@@ -15,17 +15,15 @@ import { ScrollArea } from "./ui/scroll-area";
 import { FileTypeIcon } from "./FileAttachmentPreview";
 import { formatFileSize } from "../lib/format-file-size";
 import { MarkdownImage } from "./MarkdownImage";
-import { downloadAttachmentOriginal, downloadLocalAttachmentOriginal } from "../lib/attachment-download";
-import { readAttachmentText, readLocalAttachmentText, type AttachmentTextPreview } from "../lib/attachment-text-preview";
-import { AttachmentDownloadError } from "../lib/attachment-download";
-import { AttachmentTextPreviewError } from "../lib/attachment-text-preview";
+import { AttachmentDownloadError, downloadAttachmentOriginal, downloadLocalAttachmentOriginal } from "../lib/attachment-download";
+import { AttachmentTextPreviewError, readAttachmentText, readLocalAttachmentText, type AttachmentTextPreview } from "../lib/attachment-text-preview";
 import {
   attachmentMediaFormat,
   attachmentMediaSourceUrl,
   attachmentTextFormat,
   type ChatAttachmentItem,
 } from "../lib/chat-attachment-model";
-import { MarkdownContent } from "./MarkdownContent";
+import { DocumentMarkdown } from "./DocumentMarkdown";
 import { CustomViewIframe } from "../custom-view/CustomViewRenderer";
 import {
   AttachmentViewerFitToggle,
@@ -401,7 +399,7 @@ export function AttachmentViewer({
               <>
                 {textFormat === "markdown" ? (
                   <div className="chat-attachment-markdown" data-slot="attachment-preview-body">
-                    <MarkdownContent content={text.result.text} codeBlockLayout="document" />
+                    <DocumentMarkdown content={text.result.text} />
                   </div>
                 ) : textFormat === "html" ? (
                   <CustomViewIframe

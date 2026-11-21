@@ -36,8 +36,6 @@ function walkTypescriptReactFiles(directory: string): string[] {
 describe("markdown surface mount inventory", () => {
   it("enumerates every shared MarkdownContent surface", () => {
     expect(inventoryMounts("MarkdownContent")).toEqual([
-      "packages/soul-ui/src/components/AttachmentViewer.tsx",
-      "packages/soul-ui/src/components/MarkdownDocumentPanel.tsx",
       "packages/soul-ui/src/components/chat-ui/ChatUiMessage.tsx",
       "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
       "packages/soul-ui/src/components/chat/ThinkingMessage.tsx",
@@ -60,8 +58,6 @@ describe("markdown surface mount inventory", () => {
   it("makes document code expansion explicit without changing chat or compact feeds", () => {
     const documentSurfaces = [
       "unified-dashboard/client/v3/CardNotes.tsx",
-      "packages/soul-ui/src/components/AttachmentViewer.tsx",
-      "packages/soul-ui/src/components/MarkdownDocumentPanel.tsx",
       "unified-dashboard/client/v3/FolderDescriptionPanel.tsx",
     ];
     const boundedSurfaces = [
@@ -71,6 +67,10 @@ describe("markdown surface mount inventory", () => {
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
       "unified-dashboard/client/v3/ChatUiPartsReviewSample.tsx",
     ];
+    expect(inventoryMounts("DocumentMarkdown")).toEqual([
+      "packages/soul-ui/src/components/AttachmentViewer.tsx",
+      "packages/soul-ui/src/components/MarkdownDocumentPanel.tsx",
+    ]);
     const cardDetailPane = readSource("unified-dashboard/client/v3/CardDetailPane.tsx");
     const cardNotes = readSource("unified-dashboard/client/v3/CardNotes.tsx");
 

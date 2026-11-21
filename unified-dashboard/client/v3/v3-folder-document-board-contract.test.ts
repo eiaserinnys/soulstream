@@ -72,7 +72,7 @@ describe("v3 task document board unification", () => {
 
   it("expands every fenced code block in explicit document surfaces only", () => {
     const globals = read("../../../packages/soul-ui/src/styles/globals.css");
-    const markdown = read("../../../packages/soul-ui/src/components/MarkdownContent.tsx");
+    const markdown = read("../../../packages/soul-ui/src/components/markdown-components.tsx");
 
     expect(globals).toMatch(
       /pre\[data-markdown-code-layout="document"\]\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s,
