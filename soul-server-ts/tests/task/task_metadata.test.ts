@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { extractCallerInfo } from "@soulstream/wire-schema/caller-info";
 import {
   buildCallerInfoMetadataEntry,
   buildSessionCostMetadataEntry,
   extractAgentsRunStateFromMetadata,
   extractAgentsSessionItemsFromMetadata,
-  extractCallerInfoFromMetadata,
   extractSessionCostFromMetadata,
 } from "../../src/task/task_metadata.js";
 
@@ -66,7 +66,7 @@ describe("task metadata helpers", () => {
       { type: "caller_info", value: {} },
     ];
 
-    expect(extractCallerInfoFromMetadata(metadata)).toEqual({
+    expect(extractCallerInfo(metadata)).toEqual({
       source: "slack",
       display_name: "Alice",
     });
@@ -78,14 +78,14 @@ describe("task metadata helpers", () => {
       { type: "caller_info", value: { source: "browser" } },
     ];
 
-    expect(extractCallerInfoFromMetadata(metadata)).toEqual({
+    expect(extractCallerInfo(metadata)).toEqual({
       source: "agent",
       agent_id: "roselin",
     });
   });
 
   it("falls back to the last caller_info entry when no entry has identity", () => {
-    expect(extractCallerInfoFromMetadata([
+    expect(extractCallerInfo([
       { type: "caller_info", value: { source: "browser" } },
       { type: "caller_info", value: { legacy: true } },
     ])).toEqual({ legacy: true });
@@ -93,7 +93,7 @@ describe("task metadata helpers", () => {
 
   it("matches the shared caller identity selection fixture", () => {
     for (const testCase of callerIdentityFixture.cases) {
-      expect(extractCallerInfoFromMetadata(testCase.metadata), testCase.name)
+      expect(extractCallerInfo(testCase.metadata), testCase.name)
         .toEqual(testCase.callerInfo);
     }
   });
@@ -148,7 +148,7 @@ describe("task metadata helpers", () => {
       { type: "agents_session_items", value: { backend: "openai-agents", items: "bad" } },
     ];
 
-    expect(extractCallerInfoFromMetadata(metadata)).toBeUndefined();
+    expect(extractCallerInfo(metadata)).toBeUndefined();
     expect(extractAgentsRunStateFromMetadata(metadata)).toBeUndefined();
     expect(extractAgentsSessionItemsFromMetadata(metadata)).toBeUndefined();
   });

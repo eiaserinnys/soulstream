@@ -14,10 +14,10 @@ import {
   type TaskStatus,
   type TerminationReason,
 } from "./task_models.js";
+import { extractCallerInfo } from "@soulstream/wire-schema/caller-info";
 import {
   extractAgentsRunStateFromMetadata,
   extractAgentsSessionItemsFromMetadata,
-  extractCallerInfoFromMetadata,
   extractClaudeBackendRolloverState,
   extractClaudeContextUsageFromMetadata,
   extractClaudePermissionModeFromMetadata,
@@ -153,7 +153,7 @@ export function hydrateEvictedTaskFromSessionRow(
     sessionType: row.session_type === "llm" ? "llm" : "claude",
     codexThreadId: row.claude_session_id ?? undefined,
     callerSessionId: row.caller_session_id ?? undefined,
-    callerInfo: extractCallerInfoFromMetadata(row.metadata),
+    callerInfo: extractCallerInfo(row.metadata),
     notifyCompletion: row.notify_completion !== false,
     metadata,
     sessionCost: extractSessionCostFromMetadata(metadata),

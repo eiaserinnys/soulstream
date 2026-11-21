@@ -331,64 +331,12 @@ function nonNegativeFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
-/**
- * 정체성을 명시하는 source는 신원 필드가 비어도 *신원 박힘*으로 간주.
- */
-const IDENTITY_BEARING_SOURCES: ReadonlySet<string> = new Set([
-  "agent",
-  "system",
-  "slack",
-  "soul-app",
-  "channel_observer",
-  "llm",
-  "external",
-]);
-
 export interface AgentsRunStateMetadata {
   serialized?: string;
   pendingApprovalId?: string;
   previousResponseId?: string;
   conversationId?: string;
   schemaVersion?: string;
-}
-
-/** Python `has_caller_identity` 정본 (`auth/caller_info.py:96-116`). */
-function hasCallerIdentity(callerInfo: CallerInfo): boolean {
-  const source = typeof callerInfo.source === "string" ? callerInfo.source : undefined;
-  if (source && IDENTITY_BEARING_SOURCES.has(source)) {
-    return true;
-  }
-  return Boolean(callerInfo.display_name || callerInfo.avatar_url);
-}
-
-/**
- * Python `extract_caller_info_from_metadata` 정본 인라인 이식 (R-6 fix, atom G-20).
- *
- * sessions.metadata JSONB array를 순회하여 *마지막 신원 박힌* caller_info entry value 반환.
- * 부재 시 마지막 *어떤* caller_info entry value라도 반환 (graceful — 옛 데이터 보존).
- * caller_info entry 0건이면 undefined.
- */
-export function extractCallerInfoFromMetadata(metadata: unknown): CallerInfo | undefined {
-  if (!Array.isArray(metadata)) return undefined;
-  let lastAny: CallerInfo | undefined;
-  let lastWithIdentity: CallerInfo | undefined;
-  for (const entry of metadata) {
-    if (
-      !entry ||
-      typeof entry !== "object" ||
-      (entry as Record<string, unknown>).type !== "caller_info"
-    ) {
-      continue;
-    }
-    const value = (entry as Record<string, unknown>).value;
-    if (!value || typeof value !== "object") continue;
-    const ci = value as CallerInfo;
-    lastAny = ci;
-    if (hasCallerIdentity(ci)) {
-      lastWithIdentity = ci;
-    }
-  }
-  return lastWithIdentity ?? lastAny;
 }
 
 export function extractAgentsRunStateFromMetadata(
