@@ -1,4 +1,3 @@
-import React from 'react';
 import { Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PersistentSessionWeeklyUsage } from '../components/persistent/PersistentSessionWeeklyUsage';
@@ -7,7 +6,7 @@ import { usageSummaryGaugesForApp } from '../lib/usage-summary-pool';
 import type { AppUsageSummaryNode } from '../api/usageEndpoints';
 import { useTokens } from '../theme';
 import { allBlockedReviewAccountList, claudePoolReviewList } from './claude-account-pool-fixtures';
-import type { ClaudeAccountList } from '../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAccountList } from '../../../packages/wire-schema/generated/typescript/index';
 
 export function ReviewClaudePoolPas() {
   const t = useTokens();

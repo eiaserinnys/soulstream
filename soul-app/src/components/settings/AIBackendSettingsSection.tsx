@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import type { ClaudeAccountList } from '../../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAccountList } from '../../../../packages/wire-schema/generated/typescript/index';
 import { createApiClient } from '../../api/client';
 import { useTokens, type DesignTokens } from '../../theme';
 import { FrameLoading } from '../FrameLoading';

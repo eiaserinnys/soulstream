@@ -1,10 +1,6 @@
 import type { ApiRequestContext } from './clientCore';
-import type {
-  ClaudeAccountDeleteResult,
-  ClaudeAccountList,
-  ClaudeAuthLoginFlow,
-  ClaudeCentralSettings,
-} from '../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAccountDeleteResult, ClaudeAccountList, ClaudeAuthLoginFlow } from '../../../packages/wire-schema/generated/typescript/index';
+import type { ClaudeCentralSettings } from '../../../packages/soul-ui/src/lib/usage-summary';
 import type {
   UsageData,
   AccountProfile,

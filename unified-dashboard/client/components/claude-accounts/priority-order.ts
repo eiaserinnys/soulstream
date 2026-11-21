@@ -1,4 +1,4 @@
-import type { ClaudeAccount } from "@seosoyoung/soul-ui";
+import type { ClaudeAccount } from "../../../../packages/wire-schema/generated/typescript/index";
 
 export type PriorityPatch = { id: string; priority: number };
 

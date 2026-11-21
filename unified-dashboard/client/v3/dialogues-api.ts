@@ -4,7 +4,8 @@ import { accessLinkSessions, createAccessLinksFixture } from "./access-links-fix
 import { createWebhooksFixture } from "./webhooks-fixture";
 import { createOwnedAgentsFixture } from "./owned-agents-fixture";
 import { createPersistentSessionsFixture } from "./persistent-sessions-fixture";
-import type { ClaudeAccount, ClaudeAccountList, SessionStory, UsageSummaryProvider, UsageSummaryQuota, UsageSummarySnapshot } from "@seosoyoung/soul-ui";
+import type { ClaudeAccount, ClaudeAccountList } from "../../../packages/wire-schema/generated/typescript/index";
+import type { SessionStory, UsageSummaryProvider, UsageSummaryQuota, UsageSummarySnapshot } from "@seosoyoung/soul-ui";
 import type { RecurringJob, RecurringJobRun } from "../lib/recurring-jobs";
 import type { AssignmentData } from "./AgentNodeAssignmentFields";
 import { reviewFolder, reviewFolders } from "./components-review-fixtures";
@@ -76,6 +77,7 @@ const usageFixturePoolAccounts: ClaudeAccount[] = [
     enabled: true,
     priority: 1,
     auth_state: "ok",
+    source: "local",
     usage: {
       five_hour: { used_percent: 24, resets_at: usageFixtureIso(usageFixtureResetSoon) },
       seven_day: { used_percent: 13, resets_at: usageFixtureIso(usageFixtureResetWeek) },
@@ -92,6 +94,7 @@ const usageFixturePoolAccounts: ClaudeAccount[] = [
     enabled: true,
     priority: 2,
     auth_state: "ok",
+    source: "local",
     usage: {
       five_hour: { used_percent: 100, resets_at: usageFixtureIso(usageFixtureResetSoon) },
       seven_day: { used_percent: 68, resets_at: usageFixtureIso(usageFixtureResetWeek) },

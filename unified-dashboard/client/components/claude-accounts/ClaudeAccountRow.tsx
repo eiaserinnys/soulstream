@@ -1,6 +1,7 @@
-import { Button, DashboardIconCap, Switch } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, Switch, type ProviderQuotaSlot, type ProviderQuotaSlots } from "@seosoyoung/soul-ui";
 import { ArrowDown, ArrowUp, RotateCcw, Trash2 } from "lucide-react";
-import type { ClaudeAccount, ClaudeAccountUsageWindow, ProviderQuotaSlot, ProviderQuotaSlots } from "@seosoyoung/soul-ui";
+import type { ClaudeAccount, ClaudeAccountUsageWindow } from "../../../../packages/wire-schema/generated/typescript/index";
+import { clockLabel } from "../CogitoNodeHealthClock";
 import { ProviderQuotaGrid } from "./ProviderQuotaGrid";
 
 type Props = {
@@ -20,14 +21,6 @@ type Props = {
   onCancelDelete: () => void;
   onDelete: () => void;
 };
-
-function localClock(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime())
-    ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }).format(date)
-    : null;
-}
 
 function windowSlot(
   kind: ProviderQuotaSlot["kind"],
@@ -63,7 +56,7 @@ function accountStatus(account: ClaudeAccount, nowMs: number): string | null {
   if (!account.enabled) return "사용 안 함";
   if (account.auth_state === "idle") return "대기";
   if (account.blocked) {
-    const until = localClock(account.blocked.until) ?? "해제 시각 미정";
+    const until = clockLabel(account.blocked.until) ?? "해제 시각 미정";
     return account.blocked.scope === "fable" ? `Fable ${until} 해제` : `${until} 해제`;
   }
   return null;
@@ -88,7 +81,7 @@ export function ClaudeAccountRow({
   const status = accountStatus(account, nowMs);
   const rowState = account.auth_state === "needs_relogin" ? "needs_relogin" : account.blocked ? "blocked" : "normal";
   const hasUsage = account.usage.five_hour !== null || account.usage.seven_day !== null || account.usage.fable_weekly !== null;
-  const observed = account.observed_at ? localClock(account.observed_at) : null;
+  const observed = account.observed_at ? clockLabel(account.observed_at) : null;
   const showPriority = enabledCount > 1 && account.enabled;
   const slots: ProviderQuotaSlots = [
     windowSlot("short", "5시간", account.usage.five_hour),

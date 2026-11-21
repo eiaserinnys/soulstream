@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Input } from "@seosoyoung/soul-ui";
 import { AlertCircle, ExternalLink, Loader2, RotateCcw } from "lucide-react";
-import type { ClaudeAccount, ClaudeAuthLoginFlow } from "@seosoyoung/soul-ui";
+import type { ClaudeAccount, ClaudeAuthLoginFlow } from "../../../../packages/wire-schema/generated/typescript/index";
 import {
   cancelClaudeAccountLogin,
   claudeAuthErrorMessage,

@@ -1,11 +1,10 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import * as WebBrowser from 'expo-web-browser';
-import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow } from '../../../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow } from '../../../../../packages/wire-schema/generated/typescript/index';
 import { ClaudeAccountPoolSection, type ClaudeAccountPoolApi } from '../ClaudeAccountPoolSection';
 
 function account(id: string, priority: number | null, enabled = true): ClaudeAccount {
@@ -16,6 +15,7 @@ function account(id: string, priority: number | null, enabled = true): ClaudeAcc
     enabled,
     priority,
     auth_state: 'ok',
+    source: 'local',
     usage: {
       five_hour: { used_percent: 24, resets_at: '2026-10-28T12:00:00.000Z' },
       seven_day: { used_percent: 13, resets_at: '2026-10-29T12:00:00.000Z' },
@@ -120,10 +120,10 @@ test('repeated adjacent moves preserve one-row movement without priority collisi
   ]);
 });
 
-test.each([
+test.each<[string, ClaudeAccount[]]>([
   ['null priorities', [account('one', null), account('two', null), account('three', null)]],
   ['tied priorities', [account('one', 1), account('two', 1), account('three', 1)]],
-] as const)('normalizes %s while preserving the requested adjacent move', async (_description, accounts) => {
+])('normalizes %s while preserving the requested adjacent move', async (_description, accounts) => {
   const list = { ...initial, accounts };
   const { api, current } = createMutableApi(list);
   const { view } = renderPool(api, list);

@@ -1,4 +1,5 @@
-import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow, ClaudeCentralSettings } from '../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow } from '../../../packages/wire-schema/generated/typescript/index';
+import type { ClaudeCentralSettings } from '../../../packages/soul-ui/src/lib/usage-summary';
 import type { NodeProviderSectionsApi } from '../components/settings/NodeProviderSections';
 import { reviewUsageSummary } from './usage-summary-fixtures';
 
@@ -13,18 +14,16 @@ export const claudePoolReviewList: ClaudeAccountList = {
   accounts: [
     {
       id: 'review-one', email: 'primary@example.invalid', plan: 'Max 20x', enabled: true, priority: 1,
-      auth_state: 'ok', usage: {
+      auth_state: 'ok', source: 'local', usage: {
         five_hour: { used_percent: 24, resets_at: reviewResetSoon },
-        // 빨리 씀: 지난 50%, 사용 72%. 여유: 지난 60%, 사용 20%.
         seven_day: { used_percent: 72, resets_at: reviewResetHalf },
         fable_weekly: { used_percent: 20, resets_at: reviewResetSixty },
       }, observed_at: '2026-10-28T09:10:00.000Z', blocked: null, active_sessions: 2,
     },
     {
       id: 'review-two', email: 'backup@example.invalid', plan: 'Max 5x', enabled: true, priority: 2,
-      auth_state: 'ok', usage: {
+      auth_state: 'ok', source: 'local', usage: {
         five_hour: { used_percent: 100, resets_at: reviewResetSoon },
-        // 맞춤: 지난 50%, 사용 48%. 리셋 모름: 칸막이만 남고 커서가 없다.
         seven_day: { used_percent: 48, resets_at: reviewResetHalf },
         fable_weekly: { used_percent: 46, resets_at: null },
       }, observed_at: '2026-10-28T09:08:00.000Z',
@@ -32,12 +31,12 @@ export const claudePoolReviewList: ClaudeAccountList = {
     },
     {
       id: 'review-three', email: 'reserve@example.invalid', plan: 'Pro', enabled: true, priority: 3,
-      auth_state: 'idle', usage: { five_hour: null, seven_day: null, fable_weekly: null },
+      auth_state: 'idle', source: 'local', usage: { five_hour: null, seven_day: null, fable_weekly: null },
       observed_at: '2026-10-27T23:10:00.000Z', blocked: null, active_sessions: 0,
     },
     {
       id: 'review-old', email: 'expired@example.invalid', plan: 'Pro', enabled: false, priority: null,
-      auth_state: 'needs_relogin', usage: { five_hour: null, seven_day: null, fable_weekly: null },
+      auth_state: 'needs_relogin', source: 'local', usage: { five_hour: null, seven_day: null, fable_weekly: null },
       observed_at: '2026-10-26T23:10:00.000Z', blocked: null, active_sessions: 0,
     },
   ],
@@ -66,7 +65,6 @@ const centralReviewAccounts: ClaudeAccount[] = [
       fable_weekly: { used_percent: 26, resets_at: reviewResetSixty },
     },
     observed_at: '2026-10-28T09:10:00.000Z', blocked: null, active_sessions: 0,
-    expires_at: reviewIsoIn(reviewNowSeconds + 60 * 60), refreshed_at: '2026-10-28T09:00:00.000Z', relogin_reason: null,
   },
   {
     id: '8b1e46d2-2a55-4f0b-b0a1-5c6f7d9e4b02',
@@ -78,7 +76,6 @@ const centralReviewAccounts: ClaudeAccount[] = [
       fable_weekly: { used_percent: 46, resets_at: reviewResetSixty },
     },
     observed_at: '2026-10-28T09:08:00.000Z', blocked: null, active_sessions: 0,
-    expires_at: reviewIsoIn(reviewNowSeconds + 30 * 60), refreshed_at: '2026-10-28T08:58:00.000Z', relogin_reason: null,
   },
   {
     id: 'c47a0d19-6b3e-4a82-8f3d-1e9b2c0a7d03',
@@ -86,7 +83,6 @@ const centralReviewAccounts: ClaudeAccount[] = [
     plan: 'Pro', enabled: true, priority: 3, auth_state: 'needs_relogin', source: 'central',
     usage: { five_hour: null, seven_day: null, fable_weekly: null },
     observed_at: null, blocked: null, active_sessions: 0,
-    expires_at: null, refreshed_at: null, relogin_reason: 'refresh_failed',
   },
 ];
 

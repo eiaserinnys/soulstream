@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@seosoyoung/soul-ui";
-import type { ClaudeAccountList } from "@seosoyoung/soul-ui";
+import type { ClaudeAccountList } from "../../../packages/wire-schema/generated/typescript/index";
 import {
   CENTRAL_CLAUDE_TARGET,
   getClaudeAccounts,

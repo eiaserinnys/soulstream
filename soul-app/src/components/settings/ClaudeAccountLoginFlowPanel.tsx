@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { ClaudeAuthLoginFlow } from '../../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAuthLoginFlow } from '../../../../packages/wire-schema/generated/typescript/index';
 import { useTokens } from '../../theme';
 import { makeClaudePoolStyles } from './claudeAccountPoolStyles';
 import { GlassButton } from '../GlassSurface';

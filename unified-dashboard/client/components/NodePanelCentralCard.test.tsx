@@ -4,7 +4,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ClaudeAccount, ClaudeAccountList } from "@seosoyoung/soul-ui";
+import type { ClaudeAccount, ClaudeAccountList } from "../../../packages/wire-schema/generated/typescript/index";
 
 vi.mock("@seosoyoung/soul-ui", async () => {
   const usage = await import("../../../packages/soul-ui/src/lib/usage-summary");
@@ -39,6 +39,7 @@ function account(id: string, priority: number): ClaudeAccount {
     enabled: true,
     priority,
     auth_state: "ok",
+    source: "local",
     usage: {
       five_hour: { used_percent: 10, resets_at: reset },
       seven_day: { used_percent: 20, resets_at: reset },
