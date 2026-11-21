@@ -1,22 +1,18 @@
-export type ParentEventId = string | number | null;
-
 export type ClaudeClientEvent =
   | { type: "session"; sessionId: string; pid?: number }
-  | { type: "debug"; message: string; timestamp?: number; parentEventId?: ParentEventId }
+  | { type: "debug"; message: string; timestamp?: number }
   | {
       type: "progress";
       text: string;
       foregroundToolUseId?: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
-  | { type: "text"; text: string; timestamp?: number; parentEventId?: ParentEventId }
+  | { type: "text"; text: string; timestamp?: number }
   | {
       type: "thinking";
       thinking: string;
       signature?: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "tool_start";
@@ -24,7 +20,6 @@ export type ClaudeClientEvent =
       toolInput?: Record<string, unknown>;
       toolUseId?: string | null;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "tool_result";
@@ -33,7 +28,6 @@ export type ClaudeClientEvent =
       isError?: boolean;
       toolUseId?: string | null;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "result";
@@ -51,7 +45,6 @@ export type ClaudeClientEvent =
       modelUsage?: Record<string, unknown> | null;
       permissionDenials?: string[] | null;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "context_usage";
@@ -59,7 +52,6 @@ export type ClaudeClientEvent =
       maxTokens: number;
       percent: number;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "complete";
@@ -72,7 +64,6 @@ export type ClaudeClientEvent =
       turnCostUsd?: number;
       firstCall?: { inputTokens: number; cachedInputTokens: number };
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "error";
@@ -82,13 +73,11 @@ export type ClaudeClientEvent =
       rateLimitType?: string;
       resetsAt?: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "prompt_suggestion";
       text: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "rate_limit";
@@ -97,7 +86,6 @@ export type ClaudeClientEvent =
       rateLimitType?: string;
       utilization?: number;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "input_request";
@@ -107,26 +95,22 @@ export type ClaudeClientEvent =
       startedAt?: number;
       timeoutSec?: number;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "input_request_expired";
       requestId: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "input_request_responded";
       requestId: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "compact_completed";
       trigger: string;
       message: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "assistant_error";
@@ -134,33 +118,28 @@ export type ClaudeClientEvent =
       model?: string;
       messageId?: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "away_summary";
       content: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "subagent_start";
       agentId: string;
       agentType: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "subagent_stop";
       agentId: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "claude_runtime_session_state";
       state: "idle" | "running" | "requires_action";
       sessionId?: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "claude_runtime_task_started";
@@ -173,7 +152,6 @@ export type ClaudeClientEvent =
       prompt?: string;
       skipTranscript?: boolean;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "claude_runtime_task_created";
@@ -184,7 +162,6 @@ export type ClaudeClientEvent =
       teammateName?: string;
       teamName?: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "claude_runtime_task_updated";
@@ -192,7 +169,6 @@ export type ClaudeClientEvent =
       sessionId?: string;
       patch: Record<string, unknown>;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "claude_runtime_task_progress";
@@ -204,7 +180,6 @@ export type ClaudeClientEvent =
       lastToolName?: string;
       summary?: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "claude_runtime_task_completed";
@@ -215,7 +190,6 @@ export type ClaudeClientEvent =
       teammateName?: string;
       teamName?: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "claude_runtime_task_notification";
@@ -228,7 +202,6 @@ export type ClaudeClientEvent =
       usage?: unknown;
       skipTranscript?: boolean;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "claude_runtime_hook_event";
@@ -238,7 +211,6 @@ export type ClaudeClientEvent =
       toolUseId?: string;
       hookInput?: Record<string, unknown>;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "claude_runtime_notification";
@@ -252,7 +224,6 @@ export type ClaudeClientEvent =
       sessionId?: string;
       toolUseId?: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "claude_runtime_remote_trigger";
@@ -269,7 +240,6 @@ export type ClaudeClientEvent =
       triggerType?: string;
       payload?: Record<string, unknown>;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "claude_runtime_transcript_mirror_error";
@@ -280,7 +250,6 @@ export type ClaudeClientEvent =
       subpath?: string;
       error: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     }
   | {
       type: "claude_runtime_mode_state";
@@ -294,5 +263,4 @@ export type ClaudeClientEvent =
       worktreePath?: string;
       worktreeAction?: string;
       timestamp?: number;
-      parentEventId?: ParentEventId;
     };

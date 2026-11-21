@@ -3049,7 +3049,6 @@
         "model": { "type": "string" },
         "provider": { "type": "string" },
         "timestamp": { "type": "number" },
-        "parent_event_id": { "type": ["string", "number"] },
         "_final_for_live_stream": { "type": "boolean" },
         "truncation": { "$ref": "#/$defs/EventTruncation" }
       }
@@ -3137,8 +3136,7 @@
           }
         },
         "started_at": { "type": "number" },
-        "timeout_sec": { "type": "number" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "timeout_sec": { "type": "number" }
       }
     },
     "SSEEventInputRequestExpired": {
@@ -3149,8 +3147,7 @@
       "properties": {
         "type": { "const": "input_request_expired" },
         "request_id": { "type": "string" },
-        "timestamp": { "type": "number" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "timestamp": { "type": "number" }
       }
     },
     "SSEEventInputRequestResponded": {
@@ -3161,8 +3158,7 @@
       "properties": {
         "type": { "const": "input_request_responded" },
         "request_id": { "type": "string" },
-        "timestamp": { "type": "number" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "timestamp": { "type": "number" }
       }
     },
     "SSEEventDebug": {
@@ -3175,8 +3171,7 @@
         "observation": { "$ref": "#/$defs/PersistentJevObservation" },
         "message": { "type": "string" },
         "kind": { "type": "string" },
-        "timestamp": { "type": "number" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "timestamp": { "type": "number" }
       }
     },
     "PersistentJevCandidateCounts": {
@@ -3669,8 +3664,7 @@
         "model": { "type": "string" },
         "turn_cost_usd": { "type": "number" },
         "session_cost_usd": { "type": "number" },
-        "session_cost_partial": { "type": "boolean" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "session_cost_partial": { "type": "boolean" }
       }
     },
     "SSEEventError": {
@@ -3700,8 +3694,7 @@
         "rate_limit_type": { "type": "string" },
         "resets_at": { "type": "string" },
         "thread_id": { "type": "string" },
-        "turn_id": { "type": "string" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "turn_id": { "type": "string" }
       }
     },
     "SSEEventCredentialAlert": {
@@ -3715,8 +3708,7 @@
         "rate_limit_type": { "type": "string" },
         "status": { "type": "string" },
         "resets_at": { "type": "string" },
-        "timestamp": { "type": "number" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "timestamp": { "type": "number" }
       }
     },
     "SSEEventSessionEnded": {
@@ -3746,8 +3738,7 @@
         "thinking": { "type": "string" },
         "text": { "type": "string" },
         "signature": { "type": "string" },
-        "truncation": { "$ref": "#/$defs/EventTruncation" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "truncation": { "$ref": "#/$defs/EventTruncation" }
       }
     },
     "SSEEventTextStart": {
@@ -3761,8 +3752,7 @@
         "streamIdentity": { "type": "string" },
         "liveSeq": { "type": "number" },
         "liveTextMode": { "enum": ["replace", "append"] },
-        "timestamp": { "type": "number" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "timestamp": { "type": "number" }
       }
     },
     "SSEEventTextDelta": {
@@ -3777,7 +3767,6 @@
         "liveSeq": { "type": "number" },
         "liveTextMode": { "enum": ["replace", "append"] },
         "timestamp": { "type": "number" },
-        "parent_event_id": { "type": ["string", "number"] },
         "text": { "type": "string" }
       }
     },
@@ -3792,8 +3781,7 @@
         "streamIdentity": { "type": "string" },
         "liveSeq": { "type": "number" },
         "liveTextMode": { "enum": ["replace", "append"] },
-        "timestamp": { "type": "number" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "timestamp": { "type": "number" }
       }
     },
     "SSEEventTextSnapshot": {
@@ -3869,8 +3857,7 @@
         "started_at": { "type": ["number", "null"] },
         "completed_at": { "type": ["number", "null"] },
         "duration_ms": { "type": ["number", "null"] },
-        "tool_use_id": { "type": "string" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "tool_use_id": { "type": "string" }
       }
     },
     "SSEEventToolResult": {
@@ -3893,8 +3880,7 @@
         "completed_at": { "type": ["number", "null"] },
         "duration_ms": { "type": ["number", "null"] },
         "is_error": { "type": "boolean" },
-        "tool_use_id": { "type": "string" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "tool_use_id": { "type": "string" }
       }
     },
     "SSEEventAgentUpdated": {
@@ -4051,8 +4037,7 @@
         "stop_reason": { "type": "string" },
         "errors": { "type": "array", "items": { "type": "string" } },
         "model_usage": { "type": "object", "additionalProperties": true },
-        "permission_denials": { "type": "array", "items": { "type": "string" } },
-        "parent_event_id": { "type": ["string", "number"] }
+        "permission_denials": { "type": "array", "items": { "type": "string" } }
       }
     },
     "SSEEventPromptSuggestion": {
@@ -4063,8 +4048,7 @@
       "properties": {
         "type": { "const": "prompt_suggestion" },
         "timestamp": { "type": "number" },
-        "text": { "type": "string" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "text": { "type": "string" }
       }
     },
     "SSEEventSubagentStart": {
@@ -4076,8 +4060,7 @@
         "type": { "const": "subagent_start" },
         "timestamp": { "type": "number" },
         "agent_id": { "type": "string" },
-        "agent_type": { "type": "string" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "agent_type": { "type": "string" }
       }
     },
     "SSEEventSubagentStop": {
@@ -4088,8 +4071,7 @@
       "properties": {
         "type": { "const": "subagent_stop" },
         "timestamp": { "type": "number" },
-        "agent_id": { "type": "string" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "agent_id": { "type": "string" }
       }
     },
     "SSEEventClaudeRuntimeSessionState": {
@@ -4620,8 +4602,7 @@
       "properties": {
         "type": { "const": "compact" },
         "trigger": { "type": "string" },
-        "message": { "type": "string" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "message": { "type": "string" }
       }
     },
     "SSEEventHistorySync": {
@@ -4690,8 +4671,7 @@
         "error_type": { "type": "string" },
         "model": { "type": "string" },
         "message_id": { "type": "string" },
-        "timestamp": { "type": "number" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "timestamp": { "type": "number" }
       }
     },
     "SSEEventAwaySummary": {
@@ -4702,8 +4682,7 @@
       "properties": {
         "type": { "const": "away_summary" },
         "content": { "type": "string" },
-        "timestamp": { "type": "number" },
-        "parent_event_id": { "type": ["string", "number"] }
+        "timestamp": { "type": "number" }
       }
     },
     "SSEEventSystemMessage": {

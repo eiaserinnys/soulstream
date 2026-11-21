@@ -129,7 +129,6 @@ export function toSSEEvent(m: HistoricalMessage): { event: SoulSSEEvent; eventId
   const event = {
     ...payload,
     type: m.event_type,
-    ...(payload.parent_event_id != null ? { parent_event_id: String(payload.parent_event_id) } : {}),
     ...(payload.tool_use_id != null ? { tool_use_id: String(payload.tool_use_id) } : {}),
     ...(payload.request_id != null ? { request_id: String(payload.request_id) } : {}),
   } as SoulSSEEvent;

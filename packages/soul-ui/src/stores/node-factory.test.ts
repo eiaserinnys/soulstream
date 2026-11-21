@@ -568,7 +568,6 @@ describe("createNodeFromEvent", () => {
         type: "thinking",
         timestamp: 1700000000,
         thinking: "Let me consider...",
-        parent_event_id: "toolu_abc",
       };
 
       const node = createNodeFromEvent(event, 10);
@@ -614,7 +613,6 @@ describe("createNodeFromEvent", () => {
         timestamp: 1700000000,
         agent_id: "agent-uuid-123",
         agent_type: "task",
-        parent_event_id: "toolu_xyz",
       };
 
       const node = createNodeFromEvent(event, 20);
@@ -662,7 +660,6 @@ describe("createNodeFromEvent", () => {
         tool_name: "Bash",
         tool_input: { command: "ls -la" },
         tool_use_id: "toolu_001",
-        parent_event_id: "toolu_parent",
       };
 
       const node = createNodeFromEvent(event, 30);
@@ -831,7 +828,6 @@ describe("createNodeFromEvent", () => {
             ],
           },
         ],
-        parent_event_id: "toolu_parent",
       };
 
       const node = createNodeFromEvent(event, 70);

@@ -1,6 +1,5 @@
 import { useLayoutEffect, useMemo, useState } from "react";
-import { ChatAttachmentLoaderProvider, ChatView, useDashboardStore } from "@seosoyoung/soul-ui";
-import type { ChatAttachmentItem, ChatAttachmentLoader } from "@seosoyoung/soul-ui";
+import { ChatAttachmentLoaderProvider, ChatView, useDashboardStore, type ChatAttachmentItem, type ChatAttachmentLoader, type PersistentTurnUsageMode } from "@seosoyoung/soul-ui";
 import { ChatMessageItem } from "@seosoyoung/soul-ui/components/chat/ChatMessageItem";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
 import { ClaudeRuntimeSchedulesPanel } from "@seosoyoung/soul-ui/components/ClaudeRuntimeSchedulesPanel";
@@ -8,7 +7,6 @@ import type { ClaudeRuntimeView } from "@seosoyoung/soul-ui/lib/claude-runtime-p
 import { getSessionResetState } from "@seosoyoung/soul-ui/stores/slices/_session-reset";
 import { flattenTree, type ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import type { SoulSSEEvent } from "@seosoyoung/soul-ui/shared/types";
-import type { PersistentTurnUsageMode } from "@seosoyoung/soul-ui";
 
 const REVIEW_SESSION = "components-review-manuscript";
 const PAS_8309_IMAGE_URLS = [
@@ -325,9 +323,6 @@ function ManuscriptColumn() {
         },
       },
     ] as SoulSSEEvent[];
-    const narrationInputIndex = events.findIndex(event => event.type === "user_message" && event.input_id === NARRATION_REVIEW_INPUT_ID);
-    const thinkingEvent = events.find((event): event is Extract<SoulSSEEvent, { type: "thinking" }> => event.type === "thinking");
-    if (thinkingEvent) thinkingEvent.parent_event_id = String(narrationInputIndex + 1);
     store.processEvents(events.map((event, index) => ({ event, eventId: index + 1 })));
     const argonLiveEvents: SoulSSEEvent[] = [
       ...ARGON_REVIEW_EMPTY_STREAM_IDS.flatMap((streamIdentity, index) => [
