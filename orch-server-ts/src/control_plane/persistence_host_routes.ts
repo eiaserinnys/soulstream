@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { PersistenceHostRepositories } from "./persistence_host_runtime.js";
+import { isLegacyHostDateValue } from "./repositories/session_mutation_repository.js";
 
 export interface PersistenceHostRouteOptions {
   repositoryProvider: () => Promise<PersistenceHostRepositories>;
@@ -422,7 +423,7 @@ function camelCase(
   if (Array.isArray(value)) {
     return value.map(child => camelCase(child, undefined, opaqueKeys));
   }
-  if (typeof value === "string" && isDateValue(value, key)) return new Date(value);
+  if (typeof value === "string" && isLegacyHostDateValue(value, key)) return new Date(value);
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([childKey, child]) => {
     const camelKey = childKey.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase());
@@ -431,12 +432,6 @@ function camelCase(
       opaqueKeys.has(camelKey) ? child : camelCase(child, camelKey, opaqueKeys),
     ];
   }));
-}
-
-function isDateValue(value: string, key?: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}T/.test(value)) return false;
-  if (key === undefined) return true;
-  return /(?:At|Before|Until|ExpiresAt)$/.test(key) && key !== "timestamp";
 }
 
 type DeliveryFailureCollector = {

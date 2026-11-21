@@ -227,7 +227,7 @@ async function mcpAllowedFolderIds(options: Options): Promise<readonly string[] 
   const normalized = normalizeBoardAccess(access);
   return normalized.restricted ? filterFolders(normalized, folders).map(folder => folder.id) : null;
 }
-async function resolveDispatchReferences(options: Options, refs: string[]) {
+export async function resolveDispatchReferences(options: Options, refs: string[]) {
   const [service, access, folders] = await Promise.all([
     options.cardServiceProvider!(), options.resolveAccess!(), options.provider.listFolders(),
   ]);

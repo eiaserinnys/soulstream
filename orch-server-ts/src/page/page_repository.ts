@@ -440,7 +440,7 @@ function assertPageCapableQuerySql(
   }
 }
 
-function requirePageDocumentName(documentName: string): string {
+export function requirePageDocumentName(documentName: string): string {
   const pageId = parsePageYjsDocumentName(documentName);
   if (!pageId) throw new Error(`PAGE_YJS_DOCUMENT_NAME_INVALID: ${documentName}`);
   return pageId;

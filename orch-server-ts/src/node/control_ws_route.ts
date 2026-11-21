@@ -327,7 +327,7 @@ function parseJsonFrame(payload: unknown): JsonFrameParseResult {
   }
 }
 
-function payloadToText(payload: unknown): string | undefined {
+export function payloadToText(payload: unknown): string | undefined {
   if (typeof payload === "string") return payload;
   if (Buffer.isBuffer(payload)) return payload.toString("utf8");
   if (payload instanceof ArrayBuffer) return Buffer.from(payload).toString("utf8");

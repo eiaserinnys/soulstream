@@ -7,7 +7,7 @@ import type {
   SupportedPortraitMime,
 } from "../node/agent_profile_routes.js";
 import { AgentProfileVersionConflictError } from "../node/agent_profile_routes.js";
-import type { LiveDbSqlResolver } from "./live_db_sql.js";
+import { optionalRead, type LiveDbSqlResolver } from "./live_db_sql.js";
 
 export function createLiveAgentProfileRepository(
   sqlResolver: LiveDbSqlResolver,
@@ -24,7 +24,7 @@ export function createLiveAgentProfileRepository(
       );
     },
     async list() {
-      const rows = await optionalProfileRead(async () =>
+      const rows = await optionalRead(async () =>
         (await sqlResolver.resolveSql())`
           SELECT agent_id, name, context_bundles, atom_contexts, default_preset, aliases,
                  portrait_blob IS NOT NULL AS has_portrait, portrait_mime,
@@ -39,7 +39,7 @@ export function createLiveAgentProfileRepository(
       return mapped;
     },
     async get(agentId) {
-      const rows = await optionalProfileRead(async () =>
+      const rows = await optionalRead(async () =>
         (await sqlResolver.resolveSql())`
           SELECT agent_id, name, context_bundles, atom_contexts, default_preset, aliases,
                  portrait_blob IS NOT NULL AS has_portrait, portrait_mime,
@@ -75,7 +75,7 @@ export function createLiveAgentProfileRepository(
       return false;
     },
     async getPortrait(agentId) {
-      const rows = await optionalProfileRead(async () =>
+      const rows = await optionalRead(async () =>
         (await sqlResolver.resolveSql())`
           SELECT portrait_blob, portrait_mime, portrait_sha256, version
           FROM agent_profiles
@@ -104,22 +104,6 @@ export function createLiveAgentProfileRepository(
     },
   };
   return repository;
-}
-
-async function optionalProfileRead(
-  read: () => Promise<readonly Record<string, unknown>[]>,
-): Promise<readonly Record<string, unknown>[]> {
-  try {
-    return await read();
-  } catch (error) {
-    if (isUndefinedTable(error)) return [];
-    throw error;
-  }
-}
-
-function isUndefinedTable(error: unknown): boolean {
-  return typeof error === "object" && error !== null
-    && (error as { code?: unknown }).code === "42P01";
 }
 
 async function insertProfile(sqlResolver: LiveDbSqlResolver, input: AgentProfileWrite) {

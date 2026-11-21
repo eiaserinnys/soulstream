@@ -14,6 +14,7 @@ import {
   sendUploadFailure,
   type UploadMode,
 } from "./attachment_upload_http.js";
+import { asObject } from "./owned_multipart_finish.js";
 import type { MultipartAttachmentOptions } from "./multipart_attachment_routes.js";
 
 export type OwnedMultipartOptions = MultipartAttachmentOptions & {
@@ -35,7 +36,7 @@ export async function ownedMultipartInit(
     if (actor === null) {
       throw new AttachmentUploadHttpError(401, "unauthenticated", "로그인이 필요합니다");
     }
-    const body = object(request.body);
+    const body = asObject(request.body);
     const sessionId = text(body.session_id, "session_id");
     const filename = text(body.filename, "filename");
     const contentType = text(body.content_type, "content_type");
@@ -118,13 +119,6 @@ function readInitNodeId(request: FastifyRequest, mode: UploadMode): string | nul
     throw new AttachmentUploadHttpError(400, "invalid_upload", "nodeId 형식이 올바르지 않습니다");
   }
   return raw;
-}
-
-function object(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new AttachmentUploadHttpError(400, "invalid_upload", "JSON 객체가 필요합니다");
-  }
-  return value as Record<string, unknown>;
 }
 
 function text(value: unknown, name: string): string {

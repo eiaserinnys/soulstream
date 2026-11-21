@@ -493,7 +493,7 @@ function createTurnUsageCtes(sql: SqlClient, scope: TurnUsageScope) {
   `;
 }
 
-function asNumber(value: string | number | null | undefined): number | undefined {
+export function asNumber(value: string | number | null | undefined): number | undefined {
   if (value === null || value === undefined) return undefined;
   const number = typeof value === "number" ? value : Number(value);
   return Number.isFinite(number) ? number : undefined;

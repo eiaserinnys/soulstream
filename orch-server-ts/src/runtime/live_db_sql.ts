@@ -378,6 +378,29 @@ export function createLiveSearchDbConnectionFactory(
   };
 }
 
+export function postgresErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return undefined;
+  }
+  return typeof error.code === "string" ? error.code : undefined;
+}
+
+export async function optionalRead(
+  read: () => Promise<readonly Record<string, unknown>[]>,
+): Promise<readonly Record<string, unknown>[]> {
+  try {
+    return await read();
+  } catch (error) {
+    if (isUndefinedTable(error)) return [];
+    throw error;
+  }
+}
+
+function isUndefinedTable(error: unknown): boolean {
+  return typeof error === "object" && error !== null
+    && (error as { code?: unknown }).code === "42P01";
+}
+
 export async function requireLiveDatabaseUrl(
   configProvider: LiveConfigProviderBoundary | undefined,
 ): Promise<string> {

@@ -232,7 +232,7 @@ function requestBody(request: FastifyRequest): Record<string, unknown> {
   return asObject(request.body);
 }
 
-function asObject(value: unknown): Record<string, unknown> {
+export function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new AttachmentUploadHttpError(400, "invalid_upload", "JSON 객체가 필요합니다");
   }

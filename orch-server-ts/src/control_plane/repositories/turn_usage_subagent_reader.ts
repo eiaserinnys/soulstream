@@ -1,4 +1,5 @@
 import type { SqlClient } from "../control_plane_types.js";
+import { asNumber } from "./turn_usage_repository.js";
 import { normalizedInputTokens, numberField } from "./turn_usage_sql_fields.js";
 import {
   computeSessionSubagentRollups,
@@ -229,10 +230,4 @@ function createSubagentUsageCtes(
       FROM anchor_rec
     )
   `;
-}
-
-function asNumber(value: string | number | null | undefined): number | undefined {
-  if (value === null || value === undefined) return undefined;
-  const number = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(number) ? number : undefined;
 }

@@ -1,5 +1,3 @@
-import { Buffer } from "node:buffer";
-
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type {
@@ -27,7 +25,7 @@ import {
 } from "./page_session_defaults_alias.js";
 import type { PageYjsService } from "./page_service.js";
 import { PageYjsPageNotFoundError } from "./page_yjs_persistence.js";
-import { registerPageBlockTransferRoute } from "./page_block_transfer_route.js";
+import { decodeBase64, registerPageBlockTransferRoute } from "./page_block_transfer_route.js";
 
 export const pageBrowserRouteAuthRequirements = {
   "GET /api/pages": true,
@@ -348,15 +346,6 @@ function placement(input: {
     afterBlockId: input.after_block_id,
     afterTempId: input.after_temp_id,
   };
-}
-
-function decodeBase64(value: string): Uint8Array {
-  const bytes = Buffer.from(value, "base64");
-  const normalized = value.replace(/=+$/, "");
-  if (!bytes.length || bytes.toString("base64").replace(/=+$/, "") !== normalized) {
-    throw new Error("expected_state_vector must be canonical base64");
-  }
-  return new Uint8Array(bytes);
 }
 
 const LINK_KINDS: readonly PageLinkKind[] = ["mount", "inline_page", "block_ref"];
