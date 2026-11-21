@@ -287,26 +287,119 @@ function stepBaseDirectory(lines, runIndex, runIndent) {
   return null;
 }
 
-function parseRunBlocks(source) {
+function blockEnd(lines, index) {
+  const indent = indentOf(lines[index]);
+  let end = index + 1;
+  while (end < lines.length && (isIgnorable(lines[end]) || indentOf(lines[end]) > indent)) end += 1;
+  return end;
+}
+
+function childIndent(lines, index, end) {
+  for (let next = index + 1; next < end; next += 1) {
+    if (isIgnorable(lines[next])) continue;
+    const indent = indentOf(lines[next]);
+    return indent > indentOf(lines[index]) ? indent : -1;
+  }
+  return -1;
+}
+
+function keyName(line) {
+  const match = /^\s*(?:([A-Za-z0-9_.-]+)|'([^']*)'|"([^"]*)")\s*:/.exec(line);
+  if (match === null) return null;
+  return match[1] ?? match[2] ?? match[3];
+}
+
+function findChildKey(lines, start, end, indent, key) {
+  for (let index = start; index < end; index += 1) {
+    if (isIgnorable(lines[index]) || indentOf(lines[index]) !== indent) continue;
+    if (keyName(lines[index]) === key) return index;
+  }
+  return -1;
+}
+
+function defaultsRun(lines, defaultsIndex) {
+  const end = blockEnd(lines, defaultsIndex);
+  const runIndent = childIndent(lines, defaultsIndex, end);
+  if (runIndent === -1) return null;
+  const runIndex = findChildKey(lines, defaultsIndex + 1, end, runIndent, 'run');
+  if (runIndex === -1) return null;
+  const runEnd = blockEnd(lines, runIndex);
+  const directoryIndent = childIndent(lines, runIndex, runEnd);
+  let value = null;
+  if (directoryIndent !== -1) {
+    const directoryIndex = findChildKey(lines, runIndex + 1, runEnd, directoryIndent, 'working-directory');
+    if (directoryIndex !== -1) {
+      const match = /^\s*working-directory:(.*)$/.exec(lines[directoryIndex]);
+      if (match !== null) value = match[1].trim().replace(/^['"]|['"]$/g, '');
+    }
+  }
+  return { runIndex, value };
+}
+
+function parseWorkflowStructure(lines) {
+  const defaultsRunLines = new Set();
+  const jobs = [];
+  let workflowDirectory = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (isIgnorable(lines[index]) || indentOf(lines[index]) !== 0) continue;
+    if (keyName(lines[index]) !== 'defaults') continue;
+    const defaults = defaultsRun(lines, index);
+    if (defaults === null) continue;
+    workflowDirectory = defaults.value;
+    defaultsRunLines.add(defaults.runIndex);
+  }
+  const jobsIndex = lines.findIndex((line) => indentOf(line) === 0 && keyName(line) === 'jobs');
+  if (jobsIndex !== -1) {
+    const jobsEnd = blockEnd(lines, jobsIndex);
+    const jobIndent = childIndent(lines, jobsIndex, jobsEnd);
+    if (jobIndent !== -1) {
+      for (let index = jobsIndex + 1; index < jobsEnd; index += 1) {
+        if (isIgnorable(lines[index]) || indentOf(lines[index]) !== jobIndent) continue;
+        if (keyName(lines[index]) === null) continue;
+        const jobEnd = blockEnd(lines, index);
+        const childKeyIndent = childIndent(lines, index, jobEnd);
+        let directory = null;
+        if (childKeyIndent !== -1) {
+          const defaultsIndex = findChildKey(lines, index + 1, jobEnd, childKeyIndent, 'defaults');
+          if (defaultsIndex !== -1) {
+            const defaults = defaultsRun(lines, defaultsIndex);
+            if (defaults !== null) {
+              directory = defaults.value;
+              defaultsRunLines.add(defaults.runIndex);
+            }
+          }
+        }
+        jobs.push({ start: index, end: jobEnd, directory });
+        index = jobEnd - 1;
+      }
+    }
+  }
+  return { defaultsRunLines, jobs, workflowDirectory };
+}
+
+function parseRunBlocks(source, skipLines, filePath) {
   const lines = source.split(/\r?\n/);
   const blocks = [];
   for (let index = 0; index < lines.length; index += 1) {
     const match = /^(\s*)run:(.*)$/.exec(lines[index]);
-    if (match === null) continue;
+    if (match === null || skipLines.has(index)) continue;
     const indent = match[1].length;
-    const value = stripTrailingComment(match[2]);
+    const value = match[2].trim();
     let content;
     if (value === '') {
       content = [{ line: index + 1, text: '' }];
-    } else if (/^[|>][+-]?$/.test(value)) {
+    } else if (/^[|>][+-]?(?:\s+#.*)?$/.test(value)) {
       content = runBlockLines(lines, index, indent);
       if (value.startsWith('>')) {
         content = [{ line: content[0]?.line ?? index + 1, text: content.map((entry) => entry.text).join(' ') }];
       }
     } else {
-      content = [{ line: index + 1, text: match[2].trim() }];
+      let text = value;
+      if (value.startsWith("'")) text = parseSingleQuoted(value, filePath, index + 1);
+      else if (value.startsWith('"')) text = parseDoubleQuoted(value, filePath, index + 1);
+      content = [{ line: index + 1, text }];
     }
-    blocks.push({ base: stepBaseDirectory(lines, index, indent), content });
+    blocks.push({ index, stepBase: stepBaseDirectory(lines, index, indent), content });
   }
   return blocks;
 }
@@ -329,11 +422,61 @@ function logicalCommands(content) {
   return commands;
 }
 
-function tokenize(text) {
-  return text
-    .split(/\s+/)
-    .filter((token) => token !== '')
-    .map((token) => token.replace(/^['"]|['"]$/g, ''));
+function shellCommands(text) {
+  const commands = [];
+  let words = [];
+  let word = '';
+  let open = false;
+  let quote = null;
+  const flushWord = () => {
+    if (!open) return;
+    words.push(word);
+    word = '';
+    open = false;
+  };
+  const flushCommand = () => {
+    flushWord();
+    if (words.length === 0) return;
+    commands.push(words);
+    words = [];
+  };
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quote !== null) {
+      if (character === quote) {
+        quote = null;
+        continue;
+      }
+      word += character;
+      open = true;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      open = true;
+      continue;
+    }
+    if (character === '#' && !open) break;
+    if (/\s/.test(character)) {
+      flushWord();
+      continue;
+    }
+    if (
+      character === ';' ||
+      character === '(' ||
+      character === ')' ||
+      character === '|' ||
+      (character === '&' && text[index + 1] === '&')
+    ) {
+      flushCommand();
+      if (character === '&') index += 1;
+      continue;
+    }
+    word += character;
+    open = true;
+  }
+  flushCommand();
+  return commands;
 }
 
 function resolveBase(tokens, stepBase) {
@@ -356,23 +499,27 @@ function isTestPathToken(token) {
 function findMissingRunPaths(source, filePath, trackedFiles) {
   const problems = [];
   let checked = 0;
-  for (const block of parseRunBlocks(source)) {
+  const structure = parseWorkflowStructure(source.split(/\r?\n/));
+  for (const block of parseRunBlocks(source, structure.defaultsRunLines, filePath)) {
+    const job = structure.jobs.find((entry) => block.index > entry.start && block.index < entry.end);
+    const base = block.stepBase ?? job?.directory ?? structure.workflowDirectory ?? null;
     for (const command of logicalCommands(block.content)) {
-      const tokens = tokenize(command.text);
-      const start = runArgumentStart(tokens);
-      if (start === -1) continue;
-      const base = resolveBase(tokens, block.base);
-      if (base === null) continue;
-      for (let index = start; index < tokens.length; index += 1) {
-        const token = tokens[index];
-        if (token.startsWith('-')) continue;
-        if (!isTestPathToken(token)) continue;
-        checked += 1;
-        const resolved = posix.normalize(posix.join(base, token));
-        const alive = token.includes('*')
-          ? matchesAnyTrackedFile(resolved, trackedFiles)
-          : trackedFiles.has(resolved);
-        if (!alive) problems.push({ filePath, line: command.line, token });
+      for (const words of shellCommands(command.text)) {
+        const start = runArgumentStart(words);
+        if (start === -1) continue;
+        const commandBase = resolveBase(words, base);
+        if (commandBase === null) continue;
+        for (let index = start; index < words.length; index += 1) {
+          const token = words[index];
+          if (token.startsWith('-')) continue;
+          if (!isTestPathToken(token)) continue;
+          checked += 1;
+          const resolved = posix.normalize(posix.join(commandBase, token));
+          const alive = token.includes('*')
+            ? matchesAnyTrackedFile(resolved, trackedFiles)
+            : trackedFiles.has(resolved);
+          if (!alive) problems.push({ filePath, line: command.line, token });
+        }
       }
     }
   }
