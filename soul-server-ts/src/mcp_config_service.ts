@@ -11,6 +11,7 @@ import {
   type AgentsSdkMcpServer,
   type AgentProfile,
 } from "@soulstream/agent-profile-contract";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export const DEFAULT_MCP_REGISTRY_BASENAME = "mcp-registry.yaml";
 export const DEFAULT_MCP_PROFILES_BASENAME = "mcp-profiles.yaml";
@@ -505,10 +506,6 @@ function decodeUrlQueryParamName(rawName: string): string {
   } catch {
     return rawName;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function isNodeError(err: unknown): err is NodeJS.ErrnoException {
