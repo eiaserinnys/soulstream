@@ -23,6 +23,8 @@ import {
 } from "../src/usage/session_statistics_normalizer.js";
 import type { EventIngressQuerySql, EventIngressSql } from "../src/node/event_ingress_repository.js";
 import type { EventIngressEnvelope } from "../src/node/event_ingress_types.js";
+import type { FolderContentSql } from "../src/board/folder_content_sql.js";
+import { SessionStatisticsRepository } from "../src/usage/session_statistics_repository.js";
 import {
   canonicalOwnershipEvents,
   claudeModelBreakdownEvents,
@@ -55,6 +57,36 @@ describePostgres("session statistics facts projection", () => {
   afterAll(async () => {
     await harness?.cleanup();
   });
+
+  it("reads empty statistics from a fresh-install checkpoint", async () => {
+    const [eventCount] = await sql`SELECT COUNT(*)::int AS count FROM events`;
+    expect(eventCount?.count).toBe(0);
+    const [original] = await sql`SELECT value FROM system_settings
+      WHERE setting_key = ${SESSION_STATISTICS_PROJECTION_SETTING_KEY}`;
+    const coveredSince = new Date().toISOString();
+    try {
+      // Mirrors the checkpoint written by migrate.mjs during fresh-install.
+      await sql`
+        UPDATE system_settings SET value = ${sql.json({
+          state: "ready", normalization_version: 1, covered_since: coveredSince,
+          backfill_cutoff_event_id: 0, last_session_id: null, last_event_id: null,
+        })}
+        WHERE setting_key = ${SESSION_STATISTICS_PROJECTION_SETTING_KEY}
+      `;
+      const repository = new SessionStatisticsRepository(sql as unknown as FolderContentSql);
+      const result = await repository.read({
+        query: { period: "week", anchor: coveredSince.slice(0, 10) },
+        asOf: coveredSince, timezone: "Asia/Seoul", day: null,
+        access: { restricted: false, allowedFolderIds: [] }, visibleFolders: [],
+      });
+      expect(result.projectionStatus.state).toBe("ready");
+      expect(result.sessions).toEqual([]);
+      expect(result.rows).toEqual([]);
+    } finally {
+      await sql`UPDATE system_settings SET value = ${sql.json(original!.value)}
+        WHERE setting_key = ${SESSION_STATISTICS_PROJECTION_SETTING_KEY}`;
+    }
+  }, 60_000);
 
   it("resumes a cutoff keyset backfill, tolerates live overlap, and matches the pure selectors", async () => {
     const backfillSession = "statistics-projection-backfill";

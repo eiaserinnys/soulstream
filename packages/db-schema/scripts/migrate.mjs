@@ -245,6 +245,27 @@ async function freshInstall(sql, migrations, releaseId, env) {
       throw new Error("fresh-install requires an empty database");
     }
     await tx.unsafe(await readFile(canonicalSchemaPath, "utf8"));
+    const checkpoint = await tx`
+      UPDATE system_settings
+      SET value = jsonb_build_object(
+            'state', 'ready',
+            'normalization_version', 1,
+            'covered_since', to_char(transaction_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+            'backfill_cutoff_event_id', 0,
+            'last_session_id', NULL,
+            'last_event_id', NULL
+          ),
+          version = version + 1,
+          updated_at = transaction_timestamp(),
+          updated_by = 'migration:fresh_install'
+      WHERE setting_key = 'session_statistics_projection_v1'
+        AND value->>'state' = 'backfilling'
+        AND value->'covered_since' = 'null'::jsonb
+        AND NOT EXISTS (SELECT 1 FROM events)
+    `;
+    if (checkpoint.count !== 1) {
+      throw new Error("fresh-install session statistics checkpoint initialization failed");
+    }
     await ensureLedger(tx);
     for (const migration of migrations) {
       await recordMigration(tx, migration, releaseId, "fresh_install");
