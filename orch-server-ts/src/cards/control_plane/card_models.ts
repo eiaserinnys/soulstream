@@ -1,10 +1,10 @@
 import type { FolderOperationActorKind } from "@soulstream/mcp-contract";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type {
   CardAssigneeFields,
   FolderOperationRow,
   FolderOperationTargetKind,
 } from "./card_types.js";
-import { recordFromDb } from "./repository_helpers.js";
 
 export class CardVersionConflict extends Error {
   readonly statusCode = 409;
@@ -88,7 +88,7 @@ export function cleanPatch<T extends Record<string, unknown>>(fields: T): T {
 }
 
 export function normalizeOperation(row: FolderOperationRow): FolderOperationRow {
-  return { ...row, payload_json: recordFromDb(row.payload_json) };
+  return { ...row, payload_json: asRecord(row.payload_json) ?? {} };
 }
 
 export function requireOne<T>(rows: T[], op: string): T {

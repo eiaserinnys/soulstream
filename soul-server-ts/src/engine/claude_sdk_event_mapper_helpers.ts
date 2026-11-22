@@ -1,10 +1,10 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { contextUsagePercent } from "./context_usage.js";
 import {
   asArray,
   asNullableString,
   asNumber,
-  asRecord,
   asString,
   asStringArray,
   firstString,

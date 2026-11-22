@@ -15,7 +15,6 @@ import { notifyPageUpdates } from "../page/page_update_notifications.js";
 import type {
   FolderProjectBinding,
   FolderProjectIdentityMutationResult,
-  FolderProjectIdentityRepository,
   FolderProjectIdentityServiceConfig,
   FolderProjectUpdate,
 } from "./folder_project_identity_contracts.js";
@@ -265,10 +264,4 @@ function isIdentityCommand(command: PageMutationInput["command"]): boolean {
   return command.type === "batch_operations" && command.operations.some((operation) =>
     operation.op === "rename_page" || operation.op === "set_page_archived"
   );
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }

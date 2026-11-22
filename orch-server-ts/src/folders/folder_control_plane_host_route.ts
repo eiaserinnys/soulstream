@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { CardControlPlaneService } from "../cards/card_control_plane_service.js";
 import type { FolderActorParams } from "../cards/control_plane/card_types.js";
 import type { FolderProjectIdentityService } from "./folder_project_identity_service.js";
@@ -54,7 +55,7 @@ export function registerFolderControlPlaneHostRoute(
       if (!authorization.ok) {
         return errorReply(reply, authorization.statusCode, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
       }
-      const body = record(request.body);
+      const body = asRecord(request.body);
       if (!body) return errorReply(reply, 422, "INVALID_FOLDER_REQUEST", "body must be an object");
       const operation = request.params.operation;
       if (!operations.has(operation)) {
@@ -146,17 +147,12 @@ async function dispatchWorkspace(options: FolderControlPlaneHostRouteOptions, op
 
 function camelize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(camelize);
-  const object = record(value);
+  const object = asRecord(value);
   return object ? Object.fromEntries(Object.entries(object).map(([key, child]) => [
     key.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase()), key === "settings" ? child : camelize(child),
   ])) : value;
 }
 
-function record(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
 function requiredControlPlaneString(body: Record<string, unknown>, key: string): string {
   const value = body[key];
   if (typeof value !== "string" || value.length === 0) throw statusError(422, `${key} is required`);

@@ -1,3 +1,4 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { RunnerFrame } from "./frame_protocol.js";
 
 export interface RunnerDroppedFrame {
@@ -54,7 +55,6 @@ function hostCallEventType(args: readonly unknown[]): string | undefined {
 }
 
 function recordString(value: unknown, key: string): string | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const candidate = (value as Record<string, unknown>)[key];
+  const candidate = asRecord(value)?.[key];
   return typeof candidate === "string" && candidate.length > 0 ? candidate : undefined;
 }

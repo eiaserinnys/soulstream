@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { ScheduleToolUseHandler } from "../engine/protocol.js";
@@ -462,12 +463,6 @@ export class SoulstreamScheduleService {
       : scheduleToDeletedEvent(schedule);
     await this.persistence.enqueueEvent(schedule.sessionId, event);
   }
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
 }
 
 function readString(source: Record<string, unknown>, key: string): string | undefined {

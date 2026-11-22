@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import { createSseStream } from "../sse/sse_stream.js";
 import type { SessionHistoryLiveEventSource } from "../session/session_history_routes.js";
 import { ConversationHistory } from "./conversation_history.js";
@@ -12,9 +13,6 @@ type Options = { liveEvents?: SessionHistoryLiveEventSource; closeAfterHistorySy
 type Wire = { kind: string; [key: string]: unknown };
 function frame(event: Wire, id?: string): string {
   return `event: ${event.kind}\n${id === undefined ? "" : `id: ${id}\n`}data: ${JSON.stringify(event)}\n\n`;
-}
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 function eventId(envelope: Record<string, unknown>, payload: Record<string, unknown>): number | undefined {
   for (const value of [envelope.eventId, envelope.id, payload._event_id]) {
@@ -69,7 +67,7 @@ export async function sendConversationEvents(request: FastifyRequest, reply: Fas
     const frames: string[] = [frame({ kind:"snapshot", snapshot }, loaded.cursor)];
     let push: (chunk: string) => void = (chunk) => { frames.push(chunk); };
     const process = async (envelope: Record<string, unknown>) => {
-      let payload = record(envelope.event ?? envelope.payload ?? envelope);
+      let payload = asRecord(envelope.event ?? envelope.payload ?? envelope) ?? {};
       const type = typeof payload.type === "string" ? payload.type : "";
       const id = eventId(envelope, payload);
       const sequence = typeof payload.liveSeq === "number" ? payload.liveSeq : undefined;

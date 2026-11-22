@@ -1,3 +1,4 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { LivePostgresSql } from "../runtime/live_db_sql.js";
 import { parseChildSessionRelationKey } from
   "./turn_summary_speaker.js";
@@ -193,7 +194,7 @@ function normalizeChildEvent(row: Record<string, unknown>): EvidenceEvent | null
   return {
     id,
     eventType: String(row.event_type ?? ""),
-    payload: recordValue(parseJsonValue(row.payload)),
+    payload: asRecord(parseJsonValue(row.payload)) ?? {},
   };
 }
 
@@ -204,12 +205,6 @@ function parseJsonValue(value: unknown): unknown {
   } catch {
     return value;
   }
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }
 
 function stringValue(value: unknown): string | null {

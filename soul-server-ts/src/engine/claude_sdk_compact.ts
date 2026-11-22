@@ -1,8 +1,9 @@
 import type { Query as ClaudeSdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
 import type { ClaudeRunOptions } from "./claude_adapter.js";
-import { asRecord, asString } from "./claude_sdk_helpers.js";
+import { asString } from "./claude_sdk_helpers.js";
 import type { CompactedContextUsage } from "./protocol.js";
 
 export async function readCompactedContextUsage(

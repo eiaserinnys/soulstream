@@ -1,5 +1,6 @@
 import type { LastChatMessage, LastChatMessageType } from
   "@soulstream/wire-schema/session-feed-contract";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { EventIngressEnvelope } from "./event_ingress_types.js";
 
 const PREVIEW_CODEPOINT_LIMIT = 200;
@@ -13,8 +14,8 @@ export function lastChatMessageFromEnvelope(
   envelope: EventIngressEnvelope,
   eventId: number,
 ): LastChatMessage | null {
-  const payload = recordValue(envelope.payload);
-  if (payload === null) return null;
+  const payload = asRecord(envelope.payload);
+  if (payload === undefined) return null;
   const source = lastChatSource(envelope.event_type, payload);
   if (source === null) return null;
   const preview = source.text.trim();
@@ -59,10 +60,4 @@ function stringSource(
   value: unknown,
 ): { type: LastChatMessageType; text: string } | null {
   return typeof value === "string" ? { type, text: value } : null;
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
 }

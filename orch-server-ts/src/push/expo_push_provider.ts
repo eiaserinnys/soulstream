@@ -1,4 +1,4 @@
-import { jsonObjectOrUndefined } from "../http/route_validation.js";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type {
   PushNotificationProvider,
   PushSendResult,
@@ -68,13 +68,13 @@ async function sendExpoPush(
 }
 
 export function parseExpoPushResponse(payload: unknown): PushSendResult {
-  const data = jsonObjectOrUndefined(payload)?.data;
-  const ticket = Array.isArray(data) ? jsonObjectOrUndefined(data[0]) : jsonObjectOrUndefined(data);
+  const data = asRecord(payload)?.data;
+  const ticket = Array.isArray(data) ? asRecord(data[0]) : asRecord(data);
   if (ticket === undefined) {
     return { ok: false, invalidToken: false, error: "unexpected response shape" };
   }
   if (ticket.status !== "error") return { ok: true, invalidToken: false };
-  const details = jsonObjectOrUndefined(ticket.details);
+  const details = asRecord(ticket.details);
   const error = stringValue(details?.error, ticket.message) || "unknown";
   return {
     ok: false,

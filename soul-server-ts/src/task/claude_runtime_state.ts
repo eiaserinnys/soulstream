@@ -1,6 +1,6 @@
 import type { ClaudeRuntimeTaskStatus } from "@soulstream/wire-schema";
 import type { SSEEventPayload } from "../engine/protocol.js";
-import { asRecord } from "../engine/claude_sdk_helpers.js";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import { parseRuntimeTaskStatus } from "../engine/claude_sdk_runtime_state.js";
 import { readClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";

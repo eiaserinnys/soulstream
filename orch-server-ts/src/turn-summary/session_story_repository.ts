@@ -1,4 +1,5 @@
 import type { SessionStoryTurnSummary } from "@soulstream/mcp-contract";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type {
   LiveDbSqlResolver,
 } from "../runtime/live_db_sql.js";
@@ -350,7 +351,7 @@ function normalizeDigest(row: Record<string, unknown>): SessionStoryDigest {
 function normalizeUnfoldedSummary(
   row: Record<string, unknown>,
 ): SessionStoryTurnSummary | null {
-  const payload = recordValue(row.payload);
+  const payload = asRecord(row.payload) ?? {};
   const eventId = numberValue(row.id);
   const turnNumber = numberValue(row.turn_number);
   const content = stringValue(payload.content);
@@ -363,12 +364,6 @@ function normalizeUnfoldedSummary(
     finalResponseEventId: numberValue(payload.final_response_event_id),
     createdAt: dateValue(row.created_at),
   };
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }
 
 function stringValue(value: unknown): string | null {

@@ -8,7 +8,7 @@ import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { SOULSTREAM_SCHEDULE_TOOLS } from "./claude_sdk_constants.js";
 import { type EventQueue } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
-import { asRecord } from "./claude_sdk_helpers.js";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import {
   makeNotificationEventFromToolUse,
   makeRemoteTriggerEventFromToolUse,

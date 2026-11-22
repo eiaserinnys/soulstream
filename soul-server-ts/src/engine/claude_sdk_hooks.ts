@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import type { Options as ClaudeSdkOptions } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { GENERIC_HOOK_EVENTS } from "./claude_sdk_constants.js";
 import { type EventQueue } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import {
-  asRecord,
   asString,
 } from "./claude_sdk_helpers.js";
 import {

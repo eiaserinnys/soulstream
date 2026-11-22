@@ -1,3 +1,4 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 /**
  * 카드 응답의 담당 에이전트 표시 정보를 만든다.
  *
@@ -70,15 +71,15 @@ export function createCardAssigneeAgentEnricher(
       const sessions = Array.isArray(detail.sessions)
         ? detail.sessions.flatMap((session): Record<string, unknown>[] => {
             const record = asRecord(session);
-            return record === null ? [] : [record];
+            return record === undefined ? [] : [record];
           })
         : [];
       const displays = await loadDisplays(
         [
           ...sessions.map((session) => text(session.sessionId)),
-          ...(card !== null && card.assigneeKind === "session" ? [text(card.assigneeSessionId)] : []),
+          ...(card !== undefined && card.assigneeKind === "session" ? [text(card.assigneeSessionId)] : []),
         ],
-        card === null ? [] : syntheticAgentRow(card),
+        card === undefined ? [] : syntheticAgentRow(card),
       );
       for (const session of sessions) {
         const display = displays.session(text(session.sessionId));
@@ -88,7 +89,7 @@ export function createCardAssigneeAgentEnricher(
         session.modelLabel = text(display?.modelLabel);
         session.backend = text(display?.backend);
       }
-      if (card !== null) card.assigneeAgent = assigneeAgentFor(card, displays);
+      if (card !== undefined) card.assigneeAgent = assigneeAgentFor(card, displays);
     },
   };
 }
@@ -134,10 +135,4 @@ function uniqueStrings(values: readonly (string | null)[]): string[] {
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
 }

@@ -1,4 +1,5 @@
 import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import { FolderContentSqlResolver } from "../board/folder_content_sql.js";
 import { readSessionConversation } from "../session/session_conversation_projection.js";
 import {
@@ -499,10 +500,4 @@ function maybeNumber(value: unknown): number[] {
 function numberValue(value: unknown): number | null {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
 }

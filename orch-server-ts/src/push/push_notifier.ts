@@ -1,8 +1,8 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { NodeRegistryEvent } from "../node/registry.js";
 import type { CardNotification } from "../cards/card_dispatcher.js";
 import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 import type { PushNotificationData } from "@soulstream/wire-schema/push-notification";
-import { jsonObjectOrUndefined } from "../http/route_validation.js";
 import { clip } from "../session/persistent_report_service.js";
 import type { PushRegistrationRepository } from "./push_routes.js";
 import { SessionForegroundObserverTracker } from "./session_foreground_observer_tracker.js";
@@ -294,8 +294,8 @@ export class PushNotifier {
   private async folderExcludes(folderId: string): Promise<boolean> {
     const folders = await this.options.catalog.listFolders();
     return folders.some((folder) => {
-      const record = jsonObjectOrUndefined(folder);
-      const settings = jsonObjectOrUndefined(record?.settings);
+      const record = asRecord(folder);
+      const settings = asRecord(record?.settings);
       return record?.id === folderId && settings?.excludeFromNotification === true;
     });
   }

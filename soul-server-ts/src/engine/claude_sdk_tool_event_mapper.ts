@@ -1,7 +1,7 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import type { GenericHookEventName } from "./claude_sdk_constants.js";
 import {
-  asRecord,
   asString,
 } from "./claude_sdk_helpers.js";
 import { stripGenericHookOutputFields } from "./claude_sdk_event_mapper_helpers.js";

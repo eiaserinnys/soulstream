@@ -1,4 +1,4 @@
-import { isRecord } from "@soulstream/wire-schema/json-record";
+import { asRecord, isRecord } from "@soulstream/wire-schema/json-record";
 import type { SSEEventPayload } from "./protocol.js";
 
 type UnknownRecord = Record<string, unknown>;
@@ -24,7 +24,7 @@ export function mapAgentsRunStreamEvent(event: unknown): SSEEventPayload[] {
   const now = Date.now() / 1000;
 
   if (event.type === "agent_updated_stream_event") {
-    const agent = asRecord(event.agent);
+    const agent = asRecord(event.agent) ?? {};
     return [asSSE({
       type: "agent_updated",
       agent_name: readString(agent, "name") ?? "unknown",
@@ -34,8 +34,8 @@ export function mapAgentsRunStreamEvent(event: unknown): SSEEventPayload[] {
 
   if (event.type !== "run_item_stream_event") return [];
   const name = readString(event, "name");
-  const item = asRecord(event.item);
-  const rawItem = asRecord(item.rawItem);
+  const item = asRecord(event.item) ?? {};
+  const rawItem = asRecord(item.rawItem) ?? {};
 
   switch (name) {
     case "handoff_requested": {
@@ -101,9 +101,9 @@ export function mapAgentsGuardrailError(err: unknown): SSEEventPayload[] {
     return [];
   }
 
-  const result = asRecord(err.result);
-  const guardrail = asRecord(result.guardrail);
-  const output = asRecord(result.output);
+  const result = asRecord(err.result) ?? {};
+  const guardrail = asRecord(result.guardrail) ?? {};
+  const output = asRecord(result.output) ?? {};
   const outputInfo = output.outputInfo;
   return [asSSE({
     type: "guardrail_tripwire",
@@ -159,7 +159,7 @@ function readToolUseId(rawItem: UnknownRecord): string {
 }
 
 function readAgentName(value: unknown): string | undefined {
-  const agent = asRecord(value);
+  const agent = asRecord(value) ?? {};
   return readString(agent, "name");
 }
 
@@ -188,10 +188,6 @@ function stringifyToolOutput(value: unknown): string {
 function readString(record: UnknownRecord, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" ? value : undefined;
-}
-
-function asRecord(value: unknown): UnknownRecord {
-  return isRecord(value) ? value : {};
 }
 
 function asSSE(payload: Record<string, unknown>): SSEEventPayload {

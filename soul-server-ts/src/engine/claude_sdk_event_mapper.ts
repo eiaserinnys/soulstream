@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { attachClaudeBackgroundProvenance } from "./claude_background_provenance.js";
@@ -27,7 +28,6 @@ import {
 import { makeModeEventsFromToolUse } from "./claude_sdk_tool_event_mapper.js";
 import {
   asNumber,
-  asRecord,
   asString,
 } from "./claude_sdk_helpers.js";
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";

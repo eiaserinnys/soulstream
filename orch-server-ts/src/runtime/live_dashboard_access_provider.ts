@@ -1,3 +1,4 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
 import type { FastifyRequest } from "fastify";
 import postgres from "postgres";
@@ -325,14 +326,14 @@ function normalizeFolderIds(value: unknown): string[] {
 
 function extractAccessEmail(request: FastifyRequest): string | null {
   for (const value of [
-    recordValue(request.query, "access_email"),
-    recordValue(request.query, "accessEmail"),
-    recordValue(request.body, "access_email"),
-    recordValue(request.body, "accessEmail"),
-    recordValue(recordValue(request.body, "caller_info"), "email"),
-    recordValue(recordValue(request.body, "caller_info"), "callerEmail"),
-    recordValue(recordValue(request.body, "callerInfo"), "email"),
-    recordValue(recordValue(request.body, "callerInfo"), "callerEmail"),
+    asRecord(request.query)?.access_email,
+    asRecord(request.query)?.accessEmail,
+    asRecord(request.body)?.access_email,
+    asRecord(request.body)?.accessEmail,
+    asRecord(asRecord(request.body)?.caller_info)?.email,
+    asRecord(asRecord(request.body)?.caller_info)?.callerEmail,
+    asRecord(asRecord(request.body)?.callerInfo)?.email,
+    asRecord(asRecord(request.body)?.callerInfo)?.callerEmail,
   ]) {
     if (typeof value === "string") return value;
   }
@@ -354,13 +355,6 @@ function verifyServiceBearer(
     },
   );
   return verification.ok ? { ok: true } : serviceBearerFailure(verification);
-}
-
-function recordValue(value: unknown, key: string): unknown {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  return (value as Record<string, unknown>)[key];
 }
 
 function stringValue(value: unknown): string {

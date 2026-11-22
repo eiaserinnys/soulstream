@@ -1,10 +1,10 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { attachClaudeBackgroundProvenance } from
   "./claude_background_provenance.js";
 import { extractBackgroundBashOutput } from "./claude_sdk_event_mapper_helpers.js";
 import {
   asArray,
-  asRecord,
   asString,
 } from "./claude_sdk_helpers.js";
 import type { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";

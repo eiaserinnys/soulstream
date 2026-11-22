@@ -1,4 +1,4 @@
-import { asRecord } from "../engine/claude_sdk_helpers.js";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import { readClaudeResultReceiptMetadata } from
   "../engine/claude_result_receipt_metadata.js";

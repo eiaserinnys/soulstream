@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import { parse as parseYaml } from "yaml";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
-import { jsonObjectOrUndefined } from "../http/route_validation.js";
 import type { AtomHttpClient } from "../atom/atom_routes.js";
 export { loadAtomNodeBody, loadAtomNodeMetadata } from "./skill_atom_reader.js";
 export type { AtomNodeMetadata, LoadedAtomBody, LoadAtomNodeBodyInput } from "./skill_atom_reader.js";
@@ -120,7 +120,7 @@ export function parseSkillCatalogMarkdown(
       ...(heading.nodeId ? { nodeId: heading.nodeId } : {}),
     };
     if (typeof data.notes === "string") entry.notes = data.notes;
-    const activityData = jsonObjectOrUndefined(data.activity);
+    const activityData = asRecord(data.activity);
     if (activityData) {
       const activity: NonNullable<SkillCatalogEntry["activity"]> = {};
       if (typeof activityData.medium === "string") activity.medium = activityData.medium;
@@ -168,7 +168,7 @@ export function parseDomainCatalogMarkdown(
       continue;
     }
 
-    const data = jsonObjectOrUndefined(parsed) ?? {};
+    const data = asRecord(parsed) ?? {};
     const bodyNodeId = data.body_node_id;
     if (
       typeof heading.nodeId !== "string" || !UUID_PATTERN.test(heading.nodeId) ||
@@ -199,7 +199,7 @@ export function parseDomainCatalogMarkdown(
     const sampleCues = stringArray(data.sample_cues);
     if (sampleCues) entry.sampleCues = sampleCues;
 
-    const appliesToData = jsonObjectOrUndefined(data.applies_to);
+    const appliesToData = asRecord(data.applies_to);
     if (appliesToData) {
       const appliesTo: NonNullable<DomainCatalogEntry["appliesTo"]> = {};
       const media = stringArray(appliesToData.media);
@@ -211,7 +211,7 @@ export function parseDomainCatalogMarkdown(
 
     if (Array.isArray(data.shards)) {
       entry.shards = data.shards.flatMap((value): DomainCatalogShard[] => {
-        const shard = jsonObjectOrUndefined(value);
+        const shard = asRecord(value);
         if (
           !shard || typeof shard.name !== "string" ||
           typeof shard.node_id !== "string" || !UUID_PATTERN.test(shard.node_id)
@@ -228,7 +228,7 @@ export function parseDomainCatalogMarkdown(
 
     if (Array.isArray(data.bindings)) {
       entry.bindings = data.bindings.flatMap((value): DomainCatalogBinding[] => {
-        const binding = jsonObjectOrUndefined(value);
+        const binding = asRecord(value);
         if (
           !binding || typeof binding.target_catalog !== "string" ||
           typeof binding.target_axis !== "string" || typeof binding.sheet_template !== "string"

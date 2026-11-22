@@ -1,5 +1,6 @@
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import type { ContextItem } from "@soulstream/wire-schema";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { CallerInfo } from "./task_models.js";
 
 export interface CanonicalDeliveryMessage {
@@ -30,7 +31,7 @@ export function readCanonicalDeliveryPayload(
     attachmentIds: stringArray(payload.attachment_ids),
     attachmentBindings: bindingArray(payload.attachment_bindings),
     context: contextItems(payload.context),
-    callerInfo: callerInfo(payload.caller_info),
+    callerInfo: asRecord(payload.caller_info) as CallerInfo | undefined,
     rateLimitType: optionalString(payload.rate_limit_type),
     resetsAt: optionalString(payload.resets_at),
     followupKey: optionalString(payload.followup_key),
@@ -89,10 +90,4 @@ function bindingArray(value: unknown): AttachmentPathBinding[] | undefined {
     });
   }
   return bindings.length > 0 ? bindings : undefined;
-}
-
-function callerInfo(value: unknown): CallerInfo | undefined {
-  return value && typeof value === "object"
-    ? value as CallerInfo
-    : undefined;
 }

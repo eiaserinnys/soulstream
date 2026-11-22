@@ -1,5 +1,6 @@
 import type { Query as ClaudeSdkQuery, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type {
   ClaudeAccountTurnSwitchRequest,
   ClaudeRunOptions,
@@ -15,7 +16,7 @@ import {
 import type { EventQueue } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import { ClaudeSdkUsageCarry } from "./claude_sdk_usage_carry.js";
-import { asRecord, asString } from "./claude_sdk_helpers.js";
+import { asString } from "./claude_sdk_helpers.js";
 import {
   ClaudeSdkPersistentAccountSwitchStore,
   handleClaudeSdkPersistentRateLimitTermination,
@@ -33,7 +34,6 @@ import {
   describeResultProvenance,
   isExpectedInterruptDiagnostic,
   isTurnStartingUserInput,
-  makeStaleInterruptReceiptLogger,
   provableTurnResultOwner,
   settleInterventionInterrupt,
   shouldFencePostInterruptContinuation,

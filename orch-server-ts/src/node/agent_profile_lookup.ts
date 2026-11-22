@@ -1,8 +1,8 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type {
   InMemoryNodeRegistry,
   NodeConnectionSnapshot,
 } from "./registry.js";
-import { jsonObjectOrUndefined } from "../http/route_validation.js";
 import type { AgentProfileRecord } from "./agent_profile_routes.js";
 
 export type AgentProfileIdentityOverlay = Pick<
@@ -24,7 +24,7 @@ export function findNodeAgentProfile(
   overlays: readonly AgentProfileIdentityOverlay[] = [],
 ): RegisteredAgentProfile | undefined {
   const profiles = node.agents.flatMap((candidate) => {
-    const agent = jsonObjectOrUndefined(candidate);
+    const agent = asRecord(candidate);
     const id = nonEmptyString(agent?.id);
     const overlay = id
       ? overlays.find((candidate) => candidate.agentId === id)
@@ -135,7 +135,7 @@ function aliases(
       const id = nonEmptyString(candidate);
       return id ? [{ id }] : [];
     }
-    const record = jsonObjectOrUndefined(candidate);
+    const record = asRecord(candidate);
     const id = nonEmptyString(record?.id);
     if (!id) return [];
     const defaultPreset = nonEmptyString(record?.default_preset);

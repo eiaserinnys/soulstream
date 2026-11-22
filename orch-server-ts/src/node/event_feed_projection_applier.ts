@@ -3,6 +3,7 @@ import type {
   SessionFeedDelta,
   SessionNotice,
 } from "@soulstream/wire-schema/session-feed-contract";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type {
   EventFeedProjectionApplier,
   EventIngressQuerySql,
@@ -72,7 +73,7 @@ export function attentionMutation(
   envelope: EventIngressEnvelope,
   eventId: number,
 ): AttentionMutation {
-  const payload = recordValue(envelope.payload) ?? {};
+  const payload = asRecord(envelope.payload) ?? {};
   const sessionId = envelope.session_id;
   const requestedAt = new Date(envelope.created_at).toISOString();
 
@@ -247,7 +248,7 @@ export function sessionNotice(
   eventId: number,
   attention = attentionMutation(envelope, eventId),
 ): SessionNotice | null {
-  const payload = recordValue(envelope.payload) ?? {};
+  const payload = asRecord(envelope.payload) ?? {};
   let kind: SessionNotice["kind"];
   let title: string;
   let body: string;
@@ -413,7 +414,7 @@ function attentionId(kind: PendingAttention["kind"], identity: string): string {
 function inputRequestBody(payload: Record<string, unknown>): string {
   if (Array.isArray(payload.questions)) {
     for (const value of payload.questions) {
-      const question = recordValue(value);
+      const question = asRecord(value);
       const text = firstText(question?.question, question?.header, value);
       if (text) return truncateCodepoints(text, NOTICE_BODY_MAX_CODEPOINTS);
     }
@@ -440,16 +441,16 @@ function compactQuestions(value: unknown): {
 } {
   if (!Array.isArray(value)) return { truncated: true };
   const questions = value.flatMap((item) => {
-    const question = recordValue(item);
-    if (question === null) return [];
+    const question = asRecord(item);
+    if (question === undefined) return [];
     const projected: Record<string, unknown> = {};
     for (const key of ["question", "header", "multiSelect"]) {
       if (key in question) projected[key] = question[key];
     }
     if (Array.isArray(question.options)) {
       projected.options = question.options.flatMap((option) => {
-        const record = recordValue(option);
-        if (record === null) return [];
+        const record = asRecord(option);
+        if (record === undefined) return [];
         return [{
           ...(typeof record.label === "string" ? { label: record.label } : {}),
           ...(typeof record.description === "string"
@@ -468,8 +469,8 @@ function compactToolInput(value: unknown): {
   value?: Readonly<Record<string, unknown>>;
   truncated: boolean;
 } {
-  const record = recordValue(value);
-  if (record === null) return { truncated: value !== undefined && value !== null };
+  const record = asRecord(value);
+  if (record === undefined) return { truncated: value !== undefined && value !== null };
   const projected: Record<string, unknown> = {};
   const keys = [
     "command", "cwd", "path", "paths", "url", "query", "plan",
@@ -513,10 +514,4 @@ function stringValue(...values: unknown[]): string {
 
 function truncateCodepoints(value: string, limit: number): string {
   return Array.from(value).slice(0, limit).join("");
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
 }

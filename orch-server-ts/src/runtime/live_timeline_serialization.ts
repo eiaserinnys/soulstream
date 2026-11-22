@@ -1,3 +1,4 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import { iso } from "./live_session_serialization.js";
 
 type EventRow = Record<string, unknown>;
@@ -250,7 +251,7 @@ function contentToText(value: unknown): string {
     return parts.length > 0 ? parts.join("\n") : jsonPreview(value);
   }
   const record = asRecord(value);
-  if (record !== null) {
+  if (record !== undefined) {
     for (const key of ["command", "cmd", "input", "query", "pattern", "path"]) {
       const candidate = stringValue(record[key]);
       if (candidate !== null) return candidate;
@@ -291,10 +292,4 @@ function stringValue(value: unknown): string | null {
 function numberValue(value: unknown): number | null {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
 }

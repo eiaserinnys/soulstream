@@ -6,7 +6,7 @@ import {
 import { readPersistentEnabled } from
   "@soulstream/wire-schema/persistent-session-settings";
 import type { RuntimeSessionEventHub } from "../runtime/session_event_hub.js";
-import { isRecord } from "@soulstream/wire-schema/json-record";
+import { asRecord, isRecord } from "@soulstream/wire-schema/json-record";
 import type {
   InMemorySseReplayBroadcaster,
   SessionStreamEvent,
@@ -414,7 +414,7 @@ export function collectTurnSummaryCompleteJobs(
         envelope.sessionId ??
         envelope.session_id,
     );
-    const event = recordValue(envelope.event);
+    const event = asRecord(envelope.event) ?? {};
     const completeEventId = positiveInteger(event._event_id);
     if (
       sessionId === null ||
@@ -568,13 +568,13 @@ function firstCallerInfoSource(metadata: unknown): string | null {
   if (Array.isArray(metadata)) {
     for (const entry of metadata) {
       if (!isRecord(entry) || entry.type !== "caller_info") continue;
-      const source = stringValue(recordValue(entry.value).source);
+      const source = stringValue(asRecord(entry.value)?.source);
       if (source !== null) return source;
     }
     return null;
   }
-  const record = recordValue(metadata);
-  const callerInfo = recordValue(record.caller_info ?? record.callerInfo);
+  const record = asRecord(metadata) ?? {};
+  const callerInfo = asRecord(record.caller_info ?? record.callerInfo) ?? {};
   return stringValue(callerInfo.source);
 }
 
@@ -586,7 +586,7 @@ function failureMetrics(
   readonly spawnDurationMs?: number;
   readonly peakConcurrentSpawns?: number;
 } {
-  const record = recordValue(error);
+  const record = asRecord(error) ?? {};
   return {
     ...(typeof record.attempts === "number"
       ? { attempts: record.attempts }
@@ -613,8 +613,4 @@ function positiveInteger(value: unknown): number | null {
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? value : {};
 }
