@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -20,8 +22,9 @@ describe("live config route provider adapters", () => {
     const providers = createLiveConfigRouteProviders(configProvider);
 
     await expect(providers.authRoutes.configProvider.getConfig()).resolves.toEqual({
-      authEnabled: true,
+      loginMode: "google",
       devModeEnabled: true,
+      dashboardAdminPasswordSha256: "",
       googleClientId: "google-client",
       googleClientSecret: "google-secret",
       callbackUrl: "/api/auth/google/callback",
@@ -56,14 +59,53 @@ describe("live config route provider adapters", () => {
     );
 
     await expect(devProviders.authRoutes.configProvider.getConfig()).resolves.toMatchObject({
-      authEnabled: false,
+      loginMode: "none",
       devModeEnabled: true,
       jwtSecretConfigured: false,
     });
     await expect(prodProviders.authRoutes.configProvider.getConfig()).resolves.toMatchObject({
-      authEnabled: true,
+      loginMode: "google",
       devModeEnabled: false,
       jwtSecretConfigured: true,
+    });
+  });
+
+  it("selects password login from an install password and keeps Google first", async () => {
+    const passwordProviders = createLiveConfigRouteProviders(
+      createConfigProvider({
+        google_client_id: "",
+        google_client_secret: "",
+        google_callback_url: "",
+        jwt_secret: "jwt-secret",
+        dashboard_admin_password: "hunter2",
+        environment: "production",
+        atom_enabled: false,
+      }),
+    );
+    const passwordConfig = await passwordProviders.authRoutes.configProvider.getConfig();
+    expect(passwordConfig).toMatchObject({ loginMode: "password", jwtSecretConfigured: true });
+    expect(passwordConfig.dashboardAdminPasswordSha256).toBe(
+      createHash("sha256").update("hunter2", "utf8").digest("hex"),
+    );
+    await expect(passwordProviders.publicStatusRoutes.configProvider.getConfig()).resolves.toEqual({
+      nodeName: null,
+      authEnabled: true,
+      atomEnabled: false,
+    });
+
+    const bothProviders = createLiveConfigRouteProviders(
+      createConfigProvider({
+        google_client_id: "google-client",
+        google_client_secret: "google-secret",
+        google_callback_url: "/callback",
+        jwt_secret: "jwt-secret",
+        dashboard_admin_password: "hunter2",
+        environment: "production",
+        atom_enabled: true,
+      }),
+    );
+    await expect(bothProviders.authRoutes.configProvider.getConfig()).resolves.toMatchObject({
+      loginMode: "google",
     });
   });
 

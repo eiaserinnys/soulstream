@@ -15,12 +15,14 @@ import type {
   AuthUserAuthorizer,
 } from "../auth/auth_routes.js";
 import { AUTH_COOKIE_NAME } from "../auth/auth_routes.js";
+import { resolveDashboardLoginMode } from "../auth/login_mode.js";
 import {
   serviceBearerFailure,
   verifyServiceBearerAuthorization,
 } from "../auth/service_bearer.js";
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import {
+  extractDashboardJwtCookieToken,
   extractDashboardJwtToken,
   type LiveAuthenticatedUserResolver,
 } from "./live_authenticated_user_resolver.js";
@@ -167,18 +169,24 @@ export function createLiveAuthTokenResolver(
     const configuredBearer = optionalConfigString(snapshot, "auth_bearer_token");
     const environment = requiredSnapshotString(snapshot, "environment");
     const googleClientId = requiredSnapshotString(snapshot, "google_client_id");
+    const loginMode = resolveDashboardLoginMode({
+      google_client_id: googleClientId,
+      dashboard_admin_password:
+        optionalConfigString(snapshot, "dashboard_admin_password") ?? "",
+    });
 
     const bearer = verifyServiceBearer(
       request,
       configuredBearer ?? "",
       environment,
       options.nodeCredentials,
+      loginMode === "password",
     );
     if (bearer.ok) return { ok: true };
 
-    if (googleClientId.length > 0) {
+    if (loginMode !== "none") {
       const payload = options.resolveDashboardUser === undefined
-        ? await verifyDashboardToken(request, cookieName, jwt)
+        ? await verifyDashboardToken(request, cookieName, jwt, loginMode === "google")
         : await options.resolveDashboardUser(request);
       if (payload) return { ok: true };
     }
@@ -191,8 +199,11 @@ async function verifyDashboardToken(
   request: Parameters<AuthTokenResolver>[0],
   cookieName: string,
   jwt: AuthJwtHelper,
+  allowBearer: boolean,
 ): Promise<AuthJwtPayload | null> {
-  const dashboardToken = extractDashboardJwtToken(request, cookieName);
+  const dashboardToken = allowBearer
+    ? extractDashboardJwtToken(request, cookieName)
+    : extractDashboardJwtCookieToken(request, cookieName);
   return dashboardToken ? await jwt.verifyToken(dashboardToken) : null;
 }
 
@@ -201,6 +212,12 @@ export function createLiveAuthUserAuthorizer(
 ): AuthUserAuthorizer {
   return async (user) => {
     const snapshot = await options.configProvider.getConfig();
+    const loginMode = resolveDashboardLoginMode({
+      google_client_id: optionalConfigString(snapshot, "google_client_id") ?? "",
+      dashboard_admin_password:
+        optionalConfigString(snapshot, "dashboard_admin_password") ?? "",
+    });
+    if (loginMode !== "google") return null;
     const allowedEmail = optionalConfigString(snapshot, "allowed_email")
       ?.trim()
       .toLowerCase();
@@ -353,6 +370,7 @@ function verifyServiceBearer(
   configuredBearer: string,
   environment: string,
   nodeCredentials: NodeCredentialResolver | null,
+  rejectDevelopmentBypass: boolean,
 ): AuthTokenAccessResult {
   const verification = verifyServiceBearerAuthorization(
     request.headers.authorization,
@@ -362,6 +380,9 @@ function verifyServiceBearer(
       nodeCredentials,
     },
   );
+  if (verification.ok && verification.developmentBypass && rejectDevelopmentBypass) {
+    return serviceBearerFailure({ ok: false, reason: "missing", statusCode: 401 });
+  }
   return verification.ok ? { ok: true } : serviceBearerFailure(verification);
 }
 

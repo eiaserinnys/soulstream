@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,6 +9,7 @@ import {
   authRouteAuthRequirements,
   createApp,
   loadContractFixtures,
+  type AuthJwtHelper,
 } from "../src/index.js";
 import {
   config,
@@ -34,6 +37,7 @@ describe("Auth route harness", () => {
       ["GET", "/api/auth/status"],
       ["POST", "/api/auth/logout"],
       ["POST", "/api/auth/dev-login", { email: "dev@example.com" }],
+      ["POST", "/api/auth/password-login", { password: "secret" }],
     ] as const) {
       expect(await app.inject({ method, url, payload })).toMatchObject({
         statusCode: 404,
@@ -53,6 +57,7 @@ describe("Auth route harness", () => {
       "GET /api/auth/status": false,
       "POST /api/auth/logout": false,
       "POST /api/auth/dev-login": false,
+      "POST /api/auth/password-login": false,
     });
 
     expect(
@@ -189,7 +194,11 @@ describe("Auth route harness", () => {
     const app = createApp({ config, authRoutes: createAuthRouteOptions() });
 
     const configResponse = await app.inject({ method: "GET", url: "/api/auth/config" });
-    expect(configResponse.json()).toEqual({ authEnabled: true, devModeEnabled: true });
+    expect(configResponse.json()).toEqual({
+      authEnabled: true,
+      devModeEnabled: true,
+      passwordLoginEnabled: false,
+    });
 
     const google = await app.inject({
       method: "GET",
@@ -220,7 +229,7 @@ describe("Auth route harness", () => {
       config,
       authRoutes: createAuthRouteOptions({
         configProvider: {
-          getConfig: vi.fn(async () => ({ ...enabledConfig, authEnabled: false })),
+          getConfig: vi.fn(async () => ({ ...enabledConfig, loginMode: "none" as const })),
         },
       }),
     });
@@ -373,7 +382,7 @@ describe("Auth route harness", () => {
       config,
       authRoutes: createAuthRouteOptions({
         configProvider: {
-          getConfig: vi.fn(async () => ({ ...enabledConfig, authEnabled: false })),
+          getConfig: vi.fn(async () => ({ ...enabledConfig, loginMode: "none" as const })),
         },
       }),
     });
@@ -492,4 +501,190 @@ describe("Auth route harness", () => {
 
     await app.close();
   });
+
+  it.each([
+    ["Google only", ""],
+    ["Google and install password", sha256Hex("hunter2")],
+  ])("keeps the Google mode wire unchanged: %s", async (_label, digest) => {
+    const httpClient = createHttpClient();
+    const jwt = createJwtHelper();
+    const app = createApp({
+      config,
+      authRoutes: createAuthRouteOptions({
+        httpClient,
+        jwt,
+        configProvider: {
+          getConfig: vi.fn(async () => ({
+            ...enabledConfig,
+            dashboardAdminPasswordSha256: digest,
+          })),
+        },
+      }),
+    });
+
+    expect((await app.inject({ method: "GET", url: "/api/auth/config" })).json()).toEqual({
+      authEnabled: true,
+      devModeEnabled: true,
+      passwordLoginEnabled: false,
+    });
+
+    const google = await app.inject({
+      method: "GET",
+      url: "/api/auth/google?return_to=/folder/a",
+    });
+    expect(google.statusCode).toBe(302);
+    const location = new URL(String(google.headers.location));
+    expect(location.origin).toBe("https://accounts.google.com");
+    expect(location.searchParams.get("client_id")).toBe("google-client-id");
+    expect(location.searchParams.get("state")).toBe("state-1");
+
+    const callback = await app.inject({
+      method: "GET",
+      url: "/api/auth/google/callback?code=auth-code&state=state-1",
+      headers: {
+        host: "orch.example.com",
+        cookie: `${OAUTH_STATE_COOKIE_NAME}=state-1; ${RETURN_TO_COOKIE_NAME}=/after-login`,
+      },
+    });
+    expect(callback.statusCode).toBe(302);
+    expect(callback.headers.location).toBe("/after-login");
+    expect(httpClient.post).toHaveBeenCalledWith({
+      url: "https://oauth2.googleapis.com/token",
+      data: {
+        code: "auth-code",
+        client_id: "google-client-id",
+        client_secret: "google-client-secret",
+        redirect_uri: "http://orch.example.com/api/auth/google/callback",
+        grant_type: "authorization_code",
+      },
+    });
+    expect(setCookieHeaders(callback)).toContain(
+      `${AUTH_COOKIE_NAME}=jwt:oauth@example.com:https://example.com/oauth.png; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`,
+    );
+
+    const native = await app.inject({
+      method: "POST",
+      url: "/api/auth/google/native",
+      payload: { id_token: "google-id-token" },
+    });
+    expect(native.statusCode).toBe(200);
+    expect(native.json()).toEqual({ token: "jwt:native@example.com:https://example.com/native.png" });
+
+    const passwordLogin = await app.inject({
+      method: "POST",
+      url: "/api/auth/password-login",
+      payload: { password: "hunter2" },
+    });
+    expect(passwordLogin.statusCode).toBe(404);
+
+    await app.close();
+  });
+
+  it("logs in with the install password only in password mode", async () => {
+    const jwt: AuthJwtHelper = {
+      issueToken: vi.fn(async (user) => `jwt:${user.email}:${user.picture}`),
+      verifyToken: vi.fn(async (token) =>
+        token === "jwt:owner@local:" ? { email: "owner@local", name: "Owner", picture: "" } : null),
+    };
+    const passwordConfig = {
+      ...enabledConfig,
+      loginMode: "password" as const,
+      googleClientId: "",
+      googleClientSecret: "",
+      dashboardAdminPasswordSha256: sha256Hex("hunter2"),
+    };
+    const app = createApp({
+      config,
+      authRoutes: createAuthRouteOptions({
+        jwt,
+        configProvider: { getConfig: vi.fn(async () => passwordConfig) },
+      }),
+    });
+
+    expect((await app.inject({ method: "GET", url: "/api/auth/config" })).json()).toEqual({
+      authEnabled: true,
+      devModeEnabled: true,
+      passwordLoginEnabled: true,
+    });
+
+    const wrong = await app.inject({
+      method: "POST",
+      url: "/api/auth/password-login",
+      payload: { password: "wrong" },
+    });
+    expect(wrong.statusCode).toBe(401);
+    expect(wrong.json()).toEqual({ detail: "Invalid password" });
+
+    const malformed = await app.inject({
+      method: "POST",
+      url: "/api/auth/password-login",
+      payload: { password: 42 },
+    });
+    expect(malformed.statusCode).toBe(400);
+
+    const success = await app.inject({
+      method: "POST",
+      url: "/api/auth/password-login",
+      payload: { password: "hunter2" },
+    });
+    expect(success.statusCode).toBe(200);
+    expect(success.json()).toEqual({ success: true });
+    expect(jwt.issueToken).toHaveBeenCalledWith({
+      email: "owner@local",
+      name: "Owner",
+      picture: "",
+    });
+    const cookie = `${AUTH_COOKIE_NAME}=jwt:owner@local:; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`;
+    expect(setCookieHeaders(success)).toEqual([cookie]);
+
+    const status = await app.inject({
+      method: "GET",
+      url: "/api/auth/status",
+      headers: { cookie: cookie.split(";")[0] ?? "" },
+    });
+    expect(status.json()).toMatchObject({
+      authenticated: true,
+      user: { email: "owner@local" },
+    });
+    expect((await app.inject({
+      method: "GET",
+      url: "/api/auth/status",
+      headers: { authorization: "Bearer valid-jwt" },
+    })).json()).toEqual({ authenticated: false, user: null });
+
+    const google = await app.inject({ method: "GET", url: "/api/auth/google" });
+    expect(google.statusCode).toBe(404);
+    expect(google.json()).toEqual({ detail: "Google login not available" });
+    expect((await app.inject({
+      method: "GET",
+      url: "/api/auth/google/callback?code=c&state=state-1",
+      headers: { cookie: `${OAUTH_STATE_COOKIE_NAME}=state-1` },
+    })).headers.location).toBe("/?error=auth_failed");
+    expect((await app.inject({
+      method: "POST",
+      url: "/api/auth/google/native",
+      payload: { id_token: "google-id-token" },
+    })).statusCode).toBe(404);
+
+    await app.close();
+
+    const disabled = createApp({
+      config,
+      authRoutes: createAuthRouteOptions({
+        configProvider: {
+          getConfig: vi.fn(async () => ({ ...enabledConfig, loginMode: "none" as const })),
+        },
+      }),
+    });
+    expect((await disabled.inject({
+      method: "POST",
+      url: "/api/auth/password-login",
+      payload: { password: "hunter2" },
+    })).statusCode).toBe(404);
+    await disabled.close();
+  });
 });
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}

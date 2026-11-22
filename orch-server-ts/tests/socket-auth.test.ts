@@ -101,6 +101,31 @@ describe("orch socket auth", () => {
     })).rejects.toThrow(/invalid board workspace websocket bearer token/);
   });
 
+  it("requires the password-mode dashboard cookie on page sockets", async () => {
+    const withCookie = vi.fn().mockResolvedValue({
+      payload: { email: "owner@local" },
+      carrier: "cookie",
+    });
+
+    await expect(authenticateSocketConnection({
+      token: null,
+      requestHeaders: {},
+      config: productionAuth({
+        dashboardAuthEnabled: true,
+        resolveDashboardUserFromHeaders: vi.fn().mockResolvedValue(null),
+      }),
+    })).rejects.toThrow(/missing dashboard authentication credentials/);
+
+    await expect(authenticateSocketConnection({
+      token: "cookie-token",
+      requestHeaders: { cookie: `${DASHBOARD_AUTH_COOKIE_NAME}=signed-dashboard-token` },
+      config: productionAuth({
+        dashboardAuthEnabled: true,
+        resolveDashboardUserFromHeaders: withCookie,
+      }),
+    })).resolves.toEqual({ source: "cookie", subject: "owner@local" });
+  });
+
   it("rejects production connections without a usable auth path", async () => {
     await expect(authenticateSocketConnection({
       token: null,

@@ -17,8 +17,9 @@ export const config = parseOrchServerConfig({
 });
 
 export const enabledConfig: AuthRouteConfig = {
-  authEnabled: true,
+  loginMode: "google",
   devModeEnabled: true,
+  dashboardAdminPasswordSha256: "",
   googleClientId: "google-client-id",
   googleClientSecret: "google-client-secret",
   callbackUrl: "/api/auth/google/callback",

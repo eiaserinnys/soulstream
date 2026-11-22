@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  LiveConfigProviderError,
   createApp,
   loadContractFixtures,
   nodeClaudeAuthRouteAuthRequirements,
@@ -189,6 +190,59 @@ describe("Claude auth route harness", () => {
         metadata: { node_id: "fake-node" },
       },
     ]);
+
+    await app.close();
+  });
+
+  it("answers 503 with an explicit code when Claude OAuth is not configured", async () => {
+    const notConfigured = () => new LiveConfigProviderError([{
+      owner: "node.claude-auth",
+      path: "nodeClaudeAuthRoutes.provider",
+      key: "claude_oauth_client_id",
+      reason: "missing",
+      expected: "string",
+      actualType: "string",
+    }]);
+    const { app, sessionStore } = createClaudeAuthHarness({
+      provider: {
+        getOAuthConfig: async () => { throw notConfigured(); },
+      },
+    });
+    const expected = {
+      detail: "Claude OAuth is not configured",
+      code: "claude_oauth_not_configured",
+    };
+
+    const start = await app.inject({
+      method: "GET",
+      url: "/api/nodes/fake-node/claude-auth/start",
+    });
+    expect(start.statusCode).toBe(503);
+    expect(start.json()).toEqual(expected);
+
+    sessionStore.create("callback-state", "verifier", { metadata: { node_id: "fake-node" } });
+    const callback = await app.inject({
+      method: "GET",
+      url: "/api/nodes/claude-auth/callback?code=c&state=callback-state",
+    });
+    expect(callback.statusCode).toBe(503);
+    expect(callback.json()).toEqual(expected);
+
+    const headlessStart = await app.inject({
+      method: "GET",
+      url: "/api/nodes/fake-node/claude-auth/headless/start",
+    });
+    expect(headlessStart.statusCode).toBe(503);
+    expect(headlessStart.json()).toEqual(expected);
+
+    sessionStore.create("headless-state", "verifier", { metadata: { node_id: "fake-node" } });
+    const submit = await app.inject({
+      method: "POST",
+      url: "/api/nodes/fake-node/claude-auth/headless/submit-code",
+      payload: { code: "code#headless-state" },
+    });
+    expect(submit.statusCode).toBe(503);
+    expect(submit.json()).toEqual(expected);
 
     await app.close();
   });

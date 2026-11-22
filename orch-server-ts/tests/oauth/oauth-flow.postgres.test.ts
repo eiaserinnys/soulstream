@@ -119,8 +119,9 @@ type DashboardOAuthTestState = { allowedEmail: string; googleEmail: string };
 function dashboardOAuthTestDependencies(state: DashboardOAuthTestState) {
   const configProvider = {
     getConfig: async () => ({
-      authEnabled: true,
+      loginMode: "google" as const,
       devModeEnabled: false,
+      dashboardAdminPasswordSha256: "",
       googleClientId: "fake-google-client",
       googleClientSecret: "fake-google-secret",
       callbackUrl: "/api/auth/google/callback",

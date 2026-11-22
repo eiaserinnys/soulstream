@@ -1,8 +1,11 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
   AUTH_COOKIE_NAME,
   createApp,
+  createLiveAuthTokenResolver,
   createLiveDashboardAccessProvider,
   parseOrchServerConfig,
   type AuthJwtHelper,
@@ -113,6 +116,87 @@ describe("live dashboard access provider route wiring", () => {
     await app.close();
   });
 
+  it("requires the install password cookie for protected APIs and folder creation", async () => {
+    const { app } = createPasswordRouteApp();
+
+    expect((await app.inject({ method: "GET", url: "/api/folders" })).statusCode).toBe(401);
+    expect((await app.inject({
+      method: "POST",
+      url: "/api/folders",
+      payload: { name: "New", idempotencyKey: "key-1" },
+    })).statusCode).toBe(401);
+    expect((await app.inject({
+      method: "GET",
+      url: "/api/folders",
+      headers: { authorization: "Bearer service-token" },
+    })).statusCode).toBe(200);
+
+    expect((await app.inject({
+      method: "POST",
+      url: "/api/auth/password-login",
+      payload: { password: "wrong" },
+    })).statusCode).toBe(401);
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/password-login",
+      payload: { password: "hunter2" },
+    });
+    expect(login.statusCode).toBe(200);
+    const cookie = String(login.headers["set-cookie"]).split(";")[0] ?? "";
+    expect(cookie).toBe(`${AUTH_COOKIE_NAME}=owner-token`);
+
+    const status = await app.inject({
+      method: "GET",
+      url: "/api/auth/status",
+      headers: { cookie },
+    });
+    expect(status.json()).toMatchObject({
+      authenticated: true,
+      user: { email: "owner@local" },
+    });
+
+    expect((await app.inject({
+      method: "GET",
+      url: "/api/folders",
+      headers: { cookie },
+    })).statusCode).toBe(200);
+    expect((await app.inject({
+      method: "POST",
+      url: "/api/folders",
+      headers: { cookie },
+      payload: { name: "New", idempotencyKey: "key-1" },
+    })).statusCode).toBe(201);
+
+    const logout = await app.inject({
+      method: "POST",
+      url: "/api/auth/logout",
+      headers: { cookie },
+    });
+    expect(logout.statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/folders" })).statusCode).toBe(401);
+
+    await app.close();
+  });
+
+  it("requires password login in development without a service token", async () => {
+    for (const productionGuard of [false, true]) {
+      const { app } = createPasswordRouteApp({ development: true, productionGuard });
+      for (const url of ["/api/folders", "/api/board-items?folderId=folder-a-child"]) {
+        expect((await app.inject({ method: "GET", url })).statusCode).toBe(401);
+      }
+      const login = await app.inject({
+        method: "POST", url: "/api/auth/password-login", payload: { password: "hunter2" },
+      });
+      expect(login.statusCode).toBe(200);
+      const cookie = String(login.headers["set-cookie"]).split(";")[0] ?? "";
+      for (const url of ["/api/folders", "/api/board-items?folderId=folder-a-child"]) {
+        expect((await app.inject({ method: "GET", url, headers: { cookie } })).statusCode).toBe(200);
+      }
+      await app.close();
+    }
+  });
+
   it("adds DB-backed isAdmin and dashboardAccess to auth status", async () => {
     const { app } = createRouteApp();
 
@@ -145,6 +229,79 @@ describe("live dashboard access provider route wiring", () => {
   });
 });
 
+function createPasswordRouteApp(options: { development?: boolean; productionGuard?: boolean } = {}) {
+  const configProvider = configWith({
+    auth_bearer_token: options.development ? "" : "service-token",
+    google_client_id: "",
+    dashboard_admin_password: "hunter2",
+    environment: options.development ? "development" : "production",
+  });
+  const jwt: AuthJwtHelper = {
+    issueToken: vi.fn(async (user) =>
+      user.email === "owner@local" ? "owner-token" : "unexpected-token"),
+    verifyToken: vi.fn(async (token) =>
+      token === "owner-token" ? { email: "owner@local" } : null),
+  };
+  const accessProvider = createLiveDashboardAccessProvider({
+    nodeCredentials: null,
+    configProvider,
+    jwt,
+    repository: {
+      findUserByEmail: vi.fn(async (email) => email === "owner@local"
+        ? { email: "owner@local", isAdmin: true, allowedFolderIds: [] }
+        : null),
+    },
+  });
+  const app = createApp({
+    config,
+    ...(options.productionGuard ? {
+      productionAuth: { resolveTokenAccess: createLiveAuthTokenResolver({
+        configProvider, jwt, nodeCredentials: null,
+      }) },
+    } : {}),
+    authRoutes: {
+      configProvider: {
+        getConfig: vi.fn(async () => ({
+          loginMode: "password" as const,
+          devModeEnabled: false,
+          dashboardAdminPasswordSha256: createHash("sha256")
+            .update("hunter2", "utf8").digest("hex"),
+          googleClientId: "",
+          googleClientSecret: "",
+          callbackUrl: "/api/auth/google/callback",
+          jwtSecretConfigured: true,
+          cookieName: AUTH_COOKIE_NAME,
+        })),
+      },
+      httpClient: { post: vi.fn(), get: vi.fn() },
+      jwt,
+      nativeVerifier: vi.fn(),
+      resolveTokenAccess: vi.fn(async () => ({ ok: true as const })),
+      userPayloadExtra: accessProvider.userPayloadExtra,
+    },
+    folderRoutes: {
+      provider: createFolderProvider(),
+      accessProvider,
+      nodeCredentials: null,
+      cardServiceProvider: async () => ({
+        getFolder: async (id: string) => ({ folder: { id }, cards: [] }),
+      } as never),
+      projectIdentityService: {
+        create: vi.fn(async () => ({
+          folder: { id: "folder-new", name: "New", parent_folder_id: null },
+          operation: { id: "operation-1" },
+          idempotent: false,
+        })),
+        mutateFromFolder: vi.fn(),
+      } as never,
+      resolveDashboardUserId: async (request) =>
+        request.headers.cookie?.includes("owner-token") === true ? "owner@local" : null,
+    },
+    boardItemRoutes: { provider: createBoardItemProvider(), accessProvider, host: {} as never },
+  });
+  return { app };
+}
+
 function createRouteApp() {
   const accessProvider = createLiveDashboardAccessProvider({
     nodeCredentials: null,
@@ -161,8 +318,9 @@ function createRouteApp() {
     authRoutes: {
       configProvider: {
         getConfig: vi.fn(async () => ({
-          authEnabled: true,
+          loginMode: "google" as const,
           devModeEnabled: false,
+          dashboardAdminPasswordSha256: "",
           googleClientId: "google-client",
           googleClientSecret: "google-secret",
           callbackUrl: "/api/auth/google/callback",

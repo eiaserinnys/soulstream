@@ -1,7 +1,9 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { isRecord } from "@soulstream/wire-schema/json-record";
 import { parseObjectBody } from "../http/route_validation.js";
+import type { DashboardLoginMode } from "./login_mode.js";
 import { extractBearerToken } from "./service_bearer.js";
 
 export const AUTH_COOKIE_NAME = "soul_dashboard_auth";
@@ -11,8 +13,10 @@ export const DEV_DEFAULT_AVATAR_URL_TEMPLATE =
   "https://api.dicebear.com/7.x/identicon/svg?seed={seed}";
 
 export type AuthRouteConfig = {
-  authEnabled: boolean;
+  loginMode: DashboardLoginMode;
   devModeEnabled: boolean;
+  /** SHA-256 hex digest of DASHBOARD_ADMIN_PASSWORD; empty outside password mode. */
+  dashboardAdminPasswordSha256: string;
   googleClientId: string;
   googleClientSecret: string;
   callbackUrl: string;
@@ -112,6 +116,7 @@ export const authRouteAuthRequirements = {
   "GET /api/auth/status": false,
   "POST /api/auth/logout": false,
   "POST /api/auth/dev-login": false,
+  "POST /api/auth/password-login": false,
 } as const;
 
 type GoogleQuery = {
@@ -137,6 +142,10 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
   });
 
   app.post("/api/auth/google/native", async (request, reply) => {
+    const authConfig = await options.configProvider.getConfig();
+    if (authConfig.loginMode !== "google") {
+      return routeError(reply, 404, "Google login not available");
+    }
     const body = parseObjectBody(request.body);
     if (!body.ok) return routeError(reply, 422, body.message);
     const idToken = body.value.id_token;
@@ -172,8 +181,9 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
   app.get("/api/auth/config", async () => {
     const authConfig = await options.configProvider.getConfig();
     return {
-      authEnabled: authConfig.authEnabled,
+      authEnabled: authConfig.loginMode !== "none",
       devModeEnabled: authConfig.devModeEnabled,
+      passwordLoginEnabled: authConfig.loginMode === "password",
     };
   });
 
@@ -181,7 +191,13 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     "/api/auth/google",
     async (request, reply) => {
       const authConfig = await options.configProvider.getConfig();
-      if (!authConfig.authEnabled) return routeError(reply, 404, "Auth not enabled");
+      if (authConfig.loginMode !== "google") {
+        return routeError(
+          reply,
+          404,
+          authConfig.loginMode === "none" ? "Auth not enabled" : "Google login not available",
+        );
+      }
 
       const state = options.generateState?.() ?? defaultState();
       const params = new URLSearchParams({
@@ -221,17 +237,18 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
 
   app.get("/api/auth/status", async (request) => {
     const authConfig = await options.configProvider.getConfig();
-    if (!authConfig.authEnabled) return { authenticated: true, user: null };
+    if (authConfig.loginMode === "none") return { authenticated: true, user: null };
 
     // Native clients use the same signed dashboard JWT as the cookie flow, but
     // carry it as a bearer token. Service bearer tokens fail jwt.verifyToken and
-    // never gain a dashboard/admin identity.
+    // never gain a dashboard/admin identity. The bearer carrier belongs to the
+    // Google login mode; password login authenticates with its cookie.
     const cookieToken = extractCookieToken(request, cookieName(authConfig));
     const bearerToken = extractBearerToken(request.headers.authorization);
     let payload = cookieToken
       ? await options.jwt.verifyToken(cookieToken)
       : null;
-    if (!payload && bearerToken && bearerToken !== cookieToken) {
+    if (!payload && authConfig.loginMode === "google" && bearerToken && bearerToken !== cookieToken) {
       payload = await options.jwt.verifyToken(bearerToken);
     }
     if (!payload) return { authenticated: false, user: null };
@@ -287,6 +304,38 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
       )
       .send({ success: true });
   });
+
+  app.post("/api/auth/password-login", async (request, reply) => {
+    const authConfig = await options.configProvider.getConfig();
+    if (authConfig.loginMode !== "password") {
+      return routeError(reply, 404, "Password login not available");
+    }
+    if (!authConfig.jwtSecretConfigured) {
+      return routeError(reply, 500, "JWT_SECRET not configured");
+    }
+    const body = parseObjectBody(request.body);
+    if (!body.ok) return routeError(reply, 400, body.message);
+    const password = body.value.password;
+    if (typeof password !== "string" || password.length === 0) {
+      return routeError(reply, 400, "Password is required");
+    }
+    if (!passwordMatches(password, authConfig.dashboardAdminPasswordSha256)) {
+      return routeError(reply, 401, "Invalid password");
+    }
+
+    const user = { email: "owner@local", name: "Owner", picture: "" };
+    const token = await options.jwt.issueToken(user);
+    return reply
+      .header(
+        "set-cookie",
+        serializeCookie(cookieName(authConfig), token, {
+          httpOnly: true,
+          sameSite: "Lax",
+          maxAge: 7 * 24 * 3600,
+        }),
+      )
+      .send({ success: true });
+  });
 }
 
 async function handleGoogleCallback(
@@ -306,6 +355,9 @@ async function handleGoogleCallback(
   if (!code) return reply.redirect("/?error=auth_failed");
 
   const authConfig = await options.configProvider.getConfig();
+  if (authConfig.loginMode !== "google") {
+    return reply.redirect("/?error=auth_failed");
+  }
   try {
     const tokenResponse = await options.httpClient.post({
       url: "https://oauth2.googleapis.com/token",
@@ -387,6 +439,14 @@ function redirectWithCookies(
 
 function normalizeOptionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function passwordMatches(password: string, configuredDigestHex: string): boolean {
+  if (configuredDigestHex.length === 0) return false;
+  const provided = createHash("sha256").update(password, "utf8").digest();
+  const configured = Buffer.from(configuredDigestHex, "hex");
+  if (configured.length !== provided.length) return false;
+  return timingSafeEqual(provided, configured);
 }
 
 function extractCookieToken(request: FastifyRequest, name: string): string | undefined {

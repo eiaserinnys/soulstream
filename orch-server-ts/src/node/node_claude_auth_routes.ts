@@ -139,7 +139,9 @@ export function registerNodeClaudeAuthRoutes(
       const nodeId = nodeParams(request).node_id;
       const rejected = rejectLegacyPoolLogin(reply, options, nodeId);
       if (rejected) return rejected;
-      const config = await options.provider.getOAuthConfig();
+      const resolved = await resolveOAuthConfig(options, reply);
+      if (!resolved.ok) return resolved.reply;
+      const config = resolved.config;
       const verifier = options.pkce.generateVerifier();
       const challenge = options.pkce.generateChallenge(verifier);
       const state = options.pkce.generateState();
@@ -181,7 +183,9 @@ export function registerNodeClaudeAuthRoutes(
       if (rejected) return rejected;
       if (code === undefined) return detail(reply, 400, "Missing code");
 
-      const config = await options.provider.getOAuthConfig();
+      const resolved = await resolveOAuthConfig(options, reply);
+      if (!resolved.ok) return resolved.reply;
+      const config = resolved.config;
       const exchanged = await exchangeToken(reply, options, {
         flow: "browser",
         data: {
@@ -273,7 +277,9 @@ export function registerNodeClaudeAuthRoutes(
       }
       const rejected = rejectLegacyPoolLogin(reply, options, nodeId);
       if (rejected) return rejected;
-      const config = await options.provider.getOAuthConfig();
+      const resolved = await resolveOAuthConfig(options, reply);
+      if (!resolved.ok) return resolved.reply;
+      const config = resolved.config;
       const verifier = options.pkce.generateVerifier();
       const challenge = options.pkce.generateChallenge(verifier);
       const state = options.pkce.generateState();
@@ -308,7 +314,9 @@ export function registerNodeClaudeAuthRoutes(
         return detail(reply, 404, `Node ${nodeId} not connected`);
       }
 
-      const config = await options.provider.getOAuthConfig();
+      const resolved = await resolveOAuthConfig(options, reply);
+      if (!resolved.ok) return resolved.reply;
+      const config = resolved.config;
       const exchanged = await exchangeToken(reply, options, {
         flow: "headless",
         data: {
@@ -443,6 +451,34 @@ async function exchangeToken(
     return { ok: false, reply: detail(reply, 400, "Token exchange failed: missing access_token") };
   }
   return { ok: true, token };
+}
+
+/**
+ * Claude OAuth is optional for a clean install. A config provider that cannot
+ * build the client (blank CLAUDE_OAUTH_* settings) makes these routes answer
+ * 503 instead of surfacing an internal error; other routes are unaffected.
+ */
+async function resolveOAuthConfig(
+  options: NodeClaudeAuthRouteOptions,
+  reply: FastifyReply,
+): Promise<
+  { readonly ok: true; readonly config: ClaudeOAuthConfig } |
+  { readonly ok: false; readonly reply: FastifyReply }
+> {
+  try {
+    return { ok: true, config: await options.provider.getOAuthConfig() };
+  } catch (error) {
+    if (error instanceof Error && error.name === "LiveConfigProviderError") {
+      return {
+        ok: false,
+        reply: reply.code(503).send({
+          detail: "Claude OAuth is not configured",
+          code: "claude_oauth_not_configured",
+        }),
+      };
+    }
+    throw error;
+  }
 }
 
 function callbackQuery(request: FastifyRequest): CallbackQuery {

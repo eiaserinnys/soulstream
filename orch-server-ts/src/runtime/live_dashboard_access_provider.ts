@@ -10,6 +10,7 @@ import {
   type AuthTokenAccessResult,
   type AuthUserPayloadExtra,
 } from "../auth/auth_routes.js";
+import { resolveDashboardLoginMode } from "../auth/login_mode.js";
 import {
   serviceBearerFailure,
   verifyServiceBearerAuthorization,
@@ -225,11 +226,16 @@ async function resolveAccessIdentity(input: {
   const configuredBearer = optionalConfigString(snapshot, "auth_bearer_token");
   const environment = requiredSnapshotString(snapshot, "environment");
   const googleClientId = requiredSnapshotString(snapshot, "google_client_id");
+  const loginMode = resolveDashboardLoginMode({
+    google_client_id: googleClientId,
+    dashboard_admin_password:
+      optionalConfigString(snapshot, "dashboard_admin_password") ?? "",
+  });
   const accessEmail = input.accessEmail !== undefined
     ? input.accessEmail
     : extractAccessEmail(input.request);
 
-  if (googleClientId.length > 0) {
+  if (loginMode !== "none") {
     const cookieToken = extractDashboardJwtCookieToken(input.request, input.cookieName);
     if (cookieToken) {
       const payload = await verifyDashboardToken({ ...input, request: input.request }, cookieToken);
@@ -244,10 +250,11 @@ async function resolveAccessIdentity(input: {
     configuredBearer ?? "",
     environment,
     input.nodeCredentials,
+    loginMode === "password",
   );
   if (bearer.ok) return { mode: "service_token", accessEmail };
 
-  if (googleClientId.length > 0) {
+  if (loginMode === "google") {
     const dashboardToken = extractDashboardBearerToken(input.request);
     if (dashboardToken) {
       const payload = await verifyDashboardToken({ ...input, request: input.request }, dashboardToken);
@@ -345,6 +352,7 @@ function verifyServiceBearer(
   configuredBearer: string,
   environment: string,
   nodeCredentials: NodeCredentialResolver | null,
+  rejectDevelopmentBypass: boolean,
 ): AuthTokenAccessResult {
   const verification = verifyServiceBearerAuthorization(
     request.headers.authorization,
@@ -354,6 +362,9 @@ function verifyServiceBearer(
       nodeCredentials,
     },
   );
+  if (verification.ok && verification.developmentBypass && rejectDevelopmentBypass) {
+    return serviceBearerFailure({ ok: false, reason: "missing", statusCode: 401 });
+  }
   return verification.ok ? { ok: true } : serviceBearerFailure(verification);
 }
 

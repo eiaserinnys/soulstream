@@ -60,7 +60,9 @@ describe("orch-server-ts config scaffold", () => {
       GOOGLE_IOS_CLIENT_ID: "google-ios-client",
       ALLOWED_EMAIL: "user@example.com",
       JWT_SECRET: "jwt-secret",
+      DASHBOARD_ADMIN_PASSWORD: "install-password",
       ENVIRONMENT: "production",
+      DEFAULT_PAS_AGENT_ID: "claude-default",
       CLAUDE_OAUTH_CLIENT_ID: "claude-client",
       CLAUDE_OAUTH_CALLBACK_URL: "https://example.com/claude/callback",
       TURN_SUMMARY_OPENAI_KEY: "turn-summary-key",
@@ -77,6 +79,7 @@ describe("orch-server-ts config scaffold", () => {
       mcp_allowed_hosts: ["localhost", "127.0.0.1"],
       node_name: "orch-primary",
       default_execution_node_id: "eias-linegames",
+      default_pas_agent_id: "claude-default",
       host: "127.0.0.1",
       port: 5300,
       trusted_proxy: "loopback",
@@ -98,6 +101,7 @@ describe("orch-server-ts config scaffold", () => {
       google_ios_client_id: "google-ios-client",
       allowed_email: "user@example.com",
       jwt_secret: "jwt-secret",
+      dashboard_admin_password: "install-password",
       environment: "production",
       claude_oauth_client_id: "claude-client",
       claude_oauth_callback_url: "https://example.com/claude/callback",
@@ -148,6 +152,7 @@ describe("orch-server-ts config scaffold", () => {
     expect(loadOrchServerEnvironment(minimalEnvironment())).toMatchObject({
       node_name: null,
       default_execution_node_id: "eiaserinnys",
+      default_pas_agent_id: null,
       port: 5200,
       trusted_proxy: "loopback",
       dashboard_dir: "",
@@ -159,12 +164,55 @@ describe("orch-server-ts config scaffold", () => {
       cors_allowed_origins: [],
       google_client_id: "",
       jwt_secret: "",
+      dashboard_admin_password: "",
       turn_summary_openai_key: "",
       usage_summary_poll_interval_seconds: 300,
       usage_summary_shared_accounts: [],
       soul_runner_process_enabled: false,
       soul_runner_lease_timeout_ms: 1_800_000,
     });
+  });
+
+  it("keeps Claude OAuth optional for a clean install", () => {
+    const env = minimalEnvironment();
+    delete env.CLAUDE_OAUTH_CLIENT_ID;
+    delete env.CLAUDE_OAUTH_CALLBACK_URL;
+
+    const config = loadOrchServerEnvironment(env);
+    expect(config.claude_oauth_client_id).toBe("");
+    expect(config.claude_oauth_callback_url).toBe("");
+  });
+
+  it("requires JWT_SECRET exactly when the install password enables login", () => {
+    expect(() => loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      GOOGLE_CLIENT_ID: "",
+      DASHBOARD_ADMIN_PASSWORD: "hunter2",
+    })).toThrow(/JWT_SECRET/);
+
+    expect(loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      DASHBOARD_ADMIN_PASSWORD: "hunter2",
+      JWT_SECRET: "jwt-secret",
+    }).dashboard_admin_password).toBe("hunter2");
+
+    expect(loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      GOOGLE_CLIENT_ID: "google-client",
+      DASHBOARD_ADMIN_PASSWORD: "hunter2",
+    }).google_client_id).toBe("google-client");
+  });
+
+  it("reads an optional default PAS agent id", () => {
+    expect(loadOrchServerEnvironment(minimalEnvironment()).default_pas_agent_id).toBeNull();
+    expect(loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      DEFAULT_PAS_AGENT_ID: " claude-default ",
+    }).default_pas_agent_id).toBe("claude-default");
+    expect(loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      DEFAULT_PAS_AGENT_ID: "  ",
+    }).default_pas_agent_id).toBeNull();
   });
 
   it("separates the default execution node from the external ingress node label", () => {
@@ -229,8 +277,6 @@ describe("orch-server-ts config scaffold", () => {
     "DATABASE_URL",
     "SOULSTREAM_PUBLIC_URL",
     "ENVIRONMENT",
-    "CLAUDE_OAUTH_CLIENT_ID",
-    "CLAUDE_OAUTH_CALLBACK_URL",
   ])("fails at startup when required env %s is missing", (key) => {
     const env = minimalEnvironment();
     delete env[key];

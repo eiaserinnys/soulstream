@@ -317,12 +317,14 @@ describePostgres("PAS settings API on PostgreSQL", () => {
     expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("turn_usage_mode");
     expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("animate_character");
     expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("show_work_details");
+    // This node advertises claude-opus but not the catalogue fallback codex-6.2-sol,
+    // so the create defaults keep the promoted default and drop the unadvertised fallback.
     expect(list.body.create_defaults).toEqual({
       node_id: NODE_ID,
       preferred_agent_id: PAS_AGENT,
       settings: {
         default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
-        fallback_models: [{ model_preset: "codex-6.2-sol", reasoning_effort: "high" }],
+        fallback_models: [],
         show_generation_separator: true,
         show_character: true,
         show_jev_candidates: false,
