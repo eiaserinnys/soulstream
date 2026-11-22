@@ -221,7 +221,7 @@ clone_repository() {
     as_soul git clone https://github.com/eiaserinnys/soulstream.git "$root"
     as_soul git -C "$root" checkout "${REF:-main}"
   elif [[ "$REF_SET" == true ]]; then
-    if [[ -n "$(as_soul git -C "$root" status --porcelain)" ]]; then printf 'Repository has uncommitted changes.\n' >&2; return 1; fi
+    if [[ -n "$(as_soul git -C "$root" status --porcelain --untracked-files=no)" ]]; then printf 'Repository has uncommitted changes.\n' >&2; return 1; fi
     as_soul git -C "$root" fetch origin
     as_soul git -C "$root" checkout "$REF"
   fi
