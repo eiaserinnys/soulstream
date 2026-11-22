@@ -7,9 +7,9 @@ export const REPORT_BUBBLE_MINIMUM_HEIGHT = 23 + 2 * 22 + 3 * 32 + 2 * 4 + 8 + 1
 
 type ElementRef = RefObject<HTMLElement | null>;
 /** All observations share one frame and the same usable viewport coordinates. */
-export function usePersistentSessionGeometry({ app, header, main, composer, enabled, showCharacter }: {
+export function usePersistentSessionGeometry({ app, header, main, composer, enabled, showCharacter, layoutKey }: {
   app: ElementRef; header: ElementRef; main: ElementRef; composer: ElementRef;
-  enabled: boolean; showCharacter: boolean;
+  enabled: boolean; showCharacter: boolean; layoutKey?: boolean;
 }) {
   const [geometry, setGeometry] = useState<(PersistentSessionLayout & { mainLeft: number; mainWidth: number }) | null>(null);
   useLayoutEffect(() => {
@@ -56,6 +56,6 @@ export function usePersistentSessionGeometry({ app, header, main, composer, enab
       window.visualViewport?.removeEventListener('resize', schedule); window.visualViewport?.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
     };
-  }, [app, header, main, composer, enabled, showCharacter]);
+  }, [app, header, main, composer, enabled, showCharacter, layoutKey]);
   return enabled ? geometry : null;
 }

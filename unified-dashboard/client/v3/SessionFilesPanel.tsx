@@ -101,7 +101,7 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
   return <>
     <header className="v3-panel-header v3-chat-header">
       <div className="v3-chat-title-row"><div className="v3-chat-session-title v3-session-files-title">
-        {initial && !error ? <span className="v3-session-files-skeleton" aria-label="브랜치 확인 중"/> : <>{data?.snapshot?.branch && <GitBranch className="h-4 w-4" aria-hidden="true"/>}<strong>{data?.snapshot?.branch ?? rootName ?? "파일"}</strong>{Boolean(data?.snapshot?.ahead) && <span>↑{data?.snapshot?.ahead}</span>}{Boolean(data?.snapshot?.behind) && <span>↓{data?.snapshot?.behind}</span>}</>}
+        {initial && !error ? <span className="v3-session-files-skeleton" aria-label="브랜치 확인 중"/> : <>{data?.snapshot?.branch && <GitBranch className="h-4 w-4" aria-hidden="true"/>}<strong title={data?.snapshot?.branch ?? undefined}>{data?.snapshot?.branch ?? rootName ?? "파일"}</strong>{Boolean(data?.snapshot?.ahead) && <span>↑{data?.snapshot?.ahead}</span>}{Boolean(data?.snapshot?.behind) && <span>↓{data?.snapshot?.behind}</span>}</>}
       </div>
       <DashboardIconCap ref={refreshRef} size="small" label="다시 읽기" onClick={onRefresh}><RefreshCw className={`h-4 w-4${busy ? " animate-spin" : ""}`} aria-hidden="true"/></DashboardIconCap>
       <DashboardIconCap size="small" label="파일 닫기" onClick={onClose}><X className="h-4 w-4" aria-hidden="true"/></DashboardIconCap></div>

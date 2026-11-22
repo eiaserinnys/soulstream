@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import functools
 import http.server
+import importlib.util
 import json
 import threading
 from pathlib import Path
@@ -12,6 +13,9 @@ from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[2]
 DIST = ROOT / "unified-dashboard" / "dist"
+_pas_spec = importlib.util.spec_from_file_location("session_files_pas_width", Path(__file__).with_name("session_files_pas_width.py"))
+_pas_module = importlib.util.module_from_spec(_pas_spec)
+_pas_spec.loader.exec_module(_pas_module)
 SHORT_TEXT = b"// session file preview\n"
 LONG_TEXT = ("// session file preview\n" + "".join(f"export const eventType{i:02} = 'session:{i:02}';\n" for i in range(40))).encode()
 LONG_BRANCH = "feature/" + "very-long-session-files-branch-" * 5
@@ -53,6 +57,9 @@ def install_routes(page, scene="ready", requests=None):
         if path == "/api/persistent-sessions/components-session": return route.fulfill(json={"session": session})
         if path == "/api/sessions": return route.fulfill(json={"sessions": [summary], "total": 1})
         if path == "/api/nodes": return route.fulfill(json={"nodes": [node]})
+        if path == "/api/cards" and scene == "pas-width":
+            card = {"id": "pas-width-card", "number": 1789, "folderId": "review", "title": "세션 파일 폭 확인", "request": "", "brief": "", "attachments": [], "status": "running", "blockedKind": None, "blockedDetail": None, "positionKey": "a", "queuePositionKey": None, "assigneeKind": None, "assigneeAgentId": None, "assigneeUserId": None, "assigneeSessionId": None, "nodeId": None, "modelPreset": None, "version": 1, "archived": False, "createdAt": "2026-10-01T00:00:00Z", "updatedAt": "2026-10-01T00:00:00Z"}
+            return route.fulfill(json={"cards": [card]})
         if path == "/api/nodes/stream": return route.fulfill(content_type="text/event-stream", body=f"event: snapshot\ndata: {json.dumps([node])}\n\n")
         if path == "/api/sessions/stream": return route.fulfill(content_type="text/event-stream", body=f"event: session_list\ndata: {json.dumps({'type':'session_list', 'sessions':[summary], 'total':1})}\n\n")
         if path.endswith("/events"): return route.fulfill(content_type="text/event-stream", body='event: history_sync\ndata: {"type":"history_sync","last_event_id":80,"is_live":true,"status":"running"}\n\n')
@@ -258,7 +265,7 @@ def capture_layout_checks(browser, base, out):
                 const css=getComputedStyle(strong);
                 return {pane:rect(el),header:rect(header),title:rect(title),icon:rect(svg),iconColor:getComputedStyle(svg).color,tertiary,
                   iconShrink:getComputedStyle(svg).flexShrink,strong:rect(strong),strongScroll:strong.scrollWidth,strongClient:strong.clientWidth,
-                  strongOverflow:css.overflow,strongEllipsis:css.textOverflow,strongWhiteSpace:css.whiteSpace,strongFontSize:parseFloat(css.fontSize),
+                  strongOverflow:css.overflow,strongEllipsis:css.textOverflow,strongWhiteSpace:css.whiteSpace,strongFontSize:parseFloat(css.fontSize),strongTitle:strong.getAttribute('title'),
                   ahead:rect(title.querySelector('span')),aheadText:title.querySelector('span').textContent,
                   caps:caps.map(rect),radius:getComputedStyle(el).borderRadius,border:getComputedStyle(el).borderTopWidth};
             }""")
@@ -267,6 +274,7 @@ def capture_layout_checks(browser, base, out):
             check(abs(m['icon']['width'] - 16) <= .5 and abs(m['icon']['height'] - 16) <= .5, key + ' icon', m)
             check(m['iconShrink'] == '0' and m['iconColor'] == m['tertiary'], key + ' icon style', m)
             check(m['strongScroll'] > m['strongClient'] and m['strong']['width'] >= m['strongFontSize'] and m['strongOverflow'] == 'hidden' and m['strongEllipsis'] == 'ellipsis' and m['strongWhiteSpace'] == 'nowrap', key + ' title ellipsis', m)
+            check(m['strongTitle'] == LONG_BRANCH, key + ' full branch title', m)
             check(m['aheadText'] == '↑12' and m['ahead']['width'] > 0 and len(m['caps']) == 2 and all(cap['width'] >= 32 and cap['height'] >= 32 and cap['left'] >= m['header']['left'] - .5 and cap['right'] <= m['header']['right'] + .5 for cap in m['caps']) and m['title']['right'] <= m['caps'][0]['left'] + .5 and m['caps'][0]['right'] <= m['caps'][1]['left'] + .5, key + ' caps', m)
             if width <= 390:
                 expected = '24px' if surface == 'pas' else '0px'
@@ -313,8 +321,38 @@ def capture_layout_checks(browser, base, out):
             check(m['font'] == reference['font'] and m['color'] == reference['color'], f'{scene}-{width} typography', {'actual': m, 'empty': reference})
     return results, errors
 
+def assert_pas_width(result):
+    failures = []
+    def check(ok, name, value):
+        if not ok: failures.append({"check": name, "detail": value})
+    for width in _pas_module.TASK_WIDTHS:
+        before, after = (result['tasks'][side][str(width)] for side in ('before', 'after'))
+        for part in ('main', 'composer', 'pane'):
+            check(all(abs(before[part][key] - after[part][key]) <= .5 for key in ('left', 'top', 'width', 'height')), f'tasks-{width}-{part}', {'before': before[part], 'after': after[part]})
+    for part in ('main', 'composer', 'pane'):
+        before, after = result['tasks']['after']['900'][part], result['tasks']['restored'][part]
+        check(all(abs(before[key] - after[key]) <= .5 for key in ('left', 'top', 'width', 'height')), f'tasks-restored-{part}', {'before': before, 'after': after})
+    for width in _pas_module.WIDTHS:
+        m = result['files'][str(width)]
+        check(m['draft'] == 'PAS 파일 확인 중', f'pas-{width}-draft', m['draft'])
+        check(m['branch']['title'] == 'card1789-files-dashboard', f'pas-{width}-branch-title', m['branch'])
+        if width >= 768:
+            check(m['after']['main']['width'] >= 360 and m['after']['main']['right'] <= m['pane']['left'] + .5, f'pas-{width}-columns', m)
+            for name in ('event_outbox_types.ts', 'outbox_retry.ts'):
+                item = m['names'].get(name)
+                check(item and item['scroll'] <= item['client'] and item['rect']['left'] >= m['pane']['left'] and item['rect']['right'] <= m['pane']['right'], f'pas-{width}-{name}', item)
+            for label, expected in (('label', '읽기만 한 파일'), ('badge', '일부'), ('count', '1')):
+                item = m['read'][label]
+                check(item['text'] == expected and item['scroll'] <= item['client'] and item['rect']['width'] > 0 and item['rect']['left'] >= m['pane']['left'] and item['rect']['right'] <= m['pane']['right'], f'pas-{width}-read-{label}', item)
+        else:
+            check(m['coversChat'] and m['radius'] == '24px' and m['border'] != '0px', f'pas-{width}-mobile', m)
+        check(abs(m['before']['composer']['top'] - m['after']['composer']['top']) <= 1, f'pas-{width}-composer-y', m)
+    branch = result['files']['1440']['branch']
+    check(branch['scroll'] <= branch['client'], 'pas-1440-branch-visible', branch)
+    assert not failures, json.dumps(failures, ensure_ascii=False)
+
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument("--output", required=True); parser.add_argument("--baseline-dist", required=True); parser.add_argument("--story-only", action="store_true"); parser.add_argument("--retention-only", action="store_true"); parser.add_argument("--layout-only", action="store_true"); args = parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument("--output", required=True); parser.add_argument("--baseline-dist", required=True); parser.add_argument("--story-only", action="store_true"); parser.add_argument("--retention-only", action="store_true"); parser.add_argument("--layout-only", action="store_true"); parser.add_argument("--pas-width-only", action="store_true"); args = parser.parse_args()
     out = Path(args.output).resolve(); out.mkdir(parents=True, exist_ok=True)
     server, base = serve(DIST)
     baseline_server, baseline_base = serve(Path(args.baseline_dist))
@@ -322,6 +360,10 @@ def main():
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
+            if args.pas_width_only:
+                measurements['pas_width'] = _pas_module.capture_pas_width(browser, baseline_base, base, out, install_routes)
+                assert_pas_width(measurements['pas_width'])
+                return
             if args.layout_only:
                 measurements['layout'], failures = capture_layout_checks(browser, base, out)
                 assert not failures, json.dumps(failures, ensure_ascii=False)
@@ -333,6 +375,8 @@ def main():
             assert measurements["story"]["before"] == measurements["story"]["after"], measurements["story"]
             if args.story_only: return
             measurements.update(capture_pas_and_folder(browser, base, out))
+            measurements['pas_width'] = _pas_module.capture_pas_width(browser, baseline_base, base, out, install_routes)
+            assert_pas_width(measurements['pas_width'])
             for width, scene in [(1440, "ready"), (390, "ready"), (1440, "loading"), (1440, "offline"), (1440, "error"), (360, "long"), (390, "light")]:
                 theme = "light" if scene == "light" else "dark"
                 context = browser.new_context(viewport={"width": width, "height": 900}, color_scheme=theme, reduced_motion="reduce", locale="ko-KR", timezone_id="Asia/Seoul", service_workers="block")

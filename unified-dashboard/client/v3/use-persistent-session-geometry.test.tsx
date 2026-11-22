@@ -23,3 +23,16 @@ it('keeps the portrait and toggle on the composer baseline while the shared anch
  overflowOffset=35; anchorTop=200;act(()=>{resize();nextFrame!(0)});expect(layout).toMatchObject(first);
  act(()=>root.unmount());host.remove();vi.unstubAllGlobals();
 });
+
+it('remeasures when the file pane moves a same-width conversation column',async()=>{
+ vi.stubGlobal('ResizeObserver',class{observe(){}disconnect(){}});
+ vi.stubGlobal('matchMedia',()=>({matches:true,addEventListener(){},removeEventListener(){}}));
+ const app=createRef<HTMLDivElement>(),header=createRef<HTMLElement>(),main=createRef<HTMLElement>(),composer=createRef<HTMLDivElement>();let layout:any;
+ const rect=(left:number,top:number,width:number,height:number)=>({left,top,width,height,right:left+width,bottom:top+height,x:left,y:top,toJSON(){}});
+ function Harness({open}:{open:boolean}){layout=usePersistentSessionGeometry({app,header,main,composer,enabled:true,showCharacter:true,layoutKey:open});return <div ref={app}><header ref={header}/><main ref={main}><div data-slot="chat-root"><div data-testid="chat-input"><div ref={composer}><div data-slot="chat-input-composer"><button data-testid="send-button"/></div></div></div></div></main></div>}
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host);await act(async()=>root.render(<Harness open={false}/>));
+ app.current!.getBoundingClientRect=()=>rect(0,0,1150,900);header.current!.getBoundingClientRect=()=>rect(0,0,1150,76);main.current!.getBoundingClientRect=()=>rect(238,76,480,824);
+ composer.current!.querySelector('[data-slot="chat-input-composer"]')!.getBoundingClientRect=()=>rect(238,850,480,32);
+ await act(async()=>root.render(<Harness open/>));expect(layout.mainLeft).toBe(238);
+ act(()=>root.unmount());host.remove();vi.unstubAllGlobals();
+});

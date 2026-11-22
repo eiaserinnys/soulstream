@@ -166,7 +166,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     observer.observe(seat);
     return () => observer.disconnect();
   }, [hasWeeklyUsage, usageSummary.evaluatedAtMs, usageSummary.gauges.length, usageSummary.loading, usageSummary.loadState, usageSummary.node?.fetchedAt]);
-  const geometry = usePersistentSessionGeometry({ app: appRef, header: headerRef, main: mainRef, composer: composerAnchorRef, enabled: frameReady, showCharacter: displaySettings?.showCharacter ?? false });
+  const geometry = usePersistentSessionGeometry({ app: appRef, header: headerRef, main: mainRef, composer: composerAnchorRef, enabled: frameReady, showCharacter: displaySettings?.showCharacter ?? false, layoutKey: files.open });
   const applySaved = useCallback((saved: PersistentSession) => {
     setListing(current => current ? { ...current, sessions: current.sessions.map(session => session.session_id === saved.session_id ? saved : session) } : current);
     useDashboardStore.getState().setPersistentSessionDisplaySettings(saved.session_id, saved.settings);
@@ -332,7 +332,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   const disabled = !chatReady || Boolean(error) || !activeSessionSummary?.nodeId || nodes.get(activeSessionSummary.nodeId)?.status !== 'connected';
   const lastId = user?.email ? readPersistentSessionDevicePreferences(user.email).lastSessionId : null;
   const errorContent = error ? <SettingsAlert>{error}<div className="flex gap-2"><Button data-testid="persistent-retry" onClick={() => setRetry(value => value + 1)}>다시 시도</Button><Button onClick={() => navigateDashboard('/')}>홈</Button><Button onClick={() => navigateDashboard('/persistent')}>세션 선택</Button></div></SettingsAlert> : null;
-  return <div ref={appRef} className={`v3-shell persistent-session-screen${hasWeeklyUsage ? ' has-weekly-usage' : ''}`}
+  return <div ref={appRef} className={`v3-shell persistent-session-screen${hasWeeklyUsage ? ' has-weekly-usage' : ''}${files.open ? ' has-session-files' : ''}`}
     style={{ ...shellStyle, '--pas-usage-height': `${usageHeight}px`, '--pas-baseline-bottom': geometry ? `calc(100% - ${geometry.lineY}px)` : undefined } as CSSProperties} data-testid="persistent-session-screen">
     <V3GlobalToolbar headerRef={headerRef} variant="minimal" appearance="bare" sessionName={resource?.display_name ?? undefined} agentName={resource?.agent_name ?? undefined} agentOnly={isMobile} showHome={!isMobile} onOpenHome={() => navigateDashboard('/')} onOpenConfig={() => setSettingsOpen(true)}
       sessionSwitch={sessionId ? <PersistentSessionSwitch sessions={listing?.sessions ?? []} currentSessionId={sessionId}/> : undefined}
