@@ -123,6 +123,8 @@ export class CardDispatcher {
         });
     }
     private async blockAssigneeErrors(sessionId: string): Promise<void> {
+        const owner = await this.options.repository.ownerSession(sessionId);
+        if (!owner || !isAssigneeError(owner)) return;
         for (const work of await this.options.repository.endedWork(sessionId)) {
             if (!isAssigneeError(work.terminal_session) || hasPendingSessionModelFallback(work.metadata)) continue;
             const cards = await this.options.cards(), detail = await cards.getCard(work.card_id);
@@ -130,8 +132,6 @@ export class CardDispatcher {
                 await blockAssigneeError(cards, detail.card, work.terminal_session, this.options.warn);
         }
         const linked = await this.options.repository.session(sessionId);
-        const owner = linked ?? await this.options.repository.ownerSession(sessionId);
-        if (!owner || !isAssigneeError(owner)) return;
         // 직접 지정된 담당은 sessions.card_id가 없거나 다른 카드를 가리킬 수 있다.
         const session = await this.options.repository.assigneeErrorSession(sessionId) ?? linked;
         if (!session || !isAssigneeError(session) || hasPendingSessionModelFallback(session.metadata)) return;

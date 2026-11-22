@@ -100,7 +100,7 @@ export class CardDispatchRepository {
     }
     async session(sessionId: string): Promise<CardSession | null> {
         const sql = await this.resolveSql();
-        return (await sql<CardSession[]> `SELECT session_id,card_id,node_id,status,model_preset,termination_reason,termination_detail,termination_event_id,metadata
+        return (await sql<CardSession[]> `SELECT session_id,card_id,node_id,status,model_preset,termination_reason,termination_event_id,metadata
       FROM sessions WHERE session_id=${sessionId} AND card_id IS NOT NULL`)[0] ?? null;
     }
     /** A manually assigned owner need not have sessions.card_id pointing at the card. */
