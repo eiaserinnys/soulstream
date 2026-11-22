@@ -4,16 +4,25 @@ import type { UsageStatsProvider, UsageStatsQuery } from '../../../packages/wire
 export type UsageStatsMockState = 'ready' | 'loading' | 'empty' | 'error' | 'forbidden' | 'backfilling';
 
 // Tests exercise the real client and endpoint methods through this fetch transport.
-export function createUsageStatsMockFetch(state: UsageStatsMockState, fallback: typeof fetch): typeof fetch {
+export function trackUsageStatsResponse<T>(pending: Promise<unknown>[] | undefined, promise: Promise<T>): Promise<T> {
+  pending?.push(promise);
+  return promise;
+}
+
+export function createUsageStatsMockFetch(
+  state: UsageStatsMockState,
+  fallback: typeof fetch,
+  pending?: Promise<unknown>[],
+): typeof fetch {
   let failureInjected = false;
-  return async (input, init) => {
+  return (input, init) => {
     const url = new URL(String(input), 'https://usage-stats.mock');
     if (!url.pathname.startsWith('/api/session-statistics')) return fallback(input, init);
     if (state === 'loading') return new Promise<Response>(() => {});
-    if (state === 'forbidden') return response({ error: 'forbidden' }, 403);
+    if (state === 'forbidden') return trackUsageStatsResponse(pending, Promise.resolve(response({ error: 'forbidden' }, 403)));
     if (state === 'error' && !failureInjected) {
       failureInjected = true;
-      return response({ error: 'unavailable' }, 503);
+      return trackUsageStatsResponse(pending, Promise.resolve(response({ error: 'unavailable' }, 503)));
     }
     const query: UsageStatsQuery = {
       period: url.searchParams.get('period') as UsageStatsQuery['period'],
@@ -26,11 +35,11 @@ export function createUsageStatsMockFetch(state: UsageStatsMockState, fallback: 
     if (date) {
       const base = buildUsageStatsOverview({ period: query.period, anchor: query.anchor });
       const roster = base.by_project.flatMap(row => row.project_id && row.project_id !== '__other__' ? [row.project_id] : []);
-      return response(buildUsageStatsDayDetail(date, query, roster));
+      return trackUsageStatsResponse(pending, Promise.resolve(response(buildUsageStatsDayDetail(date, query, roster))));
     }
     const overview = state === 'empty' ? buildEmptyUsageStatsOverview(query) : buildUsageStatsOverview(query);
     if (state === 'backfilling') overview.projection_status.state = 'backfilling';
-    return response(overview);
+    return trackUsageStatsResponse(pending, Promise.resolve(response(overview)));
   };
 }
 
