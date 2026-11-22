@@ -16,12 +16,15 @@ type Options = {
   metadata?: unknown;
   assignee?: string;
   unlinked?: boolean;
+  terminationEventId?: number | null;
 };
 function makeDispatcher(options: Options = {}) {
   const terminal = {
     session_id: SESSION_ID, card_id: CARD_ID, node_id: "node", agent_id: "agent", model_preset: null,
     status: options.status ?? "error", termination_reason: options.reason === undefined ? "error_aborted" : options.reason,
-    termination_detail: options.detail ?? null, termination_event_id: 17, metadata: options.metadata ?? [],
+    termination_detail: options.detail ?? null,
+    termination_event_id: options.terminationEventId === undefined ? 17 : options.terminationEventId,
+    metadata: options.metadata ?? [],
   };
   const card = { id: CARD_ID, node_id: "node", folder_id: "folder", title: "카드", status: "running",
     assignee_session_id: options.assignee ?? SESSION_ID, version: 3 };
@@ -38,14 +41,14 @@ function makeDispatcher(options: Options = {}) {
     session: vi.fn(async () => options.unlinked ? null : terminal),
     assigneeErrorSession: vi.fn(async () => card.assignee_session_id === SESSION_ID ? terminal : null),
     hasExplicitWork: vi.fn(async () => Boolean(options.work)),
-    reminderFacts: vi.fn(async () => [{
+    reminderFacts: vi.fn(async () => { events.push("reminder_check"); return [{
       cardId: CARD_ID, cardNumber: 1, cardTitle: "카드", cardVersion: card.version, cardStatus: card.status,
       statusEpochUs: "1", rootSessionId: SESSION_ID, rootStatus: terminal.status,
-      rootTerminationReason: terminal.termination_reason, rootTerminationEventId: 17,
+      rootTerminationReason: terminal.termination_reason, rootTerminationEventId: terminal.termination_event_id,
       activeDescendants: false, activeTree: false, pendingDeliveries: false, unhandledCommentId: null,
       unregisteredCompletions: false, rootEndedAfterStatus: true, pendingExecution: false,
       lastRootTurnEndedAt: new Date(), latestRootDeliveryId: null,
-    }]),
+    }]; }),
     settings: vi.fn(async () => ({ nodeConcurrency: { default: 1 } })),
     queued: vi.fn(async () => []),
   };
@@ -75,11 +78,27 @@ describe.each([false, true])("담당 오류 종료 (작업 맡기기: %s)", work
   });
 
   it("keeps limit handling exclusive", async () => {
-    const { dispatcher, blockCardForLimit, setCardStatus, updateCardNow } = makeDispatcher({ work, reason: "limit_hit" });
+    const { dispatcher, blockCardForLimit, setCardStatus, updateCardNow, events } = makeDispatcher({ work, reason: "limit_hit" });
     await dispatcher.sessionEnded(SESSION_ID);
     expect(blockCardForLimit).toHaveBeenCalledOnce();
     expect(setCardStatus).not.toHaveBeenCalled();
     expect(updateCardNow).not.toHaveBeenCalled();
+    expect(events).toEqual(["reminder_check", "limit"]);
+  });
+
+  it("does not block an intermediate error row without a terminal event", async () => {
+    const { dispatcher, setCardStatus, blockCardForLimit } = makeDispatcher({ work, reason: null, terminationEventId: null });
+    await dispatcher.sessionEnded(SESSION_ID);
+    expect(setCardStatus).not.toHaveBeenCalled();
+    expect(blockCardForLimit).not.toHaveBeenCalled();
+  });
+
+  it("blocks a confirmed error before evaluating stalled reminders", async () => {
+    const { dispatcher, events, sendMessage } = makeDispatcher({ work });
+    await dispatcher.sessionEnded(SESSION_ID);
+    expect(events.indexOf("block")).toBeGreaterThanOrEqual(0);
+    expect(events.indexOf("reminder_check")).toBeGreaterThan(events.indexOf("block"));
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("blocks a directly assigned owner whose session has no card link", async () => {

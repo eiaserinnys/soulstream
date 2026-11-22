@@ -2,7 +2,9 @@ import type { CardControlPlaneService } from "./card_control_plane_service.js";
 import type { CardRow } from "./control_plane/card_types.js";
 
 export function isAssigneeError(session: Readonly<Record<string, unknown>>): boolean {
-  return session.status === "error" && session.termination_reason !== "limit_hit" && session.termination_reason !== "killed";
+  const eventId = Number(session.termination_event_id);
+  return session.status === "error" && session.termination_reason !== "limit_hit" && session.termination_reason !== "killed"
+    && Number.isSafeInteger(eventId) && eventId > 0;
 }
 
 export async function blockAssigneeError(
