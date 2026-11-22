@@ -15,7 +15,6 @@ const MISMATCH_CUTOFF = "2026-10-20T00:01:00.000Z";
 const BASELINE_SHA = "8d1dac7a";
 const NODE_ID = "inventory-node";
 const OWNER_EMAIL = "fixture-owner@example.test";
-const ORIGIN = "https://inventory.example.test";
 const exportCli = fileURLToPath(new URL("../../scripts/attachment-migration/export_sources.ts", import.meta.url));
 const nodeSourcesCli = fileURLToPath(new URL("../../scripts/attachment-migration/node_sources.ts", import.meta.url));
 const scanNodeCli = fileURLToPath(new URL("../../scripts/attachment-migration/scan_node.mjs", import.meta.url));

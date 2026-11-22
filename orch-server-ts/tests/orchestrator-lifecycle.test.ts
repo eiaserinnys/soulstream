@@ -19,7 +19,6 @@ import { registerPublicStatusRoutes } from "../src/public/public_status_routes.j
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const catalog = repositoryModelCatalog();
-const CATALOG = catalog.snapshot();
 
 async function writeBuildInfo(
   path: string,

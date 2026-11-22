@@ -129,7 +129,6 @@ async function readCardOrFail(sql: RepositorySql, cardId: string): Promise<CardR
 
 export class CardMaintenanceService {
   private readonly sql: SqlClient;
-  private readonly repo: CardRepository;
   private readonly core: CardMutationCore;
   private readonly patchTx: CardMaintenancePorts["patchTx"];
   private readonly statusTx: CardMaintenancePorts["statusTx"];
@@ -137,7 +136,6 @@ export class CardMaintenanceService {
 
   constructor(ports: CardMaintenancePorts) {
     this.sql = ports.sql;
-    this.repo = ports.repo;
     this.core = ports.core;
     this.patchTx = ports.patchTx;
     this.statusTx = ports.statusTx;

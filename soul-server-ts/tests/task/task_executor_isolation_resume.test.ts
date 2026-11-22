@@ -252,7 +252,6 @@ describe("recovered isolated execution workspace", () => {
       const turns: EngineExecuteParams[] = [];
       const engine = makeEngine(turns);
       const mocks = makeMocks();
-      const gate = makeGate();
       const message = userMessage(runtimeFollowup
         ? { text: "runtime followup", deliveryIntent: "runtime_followup" }
         : {});

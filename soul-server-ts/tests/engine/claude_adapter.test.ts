@@ -2421,12 +2421,3 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-
-async function collectIterator<T>(iterator: AsyncIterator<T>): Promise<T[]> {
-  const items: T[] = [];
-  for (;;) {
-    const next = await iterator.next();
-    if (next.done) return items;
-    items.push(next.value);
-  }
-}

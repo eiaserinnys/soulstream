@@ -4,8 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardExecutionService, readCardExecutionRegistration, type CardExecutionRequest } from "../src/cards/card_execution_service.js";
-import type { DispatchWorkInput } from "../src/cards/card_work_dispatch_service.js";
-import { CardWorkDispatchService } from "../src/cards/card_work_dispatch_service.js";
+import { type DispatchWorkInput, CardWorkDispatchService } from "../src/cards/card_work_dispatch_service.js";
 import {
   canonicalWorkErrorDeliveryId,
   recordConfirmedErrorTx,

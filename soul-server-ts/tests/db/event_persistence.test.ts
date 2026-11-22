@@ -1,5 +1,5 @@
 import pino from "pino";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EVENT_DURABILITY, SSE_EVENT_TYPES } from "@soulstream/wire-schema";
 
 import {
@@ -109,11 +109,9 @@ function makeMockIngress() {
   };
 }
 
-function makeEventPersistence(db: SessionDB, broadcaster: SessionBroadcaster) {
+function makeEventPersistence() {
   const ingress = makeMockIngress();
   return new EventPersistence(
-    db,
-    broadcaster,
     silentLogger,
     ingress.outbox,
     ingress.pump,
@@ -143,12 +141,8 @@ describe("sanitizeJsonText", () => {
 
 describe("EventPersistence durable ingress", () => {
   it("retires a terminal registration for same-session tail events until the next execution registration", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -215,14 +209,10 @@ describe("EventPersistence durable ingress", () => {
   });
 
   it("keeps the registration active when appending a terminal transition fails", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
     ingress.append.mockResolvedValueOnce(ingress.record);
     ingress.append.mockRejectedValueOnce(new Error("outbox append failed"));
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -302,12 +292,8 @@ describe("EventPersistence durable ingress", () => {
   });
 
   it("maps runner snapshot correlation to semantic dedupe without leaking it into payload", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -448,12 +434,8 @@ describe("EventPersistence durable ingress", () => {
   });
 
   it("uses only the truncated append input on the host-direct enqueue path", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -474,12 +456,9 @@ describe("EventPersistence durable ingress", () => {
   });
 
   it("sanitizes and fsync-enqueues persistent events without direct event DB calls", async () => {
-    const { db, appendEvent, findEventIdByDedupeKey } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
+    const { appendEvent, findEventIdByDedupeKey } = makeMockDB();
     const ingress = makeMockIngress();
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -519,12 +498,9 @@ describe("EventPersistence durable ingress", () => {
   });
 
   it("generation_started is stored through the durable event outbox", async () => {
-    const { db, appendEvent } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
+    const { appendEvent } = makeMockDB();
     const ingress = makeMockIngress();
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -563,12 +539,8 @@ describe("EventPersistence durable ingress", () => {
   });
 
   it("sanitizes payload, searchable text, and typed effects before outbox append", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -597,12 +569,8 @@ describe("EventPersistence durable ingress", () => {
   });
 
   it("returns the exact DB event id only after the session ACK barrier", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -616,12 +584,8 @@ describe("EventPersistence durable ingress", () => {
   });
 
   it("persists an idempotent running transition without waiting for host recovery", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -646,12 +610,8 @@ describe("EventPersistence durable ingress", () => {
   });
 
   it("persists an idempotent runner-adopt transition and waits for its ACK", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -688,8 +648,6 @@ describe("EventPersistence durable ingress", () => {
   });
 
   it("returns the canonical session when a running transition CAS is rejected", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
     ingress.waitForAcknowledgementResult.mockResolvedValueOnce({
       source_seq: 7,
@@ -709,8 +667,6 @@ describe("EventPersistence durable ingress", () => {
       },
     });
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -731,8 +687,6 @@ describe("EventPersistence durable ingress", () => {
   });
 
   it("maps a legacy ownership ACK onto the canonical registration", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
     ingress.waitForAcknowledgementResult.mockResolvedValueOnce({
       source_seq: 7,
@@ -764,8 +718,6 @@ describe("EventPersistence durable ingress", () => {
       },
     });
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -785,8 +737,6 @@ describe("EventPersistence durable ingress", () => {
   });
 
   it("returns the canonical session when a terminal transition CAS is rejected", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
     ingress.waitForAcknowledgementResult.mockResolvedValueOnce({
       source_seq: 7,
@@ -806,8 +756,6 @@ describe("EventPersistence durable ingress", () => {
       },
     });
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -847,12 +795,8 @@ describe("EventPersistence durable ingress", () => {
   });
 
   it("waits for the last event enqueued for the session at the turn boundary", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -945,12 +889,9 @@ describe("EventPersistence transient boundary", () => {
   });
 
   it("live-only event는 durable outbox 대상이 아니다", async () => {
-    const { db, appendEvent } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
+    const { appendEvent } = makeMockDB();
     const ingress = makeMockIngress();
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -971,12 +912,9 @@ describe("EventPersistence transient boundary", () => {
   });
 
   it("text lifecycle event는 _live_only가 없어도 durable outbox 대상이 아니다", async () => {
-    const { db, appendEvent } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
+    const { appendEvent } = makeMockDB();
     const ingress = makeMockIngress();
     const ep = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       ingress.outbox,
       ingress.pump,
@@ -994,9 +932,8 @@ describe("EventPersistence transient boundary", () => {
 
 describe("EventPersistence.handleSideEffects", () => {
   it("text_delta는 last_message 없이 task.lastAssistantText만 갱신", async () => {
-    const { db, updateLastMessage } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
-    const ep = makeEventPersistence(db, broadcaster);
+    const { updateLastMessage } = makeMockDB();
+    const ep = makeEventPersistence();
     const task = makeTask();
     await ep.handleSideEffects(
       "sess-1",
@@ -1008,9 +945,8 @@ describe("EventPersistence.handleSideEffects", () => {
   });
 
   it("progress는 last_message 없이 task.lastProgressText만 갱신", async () => {
-    const { db, updateLastMessage } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
-    const ep = makeEventPersistence(db, broadcaster);
+    const { updateLastMessage } = makeMockDB();
+    const ep = makeEventPersistence();
     const task = makeTask();
     await ep.handleSideEffects(
       "sess-1",
@@ -1022,9 +958,8 @@ describe("EventPersistence.handleSideEffects", () => {
   });
 
   it("text_end (text 없음) — last_message 갱신 안 함 + lastAssistantText 변경 안 함", async () => {
-    const { db, updateLastMessage } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
-    const ep = makeEventPersistence(db, broadcaster);
+    const { updateLastMessage } = makeMockDB();
+    const ep = makeEventPersistence();
     const task = makeTask({ lastAssistantText: "previous" });
     await ep.handleSideEffects(
       "sess-1",
@@ -1036,9 +971,8 @@ describe("EventPersistence.handleSideEffects", () => {
   });
 
   it("prompt_suggestion은 영속 대상이지만 last_message와 lastAssistantText는 건드리지 않는다", async () => {
-    const { db, updateLastMessage } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
-    const ep = makeEventPersistence(db, broadcaster);
+    const { updateLastMessage } = makeMockDB();
+    const ep = makeEventPersistence();
     const task = makeTask({ lastAssistantText: "previous" });
     await ep.handleSideEffects(
       "sess-1",
@@ -1050,9 +984,7 @@ describe("EventPersistence.handleSideEffects", () => {
   });
 
   it("legacy cumulative text_delta는 매번 덮어쓴다", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
-    const ep = makeEventPersistence(db, broadcaster);
+    const ep = makeEventPersistence();
     const task = makeTask();
     await ep.handleSideEffects(
       "sess-1",
@@ -1075,9 +1007,7 @@ describe("EventPersistence.handleSideEffects", () => {
   });
 
   it("app-server text_delta chunk는 text_start 이후 누적한다", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
-    const ep = makeEventPersistence(db, broadcaster);
+    const ep = makeEventPersistence();
     const task = makeTask({ lastAssistantText: "previous turn" });
     await ep.handleSideEffects(
       "sess-1",
@@ -1109,9 +1039,8 @@ describe("EventPersistence.handleSideEffects", () => {
   });
 
   it("assistant_message is captured in runtime state without a worker DB mutation", async () => {
-    const { db, updateLastMessage } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
-    const ep = makeEventPersistence(db, broadcaster);
+    const { updateLastMessage } = makeMockDB();
+    const ep = makeEventPersistence();
     const task = makeTask({ lastAssistantText: "Hel" });
     const event = {
       type: "assistant_message",
@@ -1130,10 +1059,8 @@ describe("EventPersistence.handleSideEffects", () => {
   });
 
   it("preview 200자 cap preserves surrogate pairs in the typed effect", async () => {
-    const { db } = makeMockDB();
-    const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
-    const ep = new EventPersistence(db, broadcaster, silentLogger, ingress.outbox, ingress.pump);
+    const ep = new EventPersistence(silentLogger, ingress.outbox, ingress.pump);
     const long = `${"a".repeat(199)}😀tail`;
     await ep.enqueueEvent(
       "sess-1",
@@ -1149,9 +1076,9 @@ describe("EventPersistence.handleSideEffects", () => {
   });
 
   it("F-3A T3: preview 없는 이벤트 (text_start/text_end/session 등) — broadcaster 호출 안 함", async () => {
-    const { db, updateLastMessage } = makeMockDB();
-    const { broadcaster, emitSessionMessageUpdated } = makeMockBroadcaster();
-    const ep = makeEventPersistence(db, broadcaster);
+    const { updateLastMessage } = makeMockDB();
+    const { emitSessionMessageUpdated } = makeMockBroadcaster();
+    const ep = makeEventPersistence();
 
     for (const ev of [
       { type: "text_start", timestamp: 1 },

@@ -19,21 +19,13 @@ import type {
   OwnedAttachmentUpload,
 } from "../src/attachments/attachment_commit_contract.js";
 import type { AttachmentAssetRow } from "../src/attachments/attachment_read_service.js";
-import type {
-  AttachmentAccessProvider,
-  AttachmentNode,
-  AttachmentRouteProvider,
-  AttachmentTransport,
-  AttachmentRouteOptions,
-} from "../src/attachments/attachment_routes.js";
+import type { AttachmentAccessProvider, AttachmentNode, AttachmentTransport, AttachmentRouteOptions } from "../src/attachments/attachment_routes.js";
 import type { UiEventRepository } from "../src/ui-events/ui_event_routes.js";
 import { UI_EVENT_COLLECTION_DISABLED } from "../src/ui-events/ui_event_settings.js";
 import type { UsageSummaryClaudeAccount } from "../src/usage/provider_usage_wire.js";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const catalog = repositoryModelCatalog();
-const CATALOG = catalog.snapshot();
-
 
 const config = parseOrchServerConfig({
   environment: "test",

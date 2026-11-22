@@ -2,7 +2,7 @@ import { toMermaid, type ChartSpec } from "@soulstream/statechart";
 
 import { TERMINAL_ADOPT_REJECTION_REASONS } from "./node_adopt_rejection.js";
 import { decideNodeStopRequest } from "./node_barrier_decision.js";
-import { nodeBarrierMachine, NODE_BARRIER_STATES } from "./node_barrier_machine.js";
+import { nodeBarrierMachine } from "./node_barrier_machine.js";
 import { NODE_EXECUTION_PHASES, nodeExecutionMachine } from "./node_execution_machine.js";
 import {
   nodeGuessCells,

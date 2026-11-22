@@ -5,8 +5,7 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pino from "pino";
@@ -5124,18 +5123,6 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-async function expectPromisePending<T>(promise: Promise<T>, timeoutMs = 30): Promise<void> {
-  const pending = Symbol("pending");
-  const result = await Promise.race([
-    promise.then(
-      () => "resolved" as const,
-      () => "rejected" as const,
-    ),
-    new Promise<typeof pending>((resolve) => setTimeout(() => resolve(pending), timeoutMs)),
-  ]);
-  expect(result).toBe(pending);
-}
-
 async function* sdkMessages(messages: unknown[]): AsyncGenerator<SDKMessage> {
   for (const message of messages) {
     yield message as SDKMessage;
@@ -5251,8 +5238,4 @@ function sdkSuccessResult(
     permission_denials: [],
     ...overrides,
   } as unknown as SDKMessage;
-}
-
-function messageText(message: SDKUserMessage): string {
-  return typeof message.message.content === "string" ? message.message.content : "";
 }

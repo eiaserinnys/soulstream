@@ -2,12 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 
-import { assertAttachmentProducerTx } from "../cards/card_attachment_policy.js";
-import type { TrustedAttachmentProducer } from "../cards/card_attachment_policy.js";
+import { assertAttachmentProducerTx, type TrustedAttachmentProducer } from "../cards/card_attachment_policy.js";
 import type { RepositorySql } from "../cards/control_plane/card_types.js";
 import type { OwnedAttachmentCommitService } from "./attachment_commit_contract.js";
-import type { AttachmentAssetRow } from "./attachment_read_service.js";
-import { projectAttachmentDescriptor } from "./attachment_read_service.js";
+import { type AttachmentAssetRow, projectAttachmentDescriptor } from "./attachment_read_service.js";
 
 export type AgentAttachmentRegistrationInput = {
   readonly producer: TrustedAttachmentProducer;

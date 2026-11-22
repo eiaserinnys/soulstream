@@ -2,7 +2,6 @@ import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import { EventPersistence } from "../../src/db/event_persistence.js";
-import type { SessionDB } from "../../src/db/session_db.js";
 import { buildUserMessageEvent } from "../../src/task/task_user_message_events.js";
 import {
   publishInterventionSent,
@@ -71,14 +70,11 @@ describe("publishInterventionSent", () => {
         payload_hash: "a".repeat(64),
       };
     });
-    const db = {} as SessionDB;
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
     const broadcaster = {
       emitEventEnvelope,
     } as unknown as SessionBroadcaster;
     const persistence = new EventPersistence(
-      db,
-      broadcaster,
       logger,
       { append } as never,
       { waitForAcknowledgement: vi.fn() } as never,

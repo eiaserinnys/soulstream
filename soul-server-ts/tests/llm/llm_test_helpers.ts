@@ -70,8 +70,6 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
     "test-node",
   );
   const persistence = new EventPersistence(
-    db,
-    broadcaster,
     silentLogger,
     { append: outboxAppend } as never,
     { waitForAcknowledgement, waitForAcknowledgementResult } as never,

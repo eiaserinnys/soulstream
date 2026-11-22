@@ -1,5 +1,4 @@
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it, beforeEach, afterAll, beforeAll } from "vitest";

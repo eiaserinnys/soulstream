@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { CONVERSATION_HISTORY_PROJECTION_FINGERPRINT } from "../src/conversation/conversation_history_source.js";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 import { ConversationHistory } from "../src/conversation/conversation_history.js";
 import type { Binding } from "../src/conversation/conversation_types.js";

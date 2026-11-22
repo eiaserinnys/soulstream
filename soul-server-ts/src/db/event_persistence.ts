@@ -19,7 +19,6 @@ import {
 
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task } from "../task/task_models.js";
-import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type {
   EventOutboxAppendInput,
   EventOutbox,
@@ -30,7 +29,6 @@ import type {
   EventOutboxPump,
 } from "../upstream/event_outbox_pump.js";
 
-import type { SessionDB } from "./session_db.js";
 import {
   EventTransitionPublisher,
   type EventSessionTransitionApplication,
@@ -101,8 +99,6 @@ export class EventPersistence extends EventTransitionPublisher {
   private appendQueue: Promise<void> = Promise.resolve();
 
   constructor(
-    private readonly db: SessionDB,
-    private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
     private readonly outbox: Pick<EventOutbox, "append">,
     private readonly outboxPump: Pick<

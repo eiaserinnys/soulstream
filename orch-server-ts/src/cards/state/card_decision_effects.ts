@@ -1,11 +1,10 @@
 import type { DecisionAction } from './card_decision.js';
-import type { CardWriteStep } from './card_write_intent.js';
+import { type CardWriteStep, bind, literal, type CardBinding } from './card_write_intent.js';
 type WriteStage=NonNullable<NonNullable<DecisionAction['params']>['stage']>;
 import { and, or, not } from 'xstate';
 import { CARD_DECISION_SOURCES, CARD_COMMAND_ENTRANCES, CARD_COMMAND_CALLERS } from './card_decision_inventory.js';
 import { CARD_FACT_VALUES, TARGETS, type CardDecisionCommand } from './card_decision_facts.js';
-import { decisionGuards, permitted, inside, any, fact } from './card_decision_guards.js';
-import { bind, literal, type CardBinding } from './card_write_intent.js';
+import { permitted, inside, any, fact } from './card_decision_guards.js';
 export const COMMAND_LABELS:Record<CardDecisionCommand,string>={CREATE:'카드를 만든다',SET_STATUS:'상태를 옮긴다',REQUEST_REVIEW:'검수를 요청한다',HUMAN_INPUT:'사용자가 담당에게 말한다',ASK_QUESTION:'질문을 올린다',ANSWER_QUESTION:'질문에 답한다',WITHDRAW_QUESTION:'질문을 철회한다',ADD_COMMENT:'커멘트를 남긴다',START_WORK:'작업 착수를 확인한다',CONFIRM_EXECUTION:'서버가 실행을 확인한다',DISPATCH:'서버가 실행을 배정한다',BLOCK_FOR_LIMIT:'현재 담당의 한도 종료를 기록한다',RESUME_SHORT_LIMIT:'짧은 한도 시각이 되어 잇는다',RESUME_LONG_LIMIT:'시각 없는 한도 예약을 잇는다',RESUME_VERIFICATION:'검증 시각이 되어 잇는다',NOTE_MISSING:'담당 에이전트 없음을 적는다',BULK_SET_STATUS:'여러 카드의 상태를 옮긴다',MERGE_SOURCE:'시작 전 카드를 합쳐 닫는다',UPDATE_UNSTARTED:'시작 전 카드를 고친다',SAVE_EXECUTION_SETTINGS:'실행 설정을 저장한다',PATCH_CARD_CONTROL:'담당과 보관을 고친다',REGISTER_REPLACEMENT:'등록된 새 담당으로 바꾼다'};
 export const COMMAND_RULES:Partial<Record<CardDecisionCommand,string>>={
  CREATE:'queue 입력에 따라 todo 또는 queued로 만들고 전달한 담당을 기록한다. 새 카드는 활성 상태이며 queued이면 새 대기열 순서 키를 쓴다.',

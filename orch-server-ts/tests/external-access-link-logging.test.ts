@@ -421,23 +421,6 @@ async function runScenarioList(
   }
 }
 
-async function expectNoKeyInRecords(
-  capture: LogCapture,
-  responses: Array<{ body: string; url: string; guidance?: boolean }>,
-): Promise<void> {
-  const raw = capture.raw();
-  for (const part of ALL_PARTS) {
-    expect(raw, `log leaked ${part}`).not.toContain(part);
-  }
-  for (const response of responses) {
-    if (response.guidance === true) continue;
-    for (const part of ALL_PARTS) {
-      expect(response.body, `response ${response.url} leaked ${part}`)
-        .not.toContain(part);
-    }
-  }
-}
-
 describe("external access link request logging", () => {
   let dashboardDir: string;
 

@@ -4,7 +4,6 @@ import { searchSessionEvents, SessionHistorySearchDeadlineError as RequestDeadli
 import { DEFAULT_EXCLUDED_USER_MESSAGE_SOURCES } from "../control_plane/repositories/event_read_repository.js";
 import { SessionHistorySearchDeadlineError as DatabaseDeadlineError } from "../control_plane/repositories/session_history_search_repository.js";
 import { LiveSearchDeadlineError } from "../runtime/live_db_sql.js";
-import { applyToolContentPolicy } from "./session_content_policy.js";
 import { SessionConsumptionBoundary } from "./session_consumption_boundary.js";
 import { sessionReadAdapter, type McpSessionReadAdapter, type McpSessionRow } from "./session_read_adapter.js";
 import { sessionListQueryHandlers } from "./session_list_query_handlers.js";

@@ -264,7 +264,3 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-
-async function nextEventLoopTurn(): Promise<void> {
-  await new Promise<void>((resolve) => setImmediate(resolve));
-}

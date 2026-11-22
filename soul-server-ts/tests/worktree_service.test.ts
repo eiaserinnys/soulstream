@@ -1459,7 +1459,7 @@ describe("WorktreeService", () => {
   });
 
   it("preserves a registered worktree whose durable identity changed", async () => {
-    const { repo, service, host } = fixture();
+    const { service, host } = fixture();
     const created = await service.create({
       actorSessionId: "owner",
       repoId: "demo",

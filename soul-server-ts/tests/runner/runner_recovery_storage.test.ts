@@ -7,10 +7,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { readClosedRunnerTailStateLocal } from
   "../../src/runner/closed_runner_tail_state.js";
-import { RunnerClaudeAccountTurnStateStore } from
-  "../../src/runner/claude_account_turn_state_store.js";
-import { readAuthoritativeRunnerLifecycleLocal } from
-  "../../src/runner/runner_lifecycle_reader.js";
 import { createRunnerPhaseObservation } from
   "../../src/runner/runner_phase_observation.js";
 import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";

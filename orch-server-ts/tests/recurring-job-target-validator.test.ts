@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { InMemoryNodeRegistry } from "../src/node/registry.js";
-import { ModelPresetAvailabilityError } from "../src/model/model_preset_availability.js";
-import type { ModelPresetAvailability } from "../src/model/model_preset_availability.js";
+import { ModelPresetAvailabilityError, type ModelPresetAvailability } from "../src/model/model_preset_availability.js";
 import { createRecurringJobTargetValidator } from "../src/recurring-jobs/target_validator.js";
 import type { RecurringJobActor } from "../src/recurring-jobs/types.js";
 

@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 
 import type { Env } from "../config.js";
-import type { TaskExecutor } from "../task/task_executor.js";
+import type { TaskExecutor, RunnerProcessRuntimeFactory } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { ExecutionRegistration } from "../task/execution_registration.js";
 import type { Task } from "../task/task_models.js";
@@ -9,7 +9,6 @@ import { CLAUDE_BACKGROUND_RUNNER_DEAD_SENTENCE } from
   "../task/claude_background_retention_notice.js";
 import type { CompletionNotifier } from "../task/completion_notifier.js";
 import type { ClaudeBackgroundTaskLifecycle } from "../task/claude_background_task_lifecycle.js";
-import type { RunnerProcessRuntimeFactory } from "../task/task_executor.js";
 import {
   createRunnerProcessRuntimeFactory,
   type RunnerProcessRuntimeFactoryOptions,
@@ -27,7 +26,6 @@ import { RunnerStateHostLock } from "../runner/runner_state_host_lock.js";
 import { RunnerSessionGarbageCollector } from "../runner/runner_session_gc.js";
 import { RunnerRecoveryStorage } from "../runner/runner_recovery_storage.js";
 import { ClosedRunnerTailDrainer } from "../runner/closed_runner_tail_drainer.js";
-import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import type { NodeStallMonitor } from "./node_stall_monitor.js";
 import { createRunnerPhaseObservation } from "../runner/runner_phase_observation.js";
 

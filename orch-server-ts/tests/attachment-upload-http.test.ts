@@ -1,5 +1,4 @@
-import Fastify from "fastify";
-import type { FastifyRequest } from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import { describe, expect, it } from "vitest";
 import {
   AttachmentUploadHttpError, readUploadChecksum, readUploadId, readUploadMode, sendUploadFailure,

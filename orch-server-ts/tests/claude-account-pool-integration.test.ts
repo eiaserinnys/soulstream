@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { UsageSummaryService } from "../src/usage/usage_summary_service.js";
+import { UsageSummaryService, type UsageSummarySnapshot } from "../src/usage/usage_summary_service.js";
 import { registerUsageSummaryRoutes } from "../src/usage/usage_summary_routes.js";
-import type { UsageSummarySnapshot } from "../src/usage/usage_summary_service.js";
 import { createClaudeAuthHarness } from "./node-claude-auth-test-helpers.js";
 
 describe("Claude account-pool route and usage-summary integration", () => {

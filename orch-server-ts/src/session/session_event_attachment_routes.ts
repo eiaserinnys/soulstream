@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { SessionHistoryRouteOptions } from "./session_history_routes.js";
 import { SessionResourceAccessError } from "./session_resource_access.js";

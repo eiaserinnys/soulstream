@@ -141,28 +141,8 @@ function parseFolderMoveBody(body: unknown): Validation<{ folderId: string; idem
   return parsed.success ? { ok: true, value: parsed.data } : { ok: false, message: parsed.error.message, statusCode: 422 };
 }
 
-function optionalQueryString(
-  query: Record<string, unknown>,
-  key: string,
-): string | undefined {
-  const value = query[key];
-  return typeof value === "string" ? value : undefined;
-}
-
 function boardItemNotFound(reply: FastifyReply): FastifyReply {
   return reply.code(404).send({ detail: "Board item not found" });
-}
-
-function sendBoardItemRouteError(
-  reply: FastifyReply,
-  error: unknown,
-  fallbackStatusCode: number,
-): FastifyReply {
-  if (error instanceof BoardItemRouteError) {
-    return reply.code(error.statusCode).send({ detail: error.message });
-  }
-  const message = error instanceof Error ? error.message : "Board item route failed";
-  return reply.code(fallbackStatusCode).send({ detail: message });
 }
 
 function boardItemParams(request: FastifyRequest): BoardItemParams {

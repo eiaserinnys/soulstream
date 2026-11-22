@@ -499,7 +499,6 @@ function createSessionCommandPayload(params: {
   const {
     payload,
     agentSessionId,
-    backend,
     profileId,
     modelPresetId,
     initialModelPresetId,

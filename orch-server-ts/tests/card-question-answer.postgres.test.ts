@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import postgres from "postgres";
-import Fastify from "fastify";
-import type { FastifyRequest } from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { startPostgresTestContainer } from "../../packages/db-schema/scripts/postgres-test-container.mjs";
 import { waitForPostgres } from "./persistent-session-settings-world.js";

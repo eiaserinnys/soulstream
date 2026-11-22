@@ -3328,10 +3328,6 @@ function persistentSelectionForTarget(
   return settings?.fallback_models.find((selection) => selection.model_preset === targetPreset);
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 const PROFILE_WORKSPACE_UNAVAILABLE = "PROFILE_WORKSPACE_UNAVAILABLE";
 
 class ProfileWorkspaceUnavailableError extends Error {

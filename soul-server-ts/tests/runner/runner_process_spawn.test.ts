@@ -421,7 +421,7 @@ describe("RunnerProcessSpawner", () => {
       now: () => 0,
       delay: async () => {},
     });
-    const registered = await first.spawn(params);
+    await first.spawn(params);
     const replacement = new RunnerProcessSpawner({
       prepareDatabase,
       validateEntry: async () => {},

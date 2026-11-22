@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { callWithReferenceTranslation, cardTools } from "@soulstream/mcp-contract";
+import { callWithReferenceTranslation, cardTools, type CallToolResult } from "@soulstream/mcp-contract";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { prepareCardWorkSchema, appendCardEventTx } from "./card-work-postgres-fixture.js";
 import { unusedClusterDependencies } from "./mcp-cluster-unused-fixture.js";
@@ -9,9 +9,7 @@ import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js
 import { CardDispatcher } from "../src/cards/card_dispatcher.js";
 import { executeMcpTool } from "../src/mcp/tool_executor.js";
 import type { McpHostOptions } from "../src/mcp/types.js";
-import type { CallToolResult } from "@soulstream/mcp-contract";
 
-// Same real PostgreSQL, mutation callback and dispatcher pattern as card-comments.postgres.test.ts.
 describe("external MCP card writes", () => {
   let h: PagePostgresHarness;
   let executionOptions: McpHostOptions;

@@ -5,9 +5,7 @@ import {
   type DeliveryIntent,
   type SessionDeliveryRow,
 } from "@soulstream/wire-schema/session-delivery";
-import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
-import type { ClaudeRuntimeHostClient } from
-  "../control_plane/persistence_host_clients.js";
+import type { SessionDeliveryHostClient, ClaudeRuntimeHostClient } from "../control_plane/persistence_host_clients.js";
 
 import type {
   AddInterventionParams,

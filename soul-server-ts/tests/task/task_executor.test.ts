@@ -395,8 +395,6 @@ describe("TaskExecutor.startNewExecution", () => {
     async (_label, cacheKeepalive, expectedPreview) => {
       const mocks = makeMocks();
       const sideEffectPersistence = new EventPersistence(
-        {} as SessionDB,
-        mocks.broadcaster,
         silentLogger,
         {} as never,
         {} as never,
@@ -4159,8 +4157,6 @@ describe("TaskExecutor runner process boundary", () => {
       .mockResolvedValueOnce(acknowledgementEvent)
       .mockResolvedValueOnce(acknowledgementEvent);
     const persistence = new EventPersistence(
-      mocks.db,
-      mocks.broadcaster,
       silentLogger,
       { append: vi.fn(async () => record) },
       pump as never,

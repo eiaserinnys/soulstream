@@ -1,6 +1,6 @@
 import type { AttachmentScope } from "@soulstream/wire-schema/attachments";
 
-import type { LiveDbSqlResolver, LivePostgresSql } from "./live_db_sql.js";
+import type { LiveDbSqlResolver } from "./live_db_sql.js";
 import {
   attachmentScopeFromRegistrationScope,
   type AttachmentAssetRow,

@@ -84,8 +84,6 @@ export interface CardMcpGetResponse extends Record<string, unknown> {
   changeToken?: string;
 }
 
-type RecordCursor = { v: 1; type: "record"; cardId: string; kind: string; timestamp: string; id: string };
-type OffsetCursor = { v: 1; type: "offset"; cardId: string; kind: string; offset: number };
 type ListCursor = {
   v: 1; type: "list"; folderId: string | null; status: string | null; folder: string; positionKey: string; id: string;
 };

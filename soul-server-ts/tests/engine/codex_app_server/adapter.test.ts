@@ -4,8 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
-import pino from "pino";
-import type { Logger } from "pino";
+import pino, { type Logger } from "pino";
 import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 
 import {

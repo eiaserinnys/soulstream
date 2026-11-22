@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { appendCardEventTx } from "./card-work-postgres-fixture.js";

@@ -15,12 +15,7 @@ import type {
 } from "@soulstream/page-model";
 
 import type { SocketAuthConfig } from "../auth/socket_auth.js";
-import {
-  PageMutationCore,
-  type CreatePageMutationInput,
-  type PageMutationApplication,
-  type PageMutationInput,
-} from "./page_mutation_core.js";
+import { PageMutationCore, type CreatePageMutationInput, type PageMutationInput } from "./page_mutation_core.js";
 import type {
   CommitPageMutationInput,
   CommitPageMutationsInput,

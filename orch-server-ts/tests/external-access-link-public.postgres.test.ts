@@ -163,7 +163,7 @@ describe("external access public link routes (postgres)", () => {
   });
 
   it("admits a message with server-built caller info and completes a held status read on a reply", async () => {
-    const { grant, key, url } = await issueLink();
+    const { grant, url } = await issueLink();
     const { app, replySignal } = createRouteApp();
     try {
       const accepted = await app.inject({
@@ -242,7 +242,7 @@ describe("external access public link routes (postgres)", () => {
   });
 
   it("answers a revoked link during a wait with 401 and no data", async () => {
-    const { grant, key, url } = await issueLink();
+    const { grant, url } = await issueLink();
     const { app } = createRouteApp();
     try {
       const accepted = await app.inject({

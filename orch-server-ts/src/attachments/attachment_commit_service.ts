@@ -1,31 +1,9 @@
 import { createHash } from "node:crypto";
-import type {
-  LiveBoardAssetCompletedPart,
-  LiveBoardAssetMultipartUpload,
-} from "../runtime/live_board_asset_storage.js";
-import {
-  R2ObjectIntegrityError,
-  R2StorageRequestError,
-} from "../runtime/live_board_asset_storage.js";
+import { type LiveBoardAssetMultipartUpload, R2ObjectIntegrityError, R2StorageRequestError } from "../runtime/live_board_asset_storage.js";
 import type { R2StorageLocation } from "../runtime/r2_storage_resolver.js";
 import { R2SettingsError } from "../system/r2_settings.js";
 import { ATTACHMENT_TICKET_SECONDS, LARGE_ATTACHMENT_PART_SIZE } from "./attachment_upload_ticket.js";
-import { verifyStoredObject } from "./attachment_commit_contract.js";
-import type {
-  AttachmentCommitRepository,
-  AttachmentStorageBinding,
-  AttachmentMultipartInit,
-  CommitResult,
-  CreateOwnedAttachmentCommitServiceOptions,
-  OwnedAttachmentPendingInput,
-  OwnedAttachmentUpload,
-  OwnedAttachmentCommitService,
-  UploadOwner,
-  UploadRegistration,
-  UploadSpec,
-  VerifiedAttachmentUploadTicket,
-  VerifiedObject,
-} from "./attachment_commit_contract.js";
+import { verifyStoredObject, type AttachmentCommitRepository, type AttachmentStorageBinding, type AttachmentMultipartInit, type CommitResult, type CreateOwnedAttachmentCommitServiceOptions, type OwnedAttachmentPendingInput, type OwnedAttachmentUpload, type OwnedAttachmentCommitService, type UploadOwner, type UploadRegistration, type UploadSpec, type VerifiedAttachmentUploadTicket, type VerifiedObject } from "./attachment_commit_contract.js";
 export { verifyStoredObject } from "./attachment_commit_contract.js";
 export type * from "./attachment_commit_contract.js";
 

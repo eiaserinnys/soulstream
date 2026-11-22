@@ -6,13 +6,7 @@ import {
   mergeSoulstreamAgentSessionHeader,
   normalizeSoulstreamInternalMcpUrl,
 } from "../soulstream_internal_mcp.js";
-import type {
-  JsonObject,
-  ThreadResumeParams,
-  ThreadStartParams,
-  TurnStartParams,
-} from "./protocol.js";
-import { toCodexUserInput } from "./protocol.js";
+import { type JsonObject, type ThreadResumeParams, type ThreadStartParams, type TurnStartParams, toCodexUserInput } from "./protocol.js";
 
 export function buildThreadStartParams(
   params: EngineExecuteParams,

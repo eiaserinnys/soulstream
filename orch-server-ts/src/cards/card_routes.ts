@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { MESSAGE_BODY_LIMIT } from "../conversation/conversation_messages.js";
-import { allowed } from "./card_route_body.js";
+import { allowed, CardNotFoundError, cardRouteErrorResponse, listCardRouteBody, mutateCardRouteBody, readCardRouteBody, sendCardMessageSchema } from "./card_route_body.js";
 import { serializeCardRow } from "../folders/folder_contracts.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type {
@@ -12,14 +12,6 @@ import type {
 import { dashboardFolderActor } from "../folders/folder_workspace_routes.js";
 import { CardOperationError, type CardOperation } from "./card_operations.js";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
-import {
-  CardNotFoundError,
-  cardRouteErrorResponse,
-  listCardRouteBody,
-  mutateCardRouteBody,
-  readCardRouteBody,
-  sendCardMessageSchema,
-} from "./card_route_body.js";
 
 const mutations:readonly ["POST" | "PATCH",string,CardOperation][]=[
   ["POST","/api/cards","create_card"],["PATCH","/api/cards/:id","update_card"],

@@ -1,12 +1,4 @@
-import type {
-  AgentPortraitRecord,
-  AgentPortraitWrite,
-  AgentProfileRecord,
-  AgentProfileRepository,
-  AgentProfileWrite,
-  SupportedPortraitMime,
-} from "../node/agent_profile_routes.js";
-import { AgentProfileVersionConflictError } from "../node/agent_profile_routes.js";
+import { type AgentPortraitRecord, type AgentPortraitWrite, type AgentProfileRecord, type AgentProfileRepository, type AgentProfileWrite, type SupportedPortraitMime, AgentProfileVersionConflictError } from "../node/agent_profile_routes.js";
 import { optionalRead, type LiveDbSqlResolver } from "./live_db_sql.js";
 
 export function createLiveAgentProfileRepository(

@@ -2,19 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { OAuth2Client } from "google-auth-library";
 
-import type {
-  AuthHttpClient,
-  AuthHttpGetRequest,
-  AuthJwtHelper,
-  AuthJwtPayload,
-  AuthNativeProfile,
-  AuthNativeVerifier,
-  AuthHttpPostRequest,
-  AuthHttpResponse,
-  AuthTokenResolver,
-  AuthUserAuthorizer,
-} from "../auth/auth_routes.js";
-import { AUTH_COOKIE_NAME } from "../auth/auth_routes.js";
+import { type AuthHttpClient, type AuthHttpGetRequest, type AuthJwtHelper, type AuthJwtPayload, type AuthNativeProfile, type AuthNativeVerifier, type AuthHttpPostRequest, type AuthHttpResponse, type AuthTokenResolver, type AuthUserAuthorizer, AUTH_COOKIE_NAME } from "../auth/auth_routes.js";
 import { resolveTailscaleIdentity } from "../auth/tailscale_identity.js";
 import { resolveDashboardLoginMode } from "../auth/login_mode.js";
 import {

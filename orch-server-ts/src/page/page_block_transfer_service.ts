@@ -5,12 +5,7 @@ import type { Hocuspocus } from "@hocuspocus/server";
 import * as Y from "yjs";
 
 import { planPageBlockTransfer } from "./page_block_transfer.js";
-import type {
-  CreatePageMutationInput,
-  PageMutationActor,
-  PageMutationApplication,
-  PageMutationCore,
-} from "./page_mutation_core.js";
+import type { PageMutationActor, PageMutationApplication, PageMutationCore } from "./page_mutation_core.js";
 import type { CommitPageMutationInput, PageMutationCommitResult } from "./page_repository.js";
 import type {
   PageServiceMutationResult,

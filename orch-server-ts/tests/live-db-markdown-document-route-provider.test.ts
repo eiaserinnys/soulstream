@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  MarkdownDocumentRouteError,
-  createLiveDbCatalogRepository,
-  type LivePostgresSql,
-} from "../src/index.js";
+import { createLiveDbCatalogRepository, type LivePostgresSql } from "../src/index.js";
 
 type SqlCall = {
   text: string;

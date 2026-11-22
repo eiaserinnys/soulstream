@@ -10,35 +10,13 @@ import { buildInternalMcpServer, buildServer } from "../../src/server.js";
 import { createFullSessionMcpToken } from "../../src/security/restricted_mcp_auth.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { CatalogService } from "../../src/catalog/catalog_service.js";
-import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
+import { SessionDB } from "../../src/db/session_db.js";
 import { AgentRegistry } from "../../src/agent_registry.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 
-interface MockCall {
-  fragments: string[];
-  values: unknown[];
-}
-
-function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
-  const calls: MockCall[] = [];
-  const fn = ((strings: TemplateStringsArray, ...values: unknown[]) => {
-    const call: MockCall = { fragments: Array.from(strings), values };
-    calls.push(call);
-    const result = resultFor ? resultFor(call) : [];
-    return Promise.resolve(result);
-  }) as unknown as SqlClient & {
-    array: (a: unknown[]) => unknown[];
-    end: () => Promise<void>;
-  };
-  fn.array = (a: unknown[]) => a;
-  fn.end = vi.fn().mockResolvedValue(undefined);
-  return { sql: fn as unknown as SqlClient, calls };
-}
-
 function createSilentLogger(warn: (...args: unknown[]) => void = () => {}) {
-  // pino-compat 최소 표면. 실 logger.warn/error만 호출됨.
   const noop = () => {};
   return {
     fatal: noop,
@@ -54,7 +32,6 @@ function createSilentLogger(warn: (...args: unknown[]) => void = () => {}) {
 }
 
 function makeRuntime(warn: (...args: unknown[]) => void = () => {}): McpRuntime {
-  const { sql } = createMockSql();
   const db = new SessionDB();
   const broadcaster = {
     emitCatalogUpdated: vi.fn().mockResolvedValue(undefined),
@@ -286,52 +263,3 @@ it("logs the authenticated agent session and MCP tool name", async () => {
     await server.close();
   }
 });
-
-function initialize(baseUrl: string, origin?: string): Promise<Response> {
-  return fetch(`${baseUrl}/mcp`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json, text/event-stream",
-      ...(origin ? { "x-soulstream-caller-origin": origin } : {}),
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      method: "initialize",
-      params: {
-        protocolVersion: "2024-11-05",
-        capabilities: {},
-        clientInfo: { name: "origin-test", version: "0.0.0" },
-      },
-      id: 1,
-    }),
-  });
-}
-
-function mcpPost(
-  baseUrl: string,
-  sessionId: string,
-  body: Record<string, unknown>,
-  origin?: string,
-): Promise<Response> {
-  return fetch(`${baseUrl}/mcp`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json, text/event-stream",
-      "mcp-session-id": sessionId,
-      ...(origin ? { "x-soulstream-caller-origin": origin } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-}
-
-async function rpcPayload(response: Response): Promise<Record<string, any>> {
-  expect(response.status).toBe(200);
-  const text = await response.text();
-  const data = text
-    .split("\n")
-    .find((line) => line.startsWith("data: "))
-    ?.slice("data: ".length);
-  return JSON.parse(data ?? text) as Record<string, any>;
-}

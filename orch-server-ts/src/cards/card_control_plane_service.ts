@@ -744,8 +744,7 @@ export class CardControlPlaneService {
     }
   }
   async syncReportsAfterCommit(cardId:string,change:CardReportSyncParams):Promise<void> {
-    const {previousStatus,committedCard,questionChanged}=change;
-    const cardChanged=change.cardChanged ?? previousStatus !== committedCard?.status;
+    const {previousStatus,committedCard}=change;
     if (!this.reports || !committedCard) return;
     try {
       await this.reports.syncCard(cardId);

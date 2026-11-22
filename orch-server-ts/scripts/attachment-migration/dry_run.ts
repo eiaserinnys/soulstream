@@ -27,8 +27,6 @@ import {
   type NodeScanSummary,
 } from "./inventory_contract.js";
 
-type SourceRecord = LegacySource | InventoryRunBundleMetadata | InventoryAliasSnapshot | InventorySessionCoverage | InventoryAssetSnapshot;
-type NodeRecord = FileObservation | NodeScanSummary | InventoryNodeCoverage;
 type LegacyRootMapping = { legacy_root: string; physical_root: string };
 
 export async function writeDryRun(plan: InventoryPlan, outputDir: string): Promise<InventoryPlanSummary> {

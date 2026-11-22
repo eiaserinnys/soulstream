@@ -26,11 +26,6 @@ const nodeCredentials: NodeCredentialResolver = {
   onRevoked: () => () => undefined,
 };
 
-type HarnessOptions = {
-  readonly releasesDir?: string | null;
-  readonly currentSourceCommit?: () => string | Promise<string>;
-};
-
 const apps: Array<{ close: () => Promise<void> }> = [];
 const tempDirs: string[] = [];
 

@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { migrationSha256 } from "../../../packages/db-schema/scripts/migration-contract.mjs";
 

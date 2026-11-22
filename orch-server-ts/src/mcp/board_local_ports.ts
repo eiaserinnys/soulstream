@@ -1,9 +1,8 @@
 import { executeFolderHostOperation } from "../folders/folder_control_plane_host_route.js";
 import { describeFolderOperationError } from "../folders/folder_workspace_routes.js";
 import type { McpHostOptions } from "./types.js";
-import type { BoardMcpMutationPort, BoardMcpStore, FolderRow } from "./board_catalog_types.js";
+import type { BoardMcpMutationPort, BoardMcpStore } from "./board_catalog_types.js";
 
-// The session adapter and folder mutation boundary still cross JSON contracts.
 const wire = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? null)) as T;
 
 export function createBoardLocalPorts(options: McpHostOptions) {

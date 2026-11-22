@@ -6,7 +6,6 @@ import { SqlOwnedAgentRepository } from "../src/owned-agents/repository.js";
 import { OwnedAgentService, agentTokenHash } from "../src/owned-agents/service.js";
 import { registerOwnedAgentRoutes } from "../src/owned-agents/routes.js";
 import { createSessionOwnerResolver } from "../src/session/session_owner.js";
-import { executeMcpTool } from "../src/mcp/tool_executor.js";
 import { registerExternalEventsRoutes } from "../src/mcp/external_events_transport.js";
 import { registerMcpHostRoutes } from "../src/mcp/mcp_host_routes.js";
 import type { McpHostOptions } from "../src/mcp/types.js";

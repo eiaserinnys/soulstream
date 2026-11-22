@@ -4,15 +4,7 @@ import type {
 } from "@soulstream/wire-schema/session-statistics";
 import type { SessionStatisticsReadResult } from "./session_statistics_types.js";
 import { sessionStatisticsInPeriod } from "./session_statistics_scope.js";
-import {
-  sessionStatisticsDateMatches,
-  sessionStatisticsEventOrder,
-  sessionStatisticsProjectIdForSession,
-  sessionStatisticsProjectMatches,
-  sessionStatisticsRowProjectMatches,
-  sessionStatisticsSourceKey,
-} from "./session_statistics_aggregate.js";
-import type { SessionStatisticsScope } from "./session_statistics_aggregate.js";
+import { sessionStatisticsDateMatches, sessionStatisticsEventOrder, sessionStatisticsProjectIdForSession, sessionStatisticsProjectMatches, sessionStatisticsRowProjectMatches, sessionStatisticsSourceKey, type SessionStatisticsScope } from "./session_statistics_aggregate.js";
 import { foldTokenPartials } from "./session_statistics_field_coverage.js";
 import { sourceTokenMetrics, type SourceTokenInput } from "./session_statistics_token_metrics.js";
 
@@ -377,7 +369,6 @@ export function createSessionStatisticsCoverageIndex(
     if (!closure?.fact || closure.fact.fact_kind !== "boundary" || completeUsageIdentityKeys.has(key)) continue;
     const start = inputStarts.get(key);
     if (!start?.fact || start.fact.fact_kind !== "boundary") continue;
-    const identity = inputIdentity(start.fact.input_id, start.fact.event_id);
     const ownerEvidence = terminalByIdentityKey.get(key) ?? [];
     const attribution = mergeAttributions(ownerEvidence);
     endedRecords.push({

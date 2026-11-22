@@ -4,7 +4,7 @@ import type { McpHostOptions } from "../src/mcp/types.js";
 import { SessionResourceAccessError } from "../src/session/session_resource_access.js";
 import { PersistentSessionSettingsService } from "../src/session/persistent_session_settings_service.js";
 import type { PersistentSessionHistoryRow } from "../src/control_plane/repositories/persistent_session_history_query.js";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CallToolResult } from "@soulstream/mcp-contract";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 

@@ -1,8 +1,7 @@
 import type { Logger } from 'pino';
 import type { EventPersistence } from '../db/event_persistence.js';
 import type { SSEEventPayload } from '../engine/protocol.js';
-import type { AssignedCardContextCapture } from './assigned_card_context.js';
-import { cardStatusLabel } from './assigned_card_context.js';
+import { type AssignedCardContextCapture, cardStatusLabel } from './assigned_card_context.js';
 
 export function formatAssignedCardSnapshotContent(
   snapshot: Pick<AssignedCardContextCapture['snapshot'],'capturedAt'> & {

@@ -7,8 +7,7 @@ import type {
 } from "./claude_adapter.js";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import * as rateLimit from "./claude_sdk_rate_limit_stop_failure.js";
-import type { ClaudeRuntimeCloseReason } from "./claude_session_runtime.js";
-import type { ClaudeSessionRuntime } from "./claude_session_runtime.js";
+import type { ClaudeRuntimeCloseReason, ClaudeSessionRuntime } from "./claude_session_runtime.js";
 import {
   type ActiveForeground,
   settleInterventionInterrupt,

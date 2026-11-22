@@ -33,13 +33,8 @@ import {
   loadSessionMetadataCandidateRows,
   type SessionMetadataCandidateResult,
 } from "./live_session_metadata_candidates.js";
-import type {
-  LiveSearchDbConnectionFactory,
-  LiveSearchPendingQuery,
-  LiveSearchSql,
-} from "./live_db_sql.js";
+import { type LiveSearchDbConnectionFactory, type LiveSearchPendingQuery, cancelLiveSearchQuerySafely } from "./live_db_sql.js";
 import type { SessionBackendCatalogEntry } from "./live_session_serialization.js";
-import { cancelLiveSearchQuerySafely } from "./live_db_sql.js";
 import {
   createSearchConcurrencyLimiter,
   resolveEventTypes,

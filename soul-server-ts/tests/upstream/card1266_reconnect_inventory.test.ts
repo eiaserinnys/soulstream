@@ -161,14 +161,6 @@ function makeTask(overrides: Partial<Task> & { agentSessionId: string }): Task {
   } as Task;
 }
 
-function deferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
-
 function createAdapter(
   orch: MockOrch,
   tasks: Task[],

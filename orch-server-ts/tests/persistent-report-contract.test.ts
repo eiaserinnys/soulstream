@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collapseReportTimeline, isCardQuestionReplyContext, parsePersistentReportEntry, readPersistentReport, parsePersistentReportReply, reportActionParts, REPORT_TIMELINE_STATUS_LABEL } from "../../packages/wire-schema/src/persistent_report.js";
-import type { ReportTimelineQuestionClosed, ReportTimelineQuestionClosedStatus, ReportTimelineRowLine } from "../../packages/wire-schema/src/persistent_report.js";
+import { collapseReportTimeline, isCardQuestionReplyContext, parsePersistentReportEntry, readPersistentReport, parsePersistentReportReply, reportActionParts, REPORT_TIMELINE_STATUS_LABEL, type ReportTimelineQuestionClosed, type ReportTimelineQuestionClosedStatus, type ReportTimelineRowLine } from "../../packages/wire-schema/src/persistent_report.js";
 
 const entry = { key: "deploy-270", kind: "ask", title: "배포 결정", card_numbers: [], context: "검증을 마쳤습니다", action: "[결과](https://example.com/result)", options: ["진행", "보류"] };
 

@@ -214,7 +214,7 @@ describe("SessionDB folder ops (B-5)", () => {
 
 describe("SessionDB.getPrimarySessionBoardItem", () => {
   it("getPrimarySessionBoardItem → primary session membership을 normalized board item으로 반환", async () => {
-    const { sql, calls } = createMockSql();
+    const { calls } = createMockSql();
     const db = new SessionDB();
     const getPrimarySessionBoardItem = vi.fn().mockResolvedValue({
       id: "session:s1",
@@ -255,7 +255,7 @@ describe("SessionDB.getPrimarySessionBoardItem", () => {
   });
 
   it("getPrimarySessionBoardItem → row 없음이면 null", async () => {
-    const { sql, calls } = createMockSql();
+    const { calls } = createMockSql();
     const db = new SessionDB();
     const getPrimarySessionBoardItem = vi.fn().mockResolvedValue(null);
     db.configureFolderContentHost({ getPrimarySessionBoardItem } as never);
@@ -268,7 +268,7 @@ describe("SessionDB.getPrimarySessionBoardItem", () => {
 
 describe("SessionDB session-data host delegation", () => {
   it("preserves the public read interface while delegating to the configured host", async () => {
-    const { sql, calls } = createMockSql();
+    const { calls } = createMockSql();
     const db = new SessionDB();
     const getSession = vi.fn().mockResolvedValue({ session_id: "s1" });
     const listSessionsSummary = vi.fn().mockResolvedValue({ sessions: [], total: 0 });
@@ -295,7 +295,7 @@ describe("SessionDB session-data host delegation", () => {
   });
 
   it("keeps upstream binding warnings as a worker-side projection", async () => {
-    const { sql, calls } = createMockSql();
+    const { calls } = createMockSql();
     const db = new SessionDB();
     const row = { session_id: "s1", display_name: "게이트", binding_warnings: [] };
     const listSessionsForUpstreamDump = vi.fn().mockResolvedValue({
@@ -327,7 +327,7 @@ describe("SessionDB session-data host delegation", () => {
   });
 
   it("delegates turn excerpt and resume context without local SQL", async () => {
-    const { sql, calls } = createMockSql();
+    const { calls } = createMockSql();
     const db = new SessionDB();
     const getTurnExcerpt = vi.fn().mockResolvedValue({ totalEvents: 0, turns: [] });
     const getResumeContext = vi.fn().mockResolvedValue({

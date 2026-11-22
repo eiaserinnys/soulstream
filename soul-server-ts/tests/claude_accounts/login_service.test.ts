@@ -5,8 +5,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Logger } from "pino";
-import pino from "pino";
+import pino, { type Logger } from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../../src/auth/claude_auth.js";

@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { resolveAntigravityCliPath } from "../../src/engine/antigravity_cli_path.js";
 import { makeTempDirSync } from "../helpers/temp_dir.js";
 import { addVirtualFile, resetVirtualFs } from "../helpers/virtual_fs.js";

@@ -10,8 +10,6 @@ import type { NodeConnectionSnapshot } from "../src/node/registry_types.js";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const catalog = repositoryModelCatalog();
-const CATALOG = catalog.snapshot();
-
 
 function queuedCard(): DispatchCard {
   const now = new Date("2026-10-01T12:00:00Z");
@@ -39,7 +37,6 @@ function durableState() {
     instructionsRevision: "sha256:revision",
   };
 }
-type DurableState = ReturnType<typeof durableState>;
 function harness(state = durableState(), options: {
   beforeDecision?: (run: OrchestrationRun) => Promise<void>;
   decision?: (run: OrchestrationRun) => OrchestrationDecision;

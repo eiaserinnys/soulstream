@@ -1,5 +1,3 @@
-import { once } from "node:events";
-
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {

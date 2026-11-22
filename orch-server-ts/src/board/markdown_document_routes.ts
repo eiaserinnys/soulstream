@@ -273,14 +273,6 @@ function parseUpdateBody(
   return { ok: true, value: payload };
 }
 
-function optionalBodyString(
-  body: Record<string, unknown>,
-  key: string,
-): string | undefined {
-  const value = body[key];
-  return typeof value === "string" ? value : undefined;
-}
-
 function documentNotFound(reply: FastifyReply): FastifyReply {
   return reply.code(404).send({ detail: "Document not found" });
 }

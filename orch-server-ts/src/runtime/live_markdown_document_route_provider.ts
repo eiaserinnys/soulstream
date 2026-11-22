@@ -1,12 +1,4 @@
-import {
-  MarkdownDocumentRouteError,
-  type MarkdownDocumentRecord,
-  type MarkdownDocumentRouteProvider,
-} from "../board/markdown_document_routes.js";
-import {
-  BoardItemRouteError,
-  type BoardItemRouteProvider,
-} from "../board/board_item_routes.js";
+import type { MarkdownDocumentRouteProvider } from "../board/markdown_document_routes.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 import { CustomViewProjectionRepository } from "../board/custom_view_repository.js";
@@ -45,35 +37,4 @@ export function createLiveMarkdownDocumentRouteProvider(
       };
     },
   };
-}
-
-function serializeMarkdownDocumentRow(row: Record<string, unknown>): MarkdownDocumentRecord {
-  const record: MarkdownDocumentRecord = {
-    id: String(row.id ?? ""),
-    title: String(row.title ?? ""),
-    body: String(row.body ?? ""),
-    version: numberValue(row.version) ?? 1,
-  };
-  const folderId = stringOrNull(row.folder_id ?? row.folderId);
-  if (folderId !== null) record.folderId = folderId;
-
-  const createdAt = timestampString(row.created_at ?? row.createdAt);
-  if (createdAt !== undefined) record.createdAt = createdAt;
-  const updatedAt = timestampString(row.updated_at ?? row.updatedAt);
-  if (updatedAt !== undefined) record.updatedAt = updatedAt;
-  return record;
-}
-
-function stringOrNull(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-function numberValue(value: unknown): number | undefined {
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function timestampString(value: unknown): string | undefined {
-  if (value instanceof Date) return value.toISOString();
-  return typeof value === "string" ? value : undefined;
 }

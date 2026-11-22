@@ -2,8 +2,7 @@ import { afterAll,beforeAll,beforeEach,describe,expect,it,vi } from "vitest";
 import { createPagePostgresHarness,type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { readAssignedCardContext } from "../src/cards/assigned_card_context.js";
-import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
-import type { CardMutationChange } from "../src/cards/card_control_plane_service.js";
+import { CardControlPlaneService, type CardMutationChange } from "../src/cards/card_control_plane_service.js";
 import { buildCardChangeNotification } from "../src/cards/card_change_notification.js";
 
 describe("bounded assigned cards and locked mutation snapshots",()=>{

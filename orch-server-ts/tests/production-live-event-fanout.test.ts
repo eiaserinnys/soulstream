@@ -10,8 +10,6 @@ import {
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const catalog = repositoryModelCatalog();
-const CATALOG = catalog.snapshot();
-
 
 type TestWebSocket = {
   send: (data: string) => void;

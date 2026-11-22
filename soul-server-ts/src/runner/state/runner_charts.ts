@@ -27,11 +27,7 @@ import {
   type RunnerLifecycleState,
   type RunnerLifecycleStep,
 } from "./runner_lifecycle_machine.js";
-import { decideRunnerRecovery } from "./runner_recovery_decision.js";
-import {
-  RUNNER_RECOVERY_DISPOSITIONS,
-  type RunnerRecoveryDisposition,
-} from "./runner_recovery_decision.js";
+import { decideRunnerRecovery, RUNNER_RECOVERY_DISPOSITIONS, type RunnerRecoveryDisposition } from "./runner_recovery_decision.js";
 
 export interface RunnerLifecycleDecisionRow {
   state: RunnerLifecycleState;

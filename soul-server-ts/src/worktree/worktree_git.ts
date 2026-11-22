@@ -1,23 +1,6 @@
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  rmSync,
-  readFileSync,
-  realpathSync,
-  rmdirSync,
-  statSync,
-  symlinkSync,
-  type Stats,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync, readFileSync, realpathSync, rmdirSync, statSync, symlinkSync, type Stats, writeFileSync, promises as fs } from "node:fs";
 import { access, lstat, readdir, readFile } from "node:fs/promises";
-import { promises as fs } from "node:fs";
 
-// This module intentionally exceeds 500 lines: it is the single Git mutation
-// boundary whose identity, ref-CAS, and guarded removal invariants must stay
-// visible together. Timeout-partial recovery is split into its own tested module.
 import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { basename, isAbsolute, join, relative, resolve, win32 } from "node:path";

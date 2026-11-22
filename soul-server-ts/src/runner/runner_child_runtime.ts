@@ -8,15 +8,7 @@ import type { Logger } from "pino";
 import { shouldPersistEvent } from "../db/event_persistence.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
-import {
-  executionEndedControlFrame,
-  hostFrameAppliedControlFrame,
-  outboxAvailableControlFrame,
-  runnerCommandResultFrame,
-  type RunnerCommandFrame,
-  type RunnerEventFrame,
-  type RunnerFrame,
-} from "./frame_protocol.js";
+import { executionEndedControlFrame, outboxAvailableControlFrame, type RunnerCommandFrame, type RunnerEventFrame, type RunnerFrame } from "./frame_protocol.js";
 import {
   buildDurableRunnerEvent,
   backendSessionRotationEffect,

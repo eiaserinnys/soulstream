@@ -1,4 +1,4 @@
-import type { AuthorizeOrchestrationWorker } from "./task_runtime_commands.js";
+import { type AuthorizeOrchestrationWorker, TaskRuntimeCommands } from "./task_runtime_commands.js";
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
@@ -61,7 +61,6 @@ import { ReflectionCommands } from "./reflection_commands.js";
 import { createReflectionCommandFamily } from "./reflection_command_family.js";
 import { SessionListCommands } from "./session_list_commands.js";
 import { createSessionCommandFamily } from "./session_command_family.js";
-import { TaskRuntimeCommands } from "./task_runtime_commands.js";
 import { summarizePayloadForLog } from "./log_payload_summary.js";
 import type { PurposeDecisionRunner } from "../card-orchestration/purpose_runner.js";
 

@@ -20,7 +20,6 @@ type InventorySql = {
   begin<T>(callback: (transaction: InventorySql) => Promise<T>): Promise<T>;
 };
 
-type TablePage = { rows: SqlRow[]; nextCursor: string | null };
 type TableReader = (sql: InventorySql, cutoff: Date, after: string | null, pageSize: number) => Promise<SqlRow[]>;
 
 const READERS: ReadonlyArray<{ table: RelationalSourceTable; readPage: TableReader }> = [

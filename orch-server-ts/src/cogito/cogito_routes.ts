@@ -689,10 +689,6 @@ function stringField(record: Record<string, unknown>, key: string): string | und
   return typeof value === "string" ? value : undefined;
 }
 
-function routeError(reply: FastifyReply, statusCode: number, detail: string): FastifyReply {
-  return reply.code(statusCode).send({ detail });
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

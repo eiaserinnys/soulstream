@@ -1,16 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AttachmentRegistrationScope } from "@soulstream/wire-schema/attachments";
-import type {
-  LiveBoardAssetCompletedPart,
-  LiveBoardAssetMultipartUpload,
-  R2ObjectStorage,
-} from "../runtime/live_board_asset_storage.js";
-import {
-  R2ObjectIntegrityError,
-  R2StorageRequestError,
-} from "../runtime/live_board_asset_storage.js";
-import { createR2StorageResolver } from "../runtime/r2_storage_resolver.js";
-import type { R2StorageLocation } from "../runtime/r2_storage_resolver.js";
+import { type LiveBoardAssetCompletedPart, type LiveBoardAssetMultipartUpload, type R2ObjectStorage, R2ObjectIntegrityError, R2StorageRequestError } from "../runtime/live_board_asset_storage.js";
+import { createR2StorageResolver, type R2StorageLocation } from "../runtime/r2_storage_resolver.js";
 
 export type UploadOwner =
   | { readonly kind: "user_email"; readonly key: string }

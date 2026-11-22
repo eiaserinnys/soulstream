@@ -1,10 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type {
-  Options as ClaudeSdkOptions,
-  Query as ClaudeSdkQuery,
-  SDKUserMessage,
-} from "@anthropic-ai/claude-agent-sdk";
+import type { Query as ClaudeSdkQuery, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
 import type {

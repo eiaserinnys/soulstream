@@ -2,11 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { chooseUsablePresetId } from "@soulstream/model-catalog";
 
-import {
-  resolvePresetAvailability,
-  type ModelPresetAvailability,
-  type StaticModelPreset,
-} from "../src/model/model_preset_availability.js";
+import { resolvePresetAvailability, type ModelPresetAvailability, type StaticModelPreset, ModelPresetAvailabilityService } from "../src/model/model_preset_availability.js";
 import type {
   UsageSummaryProvider,
   UsageSummaryQuota,
@@ -19,13 +15,10 @@ import {
   type ProviderLimitProvider,
   type ProviderLimitRejection,
 } from "../src/usage/provider_limit_rejection.js";
-import { ModelPresetAvailabilityService } from "../src/model/model_preset_availability.js";
 import type { NodeConnectionSnapshot } from "../src/node/registry_types.js";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const catalog = repositoryModelCatalog();
-const CATALOG = catalog.snapshot();
-
 
 const preset: StaticModelPreset = {
   id: "claude-fable",

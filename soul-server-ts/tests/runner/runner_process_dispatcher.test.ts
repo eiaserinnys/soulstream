@@ -36,13 +36,7 @@ import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";
 import { ProcessFrameStream } from "../../src/runner/runner_process_frame_stream.js";
 import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
 import { isClosedClaudeEngineFailure } from "../../src/runner/closed_engine_error.js";
-import { buildDurableRunnerEvent } from
-  "../../src/runner/runner_child_runtime_helpers.js";
-import {
-  readRunnerHostAcknowledgedThrough,
-  RunnerHostStateStore,
-  runnerHostStatePath,
-} from "../../src/runner/runner_host_state_store.js";
+import { readRunnerHostAcknowledgedThrough, runnerHostStatePath } from "../../src/runner/runner_host_state_store.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import {
   pendingRunnerRegistrationIdentity,

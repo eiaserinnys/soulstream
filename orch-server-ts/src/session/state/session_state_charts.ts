@@ -1,15 +1,5 @@
 import { toMermaid, type ChartSpec } from "@soulstream/statechart";
-import {
-  SESSION_COMMAND_LABELS,
-  SESSION_COMMAND_RULES,
-  SESSION_FACT_LABELS,
-  SESSION_REASON_LABELS,
-  SESSION_REJECTION_REASON_WIRE,
-  SESSION_REVIEW_LABELS,
-  SESSION_STATUS_LABELS,
-  factValueLabel,
-  stateValueLabel,
-} from "./session_decision_labels.js";
+import { SESSION_COMMAND_LABELS, SESSION_COMMAND_RULES, SESSION_REASON_LABELS, SESSION_REJECTION_REASON_WIRE, factValueLabel, stateValueLabel } from "./session_decision_labels.js";
 import { SESSION_COMMANDS, type SessionDecisionCommand } from "./session_decision_facts.js";
 import { sessionDecisionMachine } from "./session_decision_machine.js";
 import {

@@ -1,14 +1,7 @@
 import type { Logger } from "pino";
 
 import type { Task } from "../task/task_models.js";
-import type {
-  RunnerRegistration,
-  RunnerRecoveryDisposition,
-} from "./runner_process_registry.js";
-import {
-  classifyRunnerRegistration,
-  hydrateRunnerRegistration,
-} from "./runner_process_registry.js";
+import { type RunnerRegistration, type RunnerRecoveryDisposition, classifyRunnerRegistration, hydrateRunnerRegistration } from "./runner_process_registry.js";
 import type { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
 import { closedRunnerTailRequiresDrain } from "./runner_recovery_scan_observer.js";
 import { hasRecordedTerminal } from "./runner_central_check.js";
