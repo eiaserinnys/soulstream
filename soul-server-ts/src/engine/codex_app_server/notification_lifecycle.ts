@@ -1,4 +1,4 @@
-import { asRecord } from "../claude_sdk_helpers.js";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { SSEEventPayload } from "../protocol.js";
 import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { mapAppServerNotification } from "./event_mapper.js";

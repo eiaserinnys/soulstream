@@ -7,11 +7,10 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
-import { isRecord } from "@soulstream/wire-schema/json-record";
+import { asRecord, isRecord } from "@soulstream/wire-schema/json-record";
 import type { ResolvedMcpServer } from "../mcp_config_service.js";
 import type { ClaudeRunOptions } from "./claude_adapter.js";
 import {
-  asRecord,
   asString,
 } from "./claude_sdk_helpers.js";
 import {

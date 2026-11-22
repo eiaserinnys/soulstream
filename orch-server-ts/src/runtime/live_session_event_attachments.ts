@@ -1,4 +1,5 @@
 import type { SessionEventAttachmentResponse } from "@soulstream/wire-schema/attachments";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
 import { createLiveAttachmentReadRepository } from "./live_attachment_read_repository.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
@@ -28,14 +29,9 @@ export async function readLiveSessionEventAttachments(
     sessionId,
     eventId,
     eventType: event.event_type,
-    payload: objectPayload(event.payload),
+    payload: asRecord(event.payload) ?? {},
     nodeId: nonEmptyString(event.session_node_id),
   }, createLiveAttachmentReadRepository(sqlResolver));
-}
-
-function objectPayload(value: unknown): Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
-  return value as Record<string, unknown>;
 }
 
 function nonEmptyString(value: string | null): string | null {

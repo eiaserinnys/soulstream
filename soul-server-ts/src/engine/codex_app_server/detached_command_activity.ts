@@ -1,4 +1,4 @@
-import { asRecord } from "../claude_sdk_helpers.js";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { CodexDetachedCommandRuntimeActivity } from "../protocol.js";
 import type { AppServerNotification } from "./protocol.js";
 

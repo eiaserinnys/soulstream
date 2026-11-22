@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
@@ -62,7 +63,7 @@ export async function executeRecurringJobHostOperation(service: RecurringJobServ
     status, body: { detail: { error: { code, message, ...(currentJob ? { current_job: serializeJob(currentJob) } : {}) } } },
   });
   if (!operations.has(operation)) return failure(404, "RECURRING_JOB_OPERATION_NOT_FOUND", "unknown recurring job operation");
-  const body = objectValue(input);
+  const body = asRecord(input);
   if (!body) return failure(422, "VALIDATION", "body must be an object");
   const actor = actorValue(body.actor);
   if (!actor) return failure(403, "FORBIDDEN", "verified recurring-job actor is required");
@@ -135,11 +136,6 @@ function actorValue(value: unknown): RecurringJobActor | null {
   };
 }
 
-function objectValue(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
 function requiredRecurringJobString(body: Record<string, unknown>, camel: string, snake: string = camel): string {
   const value = body[camel] ?? body[snake];
   if (typeof value !== "string") throw new RecurringJobError("VALIDATION", `${snake} is required`, 422);

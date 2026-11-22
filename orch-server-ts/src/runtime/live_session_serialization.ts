@@ -1,3 +1,4 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { InMemoryNodeRegistry } from "../node/registry.js";
 import { readPersistentReport, type PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 import type { CallerInfo } from "@soulstream/wire-schema";
@@ -305,17 +306,6 @@ function firstDefined(
   return undefined;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-/**
- * `auto` is a DB-internal marker meaning "resolved to no effort". Canon and the
- * write side live in soul-server-ts/src/task/session_effort_storage.ts; it must
- * never reach a client, which reports an unspecified effort as null.
- */
 const REASONING_EFFORT_AUTO_MARKER = "auto";
 
 export function publicReasoningEffort(value: unknown): string | null {

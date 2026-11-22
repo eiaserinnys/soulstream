@@ -1,3 +1,4 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 export type ProviderLimitProvider = "claude" | "codex" | "antigravity" | "opencode_go";
 
 export type ProviderLimitRejection = {
@@ -34,7 +35,7 @@ export function observeProviderExecution(input: {
     observePoolClaudeExecution(input, provider, payload);
     return;
   }
-  if (provider !== null && payload !== null) {
+  if (provider !== null && payload !== undefined) {
     const resetMs = parseTimestamp(payload.resets_at);
     const observedMs = parseTimestamp(input.event.createdAt);
     const nowMs = input.now.getTime();
@@ -103,9 +104,9 @@ function observePoolClaudeExecution(
     readonly now: Date;
   },
   provider: ProviderLimitProvider | null,
-  payload: Record<string, unknown> | null,
+  payload: Record<string, unknown> | undefined,
 ): void {
-  if (provider === "claude" && payload !== null) {
+  if (provider === "claude" && payload !== undefined) {
     const accountId = stringValue(payload.account_id);
     const scope = poolScope(payload.scope);
     const observedMs = parseTimestamp(input.event.createdAt);
@@ -133,7 +134,7 @@ function observePoolClaudeExecution(
   }
 
   const successPayload = payload;
-  if (successPayload === null) return;
+  if (successPayload === undefined) return;
   const accountId = stringValue(successPayload.account_id);
   const scope = poolScope(successPayload.scope);
   const observedMs = parseTimestamp(input.event.createdAt);
@@ -235,10 +236,4 @@ function parseTimestamp(value: unknown): number | null {
   if (typeof value !== "string") return null;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
 }

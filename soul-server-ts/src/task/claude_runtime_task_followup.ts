@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
 import type { SSEEventPayload } from "../engine/protocol.js";
 import {
@@ -38,7 +39,6 @@ import { parseClaudeNativeTaskNotification } from
 import {
   normalizeRuntimeEventRevision as normalizeEventRevision,
   normalizeRuntimeRevision as normalizeRevision,
-  runtimeRecord as asRecord,
   runtimeString as asString,
 } from "./claude_runtime_followup_utils.js";
 

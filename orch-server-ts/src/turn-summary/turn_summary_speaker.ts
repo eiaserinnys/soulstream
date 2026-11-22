@@ -1,3 +1,4 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 const HUMAN_CALLER_SOURCES = new Set([
   "browser",
   "slack",
@@ -45,7 +46,7 @@ export function resolveTurnSummarySpeaker(
     };
   }
 
-  const callerInfo = recordValue(payload.caller_info ?? payload.callerInfo);
+  const callerInfo = asRecord(payload.caller_info ?? payload.callerInfo) ?? {};
   const source = nonEmptyString(callerInfo.source);
   if (source === undefined) return undefined;
 
@@ -147,10 +148,4 @@ function nonEmptyString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const normalized = value.trim();
   return normalized.length === 0 ? undefined : normalized;
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }

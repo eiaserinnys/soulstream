@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { SOULSTREAM_SCHEDULE_TOOLS } from "./claude_sdk_constants.js";
 import {
   asNumber,
-  asRecord,
   asString,
 } from "./claude_sdk_helpers.js";
 import { compactMessage } from "./claude_sdk_prompt.js";

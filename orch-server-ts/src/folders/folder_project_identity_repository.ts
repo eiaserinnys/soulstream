@@ -1,4 +1,5 @@
 import type { FolderOperationActorKind } from "@soulstream/mcp-contract";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import { reconcileFolderParentMounts } from "./folder_parent_mounts.js";
 import { isDeepStrictEqual } from "node:util";
 import { appendFolderOperation } from "./folder_operation_store.js";
@@ -269,7 +270,7 @@ function folderRow(row: Record<string, unknown>): FolderProjectRecord | null {
     id,
     name: String(row.name ?? ""),
     sortOrder: Number(row.sort_order ?? 0),
-    settings: recordValue(row.settings),
+    settings: asRecord(row.settings) ?? {},
     parentFolderId: stringValue(row.parent_folder_id),
     projectPageId: pageId,
     archived: Boolean(row.archived),
@@ -359,13 +360,6 @@ async function pageCommitFromOperation(sql: FolderContentQuerySql, operation: Op
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value ? value : null;
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return {};
 }
 
 function assertSameRequest(operation: OperationRow, request: Record<string, unknown>): void {

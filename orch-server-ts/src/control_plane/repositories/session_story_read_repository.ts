@@ -1,3 +1,4 @@
+import { asRecord, isRecord } from "@soulstream/wire-schema/json-record";
 import type { SqlClient } from "../control_plane_types.js";
 import {
   withLiveSearchDbConnection,
@@ -559,15 +560,11 @@ function transcriptValueText(value: unknown): string {
 }
 
 function parsePayload(value: unknown): Record<string, unknown> {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
+  if (isRecord(value)) return value;
   if (typeof value !== "string") return {};
   try {
     const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : {};
+    return asRecord(parsed) ?? {};
   } catch {
     return {};
   }

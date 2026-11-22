@@ -1,4 +1,5 @@
 import type { CatalogSessionAssignment } from "@soulstream/wire-schema/catalog";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import {
   type FolderRecord,
   type FolderRouteProvider,
@@ -140,7 +141,6 @@ function numberValue(value: unknown): number | undefined {
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
-  if (value === null || value === undefined) return {};
   if (typeof value === "string") {
     try {
       const parsed: unknown = JSON.parse(value);
@@ -149,10 +149,7 @@ function objectValue(value: unknown): Record<string, unknown> {
       return {};
     }
   }
-  if (typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return {};
+  return asRecord(value) ?? {};
 }
 
 function timestampString(value: unknown): string | undefined {

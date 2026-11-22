@@ -7,10 +7,6 @@ export type Validation<T> =
   | { ok: true; value: T }
   | { ok: false; message: string; statusCode?: number };
 
-export function jsonObjectOrUndefined(value: unknown): JsonObject | undefined {
-  return isRecord(value) ? value : undefined;
-}
-
 export function parseObjectBody(
   body: unknown,
   options: { allowEmpty?: boolean } = {},

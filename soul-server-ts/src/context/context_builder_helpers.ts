@@ -295,12 +295,6 @@ export function prioritizeAtomContextSpecs(args: {
   return { session, folder: take(args.folder), agent: take(args.agent) };
 }
 
-export function normalizeSettings(settings: unknown): Record<string, unknown> {
-  return settings && typeof settings === "object"
-    ? (settings as Record<string, unknown>)
-    : {};
-}
-
 function stableJson(value: unknown): string {
   return JSON.stringify(sortObjectKeys(value));
 }

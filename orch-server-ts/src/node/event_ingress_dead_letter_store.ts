@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readdir, readFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 import type { EventIngressEnvelope } from "./event_ingress_types.js";
 
@@ -526,16 +527,10 @@ function isBaseRecord(
   value: unknown,
 ): value is Record<string, unknown> &
   Pick<LegacyEventIngressDeadLetterRecord, "node_id" | "envelope"> {
-  if (!value || typeof value !== "object") return false;
-  const record = value as Record<string, unknown>;
-  if (
-    typeof record.node_id !== "string" ||
-    !record.envelope ||
-    typeof record.envelope !== "object"
-  ) {
+  if (!isRecord(value) || typeof value.node_id !== "string" || !isRecord(value.envelope)) {
     return false;
   }
-  const envelope = record.envelope as Record<string, unknown>;
+  const envelope = value.envelope;
   return (
     typeof envelope.stream_id === "string" &&
     Number.isSafeInteger(envelope.source_seq) &&

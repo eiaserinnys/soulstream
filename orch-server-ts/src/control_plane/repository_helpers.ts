@@ -18,10 +18,6 @@ export function numberFromDb(
   return Number(value);
 }
 
-export function recordFromDb(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? value as Record<string, unknown> : {};
-}
-
 export function normalizeTranscriptSubpath(value: string | null | undefined): string | null {
   return value && value.length > 0 ? value : null;
 }

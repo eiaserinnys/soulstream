@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import Fastify from "fastify";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
 import { runPlaywrightLifecycle } from "../../../unified-dashboard/e2e/playwright-lifecycle-harness.mjs";
 import { registerFolderRoutes, type FolderRecord } from "../../src/folders/folder_routes.js";
@@ -167,19 +168,13 @@ async function listFolders(): Promise<FolderRecord[]> {
       id: String(row.id),
       name: String(row.name),
       sortOrder: Number(row.sort_order),
-      settings: recordValue(row.settings),
+      settings: asRecord(row.settings) ?? {},
       parentFolderId: typeof row.parent_folder_id === "string"
         ? row.parent_folder_id
         : null,
       projectPageId,
     };
   });
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }
 
 function projectPageHtml(): string {

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
 import {
   BoardAssetRouteError,
@@ -449,9 +450,7 @@ function objectValue(value: unknown): Record<string, unknown> {
       return {};
     }
   }
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
+  return asRecord(value) ?? {};
 }
 
 function stringValue(value: unknown): string | null {

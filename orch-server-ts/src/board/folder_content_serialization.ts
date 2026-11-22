@@ -1,3 +1,4 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { BoardItemType } from "@soulstream/wire-schema";
 import type {
   CatalogBoardItemRow,
@@ -132,7 +133,7 @@ export function toCatalogBoardItemRow(row: BoardItemDbRow): CatalogBoardItemRow 
     itemId: row.item_id,
     x: Number(row.x),
     y: Number(row.y),
-    metadata: recordFromDb(row.metadata),
+    metadata: asRecord(row.metadata) ?? {},
     ...(toIsoString(row.created_at) ? { createdAt: toIsoString(row.created_at) } : {}),
     ...(toIsoString(row.updated_at) ? { updatedAt: toIsoString(row.updated_at) } : {}),
   };
@@ -269,12 +270,6 @@ function titleRecord(
   updatedAt: Date | string | null | undefined,
 ) {
   return { id, title: title ?? null, updatedAt: toIsoString(updatedAt) ?? null };
-}
-
-function recordFromDb(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }
 
 function nullableNumber(value: string | number | null | undefined): number | null {

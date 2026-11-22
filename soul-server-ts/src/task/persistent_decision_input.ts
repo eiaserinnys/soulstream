@@ -20,7 +20,7 @@ import type {
 import type { ModelCatalog } from "../model_catalog.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionEventRow } from "@soulstream/mcp-contract";
-import { asRecord } from "../engine/claude_sdk_helpers.js";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task } from "./task_models.js";
 import { isCacheKeepaliveInput } from "./persistent_keepalive_marker.js";

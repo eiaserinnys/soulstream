@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import {
@@ -13,7 +14,7 @@ import {
   attachClaudeSdkSessionMetadata,
   readClaudeSdkSessionMetadata,
 } from "./claude_sdk_session_metadata.js";
-import { asRecord, asString } from "./claude_sdk_helpers.js";
+import { asString } from "./claude_sdk_helpers.js";
 
 export function attachClaudeToolResultEnvelope(
   event: ClaudeClientEvent,

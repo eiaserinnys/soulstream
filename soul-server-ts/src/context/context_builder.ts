@@ -1,6 +1,6 @@
-/** Builds input context; agent and folder instructions form the system prompt. */
 import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-session-settings";
 import type { InputMaterialPartV1, ContextItem } from "@soulstream/wire-schema";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import { buildPersistentReportContext } from "./persistent_report_context.js";
 import { fetchAssignedCardContextItem, type AssignedCardContextCapture } from "./assigned_card_context.js";
 import type { Logger } from "pino";
@@ -26,7 +26,6 @@ import {
   extractFolderAtomContextSpecs,
   extractFolderProjectPageIds,
   isMinimalContextScope,
-  normalizeSettings,
   omitsWorkspaceContextLists,
   prioritizeAtomContextSpecs,
   resolveContextFilterContext,
@@ -436,7 +435,7 @@ export class ExecutionContextBuilder {
         id: folderRow.id,
         parentFolderId: folderRow.parent_folder_id ?? null,
         projectPageId: folderRow.project_page_id ?? null,
-        settings: normalizeSettings(folderRow.settings),
+        settings: asRecord(folderRow.settings) ?? {},
       },
     ];
     const getCatalog = (this.db as unknown as {
@@ -453,7 +452,7 @@ export class ExecutionContextBuilder {
             id: folder.id,
             parentFolderId: folder.parentFolderId,
             projectPageId: folder.projectPageId ?? null,
-            settings: normalizeSettings(folder.settings),
+            settings: asRecord(folder.settings) ?? {},
           },
         ]),
       );

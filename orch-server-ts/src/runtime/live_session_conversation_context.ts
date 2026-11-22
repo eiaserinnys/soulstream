@@ -1,3 +1,4 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type {
   SessionConversationContextQuery,
   SessionConversationContextResponse,
@@ -99,7 +100,7 @@ async function resolveAnchorStartId(
   match: EventRow | null,
 ): Promise<number | null> {
   const summaryStartId = match?.event_type === "turn_summary"
-    ? positiveInteger(recordValue(parseJson(match.payload)).turn_start_event_id)
+    ? positiveInteger(asRecord(parseJson(match.payload))?.turn_start_event_id)
     : null;
   if (summaryStartId !== null) {
     const rows = await sql`
@@ -308,7 +309,7 @@ function buildTurns(
 function normalizeConversationMessage(row: EventRow): SessionConversationMessage | null {
   const eventId = positiveInteger(row.id);
   const eventType = String(row.event_type ?? "");
-  const payload = recordValue(parseJson(row.payload));
+  const payload = asRecord(parseJson(row.payload)) ?? {};
   if (eventId === null) return null;
   const role = eventType === "assistant_message" || eventType === "complete"
     ? "assistant" as const
@@ -340,7 +341,7 @@ function contentText(value: unknown): string {
   if (!Array.isArray(value)) return "";
   return value.flatMap((item) => {
     if (typeof item === "string") return [item];
-    const record = recordValue(item);
+    const record = asRecord(item) ?? {};
     const text = record.text ?? record.content;
     return typeof text === "string" ? [text] : [];
   }).join("\n");
@@ -353,12 +354,6 @@ function parseJson(value: unknown): unknown {
   } catch {
     return {};
   }
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }
 
 function positiveInteger(value: unknown): number | null {

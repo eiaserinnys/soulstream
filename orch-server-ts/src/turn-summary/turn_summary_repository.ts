@@ -1,3 +1,4 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type {
   LiveDbSqlResolver,
   LivePostgresSql,
@@ -85,7 +86,7 @@ export function sessionEventEnvelopeFromRow(
     type: "event",
     agentSessionId: sessionId,
     event: {
-      ...recordValue(parseJsonValue(row.payload)),
+      ...(asRecord(parseJsonValue(row.payload)) ?? {}),
       type: String(row.event_type ?? ""),
       _event_id: numberValue(row.id) ?? 0,
     },
@@ -230,7 +231,7 @@ export class TurnSummaryRepository implements TurnSummaryRepositoryPort {
       LIMIT ${limit}
     `;
     return rows
-      .map((row) => stringValue(recordValue(parseJsonValue(row.payload)).content))
+      .map((row) => stringValue(asRecord(parseJsonValue(row.payload))?.content))
       .filter((content): content is string => content !== null)
       .reverse();
   }
@@ -401,7 +402,7 @@ function normalizeEventRow(row: Record<string, unknown>): TurnSummaryEventRow | 
   return {
     id,
     eventType: String(row.event_type ?? ""),
-    payload: recordValue(parseJsonValue(row.payload)),
+    payload: asRecord(parseJsonValue(row.payload)) ?? {},
     createdAt: dateValue(row.created_at),
   };
 }
@@ -413,12 +414,6 @@ function parseJsonValue(value: unknown): unknown {
   } catch {
     return value;
   }
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }
 
 function nullableString(value: unknown): string | null {

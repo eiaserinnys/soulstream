@@ -1,5 +1,5 @@
 import type { EventPersistence } from "../db/event_persistence.js";
-import { asRecord } from "../engine/claude_sdk_helpers.js";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import { buildPersistentGenerationMetadataEntry } from "./task_metadata.js";
 import type { PersistentGenerationBootstrap, PersistentGenerationState, Task } from "./task_models.js";

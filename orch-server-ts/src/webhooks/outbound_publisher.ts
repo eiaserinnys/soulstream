@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import { asPostgresJsonValue } from "../control_plane/repository_helpers.js";
 import type {
@@ -171,9 +172,9 @@ function questionsOf(value: unknown): Array<{
 }> {
   if (!Array.isArray(value)) return [];
   return value.map((item) => {
-    const question = recordOf(item);
+    const question = asRecord(item) ?? {};
     const options = Array.isArray(question.options) ? question.options.map((option) => {
-      const entry = recordOf(option);
+      const entry = asRecord(option) ?? {};
       return {
         label: typeof entry.label === "string" ? entry.label : "",
         description: typeof entry.description === "string" ? entry.description : "",
@@ -198,10 +199,4 @@ function expiresAt(payload: Record<string, unknown>): string | null {
     return null;
   }
   return new Date((startedAt + timeoutSec) * 1000).toISOString();
-}
-
-function recordOf(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }

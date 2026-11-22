@@ -9,7 +9,7 @@ import {
 } from "./claude_sdk_drain.js";
 import type { EventQueue } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
-import { asRecord } from "./claude_sdk_helpers.js";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 
 export interface PumpLegacyClaudeQueryParams {

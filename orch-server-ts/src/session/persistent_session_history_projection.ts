@@ -4,6 +4,7 @@ import type {
   PersistentSessionHistoryModelInfo,
   PersistentSessionHistorySender,
 } from "@soulstream/mcp-contract";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { PersistentSessionHistoryRow } from "../control_plane/repositories/persistent_session_history_query.js";
 import { projectInputAttachments } from "./attachment_history_projection.js";
 
@@ -14,7 +15,7 @@ export function projectPersistentSessionHistoryEntry(
   maxTextChars: number,
 ): PersistentSessionHistoryEntry {
   const payload = row.payload;
-  const callerInfo = record(payload.caller_info) ?? {};
+  const callerInfo = asRecord(payload.caller_info) ?? {};
   const common = {
     event_id: row.id,
     created_at: row.created_at.toISOString(),
@@ -123,7 +124,7 @@ function toKstIso(value: Date): string {
 }
 
 function projectModelInfo(value: unknown): PersistentSessionHistoryModelInfo | null {
-  const model = record(value);
+  const model = asRecord(value);
   if (!model) return null;
   return {
     model_preset: stringValue(model.model_preset),
@@ -134,10 +135,4 @@ function projectModelInfo(value: unknown): PersistentSessionHistoryModelInfo | n
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function record(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
 }

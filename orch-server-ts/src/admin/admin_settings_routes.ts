@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
-import { jsonObjectOrUndefined } from "../http/route_validation.js";
 import {
   SessionReviewPolicyError,
   sessionReviewPolicyApiPayload,
@@ -44,7 +44,7 @@ export function registerAdminSettingsRoutes(
   app.put("/api/admin/settings/session-review-policy", async (request, reply) => {
     const adminEmail = await requireAdmin(request, reply, provider);
     if (adminEmail === undefined) return reply;
-    const body = jsonObjectOrUndefined(request.body);
+    const body = asRecord(request.body);
     if (!body) return policyError(reply, 422, "SESSION_REVIEW_POLICY_INVALID", "Request body must be a JSON object");
     if (!Array.isArray(body.sourceAllowlist)) {
       return policyError(reply, 422, "SESSION_REVIEW_POLICY_INVALID", "sourceAllowlist must be an array");
