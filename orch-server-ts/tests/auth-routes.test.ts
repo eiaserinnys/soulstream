@@ -8,6 +8,7 @@ import {
   RETURN_TO_COOKIE_NAME,
   authRouteAuthRequirements,
   createApp,
+  createLiveConfigRouteProviders,
   loadContractFixtures,
   type AuthJwtHelper,
 } from "../src/index.js";
@@ -208,7 +209,12 @@ describe("Auth route harness", () => {
   });
 
   it("ignores a Serve identity when Google mode takes priority", async () => {
-    const app = createApp({ config, authRoutes: createAuthRouteOptions() });
+    const snapshot: Readonly<Record<string, unknown>> = {
+      google_client_id: "google-client", google_client_secret: "secret", google_callback_url: "/api/auth/google/callback",
+      jwt_secret: "jwt-secret", environment: "production", tailscale_auth_enabled: true, tailscale_allowed_login: "owner@example.com",
+    };
+    const providers = createLiveConfigRouteProviders({ getConfig: () => snapshot, requireConfig: async (key) => snapshot[key] });
+    const app = createApp({ config, authRoutes: createAuthRouteOptions({ configProvider: providers.authRoutes.configProvider }) });
     expect((await app.inject({ method: "GET", url: "/api/auth/status", headers: { "tailscale-user-login": "owner@example.com" } })).json()).toEqual({ authenticated: false, user: null });
     expect((await app.inject({ method: "POST", url: "/api/auth/password-login", payload: { password: "x" } })).statusCode).toBe(404);
     await app.close();
