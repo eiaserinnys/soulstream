@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import path from "node:path";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import postgres from "postgres";
 import { pathToFileURL } from "node:url";
 
@@ -25,7 +26,6 @@ import {
   uniqueStrings,
   withReadOnlyTransaction,
   writeJsonlReport,
-  type ManifestIdentity,
   type MessageBackfillOptions,
 } from "./backfill_message_refs.js";
 
@@ -488,7 +488,6 @@ function sameJson(left: unknown, right: unknown): boolean {
   }
   return Object.is(left, right);
 }
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   main(process.argv.slice(2)).catch((error: unknown) => {
     const code = errorCode(error, "CARD_REF_UNVERIFIED");

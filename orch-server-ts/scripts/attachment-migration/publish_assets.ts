@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -259,10 +260,6 @@ function isCopyCandidateStatus(status: string): boolean {
 
 function publishError(code: "APPROVAL_REQUIRED" | "ALIAS_CONFLICT" | "RECEIPT_MISMATCH" | "ASSET_METADATA_CONFLICT", message: string): Error {
   return Object.assign(new Error(`${code}: ${message}`), { code });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isSha256(value: unknown): value is string {

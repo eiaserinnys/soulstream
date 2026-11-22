@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 import {
   INVENTORY_ERROR_CODES,
@@ -309,10 +310,6 @@ function eventShapeError(sessionId: string, eventId: number, detail: string): Er
 
 function isSupportedEventType(eventType: string): boolean {
   return (INVENTORY_EVENT_TYPES as readonly string[]).includes(eventType);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isQueryTimeout(error: unknown): boolean {

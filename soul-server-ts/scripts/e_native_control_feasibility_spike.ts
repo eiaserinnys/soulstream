@@ -16,6 +16,7 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import pino from "pino";
 
 import { spawnClaudeSessionEngine } from "../src/engine/session_engine_oom_score.js";
@@ -283,13 +284,13 @@ function normalizeSdkMessage(message: SDKMessage): NormalizedSdkEvent {
     normalized.result = stringValue(raw.result);
     normalized.errors = raw.errors;
   }
-  const messageRecord = recordValue(raw.message);
+  const messageRecord = asRecord(raw.message);
   const blocks = Array.isArray(messageRecord?.content) ? messageRecord.content : [];
   const assistantText: string[] = [];
   const toolNames: string[] = [];
   const toolResultText: string[] = [];
   for (const block of blocks) {
-    const entry = recordValue(block);
+    const entry = asRecord(block);
     if (!entry) continue;
     if (entry.type === "text" && typeof entry.text === "string") assistantText.push(entry.text);
     if (entry.type === "tool_use" && typeof entry.name === "string") toolNames.push(entry.name);
@@ -482,12 +483,6 @@ function unique(values: Array<string | undefined>): string[] {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
 }
 
 function waitForFileContent(path: string, expected: string, timeoutMs = 60_000): Promise<void> {

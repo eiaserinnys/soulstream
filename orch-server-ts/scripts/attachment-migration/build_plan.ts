@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import path from "node:path";
 import { normalizeAttachmentLegacyPath } from "../../src/attachments/attachment_read_service.js";
 import { collectLegacySourceTargets } from "./extract_relational.js";
@@ -555,7 +556,6 @@ function numberOrNull(value: unknown): number | null {
   if (typeof value === "string" && /^\d+$/.test(value)) return Number(value);
   return null;
 }
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function stable(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
   if (!isRecord(value)) return JSON.stringify(value) ?? "null";

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { createReadStream } from "node:fs";
 import { mkdir, mkdtemp, open, readFile, rm } from "node:fs/promises";
 import os from "node:os";
@@ -458,7 +459,6 @@ function isCopyFailure(value: unknown): value is CopyFailure {
 
 function isNodeError(value: unknown): value is NodeJS.ErrnoException { return value instanceof Error && "code" in value; }
 function isSha256(value: unknown): value is string { return typeof value === "string" && /^[a-f0-9]{64}$/.test(value); }
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   main(process.argv.slice(2)).catch((error: unknown) => {

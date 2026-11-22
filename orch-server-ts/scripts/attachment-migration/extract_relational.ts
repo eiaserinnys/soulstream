@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { normalizeAttachmentLegacyPath } from "../../src/attachments/attachment_read_service.js";
 import {
   INVENTORY_SCHEMA_VERSION,
@@ -425,10 +426,6 @@ function stripFencedBlocks(body: string): string {
     if (marker?.[1] && marker[1][0] === fence) fence = null;
   }
   return kept.join("\n");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isInventoryError(value: unknown): value is Error & { code: string } {
