@@ -63,6 +63,7 @@ describe("Antigravity process descendants", () => {
     const exit = await child.done;
     expect(terminateProcessTree).toHaveBeenCalledOnce();
     expect(terminateProcessTree).toHaveBeenCalledWith(expect.any(Number));
+    expect(child.interruptSignalled).toBe(trigger === "interrupt");
     if (trigger === "result") expect(exit.forcedAfterResult).toBe(true);
   });
   it("snapshots a real sleep in a separate process group and cleans only matching starttime", async () => {
