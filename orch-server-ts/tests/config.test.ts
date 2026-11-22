@@ -18,6 +18,16 @@ const explicitTestConfig = {
   authBearerToken: "test-token",
 };
 
+it("validates Tailscale identity and loopback only when that mode wins", () => {
+  const base = { ...minimalEnvironment(), TAILSCALE_AUTH_ENABLED: "true", TAILSCALE_ALLOWED_LOGIN: " Owner@Example.com " };
+  expect(loadOrchServerEnvironment(base)).toMatchObject({ tailscale_auth_enabled: true, tailscale_allowed_login: "owner@example.com" });
+  expect(() => loadOrchServerEnvironment({ ...base, TAILSCALE_ALLOWED_LOGIN: "" })).toThrow(/TAILSCALE_ALLOWED_LOGIN/);
+  expect(() => loadOrchServerEnvironment({ ...base, TAILSCALE_ALLOWED_LOGIN: "a b" })).toThrow(/TAILSCALE_ALLOWED_LOGIN/);
+  expect(() => loadOrchServerEnvironment({ ...base, HOST: "0.0.0.0" })).toThrow(/HOST/);
+  expect(loadOrchServerEnvironment({ ...base, HOST: "::1" }).host).toBe("::1");
+  expect(loadOrchServerEnvironment({ ...base, HOST: "0.0.0.0", GOOGLE_CLIENT_ID: "google", TAILSCALE_ALLOWED_LOGIN: "" }).google_client_id).toBe("google");
+});
+
 describe("orch-server-ts config scaffold", () => {
   it("accepts explicit test config without reading production env", () => {
     expect(parseOrchServerConfig(explicitTestConfig)).toEqual({

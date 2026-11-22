@@ -10,6 +10,15 @@ import {
 } from "../src/index.js";
 
 describe("live config route provider adapters", () => {
+  it("keeps Google priority when Tailscale is enabled", async () => {
+    const providers = createLiveConfigRouteProviders(createConfigProvider({
+      google_client_id: "google-client", google_client_secret: "secret", google_callback_url: "/callback",
+      jwt_secret: "secret", environment: "production", tailscale_auth_enabled: true, tailscale_allowed_login: "owner@example.com",
+    }));
+    const config = await providers.authRoutes.configProvider.getConfig();
+    expect(config.loginMode).toBe("google");
+    expect(config).not.toHaveProperty("tailscaleAllowedLogin");
+  });
   it("maps Python OAuth settings into auth route config", async () => {
     const configProvider = createConfigProvider({
       google_client_id: "google-client",

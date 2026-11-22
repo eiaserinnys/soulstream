@@ -16,9 +16,15 @@ test('backend defaults, ordering, deduplication, ref and help', () => {
   assert.equal(parse('--help').status, 0);
 });
 test('rejects invalid or missing options with usage', () => {
-  for (const args of [['--backends',''], ['--backends','foo'], ['--backends','claude,foo'], ['--tailscale'], ['--foo'], ['--ref']]) {
+  for (const args of [['--backends',''], ['--backends','foo'], ['--backends','claude,foo'], ['--foo'], ['--ref'], ['--tailscale-user','a'], ['--tailscale-auth-key','k'], ['--tailscale','--tailscale-user'], ['--tailscale','--tailscale-auth-key']]) {
     const result = parse(...args); assert.equal(result.status, 2, JSON.stringify(args)); assert.match(result.stdout + result.stderr, /usage|사용법/i);
   }
+});
+test('accepts Tailscale mode and optional identity', () => {
+  assert.equal(parse('--tailscale').status, 0);
+  const result = spawnSync('bash', ['-c', 'source "$1"; shift; parse_args "$@"; printf "%s" "$TAILSCALE_USER"', 'bash', script, '--tailscale', '--tailscale-auth-key', 'k', '--tailscale-user', 'U@x'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, 'u@x');
 });
 test('sourcing has no side effects', () => {
   const dir = mkdtempSync(join(tmpdir(), 'install-source-'));

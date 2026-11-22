@@ -106,13 +106,16 @@ async function authRouteConfig(configProvider: LiveConfigProviderBoundary) {
     "dashboard_admin_password",
   ) ?? "";
 
+  const loginMode = resolveDashboardLoginMode({
+    google_client_id: googleClientId,
+    dashboard_admin_password: dashboardAdminPassword,
+    tailscale_auth_enabled: snapshot.tailscale_auth_enabled === true,
+  });
   return {
-    loginMode: resolveDashboardLoginMode({
-      google_client_id: googleClientId,
-      dashboard_admin_password: dashboardAdminPassword,
-    }),
-    devModeEnabled: environment.toLowerCase() === "development" ||
-      environment.toLowerCase() === "dev",
+    loginMode,
+    ...(loginMode === "tailscale" ? { tailscaleAllowedLogin: String(snapshot.tailscale_allowed_login) } : {}),
+    devModeEnabled: loginMode !== "tailscale" && (environment.toLowerCase() === "development" ||
+      environment.toLowerCase() === "dev"),
     dashboardAdminPasswordSha256: dashboardAdminPassword.length === 0
       ? ""
       : createHash("sha256").update(dashboardAdminPassword, "utf8").digest("hex"),
@@ -147,6 +150,7 @@ async function publicStatusRouteConfig(
     authEnabled: resolveDashboardLoginMode({
       google_client_id: googleClientId,
       dashboard_admin_password: dashboardAdminPassword,
+      tailscale_auth_enabled: snapshot.tailscale_auth_enabled === true,
     }) !== "none",
     atomEnabled,
   };

@@ -22,7 +22,19 @@ ssh -L 127.0.0.1:5200:127.0.0.1:5200 <사용자>@<서버>
 
 <http://127.0.0.1:5200>에서 설치 끝에 표시된 관리자 비밀번호로 로그인합니다. 비밀번호는 서버의 `/home/soulstream/soulstream/.admin-password`에도 보관됩니다.
 
-같은 명령을 다시 실행하면 비밀 값, 기존 작업실과 설치기가 관리하지 않는 환경 설정 줄을 보존합니다. 기존 클론의 HEAD는 `--ref`를 주지 않으면 그대로 유지합니다. `--ref`를 주면 작업 트리가 깨끗할 때 해당 리비전을 체크아웃합니다. Tailscale 모드는 다음 단계에서 제공하며, 버전 업데이트 도구와 제거 도구는 포함하지 않습니다.
+같은 명령을 다시 실행하면 비밀 값, 기존 작업실과 설치기가 관리하지 않는 환경 설정 줄을 보존합니다. 기존 클론의 HEAD는 `--ref`를 주지 않으면 그대로 유지합니다. `--ref`를 주면 작업 트리가 깨끗할 때 해당 리비전을 체크아웃합니다. 버전 업데이트 도구와 제거 도구는 포함하지 않습니다.
+
+### Tailscale Serve
+
+설치 명령의 마지막 인자에 `--tailscale`을 더하면 허용된 Tailscale 계정으로 비밀번호 없이 접속합니다. 로그인 URL이 표시되면 10분 안에 승인합니다. 이미 연결된 기기는 승인을 건너뜁니다. tailnet에서 MagicDNS와 HTTPS를 켜야 합니다.
+
+```bash
+bash install/install.sh --tailscale --tailscale-user owner@example.com
+```
+
+개인 기기는 `--tailscale-user`를 생략하면 기기의 계정을 사용합니다. 태그 기기는 허용할 사람의 로그인 이름을 명시해야 합니다. 선택적으로 `--tailscale-auth-key <키>`를 사용할 수 있습니다. 설치가 끝나면 표시된 HTTPS 주소를 해당 계정의 tailnet 기기에서 엽니다. 서버의 로컬 프로세스는 신원 머리를 위조할 수 있으므로 신뢰하는 프로세스만 실행해야 합니다.
+
+`--tailscale` 없이 다시 설치하면 기존 관리자 비밀번호로 돌아갑니다. Serve 접근과 기기 연결을 제거하려면 `tailscale serve reset && tailscale logout`을 실행합니다.
 
 This guide covers installing a remote Windows worker with the PowerShell installer and running the full Soulstream stack from source.
 

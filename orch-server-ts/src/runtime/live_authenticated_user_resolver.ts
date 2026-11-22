@@ -1,3 +1,6 @@
+import { resolveTailscaleIdentity } from "../auth/tailscale_identity.js";
+import { resolveDashboardLoginMode } from "../auth/login_mode.js";
+import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
 import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
 import type { FastifyRequest } from "fastify";
 
@@ -9,13 +12,11 @@ import {
 import { extractBearerToken } from "../auth/service_bearer.js";
 import type { OAuthAccessTokenResolver, OAuthResourceAccess } from "../oauth/oauth_access.js";
 
-export type DashboardAuthHeaders = Pick<
-  FastifyRequest["headers"],
-  "authorization" | "cookie"
->;
+export type DashboardAuthHeaders = FastifyRequest["headers"];
 
 export type CreateLiveAuthenticatedUserResolversOptions = {
   readonly jwt: AuthJwtHelper;
+  readonly configProvider?: LiveConfigProviderBoundary;
   readonly cookieName?: string;
   readonly resolveOAuthToken?: OAuthAccessTokenResolver;
   readonly isServiceBearer?: (request: FastifyRequest) => Promise<boolean>;
@@ -68,7 +69,7 @@ export type LiveAuthenticatedUserResolvers = {
 
 export type AuthenticatedDashboardUser = {
   readonly payload: AuthJwtPayload;
-  readonly carrier: "cookie" | "bearer";
+  readonly carrier: "cookie" | "bearer" | "tailscale";
 };
 
 export function createLiveAuthenticatedUserResolvers(
@@ -95,7 +96,18 @@ export function createLiveAuthenticatedUserResolvers(
   const resolveUserFromHeaders = async (
     headers: DashboardAuthHeaders,
     verify: (token: string) => Promise<AuthJwtPayload | null>,
+    request?: FastifyRequest,
   ): Promise<AuthenticatedDashboardUser | null> => {
+    const config = await options.configProvider?.getConfig();
+    if (config && resolveDashboardLoginMode({
+      google_client_id: typeof config.google_client_id === "string" ? config.google_client_id : "",
+      dashboard_admin_password: typeof config.dashboard_admin_password === "string" ? config.dashboard_admin_password : "",
+      tailscale_auth_enabled: config.tailscale_auth_enabled === true,
+    }) === "tailscale") {
+      if (request && await options.isServiceBearer?.(request)) return null;
+      const email = resolveTailscaleIdentity(headers, typeof config.tailscale_allowed_login === "string" ? config.tailscale_allowed_login : "");
+      return email ? { payload: { email, name: email }, carrier: "tailscale" } : null;
+    }
     const cookieToken = extractDashboardJwtCookieTokenFromHeader(
       headers.cookie,
       cookieName,
@@ -111,11 +123,14 @@ export function createLiveAuthenticatedUserResolvers(
     }
     return null;
   };
-  const resolveAuthenticatedUser = (request: FastifyRequest) =>
-    resolveUserFromHeaders(
+  const resolveAuthenticatedUser = async (request: FastifyRequest) => {
+    const authenticated = await resolveUserFromHeaders(
       request.headers,
       (token) => verifyToken(request, token),
+      request,
     );
+    return authenticated;
+  };
   const resolveHeadersWithoutRequest = (headers: DashboardAuthHeaders) =>
     resolveUserFromHeaders(headers, (token) => Promise.resolve(options.jwt.verifyToken(token)));
   const resolveOAuthAccess = async (request: FastifyRequest): Promise<OAuthResourceAccess | null> => {
@@ -154,11 +169,9 @@ export function createLiveAuthenticatedUserResolvers(
     async resolveCallerInfo(request, bodyCallerInfo, systemNodeId) {
       const authenticated = isServiceCaller(request) ? null : await resolveAuthenticatedUser(request);
       if (authenticated !== null && !isServiceCaller(request)) {
-        // Credential carrier is the server-owned provenance boundary. Browser
-        // cookies can only become browser, while the dashboard JWT bearer is
-        // reserved for the native Soul app. A body source can never downgrade
-        // an identified browser request to system/llm or strip its identity.
-        const source = authenticated.carrier === "cookie" ? "browser" : "soul-app";
+        // Cookies and Serve identities are browser callers; dashboard JWT
+        // bearers belong to the native app. The body cannot change provenance.
+        const source = authenticated.carrier !== "bearer" ? "browser" : "soul-app";
         return authenticatedDirectCallerInfo(
           request,
           authenticated.payload,

@@ -75,6 +75,11 @@ function PasswordLoginProbe() {
   );
 }
 
+function TailscaleProbe() {
+  const auth = useAuth();
+  return createElement("span", { "data-testid": "tailscale-enabled" }, auth.isLoading ? "loading" : String(auth.tailscaleAuthEnabled));
+}
+
 function AuthGateProbe() {
   const auth = useAuth();
   return createElement("div", null,
@@ -588,6 +593,16 @@ describe("AuthProvider refresh boundary", () => {
     await vi.waitFor(() => {
       expect(statusReads).toBe(2);
     });
+  });
+
+  it.each([true, undefined])("reads Tailscale config %s and defaults an absent key to false", async (enabled) => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/auth/config") return Response.json({ authEnabled: true, devModeEnabled: false, ...(enabled ? { tailscaleAuthEnabled: true } : {}) });
+      if (String(input) === "/api/auth/status") return authStatusResponse(false);
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }));
+    flushSync(() => root.render(createElement(AuthProvider, null, createElement(TailscaleProbe))));
+    await vi.waitFor(() => expect(container.querySelector("[data-testid=tailscale-enabled]")?.textContent).toBe(String(enabled ?? false)));
   });
 
   it("restores fetch after StrictMode remount and ignores a 401 that arrives after unmount", async () => {

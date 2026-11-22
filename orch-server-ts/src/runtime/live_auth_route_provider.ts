@@ -15,6 +15,7 @@ import type {
   AuthUserAuthorizer,
 } from "../auth/auth_routes.js";
 import { AUTH_COOKIE_NAME } from "../auth/auth_routes.js";
+import { resolveTailscaleIdentity } from "../auth/tailscale_identity.js";
 import { resolveDashboardLoginMode } from "../auth/login_mode.js";
 import {
   serviceBearerFailure,
@@ -171,6 +172,7 @@ export function createLiveAuthTokenResolver(
     const googleClientId = requiredSnapshotString(snapshot, "google_client_id");
     const loginMode = resolveDashboardLoginMode({
       google_client_id: googleClientId,
+      tailscale_auth_enabled: snapshot.tailscale_auth_enabled === true,
       dashboard_admin_password:
         optionalConfigString(snapshot, "dashboard_admin_password") ?? "",
     });
@@ -180,10 +182,14 @@ export function createLiveAuthTokenResolver(
       configuredBearer ?? "",
       environment,
       options.nodeCredentials,
-      loginMode === "password",
+      loginMode === "password" || loginMode === "tailscale",
     );
     if (bearer.ok) return { ok: true };
 
+    if (loginMode === "tailscale") {
+      const login = optionalConfigString(snapshot, "tailscale_allowed_login") ?? "";
+      return resolveTailscaleIdentity(request.headers, login) ? { ok: true } : bearer;
+    }
     if (loginMode !== "none") {
       const payload = options.resolveDashboardUser === undefined
         ? await verifyDashboardToken(request, cookieName, jwt, loginMode === "google")

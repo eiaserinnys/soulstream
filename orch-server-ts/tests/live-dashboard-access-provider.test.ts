@@ -14,6 +14,18 @@ import {
 } from "../src/index.js";
 
 describe("live dashboard DB access provider", () => {
+  it("resolves the permitted Serve user through the users repository", async () => {
+    const repository = { findUserByEmail: vi.fn(async (email: string) => email === "owner@example.com" ? { email, isAdmin: true, allowedFolderIds: [] } : null) };
+    const provider = createLiveDashboardAccessProvider({ nodeCredentials: null, repository,
+      jwt: { issueToken: async () => "", verifyToken: async () => null },
+      configProvider: configWith({ auth_bearer_token: "service-token", environment: "production", google_client_id: "", tailscale_auth_enabled: true, tailscale_allowed_login: "owner@example.com" }),
+    });
+    await expect(provider.resolveAccess(requestWith({ "tailscale-user-login": "owner@example.com" }))).resolves.toEqual({ restricted: false, allowedFolderIds: [] });
+    expect(repository.findUserByEmail).toHaveBeenCalledWith("owner@example.com");
+    repository.findUserByEmail.mockResolvedValueOnce(null);
+    await expect(provider.resolveAccess(requestWith({ "tailscale-user-login": "owner@example.com" }))).resolves.toEqual({ restricted: true, allowedFolderIds: [] });
+    await expect(provider.resolveAccess(requestWith({ "tailscale-user-login": "other@example.com" }))).rejects.toMatchObject({ statusCode: 401 });
+  });
   it("requires an explicit user repository", () => {
     const options = {
       configProvider: configWith({ environment: "production" }),
@@ -304,6 +316,7 @@ function cookieRequest(token: string): FastifyRequest {
 function requestWith(input: {
   authorization?: string;
   cookie?: string;
+  "tailscale-user-login"?: string;
   query?: Record<string, unknown>;
   body?: unknown;
 } = {}): FastifyRequest {
@@ -311,6 +324,7 @@ function requestWith(input: {
     headers: {
       ...(input.authorization === undefined ? {} : { authorization: input.authorization }),
       ...(input.cookie === undefined ? {} : { cookie: input.cookie }),
+      ...(input["tailscale-user-login"] === undefined ? {} : { "tailscale-user-login": input["tailscale-user-login"] }),
     },
     query: input.query ?? {},
     body: input.body,

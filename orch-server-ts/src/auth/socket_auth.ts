@@ -12,11 +12,12 @@ export interface SocketAuthConfig {
   /** Node pairing credentials; `null` is explicit outside production composition. */
   nodeCredentials: NodeCredentialResolver | null;
   dashboardAuthEnabled: boolean;
+  tailscaleAuthEnabled?: boolean;
   resolveDashboardUserFromHeaders: (
-    headers: Pick<IncomingHttpHeaders, "authorization" | "cookie">,
+    headers: IncomingHttpHeaders,
   ) => Promise<{
     payload: Record<string, unknown>;
-    carrier: "cookie" | "bearer";
+    carrier: "cookie" | "bearer" | "tailscale";
   } | null>;
 }
 
@@ -27,7 +28,7 @@ export interface SocketAuthInput {
 }
 
 export interface SocketAuthResult {
-  source: "bearer" | "cookie" | "development";
+  source: "bearer" | "cookie" | "tailscale" | "development";
   subject: string;
   /** Present only when a node pairing credential authenticated the socket. */
   principal?: NodePrincipal;
@@ -63,7 +64,7 @@ export async function authenticateSocketConnection({
         subject: getJwtSubject(dashboardUser.payload),
       };
     }
-    if (firstHeaderValue(requestHeaders.cookie)) {
+    if (!config.tailscaleAuthEnabled && firstHeaderValue(requestHeaders.cookie)) {
       throw new Error("invalid dashboard authentication credentials");
     }
     if (firstHeaderValue(requestHeaders.authorization)) {

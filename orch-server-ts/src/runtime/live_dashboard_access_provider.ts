@@ -10,6 +10,7 @@ import {
   type AuthTokenAccessResult,
   type AuthUserPayloadExtra,
 } from "../auth/auth_routes.js";
+import { resolveTailscaleIdentity } from "../auth/tailscale_identity.js";
 import { resolveDashboardLoginMode } from "../auth/login_mode.js";
 import {
   serviceBearerFailure,
@@ -228,6 +229,7 @@ async function resolveAccessIdentity(input: {
   const googleClientId = requiredSnapshotString(snapshot, "google_client_id");
   const loginMode = resolveDashboardLoginMode({
     google_client_id: googleClientId,
+    tailscale_auth_enabled: snapshot.tailscale_auth_enabled === true,
     dashboard_admin_password:
       optionalConfigString(snapshot, "dashboard_admin_password") ?? "",
   });
@@ -235,7 +237,7 @@ async function resolveAccessIdentity(input: {
     ? input.accessEmail
     : extractAccessEmail(input.request);
 
-  if (loginMode !== "none") {
+  if (loginMode !== "none" && loginMode !== "tailscale") {
     const cookieToken = extractDashboardJwtCookieToken(input.request, input.cookieName);
     if (cookieToken) {
       const payload = await verifyDashboardToken({ ...input, request: input.request }, cookieToken);
@@ -250,9 +252,15 @@ async function resolveAccessIdentity(input: {
     configuredBearer ?? "",
     environment,
     input.nodeCredentials,
-    loginMode === "password",
+    loginMode === "password" || loginMode === "tailscale",
   );
   if (bearer.ok) return { mode: "service_token", accessEmail };
+
+  if (loginMode === "tailscale") {
+    const email = resolveTailscaleIdentity(input.request.headers, optionalConfigString(snapshot, "tailscale_allowed_login") ?? "");
+    if (email) return { mode: "dashboard", email };
+    throw new DashboardAccessError("AUTHENTICATION_REQUIRED", bearer.detail, bearer.statusCode ?? 401);
+  }
 
   if (loginMode === "google") {
     const dashboardToken = extractDashboardBearerToken(input.request);

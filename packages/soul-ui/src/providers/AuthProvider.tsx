@@ -45,6 +45,7 @@ export interface AuthContextValue {
   devModeEnabled: boolean;
   /** 설치 비밀번호 로그인 사용 가능 여부 (서버 플래그 기반) */
   passwordLoginEnabled: boolean;
+  tailscaleAuthEnabled: boolean;
   /** 인증 완료 여부 */
   isAuthenticated: boolean;
   /** 현재 사용자 정보 */
@@ -108,6 +109,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [authEnabled, setAuthEnabled] = useState(false);
   const [devModeEnabled, setDevModeEnabled] = useState(false);
   const [passwordLoginEnabled, setPasswordLoginEnabled] = useState(false);
+  const [tailscaleAuthEnabled, setTailscaleAuthEnabled] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const isAuthenticatedRef = useRef(false);
@@ -224,6 +226,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setAuthEnabled(config.authEnabled);
         setDevModeEnabled(config.devModeEnabled ?? false);
         setPasswordLoginEnabled(config.passwordLoginEnabled ?? false);
+        setTailscaleAuthEnabled(config.tailscaleAuthEnabled ?? false);
 
         if (config.authEnabled) {
           // 2. 인증 활성 → /api/auth/status로 현재 인증 상태 확인
@@ -283,6 +286,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         authEnabled,
         devModeEnabled,
         passwordLoginEnabled,
+        tailscaleAuthEnabled,
         isAuthenticated,
         user,
         refreshAuthStatus,

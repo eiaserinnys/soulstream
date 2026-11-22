@@ -190,6 +190,30 @@ describe("Auth route harness", () => {
     await app.close();
   });
 
+  it("returns Tailscale status only for the permitted Serve identity", async () => {
+    const jwt = createJwtHelper();
+    const app = createApp({ config, authRoutes: createAuthRouteOptions({ jwt,
+      configProvider: { getConfig: () => ({ ...enabledConfig, loginMode: "tailscale", devModeEnabled: false, tailscaleAllowedLogin: "owner@example.com" }) },
+      userPayloadExtra: async () => ({ isAdmin: true, dashboardAccess: { restricted: false, allowedFolderIds: [] } }),
+    }) });
+    expect((await app.inject("/api/auth/config")).json()).toEqual({ authEnabled: true, devModeEnabled: false, passwordLoginEnabled: false, tailscaleAuthEnabled: true });
+    expect((await app.inject({ method: "GET", url: "/api/auth/status", headers: { "tailscale-user-login": "OWNER@example.com" } })).json()).toEqual({
+      authenticated: true, user: { email: "owner@example.com", name: "owner@example.com", picture: "", isAdmin: true, dashboardAccess: { restricted: false, allowedFolderIds: [] } },
+    });
+    expect((await app.inject({ method: "GET", url: "/api/auth/status", headers: { cookie: "soul_dashboard_auth=valid-jwt" } })).json()).toEqual({ authenticated: false, user: null });
+    expect((await app.inject({ method: "GET", url: "/api/auth/token", headers: { "tailscale-user-login": "owner@example.com", cookie: "soul_dashboard_auth=valid-jwt" } })).statusCode).toBe(401);
+    expect(jwt.verifyToken).not.toHaveBeenCalled();
+    expect((await app.inject({ method: "POST", url: "/api/auth/password-login", payload: { password: "x" } })).statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("ignores a Serve identity when Google mode takes priority", async () => {
+    const app = createApp({ config, authRoutes: createAuthRouteOptions() });
+    expect((await app.inject({ method: "GET", url: "/api/auth/status", headers: { "tailscale-user-login": "owner@example.com" } })).json()).toEqual({ authenticated: false, user: null });
+    expect((await app.inject({ method: "POST", url: "/api/auth/password-login", payload: { password: "x" } })).statusCode).toBe(404);
+    await app.close();
+  });
+
   it("returns OAuth config and redirects Google auth with safe state and return_to cookies", async () => {
     const app = createApp({ config, authRoutes: createAuthRouteOptions() });
 
