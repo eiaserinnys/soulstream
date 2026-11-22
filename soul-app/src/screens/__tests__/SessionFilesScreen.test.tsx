@@ -71,10 +71,13 @@ test('pending을 3초마다 열 번 다시 읽고 떠나면 타이머를 멈춘�
 
 test('요청 실패 후 다시 시도하면 결과가 나온다', async () => {
   mockGet.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(reviewWorkspace);
-  const screen = render(<SessionFilesContent sessionId="s" active />);
+  const onHeader = jest.fn();
+  const screen = render(<SessionFilesContent sessionId="s" active onHeader={onHeader} />);
   await waitFor(() => expect(screen.getByText('다시 시도')).toBeTruthy());
+  expect(onHeader).toHaveBeenLastCalledWith(expect.objectContaining({ title: '파일', branch: false }));
   fireEvent.press(screen.getByText('다시 시도'));
   await waitFor(() => expect(screen.getByLabelText('config.ts')).toBeTruthy());
+  expect(onHeader).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'card1802-outbox-backoff', branch: true }));
 });
 
 test('열린 동안 턴이 끝나면 다시 조회하고 떠나면 대기 중인 재조회를 취소한다', async () => {

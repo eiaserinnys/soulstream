@@ -78,7 +78,7 @@ test('iPhone PAS 카드는 기존 PhoneCardDetail stack 경로를 사용하고 P
   const tabs = getBottomTabCaptures()[0];
   for (const tab of tabs.screens) render(<PersistentSessionProvider>{React.createElement(tab.component)}</PersistentSessionProvider>);
   const feed = getNativeStackCaptures().find(stack => stack.screens[0]?.name === 'Feed')!;
-  expect(feed.screens.map(s => s.name)).toEqual(['Feed', 'Search', 'CardDetail', 'MarkdownDocument', 'Chat']);
+  expect(feed.screens.map(s => s.name)).toEqual(['Feed', 'Search', 'CardDetail', 'MarkdownDocument', 'Chat', 'SessionFiles']);
   expect(feed.screens.find(s => s.name === 'Chat')?.options.gestureEnabled).toBe(false);
   const pas = getNativeStackCaptures().find(stack => stack.screens[0]?.name === 'PersistentSession')!;
   expect(pas.screens.map(s => s.name)).toEqual(['PersistentSession', 'CardDetail', 'MarkdownDocument']);

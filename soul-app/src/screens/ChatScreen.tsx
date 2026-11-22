@@ -125,17 +125,18 @@ export function ChatScreen({ route, navigation }: Props) {
       ),
       headerRight: () => (
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <LiquidGlassButton iconOnly variant="plain" accessibilityLabel="세션 파일"
-          contentStyle={styles.headerMenu} onPress={() => navigation.navigate('SessionFiles', { sessionId })}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="세션 파일"
+          style={styles.headerMenu} onPress={() => navigation.navigate('SessionFiles', { sessionId })}>
           <Ionicons name="folder-open-outline" color={t.colors.accent} size={t.iconSize.navigation} />
-        </LiquidGlassButton>
-        <LiquidGlassButton iconOnly variant="plain"
+        </TouchableOpacity>
+        <TouchableOpacity
           onPress={() => menus.openSessionMenu({ sessionId })}
+          accessibilityRole="button"
           accessibilityLabel="세션 메뉴"
-          contentStyle={styles.headerMenu}
+          style={styles.headerMenu}
         >
           <Text style={styles.headerMenuText}>•••</Text>
-        </LiquidGlassButton>
+        </TouchableOpacity>
         </View>
       ),
     });

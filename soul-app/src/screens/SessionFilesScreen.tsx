@@ -20,6 +20,7 @@ import { FrameLoading } from '../components/FrameLoading';
 import { AttachmentPreviewModal } from '../components/AttachmentPreviewModal';
 import { isLegacyAttachmentImage, type AttachmentView } from '../lib/attachment-view';
 import { TabletPaneHeader } from '../components/split/TabletPaneHeader';
+import { formatCardTime } from '../lib/card-check-item-summary';
 
 type FileEntry = SessionWorkspaceResponse['files'][number];
 type ReadEntry = SessionWorkspaceResponse['read_only'][number];
@@ -146,13 +147,13 @@ export function SessionFilesView({ data, error, refreshing, onRefresh, expanded,
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
       {data?.node.status === 'offline' ? <GroupedGlassSheet><View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm, paddingHorizontal: t.uiSpacing.md, paddingVertical: t.uiSpacing.sm, minHeight: t.hitTarget.min }}>
         <Ionicons name="cloud-offline-outline" size={t.iconSize.standard} color={t.colors.warningText} />
-        <Text style={{ flex: 1, ...t.foundation.typography.meta, color: t.colors.textSecondary }}>노드 끊김{data.snapshot?.observed_at ? `, ${new Date(data.snapshot.observed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} 기준` : ''}</Text>
+        <Text style={{ flex: 1, ...t.foundation.typography.meta, color: t.colors.textSecondary }}>노드 끊김{data.snapshot?.observed_at ? `, ${formatCardTime(data.snapshot.observed_at)} 기준` : ''}</Text>
       </View></GroupedGlassSheet> : null}
       {message ? <View style={{ alignItems: 'center', gap: t.spacing.sm }}><Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>{message}</Text>
         {(error || data?.node.status === 'error') ? <LiquidGlassButton onPress={onRefresh}><Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 시도</Text></LiquidGlassButton> : null}</View> : null}
       {!message && data && !data.files.length && data.node.status !== 'offline' ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary, textAlign: 'center' }}>바뀐 파일 없음</Text> : null}
       {groups.map(([dir, files]) => <View key={dir}>
-        <Text numberOfLines={1} style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary, paddingHorizontal: t.uiSpacing.md, marginBottom: t.spacing.xs }}>{dir || '.'}</Text>
+        <Text selectable={false} numberOfLines={1} style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary, paddingHorizontal: t.uiSpacing.md, marginBottom: t.spacing.xs }}>{dir || '.'}</Text>
         <GroupedGlassSheet>{files.map(file => <FileRow key={file.path} file={file} onPress={() => onSelect(file.path)} />)}</GroupedGlassSheet>
       </View>)}
       {(reads.length > 0 || data?.attribution === 'partial') ? <GroupedGlassSheet>
