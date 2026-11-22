@@ -2,9 +2,11 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
 import postgres from "postgres";
+import { inject } from "vitest";
 
 import { startPostgresTestContainer } from
   "../../../packages/db-schema/scripts/postgres-test-container.mjs";
+
 export interface TestDatabaseLease {
   url: string;
   cleanup: () => Promise<void>;
@@ -26,8 +28,8 @@ export async function provisionTestDatabase({
   dockerPassword: string;
   dockerDatabase: string;
 }): Promise<TestDatabaseLease> {
-  const external = process.env.TEST_DATABASE_URL?.trim();
-  if (external) return await provisionExternalDatabase(external, prefix);
+  const adminUrl = process.env.TEST_DATABASE_URL?.trim() || inject("sharedPostgresTestUrl");
+  if (adminUrl) return await provisionDatabaseOnServer(adminUrl, prefix);
   return await provisionDockerDatabase({ dockerUser, dockerPassword, dockerDatabase });
 }
 
@@ -43,7 +45,7 @@ function assertSafeTestUrl(value: string): URL {
   return url;
 }
 
-async function provisionExternalDatabase(value: string, prefix: string) {
+async function provisionDatabaseOnServer(value: string, prefix: string) {
   const base = assertSafeTestUrl(value);
   const safePrefix = prefix.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 24);
   const database = `${base.pathname.slice(1)}_${safePrefix}_${process.pid}_`
@@ -60,11 +62,11 @@ async function provisionExternalDatabase(value: string, prefix: string) {
   databaseUrl.pathname = `/${database}`;
   return {
     url: databaseUrl.toString(),
-    cleanup: async () => await dropExternalTestDatabase(adminUrl, database),
+    cleanup: async () => await dropTestDatabase(adminUrl, database),
   };
 }
 
-async function dropExternalTestDatabase(adminUrl: URL, database: string): Promise<void> {
+async function dropTestDatabase(adminUrl: URL, database: string): Promise<void> {
   const cleanupSql = postgres(adminUrl.toString(), { max: 1, idle_timeout: 1 });
   try {
     for (let attempt = 0; attempt < 5; attempt += 1) {
