@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ChatMessage } from "./flatten-tree";
-import { flattenTree } from "./flatten-tree";
+import { type ChatMessage, flattenTree } from "./flatten-tree";
 import {
   isManuscriptSilentTokenText,
   isStandaloneKoreanYesAck,

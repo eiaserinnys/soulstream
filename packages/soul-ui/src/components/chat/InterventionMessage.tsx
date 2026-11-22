@@ -1,6 +1,5 @@
 import { cn } from "../../lib/cn";
-import { memo } from "react";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";

@@ -1,6 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-
-import { HttpResponseError } from "./http-response-error";
 import { fetchUsageSummary } from "./usage-summary";
 
 describe("fetchUsageSummary", () => {

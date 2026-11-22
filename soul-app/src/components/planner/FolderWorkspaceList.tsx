@@ -1,5 +1,5 @@
 import { useContinuityScroll } from '../../hooks/useContinuityScroll';
-import React,{useCallback,useEffect,useRef,useState,type ReactNode} from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { FlatList,Text,View,useWindowDimensions,type StyleProp,type ViewStyle,type ViewToken } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardDto } from '../../api/cardTypes';

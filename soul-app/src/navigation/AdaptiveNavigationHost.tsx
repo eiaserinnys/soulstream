@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { NavigationContainer, type InitialState, type NavigationContainerRefWithCurrent, type NavigationState } from '@react-navigation/native';
 import { useTokens, type DeviceType } from '../theme';
 import { useUIStore } from '../store/uiStore';

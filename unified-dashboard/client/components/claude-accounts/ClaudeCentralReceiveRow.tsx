@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Switch } from "@seosoyoung/soul-ui";
-import type { ClaudeCentralSettings } from "@seosoyoung/soul-ui";
+import { Button, Switch, type ClaudeCentralSettings } from "@seosoyoung/soul-ui";
 import {
   getClaudeCentralSettings,
   putClaudeCentralReceive,

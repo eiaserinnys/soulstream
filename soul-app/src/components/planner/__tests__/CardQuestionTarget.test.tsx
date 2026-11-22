@@ -1,4 +1,3 @@
-import React from 'react';
 import { TextInput } from 'react-native';
 import { act, render, renderHook } from '@testing-library/react-native';
 import { CardCommentComposer } from '../CardCommentComposer';

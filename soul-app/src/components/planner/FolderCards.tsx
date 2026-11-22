@@ -1,10 +1,9 @@
-import React, { forwardRef, useImperativeHandle, useMemo, useState } from 'react';
+import { forwardRef, useImperativeHandle, useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import { usePlannerFolder } from '../../hooks/usePlannerFolder';
 import { useTokens } from '../../theme';
 import { PlannerSectionHeader } from './PlannerSectionHeader';
-import { CardRow } from './CardRow';
 import { CardComposer } from './CardComposer';
 import { CardDetailSheet } from './CardDetailSheet';
 import { cardStyles } from './Card.styles';

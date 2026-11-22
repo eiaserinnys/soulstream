@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { useSessionStore } from '../store/sessionStore';
 import { SessionCard } from './SessionCard';
 

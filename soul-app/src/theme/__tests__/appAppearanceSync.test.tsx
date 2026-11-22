@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, render } from '@testing-library/react-native';
 import { Appearance, Platform } from 'react-native';
 import { AppAppearanceSync } from '../AppAppearanceSync';

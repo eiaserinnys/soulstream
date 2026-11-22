@@ -1,15 +1,5 @@
-import { CHAT_UI_LIMITS } from "./types.js";
-import type { ValidationIssue } from "./types.js";
-import {
-  addIssue,
-  codePointLength,
-  hasOwn,
-  inspectJsonValue,
-  isPlainObject,
-  MAX_ISSUES,
-  utf8ByteLength,
-} from "./validate_utils.js";
-import type { UnknownRecord } from "./validate_utils.js";
+import { CHAT_UI_LIMITS, type ValidationIssue } from "./types.js";
+import { addIssue, codePointLength, hasOwn, inspectJsonValue, isPlainObject, MAX_ISSUES, utf8ByteLength, type UnknownRecord } from "./validate_utils.js";
 
 const KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,47}$/;
 const DIMENSION_PATTERN = /^[A-Za-z][A-Za-z0-9_:]{0,31}$/;

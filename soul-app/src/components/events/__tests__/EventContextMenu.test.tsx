@@ -2,7 +2,6 @@ jest.mock('expo-clipboard', () => ({
   setStringAsync: jest.fn(() => Promise.resolve()),
 }));
 
-import React from 'react';
 import { ActionSheetIOS, Text } from 'react-native';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import * as Clipboard from 'expo-clipboard';

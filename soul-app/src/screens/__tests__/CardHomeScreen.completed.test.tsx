@@ -3,7 +3,6 @@ jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityI
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 jest.mock('../../api/client', () => ({ createApiClient: () => mockApi }));
 jest.mock('../../components/planner/TodayCardComposer', () => ({ TodayCardComposer: () => require('react').createElement(require('react-native').View, { testID: 'composer-content' }) }));
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { State } from 'react-native-gesture-handler';

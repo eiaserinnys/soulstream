@@ -194,10 +194,6 @@ async function chooseNode(value: string) {
   flushSync(() => item.click());
 }
 
-function modelSelect(): HTMLSelectElement | null {
-  return document.body.querySelector<HTMLSelectElement>('select[aria-label="모델 선택"]');
-}
-
 function startButton(): HTMLButtonElement | undefined {
   return Array.from(document.body.querySelectorAll("button")).find(
     (button) => button.textContent?.includes("시작"),

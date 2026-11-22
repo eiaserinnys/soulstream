@@ -1,4 +1,3 @@
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { render, renderHook, fireEvent } from '@testing-library/react-native';
 import { PHONE_CHAT_TYPOGRAPHY, TABLET_CHAT_TYPOGRAPHY, useTokens } from '../../../theme';

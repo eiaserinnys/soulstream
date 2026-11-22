@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens } from '../../theme';
 import { useActiveDuoRailOverride } from '../../navigation/phoneRailActions';
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, splitDuoRailBackAction } from '../../navigation/duoSideBand';
-import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from './RailCapsule';
+import { RailCapsule, RailCapsuleItem } from './RailCapsule';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import { duoRailLayout } from '../../navigation/duoRailLayout';
 

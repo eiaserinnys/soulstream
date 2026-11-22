@@ -3,12 +3,9 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 import type { FlatList } from 'react-native';
 import type { SessionEvent } from '../../../api/types';
 import type { ChatBodyStyles } from '../ChatBody.styles';
-import type { ChatRenderItem } from '../groupChatEvents';
 import { ChatEventList } from '../ChatEventList';
-import { groupChatEvents } from '../groupChatEvents';
+import { type ChatRenderItem, groupChatEvents } from '../groupChatEvents';
 import { projectPersistentTurnUsage } from '../persistentTurnUsageProjection';
-// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
-// promises) must settle inside act before RNTL's cleanup yields to the event loop.
 const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 jest.mock('../../events/EventRenderer', () => ({ EventRenderer: () => null }));

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, View, type ColorValue } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';

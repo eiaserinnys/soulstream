@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
-import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import {
   createGlobalAppFailureRecord,

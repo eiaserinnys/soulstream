@@ -1,13 +1,4 @@
-import React, {
-  forwardRef,
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Alert, RefreshControl, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AutomaticRefreshSlot } from '../components/AutomaticRefreshIndicator';
 import { FrameLoading } from '../components/FrameLoading';

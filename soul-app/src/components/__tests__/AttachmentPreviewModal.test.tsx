@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AttachmentReadError } from '../../api/attachmentEndpoints';

@@ -1,4 +1,3 @@
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { Splitter } from '../Splitter';

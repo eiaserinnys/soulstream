@@ -168,7 +168,6 @@ export function pasCardQuestion(entry: PersistentReportEntry, controls: ReportQu
       return false;
     }
   };
-  const expandWith = (target: CardQuestionTarget | null) => { controls.expand(); setCardQuestionTarget(scope, target, true); };
   const revised = view.revisedAt ? new Date(view.revisedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : null;
   return {
     meta: revised ? <span className="v3-card-question-meta">{revised}에 고침</span> : null,

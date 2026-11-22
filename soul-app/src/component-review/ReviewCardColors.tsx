@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import { CardStatusMenu } from '../components/planner/CardStatusMenu';
 import { GlassButton } from '../components/GlassSurface';

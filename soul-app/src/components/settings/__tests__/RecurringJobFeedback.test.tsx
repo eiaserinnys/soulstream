@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ActivityIndicator, ScrollView } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 

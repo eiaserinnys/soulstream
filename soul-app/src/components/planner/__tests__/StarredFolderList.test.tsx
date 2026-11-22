@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import { ActivityIndicator } from 'react-native';
 import type { PlannerFolder } from '../../../api/plannerTypes';

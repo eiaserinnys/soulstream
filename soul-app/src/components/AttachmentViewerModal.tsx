@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   Modal,
   Pressable,

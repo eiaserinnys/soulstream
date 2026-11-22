@@ -1,9 +1,7 @@
-import React from 'react';
-import { StyleSheet, View } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
+import { fireEvent, render, waitFor, renderHook } from '@testing-library/react-native';
 import type { AttachmentView } from '../../lib/attachment-view';
 import { createSessionVisualRoles, useTokens } from '../../theme';
-import { renderHook } from '@testing-library/react-native';
 import { ChatRefinedImageGallery } from '../AttachmentImage';
 import { MessageAttachments } from '../MessageAttachments';
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Text } from 'react-native';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../navigation/PersistentSessionContext';

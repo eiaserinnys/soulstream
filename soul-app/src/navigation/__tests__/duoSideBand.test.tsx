@@ -1,4 +1,3 @@
-import React from 'react';
 import { renderHook } from '@testing-library/react-native';
 import { Platform } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';

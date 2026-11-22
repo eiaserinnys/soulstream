@@ -41,8 +41,3 @@ export const SSE_EVENT_TYPES = GENERATED_SSE_EVENT_TYPES.filter(
   (eventType): eventType is Exclude<SSEEventType, _SSEExcludedTypes> =>
     !SSE_EXCLUDED_TYPES.has(eventType as _SSEExcludedTypes),
 ) satisfies readonly Exclude<SSEEventType, _SSEExcludedTypes>[];
-
-// 컴파일 타임 검증: 시스템 이벤트를 제외한 모든 SSEEventType이 SSE_EVENT_TYPES에 포함되는지 확인
-type _AssertHandledEventTypesCovered = {
-  [K in Exclude<SSEEventType, _SSEExcludedTypes>]: K extends (typeof SSE_EVENT_TYPES)[number] ? true : never
-};

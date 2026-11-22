@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, render } from '@testing-library/react-native';
 import { Animated, AppState } from 'react-native';
 import { StatusDot } from '../chat/StatusDot';

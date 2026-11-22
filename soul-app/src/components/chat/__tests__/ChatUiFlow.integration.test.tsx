@@ -1,5 +1,4 @@
-import React from 'react';
-import { ActionSheetIOS, TextInput } from 'react-native';
+import { ActionSheetIOS } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import * as Clipboard from 'expo-clipboard';
 import { ChatBody } from '../ChatBody';

@@ -1,7 +1,5 @@
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
-import { Image } from 'react-native';
+import { StyleSheet, Image } from 'react-native';
 import type { StoreApi } from 'zustand';
 import type { PersistentSessionScene } from '../../store/persistentSessionScene';
 import { PersistentSessionPortrait, PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';

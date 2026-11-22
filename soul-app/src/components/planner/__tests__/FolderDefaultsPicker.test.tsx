@@ -1,4 +1,3 @@
-import React from 'react';
 import { ActionSheetIOS } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { FolderDefaultsPicker } from '../FolderDefaultsPicker';

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, PanResponder, StyleSheet } from 'react-native';
 import { useTokens, type DesignTokens } from '../../theme';
 

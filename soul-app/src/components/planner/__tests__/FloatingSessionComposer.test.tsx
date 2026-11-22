@@ -1,4 +1,3 @@
-import React from 'react';
 import { Platform } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { FloatingSessionComposer } from '../FloatingSessionComposer';

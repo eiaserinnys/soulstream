@@ -1,7 +1,6 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
 
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { FolderWorkspaceToggleActions } from '../FolderWorkspaceToggleActions';

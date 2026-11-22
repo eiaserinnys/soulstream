@@ -1,6 +1,5 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../../menus/AppContextMenu', () => ({ showAppContextMenu: jest.fn() }));
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import { showAppContextMenu } from '../../menus/AppContextMenu';

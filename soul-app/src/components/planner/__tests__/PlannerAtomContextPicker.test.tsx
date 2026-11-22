@@ -1,8 +1,5 @@
-import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { PlannerAtomContextPicker } from '../PlannerAtomContextPicker';
-// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
-// promises) must settle inside act before RNTL's cleanup yields to the event loop.
 const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 test('노드 선택 화면 안에서 depth와 titlesOnly를 정해 한 번에 반환한다', async () => {

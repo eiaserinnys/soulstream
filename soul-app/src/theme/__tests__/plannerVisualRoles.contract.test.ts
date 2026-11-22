@@ -1,15 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { DesignTokens } from '../tokens';
-import {
-  DARK_COLORS,
-  DESIGN_SPACING,
-  PHONE_CARD_LAYOUT,
-  PHONE_FOUNDATION,
-  TABLET_CARD_LAYOUT,
-  TABLET_FOUNDATION,
-  TABLET_SPACING,
-} from '../tokens';
+import { type DesignTokens, DARK_COLORS, DESIGN_SPACING, PHONE_CARD_LAYOUT, PHONE_FOUNDATION, TABLET_CARD_LAYOUT, TABLET_FOUNDATION, TABLET_SPACING } from '../tokens';
 import { createPlannerVisualRoles } from '../plannerVisualRoles';
 
 const SRC_ROOT = path.resolve(__dirname, '../..');

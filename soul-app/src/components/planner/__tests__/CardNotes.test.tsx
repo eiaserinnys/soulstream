@@ -1,4 +1,3 @@
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { useTokens } from '../../../theme';
 import { PlannerMarkdownText } from '../PlannerMarkdownText';

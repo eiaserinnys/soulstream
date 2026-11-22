@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { SettingsScreen } from '../../screens/SettingsScreen';
 import { AppModalSurface } from '../AppModalSurface';
 import { useDuoSideBand } from '../../navigation/duoSideBand';

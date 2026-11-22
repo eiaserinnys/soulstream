@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { ApiHttpError } from '../../../api/clientCore';
 import type { PersistentSessionInstruction } from '../../../api/persistentSessionEndpoints';

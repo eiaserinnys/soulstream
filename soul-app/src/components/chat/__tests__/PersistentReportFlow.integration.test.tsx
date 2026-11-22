@@ -60,8 +60,7 @@ jest.mock('../ChatEventList', () => {
     return React.createElement(ChatEventList, props);
   }) };
 });
-const ui = { ...chatUiFixtureEvent('normal'), id: '2' };
-const stored = { id: 2, event_type: ui.type, payload: ui.data, parent_event_id: 1, created_at: '2026-10-12T00:00:01Z' };
+chatUiFixtureEvent('normal');
 const session = (id: string) => ({ agentSessionId: id, nodeId: 'public-node', status: 'completed' as const,
   displayName: '공개 예시', createdAt: '2026-10-12T00:00:00Z', updatedAt: '2026-10-12T00:00:00Z' });
 function jsonResponse(body: unknown): Response {

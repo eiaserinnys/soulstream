@@ -1,10 +1,4 @@
-/**
- * thinking-orbs by Jakub Antalik, MIT.
- * Parameters and the `orbits` algorithm are ported from thinking-orbs@0.2.0;
- * only CanvasRenderingContext2D.arc() is replaced by fixed React Native dot views.
- */
-
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, {
   interpolateColor,

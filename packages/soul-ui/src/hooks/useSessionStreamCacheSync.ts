@@ -127,7 +127,6 @@ export function useSessionStreamCacheSync(
   const {
     enabled,
     urlBuilder,
-    queryKey,
     onEventIdAdvance,
     onStreamMeta: onStreamMetaOption,
     onReplayGap: onReplayGapOption,

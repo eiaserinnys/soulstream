@@ -1,5 +1,4 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
-import React from 'react';
 import { Text } from 'react-native';
 import { fireEvent, render, within } from '@testing-library/react-native';
 import { CompletedCardFilters } from '../CompletedCardFilters';

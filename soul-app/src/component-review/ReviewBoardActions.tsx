@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { useTokens } from '../theme';
 import { CardRow } from '../components/planner/CardRow';

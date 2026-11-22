@@ -49,7 +49,6 @@ jest.mock('../FolderSessionHistory', () => ({ FolderSessionHistory: () => null }
 jest.mock('../SessionSuccessionSheet', () => ({ SessionSuccessionSheet: () => null }));
 jest.mock('../SessionSuccessionHost', () => ({ SessionSuccessionHost: () => null }));
 
-import React from 'react';
 import { Alert, PixelRatio, StyleSheet } from 'react-native';
 import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 import type { PlannerFolder, PlannerToday } from '../../../api/plannerTypes';

@@ -1,14 +1,4 @@
-/**
- * LLM 대화 히스토리 빌더.
- *
- * 활성 세션의 트리에서 user 메시지와 assistant 메시지를
- * 시간 순서로 평탄화해 LLM API 요청 형식의 messages 배열을 만든다.
- *
- * 순수 함수 — 네트워크 호출 없음, React 훅에 의존하지 않음.
- */
-
-import { flattenTree } from "../../lib/flatten-tree";
-import type { ChatMessage, FlattenTreeCache } from "../../lib/flatten-tree";
+import { flattenTree, type ChatMessage, type FlattenTreeCache } from "../../lib/flatten-tree";
 import type { EventTreeNode } from "@shared/types";
 
 export interface LlmHistoryMessage {

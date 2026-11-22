@@ -12,10 +12,10 @@ import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/re
 import { StyleSheet, useWindowDimensions } from 'react-native';
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../../../theme';
 import { CardAssignmentSheet } from '../CardAssignmentSheet';
-import { CardDetailContent, CardDetailSheet } from '../CardDetailSheet';
+import { CardDetailContent } from '../CardDetailSheet';
 import { CardRow } from '../CardRow';
 import { ExecutionSelectionSheet } from '../ExecutionSelectionSheet';
-import { CardTimeline, reportSummary } from '../CardTimeline';
+import { reportSummary } from '../CardTimeline';
 import { GlassButton } from '../../GlassSurface';
 import { CardCreateSheet } from '../CardCreateSheet';
 import { TodayCardComposer } from '../TodayCardComposer';
@@ -23,7 +23,6 @@ import { cardFixture } from '../../../test-support/cards';
 import { useCardStore } from '../../../store/cardStore';
 import { useSessionStore } from '../../../store/sessionStore';
 import { useSettingsStore } from '../../../store/settingsStore';
-import { useUIStore } from '../../../store/uiStore';
 const card = { ...cardFixture({ status: 'review', assigneeSessionId: 'root', assigneeKind: 'session' }), brief: '# 전달받은 요약' };
 const session = { displayName: '담당 세션', agentSessionId: 'root', agentId: 'roselin', agentName: '로젤린', agentPortraitUrl: 'https://test/agent.png', status: 'idle', createdAt: card.createdAt, updatedAt: card.updatedAt };
 const detail = { card, sessions: [session], reports: [{ id: 'r1', cardId: card.id, sessionId: 'root', title: '결과', body: '결론\n\n![첫 캡처](https://test/one.png)\n![두 캡처](https://test/two.png)\n![세 캡처](https://test/three.png)', format: 'markdown', createdAt: '2026-09-30T03:00:00Z' }],
@@ -224,7 +223,7 @@ test.each(['phone', 'tabletLandscape'] as const)('%s 카드 행은 실제 자식
   jest.mocked(useDeviceType).mockReturnValue(device);
   const screen = render(<CardRow api={null} card={card} onOpen={jest.fn()} />);
   const row = StyleSheet.flatten(screen.getByTestId(`card-row-${card.id}-layout`).props.style);
-  const open = StyleSheet.flatten(screen.getByLabelText(`${card.title} 카드 상세`).props.style);
+  screen.getByLabelText(`${card.title} 카드 상세`);
   const avatar = StyleSheet.flatten(screen.getByTestId(`card-${card.id}-avatar`).props.style);
   const cap = StyleSheet.flatten(screen.getByTestId(`card-${card.id}-완료-visual`).props.style);
   const capTouch = StyleSheet.flatten(screen.getByLabelText('완료').props.style);

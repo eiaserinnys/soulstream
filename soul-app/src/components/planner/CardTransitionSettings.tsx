@@ -1,4 +1,3 @@
-import React from 'react';
 import type {ApiClient} from '../../api/client';
 import type {useCardTransition} from '../../hooks/useCardTransition';
 import {CardAssignmentSheet} from './CardAssignmentSheet';

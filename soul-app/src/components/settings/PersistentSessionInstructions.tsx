@@ -1,5 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
-
+import { useEffect, useRef, useState } from 'react';
 import type { PersistentSessionInstruction } from '../../api/persistentSessionEndpoints';
 import { ApiHttpError } from '../../api/clientCore';
 import { PersistentSessionInstructionsFields } from './PersistentSessionSettingsFields';

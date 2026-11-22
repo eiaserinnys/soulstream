@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { PlannerFolder } from '../api/plannerTypes';
 import type { Folder } from '../api/types';

@@ -1,5 +1,5 @@
 import type { StateCreator } from "zustand";
-import type { DashboardActions, DashboardState, PendingChatSend } from "../dashboard-store-types";
+import type { DashboardActions, DashboardState } from "../dashboard-store-types";
 
 export function getPendingChatSendInitialState(): Pick<DashboardState, "pendingChatSends"> {
   return { pendingChatSends: {} };

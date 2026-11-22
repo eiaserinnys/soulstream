@@ -1028,13 +1028,8 @@ function ChatViewContent({
           }
         }}
         totalListHeightChanged={handleTotalListHeightChanged}
-        /**
-         * tool-group은 마지막 tool, summary-group은 anchor의 키를 유지한다.
-         * turn summary가 늦게 결합되어도 가상 행의 key와 data 길이가 바뀌지 않는다.
-         */
         computeItemKey={(_index, item) => messageOrGroupKey(item)}
         itemContent={(index, item) => {
-          const message = item.type === "single" ? item.msg : null;
           const narrationItem = item.type === "summary-group" ? item.anchor : item;
           const narration = isManuscript && (
             isManuscriptNarration(item, timelineItems[index - firstItemIndex + 1])

@@ -40,7 +40,6 @@ jest.mock('../FolderSessionHistory', () => ({ FolderSessionHistory: () => null }
 jest.mock('../SessionSuccessionSheet', () => ({ SessionSuccessionSheet: () => null }));
 jest.mock('../SessionSuccessionHost', () => ({ SessionSuccessionHost: () => null }));
 
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
 import type { PlannerBlock, PlannerFolder } from '../../../api/plannerTypes';

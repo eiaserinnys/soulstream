@@ -1,4 +1,4 @@
-import React, { useState, type PropsWithChildren } from 'react';
+import { useState, type PropsWithChildren } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useSettingsStore } from '../store/settingsStore';

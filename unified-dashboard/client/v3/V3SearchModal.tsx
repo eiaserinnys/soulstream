@@ -1,6 +1,4 @@
-import type { SessionSummary } from "@seosoyoung/soul-ui";
-import type { ChatFocusTarget } from "@seosoyoung/soul-ui";
-
+import type { SessionSummary, ChatFocusTarget } from "@seosoyoung/soul-ui";
 import { SearchModal } from "../components/SearchModal";
 
 type V3SearchModalProps = {

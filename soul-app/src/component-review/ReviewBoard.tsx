@@ -1,5 +1,5 @@
-import React, { useMemo,useState } from 'react';
-import { Text, View, useWindowDimensions } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Text, View } from 'react-native';
 import { useTokens } from '../theme';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 import { PlannerSectionHeader } from '../components/planner/PlannerSectionHeader';
@@ -24,7 +24,6 @@ const exampleCards = initialCards.map((card) => ({ ...card,
 
 export function ReviewBoard() {
   const t = useTokens();
-  const { height } = useWindowDimensions();
   const [scenario, setScenario] = useState<Scenario>('mixed');
   const [scope, setScope] = useState<Scope>('folder');
   const [layout, setLayout] = useState<Layout>('board');

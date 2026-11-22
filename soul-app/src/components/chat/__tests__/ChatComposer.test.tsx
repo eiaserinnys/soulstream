@@ -10,9 +10,8 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 
 import { ChatComposer } from '../ChatComposer';
 import { ChatInterruptButton } from '../ChatInterruptButton';
-import { makeStyles } from '../ChatBody.styles';
+import { makeStyles, ADD_GLYPH_INSET_RATIO } from '../ChatBody.styles';
 import { createSessionVisualRoles, useTokens } from '../../../theme';
-import { ADD_GLYPH_INSET_RATIO } from '../ChatBody.styles';
 import * as inputMeasurement from '../useTextInputContentHeight';
 
 afterEach(() => jest.restoreAllMocks());

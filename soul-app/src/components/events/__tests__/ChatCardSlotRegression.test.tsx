@@ -1,5 +1,4 @@
 jest.mock('../CopyableAssistantMarkdown', () => ({ CopyableAssistantMarkdown: ({ markdown }: any) => require('react').createElement(require('react-native').Text, null, markdown) }));
-import React from 'react';
 import { render } from '@testing-library/react-native';
 import { UserMessage } from '../UserMessage';
 import { AssistantMessage } from '../AssistantMessage';

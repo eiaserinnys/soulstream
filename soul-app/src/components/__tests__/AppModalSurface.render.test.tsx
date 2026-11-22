@@ -1,7 +1,5 @@
-import React from 'react';
 import { Modal, StyleSheet, View } from 'react-native';
 import { render } from '@testing-library/react-native';
-
 import {
   AppModalSurface,
   resolveAppModalPresentation,

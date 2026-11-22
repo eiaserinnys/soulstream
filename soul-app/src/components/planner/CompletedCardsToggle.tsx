@@ -1,4 +1,3 @@
-import React from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LiquidGlassButton } from '../LiquidGlassButton';
 import { useTokens } from '../../theme';

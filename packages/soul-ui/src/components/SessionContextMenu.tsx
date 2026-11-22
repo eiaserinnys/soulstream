@@ -1,18 +1,8 @@
 import {SessionContinueErrorDialog,SessionDeleteDialog} from "./SessionDialogViews";
-/**
- * SessionContextMenu - 세션 우클릭 컨텍스트 메뉴 공통 컴포넌트
- *
- * Session surfaces share the same context menu and dialogs.
- * 세션 ID 복사 · 이름 변경 · 폴더 이동 · 삭제 기능을 제공한다.
- *
- * 모바일: Dialog 하단 시트 (bottomStickOnMobile)
- * 데스크탑: base-ui Menu 프리미티브 (VirtualElement anchor + scale/opacity 진입·퇴장 전환)
- */
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useIsMobile } from "../hooks/use-mobile";
-import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel, DialogFooter } from "./ui/dialog";
+import { Dialog, DialogPopup } from "./ui/dialog";
 import { Menu, MenuPopup } from "./ui/menu";
-import { Button } from "./ui/button";
 import { cn } from "../lib/cn";
 import { SessionMenuItems } from "./SessionMenuItems";
 import { RenameSessionDialog } from "./RenameSessionDialog";

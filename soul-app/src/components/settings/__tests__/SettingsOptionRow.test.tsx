@@ -1,4 +1,3 @@
-import React from 'react';
 import { ScrollView, StyleSheet, Text } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { SettingsOptionRow, type SettingsOption } from '../SettingsOptionRow';

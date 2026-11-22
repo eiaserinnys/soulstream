@@ -1,28 +1,5 @@
 import {orchestratorFetch} from "@seosoyoung/soul-ui/lib/orchestrator-connection";
-/**
- * OrchestratorSessionProvider - unified-dashboard용 세션 Provider
- *
- * orchestrator-dashboard의 OrchestratorSessionProvider를 unified-dashboard로 포팅.
- * soul-ui SessionStorageProvider 인터페이스를 구현한다.
- *
- * - fetchSessions: /api/sessions 에서 세션 목록 조회 (orchestrator BFF 경로)
- * - subscribe: /api/sessions/:key/events SSE 스트림 구독 (히스토리 포함)
- *   → worker EventStore가 히스토리 스트리밍을 처리하므로 SessionCache 불필요
- */
-
-import type {
-  SessionStorageProvider,
-  SessionListResult,
-  FetchSessionsOptions,
-  SoulSSEEvent,
-  SessionSummary,
-} from "@seosoyoung/soul-ui";
-import {
-  buildFetchSessionsUrl,
-  createRegisteredDetailCursorStore,
-  createSSESubscribe,
-  toSessionSummary,
-} from "@seosoyoung/soul-ui";
+import { type SessionStorageProvider, type SessionListResult, type FetchSessionsOptions, type SoulSSEEvent, type SessionSummary, buildFetchSessionsUrl, createRegisteredDetailCursorStore, createSSESubscribe, toSessionSummary } from "@seosoyoung/soul-ui";
 
 const MAX_TARGETED_SESSION_URL_LENGTH = 6_000;
 const MAX_TARGETED_SESSION_IDS = 200;

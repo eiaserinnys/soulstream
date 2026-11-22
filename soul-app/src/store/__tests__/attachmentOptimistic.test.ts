@@ -1,6 +1,5 @@
 import type { SessionEvent } from '../../api/types';
-import type { PendingOptimisticEvent } from '../chatStore';
-import { useChatStore } from '../chatStore';
+import { type PendingOptimisticEvent, useChatStore } from '../chatStore';
 import { matchesAttachmentPending, removeGeneratedAttachmentPathNotes } from '../../lib/attachment-message-match';
 
 const SID = 'attachment-optimistic-test';

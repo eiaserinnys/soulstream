@@ -1,8 +1,7 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 
-import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import { StyleSheet, useWindowDimensions } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { formatUsageUpdatedLabel, type UsageSummaryGauge, type UsageSummaryNode } from '../../../../../packages/soul-ui/src/lib/usage-summary';
 import { DARK_COLORS, DESIGN_SPACING, LIGHT_COLORS } from '../../../theme/tokens';
 import type { AppUsageSummaryGauge } from '../../../lib/usage-summary-pool';

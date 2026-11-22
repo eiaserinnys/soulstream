@@ -1,4 +1,3 @@
-import React from 'react';
 import { Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardDto } from '../../api/cardTypes';

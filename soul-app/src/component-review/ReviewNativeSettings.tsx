@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { View } from 'react-native';
 import { SettingsModal } from '../components/settings/SettingsModal';
 import { PersistentSessionPasSettingsModal } from '../components/settings/PersistentSessionPasSettingsModal';

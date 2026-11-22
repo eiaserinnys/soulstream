@@ -1,6 +1,5 @@
-import React, { memo, useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-
 import type {
   SessionEvent,
   ToolApprovalPayload,

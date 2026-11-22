@@ -34,7 +34,6 @@ jest.mock('../../theme/useDeviceType', () => ({
   deviceTypeToBaseKey: (device: string) => device === 'phone' ? 'phone' : 'tablet',
 }));
 
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { TabNavigator } from '../TabNavigator';

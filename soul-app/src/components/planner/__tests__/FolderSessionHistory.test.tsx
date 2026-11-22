@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { FlatList, StyleSheet } from 'react-native';
 import type { Session } from '../../../api/types';

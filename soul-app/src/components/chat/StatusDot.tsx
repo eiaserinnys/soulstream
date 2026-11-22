@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, AppState, StyleSheet } from 'react-native';
 import { useTokens } from '../../theme';
 import { capsuleRadius } from '../../theme/tokens';

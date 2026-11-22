@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { ScrollView, View } from 'react-native';
 import { MessageAttachments } from '../../../src/components/MessageAttachments';
 import { CardQuestionBody } from '../../../src/components/planner/CardQuestionBlock';

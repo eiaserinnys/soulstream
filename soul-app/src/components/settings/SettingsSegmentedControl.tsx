@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { createPrimitiveRoles, useTokens, type DesignTokens } from '../../theme';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';

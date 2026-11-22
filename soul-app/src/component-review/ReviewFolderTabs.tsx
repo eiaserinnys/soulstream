@@ -1,4 +1,3 @@
-import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { PersistentSessionProvider } from '../navigation/PersistentSessionContext';
 import { TabNavigator } from '../navigation/TabNavigator';

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text } from 'react-native';
 import type { Folder } from '../../api/types';
 import {

@@ -1,4 +1,4 @@
-import React,{useEffect,useRef,useState} from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FlatList,Text,View,useWindowDimensions } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardDto } from '../../api/cardTypes';

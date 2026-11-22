@@ -1,4 +1,3 @@
-import React from 'react';
 import { GlassButton, type GlassButtonProps } from './GlassSurface';
 
 export type LiquidGlassButtonProps = GlassButtonProps;

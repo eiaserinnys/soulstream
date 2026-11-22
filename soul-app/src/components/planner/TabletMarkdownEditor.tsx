@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { PlannerForegroundCard } from './PlannerForegroundCard';

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 import type { CardCheckItem } from '../../api/cardTypes';
 import { useTokens } from '../../theme';

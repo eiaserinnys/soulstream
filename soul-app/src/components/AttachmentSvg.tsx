@@ -1,5 +1,5 @@
 import { File } from 'expo-file-system';
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Text,

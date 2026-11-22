@@ -16,7 +16,6 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   default: () => mockDimensions,
 }));
 
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import type { Session } from '../../../api/types';

@@ -1,7 +1,5 @@
-import { memo } from "react";
-import type { MouseEvent } from "react";
+import { memo, type MouseEvent } from "react";
 
-/** truncate된 콘텐츠 하단에 표시하는 "전체 내용 보기" 버튼 */
 export const ShowFullContentButton = memo(function ShowFullContentButton({
   loading,
   error,

@@ -24,10 +24,9 @@ import { CardCreateDialog } from "./CardCreateDialog";
 import { SessionSuccessionModal } from "./SessionSuccessionModal";
 import { RitualModal } from "./RitualModal";
 import { dialoguesFolders, dialoguesAssignment, createDialoguesApi } from "./dialogues-api";
-import { reviewCard, reviewDetail, reviewFolder, reviewSession } from "./components-review-fixtures";
+import { reviewFolder, reviewSession } from "./components-review-fixtures";
 import type { DialogueId } from "./dialogues-inventory";
 import { DialoguesOverlaySamples } from "./DialoguesOverlaySamples";
-/** Every branch renders the production component/view, with local operations at its boundary. */
 export function DialoguesSamples({
   id,
   api,

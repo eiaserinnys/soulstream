@@ -11,7 +11,6 @@ jest.mock('../../components/planner/CardBoardWorkspace', () => {
       ReactModule.createElement(View, { testID: 'card-board-workspace-mock', ...props })),
   };
 });
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { render } from '@testing-library/react-native';
 import { CardHomeScreen } from '../CardHomeScreen';

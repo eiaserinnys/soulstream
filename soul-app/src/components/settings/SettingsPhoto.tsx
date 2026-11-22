@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, View, TouchableWithoutFeedback, StyleSheet, type ImageProps } from 'react-native';
 import { ImageViewerModal } from '../ImageViewerModal';
 const fallback = require('../../../assets/settings-wallpaper-fallback.jpg');

@@ -1,11 +1,10 @@
 import { AdaptiveNavigationHost } from '../navigation/AdaptiveNavigationHost';
 import { LayoutContinuityProvider } from '../navigation/LayoutContinuityContext';
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, Text, View, type AlertButton } from 'react-native';
 import { PersistentSessionProvider } from '../navigation/PersistentSessionContext';
 import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
-import { useDeviceType } from '../theme';
-import { useTokens } from '../theme';
+import { useDeviceType, useTokens } from '../theme';
 import { AppModalSurface } from '../components/AppModalSurface';
 import { GroupedGlassRow, GroupedGlassSheet } from '../components/planner/GroupedGlassSheet';
 import { ENTRY_SHELL_ALERT_EVENT, installEntryShellPublicHarness, type EntryShellAlertRequest } from './fixture-client';
@@ -48,10 +47,8 @@ export function EntryShellAlertHarness() {
   </AppModalSurface>;
 }
 
-/** Real phone tab/stack/home and tablet split tree. Metro injects fixture transport. */
 export function ReviewEntryShell() {
   const device = useDeviceType();
-  const t = useTokens();
   return <View style={{ flex: 1 }}><PersistentSessionProvider><LayoutContinuityProvider>
     <ContentLinkProvider><AdaptiveNavigationHost device={device} /></ContentLinkProvider>
   </LayoutContinuityProvider></PersistentSessionProvider>

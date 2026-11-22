@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { useSessionStore } from '../../../store/sessionStore';

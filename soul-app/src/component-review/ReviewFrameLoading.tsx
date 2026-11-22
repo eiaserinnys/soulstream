@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import type { ApiClient } from '../api/client';
 import { FrameLoading } from '../components/FrameLoading';

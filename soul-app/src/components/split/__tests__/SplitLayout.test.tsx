@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, render } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUIStore } from '../../../store/uiStore';

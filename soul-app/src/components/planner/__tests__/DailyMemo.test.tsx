@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import type { PlannerBlock } from '../../../api/plannerTypes';
 import { DailyMemo } from '../DailyMemo';

@@ -2,8 +2,7 @@
  * @vitest-environment jsdom
  */
 
-import { createElement } from "react";
-import type { ComponentProps } from "react";
+import { createElement, type ComponentProps } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";

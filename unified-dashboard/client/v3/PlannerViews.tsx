@@ -10,7 +10,6 @@ import type {
   DailyPlannerData,
   PlannerFolder,
 } from "./planner-data";
-import { visibleDailyFolders } from "./today-folder-state";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import type { SessionNodeConnectivity } from "@seosoyoung/soul-ui/lib/session-node-connectivity";
 
@@ -56,21 +55,6 @@ export function DailyPlannerView({
   const cards = groupCards(Object.values(byId));
   const summary = ([ ["확인할 것",cards.attention.length], ["진행 중",cards.running.length], ["대기",cards.queued.length] ] as const).filter(([,count])=>count>0).map(([label,count])=>`${label} ${count}`).join(" / ");
   const data = state.data;
-  const visibleTasks = visibleDailyFolders(data?.folders ?? [], isTodayView, todayFolderIds);
-  const visibleProjects = folders.filter((folder) => visibleTasks.some((task) => task.parentFolderId === folder.id));
-  const visibleProjectIds = new Set(visibleProjects.map((folder) => folder.id));
-  const groups = data ? [
-    ...visibleProjects.map((folder) => ({
-      project: folder,
-      tasks: visibleTasks.filter((task) => task.parentFolderId === folder.id),
-    })),
-    {
-      project: null,
-      tasks: visibleTasks.filter((task) => (
-        task.parentFolderId === null || !visibleProjectIds.has(task.parentFolderId)
-      )),
-    },
-  ].filter((group) => group.tasks.length > 0) : [];
 
   return (
     <div className="v3-planner-column v3-planner-column--daily">
@@ -100,10 +84,6 @@ function LoadError({ message }: { message: string }) {
       detail={message}
     />
   );
-}
-
-function EmptyState({ text }: { text: string }) {
-  return <div className="v3-empty">{text}</div>;
 }
 
 function formatLongDate(value: string): string {

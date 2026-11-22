@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import type { CardAttachmentAssetEvidence, CardCheckItem, CardDetail } from '../api/cardTypes';
 import { cardFixture } from '../test-support/cards';

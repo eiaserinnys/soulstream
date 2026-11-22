@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { SessionCardView } from '../../components/SessionCardView';
 import { ProjectContextEditorView } from '../../components/planner/ProjectContextEditorView';

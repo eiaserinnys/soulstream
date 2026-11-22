@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Text, View, type TextStyle } from 'react-native';
 import type { ClaudeCentralSettings } from '../../../../packages/soul-ui/src/lib/usage-summary';
 import type { ApiClient } from '../../api/client';

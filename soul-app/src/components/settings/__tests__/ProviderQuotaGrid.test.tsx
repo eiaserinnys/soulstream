@@ -1,6 +1,4 @@
-import React from 'react';
 import { render } from '@testing-library/react-native';
-
 import { ProviderQuotaGrid, quotaResetLabel, weeklySegmentPercents, type QuotaGridCell } from '../ProviderQuotaGrid';
 
 const cells: (QuotaGridCell | null)[] = [

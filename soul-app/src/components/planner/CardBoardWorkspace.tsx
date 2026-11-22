@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Platform, Text, View } from 'react-native';
 import { AutomaticRefreshSlot } from '../AutomaticRefreshIndicator';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';

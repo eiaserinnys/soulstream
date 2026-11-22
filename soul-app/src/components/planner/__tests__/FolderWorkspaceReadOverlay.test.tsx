@@ -9,20 +9,14 @@ import { cardFixture } from '../../../test-support/cards';
 import { usePlannerStore } from '../../../store/plannerStore';
 import { useSessionStore } from '../../../store/sessionStore';
 import { useUIStore } from '../../../store/uiStore';
-import {
-  CardPanelOverlayFrame,
-  FolderWorkspaceReadOverlay,
-  resolveFolderPaneWidth,
-} from '../FolderWorkspaceReadOverlay';
+import { CardPanelOverlayFrame, FolderWorkspaceReadOverlay, resolveFolderPaneWidth, DuoTopBandRailScope } from '../FolderWorkspaceReadOverlay';
 import { ChatPane } from '../../split/ChatPane';
 import { retryPlannerSessionWorkspace } from '../../../lib/planner-folder-workspace';
 import { coordinateFolderWorkspaceClose } from '../../../lib/planner-folder-title-save';
-import { TABLET_SHELL_LAYOUT } from '../../../theme';
+import { TABLET_SHELL_LAYOUT, useDeviceType } from '../../../theme';
 import { DuoSideBandContext, DuoTopBandContext, DuoTopBandMainContext } from '../../../navigation/tabContract';
 import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
-import { DuoTopBandRailScope } from '../FolderWorkspaceReadOverlay';
 import { useDuoSideBand } from '../../../navigation/duoSideBand';
-import { useDeviceType } from '../../../theme';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 let mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };

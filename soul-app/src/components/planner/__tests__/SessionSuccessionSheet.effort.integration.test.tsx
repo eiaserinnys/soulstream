@@ -1,4 +1,3 @@
-import React from 'react';
 import { ActionSheetIOS, Modal, ScrollView } from 'react-native';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';

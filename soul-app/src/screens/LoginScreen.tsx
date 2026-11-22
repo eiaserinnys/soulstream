@@ -1,10 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  ActivityIndicator,
-  StyleSheet,
-} from 'react-native';
+import { useEffect, useState, useMemo } from 'react';
+import { Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
@@ -12,7 +7,6 @@ import Constants from 'expo-constants';
 import { useSettingsStore } from '../store/settingsStore';
 import { useAuthStore } from '../store/authStore';
 import { useTokens, type DesignTokens } from '../theme';
-import { useMemo } from 'react';
 import { createSurfaceRoles } from '../theme/surfaceRoles';
 import { GlassButton } from '../components/GlassSurface';
 

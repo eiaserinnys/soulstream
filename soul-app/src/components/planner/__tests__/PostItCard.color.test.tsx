@@ -1,5 +1,4 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { render } from '@testing-library/react-native';
 import { CARD_COLORS } from '../../../../../packages/wire-schema/src/card_colors';

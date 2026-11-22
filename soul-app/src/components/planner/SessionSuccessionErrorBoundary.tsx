@@ -1,5 +1,4 @@
-import React from 'react';
-import type { ErrorInfo, ReactNode } from 'react';
+import React, { type ErrorInfo, type ReactNode } from 'react';
 import { Button, StyleSheet, Text, View } from 'react-native';
 import {
   createSessionSuccessionFailureRecord,

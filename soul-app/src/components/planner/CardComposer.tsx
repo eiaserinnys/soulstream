@@ -1,5 +1,5 @@
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import type { ApiClient } from '../../api/client';

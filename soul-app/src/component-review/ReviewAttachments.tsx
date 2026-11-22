@@ -1,4 +1,3 @@
-import React from 'react';
 import { Asset } from 'expo-asset';
 import { ScrollView } from 'react-native';
 import type { AttachmentReadContext } from '../../../packages/wire-schema/src/attachments';

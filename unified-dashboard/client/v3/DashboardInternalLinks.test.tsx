@@ -2,9 +2,8 @@
 import { act, useMemo } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { InternalLinkTarget } from "@seosoyoung/soul-ui";
 import { DashboardInternalLinks, useDashboardInternalLinks, useRegisterDashboardLinkOpeners, type DashboardLinkOpeners } from "./DashboardInternalLinks";
-import { useInternalLinkClick } from "@seosoyoung/soul-ui";
+import { type InternalLinkTarget, useInternalLinkClick } from "@seosoyoung/soul-ui";
 import { MarkdownContent } from "@seosoyoung/soul-ui/components/MarkdownContent";
 import { InternalLinkViewers } from "./InternalLinkViewers";
 

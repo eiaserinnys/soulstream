@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
-import { act } from "react";
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

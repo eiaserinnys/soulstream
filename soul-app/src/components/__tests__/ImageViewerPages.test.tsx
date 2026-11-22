@@ -1,4 +1,3 @@
-import React from 'react';
 import { Image } from 'react-native';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { AttachmentView } from '../../lib/attachment-view';

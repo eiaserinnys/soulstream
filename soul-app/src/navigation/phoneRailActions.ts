@@ -1,7 +1,6 @@
-import { useCallback, useLayoutEffect, useRef } from 'react';
+import { useCallback, useLayoutEffect, useRef, type ComponentProps } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { create } from 'zustand';
-import type { ComponentProps } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { PlannerContextMenuAction } from '../lib/planner-context-menu-model';
 

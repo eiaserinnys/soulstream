@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { PersistentSessionWeeklyUsage } from '../components/persistent/PersistentSessionWeeklyUsage';

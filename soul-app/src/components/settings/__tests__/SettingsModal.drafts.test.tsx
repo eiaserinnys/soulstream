@@ -1,4 +1,3 @@
-import React from 'react';
 import { Alert, StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import * as ImagePicker from 'expo-image-picker';

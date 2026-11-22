@@ -4,7 +4,6 @@ jest.mock('../MainListPane', () => ({ MainListPane: () => null }));
 jest.mock('../TabletSessionFeedPane', () => ({ TabletSessionFeedPane: () => null }));
 jest.mock('../../planner/FolderWorkspaceReadOverlay', () => ({ FolderWorkspaceReadOverlay: () => null }));
 jest.mock('../../planner/TodayCardComposer', () => ({ TodayCardComposer: () => require('react').createElement(require('react-native').View, { testID: 'composer-content' }) }));
-import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { ThreePaneLayout } from '../ThreePaneLayout';

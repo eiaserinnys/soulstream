@@ -1,5 +1,4 @@
 jest.mock('../useSwayCharacterAnimation', () => ({ useSwayCharacterAnimation: jest.fn(() => ({ phase: { value: 0 } })) }));
-import React from 'react';
 import { Image } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { SwayCharacter } from '../SwayCharacter';

@@ -414,10 +414,6 @@ function mergePages(first: readonly PageDto[], second: readonly PageDto[]): Page
   return [...new Map([...first, ...second].map((page) => [page.id, page])).values()];
 }
 
-function mergeTasks(first: readonly PlannerFolder[], second: readonly PlannerFolder[]): PlannerFolder[] {
-  return [...new Map([...first, ...second].map((task) => [task.page.id, task])).values()];
-}
-
 function errorText(error: unknown): string {
   return error instanceof Error && error.message ? error.message : String(error);
 }

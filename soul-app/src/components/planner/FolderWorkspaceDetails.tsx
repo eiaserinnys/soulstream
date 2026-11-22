@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { PlannerFolder } from '../../api/plannerTypes';

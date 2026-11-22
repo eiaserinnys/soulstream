@@ -1,8 +1,7 @@
-import React, { forwardRef, useCallback, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useMemo, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
-import type { ApiClient } from '../api/client';
 import { useTokens } from '../theme';
-import { createApiClient } from '../api/client';
+import { type ApiClient, createApiClient } from '../api/client';
 import { useSettingsStore } from '../store/settingsStore';
 import { useUIStore } from '../store/uiStore';
 import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';

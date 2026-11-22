@@ -1,6 +1,5 @@
 import type { SessionEvent } from '../../../api/types';
-import type { ChatRenderItem } from '../groupChatEvents';
-import { groupChatEvents } from '../groupChatEvents';
+import { type ChatRenderItem, groupChatEvents } from '../groupChatEvents';
 import { projectManuscriptActivity } from '../manuscriptActivityProjection';
 
 const ev = (id: string, type: SessionEvent['type'], data: Record<string, unknown> = {}): SessionEvent => ({

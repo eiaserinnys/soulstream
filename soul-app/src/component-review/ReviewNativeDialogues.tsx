@@ -1,4 +1,3 @@
-import React from 'react';
 import { ActionSheetIOS, Alert, Platform, Text } from 'react-native';
 import { useTokens } from '../theme';
 import { GlassButton } from '../components/GlassSurface';

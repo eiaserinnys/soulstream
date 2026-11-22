@@ -2,10 +2,8 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { UseChatAttachmentsResult } from "./useChatAttachments";
-import { useChatAttachments } from "./useChatAttachments";
-import { ChatAttachmentLoaderProvider } from "./ChatAttachmentLoader";
-import type { ChatAttachmentLoaderInput } from "./ChatAttachmentLoader";
+import { type UseChatAttachmentsResult, useChatAttachments } from "./useChatAttachments";
+import { ChatAttachmentLoaderProvider, type ChatAttachmentLoaderInput } from "./ChatAttachmentLoader";
 import type { ChatAttachmentItem } from "../lib/chat-attachment-model";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

@@ -23,13 +23,12 @@ import {
 import { chatImageSource } from '../../lib/chat-image-source';
 import { MessageTextSelectionView } from './MessageTextSelectionView';
 import type { MessageSelectionModel } from './message-selection-model';
-import type { PendingOptimisticStatus } from '../../store/chatStore';
+import type { PendingOptimisticStatus, PendingOptimisticEvent } from '../../store/chatStore';
 import { extractUserText } from './eventActions';
 import { AttachmentChips } from '../chat/AttachmentChips';
 import { MessageAttachments } from '../MessageAttachments';
 import { makeStyles as makeChatBodyStyles } from '../chat/ChatBody.styles';
 import { removeGeneratedAttachmentPathNotes } from '../../lib/attachment-message-match';
-import type { PendingOptimisticEvent } from '../../store/chatStore';
 import type { AttachmentReadContext } from '../../../../packages/wire-schema/src/attachments';
 import { getMessageAttachmentSignals, useMessageAttachments } from '../../hooks/useMessageAttachments';
 

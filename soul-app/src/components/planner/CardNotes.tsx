@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import type { CardComment } from '../../api/cardTypes';
 import type { Session } from '../../api/types';

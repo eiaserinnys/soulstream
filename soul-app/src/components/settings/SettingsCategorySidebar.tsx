@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useTokens, type DesignTokens } from '../../theme';
 import { SETTINGS_CATEGORIES, type SettingsCategory } from './settingsCategories';

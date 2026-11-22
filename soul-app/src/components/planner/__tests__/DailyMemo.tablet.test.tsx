@@ -12,7 +12,6 @@ jest.mock('react-native-enriched-markdown', () => {
   };
 });
 
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { PlannerBlock } from '../../../api/plannerTypes';
 import { DailyMemo } from '../DailyMemo';

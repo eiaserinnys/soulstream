@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { DesignTokens } from '../tokens';
-import { DARK_COLORS, LIGHT_COLORS, PHONE_FOUNDATION } from '../tokens';
+import { type DesignTokens, DARK_COLORS, LIGHT_COLORS, PHONE_FOUNDATION } from '../tokens';
 import { PRIMITIVE_ROLE_NAMES, createPrimitiveRoles } from '../surfacePrimitives';
 
 const SRC_ROOT = path.resolve(__dirname, '../..');

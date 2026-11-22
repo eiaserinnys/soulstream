@@ -11,8 +11,7 @@ import {
   registerNode,
   ensureRoot,
 } from "./processing-context";
-import type { ProcessingContext } from "./processing-context";
-import type { EventTreeNode, ErrorNode, ToolNode } from "../shared/types";
+import type { ErrorNode, ToolNode } from "../shared/types";
 
 describe("createProcessingContext", () => {
   it("should return a context with all empty Maps and null fields", () => {

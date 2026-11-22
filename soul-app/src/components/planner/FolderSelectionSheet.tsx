@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { ScrollView, TextInput, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ScrollView, TextInput, View, Text } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import { usePlannerStarred } from '../../hooks/usePlannerStarred';
 import { buildPlannerProjectTreeRows } from '../../lib/planner-project-tree';
@@ -11,7 +11,6 @@ import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
 import { ProjectTreeSheet } from './ProjectTreeSheet';
 import { StarredFolderList } from './StarredFolderList';
 import { cardStyles } from './Card.styles';
-import { Text } from 'react-native';
 
 export function FolderSelectionSheet({ api, onSelect, onClose }: {
   api: ApiClient | null; onSelect(folderId: string): void; onClose(): void;

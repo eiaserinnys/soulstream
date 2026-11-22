@@ -1,4 +1,3 @@
-import React from 'react';
 import { ScrollView } from 'react-native';
 import { initializeReview } from '../../component-review/ComponentReview';
 import { ReviewRows } from '../../component-review/ReviewRows';

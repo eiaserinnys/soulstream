@@ -1,4 +1,3 @@
-import React from 'react';
 import { ActivityIndicator, Alert, StyleSheet, type LayoutChangeEvent, type LayoutRectangle } from 'react-native';
 import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';

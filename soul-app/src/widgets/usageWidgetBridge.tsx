@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import { measureDiagnosticOperation } from '../lib/session-diagnostics-api';
 import { requireOptionalNativeModule } from 'expo-modules-core';

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
 import { CompactTouchTarget } from '../../CompactTouchTarget';
 import { useTokens } from '../../../theme';

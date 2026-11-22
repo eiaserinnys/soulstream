@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-
 import { RecurringSchedulePicker } from '../RecurringSchedulePicker';
 import { defaultRecurringSchedule } from '../../../../../packages/soul-ui/src/lib/recurring-schedule';
 

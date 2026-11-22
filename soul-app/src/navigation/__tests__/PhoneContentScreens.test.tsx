@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, renderHook } from '@testing-library/react-native';
 import { StyleSheet, Text } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
