@@ -95,6 +95,7 @@ for (const [name, responses, refreshes, pending] of [
 ]) {
   test(name, () => {
     const { output, args, sleeps } = run(responses);
+    if (name === 'retries when the local node is absent') assert.match(output, /^Preset refresh attempt 1: local unavailable$/m);
     assert.equal((args.match(/\/api\/usage\/refresh/g) ?? []).length, refreshes);
     assert.equal((output.match(/Preset refresh attempt /g) ?? []).length, refreshes);
     assert.deepEqual(sleeps, Array(refreshes - 1).fill('10'));

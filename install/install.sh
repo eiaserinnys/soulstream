@@ -411,7 +411,7 @@ refresh_model_presets() {
     result='pending|local unavailable'
     if response=$(curl --max-time 60 -fsS -X POST -H "@$header" http://127.0.0.1:5200/api/usage/refresh 2>/dev/null); then
       if result=$(jq -r '
-        first(.nodes[]? | select(.nodeId == "local")) as $node |
+        (first(.nodes[]? | select(.nodeId == "local")) // null) as $node |
         ["claude", "codex", "antigravity", "opencode_go"] as $names |
         ($node.providers // {}) as $providers |
         (if $node != null and $node.stale == false and
