@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 const script = resolve('install/install.sh');
@@ -77,5 +77,56 @@ test('clone reruns ignore untracked installer files and protect tracked changes'
   const noRef=run(a,'false');
   assert.equal(noRef.status,0,noRef.stderr);
   assert.equal(git('-C',root,'rev-parse','HEAD'),b);
+ } finally { rmSync(dir,{recursive:true,force:true}); }
+});
+
+test('Tailscale identity selection handles personal and tagged devices', () => {
+ const personal = JSON.stringify({Self:{DNSName:'node.tailnet.ts.net.',UserID:123,Tags:[]},User:{'123':{LoginName:'Owner@Example.com'}}});
+ const tagged = JSON.stringify({Self:{DNSName:'node.tailnet.ts.net.',UserID:42,Tags:['tag:server']},User:{'42':{LoginName:'tagged-devices'}}});
+ const select=(status,user='')=>spawnSync('bash',['-ec','source "$1"; TAILSCALE_USER="$2"; select_tailscale_identity; printf "%s %s" "$TAILSCALE_DNS" "$TAILSCALE_USER"','bash',script,user],{input:status,encoding:'utf8'});
+ assert.equal(select(personal).stdout,'node.tailnet.ts.net owner@example.com');
+ assert.notEqual(select(tagged).status,0);
+ assert.equal(select(tagged,'allowed@example.com').stdout,'node.tailnet.ts.net allowed@example.com');
+ assert.notEqual(select(JSON.stringify({Self:{DNSName:'',UserID:123},User:{'123':{LoginName:'x'}}})).status,0);
+});
+
+test('Tailscale rendering preserves secrets and password across mode changes', () => {
+ const dir=mkdtempSync(join(tmpdir(),'install-tailscale-')), home=join(dir,'home'), root=join(home,'soulstream');
+ const renderMode=(mode)=>spawnSync('bash',['-c','source "$1"; BACKENDS=codex; TAILSCALE="$4"; TAILSCALE_DNS=node.tailnet.ts.net; TAILSCALE_USER=owner@example.com; TAILSCALE_AUTH_KEY=secret-key; render_config "$2" "$3"','bash',script,home,root,mode],{encoding:'utf8'});
+ try {
+  let run=renderMode('true'); assert.equal(run.status,0,run.stderr);
+  const orchPath=join(root,'.env.orch'), passwordPath=join(root,'.admin-password');
+  assert.equal(statSync(orchPath).mode & 0o777,0o600);
+  assert.throws(()=>statSync(passwordPath));
+  let orch=env(orchPath); assert.equal(orch.TAILSCALE_AUTH_ENABLED,'true'); assert.equal(orch.TAILSCALE_ALLOWED_LOGIN,'owner@example.com');
+  assert.equal(orch.SOULSTREAM_PUBLIC_URL,'https://node.tailnet.ts.net'); assert.equal(orch.CORS_ALLOWED_ORIGINS,'https://node.tailnet.ts.net,http://127.0.0.1:5200');
+  assert.equal(orch.DASHBOARD_ADMIN_PASSWORD,undefined); assert.ok(!(run.stdout+run.stderr+readFileSync(orchPath,'utf8')).includes('secret-key'));
+  const initial=orch;
+  run=renderMode('false'); assert.equal(run.status,0,run.stderr); orch=env(orchPath);
+  const password=orch.DASHBOARD_ADMIN_PASSWORD; assert.ok(password); assert.equal(orch.TAILSCALE_AUTH_ENABLED,undefined);
+  run=renderMode('true'); assert.equal(run.status,0,run.stderr); assert.equal(readFileSync(passwordPath,'utf8').trim(),password);
+  orch=env(orchPath); assert.equal(orch.DASHBOARD_ADMIN_PASSWORD,undefined);
+  run=renderMode('false'); assert.equal(run.status,0,run.stderr); orch=env(orchPath);
+  assert.equal(orch.DASHBOARD_ADMIN_PASSWORD,password); assert.equal(readFileSync(passwordPath,'utf8').trim(),password);
+  for (const key of ['JWT_SECRET','AUTH_BEARER_TOKEN','DATABASE_URL']) assert.equal(orch[key],initial[key]);
+ } finally { rmSync(dir,{recursive:true,force:true}); }
+});
+
+test('Tailscale auth key is passed through a private temporary file and removed', () => {
+ const dir=mkdtempSync(join(tmpdir(),'install-tailscale-key-')), bin=join(dir,'tailscale'), log=join(dir,'log'), state=join(dir,'state');
+ try {
+  writeFileSync(bin, `#!/usr/bin/env bash
+if [[ "$1" == status ]]; then
+ if [[ -f "$TEST_STATE" ]]; then printf '%s' '{"BackendState":"Running","Self":{"DNSName":"node.tailnet.ts.net.","UserID":1},"User":{"1":{"LoginName":"owner@example.com"}}}'; else printf '%s' '{"BackendState":"Stopped"}'; fi
+elif [[ "$1" == up ]]; then
+ [[ "$2" == --auth-key=file:* ]] || exit 10
+ file=\${2#--auth-key=file:}; [[ "$(stat -c %a "$file")" == 600 && "$(cat "$file")" == "$TEST_KEY" ]] || exit 11
+ printf '%s' "$file" > "$TEST_STATE"; fi
+`); chmodSync(bin,0o755);
+  const run=spawnSync('bash',['-ec','source "$1"; LOG="$2"; TAILSCALE_USER=; TAILSCALE_AUTH_KEY="$TEST_KEY"; exec 3>&2; setup_tailscale','bash',script,log],{
+   env:{...process.env,PATH:`${dir}:${process.env.PATH}`,TEST_STATE:state,TEST_KEY:'example-auth-key'},encoding:'utf8'
+  });
+  assert.equal(run.status,0,run.stderr); assert.ok(!(run.stdout+run.stderr+readFileSync(log,'utf8')).includes('example-auth-key'));
+  assert.throws(()=>statSync(readFileSync(state,'utf8')));
  } finally { rmSync(dir,{recursive:true,force:true}); }
 });

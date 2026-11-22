@@ -4,8 +4,22 @@ import {
   DASHBOARD_AUTH_COOKIE_NAME,
   authenticateSocketConnection,
 } from "../src/auth/socket_auth.js";
+import { createLiveAuthenticatedUserResolvers } from "../src/runtime/live_authenticated_user_resolver.js";
 
 describe("orch socket auth", () => {
+  it("authenticates a Serve identity and retains node bearer precedence", async () => {
+    const values = { google_client_id: "", tailscale_auth_enabled: true, tailscale_allowed_login: "owner@example.com" };
+    const resolver = createLiveAuthenticatedUserResolvers({
+      jwt: { issueToken: async () => "", verifyToken: async () => null },
+      configProvider: { getConfig: () => values, requireConfig: async (key) => values[key as keyof typeof values] },
+    });
+    const config = productionAuth({ authBearerToken: "service-token", dashboardAuthEnabled: true, resolveDashboardUserFromHeaders: resolver.resolveUserFromHeaders });
+    await expect(authenticateSocketConnection({ requestHeaders: { "tailscale-user-login": "OWNER@example.com" }, config })).resolves.toEqual({ source: "tailscale", subject: "owner@example.com" });
+    for (const requestHeaders of [{}, { "tailscale-user-login": "other" }, { "tailscale-user-login": "owner@example.com", "tailscale-funnel-request": "?1" }]) {
+      await expect(authenticateSocketConnection({ requestHeaders, config })).rejects.toThrow();
+    }
+    await expect(authenticateSocketConnection({ token: "service-token", requestHeaders: {}, config })).resolves.toEqual({ source: "bearer", subject: "bearer" });
+  });
   it("accepts the configured service bearer token", async () => {
     await expect(authenticateSocketConnection({
       token: "service-token",

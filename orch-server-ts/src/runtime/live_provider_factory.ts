@@ -294,6 +294,7 @@ export function createLiveOrchestratorProviderBundle(
     };
   const authenticatedUserResolvers = createLiveAuthenticatedUserResolvers({
     jwt: authJwt,
+    configProvider: options.dependencies.configProvider,
     ...(resolveOAuthToken === undefined ? {} : { resolveOAuthToken }),
     isServiceBearer: async request => {
       const config = await options.dependencies.configProvider.getConfig();

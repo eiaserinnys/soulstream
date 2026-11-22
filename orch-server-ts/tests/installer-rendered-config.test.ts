@@ -8,6 +8,17 @@ import { resolveDashboardLoginMode } from "../src/auth/login_mode.js";
 import { loadOrchServerEnvironment, toOrchServerTsConfig } from "../src/config.js";
 
 describe("installer orchestrator configuration", () => {
+  it("loads Tailscale installer configuration without a password", () => {
+    const dir = mkdtempSync(join(tmpdir(), "installer-tailscale-"));
+    const home = join(dir, "home"), root = join(home, "soulstream");
+    try {
+      execFileSync("bash", ["-c", 'source "$1"; BACKENDS=codex; TAILSCALE=true; TAILSCALE_DNS=node.tailnet.ts.net; TAILSCALE_USER=owner@example.com; render_config "$2" "$3"', "bash", resolve("../install/install.sh"), home, root]);
+      const raw = parseEnv(readFileSync(join(root, ".env.orch"), "utf8"));
+      const env = loadOrchServerEnvironment(raw);
+      expect(resolveDashboardLoginMode(env)).toBe("tailscale");
+      expect(raw.DASHBOARD_ADMIN_PASSWORD).toBeUndefined();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
   it.each(["claude", "codex", "antigravity", "claude,codex,antigravity"])("loads %s", (backends) => {
     const dir = mkdtempSync(join(tmpdir(), "installer-orch-"));
     const home = join(dir, "home"), root = join(home, "soulstream");

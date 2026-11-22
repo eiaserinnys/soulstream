@@ -8,6 +8,7 @@ import {
   RETURN_TO_COOKIE_NAME,
   authRouteAuthRequirements,
   createApp,
+  createLiveConfigRouteProviders,
   loadContractFixtures,
   type AuthJwtHelper,
 } from "../src/index.js";
@@ -187,6 +188,35 @@ describe("Auth route harness", () => {
     expect(noEmail.statusCode).toBe(400);
     expect(noEmail.json()).toEqual({ detail: "ID token missing email" });
 
+    await app.close();
+  });
+
+  it("returns Tailscale status only for the permitted Serve identity", async () => {
+    const jwt = createJwtHelper();
+    const app = createApp({ config, authRoutes: createAuthRouteOptions({ jwt,
+      configProvider: { getConfig: () => ({ ...enabledConfig, loginMode: "tailscale", devModeEnabled: false, tailscaleAllowedLogin: "owner@example.com" }) },
+      userPayloadExtra: async () => ({ isAdmin: true, dashboardAccess: { restricted: false, allowedFolderIds: [] } }),
+    }) });
+    expect((await app.inject("/api/auth/config")).json()).toEqual({ authEnabled: true, devModeEnabled: false, passwordLoginEnabled: false, tailscaleAuthEnabled: true });
+    expect((await app.inject({ method: "GET", url: "/api/auth/status", headers: { "tailscale-user-login": "OWNER@example.com" } })).json()).toEqual({
+      authenticated: true, user: { email: "owner@example.com", name: "owner@example.com", picture: "", isAdmin: true, dashboardAccess: { restricted: false, allowedFolderIds: [] } },
+    });
+    expect((await app.inject({ method: "GET", url: "/api/auth/status", headers: { cookie: "soul_dashboard_auth=valid-jwt" } })).json()).toEqual({ authenticated: false, user: null });
+    expect((await app.inject({ method: "GET", url: "/api/auth/token", headers: { "tailscale-user-login": "owner@example.com", cookie: "soul_dashboard_auth=valid-jwt" } })).statusCode).toBe(401);
+    expect(jwt.verifyToken).not.toHaveBeenCalled();
+    expect((await app.inject({ method: "POST", url: "/api/auth/password-login", payload: { password: "x" } })).statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("ignores a Serve identity when Google mode takes priority", async () => {
+    const snapshot: Readonly<Record<string, unknown>> = {
+      google_client_id: "google-client", google_client_secret: "secret", google_callback_url: "/api/auth/google/callback",
+      jwt_secret: "jwt-secret", environment: "production", tailscale_auth_enabled: true, tailscale_allowed_login: "owner@example.com",
+    };
+    const providers = createLiveConfigRouteProviders({ getConfig: () => snapshot, requireConfig: async (key) => snapshot[key] });
+    const app = createApp({ config, authRoutes: createAuthRouteOptions({ configProvider: providers.authRoutes.configProvider }) });
+    expect((await app.inject({ method: "GET", url: "/api/auth/status", headers: { "tailscale-user-login": "owner@example.com" } })).json()).toEqual({ authenticated: false, user: null });
+    expect((await app.inject({ method: "POST", url: "/api/auth/password-login", payload: { password: "x" } })).statusCode).toBe(404);
     await app.close();
   });
 

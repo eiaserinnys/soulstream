@@ -1,23 +1,33 @@
 #!/usr/bin/env bash
 
 usage() {
-  printf 'Usage: install.sh [--backends claude,codex,antigravity] [--ref git-ref] [--help]\n'
+  printf 'Usage: install.sh [--backends claude,codex,antigravity] [--ref git-ref] [--tailscale [--tailscale-auth-key key] [--tailscale-user login]] [--help]\n'
 }
 
 parse_args() {
   BACKENDS=claude,codex
   REF=
   REF_SET=false
+  TAILSCALE=false
+  TAILSCALE_AUTH_KEY=
+  TAILSCALE_USER=
   while (($#)); do
     case "$1" in
       --help) usage; exit 0 ;;
-      --backends|--ref)
+      --tailscale) TAILSCALE=true; shift ;;
+      --backends|--ref|--tailscale-auth-key|--tailscale-user)
         if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then usage >&2; exit 2; fi
-        if [[ "$1" == --ref ]]; then REF=$2; REF_SET=true; else BACKENDS=$2; fi
+        case "$1" in
+          --ref) REF=$2; REF_SET=true ;;
+          --backends) BACKENDS=$2 ;;
+          --tailscale-auth-key) TAILSCALE_AUTH_KEY=$2 ;;
+          --tailscale-user) TAILSCALE_USER=${2,,} ;;
+        esac
         shift 2 ;;
       *) usage >&2; exit 2 ;;
     esac
   done
+  if [[ "$TAILSCALE" != true && ( -n "$TAILSCALE_AUTH_KEY" || -n "$TAILSCALE_USER" ) ]]; then usage >&2; exit 2; fi
   local item normalized= remaining=$BACKENDS
   while :; do
     item=${remaining%%,*}
@@ -50,7 +60,10 @@ prepare_secrets() {
   [[ -n "$BEARER" ]] || BEARER=$(openssl rand -hex 32)
   [[ -n "$JWT" ]] || JWT=$(openssl rand -hex 32)
   [[ -n "$DB_PASSWORD" ]] || DB_PASSWORD=$(openssl rand -hex 32)
-  if [[ -z "$ADMIN_PASSWORD" ]]; then ADMIN_PASSWORD=$(openssl rand -hex 12); fi
+  if [[ "${TAILSCALE:-false}" != true ]]; then
+    if [[ -z "$ADMIN_PASSWORD" && -f "$root/.admin-password" ]]; then ADMIN_PASSWORD=$(cat "$root/.admin-password"); fi
+    if [[ -z "$ADMIN_PASSWORD" ]]; then ADMIN_PASSWORD=$(openssl rand -hex 12); fi
+  fi
 }
 
 # Remove keys owned by the installer, preserving every other line verbatim.
@@ -81,13 +94,24 @@ DEFAULT_EXECUTION_NODE_ID=local
 DEFAULT_PAS_AGENT_ID=${first}-default
 DATABASE_URL=postgresql://soulstream:${DB_PASSWORD}@127.0.0.1:5432/soulstream
 DASHBOARD_DIR=${root}/unified-dashboard/dist
-SOULSTREAM_PUBLIC_URL=http://127.0.0.1:5200
-CORS_ALLOWED_ORIGINS=http://127.0.0.1:5200,http://localhost:5200
 AUTH_BEARER_TOKEN=${BEARER}
 JWT_SECRET=${JWT}
-DASHBOARD_ADMIN_PASSWORD=${ADMIN_PASSWORD}
 ATOM_ENABLED=false
 ENV
+  if [[ "${TAILSCALE:-false}" == true ]]; then
+    cat >> "$fresh_orch" <<ENV
+SOULSTREAM_PUBLIC_URL=https://${TAILSCALE_DNS}
+CORS_ALLOWED_ORIGINS=https://${TAILSCALE_DNS},http://127.0.0.1:5200
+TAILSCALE_AUTH_ENABLED=true
+TAILSCALE_ALLOWED_LOGIN=${TAILSCALE_USER}
+ENV
+  else
+    cat >> "$fresh_orch" <<ENV
+SOULSTREAM_PUBLIC_URL=http://127.0.0.1:5200
+CORS_ALLOWED_ORIGINS=http://127.0.0.1:5200,http://localhost:5200
+DASHBOARD_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+ENV
+  fi
   if has_backend antigravity; then printf 'AGY_CLI_PATH=%s/.local/bin/agy\n' "$home" >> "$fresh_orch"; fi
   cat > "$fresh_worker" <<ENV
 ENVIRONMENT=production
@@ -118,10 +142,10 @@ ATOM_ENABLED=false
 ENV
   if has_backend claude; then printf 'CLAUDE_AUTH_TOKEN_PATH=%s/.claude/.credentials.json\n' "$home" >> "$fresh_worker"; fi
   if has_backend codex; then printf 'CODEX_ADAPTER_MODE=app-server\n' >> "$fresh_worker"; fi
-  merge_env "$root/.env.orch" "$fresh_orch" 'ENVIRONMENT HOST PORT DEFAULT_EXECUTION_NODE_ID DEFAULT_PAS_AGENT_ID DATABASE_URL DASHBOARD_DIR SOULSTREAM_PUBLIC_URL CORS_ALLOWED_ORIGINS AUTH_BEARER_TOKEN JWT_SECRET DASHBOARD_ADMIN_PASSWORD ATOM_ENABLED AGY_CLI_PATH'
+  merge_env "$root/.env.orch" "$fresh_orch" 'ENVIRONMENT HOST PORT DEFAULT_EXECUTION_NODE_ID DEFAULT_PAS_AGENT_ID DATABASE_URL DASHBOARD_DIR SOULSTREAM_PUBLIC_URL CORS_ALLOWED_ORIGINS AUTH_BEARER_TOKEN JWT_SECRET DASHBOARD_ADMIN_PASSWORD TAILSCALE_AUTH_ENABLED TAILSCALE_ALLOWED_LOGIN ATOM_ENABLED AGY_CLI_PATH'
   merge_env "$root/.env.soul-server-ts" "$fresh_worker" 'ENVIRONMENT SOULSTREAM_NODE_ID SOULSTREAM_UPSTREAM_URL SOULSTREAM_BACKENDS AUTH_BEARER_TOKEN PORTABLE_LOCAL_MCP_AUTHORIZATION HOST PORT MCP_INTERNAL_PORT MCP_ENABLED MCP_PATH MCP_REQUIRE_AUTH MCP_ALLOWED_HOSTS AGENTS_CONFIG_PATH EVENT_OUTBOX_DIR INCOMING_FILE_DIR SOUL_RUNNER_PROCESS_ENABLED SOUL_RUNNER_STATE_DIR SOUL_RUNNER_ARTIFACT_DIR SOUL_RUNNER_RELEASES_DIR WORKTREE_MCP_ENABLED WORKTREE_PROJECTS_ROOT SESSION_ISOLATION_MODE CLAUDE_ACCOUNT_POOL_ENABLED ATOM_ENABLED CLAUDE_AUTH_TOKEN_PATH CODEX_ADAPTER_MODE CLAUDE_CODE_EXECPATH CODEX_CLI_PATH AGY_CLI_PATH DISABLE_AUTOUPDATER'
   rm -f "$fresh_orch" "$fresh_worker"
-  printf '%s\n' "$ADMIN_PASSWORD" > "$root/.admin-password"; chmod 600 "$root/.admin-password"
+  if [[ "${TAILSCALE:-false}" != true ]]; then printf '%s\n' "$ADMIN_PASSWORD" > "$root/.admin-password"; chmod 600 "$root/.admin-password"; fi
   printf 'agents:\n' > "$root/config/agents.yaml"
   local IFS=,
   for backend in $BACKENDS; do
@@ -162,6 +186,50 @@ The `soulstream` MCP server provides session and workspace tools.
 Atom is disabled on this installation; do not call `search_skills` or `load_skill`.
 MARKDOWN
   ln -sfn AGENTS.md "$home/workspace/CLAUDE.md"
+}
+
+# Parse status from stdin; status user IDs are numeric while User map keys are strings.
+select_tailscale_identity() {
+  local status login tagged
+  status=$(cat)
+  TAILSCALE_DNS=$(jq -r '.Self.DNSName // "" | rtrimstr(".")' <<< "$status")
+  login=$(jq -r '.User[(.Self.UserID | tostring)].LoginName // ""' <<< "$status")
+  tagged=$(jq -r '(.Self.Tags // []) | length > 0' <<< "$status")
+  if [[ -z "$TAILSCALE_DNS" ]]; then printf 'Enable MagicDNS in your tailnet.\n' >&2; return 1; fi
+  if [[ -z "${TAILSCALE_USER:-}" ]]; then
+    if [[ "$tagged" == true || -z "$login" || "${login,,}" == tagged-devices ]]; then
+      printf 'Tagged devices require --tailscale-user.\n' >&2; return 1
+    fi
+    TAILSCALE_USER=${login,,}
+  fi
+  TAILSCALE_USER=${TAILSCALE_USER#"${TAILSCALE_USER%%[![:space:]]*}"}
+  TAILSCALE_USER=${TAILSCALE_USER%"${TAILSCALE_USER##*[![:space:]]}"}
+  TAILSCALE_USER=${TAILSCALE_USER,,}
+  if [[ -z "$TAILSCALE_USER" || "$TAILSCALE_USER" =~ [[:space:]] ]]; then printf 'Invalid Tailscale login.\n' >&2; return 1; fi
+}
+
+setup_tailscale() {
+  if ! command -v tailscale >/dev/null; then curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG" 2>&1; fi
+  if ! tailscale status --json 2>/dev/null | jq -e '.BackendState == "Running"' >/dev/null; then
+    if [[ -n "$TAILSCALE_AUTH_KEY" ]]; then
+      local key_file
+      key_file=$(mktemp); chmod 600 "$key_file"
+      printf '%s' "$TAILSCALE_AUTH_KEY" > "$key_file"
+      if ! tailscale up --auth-key="file:$key_file" >> "$LOG" 2>&1; then rm -f "$key_file"; return 1; fi
+      rm -f "$key_file"
+      TAILSCALE_AUTH_KEY=
+    else
+      timeout 600 tailscale up >&3 2>&3
+    fi
+  fi
+  select_tailscale_identity < <(tailscale status --json)
+}
+
+setup_tailscale_serve() {
+  if ! tailscale serve --bg http://127.0.0.1:5200; then
+    printf 'Enable HTTPS in the Tailscale admin console, then retry.\n' >&2
+    return 1
+  fi
 }
 
 preflight() {
@@ -235,7 +303,11 @@ setup_database() {
   fi
   if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='soulstream'" | grep -qx 1; then sudo -u postgres createdb -O soulstream soulstream; fi
 }
-write_configuration() { render_config /home/soulstream "$1" "$DB_PASSWORD"; chown -R soulstream:soulstream "$1/config" "$1/.env.orch" "$1/.env.soul-server-ts" "$1/.admin-password" "$1/.local" /home/soulstream/workspace; }
+write_configuration() {
+  render_config /home/soulstream "$1" "$DB_PASSWORD"
+  chown -R soulstream:soulstream "$1/config" "$1/.env.orch" "$1/.env.soul-server-ts" "$1/.local" /home/soulstream/workspace
+  if [[ "$TAILSCALE" != true && -f "$1/.admin-password" ]]; then chown soulstream:soulstream "$1/.admin-password"; fi
+}
 build_project() {
   local root=$1
   as_soul bash -ec 'cd "$1"; corepack pnpm install --frozen-lockfile --prod=false; SOULSTREAM_RELEASE_ENV_FILE="$1/.env.soul-server-ts" corepack pnpm --filter @soulstream/soul-server-ts run build; corepack pnpm --filter @soulstream/orch-server-ts run build; corepack pnpm --dir "$1/unified-dashboard" run build' bash "$root"
@@ -244,7 +316,11 @@ setup_schema() {
   local root=$1 sha
   sha=$(as_soul git -C "$root" rev-parse --short=12 HEAD)
   as_soul bash -ec 'cd "$1"; export HANIEL_SERVICE_ENV_FILE="$1/.env.orch" SOULSTREAM_RELEASE_ID="clean-$2"; node packages/db-schema/scripts/migrate.mjs initialize; node packages/db-schema/scripts/migrate.mjs verify' bash "$root" "$sha"
-  sudo -u postgres psql -d soulstream -v ON_ERROR_STOP=1 -c "INSERT INTO users (email, display_name, is_admin) VALUES ('owner@local', 'Owner', TRUE) ON CONFLICT (email) DO NOTHING" >/dev/null
+  local owner=owner@local display_name=Owner
+  if [[ "$TAILSCALE" == true ]]; then owner=$TAILSCALE_USER; display_name=$owner; fi
+  sudo -u postgres psql -d soulstream -v ON_ERROR_STOP=1 -v "owner=$owner" -v "display_name=$display_name" >/dev/null <<'SQL'
+INSERT INTO users (email, display_name, is_admin) VALUES (:'owner', :'display_name', TRUE) ON CONFLICT (email) DO NOTHING;
+SQL
 }
 install_units() {
   local root=$1
@@ -292,6 +368,22 @@ wait_and_create_workspace() {
     if ((SECONDS >= deadline)); then journalctl -u soulstream-orch.service -n 50 --no-pager; journalctl -u soulstream-worker.service -n 50 --no-pager; rm -f "$header" "$cookie"; return 1; fi
     sleep 2
   done
+  if [[ "$TAILSCALE" == true ]]; then
+    printf 'Tailscale-User-Login: %s\n' "$TAILSCALE_USER" > "$cookie"
+    count=$(curl -fsS -H "@$cookie" http://127.0.0.1:5200/api/folders | jq '[.folders[] | select(.name=="작업실")] | length')
+    if [[ "$count" == 0 ]]; then
+      curl -fsS -H "@$cookie" -X POST -H 'Content-Type: application/json' --data '{"name":"작업실","idempotencyKey":"clean-install-default-workspace"}' http://127.0.0.1:5200/api/folders >/dev/null
+    fi
+    curl -fsS -H "@$cookie" http://127.0.0.1:5200/api/folders | jq -e '[.folders[] | select(.name=="작업실")] | length == 1' >/dev/null
+    status=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5200/api/folders)
+    [[ "$status" == 401 ]]
+    status=$(curl -s -o /dev/null -w '%{http_code}' -H "@$cookie" -H 'Tailscale-Funnel-Request: ?1' http://127.0.0.1:5200/api/folders)
+    [[ "$status" == 401 ]]
+    status=$(curl -s -o /dev/null -w '%{http_code}' -H "Tailscale-User-Login: ${TAILSCALE_USER}.other" http://127.0.0.1:5200/api/folders)
+    [[ "$status" == 401 || "$status" == 403 ]]
+    rm -f "$header" "$cookie"
+    return 0
+  fi
   printf '{"password":"%s"}' "$(cat "$root/.admin-password")" | curl -fsS -c "$cookie" -X POST -H 'Content-Type: application/json' --data @- http://127.0.0.1:5200/api/auth/password-login >/dev/null
   count=$(curl -fsS -b "$cookie" http://127.0.0.1:5200/api/folders | jq '[.folders[] | select(.name=="작업실")] | length')
   if [[ "$count" == 0 ]]; then
@@ -305,8 +397,14 @@ wait_and_create_workspace() {
 finish_message() {
   local root=$1
   printf '\nInstalled %s; backends: %s\n' "$(as_soul git -C "$root" rev-parse --short=12 HEAD)" "$BACKENDS"
+  if [[ "$TAILSCALE" == true ]]; then
+    printf 'Open https://%s from a tailnet device signed in as %s.\n' "$TAILSCALE_DNS" "$TAILSCALE_USER"
+    printf 'Local processes on this server can forge identity headers.\n'
+    printf 'Remove access: tailscale serve reset && tailscale logout\n'
+  else
   printf 'Connect: ssh -L 127.0.0.1:5200:127.0.0.1:5200 <user>@<server>\nOpen http://127.0.0.1:5200\n'
   printf 'Administrator password: %s\nStored in: %s/.admin-password\n' "$(cat "$root/.admin-password")" "$root"
+  fi
   if has_backend claude; then printf 'Claude: sudo -Hu soulstream env BROWSER=/bin/false /home/soulstream/.local/bin/claude auth login (open the URL on another device).\n'; fi
   if has_backend codex; then printf 'Codex: sudo -Hu soulstream /usr/local/bin/codex login --device-auth (enable device code login in ChatGPT security settings).\n'; fi
   if has_backend antigravity; then printf 'Antigravity: ssh soulstream@<server>, run ~/.local/bin/agy, sign in, then /exit.\n'; fi
@@ -326,6 +424,7 @@ main() {
   LOG=/var/log/soulstream-install.log; STEP=setup
   touch "$LOG"; chmod 600 "$LOG"; trap on_error ERR
   run_step 'Installing packages' install_packages
+  if [[ "$TAILSCALE" == true ]]; then STEP='Setting up Tailscale'; printf '%s\n' "$STEP"; setup_tailscale; fi
   run_step 'Setting up account' setup_account
   run_step 'Installing Node.js' install_node
   run_step 'Installing selected CLIs' install_clis
@@ -335,6 +434,7 @@ main() {
   run_step 'Building Soulstream' build_project "$root"
   run_step 'Initializing schema' setup_schema "$root"
   run_step 'Starting services' install_units "$root"
+  if [[ "$TAILSCALE" == true ]]; then run_step 'Enabling Tailscale Serve' setup_tailscale_serve; fi
   run_step 'Checking services and workspace' wait_and_create_workspace "$root"
   finish_message "$root"
 }

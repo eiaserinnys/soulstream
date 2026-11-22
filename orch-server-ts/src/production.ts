@@ -4,7 +4,7 @@ import { closeNodeSocketsForHandover } from "./websocket_plugin.js";
 import { createConversationMessagePorts } from "./conversation/conversation_message_ports.js";
 import { ConversationService } from "./conversation/conversation_service.js";
 import { ConversationCatalog } from "./conversation/conversation_catalog.js";
-import { dashboardAuthEnabled } from "./auth/login_mode.js";
+import { dashboardAuthEnabled, resolveDashboardLoginMode } from "./auth/login_mode.js";
 import { verifyServiceBearerAuthorization } from "./auth/service_bearer.js";
 import { SqlOwnedAgentRepository } from "./owned-agents/repository.js";
 import type { OnPersistentReportPosted, PublishPersistentReports } from "./session/persistent_report_service.js";
@@ -627,6 +627,7 @@ export async function createLiveProductionApplication(
           environment: config.environment,
           nodeCredentials: nodeCredentialStore,
           dashboardAuthEnabled: dashboardAuthEnabled(config),
+          tailscaleAuthEnabled: resolveDashboardLoginMode(config) === "tailscale",
           resolveDashboardUserFromHeaders: (headers) =>
             providers.authenticatedUserResolvers.resolveUserFromHeaders(headers),
         },

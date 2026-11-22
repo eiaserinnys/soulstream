@@ -1,5 +1,20 @@
 import type { FastifyRequest } from "fastify";
 import { describe, expect, it, vi } from "vitest";
+import { resolveTailscaleIdentity } from "../src/auth/tailscale_identity.js";
+import { resolveDashboardLoginMode } from "../src/auth/login_mode.js";
+
+it("selects the highest priority login mode and validates Serve headers", () => {
+  expect(resolveDashboardLoginMode({})).toBe("none");
+  expect(resolveDashboardLoginMode({ dashboard_admin_password: "pw" })).toBe("password");
+  expect(resolveDashboardLoginMode({ tailscale_auth_enabled: true, dashboard_admin_password: "pw" })).toBe("tailscale");
+  expect(resolveDashboardLoginMode({ google_client_id: "google", tailscale_auth_enabled: true, dashboard_admin_password: "pw" })).toBe("google");
+  const allowed = "owner@example.com";
+  expect(resolveTailscaleIdentity({ "tailscale-user-login": " Owner@Example.com " }, allowed)).toBe(allowed);
+  for (const headers of [{}, { "tailscale-user-login": "" }, { "tailscale-user-login": "other" },
+    { "tailscale-user-login": [allowed] }, { "tailscale-user-login": allowed, "tailscale-funnel-request": "?1" }]) {
+    expect(resolveTailscaleIdentity(headers, allowed)).toBeNull();
+  }
+});
 import { SERVICE_CALLER } from "../src/auth/service_caller.js";
 
 import {
@@ -8,6 +23,16 @@ import {
 } from "../src/index.js";
 
 describe("live authenticated user resolver", () => {
+  it("checks service bearer before reading Tailscale identity for caller attribution", async () => {
+    const config = { google_client_id: "", tailscale_auth_enabled: true, tailscale_allowed_login: "owner@example.com" };
+    const resolvers = createLiveAuthenticatedUserResolvers({ jwt: createJwtHelper({}),
+      configProvider: { getConfig: () => config, requireConfig: async (key) => config[key as keyof typeof config] },
+      isServiceBearer: async () => true,
+    });
+    const headers = { authorization: "Bearer service-token", get ["tailscale-user-login"](): string { throw new Error("identity should not be read"); } };
+    await expect(resolvers.resolveUser(requestWithHeaders(headers))).resolves.toBeNull();
+    await expect(resolvers.resolveCallerInfo(requestWithHeaders({ authorization: "Bearer service-token", "tailscale-user-login": "owner@example.com" }), undefined, "node-a")).resolves.toMatchObject({ source: "system" });
+  });
   it("resolves the dashboard JWT cookie before a bearer header", async () => {
     const jwt = createJwtHelper({
       "cookie-jwt": { email: "cookie@example.com", name: "Cookie" },

@@ -7,6 +7,28 @@ import {
 } from "../src/index.js";
 
 describe("live auth token access resolver", () => {
+  it("accepts only the allowed Serve identity after service bearer and rejects development bypass", async () => {
+    const jwt = jwtVerifier("dashboard-jwt");
+    const resolver = createLiveAuthTokenResolver({ nodeCredentials: null, jwt, configProvider: configWith({
+      auth_bearer_token: "service-token", environment: "production", google_client_id: "",
+      tailscale_auth_enabled: true, tailscale_allowed_login: "owner@example.com",
+    }) });
+    const rejected: Record<string, string | string[]>[] = [{}, { "tailscale-user-login": "other@example.com" }, { "tailscale-user-login": "" },
+      { "tailscale-user-login": ["owner@example.com"] },
+      { "tailscale-user-login": "owner@example.com", "tailscale-funnel-request": "?1" },
+      { cookie: "soul_dashboard_auth=dashboard-jwt" }];
+    for (const headers of rejected) {
+      await expect(resolver(request(headers))).resolves.toMatchObject({ ok: false, statusCode: 401 });
+    }
+    await expect(resolver(request({ "tailscale-user-login": " Owner@Example.com " }))).resolves.toEqual({ ok: true });
+    await expect(resolver(request({ authorization: "Bearer service-token" }))).resolves.toEqual({ ok: true });
+    expect(jwt.verifyToken).not.toHaveBeenCalled();
+    const dev = createLiveAuthTokenResolver({ nodeCredentials: null, jwt, configProvider: configWith({
+      auth_bearer_token: "", environment: "development", google_client_id: "",
+      tailscale_auth_enabled: true, tailscale_allowed_login: "owner@example.com",
+    }) });
+    await expect(dev(request({}))).resolves.toMatchObject({ ok: false, statusCode: 401 });
+  });
   it("accepts configured service Bearer before trying dashboard JWT", async () => {
     const jwt = jwtVerifier();
     const resolver = createLiveAuthTokenResolver({
@@ -219,6 +241,6 @@ function jwtVerifier(validToken?: string): AuthJwtHelper {
   };
 }
 
-function request(headers: Record<string, string>) {
+function request(headers: Record<string, string | string[]>) {
   return { headers } as never;
 }

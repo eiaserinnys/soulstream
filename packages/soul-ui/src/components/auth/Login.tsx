@@ -30,7 +30,7 @@ export function buildGoogleAuthUrl(
 }
 
 export function Login({ title = "Dashboard" }: LoginProps) {
-  const { devModeEnabled, passwordLoginEnabled, devLogin, passwordLogin } = useAuth();
+  const { devModeEnabled, passwordLoginEnabled, tailscaleAuthEnabled, devLogin, passwordLogin } = useAuth();
   const [devEmail, setDevEmail] = useState("");
   const [devName, setDevName] = useState("");
   const [password, setPassword] = useState("");
@@ -112,8 +112,10 @@ export function Login({ title = "Dashboard" }: LoginProps) {
           </div>
         )}
 
+        {tailscaleAuthEnabled && <p className="text-sm text-muted-foreground">Tailscale에 허용된 계정으로 로그인한 기기에서 이 서버의 Serve 주소로 접속하세요.</p>}
+
         {/* 설치 비밀번호 로그인 (password 모드) */}
-        {passwordLoginEnabled && (
+        {passwordLoginEnabled && !tailscaleAuthEnabled && (
           <form onSubmit={handlePasswordLogin} className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="password-login" className="text-sm text-muted-foreground">
@@ -143,7 +145,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
         )}
 
         {/* Google 로그인 (Google 모드) */}
-        {!passwordLoginEnabled && (
+        {!passwordLoginEnabled && !tailscaleAuthEnabled && (
         <button
           type="button"
           onClick={handleGoogleLogin}

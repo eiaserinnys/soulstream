@@ -4,6 +4,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { isRecord } from "@soulstream/wire-schema/json-record";
 import { parseObjectBody } from "../http/route_validation.js";
 import type { DashboardLoginMode } from "./login_mode.js";
+import { deleteCookie, extractCookieToken, parseCookies, serializeCookie } from "./auth_cookie.js";
+import { resolveTailscaleIdentity } from "./tailscale_identity.js";
 import { extractBearerToken } from "./service_bearer.js";
 
 export const AUTH_COOKIE_NAME = "soul_dashboard_auth";
@@ -14,6 +16,7 @@ export const DEV_DEFAULT_AVATAR_URL_TEMPLATE =
 
 export type AuthRouteConfig = {
   loginMode: DashboardLoginMode;
+  tailscaleAllowedLogin?: string;
   devModeEnabled: boolean;
   /** SHA-256 hex digest of DASHBOARD_ADMIN_PASSWORD; empty outside password mode. */
   dashboardAdminPasswordSha256: string;
@@ -135,7 +138,8 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     if (!access.ok) {
       return routeError(reply, access.statusCode ?? 401, access.detail);
     }
-    const token = extractCookieToken(request, await getCookieName(options))
+    const authConfig = await options.configProvider.getConfig();
+    const token = (authConfig.loginMode === "tailscale" ? undefined : extractCookieToken(request, cookieName(authConfig)))
       ?? extractBearerToken(request.headers.authorization);
     if (!token) return routeError(reply, 401, "No auth token in session");
     return { token };
@@ -184,6 +188,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
       authEnabled: authConfig.loginMode !== "none",
       devModeEnabled: authConfig.devModeEnabled,
       passwordLoginEnabled: authConfig.loginMode === "password",
+      ...(authConfig.loginMode === "tailscale" ? { tailscaleAuthEnabled: true } : {}),
     };
   });
 
@@ -238,6 +243,14 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
   app.get("/api/auth/status", async (request) => {
     const authConfig = await options.configProvider.getConfig();
     if (authConfig.loginMode === "none") return { authenticated: true, user: null };
+
+    if (authConfig.loginMode === "tailscale") {
+      const email = resolveTailscaleIdentity(request.headers, authConfig.tailscaleAllowedLogin ?? "");
+      if (!email) return { authenticated: false, user: null };
+      const payload = { email, name: email };
+      const payloadExtra = await options.userPayloadExtra?.(payload);
+      return { authenticated: true, user: { email, name: email, picture: "", ...(payloadExtra ?? {}) } };
+    }
 
     // Native clients use the same signed dashboard JWT as the cookie flow, but
     // carry it as a bearer token. Service bearer tokens fail jwt.verifyToken and
@@ -346,6 +359,8 @@ async function handleGoogleCallback(
   const errorCode = normalizeOptionalString(request.query.error);
   if (errorCode) return reply.redirect(`/?error=${encodeURIComponent(errorCode)}`);
 
+  const authConfig = await options.configProvider.getConfig();
+  if (authConfig.loginMode === "tailscale") return reply.redirect("/?error=auth_failed");
   const state = normalizeOptionalString(request.query.state);
   const expectedState = parseCookies(request.headers.cookie)[OAUTH_STATE_COOKIE_NAME];
   if (!expectedState || state !== expectedState) {
@@ -354,7 +369,6 @@ async function handleGoogleCallback(
   const code = normalizeOptionalString(request.query.code);
   if (!code) return reply.redirect("/?error=auth_failed");
 
-  const authConfig = await options.configProvider.getConfig();
   if (authConfig.loginMode !== "google") {
     return reply.redirect("/?error=auth_failed");
   }
@@ -417,10 +431,6 @@ async function authorizeUser(
   return result ? String(result) : null;
 }
 
-async function getCookieName(options: AuthRouteOptions): Promise<string> {
-  return cookieName(await options.configProvider.getConfig());
-}
-
 function cookieName(config: AuthRouteConfig): string {
   return config.cookieName ?? AUTH_COOKIE_NAME;
 }
@@ -447,21 +457,6 @@ function passwordMatches(password: string, configuredDigestHex: string): boolean
   const configured = Buffer.from(configuredDigestHex, "hex");
   if (configured.length !== provided.length) return false;
   return timingSafeEqual(provided, configured);
-}
-
-function extractCookieToken(request: FastifyRequest, name: string): string | undefined {
-  return parseCookies(request.headers.cookie)[name];
-}
-
-function parseCookies(header: string | string[] | undefined): Record<string, string> {
-  const cookieHeader = Array.isArray(header) ? header.join("; ") : header;
-  const result: Record<string, string> = {};
-  for (const part of cookieHeader?.split(";") ?? []) {
-    const index = part.indexOf("=");
-    if (index <= 0) continue;
-    result[part.slice(0, index).trim()] = part.slice(index + 1).trim();
-  }
-  return result;
 }
 
 function headerString(value: string | string[] | undefined): string | undefined {
@@ -497,28 +492,4 @@ function isSuccessStatus(statusCode: number): boolean {
 
 function devDefaultAvatarUrl(email: string): string {
   return DEV_DEFAULT_AVATAR_URL_TEMPLATE.replace("{seed}", encodeURIComponent(email));
-}
-
-function serializeCookie(
-  name: string,
-  value: string,
-  options: {
-    httpOnly?: boolean;
-    sameSite?: "Lax";
-    maxAge?: number;
-    path?: string;
-    secure?: boolean;
-  },
-): string {
-  const parts = [`${name}=${value}`];
-  parts.push(`Path=${options.path ?? "/"}`);
-  if (options.httpOnly) parts.push("HttpOnly");
-  if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
-  if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`);
-  if (options.secure) parts.push("Secure");
-  return parts.join("; ");
-}
-
-function deleteCookie(name: string): string {
-  return serializeCookie(name, "", { maxAge: 0 });
 }

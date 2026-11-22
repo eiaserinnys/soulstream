@@ -52,6 +52,8 @@ export type OrchServerEnvironmentConfig = Partial<ExternalIngressEnvironmentConf
   readonly allowed_email: string;
   readonly jwt_secret: string;
   readonly dashboard_admin_password: string;
+  readonly tailscale_auth_enabled?: boolean;
+  readonly tailscale_allowed_login?: string;
   readonly environment: string;
   readonly claude_oauth_client_id: string;
   readonly claude_oauth_callback_url: string;
@@ -92,6 +94,8 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "ALLOWED_EMAIL",
   "JWT_SECRET",
   "DASHBOARD_ADMIN_PASSWORD",
+  "TAILSCALE_AUTH_ENABLED",
+  "TAILSCALE_ALLOWED_LOGIN",
   "CLAUDE_OAUTH_CLIENT_ID",
   "CLAUDE_OAUTH_CALLBACK_URL",
   "CODEX_CLI_PATH",
@@ -151,10 +155,21 @@ export function loadOrchServerEnvironment(
   const googleClientId = env.GOOGLE_CLIENT_ID ?? "";
   const dashboardAdminPassword = env.DASHBOARD_ADMIN_PASSWORD ?? "";
   const jwtSecret = env.JWT_SECRET ?? "";
+  const tailscaleEnabled = parseBoolean(env.TAILSCALE_AUTH_ENABLED, "TAILSCALE_AUTH_ENABLED", false);
+  const tailscaleMode = !googleClientId && tailscaleEnabled;
+  const tailscaleLogin = (env.TAILSCALE_ALLOWED_LOGIN ?? "").trim().toLowerCase();
+  const host = requiredEnvString(env, "HOST");
+  if (tailscaleMode && (!tailscaleLogin || /\s/.test(tailscaleLogin))) {
+    throw new Error("TAILSCALE_ALLOWED_LOGIN must be a non-empty login without whitespace");
+  }
+  if (tailscaleMode && !["127.0.0.1", "::1", "localhost"].includes(host)) {
+    throw new Error("HOST must be loopback in Tailscale mode");
+  }
   if (
     resolveDashboardLoginMode({
       google_client_id: googleClientId,
       dashboard_admin_password: dashboardAdminPassword,
+      tailscale_auth_enabled: tailscaleEnabled,
     }) === "password" &&
     jwtSecret.trim().length === 0
   ) {
@@ -168,7 +183,7 @@ export function loadOrchServerEnvironment(
     default_execution_node_id:
       (env.DEFAULT_EXECUTION_NODE_ID?.trim() ?? "") || DEFAULT_EXECUTION_NODE_ID,
     default_pas_agent_id: optionalNonEmptyString(env.DEFAULT_PAS_AGENT_ID),
-    host: requiredEnvString(env, "HOST"),
+    host,
     port: parsePort(env.PORT),
     trusted_proxy: DEFAULT_TRUSTED_PROXY,
     database_url: requiredEnvString(env, "DATABASE_URL"),
@@ -191,6 +206,7 @@ export function loadOrchServerEnvironment(
     allowed_email: env.ALLOWED_EMAIL ?? "",
     jwt_secret: jwtSecret,
     dashboard_admin_password: dashboardAdminPassword,
+    ...(tailscaleMode ? { tailscale_auth_enabled: true, tailscale_allowed_login: tailscaleLogin } : {}),
     environment,
     claude_oauth_client_id: env.CLAUDE_OAUTH_CLIENT_ID ?? "",
     claude_oauth_callback_url: env.CLAUDE_OAUTH_CALLBACK_URL ?? "",

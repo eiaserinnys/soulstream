@@ -189,4 +189,15 @@ describe("Login password mode", () => {
     });
     expect(container.querySelector("[data-testid=password-login-input]")).toBeNull();
   });
+
+  it("shows only the Tailscale guidance for a rejected identity", async () => {
+    renderGate(async (input) => {
+      if (String(input) === "/api/auth/config") return Response.json({ authEnabled: true, devModeEnabled: false, tailscaleAuthEnabled: true });
+      if (String(input) === "/api/auth/status") return Response.json({ authenticated: false, user: null });
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("Tailscale에 허용된 계정으로 로그인한 기기에서 이 서버의 Serve 주소로 접속하세요."));
+    expect(container.querySelector("[data-testid=google-login-button]")).toBeNull();
+    expect(container.querySelector("[data-testid=password-login-input]")).toBeNull();
+  });
 });
