@@ -4,16 +4,7 @@ import { TaskLifecycleRoute } from "../../src/task/task_lifecycle_route.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 import type { Task } from "../../src/task/task_models.js";
 
-import {
-  DEDUPE_KEY,
-  IDENTITY,
-  SESSION_ID,
-  makeNotifier,
-  makeOutboxDirectory,
-  makeStore,
-  makeTask,
-  silentLogger,
-} from "./card1266_settlement_harness.js";
+import { IDENTITY, SESSION_ID, makeNotifier, makeOutboxDirectory, makeStore, makeTask, silentLogger } from "./card1266_settlement_harness.js";
 
 async function setup(task: Task, options: { pending?: boolean } = {}) {
   const directory = await makeOutboxDirectory();

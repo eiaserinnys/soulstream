@@ -7,10 +7,7 @@ import { createBoardRoundtripHarness } from "../../../soul-server-ts/tests/mcp/b
 
 const context: McpRequestContext = { callerSessionId: "header-session" };
 const external: McpRequestContext = { ...context, principal: { authority: "external", source: "llm", displayName: "External" } };
-const move = { board_item_id: "markdown:doc-1", folder_id: "00000000-0000-4000-8000-000000000001", idempotency_key: "move" };
 const view = { folder_id: "00000000-0000-4000-8000-000000000001", html: "<p>새 뷰</p>", idempotency_key: "create-view" };
-const patch = { custom_view_id: "cv-1", expected_revision: 1, html: "<p>after</p>", idempotency_key: "patch-view" };
-// Each existing handler's explicit errors and each required production branch is listed here.
 const cases: readonly [string, string, Record<string, unknown>, boolean?, McpRequestContext?][] = [["external read", "get_custom_view", { custom_view_id: "cv-1" }, false, external],
 ["external view mutation", "create_custom_view", { ...view, caller_session_id: "argument-session" }, false, external]];
 

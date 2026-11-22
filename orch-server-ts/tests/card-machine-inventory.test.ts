@@ -2,8 +2,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { expect,it } from 'vitest';
 import { cardDecisionMachine } from '../src/cards/state/card_decision_machine.js';
 import { CARD_FACT_VALUES } from '../src/cards/state/card_decision_facts.js';
-import { CARD_DECISION_SOURCES, CARD_RUNTIME_SQL_WRITERS, CARD_COMMAND_ENTRANCES, CARD_COMMAND_CALLERS } from '../src/cards/state/card_decision_inventory.js';
-import { CARD_RUNTIME_DECISION_CALLS, CARD_RUNTIME_DECISION_IMPORTERS } from '../src/cards/state/card_decision_inventory.js';
+import { CARD_DECISION_SOURCES, CARD_RUNTIME_SQL_WRITERS, CARD_COMMAND_ENTRANCES, CARD_COMMAND_CALLERS, CARD_RUNTIME_DECISION_CALLS, CARD_RUNTIME_DECISION_IMPORTERS } from '../src/cards/state/card_decision_inventory.js';
 it('pins every command to an existing operational function',async()=>{
  expect(Object.keys(CARD_DECISION_SOURCES).sort()).toEqual(Object.keys(CARD_FACT_VALUES).sort());
  for(const [file,name] of Object.values(CARD_DECISION_SOURCES))expect(await readFile(new URL(`../src/${file}`,import.meta.url),'utf8')).toMatch(new RegExp(`\\b${name}\\b`));

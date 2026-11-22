@@ -22,7 +22,6 @@ import {
   buildEventOutboxAppendInput,
   EventPersistence,
 } from "../../src/db/event_persistence.js";
-import type { SessionDB } from "../../src/db/session_db.js";
 import {
   computeEventOutboxPayloadHash,
   EventOutbox,
@@ -33,13 +32,9 @@ import {
   EventOutboxPump,
   type EventAppendAck,
 } from "../../src/upstream/event_outbox_pump.js";
-import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 import type { FullSchemaPostgresHarness } from
   "../db/full_schema_postgres_harness.js";
-import {
-  LIVE_OWNER_IDENTITY,
-  OWNERLESS_NODE_ID,
-} from "./ownerless_running_reconciliation_fixture.js";
+import { OWNERLESS_NODE_ID } from "./ownerless_running_reconciliation_fixture.js";
 
 const logger = pino({ level: "silent" });
 
@@ -58,7 +53,6 @@ export class OwnerlessIngressHarness {
 
   private readonly directory: string;
   private readonly ingress: EventIngressRepository;
-  private readonly outbox: EventOutbox;
   private readonly pump: EventOutboxPump;
   private directSourceSeq = 0;
   private terminalFailuresRemaining = 0;
@@ -73,11 +67,8 @@ export class OwnerlessIngressHarness {
   ) {
     this.directory = directory;
     this.ingress = ingress;
-    this.outbox = outbox;
     this.pump = pump;
     this.persistence = new EventPersistence(
-      {} as SessionDB,
-      {} as SessionBroadcaster,
       logger,
       outbox,
       pump,

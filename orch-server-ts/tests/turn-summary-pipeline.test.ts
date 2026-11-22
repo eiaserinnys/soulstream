@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { parsePersistentInstructionsApplyPayload } from
-  "@soulstream/wire-schema/persistent-session-instructions";
-import type { PersistentInstructionsApplyPayload } from
-  "@soulstream/wire-schema/persistent-session-instructions";
+import { parsePersistentInstructionsApplyPayload, type PersistentInstructionsApplyPayload } from "@soulstream/wire-schema/persistent-session-instructions";
 
 import type { NodeRegistryEvent } from "../src/node/registry.js";
 import { RuntimeSessionEventHub } from "../src/runtime/session_event_hub.js";
@@ -13,10 +10,7 @@ import {
   resolveTurnSummaryEligibility,
   TurnSummaryPipeline,
 } from "../src/turn-summary/turn_summary_pipeline.js";
-import type {
-  PersistentInstructionCandidate,
-  PersistentInstructionExtractor,
-} from "../src/turn-summary/persistent_instruction_extractor.js";
+import type { PersistentInstructionCandidate } from "../src/turn-summary/persistent_instruction_extractor.js";
 import type { TurnSummaryConfig } from "../src/turn-summary/turn_summary_config.js";
 import type { TurnSummarizer } from "../src/turn-summary/turn_summarizer.js";
 import type { TurnSummaryStartEvidence } from

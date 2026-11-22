@@ -1,13 +1,6 @@
-/**
- * stateful MCP 세션의 principal 고정(§3) — raw HTTP.
- *
- * 최초 initialize의 principal과 다른 POST/GET/DELETE는 403이다. restricted A가
- * restricted B의 세션도, full 세션도 빌릴 수 없다. full 동작은 그대로다.
- * 정책 로드 실패는 restricted만 503으로 막고 full은 계속 동작한다.
- */
 import { fileURLToPath } from "node:url";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { buildInternalMcpServer } from "../../src/server.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";

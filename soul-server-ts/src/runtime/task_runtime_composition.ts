@@ -12,11 +12,7 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { ProviderUsageCommandHandler } from "../auth/provider_usage.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
-import type {
-  EngineFactory,
-  RunnerProcessRuntimeFactory,
-} from "../task/task_executor.js";
-import { TaskExecutor } from "../task/task_executor.js";
+import { type EngineFactory, type RunnerProcessRuntimeFactory, TaskExecutor, type WorktreeExecutionResolver } from "../task/task_executor.js";
 import { chooseSessionModelFallbackTarget } from "../task/session_model_fallback.js";
 import {
   TaskCompletionNotifier,
@@ -35,7 +31,6 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { ScheduleDispatcher } from "../schedule/schedule_dispatcher.js";
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
-import type { WorktreeExecutionResolver } from "../task/task_executor.js";
 import { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
 import { createAttachmentMaterializer } from "../attachments/attachment_materializer.js";
 import {

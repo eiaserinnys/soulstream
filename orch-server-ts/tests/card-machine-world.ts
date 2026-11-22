@@ -37,13 +37,13 @@ export async function createCardMachineWorld() {
     resolveTarget:()=>({nodeId:"node",agentId:"worker",modelPreset:"model",available,reason:null}),
     launch:async()=>{},sendMessage:async()=>{if(failSend)throw new Error("test transport failure");},notify:async()=>{},
     deliveryExists:async()=>false,abandonDelivery:async()=>{},warn:()=>{},now:()=>now});
-  let cardId="",baseOwner="owner",limitedOwner:string|null=null,short=false;
+  let cardId="",limitedOwner:string|null=null,short=false;
   async function reset() {
     await dispatcher.drain();
     await h.sql`DELETE FROM card_orchestration_dispatches`;await h.sql`DELETE FROM card_orchestration_runs`;await h.sql`DELETE FROM folder_operations`;await h.sql`DELETE FROM cards`;await h.sql`DELETE FROM sessions`;
     for(const id of ["pas","owner","replacement","other"]) await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,model_preset,status,metadata)
       VALUES(${id},'node','worker','model','running',${h.sql.json(metadata(false))})`;
-    cardId="";baseOwner="owner";limitedOwner=null;short=false;available=false;failSend=false;now=Date.now();
+    cardId="";limitedOwner=null;short=false;available=false;failSend=false;now=Date.now();
   }
   async function row() {return (await h.sql`SELECT * FROM cards WHERE id=${cardId}`)[0]!;}
   async function ownerId() {return String((await row()).assignee_session_id);}
@@ -57,7 +57,7 @@ export async function createCardMachineWorld() {
     if(type.startsWith("HUMAN_MOVE_")||type.startsWith("ASSIGNEE_MOVE_")) {
       const target=type.replace(/^(HUMAN|ASSIGNEE)_MOVE_/,"");
       const actor=type.startsWith("HUMAN_")?human:await agent();
-      const before=await row();
+      await row();
       await cards.setCardStatus({...actor,cardId,status:(statusOf[target]??target) as Exclude<CardStatus,"uncreated">,
         blockedKind:target==="question"?"question":target==="limit"?"limit":target==="noReport"?"no_report":null,
         blockedDetail:target==="noReport"?"보고 없음":null,wakeAt:target==="verification"?new Date(Date.now()+3600000).toISOString():undefined,waitingFor:target==="verification"?"배포 확인":undefined});return;
@@ -123,7 +123,7 @@ export async function createCardMachineWorld() {
       }
       case "START_WORK":await recordWorkReceipt(h,await ownerId(),"running",execution);await cards.startCardWork({...await agent(),cardId,execution});return;
       case "SERVER_SHORT_LIMIT":case "SERVER_LONG_LIMIT":{
-        limitedOwner=await ownerId();baseOwner=limitedOwner;short=type==="SERVER_SHORT_LIMIT";
+        limitedOwner=await ownerId();short=type==="SERVER_SHORT_LIMIT";
         if(short) {
           const reset=new Date(now+3600000).toISOString();
           await h.sql`SELECT event_append(${limitedOwner},'credential_alert',${JSON.stringify({status:"rejected",resets_at:reset})},'',NOW(),NULL)`;

@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lstatSync } from "node:fs";
-import { promises as fs } from "node:fs";
+import { lstatSync, promises as fs } from "node:fs";
 import { join } from "node:path";
 
 function trashRoot(projectsRoot: string): string {

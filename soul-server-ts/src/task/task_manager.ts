@@ -117,16 +117,10 @@ export class TaskManager {
     private readonly db: SessionDB,
     private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
-    /** Persistent publisher의 durable outbox ingress. 누락 시 발행 경로가 명시적으로 실패한다. */
-    private readonly persistence?: EventPersistence,
-    /**
-     * Phase A context 정본 진입점 (atom d7a1ad86 차단):
-     * auto-resume transition이 user_message wire에 박을 ContextItem[]을 조립할 때 사용.
-     * undefined일 때 context 박지 않음 (legacy 호출자·단위 테스트 호환 — design-principles §8 실패 격리).
-     */
+    persistence?: EventPersistence,
     contextBuilder?: ExecutionContextBuilder,
     private readonly agentRegistry?: AgentRegistry,
-    private readonly folderContentHost?: Pick<FlatFolderContentHostClient, "moveSessionToFolder">,
+    folderContentHost?: Pick<FlatFolderContentHostClient, "moveSessionToFolder">,
     taskCreationHook?: TaskCreationHook,
     private readonly deliveryRuntimeV2Enabled = false,
     sessionRuntimeControl?: ClaudeSessionRuntimeControl,

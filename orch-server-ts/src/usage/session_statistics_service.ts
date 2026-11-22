@@ -15,13 +15,7 @@ import type {
   SessionStatisticsReadResult,
   SessionStatisticsRepositoryPort,
 } from "./session_statistics_types.js";
-import {
-  aggregateSessionStatisticsMetrics,
-  selectOwnedSessionStatisticsRows,
-  sessionStatisticsCompareText,
-  sessionStatisticsDate,
-} from "./session_statistics_aggregate.js";
-import type { SessionStatisticsScope } from "./session_statistics_aggregate.js";
+import { aggregateSessionStatisticsMetrics, selectOwnedSessionStatisticsRows, sessionStatisticsCompareText, sessionStatisticsDate, type SessionStatisticsScope } from "./session_statistics_aggregate.js";
 import {
   createSessionStatisticsCoverageIndex,
   sessionStatisticsCoverage,

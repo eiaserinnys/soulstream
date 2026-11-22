@@ -1,8 +1,4 @@
-import { query as defaultQuery } from "@anthropic-ai/claude-agent-sdk";
-import type {
-  Query as ClaudeSdkQuery,
-  SDKUserMessage,
-} from "@anthropic-ai/claude-agent-sdk";
+import { query as defaultQuery, type Query as ClaudeSdkQuery, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
 import type { RunnerControlFrame } from "../runner/frame_protocol.js";
@@ -48,8 +44,7 @@ import {
   DEFAULT_INPUT_REQUEST_TIMEOUT_MS,
   DEFAULT_POST_RESULT_DRAIN_MS,
 } from "./claude_sdk_client_defaults.js";
-import { runClaudeSdkOneShotAttempt } from "./claude_sdk_one_shot_attempt.js";
-import type { ClaudeSdkOneShotAttemptContext } from "./claude_sdk_one_shot_attempt.js";
+import { runClaudeSdkOneShotAttempt, type ClaudeSdkOneShotAttemptContext } from "./claude_sdk_one_shot_attempt.js";
 import { ClaudeSdkUsageCarry } from "./claude_sdk_usage_carry.js";
 import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.js";
 import type {

@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { PersistentReportService } from "./persistent_report_service.js";
-import type { SessionResourceAccessProvider } from "./session_resource_access.js";
+import { type SessionResourceAccessProvider, SessionResourceAccessError } from "./session_resource_access.js";
 
 import { mapNodeCommandError } from "../http/api_errors.js";
 import { PersistentSessionApiError } from "./persistent_session_api_error.js";
@@ -8,7 +8,6 @@ import {
   type PersistentSessionSettingsService,
 } from "./persistent_session_settings_service.js";
 import { SessionCommandRouteError } from "./session_command_router.js";
-import { SessionResourceAccessError } from "./session_resource_access.js";
 
 export type PersistentSessionSettingsRouteOptions = {
   service: PersistentSessionSettingsService;

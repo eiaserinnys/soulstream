@@ -2,12 +2,7 @@ import type { FastifyRequest } from "fastify";
 import type { AttachmentRegistrationScope } from "@soulstream/wire-schema/attachments";
 import { AttachmentUploadHttpError, type AttachmentUploadOptions, type UploadMode } from "../attachments/attachment_upload_http.js";
 import type { AttachmentReadRouteOptions } from "../attachments/attachment_read_routes.js";
-import type {
-  AttachmentCommitRepository,
-  AttachmentStorageBinding,
-  OwnedAttachmentCommitService,
-  UploadRegistration,
-} from "../attachments/attachment_commit_contract.js";
+import type { AttachmentCommitRepository, OwnedAttachmentCommitService } from "../attachments/attachment_commit_contract.js";
 import type { SessionResourceAccessProvider, SessionResourceAccessRepository } from "../session/session_resource_access.js";
 import type { LiveAuthenticatedEmailResolver } from "./live_authenticated_user_resolver.js";
 

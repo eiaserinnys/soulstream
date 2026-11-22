@@ -1,6 +1,5 @@
 import type { RepositorySql, FolderOperationRow } from "../cards/control_plane/card_types.js";
-import type { AppendFolderOperationTxParams } from "../cards/control_plane/card_models.js";
-import { normalizeOperation, requireOne } from "../cards/control_plane/card_models.js";
+import { type AppendFolderOperationTxParams, normalizeOperation, requireOne } from "../cards/control_plane/card_models.js";
 import { asPostgresJsonValue } from "../cards/control_plane/repository_helpers.js";
 
 export async function appendFolderOperation(sql: RepositorySql, params: AppendFolderOperationTxParams): Promise<FolderOperationRow> {

@@ -2,7 +2,7 @@ import type { SessionActionCommandRouteOptions } from "../session/session_action
 import type { RecurringJobHostRouteOptions } from "../recurring-jobs/recurring_job_host_routes.js";
 import type { CardOrchestrationRouteOptions } from "../cards/card_orchestration_routes.js";
 import type { NodeSnapshotRouteOptions } from "../node/node_snapshot_routes.js";
-import type { NodeAgentProfileRouteOptions } from "../node/node_agent_profile_routes.js";
+import type { NodeAgentProfileRouteOptions, NodeAgentProfileProvider } from "../node/node_agent_profile_routes.js";
 import type { CogitoRouteOptions } from "../cogito/cogito_routes.js";
 import type { SessionCommandRouteOptions } from "../session/session_command_routes.js";
 import type { FastifyBaseLogger } from "fastify";
@@ -14,7 +14,6 @@ import type { FolderControlPlaneHostRouteOptions } from "../folders/folder_contr
 import type { CardRouteBodyOptions } from "../cards/card_route_body.js";
 import type { BoardAccess } from "../board/board_access.js";
 import type { FlatFolderContentHost } from "../board/flat_folder_content_host.js";
-import type { NodeAgentProfileProvider } from "../node/node_agent_profile_routes.js";
 import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
 import type { ContextBundleRepository } from "../node/context_bundle_routes.js";
 import type { ModelCatalogSource } from "../model/model_catalog_source.js";

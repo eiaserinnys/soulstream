@@ -1,6 +1,5 @@
 import { mkdir, open, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";

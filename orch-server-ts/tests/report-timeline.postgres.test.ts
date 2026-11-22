@@ -14,7 +14,6 @@ describe("PAS report timeline on production PostgreSQL schema", () => {
   let dbPort: ConstructorParameters<typeof CardControlPlaneService>[1];
   const hub = { publish: vi.fn() };
   const warn = vi.fn();
-  const human = { actorKind: "user" as const, actorSessionId: null, actorUserId: "director@example.com" };
   let connectedSessionNumber = 0;
   const line: ReportTimelineLine = {
     line_key: "report:example", status: "report", title: "준비 완료", detail: "확인했습니다",

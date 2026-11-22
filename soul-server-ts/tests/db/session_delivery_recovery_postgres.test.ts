@@ -281,10 +281,6 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         kind: "absent" as const,
         inputUuid: buildDeliveryInputUuid(deliveryId),
       }));
-      const queuedRecovery = makeQueuedRecovery(
-        `queued-${suffix}`,
-        transcriptProbe,
-      );
       const recoveryDispatch = vi.fn(async (
         recovered: Parameters<TaskInterventionRoute["addIntervention"]>[0],
       ) => {
@@ -467,10 +463,6 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       kind: "absent" as const,
       inputUuid: buildDeliveryInputUuid(deliveryId),
     }));
-    const queuedRecovery = makeQueuedRecovery(
-      "queued-terminal-completion",
-      transcriptProbe,
-    );
     const recoveryDispatch = vi.fn(async (
       recovered: Parameters<TaskInterventionRoute["addIntervention"]>[0],
     ) => {

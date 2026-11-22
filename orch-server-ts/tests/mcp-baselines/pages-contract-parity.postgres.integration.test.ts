@@ -11,13 +11,10 @@ import { createPagePostgresHarness, type PagePostgresHarness } from "../../../or
 type McpRequestContext = { callerSessionId?: string; principal?: { authority: string; source: string; displayName: string } };
 import { executeMcpTool } from "../../src/mcp/tool_executor.js";
 import type { McpHostOptions } from "../../src/mcp/types.js";
-import { skillTools as skillDefinitions } from "@soulstream/mcp-contract";
-import * as hostTransport from "../../../soul-server-ts/src/control_plane/persistence_host_transport.js";
 
 const internal: McpRequestContext = { callerSessionId: "agent-session" };
 const external: McpRequestContext = { ...internal, principal: { authority: "external", source: "llm", displayName: "External" } };
 const create = { id: "new-page", title: "새 페이지", idempotency_key: "new-key" };
-const batch = { page_id: "seed", expected_version: 1, idempotency_key: "batch-key", operations: [{ op: "rename_page", title: "변경" }] };
 type Case = [string, string, Record<string, unknown>, McpRequestContext?, boolean?, number?];
 const cases: Case[] = [["external read", "get_page", { page_id: "seed", caller_session_id: "spoofed" }, external],
 ["external write", "create_page", { ...create, caller_session_id: "spoofed" }, external],
@@ -49,9 +46,7 @@ describe("pages/live/skills MCP host roundtrip", () => {
     app.addHook("onRequest", async (request: import("fastify").FastifyRequest) => { if (request.url.startsWith("/api/mcp/host/")) hostCalls++; });
     executionOptions = { authBearerToken: "token", pages: pageOptions, skills: skillOptions, cards, folders: {} } as never as unknown as McpHostOptions;
     registerMcpHostRoutes(app, executionOptions);
-    const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
-    const orch = { baseUrl, headers: { authorization: "Bearer token" } };
-    const logger = { warn: vi.fn() } as never;
+    await app.listen({ host: "127.0.0.1", port: 0 });
     vi.stubGlobal("fetch", fakeFetch);
   }, 60_000);
   afterAll(async () => { vi.unstubAllGlobals(); await app?.close(); await service?.close(); await h?.cleanup(); });
@@ -88,7 +83,7 @@ describe("pages/live/skills MCP host roundtrip", () => {
   it.each(cases.filter(row => row.includes(external) && row[0] !== "batch delete external"))("preserves %s", async (_label, name, input, ctx = internal, error = false, repeats = 1) => {
     query = String(input.query ?? "");
     input = { ...input, ...(input.idempotency_key ? { idempotency_key: `${name}:agent-session:${input.idempotency_key}` } : {}) };
-    await seed(); const before = hostCalls; let next: any;
+    await seed(); let next: any;
     for (let i = 0; i < repeats; i++) next = await call(name, input, ctx);
     expect(next.isError === true).toBe(error);
     expect(serialize(name === "upsert_page_markdown" && input.title ? "upsert_page_markdown:new" : name, next)).toMatchSnapshot();

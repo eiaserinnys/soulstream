@@ -6,7 +6,6 @@ import { SessionStoryReadRepository } from "../src/control_plane/repositories/se
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 import { createLiveCogitoSearchProvider } from "../src/runtime/live_cogito_search_provider.js";
 import type { LiveSearchDbConnectionFactory, LiveSearchSql } from "../src/runtime/live_db_sql.js";
-import type { CogitoSearchProvider } from "../src/cogito/cogito_routes.js";
 import { createFullSchemaPostgresHarness } from "./board_yjs_postgres_harness.js";
 
 describe("persistent context lexical SQL in PostgreSQL", () => {

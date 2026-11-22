@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
-import { vi } from "vitest";
 
 import { composeTaskRuntime } from "../../src/runtime/task_runtime_composition.js";
 import { composeWorkerRuntime } from "../../src/runtime/worker_composition.js";

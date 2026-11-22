@@ -291,7 +291,6 @@ function createSilentLogger() {
   } as unknown as McpRuntime["logger"];
 }
 
-let sqlCalls: MockSqlCall[] = [];
 let smokeSql: SqlClient;
 let smokeProjection: ReturnType<typeof configureTestBoardProjectionReadHost>;
 const worktreeList = vi.fn(async (input: unknown) => [{ input }]);
@@ -300,7 +299,6 @@ const renameFolder = vi.fn(async () => ({ folder: {}, operation: {}, idempotent:
 
 function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRuntime {
   const sql = createMockSql() as SqlClient & { __calls: MockSqlCall[] };
-  sqlCalls = sql.__calls;
   const db = new SessionDB();
   smokeSql = sql;
   smokeProjection = configureTestBoardProjectionReadHost(db, sql);

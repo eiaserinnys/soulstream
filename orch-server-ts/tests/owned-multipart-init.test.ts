@@ -14,7 +14,6 @@ const EXP = 1_800_000_000;
 const ID_V1 = { "x-soulstream-attachment-contract": "id-v1" };
 
 function createHarness(overrides: { requireRegistration?: AttachmentUploadOptions["requireRegistration"]; actor?: AttachmentUploadOptions["resolveActor"]; initMultipart?: OwnedAttachmentCommitService["initMultipart"] } = {}) {
-  const calls: string[] = [];
   const registration: UploadRegistration = { registrationScope: { type: "session", id: SESSION_ID }, sourceNodeId: null, sourceSessionId: SESSION_ID, outputCommandId: null };
   const binding = {
     identity: "settings-v1",

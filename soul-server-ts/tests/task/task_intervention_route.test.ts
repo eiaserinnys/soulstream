@@ -1309,7 +1309,6 @@ describe("TaskInterventionRoute.addIntervention", () => {
     const task = makeTask({ status: "completed" });
     const { route, autoResumeTransition, sessionNotificationPublisher } =
       makeSubject([task], gate);
-    const activation = activationBarrier(Promise.resolve());
     vi.mocked(autoResumeTransition.resume).mockImplementation(
       async (_resumedTask, _message, _callback, options) => {
         await options?.afterRunningTransition?.();

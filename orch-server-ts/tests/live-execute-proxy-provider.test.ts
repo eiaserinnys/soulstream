@@ -18,8 +18,6 @@ import {
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const catalog = repositoryModelCatalog();
-const CATALOG = catalog.snapshot();
-
 
 describe("live execute proxy provider", () => {
   it("creates new execute sessions over the websocket command bridge and streams raw events", async () => {

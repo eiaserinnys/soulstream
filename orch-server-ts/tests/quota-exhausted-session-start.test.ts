@@ -10,10 +10,7 @@ import { UsageSummaryService, type UsageSummarySnapshot } from "../src/usage/usa
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const catalog = repositoryModelCatalog();
-const CATALOG = catalog.snapshot();
 
-
-/** The real availability service, route, router and bridge deliver a command to a fake node. */
 function harness(reason: "quota" | "env" | "auth" = "quota") {
   const registry = new InMemoryNodeRegistry({ sessionCache: new PerNodeSessionCache() });
   const registration = registry.registerNode({

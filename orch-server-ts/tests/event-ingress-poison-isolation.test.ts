@@ -17,8 +17,6 @@ import type { EventAppendBatch } from "../src/node/event_ingress_types.js";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const catalog = repositoryModelCatalog();
-const CATALOG = catalog.snapshot();
-
 
 const STREAM_ID = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10";
 const FIXED_NOW = new Date("2026-08-13T00:00:00.000Z");

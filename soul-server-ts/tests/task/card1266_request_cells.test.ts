@@ -1,11 +1,4 @@
-/**
- * 카드 #1266 U5b 바깥 요청 칸의 경계 시험이다(주인 없음, 러너 없이 올린 활성 task, 시동 중,
- * 실행 등록 대기, 턴을 도는 중).
- * 칸마다 그 실행 상태를 운영 코드로 만든 뒤 TaskManager의 운영 진입 함수로 요청을 보내 나온
- * 처분을 보고, 정의의 판정 함수가 같은 처분을 내는지도 본다. 시험 이름은 `NODE_REQUEST_TABLE`의
- * `test`와 같아야 하고 `tests/task/state/node_barrier_request.test.ts`가 그 대응을 확인한다.
- */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   deferred,
@@ -21,17 +14,7 @@ import {
   terminalRow,
   track,
 } from "./card1266_request_cells_harness.js";
-import {
-  deleteTask,
-  expectDefinition,
-  expectOneTerminal,
-  intervene,
-  resume,
-  startReleasing,
-  startRetained,
-  startStarting,
-  stopTask,
-} from "./card1266_request_cells_steps.js";
+import { deleteTask, expectDefinition, expectOneTerminal, intervene, resume, startStarting, stopTask } from "./card1266_request_cells_steps.js";
 
 describe("바깥 요청 칸의 경계 시험 (카드 #1266 U5b)", () => {
   describe("주인 없음", () => {

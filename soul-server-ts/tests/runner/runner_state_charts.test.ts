@@ -36,11 +36,7 @@ import {
   RUNNER_LIFECYCLE_STATES,
   RUNNER_LIFECYCLE_STEPS,
 } from "../../src/runner/state/runner_lifecycle_machine.js";
-import {
-  RUNNER_RECOVERY_DISPOSITIONS,
-  type RunnerRecoveryFacts,
-} from "../../src/runner/state/runner_recovery_decision.js";
-import { decideRunnerRecovery } from "../../src/runner/state/runner_recovery_decision.js";
+import { RUNNER_RECOVERY_DISPOSITIONS, type RunnerRecoveryFacts, decideRunnerRecovery } from "../../src/runner/state/runner_recovery_decision.js";
 
 function recovery(facts: Partial<RunnerRecoveryFacts>): string {
   return decideRunnerRecovery({

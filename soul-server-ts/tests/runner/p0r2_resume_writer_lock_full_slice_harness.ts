@@ -348,7 +348,7 @@ export class P0R2FullSliceHarness {
       await controller.drain();
       await ackTail;
     });
-    const persistence = new EventPersistence(db, broadcaster, logger, outbox, pump);
+    const persistence = new EventPersistence(logger, outbox, pump);
     const mcpConfigService = new McpConfigService({
       agentsConfigPath,
       registryPath,

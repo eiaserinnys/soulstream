@@ -1,7 +1,7 @@
 import type { CallToolResult } from "@soulstream/mcp-contract";
 import { unusedClusterDependencies } from "../../../orch-server-ts/tests/mcp-cluster-unused-fixture.js";
 import Fastify from "fastify";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CardControlPlaneService } from "../../../orch-server-ts/src/cards/card_control_plane_service.js";
 import { createFolderContentSqlAdapter } from "../../../orch-server-ts/src/board/folder_content_sql.js";
 import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
@@ -14,12 +14,6 @@ type McpRequestContext = { callerSessionId?: string; principal?: { authority: st
 import { executeMcpTool } from "../../src/mcp/tool_executor.js";
 import type { McpHostOptions } from "../../src/mcp/types.js";
 
-const external: McpRequestContext = { principal: { authority: "external", source: "llm", displayName: "External" } };
-const folderId = "00000000-0000-4000-8000-000000000001";
-const mutation = { folder_id: folderId, expected_version: 1, idempotency_key: "tool-change" };
-const cases = [];
-
-// Actual SDK, host routes, services and disposable PG, as in page-roundtrip.postgres.integration.test.ts.
 describe("folder object orchestrator MCP roundtrip", () => {
   let h: PagePostgresHarness;
   let identity: FolderProjectIdentityService;
@@ -49,9 +43,7 @@ describe("folder object orchestrator MCP roundtrip", () => {
       resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }),
     } } as unknown as McpHostOptions;
     registerMcpHostRoutes(app, executionOptions);
-    const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
-    const orch = { baseUrl, headers: { authorization: "Bearer service-token" } };
-    const logger = { warn: vi.fn() } as never;
+    await app.listen({ host: "127.0.0.1", port: 0 });
   }, 60_000);
 
   afterAll(async () => { await app?.close(); await h?.cleanup(); });

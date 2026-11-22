@@ -7,11 +7,7 @@ import type {
   RespondNodeCommandPayload,
   SubscribeEventsNodeCommandPayload,
 } from "../node/pending_commands.js";
-import type {
-  CreateSessionNodeCommandPayload,
-  NodeConnectionSnapshot,
-} from "../node/registry.js";
-import { InMemoryNodeRegistry } from "../node/registry.js";
+import { type CreateSessionNodeCommandPayload, type NodeConnectionSnapshot, InMemoryNodeRegistry } from "../node/registry.js";
 import type { AgentProfileRecord } from "../node/agent_profile_routes.js";
 import {
   SessionCreateNodeSelectionError,

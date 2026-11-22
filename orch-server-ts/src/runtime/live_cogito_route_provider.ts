@@ -1,13 +1,4 @@
-import type {
-  CogitoBriefCollector,
-  CogitoNode,
-  CogitoNodeProvider,
-  CogitoSearchProvider,
-} from "../cogito/cogito_routes.js";
-import {
-  CogitoBriefTimeoutError,
-  CogitoBriefUnavailableError,
-} from "../cogito/cogito_routes.js";
+import { type CogitoBriefCollector, type CogitoNode, type CogitoNodeProvider, type CogitoSearchProvider, CogitoBriefTimeoutError, CogitoBriefUnavailableError } from "../cogito/cogito_routes.js";
 import {
   PendingNodeCommandRejectedError,
   PendingNodeCommandTimeoutError,

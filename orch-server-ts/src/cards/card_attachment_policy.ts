@@ -1,5 +1,4 @@
-import type { AttachmentAssetRow } from "../attachments/attachment_read_service.js";
-import { attachmentScopeFromRegistrationScope } from "../attachments/attachment_read_service.js";
+import { type AttachmentAssetRow, attachmentScopeFromRegistrationScope } from "../attachments/attachment_read_service.js";
 import { isRasterPreviewMimeType } from "../attachments/attachment_read_http.js";
 import { assetFromRow } from "../runtime/live_attachment_read_repository.js";
 import type { RepositorySql } from "./control_plane/card_types.js";

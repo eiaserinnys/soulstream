@@ -8,15 +8,7 @@ import {
   RunnerReleaseGarbageCollector,
   type RunnerReleaseGarbageCollectorDependencies,
 } from "../../src/runner/runner_release_gc.js";
-import type {
-  RunnerReleaseDescriptor,
-  RunnerReleaseMaterializer,
-} from "../../src/runner/runner_release_materializer.js";
-import {
-  BuildArtifactReleaseMaterializer,
-  hashArtifactSet,
-  RUNNER_RELEASE_ARTIFACTS,
-} from "../../src/runner/runner_release_materializer.js";
+import { type RunnerReleaseDescriptor, type RunnerReleaseMaterializer, BuildArtifactReleaseMaterializer, hashArtifactSet, RUNNER_RELEASE_ARTIFACTS } from "../../src/runner/runner_release_materializer.js";
 import { RunnerReleasePool } from "../../src/runner/runner_release_pool.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { createRunnerPhaseObservation } from "../../src/runner/runner_phase_observation.js";

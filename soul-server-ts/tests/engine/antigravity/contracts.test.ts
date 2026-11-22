@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import pino from "pino";
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
 import { AgentBackendSchema, parseModelCatalogYaml } from "@soulstream/model-catalog";
 import { openModelCatalogFile } from "@soulstream/model-catalog/file-loader";
 import { ModelCatalog, nodeEffortCapabilities } from "../../../src/model_catalog.js";

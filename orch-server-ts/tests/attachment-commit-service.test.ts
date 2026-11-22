@@ -332,7 +332,6 @@ describe("owned attachment commit service", () => {
   });
 
   it("recovers a completed R2 object after a prior DB failure and makes ticket retries idempotent", async () => {
-    const bytes = new Uint8Array([1, 2, 3]);
     const ticket = {
       importId: "attachment-a",
       storageKey: "session-attachments/originals/attachment-a",

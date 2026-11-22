@@ -377,14 +377,6 @@ export class PersistentSessionSettingsService {
     });
   }
 
-  private async normalizeNewDefaultModel(nodeId: string, requested: PersistentModelSelection) {
-    return this.normalizeModel(nodeId, requested, {
-      requireAvailable: true,
-      allowLimitRejected: false,
-      keepEffort: undefined,
-    });
-  }
-
   private normalizeModel(
     nodeId: string,
     requested: PersistentModelSelection,

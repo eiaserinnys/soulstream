@@ -20,19 +20,7 @@ import {
   startRunning,
   track,
 } from "./card1266_request_cells_harness.js";
-import {
-  CARD_START_CALLERS,
-  cardStartResume,
-  deleteTask,
-  expectDefinition,
-  expectOneTerminal,
-  intervene,
-  resume,
-  startReleasing,
-  startRetained,
-  startStarting,
-  stopTask,
-} from "./card1266_request_cells_steps.js";
+import { CARD_START_CALLERS, cardStartResume, deleteTask, expectDefinition, expectOneTerminal, intervene, resume, stopTask } from "./card1266_request_cells_steps.js";
 
 describe("바깥 요청 칸의 경계 시험 (카드 #1266 U5b)", () => {
   describe("러너의 남은 기록을 올리는 중", () => {

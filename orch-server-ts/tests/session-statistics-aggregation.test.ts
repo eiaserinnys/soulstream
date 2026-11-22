@@ -397,7 +397,6 @@ describe("session statistics coverage aggregation", () => {
   it("keeps options based on the unfiltered period and sorts tied project totals by id", () => {
     const rows = Array.from({ length: 6 }, (_, index) => {
       const sessionId = `session-${index + 1}`;
-      const projectId = `project-${index + 1}`;
       const eventId = index + 20;
       return usageRow({
         session_id: sessionId,

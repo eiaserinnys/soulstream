@@ -8,11 +8,7 @@ import {
   compileContextSources,
   createContextSource,
 } from "./compiler/index.js";
-import type {
-  AtomRefPageContextCandidate,
-  PageContextCandidate,
-} from "./page_context_assembler.js";
-import { selectNearestPageContextCandidates } from "./page_context_assembler.js";
+import { type AtomRefPageContextCandidate, type PageContextCandidate, selectNearestPageContextCandidates } from "./page_context_assembler.js";
 
 const DISABLED_ATOM_CONFIG: AtomFetchConfig = {
   enabled: false,

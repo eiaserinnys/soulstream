@@ -2,8 +2,7 @@ import { createServer, type AddressInfo, type Server } from "node:net";
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ClaudeSdkClient } from "../../src/engine/claude_adapter.js";
-import type { ClaudeRunOptions } from "../../src/engine/claude_adapter.js";
+import { ClaudeSdkClient, type ClaudeRunOptions } from "../../src/engine/claude_adapter.js";
 import {
   abortSignal,
   collect,

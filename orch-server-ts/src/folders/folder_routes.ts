@@ -2,10 +2,9 @@ import { registerCardRoutes, cardRouteAuthRequirements } from "../cards/card_rou
 import type { CardControlPlaneService } from "../cards/card_control_plane_service.js";
 import { registerFolderWorkspaceRoutes, folderWorkspaceRouteAuthRequirements, dashboardFolderActor, folderOperationError } from "./folder_workspace_routes.js";
 import { randomUUID } from "node:crypto";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { CatalogSessionAssignment } from "@soulstream/wire-schema/catalog";
 
-import type { PageMutationActor } from "../page/page_mutation_core.js";
 import { isBoardFolderAllowed, normalizeBoardAccess, type BoardAccess } from "../board/board_access.js";
 import {
   accessPayload,
@@ -119,10 +118,6 @@ export class FolderRouteError extends Error {
   }
 }
 
-type FolderParams = {
-  folder_id: string;
-};
-
 const SYSTEM_FOLDER_IDS = new Set(["claude", "llm"]);
 
 export const folderRouteAuthRequirements = {
@@ -207,52 +202,6 @@ export function registerFolderRoutes(
 
 }
 
-async function dashboardActor(
-  request: FastifyRequest,
-  options: FolderRouteOptions,
-): Promise<PageMutationActor> {
-  const userId = await options.resolveDashboardUserId?.(request) ?? null;
-  return userId
-    ? { actorKind: "user", actorUserId: userId }
-    : { actorKind: "system" };
-}
-
-function requestIdempotencyKey(
-  request: FastifyRequest,
-  body: Record<string, unknown>,
-): string {
-  const supplied = body.idempotencyKey;
-  if (typeof supplied === "string" && supplied.trim()) return supplied.trim();
-  const header = request.headers["idempotency-key"];
-  if (typeof header === "string" && header.trim()) return header.trim();
-  return randomUUID();
-}
-
-function parseUpdateBody(body: Record<string, unknown>): Validation<FolderUpdateInput> {
-  const update: FolderUpdateInput = {};
-  if (hasOwn(body, "name")) {
-    const name = optionalStringOrNull(body, "name");
-    if (!name.ok) return name;
-    update.name = name.value ?? null;
-  }
-  if (hasOwn(body, "sortOrder")) {
-    const sortOrder = optionalIntegerOrNull(body, "sortOrder");
-    if (!sortOrder.ok) return sortOrder;
-    update.sortOrder = sortOrder.value ?? null;
-  }
-  if (hasOwn(body, "settings")) {
-    const settings = optionalObjectOrNull(body, "settings");
-    if (!settings.ok) return settings;
-    update.settings = settings.value ?? null;
-  }
-  if (hasOwn(body, "parentFolderId")) {
-    const parentFolderId = optionalStringOrNull(body, "parentFolderId");
-    if (!parentFolderId.ok) return parentFolderId;
-    update.parentFolderId = parentFolderId.value ?? null;
-  }
-  return { ok: true, value: update };
-}
-
 function parseReorderBody(body: unknown): Validation<FolderReorderInput[]> {
   if (!Array.isArray(body)) {
     return { ok: false, message: "Request body must be a JSON array" };
@@ -278,71 +227,7 @@ function parseReorderBody(body: unknown): Validation<FolderReorderInput[]> {
   return { ok: true, value: items };
 }
 
-function systemUpdateGuard(
-  folderId: string,
-  update: FolderUpdateInput,
-): string | null {
-  if (update.name !== undefined && update.name !== null) {
-    return rejectSystemFolderMutation(folderId, "renamed");
-  }
-  if (update.sortOrder !== undefined && update.sortOrder !== null) {
-    return rejectSystemFolderMutation(folderId, "reordered");
-  }
-  if (hasOwn(update, "parentFolderId")) {
-    return rejectSystemFolderMutation(folderId, "moved");
-  }
-  return null;
-}
-
 function rejectSystemFolderMutation(folderId: string, operation: string): string | null {
   if (!SYSTEM_FOLDER_IDS.has(folderId)) return null;
   return `System folder '${folderId}' cannot be ${operation}.`;
-}
-
-function optionalInteger(
-  body: Record<string, unknown>,
-  key: string,
-  defaultValue: number,
-): Validation<number> {
-  if (!hasOwn(body, key)) return { ok: true, value: defaultValue };
-  return requiredInteger(body, key);
-}
-
-function optionalIntegerOrNull(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<number | null | undefined> {
-  if (!hasOwn(body, key)) return { ok: true, value: undefined };
-  const value = body[key];
-  if (value === null) return { ok: true, value: null };
-  return requiredInteger(body, key);
-}
-
-function optionalObjectOrNull(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<Record<string, unknown> | null | undefined> {
-  if (!hasOwn(body, key)) return { ok: true, value: undefined };
-  const value = body[key];
-  if (value === null) return { ok: true, value: null };
-  if (typeof value === "object" && !Array.isArray(value)) {
-    return { ok: true, value: value as Record<string, unknown> };
-  }
-  return { ok: false, message: `${key} must be an object or null` };
-}
-
-function sendProviderError(
-  reply: FastifyReply,
-  error: unknown,
-  fallbackStatusCode: number,
-): FastifyReply {
-  if (error instanceof FolderRouteError) {
-    return reply.code(error.statusCode).send({ detail: error.message });
-  }
-  const message = error instanceof Error ? error.message : "Folder route failed";
-  return reply.code(fallbackStatusCode).send({ detail: message });
-}
-
-function folderParams(request: FastifyRequest): FolderParams {
-  return request.params as FolderParams;
 }

@@ -3,14 +3,13 @@ import { serverCardEvidence, type ServerEvidenceRows } from '../src/cards/state/
 import { humanCardEvidence } from '../src/cards/state/card_human_evidence.js';
 import { cardCommandEntryFailure } from '../src/cards/state/card_command_entrance.js';
 import { rowToStateValue } from '../src/cards/state/card_state_value.js';
-import type { CardDecision } from '../src/cards/state/card_decision.js';
+import { type CardDecision, decideCardTransition } from '../src/cards/state/card_decision.js';
 import { generateKeyBetween } from '@soulstream/fractional-position';
 import { assigneeToFields } from '../src/cards/control_plane/card_models.js';
 import { questionCardNow, checkCardReviewAsk, reviewCardNowFromCheckedAsk, makeCardNow, openCardItemFix } from '../src/cards/card_item_rules.js';
 import { verificationWaitNow } from '../src/cards/card_verification_wait.js';
 import { formatLimitResumeClock } from '../src/cards/card_limit_auto_resume.js';
 import { mergedCloseNow } from '../src/cards/card_maintenance_tx.js';
-import { decideCardTransition } from '../src/cards/state/card_decision.js';
 import { decodeCardDecision } from '../src/cards/state/card_decision_decoder.js';
 import { formatCardDecisionRejection } from '../src/cards/state/card_decision_errors.js';
 import type { CardCommand } from '../src/cards/state/card_decision_facts.js';

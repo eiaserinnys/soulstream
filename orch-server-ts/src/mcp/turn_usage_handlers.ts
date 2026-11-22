@@ -1,4 +1,4 @@
-import { errorResult, jsonResult, sessionTools } from "@soulstream/mcp-contract";
+import { errorResult, jsonResult } from "@soulstream/mcp-contract";
 import { summarizeTurnUsage } from "./turn_usage_summary.js";
 import { parseOffsetTimestamp } from "./session_query_values.js";
 import type { McpToolHandler } from "./types.js";

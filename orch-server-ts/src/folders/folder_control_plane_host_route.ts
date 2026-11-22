@@ -35,8 +35,6 @@ const operations = new Set([
   ...Object.keys(folderOperationSchemas),
 ]);
 
-const updateColumns = new Set(["name", "sort_order", "settings", "parent_folder_id"]);
-
 export function registerFolderControlPlaneHostRoute(
   app: FastifyInstance,
   options: FolderControlPlaneHostRouteOptions,
@@ -170,22 +168,8 @@ function stringArray(body: Record<string, unknown>, key: string): string[] {
   }
   return value;
 }
-function nullableStringArray(body: Record<string, unknown>, key: string): Array<string | null> {
-  const value = body[key];
-  if (!Array.isArray(value) || !value.every((entry) => entry === null || typeof entry === "string")) {
-    throw statusError(422, `${key} must be a nullable string array`);
-  }
-  return value;
-}
 function statusError(statusCode: number, message: string): Error & { statusCode: number } {
   return Object.assign(new Error(message), { statusCode });
-}
-function errorStatus(error: unknown): number {
-  if (error !== null && typeof error === "object" && "statusCode" in error) {
-    const statusCode = (error as { statusCode?: unknown }).statusCode;
-    if (typeof statusCode === "number") return statusCode;
-  }
-  return 500;
 }
 function errorReply(reply: FastifyReply, status: number, code: string, message: string) {
   return reply.code(status).send({ detail: { error: { code, message } } });

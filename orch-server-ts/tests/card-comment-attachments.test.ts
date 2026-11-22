@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import { registerCardRoutes } from "../src/cards/card_routes.js";
 import { createCardCommentAttachmentUploader } from "../src/cards/card_comment_attachment_upload.js";
@@ -9,7 +9,6 @@ import type {
   CardCommentAttachmentUploadInput,
   FolderRouteOptions,
 } from "../src/folders/folder_routes.js";
-import type { FastifyRequest } from "fastify";
 
 type Uploader = NonNullable<FolderRouteOptions["uploadCardCommentAttachment"]>;
 

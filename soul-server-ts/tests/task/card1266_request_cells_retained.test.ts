@@ -28,17 +28,7 @@ import {
   type CellWorld,
   type FakeRunner,
 } from "./card1266_request_cells_harness.js";
-import {
-  deleteTask,
-  expectDefinition,
-  expectOneTerminal,
-  intervene,
-  resume,
-  startReleasing,
-  startRetained,
-  startStarting,
-  stopTask,
-} from "./card1266_request_cells_steps.js";
+import { deleteTask, expectDefinition, expectOneTerminal, intervene, resume, startReleasing, startRetained, stopTask } from "./card1266_request_cells_steps.js";
 
 describe("바깥 요청 칸의 경계 시험 (카드 #1266 U5b)", () => {
   type RetainedKind = "claude_background" | "codex_command";

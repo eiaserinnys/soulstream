@@ -155,7 +155,7 @@ async function pagedFixture() {
 
 describe("WorktreeService.list paging and removed filtering", () => {
   it.each(["demo", undefined])("lists a linked base repository with repo id %s", async (repoId) => {
-    const { projectsRoot, repo, service } = fixture();
+    const { repo, service } = fixture();
     const outsideRoot = mkdtempSync(join(tmpdir(), "worktree-linked-repo-"));
     roots.push(outsideRoot);
     const linkedRepo = join(outsideRoot, "demo");

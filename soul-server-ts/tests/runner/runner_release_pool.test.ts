@@ -4,11 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type {
-  RunnerReleaseDescriptor,
-  RunnerReleaseMaterializer,
-} from "../../src/runner/runner_release_materializer.js";
-import { BuildArtifactReleaseMaterializer } from "../../src/runner/runner_release_materializer.js";
+import { type RunnerReleaseDescriptor, type RunnerReleaseMaterializer, BuildArtifactReleaseMaterializer } from "../../src/runner/runner_release_materializer.js";
 import {
   RunnerReleasePool,
   type RunnerReleasePoolDependencies,

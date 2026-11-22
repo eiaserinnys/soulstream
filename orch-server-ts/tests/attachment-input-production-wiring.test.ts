@@ -16,8 +16,6 @@ import { UI_EVENT_COLLECTION_DISABLED } from "../src/ui-events/ui_event_settings
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const catalog = repositoryModelCatalog();
-const CATALOG = catalog.snapshot();
-
 
 const asset = {
   id: "attachment-a",

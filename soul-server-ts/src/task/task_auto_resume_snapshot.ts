@@ -1,11 +1,5 @@
-import {
-  isTerminalTaskStatus,
-  type Task,
-  type TaskStatus,
-  type TerminationReason,
-} from "./task_models.js";
+import type { Task, TaskStatus, TerminationReason } from "./task_models.js";
 
-/** 자동 재개가 종료 상태를 되돌릴 때 쓰는 순수 보조: 종료 스냅샷과 caller_info 비교. */
 export interface TerminalResumeSnapshot {
   status: Extract<TaskStatus, "completed" | "error" | "interrupted">;
   terminationReason: TerminationReason;

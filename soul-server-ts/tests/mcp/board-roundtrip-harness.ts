@@ -21,7 +21,7 @@ import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_
 import { createLiveDbSqlResolver } from "../../../orch-server-ts/src/runtime/live_db_sql.js";
 import { createLiveDbCatalogRepository } from "../../../orch-server-ts/src/runtime/live_db_catalog_repository.js";
 import { createLiveFolderProvider } from "../../../orch-server-ts/src/runtime/live_folder_route_provider.js";
-import { broadcastTargetedSessionCatalogDelta, withSessionCatalogMutationBroadcasts } from "../../../orch-server-ts/src/runtime/live_session_catalog_mutation_broadcaster.js";
+import { withSessionCatalogMutationBroadcasts } from "../../../orch-server-ts/src/runtime/live_session_catalog_mutation_broadcaster.js";
 import { registerSessionCatalogRoutes } from "../../../orch-server-ts/src/session/session_catalog_routes.js";
 import { InMemorySseReplayBroadcaster, type SessionStreamEvent } from "../../../orch-server-ts/src/sse/replay_broadcaster.js";
 import { createFullSchemaPostgresHarness } from "../../../orch-server-ts/tests/board_yjs_postgres_harness.js";

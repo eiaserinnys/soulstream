@@ -1,23 +1,4 @@
-/**
- * Codex EnginePort 구현 — `@openai/codex-sdk@^0.155.1` SDK 모드 단독.
- *
- * 옵션 D 비대칭 모델 단계 1 (Phase B-2). SDK 채택 정당성: 4차 캐시 §3.2 — "각 백엔드를
- * 그 SDK의 정본 언어에서". subprocess fallback 없음 — TS 정본 우월성 유지.
- *
- * Codex SDK API 표면(/tmp/codex-sdk/package/dist/index.d.ts 정본):
- * - `new Codex({apiKey?, env?, config?, baseUrl?})` — 인스턴스
- * - `codex.startThread({workingDirectory, skipGitRepoCheck, model?})` → Thread
- * - `codex.resumeThread(id, options?)` → Thread
- * - `thread.runStreamed(input, {signal?})` → `{events}` AsyncGenerator<ThreadEvent>
- *
- * 본 PR 범위:
- * - 어댑터 자체 + 이벤트 매핑.
- * - *세션 lifecycle 통합*은 B-3 (task_executor 신설 시 본 어댑터를 주입).
- * - onIntervention: SDK 표면 없음 — 조용히 무시 (interface 시그니처 유지).
- * - onCompact: Codex는 compact 이벤트 없음 — 호출 안 됨.
- */
-
-import { Codex, type Thread, type ThreadEvent, type Input } from "@openai/codex-sdk";
+import { Codex, type Thread, type Input } from "@openai/codex-sdk";
 import type { Logger } from "pino";
 
 import {

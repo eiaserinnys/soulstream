@@ -4,12 +4,7 @@ import type {
 } from "@soulstream/wire-schema/session-statistics";
 import type { SessionStatisticsReadResult } from "./session_statistics_types.js";
 import { sessionStatisticsInPeriod } from "./session_statistics_scope.js";
-import {
-  sessionStatisticsCompareText,
-  sessionStatisticsDate,
-  sessionStatisticsSourceKey,
-} from "./session_statistics_aggregate.js";
-import type { SessionStatisticsScope } from "./session_statistics_aggregate.js";
+import { sessionStatisticsCompareText, sessionStatisticsDate, sessionStatisticsSourceKey, type SessionStatisticsScope } from "./session_statistics_aggregate.js";
 import { sessionStatisticsRowsForQuery } from "./session_statistics_coverage.js";
 
 type Row = SessionStatisticsReadResult["rows"][number];

@@ -108,8 +108,6 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   const db = new SessionDB();
   const broadcaster = new SessionBroadcaster(createBroadcasterSend(() => upstreamAdapter, logger), agentRegistry, env.SOULSTREAM_NODE_ID);
   const persistence = new EventPersistence(
-    db,
-    broadcaster,
     logger,
     eventOutbox,
     eventOutboxPump,

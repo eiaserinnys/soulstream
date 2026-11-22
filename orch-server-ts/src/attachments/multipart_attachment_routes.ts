@@ -4,10 +4,7 @@ import type { AttachmentR2Storage } from "../runtime/live_board_asset_storage.js
 import type { AttachmentUploadOptions } from "./attachment_upload_http.js";
 import { ownedMultipartInit } from "./owned_multipart_init.js";
 import { ownedMultipartAbort, ownedMultipartComplete } from "./owned_multipart_finish.js";
-import {
-  ATTACHMENT_TICKET_SECONDS, LARGE_ATTACHMENT_MAX_SIZE, LARGE_ATTACHMENT_PART_SIZE,
-  issueAttachmentTicket, verifyAttachmentTicket, type AttachmentUploadTicket,
-} from "./attachment_upload_ticket.js";
+import { ATTACHMENT_TICKET_SECONDS, LARGE_ATTACHMENT_MAX_SIZE, LARGE_ATTACHMENT_PART_SIZE, issueAttachmentTicket, verifyAttachmentTicket } from "./attachment_upload_ticket.js";
 
 export interface AttachmentImportInput {
   uploadId: string; sessionId: string; filename: string; contentType: string;

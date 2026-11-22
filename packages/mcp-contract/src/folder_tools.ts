@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { folderStatusSchema, assigneeValueSchema, assigneeSchema, idempotencyKeySchema, optionalReasonSchema, expectedVersionSchema, callerSessionIdSchema, mutationToolDescription } from "./folder_shared.js";
+import { folderStatusSchema, idempotencyKeySchema, optionalReasonSchema, expectedVersionSchema, callerSessionIdSchema, mutationToolDescription } from "./folder_shared.js";
 
 export const folderObjectTools = {
   create_folder: { name: "create_folder", config: {

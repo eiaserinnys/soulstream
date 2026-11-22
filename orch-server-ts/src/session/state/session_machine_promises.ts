@@ -1,5 +1,4 @@
-import type { SessionDecisionRow } from "./session_decision_table.js";
-import { sessionDecisionTable } from "./session_decision_table.js";
+import { type SessionDecisionRow, sessionDecisionTable } from "./session_decision_table.js";
 import {
   SESSION_COMMAND_LABELS,
   SESSION_REASON_LABELS,

@@ -5,12 +5,10 @@ import { formatCardDecisionFailure } from '../../cards/state/card_decision_error
 import { makeCardNow } from '../../cards/card_item_rules.js';
 import { randomUUID } from "node:crypto";
 import type { SqlClient } from "../control_plane_types.js";
-import type { RepositorySql } from "../../cards/control_plane/card_types.js";
+import type { RepositorySql, CardRow } from "../../cards/control_plane/card_types.js";
 import { patchCardTx } from "../../cards/control_plane/card_patch.js";
-import type { CardRow } from "../../cards/control_plane/card_types.js";
 import { appendFolderOperation } from "../../folders/folder_operation_store.js";
 
-/** Called inside the same transaction as the new session registration. */
 export async function applySessionCardReplacement(sql:SqlClient,sessionId:string):Promise<void> {
   const row=(await sql<Array<{card_id:string;operation_id:string;actor_session_id:string;actor_user_id:string|null;
     folder_id:string;payload_json:{previous_assignee:{session_id:string};target:{nodeId:string;modelPreset:string|null}}}>>`

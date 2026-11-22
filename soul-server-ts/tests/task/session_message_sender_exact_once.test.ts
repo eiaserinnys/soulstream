@@ -3,12 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import type { AutoResumeTransition } from
   "../../src/task/task_auto_resume_transition.js";
-import type {
-  AddInterventionParams,
-  AddInterventionResult,
-} from "../../src/task/task_intervention_route.js";
-import { TaskInterventionRoute } from
-  "../../src/task/task_intervention_route.js";
+import { type AddInterventionParams, type AddInterventionResult, TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import {
   TaskDeliveryLedgerGate,
   type DeliveryLedgerAdmission,
@@ -134,7 +129,7 @@ class SharedDeliveryLedger {
   async recoverDue(
     deliver: (request: AddInterventionParams) => Promise<void>,
   ): Promise<void> {
-    for (const [deliveryId, stored] of [...this.rows]) {
+    for (const [, stored] of [...this.rows]) {
       if (stored.row.aggregate_state === "consumed") continue;
       if ((stored.row.attempt_expires_at?.getTime() ?? Infinity) > this.clock.now) {
         continue;

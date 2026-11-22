@@ -2,25 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createCardAttachmentSourceImport } from "../src/attachments/card_attachment_source_import.js";
 import { createLiveAttachmentSourceReader } from "../src/runtime/live_attachment_route_provider.js";
 
-import {
-  ATTACHMENT_COMMAND_TIMEOUT_MS,
-  AttachmentTransportConnectionError,
-  AttachmentTransportTimeoutError,
-  createLiveAttachmentRouteProviders,
-  InMemoryNodeRegistry,
-  MAX_ATTACHMENT_SIZE_BYTES,
-  NodeCommandTransportError,
-  NodeCommandTransportHub,
-  PendingNodeCommandRejectedError,
-  PendingNodeCommandTimeoutError,
-  SessionCommandTransportBridge,
-  type AttachmentUploadInput,
-  type LiveAttachmentCommandBridge,
-  type NodeCommandResponse,
-  type NodeConnectionSnapshot,
-  type RequestResponseNodeCommandPayload,
-  type RoutedPendingSessionCommand,
-} from "../src/index.js";
+import { ATTACHMENT_COMMAND_TIMEOUT_MS, AttachmentTransportConnectionError, AttachmentTransportTimeoutError, createLiveAttachmentRouteProviders, InMemoryNodeRegistry, MAX_ATTACHMENT_SIZE_BYTES, NodeCommandTransportError, NodeCommandTransportHub, PendingNodeCommandRejectedError, PendingNodeCommandTimeoutError, SessionCommandTransportBridge, type AttachmentUploadInput, type LiveAttachmentCommandBridge, type NodeCommandResponse, type RequestResponseNodeCommandPayload, type RoutedPendingSessionCommand } from "../src/index.js";
 
 const nodeId = "node-attachment";
 type AnyRoutedPendingCommand = RoutedPendingSessionCommand<

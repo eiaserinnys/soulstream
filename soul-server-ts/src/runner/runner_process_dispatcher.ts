@@ -181,7 +181,6 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private outbox!: RunnerParentOutbox;
   private stoppedRunnerWriter: RunnerSqliteEventOutbox | undefined;
   private stoppedRunnerWriterLock: RunnerWriterLock | undefined;
-  private runnerDatabasePath!: string;
   private pump: EventOutboxPump | undefined;
   private pumpInitialization: Promise<void> | undefined;
   private unregisterPump: (() => void) | undefined;
@@ -658,7 +657,6 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         this.spawnInput.sessionId,
       );
       this.socketPath = paths.socketPath;
-      this.runnerDatabasePath = paths.databasePath;
       this.stoppedRunnerWriterLock = await RunnerWriterLock.acquire(paths.lockPath);
       try {
         this.stoppedRunnerWriter = await RunnerSqliteEventOutbox.open(paths.databasePath, {
@@ -697,7 +695,6 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     const spawned = await this.options.runnerProcess!;
     this.spawnedProcess = spawned;
     this.socketPath = spawned.paths.socketPath;
-    this.runnerDatabasePath = spawned.paths.databasePath;
     const spawnedProof = spawned.adopted
       ? undefined
       : await this.prepareSpawnedIdentityProof(spawned);

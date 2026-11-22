@@ -19,10 +19,7 @@ import { TaskExecutorFinalizer } from
 import { TaskLifecycleTransition } from
   "../../src/task/task_lifecycle_transition.js";
 import type { Task } from "../../src/task/task_models.js";
-import { createFullSchemaPostgresHarness } from
-  "../db/full_schema_postgres_harness.js";
-import type { FullSchemaPostgresHarness } from
-  "../db/full_schema_postgres_harness.js";
+import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from "../db/full_schema_postgres_harness.js";
 import { OwnerlessIngressHarness } from
   "./ownerless_running_ingress_harness.js";
 import {

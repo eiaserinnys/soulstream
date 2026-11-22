@@ -6,9 +6,8 @@ import {
   createLiveDashboardAccessProvider,
   createPostgresDashboardUserRepository,
 } from "../../src/runtime/live_dashboard_access_provider.js";
-import { createLiveDbSqlResolver } from "../../src/runtime/live_db_sql.js";
+import { createLiveDbSqlResolver, type LivePostgresSql } from "../../src/runtime/live_db_sql.js";
 import { createSessionResourceAccessProvider } from "../../src/session/session_resource_access.js";
-import type { LivePostgresSql } from "../../src/runtime/live_db_sql.js";
 
 export async function createLiveTestAttachmentService(
   sql: LivePostgresSql,

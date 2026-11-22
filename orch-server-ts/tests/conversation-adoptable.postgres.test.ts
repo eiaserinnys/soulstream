@@ -11,8 +11,6 @@ import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from 
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const catalog = repositoryModelCatalog();
-const CATALOG = catalog.snapshot();
-
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/conversation-v1/adoptable.json", import.meta.url), "utf8"));
 const persistent = [{ type: "persistent_session", value: { enabled: true } }];

@@ -15,8 +15,7 @@ import {
   type RunnerRegistration,
   type RunnerRegistrationScan,
 } from "./runner_process_registry.js";
-import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
-import type { RunnerSessionMutationLockObservationContext } from "./runner_session_mutation_lock.js";
+import { withRunnerSessionMutationLock, type RunnerSessionMutationLockObservationContext } from "./runner_session_mutation_lock.js";
 import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 import type { RunnerRecoveryStorage } from "./runner_recovery_storage.js";
 import {

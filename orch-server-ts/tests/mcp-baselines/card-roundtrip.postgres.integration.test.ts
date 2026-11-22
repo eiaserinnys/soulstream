@@ -2,7 +2,7 @@ import type { CallToolResult } from "@soulstream/mcp-contract";
 import { unusedClusterDependencies } from "../../../orch-server-ts/tests/mcp-cluster-unused-fixture.js";
 import { readFile } from "node:fs/promises";
 import Fastify from "fastify";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CardControlPlaneService } from "../../../orch-server-ts/src/cards/card_control_plane_service.js";
 import { createFolderContentSqlAdapter } from "../../../orch-server-ts/src/board/folder_content_sql.js";
 import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
@@ -15,9 +15,6 @@ import { createLiveDashboardAccessProvider, serviceTokenAccessWithoutEmail } fro
 
 const context: McpRequestContext = { callerSessionId: "header-session" };
 const external: McpRequestContext = { ...context, principal: { authority: "external", source: "llm", displayName: "External" } };
-const status = { card_id: "card-1", expected_version: 1, idempotency_key: "status-key" };
-const execution = { registrationId: "registration", executionCommandId: "command" };
-// Reuses the folder roundtrip SDK/HTTP/PG harness and card-work-start's real schema setup.
 const cases: readonly [string, string, Record<string, unknown>, McpRequestContext?, boolean?][] = [["external query", "get_card", { card_id: "card-1", caller_session_id: "argument-session" }, external]];
 
 describe("card orchestrator MCP roundtrip", () => {
@@ -44,9 +41,7 @@ describe("card orchestrator MCP roundtrip", () => {
       authBearerToken: options.authBearerToken, serviceProvider: async () => { throw new Error("unused folder host"); },
     } } as unknown as McpHostOptions;
     registerMcpHostRoutes(app, executionOptions);
-    const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
-    const orch = { baseUrl, headers: { authorization: "Bearer service-token" } };
-    const logger = { warn: vi.fn() } as never;
+    await app.listen({ host: "127.0.0.1", port: 0 });
   }, 60_000);
   afterAll(async () => { await app?.close(); await h?.cleanup(); });
   async function seed() {

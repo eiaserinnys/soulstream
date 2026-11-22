@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CardControlPlaneService } from '../src/cards/card_control_plane_service.js';
-import type { CardMutationParams } from '../src/cards/card_control_plane_service.js';
+import { CardControlPlaneService, type CardMutationParams } from '../src/cards/card_control_plane_service.js';
 import type { CardRow, RepositorySql } from '../src/cards/control_plane/card_types.js';
 import type { FolderMutateParams } from '../src/cards/control_plane/card_mutation_core.js';
 import { decideCardTransition } from '../src/cards/state/card_decision.js';

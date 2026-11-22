@@ -1,7 +1,4 @@
-import type { ClaudeRuntimeHostClient } from
-  "../control_plane/persistence_host_clients.js";
-import type { SessionDeliveryHostClient } from
-  "../control_plane/persistence_host_clients.js";
+import type { ClaudeRuntimeHostClient, SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
 
 import { buildClaudeBackgroundGenerationIdentity } from
   "./claude_background_generation_identity.js";

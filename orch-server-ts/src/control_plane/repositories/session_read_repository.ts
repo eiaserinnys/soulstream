@@ -1,9 +1,8 @@
-import { formatCardReference } from "@soulstream/mcp-contract";
+import { formatCardReference, type SessionReadPeriod } from "@soulstream/mcp-contract";
 
 import { readSessionReferences } from "../../cards/card_reference_repository.js";
 import type { RepositorySql } from "../../cards/control_plane/card_types.js";
 import type { SqlClient } from "../control_plane_types.js";
-import type { SessionReadPeriod } from "@soulstream/mcp-contract";
 
 type SessionSummaryQueryRow = HostSessionSummaryRow & {
   event_count: string | number;

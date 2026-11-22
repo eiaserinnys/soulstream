@@ -1,4 +1,3 @@
-import type { InitialFolderContext } from "@soulstream/page-model";
 import type {
   PageMutationActor,
   PageMutationApplication,

@@ -171,8 +171,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
       orchReceived.push(data as Record<string, unknown>);
     });
 
-    // mock postgres — 모든 stored proc 호출 캡처
-    const { sql, calls: dbCalls } = makeStoredProcMock();
+    const { calls: dbCalls } = makeStoredProcMock();
     const db = new SessionDBClass();
 
     const registry = new AgentRegistry([codexAgent]);
@@ -200,8 +199,6 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     const broadcaster = new SessionBroadcaster(send, registry, "eias-shopping-ts");
     const outbox = makeEventOutboxHarness();
     const persistence = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       { append: outbox.append } as never,
       {
@@ -346,7 +343,6 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     const send = vi.fn(async (data: unknown) => {
       orchReceived.push(data as Record<string, unknown>);
     });
-    const { sql } = makeStoredProcMock();
     const db = new SessionDBClass();
     const registry = new AgentRegistry([codexAgent]);
     const broadcaster = new SessionBroadcaster(
@@ -362,8 +358,6 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
       },
     );
     const persistence = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       { append: outbox.append } as never,
       {
@@ -452,14 +446,11 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
 
   it("resolves a bound worktree before engine/context creation and never falls back to profile cwd", async () => {
     const send = vi.fn(async () => undefined);
-    const { sql } = makeStoredProcMock();
     const db = new SessionDBClass();
     const registry = new AgentRegistry([codexAgent]);
     const broadcaster = new SessionBroadcaster(send, registry, "node-worktree");
     const outbox = makeEventOutboxHarness();
     const persistence = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       { append: outbox.append } as never,
       {
@@ -570,14 +561,12 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     const send = vi.fn(async (data) => {
       orchReceived.push(data);
     });
-    const { sql, calls: dbCalls } = makeStoredProcMock();
+    const { calls: dbCalls } = makeStoredProcMock();
     const db = new SessionDBClass();
     const registry = new AgentRegistry([codexAgent]);
     const broadcaster = new SessionBroadcaster(send, registry, "n");
     const outbox = makeEventOutboxHarness();
     const persistence = new EventPersistence(
-      db,
-      broadcaster,
       silentLogger,
       { append: outbox.append } as never,
       {

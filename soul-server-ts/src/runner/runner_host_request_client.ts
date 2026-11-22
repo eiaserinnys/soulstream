@@ -5,8 +5,7 @@ import {
   runnerRequestFrame,
   type RunnerControlFrame,
 } from "./frame_protocol.js";
-import type { RunnerIpcConnection } from "./runner_ipc_connection.js";
-import { RunnerObservationDroppedError } from "./runner_ipc_connection.js";
+import { type RunnerIpcConnection, RunnerObservationDroppedError } from "./runner_ipc_connection.js";
 
 export type RunnerHostService =
   | "session_store"

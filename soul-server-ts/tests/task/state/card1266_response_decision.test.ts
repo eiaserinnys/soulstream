@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { decideNodeResponse } from "../../../src/task/state/node_response_decision.js";
-import type { NodeResponseFacts } from "../../../src/task/state/node_response_machine.js";
-import {
-  NODE_RESPONSE_ROUTES,
-  NODE_WIRE_REASONS,
-} from "../../../src/task/state/node_response_machine.js";
+import { type NodeResponseFacts, NODE_RESPONSE_ROUTES, NODE_WIRE_REASONS } from "../../../src/task/state/node_response_machine.js";
 
 const TERMINATION: NodeResponseFacts = {
   call: "termination",

@@ -7,8 +7,6 @@ import { registerPersistentSessionSettingsRoutes } from "../src/session/persiste
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const catalog = repositoryModelCatalog();
-const CATALOG = catalog.snapshot();
-
 
 type Instruction = {
   id: string;

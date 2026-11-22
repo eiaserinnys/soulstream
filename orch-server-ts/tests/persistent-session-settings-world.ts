@@ -13,19 +13,6 @@ import { createHarnessCore } from "./session-action-command-test-helpers.js";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const catalog = repositoryModelCatalog();
-const CATALOG = catalog.snapshot();
-
-
-/**
- * PAS settings API against a real PostgreSQL schema.
- *
- * Real: schema.sql (session_apply_metadata_entry / session_rename), the orch repository, service,
- * routes, session command router, node registry and command bridge, the model-preset availability
- * service, and the worker's PersistentSessionControl + session command handlers + task hydration.
- * Mocked: the model catalog the worker resolves against, the transport socket, the profile catalog,
- * folder access policy, and the worker's session-creation runtime (it only inserts the ordinary row a
- * real create would register).
- */
 
 export const NODE_ID = "eiaserinnys";
 export const PAS_AGENT = "seosoyoung-pas";

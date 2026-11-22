@@ -6,7 +6,6 @@ import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EventPersistence } from "../../src/db/event_persistence.js";
-import type { SessionDB } from "../../src/db/session_db.js";
 import { TaskExecutorFinalizer } from
   "../../src/task/task_executor_finalizer.js";
 import { TaskLifecycleTransition } from
@@ -15,8 +14,6 @@ import type { Task } from "../../src/task/task_models.js";
 import { EventOutbox } from "../../src/upstream/event_outbox.js";
 import { EventOutboxPump } from
   "../../src/upstream/event_outbox_pump.js";
-import type { SessionBroadcaster } from
-  "../../src/upstream/session_broadcaster.js";
 
 const silentLogger = pino({ level: "silent" });
 const tempDirectories: string[] = [];
@@ -35,8 +32,6 @@ describe("terminal transition application chain", () => {
     const pumpErrors: unknown[] = [];
     const pump = new EventOutboxPump(outbox, (error) => pumpErrors.push(error));
     const persistence = new EventPersistence(
-      {} as SessionDB,
-      {} as SessionBroadcaster,
       silentLogger,
       outbox,
       pump,

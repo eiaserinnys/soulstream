@@ -4,8 +4,7 @@ import { CardMcpReadService, type CardMcpGetInput } from "../src/cards/card_mcp_
 import { CardMcpReadRepository } from "../src/cards/control_plane/card_mcp_read_repository.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
-import type { CardItem } from "../src/cards/card_item_rules.js";
-import type { CardNow } from "../src/cards/card_item_rules.js";
+import type { CardItem, CardNow } from "../src/cards/card_item_rules.js";
 
 type SeedCard = {
   id: string;

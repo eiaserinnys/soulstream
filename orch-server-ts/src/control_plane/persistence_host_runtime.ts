@@ -1,6 +1,5 @@
 import { FolderContentSqlResolver } from "../board/folder_content_sql.js";
-import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
-import type { LiveSearchDbConnectionFactory } from "../runtime/live_db_sql.js";
+import type { LiveDbSqlResolver, LiveSearchDbConnectionFactory } from "../runtime/live_db_sql.js";
 import type { SqlClient } from "./control_plane_types.js";
 import { ClaudeBackgroundTaskRepository } from "./repositories/claude_background_task_repository.js";
 import { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";

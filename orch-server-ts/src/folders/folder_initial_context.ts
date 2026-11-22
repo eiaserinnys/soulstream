@@ -2,13 +2,6 @@ import {
   markdownToPageBlocks,
   type InitialFolderContext,
 } from "@soulstream/page-model";
-import * as Y from "yjs";
-
-import {
-  PageMutationCore,
-  type PageMutationActor,
-} from "../page/page_mutation_core.js";
-import { readPageYDocReplica } from "../page/page_yjs_model.js";
 
 export function initialFolderOperations(
   title: string,

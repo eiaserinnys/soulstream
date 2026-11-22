@@ -22,8 +22,6 @@ import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 import { HandoverGate } from "../src/runtime/handover_gate.js";
 
 const catalog = repositoryModelCatalog();
-const CATALOG = catalog.snapshot();
-
 
 const temporaryDirectories: string[] = [];
 
