@@ -57,6 +57,67 @@ afterEach(async () => {
 });
 
 describe.sequential("versioned migration runner", () => {
+  itWithDatabase("initializes the statistics checkpoint from the fresh install time", async () => {
+    const url = await startPostgres();
+    const cwd = environmentDirectory(url);
+    const startedAt = Date.now();
+    const result = runWithEnv(MIGRATE, REPOSITORY_ROOT, { HANIEL_SERVICE_CWD: cwd }, "initialize");
+    const finishedAt = Date.now();
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+
+    const sql = postgres(url, { max: 1, idle_timeout: 1 });
+    try {
+      const [checkpoint] = await sql`
+        SELECT value, version, updated_by FROM system_settings
+        WHERE setting_key = 'session_statistics_projection_v1'
+      `;
+      expect(checkpoint?.value).toMatchObject({
+        state: "ready", normalization_version: 1, backfill_cutoff_event_id: 0,
+        last_session_id: null, last_event_id: null,
+      });
+      const coveredSince = checkpoint?.value.covered_since;
+      expect(typeof coveredSince).toBe("string");
+      expect(coveredSince).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      const coveredAt = Date.parse(coveredSince);
+      expect(Number.isFinite(coveredAt)).toBe(true);
+      expect(coveredAt).toBeGreaterThanOrEqual(startedAt - 60_000);
+      expect(coveredAt).toBeLessThanOrEqual(finishedAt + 60_000);
+      expect(Number(checkpoint?.version)).toBe(2); // schema seed version 1 + 1
+      expect(checkpoint?.updated_by).toBe("migration:fresh_install");
+    } finally {
+      await sql.end({ timeout: 5 });
+    }
+  }, DATABASE_TEST_TIMEOUT_MS);
+
+  itWithDatabase("leaves an existing statistics checkpoint untouched on initialize", async () => {
+    const url = await startPostgres();
+    const cwd = environmentDirectory(url);
+    const serviceEnvironment = { HANIEL_SERVICE_CWD: cwd };
+    const fresh = runWithEnv(MIGRATE, REPOSITORY_ROOT, serviceEnvironment, "initialize");
+    expect(fresh.status, fresh.stderr || fresh.stdout).toBe(0);
+
+    const sql = postgres(url, { max: 1, idle_timeout: 1 });
+    try {
+      const [before] = await sql`
+        UPDATE system_settings SET
+          value = '{"state":"backfilling","normalization_version":1,"covered_since":null,"backfill_cutoff_event_id":null,"last_session_id":null,"last_event_id":null}'::jsonb,
+          version = 1, updated_by = 'migration:125_session_statistics_facts'
+        WHERE setting_key = 'session_statistics_projection_v1'
+        RETURNING value, version, updated_at, updated_by
+      `;
+      expect(before?.value).toMatchObject({ state: "backfilling", covered_since: null });
+      const current = runWithEnv(MIGRATE, REPOSITORY_ROOT, serviceEnvironment, "initialize");
+      expect(current.status, current.stderr || current.stdout).toBe(0);
+      const [after] = await sql`
+        SELECT value, version, updated_at, updated_by FROM system_settings
+        WHERE setting_key = 'session_statistics_projection_v1'
+      `;
+      expect(after).toEqual(before);
+    } finally {
+      await sql.end({ timeout: 5 });
+    }
+  }, DATABASE_TEST_TIMEOUT_MS);
+
   itWithDatabase("initializes fresh and applies the post-086 trigger retirement", async () => {
     const url = await startPostgres();
     const cwd = environmentDirectory(url);
