@@ -624,7 +624,6 @@ describe("session command HTTP route harness", () => {
       for (const modelPresetFallbacks of [["claude-opus", " "], "claude-opus", ["claude-opus", 7]]) {
         const { registry, router, bridge } = createHarness();
         registerNode(registry);
-        const send = vi.fn();
         const app = createApp({ config, sessionCommandRoutes: { router, bridge, nodeCredentials: null } });
         try {
           const response = await app.inject({ method: "POST", url: "/api/sessions", payload: {
@@ -633,7 +632,6 @@ describe("session command HTTP route harness", () => {
           expect(response.statusCode).toBe(400);
           expect(response.json()).toMatchObject({ error: { code: "INVALID_REQUEST" } });
         } finally { await app.close(); }
-        expect(send).not.toHaveBeenCalled();
       }
     });
   });

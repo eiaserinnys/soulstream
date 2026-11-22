@@ -38,11 +38,9 @@ const LEGACY_HELPERS = [
 ] as const;
 
 describe('N5 production coverage closure', () => {
-  test('9 files own 12 assigned units and the whole audit closes at 108', () => {
+  test('9 files own 12 assigned units', () => {
     expect(Object.keys(N5_UNITS)).toHaveLength(9);
     expect(Object.values(N5_UNITS).flat()).toHaveLength(12);
-    expect(31 + 7 + 24 + 34 + 12).toBe(108);
-    expect(12 + 5 + 19 + 28 + 10).toBe(74);
     for (const file of Object.keys(N5_UNITS)) {
       expect(fs.existsSync(path.join(SRC_ROOT, file))).toBe(true);
     }
