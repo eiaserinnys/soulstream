@@ -23,7 +23,7 @@ function observeProcess(pid: number): ProcessObservation {
     return { state: code === "ENOENT" || code === "ESRCH" ? "dead" : "unknown", detail: code ?? String(error) };
   }
 }
-function live(pid: number) {
+function mayNeedCleanup(pid: number) {
   return observeProcess(pid).state !== "dead";
 }
 async function gone(pid: number, observe = observeProcess) {
@@ -116,11 +116,12 @@ describe("Antigravity process descendants", () => {
         expect(Number(stat[2])).toBe(pid); // separate PGID
       }
       expect(cleanUpAntigravityDescendants([{ ...child, startTime: "different-starttime" }])).toBe(0);
-      expect(live(pid)).toBe(true);
+      const seen = observeProcess(pid);
+      expect(seen.state, `process observation: ${seen.detail}`).toBe("live");
       expect(cleanUpAntigravityDescendants(snapshot)).toBe(1);
       await gone(pid);
     } finally {
-      if (live(pid)) process.kill(pid, "SIGTERM");
+      if (mayNeedCleanup(pid)) process.kill(pid, "SIGTERM");
       parent.kill("SIGTERM"); await once(parent, "close");
     }
   });
@@ -144,7 +145,7 @@ describe("Antigravity process descendants", () => {
       await gone(pid);
       expect(warn).toHaveBeenCalledWith({ terminatedProcessCount: 1 }, expect.any(String));
     } finally {
-      if (pid && live(pid)) process.kill(pid, "SIGTERM");
+      if (pid && mayNeedCleanup(pid)) process.kill(pid, "SIGTERM");
     }
   });
   it("force-kills a CLI that stays alive after a successful result and keeps the completion", async () => {
