@@ -309,7 +309,7 @@ describe("R36 delete_session lifecycle lab", () => {
           terminal_error: { code: "runner_exited" },
         },
       });
-      expect(await readRunnerRegistrationIdentity(fixture.paths.sessionDirectory, undefined, recoveryStorage))
+      expect(await readRunnerRegistrationIdentity(fixture.paths.sessionDirectory))
         .toMatchObject({ pid: null, startIdentity: null });
       expect(await Promise.all([
         pathExists(fixture.paths.pidPath),
@@ -321,7 +321,7 @@ describe("R36 delete_session lifecycle lab", () => {
       await coordinator.waitForSettled();
 
       expect((await readRunnerRegistrationIdentity(
-        fixture.paths.sessionDirectory, undefined, recoveryStorage,
+        fixture.paths.sessionDirectory,
       ))?.retiredAt).toBeTruthy();
       expect(logger.warn).not.toHaveBeenCalledWith(
         expect.anything(),
@@ -377,7 +377,7 @@ describe("R36 delete_session lifecycle lab", () => {
 
       expect(terminate).not.toHaveBeenCalled();
       expect((await readRunnerRegistrationIdentity(
-        fixture.paths.sessionDirectory, undefined, recoveryStorage,
+        fixture.paths.sessionDirectory,
       ))?.retiredAt).toBeUndefined();
       expect(logger.warn).toHaveBeenCalledWith(
         { sessionId: fixture.sessionId },
