@@ -857,6 +857,7 @@ state "한도 재개 예약" as sessionReservation {
 
 | 파일 | 비교 | 목록 | SQL | 뜻 |
 | :-- | --: | --: | --: | :-- |
+| src/cards/card_assignee_error.ts | 1 | 0 | 0 | 담당 세션의 오류 종료를 카드 막힘 대상으로 판정한다. |
 | src/cards/card_capacity.ts | 0 | 0 | 5 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_change_delivery.ts | 1 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_change_notification.ts | 2 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
@@ -941,7 +942,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/usage/session_statistics_usage_candidates.ts | 2 | 0 | 0 | 공급자 오류·사용 상태. |
 | src/usage/usage_summary_service.ts | 3 | 0 | 0 | 공급자 오류·사용 상태. |
 
-파일 83개, 비교 84줄, 목록 27줄, SQL 60줄이다.
+파일 84개, 비교 85줄, 목록 27줄, SQL 60줄이다.
 
 ## 다시 만들기
 

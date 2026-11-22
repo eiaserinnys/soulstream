@@ -169,6 +169,7 @@ export interface SessionStatusLiteralFile {
 
 /** 새 줄이 생기면 시험이 깨진다. 다른 뜻이면 note에 적는다. */
 export const SESSION_STATUS_LITERAL_ALLOWLIST: SessionStatusLiteralFile[] = [
+  { file: "src/cards/card_assignee_error.ts", comparisons: 1, lists: 0, sql: 0, note: "담당 세션의 오류 종료를 카드 막힘 대상으로 판정한다." },
   { file: "src/cards/card_capacity.ts", comparisons: 0, lists: 0, sql: 5, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
   { file: "src/cards/card_change_delivery.ts", comparisons: 1, lists: 0, sql: 0, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
   { file: "src/cards/card_change_notification.ts", comparisons: 2, lists: 0, sql: 0, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
