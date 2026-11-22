@@ -46,7 +46,7 @@ export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose,
   useEffect(() => { setFilesOpen(false); }, [sessionId]);
   useRegisterDuoRailOverride('chat-pane-files', duo && active && filesOpen, [
     { id: 'back', label: '대화로 돌아가기', icon: 'chevron-back', onPress: () => setFilesOpen(false) },
-    { id: 'refresh', label: '다시 읽기', icon: 'refresh', onPress: () => filesHeader?.refresh() },
+    { id: 'refresh', label: '다시 읽기', icon: 'refresh', disabled: !filesHeader || filesHeader.disabled, onPress: () => { if (filesHeader && !filesHeader.disabled) filesHeader.refresh(); } },
   ]);
   const focusEventId = useUIStore((s) => independentSession ? null : s.focusEventId);
   const storyOpenRequestId = useUIStore((s) => independentSession ? null : s.storyOpenRequestId);

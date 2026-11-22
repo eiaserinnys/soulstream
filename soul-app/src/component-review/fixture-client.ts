@@ -439,10 +439,15 @@ export function createApiClient(baseUrl = ''): ApiClient {
       attempts++;
       if (sample === 'loading') return new Promise<never>(() => {});
       if (sample === 'error' && attempts === 1) throw new Error('공개 예시: 조회 실패');
+      const noRows = sample === 'empty' || sample === 'unsupported' || sample === 'no_workspace' || sample === 'not_git';
       return { ...reviewWorkspace,
-        node: { ...reviewWorkspace.node, status: sample === 'offline' ? 'offline' : 'ok' },
-        snapshot: sample === 'long' ? { ...reviewWorkspace.snapshot!, branch: '아주-긴-브랜치-이름-레이아웃을-살펴봅니다-1234567890' } : reviewWorkspace.snapshot,
-        files: sample === 'long' ? reviewWorkspace.files.map(file => ({ ...file, path: `${file.path}-아주-긴-파일-이름이-있는-경우-레이아웃을-살펴봅니다-1234567890.ts` })) : reviewWorkspace.files,
+        node: { ...reviewWorkspace.node, status: sample === 'offline' ? 'offline' : sample === 'unsupported' ? 'unsupported' : sample === 'no_workspace' ? 'no_workspace' : 'ok' },
+        snapshot: sample === 'long' ? { ...reviewWorkspace.snapshot!, branch: '아주-긴-브랜치-이름-레이아웃을-살펴봅니다-1234567890' }
+          : sample === 'not_git' || sample === 'not_git_reads' ? { ...reviewWorkspace.snapshot!, state: 'not_git', branch: null, ahead: 0, behind: 0 }
+          : sample === 'pending' ? { ...reviewWorkspace.snapshot!, state: 'pending', refreshing: true }
+          : sample === 'refreshing' ? { ...reviewWorkspace.snapshot!, refreshing: true } : reviewWorkspace.snapshot,
+        files: noRows || sample === 'not_git_reads' || sample === 'pending' ? [] : sample === 'long' ? reviewWorkspace.files.map(file => ({ ...file, path: `${file.path}-아주-긴-파일-이름이-있는-경우-레이아웃을-살펴봅니다-1234567890.ts` })) : reviewWorkspace.files,
+        read_only: noRows || sample === 'pending' ? [] : reviewWorkspace.read_only,
       };
     } } as unknown as ApiClient;
   }

@@ -25,7 +25,7 @@ import { formatCardTime } from '../lib/card-check-item-summary';
 type FileEntry = SessionWorkspaceResponse['files'][number];
 type ReadEntry = SessionWorkspaceResponse['read_only'][number];
 type Props = NativeStackScreenProps<FeedStackParamList, 'SessionFiles'>;
-type Header = { title: string; branch: boolean; ahead: number; behind: number; refreshing: boolean; refresh: () => void };
+type Header = { title: string; branch: boolean; ahead: number; behind: number; refreshing: boolean; disabled: boolean; refresh: () => void };
 const TURN_EVENTS = ['complete'] as const;
 
 export function SessionFilesScreen({ route, navigation }: Props) {
@@ -34,7 +34,7 @@ export function SessionFilesScreen({ route, navigation }: Props) {
   const [header, setHeader] = useState<Header | null>(null);
   useRegisterDuoRailOverride('session-files', duo && focused, [
     { id: 'back', label: '뒤로', icon: 'chevron-back', onPress: () => navigation.goBack() },
-    { id: 'refresh', label: '다시 읽기', icon: 'refresh', onPress: () => header?.refresh() },
+    { id: 'refresh', label: '다시 읽기', icon: 'refresh', disabled: !header || header.disabled, onPress: () => { if (header && !header.disabled) header.refresh(); } },
   ]);
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -52,15 +52,15 @@ export function FilesTitle({ header }: { header: Header | null }) {
   const t = useTokens();
   return <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs, flexShrink: 1 }}>
     {header?.branch ? <Ionicons name="git-branch-outline" size={t.iconSize.standard} color={t.colors.textTertiary} /> : null}
-    <Text numberOfLines={1} style={{ ...t.foundation.typography.navigation, color: t.colors.textPrimary, flexShrink: 1 }}>{header?.title ?? '파일'}</Text>
-    {header?.ahead ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>↑{header.ahead}</Text> : null}
-    {header?.behind ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>↓{header.behind}</Text> : null}
+    <Text selectable={false} numberOfLines={1} style={{ ...t.foundation.typography.navigation, color: t.colors.textPrimary, flexShrink: 1 }}>{header?.title ?? '파일'}</Text>
+    {header?.ahead ? <Text selectable={false} style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>↑{header.ahead}</Text> : null}
+    {header?.behind ? <Text selectable={false} style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>↓{header.behind}</Text> : null}
   </View>;
 }
 
 export function RefreshButton({ header }: { header: Header | null }) {
   const t = useTokens();
-  return <LiquidGlassButton iconOnly variant="plain" accessibilityLabel="다시 읽기" onPress={() => header?.refresh()}>
+  return <LiquidGlassButton iconOnly variant="plain" accessibilityLabel="다시 읽기" disabled={!header || header.disabled} onPress={() => header?.refresh()}>
     {header?.refreshing ? <ActivityIndicator color={t.colors.accent} /> : <Ionicons name="refresh" size={t.iconSize.navigation} color={t.colors.accent} />}
   </LiquidGlassButton>;
 }
@@ -72,13 +72,17 @@ export function SessionFilesContent({ sessionId, active, onHeader }: { sessionId
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
   const [cycle, setCycle] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const retries = useRef(0);
   const mounted = useRef(false);
   const request = useRef(0);
+  const inFlight = useRef(false);
   const refresh = useCallback(async (reset = true) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     if (reset) retries.current = 0;
     const current = ++request.current;
     setRefreshing(true);
@@ -89,13 +93,16 @@ export function SessionFilesContent({ sessionId, active, onHeader }: { sessionId
     } catch {
       if (mounted.current && current === request.current) setError(true);
     } finally {
-      if (mounted.current && current === request.current) { setLoading(false); setRefreshing(false); }
+      if (current === request.current) {
+        inFlight.current = false;
+        if (mounted.current) { setLoading(false); setRefreshing(false); }
+      }
     }
   }, [api, sessionId]);
   useEffect(() => {
     mounted.current = active;
-    if (active) { setLoading(true); void refresh(); }
-    return () => { mounted.current = false; request.current++; };
+    if (active) { setLoading(true); setPullRefreshing(false); void refresh(); }
+    return () => { mounted.current = false; request.current++; inFlight.current = false; };
   }, [active, refresh]);
   useEffect(() => {
     if (!active || refreshing || error || !(data?.snapshot?.state === 'pending' || data?.snapshot?.refreshing) || retries.current >= 10) return;
@@ -110,16 +117,23 @@ export function SessionFilesContent({ sessionId, active, onHeader }: { sessionId
   const snapshot = data?.snapshot;
   const folder = data?.root?.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
   const title = snapshot?.branch || folder || '파일';
-  const spinning = refreshing || !!snapshot?.refreshing;
+  const firstLoading = loading || (!error && data?.node.status === 'ok' && snapshot?.state === 'pending');
+  const spinning = !firstLoading && (refreshing || (!error && !!snapshot?.refreshing));
   const manualRefresh = useCallback(() => { void refresh(); }, [refresh]);
-  useEffect(() => { onHeader?.({ title, branch: !!snapshot?.branch, ahead: snapshot?.ahead ?? 0, behind: snapshot?.behind ?? 0, refreshing: spinning, refresh: manualRefresh }); }, [title, snapshot?.branch, snapshot?.ahead, snapshot?.behind, spinning, manualRefresh, onHeader]);
-  if (loading || (!error && data?.node.status === 'ok' && snapshot?.state === 'pending')) return <FrameLoading text="파일 상태를 읽는 중" />;
-  return <SessionFilesView data={data} error={error} refreshing={refreshing} onRefresh={manualRefresh}
+  const pullRefresh = useCallback(async () => {
+    if (inFlight.current || (!error && snapshot?.refreshing)) return;
+    setPullRefreshing(true);
+    try { await refresh(); } finally { if (mounted.current) setPullRefreshing(false); }
+  }, [refresh, error, snapshot?.refreshing]);
+  useEffect(() => { onHeader?.({ title, branch: !!snapshot?.branch, ahead: snapshot?.ahead ?? 0, behind: snapshot?.behind ?? 0, refreshing: spinning, disabled: firstLoading || spinning, refresh: manualRefresh }); }, [title, snapshot?.branch, snapshot?.ahead, snapshot?.behind, spinning, firstLoading, manualRefresh, onHeader]);
+  if (firstLoading) return <FrameLoading testID="session-files-loading" text="파일 상태를 읽는 중" />;
+  return <SessionFilesView data={data} error={error} refreshing={pullRefreshing} onRefresh={manualRefresh} onPullRefresh={pullRefresh}
     expanded={expanded} onToggle={() => setExpanded(value => !value)} selected={selected} onSelect={setSelected} sessionId={sessionId} />;
 }
 
-export function SessionFilesView({ data, error, refreshing, onRefresh, expanded, onToggle, selected, onSelect, sessionId }: {
+export function SessionFilesView({ data, error, refreshing, onRefresh, onPullRefresh = onRefresh, expanded, onToggle, selected, onSelect, sessionId }: {
   data: SessionWorkspaceResponse | null; error: boolean; refreshing: boolean; onRefresh(): void;
+  onPullRefresh?(): void;
   expanded: boolean; onToggle(): void; selected: string | null; onSelect(path: string | null): void; sessionId: string;
 }) {
   const t = useTokens();
@@ -142,21 +156,27 @@ export function SessionFilesView({ data, error, refreshing, onRefresh, expanded,
   const message = error ? '파일을 불러오지 못했습니다' : data?.node.status === 'unsupported' ? '이 노드는 파일 보기를 지원하지 않습니다'
     : data?.node.status === 'no_workspace' ? '작업 폴더가 없습니다' : data?.node.status === 'error' ? '파일을 불러오지 못했습니다'
     : data?.snapshot?.state === 'not_git' ? 'Git 작업 폴더가 아닙니다' : null;
+  const empty = !message && data && !data.files.length && data.node.status !== 'offline' ? '바뀐 파일 없음' : null;
+  const centerState = !!(message || empty) && groups.length === 0 && reads.length === 0 && data?.node.status !== 'offline';
   return <View style={{ flex: 1 }}>
-    <ScrollView testID="session-files-scroll" contentContainerStyle={{ paddingHorizontal: t.foundation.pageInset, paddingTop: t.uiSpacing.md, paddingBottom: t.uiSpacing.xl, gap: t.uiSpacing.lg }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+    <ScrollView testID="session-files-scroll" contentContainerStyle={{ flexGrow: 1, paddingHorizontal: t.foundation.pageInset, paddingTop: t.uiSpacing.md, paddingBottom: t.uiSpacing.xl, gap: t.uiSpacing.lg }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onPullRefresh} />}>
       {data?.node.status === 'offline' ? <GroupedGlassSheet><View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm, paddingHorizontal: t.uiSpacing.md, paddingVertical: t.uiSpacing.sm, minHeight: t.hitTarget.min }}>
         <Ionicons name="cloud-offline-outline" size={t.iconSize.standard} color={t.colors.warningText} />
-        <Text style={{ flex: 1, ...t.foundation.typography.meta, color: t.colors.textSecondary }}>노드 끊김{data.snapshot?.observed_at ? `, ${formatCardTime(data.snapshot.observed_at)} 기준` : ''}</Text>
+        <Text selectable={false} style={{ flex: 1, ...t.foundation.typography.meta, color: t.colors.textSecondary }}>노드 끊김{data.snapshot?.observed_at ? `, ${formatCardTime(data.snapshot.observed_at)} 기준` : ''}</Text>
       </View></GroupedGlassSheet> : null}
-      {message ? <View style={{ alignItems: 'center', gap: t.spacing.sm }}><Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>{message}</Text>
-        {(error || data?.node.status === 'error') ? <LiquidGlassButton onPress={onRefresh}><Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 시도</Text></LiquidGlassButton> : null}</View> : null}
-      {!message && data && !data.files.length && data.node.status !== 'offline' ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary, textAlign: 'center' }}>바뀐 파일 없음</Text> : null}
+      {message || empty ? <View testID="session-files-state" style={{ alignItems: 'center', ...(centerState ? { flex: 1, justifyContent: 'center' } : null) }}>
+        <View testID="session-files-state-content" style={{ alignItems: 'center', gap: t.spacing.sm }}>
+        <Text selectable={false} style={{ ...t.foundation.typography.body, color: t.colors.textSecondary, textAlign: 'center' }}>{message || empty}</Text>
+        {centerState && data?.attribution === 'partial' ? <Text selectable={false} style={{ ...t.foundation.typography.label, color: t.colors.textSecondary }}>일부</Text> : null}
+        {(error || data?.node.status === 'error') ? <LiquidGlassButton variant="primary" onPress={onRefresh}><Text style={{ ...t.foundation.typography.body, color: t.colors.accentText }}>다시 시도</Text></LiquidGlassButton> : null}
+        </View>
+      </View> : null}
       {groups.map(([dir, files]) => <View key={dir}>
         <Text selectable={false} numberOfLines={1} style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary, paddingHorizontal: t.uiSpacing.md, marginBottom: t.spacing.xs }}>{dir || '.'}</Text>
         <GroupedGlassSheet>{files.map(file => <FileRow key={file.path} file={file} onPress={() => onSelect(file.path)} />)}</GroupedGlassSheet>
       </View>)}
-      {(reads.length > 0 || data?.attribution === 'partial') ? <GroupedGlassSheet>
+      {(reads.length > 0 || (groups.length > 0 && data?.attribution === 'partial')) ? <GroupedGlassSheet>
         <GroupedGlassRow accessibilityLabel="읽기만 한 파일" accessibilityState={{ expanded }} onPress={onToggle} style={{ minHeight: planner.minHeight.row, paddingHorizontal: t.uiSpacing.md, paddingVertical: t.uiSpacing.sm }}>
           <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
             <View style={{ width: planner.contentIconFrame, height: planner.contentIconFrame, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="eye-outline" size={t.iconSize.standard} color={t.colors.fileRead} /></View>

@@ -4,6 +4,7 @@ import argparse
 import json
 import mimetypes
 import os
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -107,9 +108,9 @@ def main():
             browser = p.chromium.launch()
             page = browser.new_page(viewport={'width': 390, 'height': 844}, device_scale_factor=1)
             page.on('pageerror', lambda e: result['errors'].append(str(e)))
-            def scene(name, query, width=390, height=844):
+            def scene(name, query, width=390, height=844, theme='dark'):
                 page.set_viewport_size({'width': width, 'height': height})
-                page.goto(base + '?' + query + '&theme=dark', wait_until='domcontentloaded')
+                page.goto(base + '?' + query + '&theme=' + theme, wait_until='domcontentloaded')
                 page.wait_for_timeout(1800)
                 page.evaluate('document.fonts.ready')
                 page.screenshot(path=str(out / (name + '.png')))
@@ -143,6 +144,7 @@ def main():
             page.wait_for_timeout(500)
             page.screenshot(path=str(out / 'preview.png'))
             result['operations']['14_open_focus'] = page.evaluate('document.activeElement?.outerHTML.slice(0,300)')
+            result['operations']['11_preview'] = select_by_drag(page, page.get_by_test_id('attachment-preview-text').get_by_text(re.compile('노드 이벤트')).first)
             close = page.get_by_label('첨부 미리보기 닫기', exact=True)
             close.focus()
             result['operations']['15_modal_tabs'] = [focus_label(page)] + tab_sequence(page, 4)
@@ -168,12 +170,45 @@ def main():
             result['operations']['15_escape_closed'] = page.locator('[data-testid="attachment-preview-modal"]').count() == 0
             result['operations']['14_return_focus'] = page.evaluate('document.activeElement?.outerHTML.slice(0,300)')
             scene('loading', 'section=sessionFiles&sample=loading')
+            result['operations']['1_loading'] = {'body': page.get_by_test_id('session-files-loading').count(),
+                'header_disabled': page.get_by_label('다시 읽기', exact=True).is_disabled(),
+                'header_spinners': page.get_by_label('다시 읽기', exact=True).locator('[role="progressbar"]').count()}
+            scene('pending', 'section=sessionFiles&sample=pending')
+            result['operations']['1_pending'] = {'body': page.get_by_test_id('session-files-loading').count(),
+                'header_disabled': page.get_by_label('다시 읽기', exact=True).is_disabled(),
+                'header_spinners': page.get_by_label('다시 읽기', exact=True).locator('[role="progressbar"]').count()}
+            scene('refreshing', 'section=sessionFiles&sample=refreshing')
+            result['operations']['1_refreshing'] = {'body': page.get_by_test_id('session-files-loading').count(),
+                'header_disabled': page.get_by_label('다시 읽기', exact=True).is_disabled(),
+                'header_spinners': page.get_by_label('다시 읽기', exact=True).locator('[role="progressbar"]').count(),
+                'row': page.get_by_label('config.ts', exact=True).count()}
             scene('offline', 'section=sessionFiles&sample=offline')
+            result['operations']['11_offline'] = select_by_drag(page, page.get_by_text(re.compile('노드 끊김')).first)
             scene('error', 'section=sessionFiles&sample=error')
             result['operations']['error_title'] = page.get_by_text('파일', exact=True).count()
             page.get_by_text('다시 시도', exact=True).first.click()
             page.get_by_label('config.ts', exact=True).first.wait_for(timeout=5000)
             result['operations']['17_retry'] = True
+            scene('error-light', 'section=sessionFiles&sample=error', theme='light')
+            result['operations']['error_light_button'] = page.get_by_text('다시 시도', exact=True).first.evaluate('''e => {
+              const button=e.closest('[role="button"]'); const s=getComputedStyle(button);
+              return {background:s.backgroundColor, color:getComputedStyle(e).color}; }''')
+            centered = []
+            for sample in ['error', 'unsupported', 'no_workspace', 'empty', 'not_git']:
+                for width in [390, 360, 1024]:
+                    page.set_viewport_size({'width': width, 'height': 844})
+                    page.goto(base + f'?section=sessionFiles&sample={sample}&theme=dark', wait_until='domcontentloaded')
+                    content = page.get_by_test_id('session-files-state-content')
+                    content.wait_for(timeout=10000)
+                    page.evaluate('document.fonts.ready')
+                    body = page.get_by_test_id('session-files-scroll').bounding_box()
+                    state = content.bounding_box()
+                    delta = (state['y'] + state['height'] / 2) - (body['y'] + body['height'] / 2)
+                    centered.append({'sample': sample, 'width': width, 'delta': delta, 'body': body, 'state': state})
+            result['operations']['2_centered'] = centered
+            scene('not-git-reads', 'section=sessionFiles&sample=not_git_reads')
+            result['operations']['2_not_git_reads'] = {'state': page.get_by_test_id('session-files-state-content').bounding_box(),
+                'body': page.get_by_test_id('session-files-scroll').bounding_box(), 'read_row': page.get_by_label('읽기만 한 파일').count()}
             scene('long-names', 'section=sessionFiles&sample=long', 360)
             result['operations']['16_overflow'] = page.evaluate('document.documentElement.scrollWidth > innerWidth')
             result['operations']['16_names'] = page.evaluate('''() => [...document.querySelectorAll('[aria-label*="아주-긴"]')].map(row => {
@@ -221,6 +256,8 @@ def main():
             page.screenshot(path=str(out / 'tablet.png'))
             result['scenes']['tablet'] = {'width': 1024, 'height': 768, 'overflow': page.evaluate('document.documentElement.scrollWidth > innerWidth')}
             scene('selection-files', 'section=sessionFiles', 390, 500)
+            result['operations']['11_header'] = {'title': select_by_drag(page, page.get_by_text('card1802-outbox-backoff', exact=True).first),
+                'ahead': select_by_drag(page, page.get_by_text('↑1', exact=True).first)}
             folder_text = page.get_by_text('soul-server-ts/src', exact=True).first
             folder_selection = select_by_drag(page, folder_text)
             scene('selection-files', 'section=sessionFiles', 390, 500)
@@ -250,6 +287,17 @@ def main():
         raise SystemExit('창 크기 변경 후 스크롤 위치가 달라졌습니다')
     if result['operations']['error_title'] != 1:
         raise SystemExit('첫 조회 실패의 제목이 파일이 아닙니다')
+    for key in ['1_loading', '1_pending']:
+        if result['operations'][key] != {'body': 1, 'header_disabled': True, 'header_spinners': 0}:
+            raise SystemExit('첫 조회 또는 pending 스피너와 단추 상태가 다릅니다')
+    if result['operations']['1_refreshing'] != {'body': 0, 'header_disabled': True, 'header_spinners': 1, 'row': 1}:
+        raise SystemExit('마지막 결과 갱신 중 스피너와 단추 상태가 다릅니다')
+    if any(abs(entry['delta']) > 48 for entry in result['operations']['2_centered']):
+        raise SystemExit('빈 상태의 중심이 본문 중심에서 벗어났습니다')
+    if result['operations']['2_not_git_reads']['read_row'] != 1:
+        raise SystemExit('읽은 파일이 있는 not_git 목록이 사라졌습니다')
+    if any(result['operations']['11_header'].values()) or result['operations']['11_offline'] or not result['operations']['11_preview']:
+        raise SystemExit('머리·오프라인·미리보기의 글 선택 상태가 다릅니다')
     expected_list = ['Start, back', '다시 읽기', 'config.ts', 'event_outbox_types.ts', 'event_outbox.ts', 'outbox_retry.ts', 'event_outbox.test.ts', '읽기만 한 파일']
     if result['operations']['15_list_tabs'] != expected_list:
         raise SystemExit('파일 목록 Tab 순서가 다릅니다')
