@@ -135,6 +135,7 @@ export const routeCoverageOwners = [
 export const tsOnlyRouteKeys = [
   ...Object.keys(conversationRouteAuthRequirements),
   ...Object.keys(oauthRouteAuthRequirements),
+  "POST /api/auth/password-login",
   "GET /api/owned-agents", "POST /api/owned-agents", "PATCH /api/owned-agents/{id}",
   "POST /api/owned-agents/{id}/keys", "DELETE /api/owned-agents/{id}/keys/{keyId}", "POST /api/owned-agents/register-existing",
   "POST /api/access-links", "GET /api/access-links", "DELETE /api/access-links/{id}",

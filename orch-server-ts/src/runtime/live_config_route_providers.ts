@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
+
 import {
   AUTH_COOKIE_NAME,
   type AuthRouteConfigProvider,
 } from "../auth/auth_routes.js";
+import { resolveDashboardLoginMode } from "../auth/login_mode.js";
 import type { AtomRouteConfigProvider } from "../atom/atom_routes.js";
 import type { PublicStatusRouteConfigProvider } from "../public/public_status_routes.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
@@ -83,23 +86,36 @@ async function authRouteConfig(configProvider: LiveConfigProviderBoundary) {
     path: "authRoutes.configProvider",
   } as const;
   const [
+    snapshot,
     googleClientId,
     googleClientSecret,
     callbackUrl,
     jwtSecret,
     environment,
   ] = await Promise.all([
+    configProvider.getConfig(),
     requireString(configProvider, route, "google_client_id"),
     requireString(configProvider, route, "google_client_secret"),
     requireString(configProvider, route, "google_callback_url"),
     requireString(configProvider, route, "jwt_secret"),
     requireString(configProvider, route, "environment"),
   ]);
+  const dashboardAdminPassword = optionalString(
+    snapshot,
+    route,
+    "dashboard_admin_password",
+  ) ?? "";
 
   return {
-    authEnabled: googleClientId.length > 0,
+    loginMode: resolveDashboardLoginMode({
+      google_client_id: googleClientId,
+      dashboard_admin_password: dashboardAdminPassword,
+    }),
     devModeEnabled: environment.toLowerCase() === "development" ||
       environment.toLowerCase() === "dev",
+    dashboardAdminPasswordSha256: dashboardAdminPassword.length === 0
+      ? ""
+      : createHash("sha256").update(dashboardAdminPassword, "utf8").digest("hex"),
     googleClientId,
     googleClientSecret,
     callbackUrl,
@@ -120,10 +136,18 @@ async function publicStatusRouteConfig(
     requireString(configProvider, route, "google_client_id"),
     requireBoolean(configProvider, route, "atom_enabled"),
   ]);
+  const dashboardAdminPassword = optionalString(
+    snapshot,
+    route,
+    "dashboard_admin_password",
+  ) ?? "";
 
   return {
     nodeName: optionalString(snapshot, route, "node_name"),
-    authEnabled: googleClientId.length > 0,
+    authEnabled: resolveDashboardLoginMode({
+      google_client_id: googleClientId,
+      dashboard_admin_password: dashboardAdminPassword,
+    }) !== "none",
     atomEnabled,
   };
 }

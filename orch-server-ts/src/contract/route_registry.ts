@@ -336,7 +336,13 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
     authRequired: true,
     family: "session",
   },
-
+  {
+    methods: ["POST"],
+    path: "/api/auth/password-login",
+    name: "password_login",
+    authRequired: false,
+    family: "auth",
+  },
 ];
 
 /**

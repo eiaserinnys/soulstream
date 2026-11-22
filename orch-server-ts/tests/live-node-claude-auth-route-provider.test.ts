@@ -81,6 +81,29 @@ describe("live node Claude auth route provider", () => {
     });
   });
 
+  it("treats blank OAuth settings as a missing optional configuration", async () => {
+    const configProvider = createConfigProvider({
+      claude_oauth_client_id: "",
+      claude_oauth_callback_url: "",
+    });
+    const provider = createLiveNodeClaudeAuthOAuthConfigProvider({
+      configProvider,
+    });
+
+    await expect(provider.getOAuthConfig()).rejects.toMatchObject({
+      failures: [
+        {
+          owner: "node.claude-auth",
+          path: "nodeClaudeAuthRoutes.provider",
+          key: "claude_oauth_client_id",
+          reason: "missing",
+          expected: "string",
+          actualType: "string",
+        },
+      ],
+    });
+  });
+
   it("fails with a typed config error when OAuth config type is invalid", async () => {
     const configProvider = createConfigProvider({
       claude_oauth_client_id: 123,

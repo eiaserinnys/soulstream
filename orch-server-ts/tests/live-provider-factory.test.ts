@@ -402,7 +402,7 @@ describe("live provider factory boundary", () => {
     await expect(
       bundle.authRoutes.configProvider.getConfig(),
     ).resolves.toMatchObject({
-      authEnabled: true,
+      loginMode: "google",
       devModeEnabled: false,
       googleClientId: "google-client",
       googleClientSecret: "google-secret",

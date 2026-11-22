@@ -4,6 +4,7 @@ import { closeNodeSocketsForHandover } from "./websocket_plugin.js";
 import { createConversationMessagePorts } from "./conversation/conversation_message_ports.js";
 import { ConversationService } from "./conversation/conversation_service.js";
 import { ConversationCatalog } from "./conversation/conversation_catalog.js";
+import { dashboardAuthEnabled } from "./auth/login_mode.js";
 import { verifyServiceBearerAuthorization } from "./auth/service_bearer.js";
 import { SqlOwnedAgentRepository } from "./owned-agents/repository.js";
 import type { OnPersistentReportPosted, PublishPersistentReports } from "./session/persistent_report_service.js";
@@ -625,7 +626,7 @@ export async function createLiveProductionApplication(
           authBearerToken: config.auth_bearer_token,
           environment: config.environment,
           nodeCredentials: nodeCredentialStore,
-          dashboardAuthEnabled: Boolean(config.google_client_id),
+          dashboardAuthEnabled: dashboardAuthEnabled(config),
           resolveDashboardUserFromHeaders: (headers) =>
             providers.authenticatedUserResolvers.resolveUserFromHeaders(headers),
         },
@@ -1120,6 +1121,7 @@ export async function createLiveProductionApplication(
         outbound: outboundWebhookManagement,
       },
       claudeCentralService,
+      config.default_pas_agent_id,
     ),
     nodeReleaseRoutes: {
       authBearerToken: config.auth_bearer_token,
@@ -1641,6 +1643,7 @@ export function buildProductionRouteOptions(
   defaultExecutionNodeId?: string,
   webhooks?: McpHostOptions["webhooks"],
   claudeCentral?: ClaudeCentralService,
+  defaultPasAgentId?: string | null,
 ): CreateAppOptions {
   if (defaultExecutionNodeId === undefined) {
     throw new Error("default execution node is required to build production routes");
@@ -1682,6 +1685,7 @@ export function buildProductionRouteOptions(
     profiles: providers.nodeAgentProfileRoutes.provider,
     modelCatalog: providers.modelCatalog,
     defaultExecutionNodeId,
+    ...(defaultPasAgentId === undefined ? {} : { defaultPasAgentId }),
   });
   const conversationService = conversationSql ? new ConversationService({
     sql: conversationSql, access: sessionAccessProvider, persistent: persistentSessionSettingsService,

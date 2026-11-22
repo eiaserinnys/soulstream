@@ -125,6 +125,32 @@ describe("live auth token access resolver", () => {
     expect(jwt.verifyToken).toHaveBeenCalledTimes(1);
   });
 
+  it("accepts the password login cookie in password mode and keeps Bearer for Google mode", async () => {
+    const jwt = jwtVerifier("dashboard-jwt");
+    const resolver = createLiveAuthTokenResolver({
+      nodeCredentials: null,
+      configProvider: configWith({
+        auth_bearer_token: "service-token",
+        environment: "production",
+        google_client_id: "",
+        dashboard_admin_password: "hunter2",
+        jwt_secret: "jwt-secret",
+      }),
+      jwt,
+    });
+
+    await expect(
+      resolver(request({ cookie: "soul_dashboard_auth=dashboard-jwt" })),
+    ).resolves.toEqual({ ok: true });
+    await expect(
+      resolver(request({ authorization: "Bearer dashboard-jwt" })),
+    ).resolves.toMatchObject({ ok: false, statusCode: 401 });
+    await expect(
+      resolver(request({ authorization: "Bearer service-token" })),
+    ).resolves.toEqual({ ok: true });
+    expect(jwt.verifyToken).toHaveBeenCalledTimes(1);
+  });
+
   it("does not turn auth-disabled JWT dependency into a bypass", async () => {
     const jwt = jwtVerifier("dashboard-jwt");
     const resolver = createLiveAuthTokenResolver({

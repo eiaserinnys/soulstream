@@ -43,6 +43,8 @@ export interface AuthContextValue {
   authEnabled: boolean;
   /** dev-login 사용 가능 여부 (서버 플래그 기반) */
   devModeEnabled: boolean;
+  /** 설치 비밀번호 로그인 사용 가능 여부 (서버 플래그 기반) */
+  passwordLoginEnabled: boolean;
   /** 인증 완료 여부 */
   isAuthenticated: boolean;
   /** 현재 사용자 정보 */
@@ -53,6 +55,8 @@ export interface AuthContextValue {
   logout: () => Promise<void>;
   /** Dev 로그인 (devModeEnabled: true일 때만 사용) */
   devLogin: (email: string, name?: string) => Promise<void>;
+  /** 설치 비밀번호 로그인 */
+  passwordLogin: (password: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -103,6 +107,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [authEnabled, setAuthEnabled] = useState(false);
   const [devModeEnabled, setDevModeEnabled] = useState(false);
+  const [passwordLoginEnabled, setPasswordLoginEnabled] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const isAuthenticatedRef = useRef(false);
@@ -173,6 +178,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
     [refreshAuthStatus],
   );
 
+  const passwordLogin = useCallback(
+    async (password: string) => {
+      const res = await orchestratorFetch(fetch,"/api/auth/password-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+        credentials: "same-origin",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ detail: "Unknown error" }));
+        throw new Error(data.detail ?? `Password login failed: ${res.status}`);
+      }
+      await refreshAuthStatus();
+    },
+    [refreshAuthStatus],
+  );
+
   useEffect(() => {
     let isMounted = true;
     const generation = ++lifecycleGenerationRef.current;
@@ -201,6 +223,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         setAuthEnabled(config.authEnabled);
         setDevModeEnabled(config.devModeEnabled ?? false);
+        setPasswordLoginEnabled(config.passwordLoginEnabled ?? false);
 
         if (config.authEnabled) {
           // 2. 인증 활성 → /api/auth/status로 현재 인증 상태 확인
@@ -259,11 +282,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
         isLoading,
         authEnabled,
         devModeEnabled,
+        passwordLoginEnabled,
         isAuthenticated,
         user,
         refreshAuthStatus,
         logout,
         devLogin,
+        passwordLogin,
       }}
     >
       {children}

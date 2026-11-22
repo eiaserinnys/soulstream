@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveDashboardLoginMode } from "./auth/login_mode.js";
 import { loadExternalIngressEnvironment, EXTERNAL_INGRESS_ENVIRONMENT_VARIABLES, type ExternalIngressEnvironmentConfig } from "./config_external_ingress.js";
 import { DEFAULT_DOMAIN_CATALOG_NODE_ID, DEFAULT_SKILL_CATALOG_NODE_ID } from "./skills/skill_catalog.js";
 
@@ -28,6 +29,7 @@ export type OrchServerTsConfig = Omit<
 export type OrchServerEnvironmentConfig = Partial<ExternalIngressEnvironmentConfig> & {
   readonly node_name: string | null;
   readonly default_execution_node_id: string;
+  readonly default_pas_agent_id: string | null;
   readonly host: string;
   readonly port: number;
   readonly trusted_proxy: typeof DEFAULT_TRUSTED_PROXY;
@@ -49,6 +51,7 @@ export type OrchServerEnvironmentConfig = Partial<ExternalIngressEnvironmentConf
   readonly google_ios_client_id: string;
   readonly allowed_email: string;
   readonly jwt_secret: string;
+  readonly dashboard_admin_password: string;
   readonly environment: string;
   readonly claude_oauth_client_id: string;
   readonly claude_oauth_callback_url: string;
@@ -69,6 +72,7 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "CORS_ALLOWED_ORIGINS",
   "NODE_NAME",
   "DEFAULT_EXECUTION_NODE_ID",
+  "DEFAULT_PAS_AGENT_ID",
   "HOST",
   "PORT",
   "DATABASE_URL",
@@ -87,6 +91,7 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "GOOGLE_IOS_CLIENT_ID",
   "ALLOWED_EMAIL",
   "JWT_SECRET",
+  "DASHBOARD_ADMIN_PASSWORD",
   "CLAUDE_OAUTH_CLIENT_ID",
   "CLAUDE_OAUTH_CALLBACK_URL",
   "CODEX_CLI_PATH",
@@ -143,11 +148,26 @@ export function loadOrchServerEnvironment(
   if (isProduction && authBearerToken.trim().length === 0) {
     throw new Error("AUTH_BEARER_TOKEN must be set in production");
   }
+  const googleClientId = env.GOOGLE_CLIENT_ID ?? "";
+  const dashboardAdminPassword = env.DASHBOARD_ADMIN_PASSWORD ?? "";
+  const jwtSecret = env.JWT_SECRET ?? "";
+  if (
+    resolveDashboardLoginMode({
+      google_client_id: googleClientId,
+      dashboard_admin_password: dashboardAdminPassword,
+    }) === "password" &&
+    jwtSecret.trim().length === 0
+  ) {
+    throw new Error(
+      "JWT_SECRET must be set when DASHBOARD_ADMIN_PASSWORD enables password login",
+    );
+  }
   return {
     ...loadExternalIngressEnvironment(env),
     node_name: optionalString(env.NODE_NAME),
     default_execution_node_id:
       (env.DEFAULT_EXECUTION_NODE_ID?.trim() ?? "") || DEFAULT_EXECUTION_NODE_ID,
+    default_pas_agent_id: optionalNonEmptyString(env.DEFAULT_PAS_AGENT_ID),
     host: requiredEnvString(env, "HOST"),
     port: parsePort(env.PORT),
     trusted_proxy: DEFAULT_TRUSTED_PROXY,
@@ -164,15 +184,16 @@ export function loadOrchServerEnvironment(
     domain_catalog_node_id: env.DOMAIN_CATALOG_NODE_ID ?? DEFAULT_DOMAIN_CATALOG_NODE_ID,
     auth_bearer_token: authBearerToken,
     cors_allowed_origins: corsAllowedOrigins,
-    google_client_id: env.GOOGLE_CLIENT_ID ?? "",
+    google_client_id: googleClientId,
     google_client_secret: env.GOOGLE_CLIENT_SECRET ?? "",
     google_callback_url: env.GOOGLE_CALLBACK_URL ?? "",
     google_ios_client_id: env.GOOGLE_IOS_CLIENT_ID ?? "",
     allowed_email: env.ALLOWED_EMAIL ?? "",
-    jwt_secret: env.JWT_SECRET ?? "",
+    jwt_secret: jwtSecret,
+    dashboard_admin_password: dashboardAdminPassword,
     environment,
-    claude_oauth_client_id: requiredEnvString(env, "CLAUDE_OAUTH_CLIENT_ID"),
-    claude_oauth_callback_url: requiredEnvString(env, "CLAUDE_OAUTH_CALLBACK_URL"),
+    claude_oauth_client_id: env.CLAUDE_OAUTH_CLIENT_ID ?? "",
+    claude_oauth_callback_url: env.CLAUDE_OAUTH_CALLBACK_URL ?? "",
     codex_cli_path: optionalString(env.CODEX_CLI_PATH),
     antigravity_cli_path: optionalString(env.AGY_CLI_PATH),
     typesafe_api_key: env.TYPESAFE_API_KEY ?? "",
@@ -248,6 +269,11 @@ function publicOrigin(value: string): string {
 
 function optionalString(value: string | undefined): string | null {
   return value === undefined ? null : value;
+}
+
+function optionalNonEmptyString(value: string | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length === 0 ? null : trimmed;
 }
 
 function parsePort(value: string | undefined): number {

@@ -7,7 +7,7 @@
  * - URL 파라미터 에러 처리: ?error=auth_failed, ?error=no_user
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../providers/AuthProvider";
 import { AuthSurface } from "./AuthSurface";
 
@@ -30,11 +30,13 @@ export function buildGoogleAuthUrl(
 }
 
 export function Login({ title = "Dashboard" }: LoginProps) {
-  const { devModeEnabled, devLogin } = useAuth();
+  const { devModeEnabled, passwordLoginEnabled, devLogin, passwordLogin } = useAuth();
   const [devEmail, setDevEmail] = useState("");
   const [devName, setDevName] = useState("");
+  const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
 
   // OAuth 콜백 에러 파라미터 처리
   useEffect(() => {
@@ -48,6 +50,26 @@ export function Login({ title = "Dashboard" }: LoginProps) {
 
   const handleGoogleLogin = () => {
     window.location.href = buildGoogleAuthUrl(window.location);
+  };
+
+  const handlePasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!password) {
+      setError("비밀번호를 입력해주세요.");
+      return;
+    }
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await passwordLogin(password);
+      // 성공 시 AuthProvider가 isAuthenticated: true로 전환 → AuthGate에서 App 렌더링
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
+      // 제출 단추가 비활성으로 바뀌며 초점을 잃으므로, 다시 입력할 비밀번호 칸으로 돌린다.
+      passwordInputRef.current?.focus();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDevLogin = async (e: React.FormEvent) => {
@@ -90,7 +112,38 @@ export function Login({ title = "Dashboard" }: LoginProps) {
           </div>
         )}
 
-        {/* Google 로그인 */}
+        {/* 설치 비밀번호 로그인 (password 모드) */}
+        {passwordLoginEnabled && (
+          <form onSubmit={handlePasswordLogin} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="password-login" className="text-sm text-muted-foreground">
+                비밀번호
+              </label>
+              <input
+                type="password"
+                id="password-login"
+                ref={passwordInputRef}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+                data-testid="password-login-input"
+                className="bg-input border border-border rounded-floor py-1.5 px-3 text-sm text-foreground outline-none transition-colors duration-150 focus:border-accent-blue/40"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              data-testid="password-login-button"
+              className="w-full py-2 bg-accent-blue border-accent-blue text-white rounded-full text-sm font-medium hover:bg-accent-blue/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
+            >
+              {isSubmitting ? "로그인 중..." : "로그인"}
+            </button>
+          </form>
+        )}
+
+        {/* Google 로그인 (Google 모드) */}
+        {!passwordLoginEnabled && (
         <button
           type="button"
           onClick={handleGoogleLogin}
@@ -123,6 +176,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
           </svg>
           Sign in with Google
         </button>
+        )}
 
         {/* Dev 로그인 (devModeEnabled 서버 플래그 기반) */}
         {devModeEnabled && (

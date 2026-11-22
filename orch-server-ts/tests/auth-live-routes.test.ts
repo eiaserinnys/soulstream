@@ -44,8 +44,9 @@ describe("auth routes with live providers", () => {
       config,
       authRoutes: {
         configProvider: { getConfig: async () => ({
-          authEnabled: true,
+          loginMode: "google",
           devModeEnabled: true,
+          dashboardAdminPasswordSha256: "",
           googleClientId: "google-client",
           googleClientSecret: "google-secret",
           callbackUrl: "/api/auth/google/callback",
@@ -110,8 +111,9 @@ describe("auth routes with live providers", () => {
       now: () => new Date("2026-01-01T00:00:00.000Z"),
     });
     const authConfig = {
-      authEnabled: true,
+      loginMode: "google" as const,
       devModeEnabled: true,
+      dashboardAdminPasswordSha256: "",
       googleClientId: "google-client",
       googleClientSecret: "google-secret",
       callbackUrl: "/api/auth/google/callback",

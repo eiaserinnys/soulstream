@@ -62,6 +62,19 @@ function AuthProbe() {
   }, auth.isLoading ? "loading" : auth.isAuthenticated ? "authenticated" : "signed-out");
 }
 
+function PasswordLoginProbe() {
+  const auth = useAuth();
+  return createElement("div", null,
+    createElement("span", { "data-testid": "password-enabled" },
+      auth.passwordLoginEnabled ? "enabled" : "disabled"),
+    createElement("button", {
+      type: "button",
+      onClick: () => { void auth.passwordLogin("hunter2").catch(() => undefined); },
+      "data-testid": "password-login-probe",
+    }, "login"),
+  );
+}
+
 function AuthGateProbe() {
   const auth = useAuth();
   return createElement("div", null,
@@ -539,6 +552,42 @@ describe("AuthProvider refresh boundary", () => {
     expect(response.status).toBe(401);
     await vi.waitFor(() => expect(statusReads).toBe(1));
     expect(container.querySelector("[data-testid=dashboard]")).not.toBeNull();
+  });
+
+  it("exposes password login from the config and refreshes the status after success", async () => {
+    let statusReads = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/auth/config") {
+        return Response.json({
+          authEnabled: true,
+          devModeEnabled: false,
+          passwordLoginEnabled: true,
+        });
+      }
+      if (url === "/api/auth/status") {
+        statusReads += 1;
+        return authStatusResponse(statusReads > 1);
+      }
+      if (url === "/api/auth/password-login") {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body))).toEqual({ password: "hunter2" });
+        return Response.json({ success: true });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+
+    flushSync(() => {
+      root.render(createElement(AuthProvider, null, createElement(PasswordLoginProbe)));
+    });
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-testid=password-enabled]")?.textContent).toBe("enabled");
+    });
+
+    container.querySelector<HTMLButtonElement>("[data-testid=password-login-probe]")?.click();
+    await vi.waitFor(() => {
+      expect(statusReads).toBe(2);
+    });
   });
 
   it("restores fetch after StrictMode remount and ignores a 401 that arrives after unmount", async () => {

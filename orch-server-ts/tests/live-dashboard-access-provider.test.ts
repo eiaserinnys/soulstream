@@ -124,6 +124,48 @@ describe("live dashboard DB access provider", () => {
     expect(jwt.verifyToken).not.toHaveBeenCalled();
   });
 
+  it("requires the password login cookie in password mode and keeps the Bearer carrier for Google mode", async () => {
+    const repository = {
+      findUserByEmail: vi.fn(async (email: string) => ({
+        email,
+        isAdmin: false,
+        allowedFolderIds: ["folder-a"],
+      })),
+    };
+    const jwt: AuthJwtHelper = {
+      issueToken: vi.fn(async () => "token"),
+      verifyToken: vi.fn(async (token) =>
+        token === "owner-token" ? { email: "owner@local" } : null
+      ),
+    };
+    const provider = createLiveDashboardAccessProvider({
+      nodeCredentials: null,
+      configProvider: configWith({
+        auth_bearer_token: "service-token",
+        google_client_id: "",
+        dashboard_admin_password: "hunter2",
+        environment: "production",
+      }),
+      jwt,
+      repository,
+    });
+
+    await expect(provider.resolveAccess(cookieRequest("owner-token"))).resolves.toEqual({
+      restricted: true,
+      allowedFolderIds: ["folder-a"],
+    });
+    expect(repository.findUserByEmail).toHaveBeenCalledWith("owner@local");
+    await expect(
+      provider.resolveAccess(requestWith({ authorization: "Bearer owner-token" })),
+    ).rejects.toMatchObject({ statusCode: 401 });
+    await expect(
+      provider.resolveAccess(requestWith({ authorization: "Bearer service-token" })),
+    ).resolves.toEqual({ restricted: false, allowedFolderIds: [] });
+    await expect(provider.resolveAccess(requestWith())).rejects.toMatchObject({
+      statusCode: 401,
+    });
+  });
+
   it("denies missing or invalid dashboard JWT requests before resolving user access", async () => {
     const { provider, repository } = createProviderHarness();
 

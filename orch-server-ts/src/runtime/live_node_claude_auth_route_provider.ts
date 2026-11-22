@@ -267,6 +267,13 @@ async function requireClaudeAuthString(
       claudeAuthConfigFailure(key, "invalid_type", "string", value),
     ]);
   }
+  if (value.length === 0) {
+    // Blank Claude OAuth settings mean the install never configured this
+    // optional integration; the node routes answer 503 instead of failing boot.
+    throw new LiveConfigProviderError([
+      claudeAuthConfigFailure(key, "missing", "string", value),
+    ]);
+  }
   return value;
 }
 
