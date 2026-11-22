@@ -1,5 +1,29 @@
 # Installation
 
+## 리눅스 한 줄 설치
+
+빈 Debian 13 x86_64 서버에서 root로 실행합니다. 2 vCPU, RAM 4 GB, 디스크 40 GB 이상을 권장합니다. 설치기는 RAM 3.5 GiB와 루트 파일시스템의 여유 공간 20 GB 이상을 확인합니다.
+
+```bash
+bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl/certs/ca-certificates.crt) || (apt-get update && apt-get install -y curl ca-certificates); tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex'
+```
+
+`--backends`는 `claude`, `codex`, `antigravity` 중 원하는 백엔드를 쉼표로 구분합니다. 기본값은 `claude,codex`이며 첫 백엔드가 기본 에이전트입니다. 선택 사항인 `--ref <브랜치·태그·커밋>`으로 설치할 리비전을 지정합니다.
+
+설치기는 필수 패키지, 전용 사용자, Node.js, 선택한 CLI와 PostgreSQL을 준비하고 소스를 클론해 설정·빌드·스키마 초기화를 마친 뒤 systemd 서비스를 시작합니다. 로컬 작업실을 만들고 서비스 연결과 인증을 확인합니다. 로그는 `/var/log/soulstream-install.log`에 남습니다.
+
+설치가 끝나면 안내된 명령으로 선택한 CLI에 로그인합니다. Codex는 ChatGPT 보안 설정에서 기기 코드 로그인을 켜야 합니다. Antigravity는 `ssh soulstream@<서버>`로 직접 접속해 `~/.local/bin/agy`에서 로그인하고 `/exit`로 나옵니다. 로그인 후 프리셋은 5분 안에 갱신되며, 즉시 갱신 명령도 설치 결과에 표시됩니다.
+
+대시보드는 SSH 터널을 연 뒤 로컬 브라우저에서 접속합니다.
+
+```bash
+ssh -L 127.0.0.1:5200:127.0.0.1:5200 <사용자>@<서버>
+```
+
+<http://127.0.0.1:5200>에서 설치 끝에 표시된 관리자 비밀번호로 로그인합니다. 비밀번호는 서버의 `/home/soulstream/soulstream/.admin-password`에도 보관됩니다.
+
+같은 명령을 다시 실행하면 비밀 값, 기존 작업실과 설치기가 관리하지 않는 환경 설정 줄을 보존합니다. 기존 클론의 HEAD는 `--ref`를 주지 않으면 그대로 유지합니다. `--ref`를 주면 작업 트리가 깨끗할 때 해당 리비전을 체크아웃합니다. Tailscale 모드는 다음 단계에서 제공하며, 버전 업데이트 도구와 제거 도구는 포함하지 않습니다.
+
 This guide covers installing a remote Windows worker with the PowerShell installer and running the full Soulstream stack from source.
 
 ## Requirements
