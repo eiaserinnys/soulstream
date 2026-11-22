@@ -24,6 +24,14 @@ test('sourcing has no side effects', () => {
   const dir = mkdtempSync(join(tmpdir(), 'install-source-'));
   try { const result = spawnSync('bash', ['-c', 'source "$1"', 'bash', script], { cwd: dir, encoding: 'utf8' }); assert.equal(result.status, 0); assert.equal(result.stdout + result.stderr, ''); assert.deepEqual(readdirSync(dir), []); } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+test('installation commands start in a directory accessible to service users', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'install-cwd-'));
+  try {
+    const result = spawnSync('bash', ['-ec', 'source "$1"; prepare_install_cwd; pwd -P', 'bash', script], { cwd: dir, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), '/');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 test('Claude login guidance works without a local browser', () => {
   const dir = mkdtempSync(join(tmpdir(), 'install-finish-'));
   try {

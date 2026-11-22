@@ -315,9 +315,11 @@ finish_message() {
 }
 on_error() { trap - ERR; printf '\nInstallation failed at: %s\nLog: %s\n' "$STEP" "$LOG" >&3; tail -n 30 "$LOG" >&3; exit 1; }
 run_step() { STEP=$1; shift; printf '%s\n' "$STEP"; "$@" >> "$LOG" 2>&1; }
+prepare_install_cwd() { cd /; }
 main() {
   set -Eeuo pipefail
   parse_args "$@"
+  prepare_install_cwd
   preflight
   local root=/home/soulstream/soulstream
   exec 3>&2
