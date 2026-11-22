@@ -41,6 +41,7 @@ import { sessionResumeAfterLimitRouteAuthRequirements } from "../session/session
 import { sessionCatalogRouteAuthRequirements } from "../session/session_catalog_routes.js";
 import { persistentSessionSettingsRouteAuthRequirements } from "../session/persistent_session_settings_routes.js";
 import { sessionCommandRouteAuthRequirements } from "../session/session_command_routes.js";
+import { sessionWorkspaceRouteAuthRequirements } from "../session/session_workspace_routes.js";
 import { sessionHistoryRouteAuthRequirements } from "../session/session_history_routes.js";
 import { sessionEventAttachmentRouteAuthRequirements } from "../session/session_event_attachment_routes.js";
 import { sessionSnapshotRouteAuthRequirements } from "../session/session_snapshot_routes.js";
@@ -116,6 +117,7 @@ export const routeCoverageOwners = [
       ...sessionHistoryRouteAuthRequirements,
       ...sessionConversationRouteAuthRequirements,
       ...sessionEventAttachmentRouteAuthRequirements,
+      ...sessionWorkspaceRouteAuthRequirements,
     },
   },
   { owner: "session.snapshot", authRequirements: sessionSnapshotRouteAuthRequirements },
@@ -201,6 +203,8 @@ export const tsOnlyRouteKeys = [
   "GET /api/sessions/{session_id}/delivery-failures",
   "GET /api/sessions/{session_id}/events/{event_id}",
   "GET /api/sessions/{session_id}/events/{event_id}/attachments",
+  "GET /api/sessions/{session_id}/workspace",
+  "GET /api/sessions/{session_id}/workspace/file",
   "GET /api/sessions/{session_id}/resume-after-limit",
   "POST /api/sessions/{session_id}/resume-after-limit",
   "POST /api/ui-events",

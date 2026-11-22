@@ -57,7 +57,9 @@
     "plan_agent_profile_update",
     "apply_agent_profile_update",
     "list_agents_config_snapshots",
-    "rollback_agents_config"
+    "rollback_agents_config",
+    "workspace_snapshot",
+    "workspace_file_read"
   ],
   "x-soulstream-event-ingress-rejection-codes": [
     "EVENT_INGRESS_TRANSIENT_FAILURE",
@@ -196,6 +198,291 @@
     "system_message": "durable"
   },
   "$defs": {
+    "WorkspaceSnapshot": {
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "agent_id",
+        "worktree_id",
+        "since"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "const": "workspace_snapshot"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "agent_id": {
+          "type": "string"
+        },
+        "worktree_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "since": {
+          "type": "string"
+        }
+      }
+    },
+    "WorkspaceFileRead": {
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "agent_id",
+        "worktree_id",
+        "path"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "const": "workspace_file_read"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "agent_id": {
+          "type": "string"
+        },
+        "worktree_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "length": {
+          "type": "integer"
+        }
+      }
+    },
+    "WorkspaceSnapshotResult": {
+      "type": "object",
+      "required": [
+        "type",
+        "requestId",
+        "root",
+        "state",
+        "observed_at",
+        "refreshing",
+        "git"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "const": "workspace_snapshot_result"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "root": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "ready",
+            "pending",
+            "not_git"
+          ]
+        },
+        "observed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "refreshing": {
+          "type": "boolean"
+        },
+        "git": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "branch",
+                "head",
+                "upstream",
+                "ahead",
+                "behind",
+                "truncated",
+                "files",
+                "commits"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "branch": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "head": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "upstream": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "ahead": {
+                  "type": "integer"
+                },
+                "behind": {
+                  "type": "integer"
+                },
+                "truncated": {
+                  "type": "boolean"
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "path",
+                      "status",
+                      "orig_path",
+                      "added",
+                      "deleted",
+                      "size"
+                    ],
+                    "additionalProperties": true,
+                    "properties": {
+                      "path": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "enum": [
+                          "modified",
+                          "added",
+                          "deleted",
+                          "renamed",
+                          "untracked",
+                          "conflicted",
+                          "typechange"
+                        ]
+                      },
+                      "orig_path": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "added": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "deleted": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "size": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "commits": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "sha",
+                      "subject",
+                      "committed_at",
+                      "files"
+                    ],
+                    "additionalProperties": true,
+                    "properties": {
+                      "sha": {
+                        "type": "string"
+                      },
+                      "subject": {
+                        "type": "string"
+                      },
+                      "committed_at": {
+                        "type": "string"
+                      },
+                      "files": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "WorkspaceFileReadResult": {
+      "type": "object",
+      "required": [
+        "type",
+        "requestId",
+        "content_b64",
+        "content_type",
+        "size",
+        "offset",
+        "length"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "const": "workspace_file_read_result"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "content_b64": {
+          "type": "string"
+        },
+        "content_type": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "length": {
+          "type": "integer"
+        }
+      }
+    },
     "SessionLifecycleStatus": {
       "type": "string",
       "enum": ["initializing", "running", "completed", "error", "interrupted"]
@@ -4792,7 +5079,11 @@
     { "$ref": "#/$defs/ClaudeRuntimeListSchedules" },
     { "$ref": "#/$defs/ClaudeRuntimeDeleteSchedule" },
     { "$ref": "#/$defs/ProviderUsageGet" },
-    { "$ref": "#/$defs/ReflectBrief" }
+    { "$ref": "#/$defs/ReflectBrief" },
+    { "$ref": "#/$defs/WorkspaceSnapshot" },
+    { "$ref": "#/$defs/WorkspaceFileRead" },
+    { "$ref": "#/$defs/WorkspaceSnapshotResult" },
+    { "$ref": "#/$defs/WorkspaceFileReadResult" }
   ],
   "discriminator": { "propertyName": "type" }
 }

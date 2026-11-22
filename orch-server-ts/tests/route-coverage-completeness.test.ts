@@ -247,6 +247,7 @@ function createAllOptInRouteApp() {
     sessionCatalogRoutes: inert,
     sessionCommandRoutes: inert,
     sessionHistoryRoutes: { provider: { readConversation: async () => null } },
+    sessionWorkspaceRoutes: inert,
     sessionSnapshotRoutes: inert,
     sseReplayRoutes: inert,
     systemConfigRoutes: inert,

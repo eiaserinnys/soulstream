@@ -25,6 +25,8 @@ import {
 } from "./agent_config_commands.js";
 import { createAgentConfigCommandFamily } from "./agent_config_command_family.js";
 import { AttachmentCommands } from "./attachment_commands.js";
+import { workspaceServiceFor } from "../workspace/workspace_service.js";
+import { createWorkspaceCommandFamily } from "./workspace_command_family.js";
 import { createAttachmentCommandFamily } from "./attachment_command_family.js";
 import {
   ClaudeAuthCommands,
@@ -202,6 +204,7 @@ export class CommandDispatcher {
       ...createClaudeRuntimeCommandFamily({ send, logger, claudeRuntimeCommands }),
       ...createRealtimeCommandFamily({ send, realtimeCommands }),
       ...createAttachmentCommandFamily({ send, attachmentCommands }),
+      ...createWorkspaceCommandFamily({ send, workspace: workspaceServiceFor(reflectionRuntime, agentRegistry, reflectionRuntime?.worktreeService) }),
       ...createAuthCommandFamily({
         send,
         claudeAuthCommands,

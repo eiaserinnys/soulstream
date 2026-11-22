@@ -1,3 +1,4 @@
+import { WorkspaceService, registerWorkspaceService } from "../workspace/workspace_service.js";
 import type { Logger } from "pino";
 
 import type { AuthorizeOrchestrationWorker } from "../upstream/task_runtime_commands.js";
@@ -97,6 +98,7 @@ export function composeWorkerUpstreamAdapter({
   authorizeOrchestrationWorker,
 }: WorkerUpstreamCompositionParams): UpstreamAdapter {
   const { env, logger, agentRegistry, agentProfileSource } = worker;
+  registerWorkspaceService(reflectionRuntime, new WorkspaceService(agentRegistry, reflectionRuntime.worktreeService));
   return new UpstreamAdapter(
     {
       url: env.SOULSTREAM_UPSTREAM_URL,

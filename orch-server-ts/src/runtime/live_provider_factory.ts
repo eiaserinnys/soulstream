@@ -64,6 +64,8 @@ import type { AgentProfileRouteOptions } from "../node/agent_profile_routes.js";
 import type { ContextBundleRouteOptions } from "../node/context_bundle_routes.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
 import { sessionDeleteTransportFromRouteOptions } from "../session/session_delete.js";
+import { createLiveSessionWorkspaceProvider } from "./live_session_workspace_provider.js";
+import type { SessionWorkspaceRouteOptions } from "../session/session_workspace_routes.js";
 import { createLiveDashboardAccessProvider } from "./live_dashboard_access_provider.js";
 import { createLiveExecuteProxyRouteProvider } from "./live_execute_proxy_route_provider.js";
 import {
@@ -176,6 +178,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly userPreferencesRoutes: UserPreferencesRouteOptions;
   readonly userBackgroundRoutes: UserBackgroundRouteOptions;
   readonly sessionCatalogRoutes: SessionCatalogRouteOptions;
+  readonly sessionWorkspaceRoutes?: SessionWorkspaceRouteOptions;
   readonly runtime: LiveRuntimeProviderBundle;
   readonly cogitoRoutes:
     & LiveCogitoRouteProviderBundle["cogitoRoutes"]
@@ -569,6 +572,7 @@ export function createLiveOrchestratorProviderBundle(
       ),
       accessProvider: sessionResourceAccessProvider,
     },
+    ...(options.dbSqlResolver ? { sessionWorkspaceRoutes: { accessProvider: sessionResourceAccessProvider, provider: createLiveSessionWorkspaceProvider({ sqlResolver: options.dbSqlResolver, registry: options.runtimeServices.registry, bridge: options.runtimeServices.sessionBridge, modelCatalog: options.modelCatalog }) } } : {}),
     runtime: buildLiveRuntimeProviderBundle(
       options.runtimeServices,
       sessionResourceAccessProvider,
