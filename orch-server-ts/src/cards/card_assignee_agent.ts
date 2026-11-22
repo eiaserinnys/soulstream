@@ -1,11 +1,4 @@
 import { asRecord } from "@soulstream/wire-schema/json-record";
-/**
- * 카드 응답의 담당 에이전트 표시 정보를 만든다.
- *
- * 목록과 상세 응답을 내는 HTTP 라우트에서만 부르고, 행 직렬화(serializeCardRow)와
- * MCP 읽기·변경 응답은 건드리지 않는다. 이름·초상화·모델 표시명은 GET /api/sessions
- * 행이 쓰는 live_session_serialization.ts의 함수로 같은 값을 낸다.
- */
 
 export type CardAssigneeSessionLoader = (
   sessionIds: readonly string[],

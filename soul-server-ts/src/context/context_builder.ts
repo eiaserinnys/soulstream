@@ -1,4 +1,3 @@
-/** Builds input context; agent and folder instructions form the system prompt. */
 import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-session-settings";
 import type { InputMaterialPartV1, ContextItem } from "@soulstream/wire-schema";
 import { asRecord } from "@soulstream/wire-schema/json-record";

@@ -1,5 +1,4 @@
 import { asRecord } from "@soulstream/wire-schema/json-record";
-/** Haniel의 상세 응답을 요청한 서비스 또는 작은 상태 요약으로 투영한다. */
 type JsonObject = Record<string, unknown>;
 
 function pick(value: JsonObject, keys: readonly string[]): JsonObject {
