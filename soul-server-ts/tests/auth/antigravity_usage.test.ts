@@ -20,6 +20,15 @@ async function fakeCli(body: string) {
 }
 
 describe("Antigravity account usage", () => {
+  it("blocks failures before first success and reports later failures as errors", async () => {
+    const config = await fakeCli("process.exit(3)");
+    const service = new ProviderUsageService({ antigravity: config });
+    expect(await service.fetchProvider("antigravity")).toMatchObject({ status: "not_configured" });
+    await writeFile(config.cliPath, `#!${process.execPath}\nprocess.stdout.write(${JSON.stringify(fixture)})`);
+    expect(await service.fetchProvider("antigravity")).toMatchObject({ status: "auto" });
+    await writeFile(config.cliPath, `#!${process.execPath}\nprocess.exit(3)`);
+    expect(await service.fetchProvider("antigravity")).toMatchObject({ status: "error" });
+  });
   it("collects only command_result Gemini weekly and 5h quotas with no model or conversation", async () => {
     const config = await fakeCli(`const fs = require('node:fs'); fs.writeFileSync('invocation.json', JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd() })); process.stdout.write(${JSON.stringify(fixture)});`);
     const limits = await collectAntigravityUsage(config, new AbortController().signal);

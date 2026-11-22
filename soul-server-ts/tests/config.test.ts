@@ -12,6 +12,13 @@ describe("parseEnv", () => {
     EVENT_OUTBOX_DIR: "/tmp/soulstream-event-outbox-test",
   };
 
+  it("defaults to all existing backends and validates explicit selections", () => {
+    expect(parseEnv(minimal).SOULSTREAM_BACKENDS).toEqual(["claude", "codex", "antigravity", "opencode"]);
+    expect(parseEnv({ ...minimal, SOULSTREAM_BACKENDS: " " }).SOULSTREAM_BACKENDS).toEqual(parseEnv(minimal).SOULSTREAM_BACKENDS);
+    expect(parseEnv({ ...minimal, SOULSTREAM_BACKENDS: "codex, claude" }).SOULSTREAM_BACKENDS).toEqual(["codex", "claude"]);
+    expect(() => parseEnv({ ...minimal, SOULSTREAM_BACKENDS: "codex,unknown" })).toThrow(/SOULSTREAM_BACKENDS/);
+  });
+
   it("필수 키만 있으면 default들이 채워진다", () => {
     const env = parseEnv(minimal);
     expect(env.SOULSTREAM_NODE_ID).toBe("eias-shopping-ts");

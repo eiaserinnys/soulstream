@@ -8,8 +8,73 @@ import {
 } from "../src/usage/usage_summary_service.js";
 import { resolvePresetAvailability } from "../src/model/model_preset_availability.js";
 import { mergeClaudePoolObservations } from "../src/usage/claude_account_pool_observation.js";
+import { createApp, parseOrchServerConfig } from "../src/index.js";
 
 describe("UsageSummaryService", () => {
+  it("preserves existing availability for an operating node with all three providers", async () => {
+    const response = successResponse(10, 10);
+    Object.assign(response.data.providers.antigravity, limits(10, 10, []));
+    const now = new Date("2026-07-20T10:00:00.000Z");
+    const service = new UsageSummaryService({ registry: fakeRegistry(["node-a"]), bridge: { sendPendingCommand: vi.fn(async () => response) } as unknown as UsageSummaryBridge, pollIntervalMs: 300_000, sharedAccountGroups: [], now: () => now });
+    await service.collectOnce();
+    for (const backend of ["claude", "codex", "antigravity"] as const) {
+      expect(resolvePresetAvailability("node-a", { id: backend, label: backend, backend, available: true, usage_provider: backend }, service.getSummary(), now)).toMatchObject({ available: true, reason: null, usage_warning: false });
+    }
+  });
+
+  it("keeps an error when there has never been a successful provider sample", async () => {
+    const response = successResponse(10);
+    Object.assign(response.data.providers.codex, providerErrorLimits());
+    const service = new UsageSummaryService({ registry: fakeRegistry(["node-a"]), bridge: { sendPendingCommand: vi.fn(async () => response) } as unknown as UsageSummaryBridge, pollIntervalMs: 300_000, sharedAccountGroups: [] });
+    await service.collectOnce();
+    expect(service.getSummary().nodes[0]?.providers.codex?.status).toBe("error");
+  });
+  it.each(["claude", "codex", "antigravity"] as const)("unblocks %s after login through POST /api/usage/refresh", async (provider) => {
+    let loggedIn = false;
+    const registry = fakeRegistry(["node-a"]);
+    const bridge = { sendPendingCommand: vi.fn(async () => {
+      const response = successResponse(10, 10);
+      Object.assign(response.data.providers[provider], loggedIn ? limits(10, 10, []) : { ...limits(null, null, []), status: "not_configured" });
+      return response;
+    }) } as unknown as UsageSummaryBridge;
+    const now = new Date("2026-07-20T10:00:00.000Z");
+    const service = new UsageSummaryService({ registry, bridge, pollIntervalMs: 300_000, sharedAccountGroups: [], now: () => now });
+    const app = createApp({ config: parseOrchServerConfig({ environment: "test", databaseUrl: "postgres://soulstream_test@localhost/soulstream_test", authBearerToken: "test-token" }), usageSummaryRoutes: { service } });
+    const preset = { id: `${provider}-test`, label: provider, backend: provider, available: true, usage_provider: provider };
+    await service.collectOnce();
+    expect(resolvePresetAvailability("node-a", preset, service.getSummary(), now)).toMatchObject({ available: false, reason: "not_authenticated" });
+    loggedIn = true;
+    expect((await app.inject({ method: "POST", url: "/api/usage/refresh" })).statusCode).toBe(200);
+    expect(resolvePresetAvailability("node-a", preset, service.getSummary(), now)).toMatchObject({ available: true, reason: null });
+    await app.close();
+  });
+
+  it.each(["claude", "codex", "antigravity"] as const)("keeps %s success on errors, but applies logout, in both collection paths", async (provider) => {
+    let status: "auto" | "error" | "not_configured" = "auto";
+    const registry = fakeRegistry(["node-a"]);
+    const bridge = { sendPendingCommand: vi.fn(async ({ command }: { command: { message: { provider?: string } } }) => {
+      const value = { ...limits(10, 10, []), status };
+      if (command.message.provider) return { success: true, data: command.message.provider === provider ? value : limits(10, 10, []) };
+      const response = successResponse(10, 10);
+      Object.assign(response.data.providers[provider], value);
+      return response;
+    }) } as unknown as UsageSummaryBridge;
+    const service = new UsageSummaryService({ registry, bridge, pollIntervalMs: 300_000, sharedAccountGroups: [] });
+    await service.collectOnce();
+    status = "error";
+    await service.collectOnce();
+    expect(service.getSummary().nodes[0]?.providers[provider]?.status).toBe("auto");
+    await service.refreshNode("node-a");
+    expect(service.getSummary().nodes[0]?.providers[provider]?.status).toBe("auto");
+    status = "not_configured";
+    await service.refreshNode("node-a");
+    expect(service.getSummary().nodes[0]?.providers[provider]?.status).toBe("not_configured");
+    status = "auto";
+    await service.collectOnce();
+    status = "not_configured";
+    await service.collectOnce();
+    expect(service.getSummary().nodes[0]?.providers[provider]?.status).toBe("not_configured");
+  });
   it("preserves source observation rather than collector time and wakes after a committed collection", async () => {
     const response = successResponse(16);
     Object.assign(response.data.providers.claude, { source: "claude-api", sourceKind: "remote", observedAt: "2026-07-20T09:59:00.000Z" });
@@ -273,7 +338,7 @@ describe("UsageSummaryService", () => {
     });
   });
 
-  it("refreshes only the target Claude provider and publishes the exact GET snapshot", async () => {
+  it("refreshes the target node providers and publishes the exact GET snapshot", async () => {
     const registry = fakeRegistry(["node-a", "node-b"]);
     registry.getConnectedNode("node-a")!.capabilities = { claude_account_pool_v1: true };
     let refreshedAccounts = [poolAccount("account-a")];
@@ -292,6 +357,7 @@ describe("UsageSummaryService", () => {
           });
           return response;
         }
+        if (command.message.provider) return providerSuccessResponse(command.message.provider, 80);
         return successResponse(node.nodeId === "node-a" ? 20 : 40);
       }),
     } as unknown as UsageSummaryBridge;
@@ -708,6 +774,7 @@ describe("UsageSummaryService", () => {
             ? { type: "provider_usage_result", success: true, data: providerErrorLimits(), provider: "claude" }
             : providerSuccessResponse("claude", 16);
         }
+        if (command.message.provider) return providerSuccessResponse(command.message.provider, 80);
         return successResponse(16);
       }),
     } as unknown as UsageSummaryBridge;

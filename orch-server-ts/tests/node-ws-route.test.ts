@@ -41,6 +41,25 @@ const productionConfig = parseOrchServerConfig({
 
 describe("Node WS Fastify route harness", () => {
   const fixture = loadContractFixtures().fakeNodeReconnect;
+  it("refreshes usage after registration without blocking it when refresh fails", async () => {
+    const { registry } = createRegistry();
+    const transportHub = new NodeCommandTransportHub();
+    const onRegistered = vi.fn(async (nodeId: string) => {
+      expect(transportHub.listAttached().some((entry) => entry.nodeId === nodeId)).toBe(true);
+      throw new Error("usage unavailable");
+    });
+    const app = createApp({ config: explicitTestConfig, nodeWsRoute: { registry, nodeCredentials: null, transportHub, onRegistered } });
+    await app.ready();
+    const ws = await injectAuthenticatedWs(app);
+    const ack = waitForMessage(ws);
+    ws.send(JSON.stringify(fixture.registration));
+    expect(await ack).toContain("node_register_ack");
+    await waitFor(() => onRegistered.mock.calls.length === 1);
+    expect(onRegistered).toHaveBeenCalledWith("fake-node");
+    expect(registry.getConnectedNode("fake-node")).toBeDefined();
+    ws.terminate();
+    await app.close();
+  });
   const releaseManifest = {
     schema_version: 1,
     manifest_id: "manifest-1",

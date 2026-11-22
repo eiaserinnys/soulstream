@@ -72,6 +72,7 @@ export type NodeWsRouteOptions = {
   /** Consecutive unanswered control pings before the lane is terminated (default 2). */
   controlPingMissLimit?: number;
   releaseActivationReceipts?: ReleaseActivationReceiptStore;
+  onRegistered?: (nodeId: string) => Promise<unknown>;
 };
 
 export type NodeWsRouteSecurity = {
@@ -144,6 +145,9 @@ export function registerNodeWsRoute(
       const controller = new NodeWsFrameController({
         registry: options.registry,
         principal,
+        onRegistered: options.onRegistered,
+        onRegistrationRefreshError: (nodeId, error) =>
+          app.log.warn({ nodeId, err: error }, "Initial node usage refresh failed"),
       });
       const transport: NodeCommandTransport = {
         send: (data) => socket.send(data),

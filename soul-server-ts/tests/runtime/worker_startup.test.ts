@@ -1,8 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { startWorkerRuntime } from "../../src/runtime/worker_startup.js";
+import { configureWorkerClaudeExecutable, startWorkerRuntime } from "../../src/runtime/worker_startup.js";
+import { parseEnv } from "../../src/config.js";
 
 describe("worker startup ordering", () => {
+  it("prepares a codex-only worker without a Claude executable", async () => {
+    const env = parseEnv({ SOULSTREAM_NODE_ID: "test", SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node", EVENT_OUTBOX_DIR: "/tmp/outbox", SOULSTREAM_BACKENDS: "codex" });
+    expect(configureWorkerClaudeExecutable(env.SOULSTREAM_BACKENDS, { PATH: "/missing" }, "linux", { error: vi.fn() })).toBeUndefined();
+    const runtime = { createUpstreamAdapter: () => ({ run: async () => {} }), upstreamRegistrationReady: Promise.resolve() };
+    const listen = vi.fn(async () => {});
+    await startWorkerRuntime({ compose: async () => runtime, listen, logger: { info: vi.fn() }, onUpstreamFailure: vi.fn(), onRunnerRecoveryFailure: vi.fn() });
+    expect(listen).toHaveBeenCalledOnce();
+  });
   it("reaches listen and starts the upstream adapter before an owner-null recovery scan waits for application", async () => {
     const order: string[] = [];
     const info = vi.fn();

@@ -73,6 +73,20 @@ function hangingFetch(): typeof fetch {
 }
 
 describe("ProviderUsageService", () => {
+  it("does not query providers disabled by the worker selection", async () => {
+    const fetchUsage = vi.fn();
+    const service = new ProviderUsageService({
+      enabledBackends: ["codex"],
+      claudeAuth: { fetchUsage } as unknown as ClaudeAuthCommandHandler,
+      antigravity: { cliPath: "/missing/agy", environment: {}, stateDirectory: "/missing" },
+      homeDir: "/missing/test-provider-home",
+    });
+    expect(await service.fetchProvider("claude")).toMatchObject({ status: "not_configured" });
+    expect(await service.fetchProvider("antigravity")).toMatchObject({ status: "not_configured" });
+    expect(await service.fetchProvider("opencode_go")).toMatchObject({ status: "not_configured" });
+    expect(await service.fetchProvider("codex")).toMatchObject({ status: "not_configured" });
+    expect(fetchUsage).not.toHaveBeenCalled();
+  });
   it("updates the process observation memo through provider_usage_get", async () => {
     resetProviderUsageObservationMemo();
     const claudeAuth = {

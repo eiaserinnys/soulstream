@@ -121,6 +121,14 @@ export const EnvSchema = z
      * against the first catalogue snapshot at startup.
      */
     MODEL_CATALOG_GROUPS: z.string().default(""),
+    /** Empty retains every existing backend, including legacy OpenCode presets. */
+    SOULSTREAM_BACKENDS: z.string().default("")
+      .refine((value) => value.split(",").every((item) =>
+        !item.trim() || ["claude", "codex", "antigravity"].includes(item.trim())),
+      "SOULSTREAM_BACKENDS contains an unknown backend")
+      .transform((value): Array<"claude" | "codex" | "antigravity" | "opencode"> =>
+        value.trim() ? value.split(",").map((item) => item.trim()).filter(Boolean) as Array<"claude" | "codex" | "antigravity">
+          : ["claude", "codex", "antigravity", "opencode"]),
     /**
      * 세션 첨부 파일 저장 디렉토리. orch가 WS reverse-proxy로 파일을 전달하면
      * TS 노드는 이 경로 아래에 저장하고 Codex에게 절대경로를 넘긴다.

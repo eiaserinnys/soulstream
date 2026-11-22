@@ -233,18 +233,25 @@ export class UsageSummaryService {
           }
         }
       } else {
-        const claude = await this.fetchNodeProvider(nodeId, "claude");
+        const [claude, codex, antigravity] = await Promise.all([
+          this.fetchNodeProvider(nodeId, "claude"),
+          this.fetchNodeProvider(nodeId, "codex"),
+          node.supportedBackends.includes("antigravity")
+            ? this.fetchNodeProvider(nodeId, "antigravity")
+            : Promise.resolve(previous.providers.antigravity),
+        ]);
         fetchedAt = this.now().toISOString();
-        // A provider-level error is a failed sample: keep the previous value
-        // and its fetchedAt so a manual refresh does not raise the warning.
-        const keepPreviousClaude = claude.status === "error";
+        const fresh = { claude, codex, antigravity };
+        const providers = { ...previous.providers };
+        for (const provider of ["claude", "codex", "antigravity"] as const) {
+          const value = fresh[provider];
+          if (value.status === "error" && previous.providers[provider].status === "auto") continue;
+          providers[provider] = value;
+          if (value.status !== "error") state.providerFetchedAt[provider] = fetchedAt;
+        }
         snapshot = {
-          providers: {
-            ...previous.providers,
-            claude: keepPreviousClaude ? previous.providers.claude : claude,
-          },
+          providers,
         };
-        if (!keepPreviousClaude) state.providerFetchedAt.claude = fetchedAt;
       }
       state.snapshot = snapshot;
       state.disconnectedSince = null;
@@ -397,7 +404,7 @@ export class UsageSummaryService {
       });
       const providerLimits = (provider: UsageSummaryProviderName): ProviderLimits =>
         fresh.get(provider)
-        ?? state.snapshot?.providers[provider]
+        ?? (state.snapshot?.providers[provider].status === "auto" ? state.snapshot.providers[provider] : undefined)
         ?? failedValues.get(provider)
         ?? { ...NOT_CONFIGURED_PROVIDER_LIMITS, status: "error" };
       const snapshot: ProviderUsageSnapshot = {
