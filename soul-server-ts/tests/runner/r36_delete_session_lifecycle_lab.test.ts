@@ -2,7 +2,8 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { RunnerRecoveryStorage } from "../../src/runner/runner_recovery_storage.js";
 
 import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import type { SessionDB } from "../../src/db/session_db.js";
@@ -40,6 +41,9 @@ import {
 const ACTIVE_SESSION = "delete-active";
 const LEGACY_RESIDUE = "1ed01abc-residue";
 const STARTED_AT = Date.parse("2026-09-01T00:00:00.000Z");
+
+const recoveryStorage = new RunnerRecoveryStorage();
+afterAll(async () => { await recoveryStorage.close(); });
 
 describe("R36 delete_session lifecycle lab", () => {
   it("stops an active runner before deletion and converges both new and legacy deleted-session evidence", async () => {
@@ -279,17 +283,20 @@ describe("R36 delete_session lifecycle lab", () => {
       logger,
       spawner: fixture.spawner,
       now: () => now,
+      recoveryStorage,
       sessionGarbageCollector: new RunnerSessionGarbageCollector(
         fixture.stateDirectory,
         1_000,
         logger,
+        undefined,
+        recoveryStorage,
       ),
     });
 
     try {
       const initial = await readRunnerRegistrationSummary(
         fixture.paths.sessionDirectory,
-        { verifyProcessIdentity: true },
+        { verifyProcessIdentity: true, recoveryStorage },
       );
       expect(initial).toMatchObject({
         pid: fixture.historicalPid,
@@ -350,12 +357,13 @@ describe("R36 delete_session lifecycle lab", () => {
       logger,
       spawner: fixture.spawner,
       now: () => STARTED_AT,
+      recoveryStorage,
     });
 
     try {
       const initial = await readRunnerRegistrationSummary(
         fixture.paths.sessionDirectory,
-        { verifyProcessIdentity: true },
+        { verifyProcessIdentity: true, recoveryStorage },
       );
       expect(initial).toMatchObject({
         pid: fixture.historicalPid,

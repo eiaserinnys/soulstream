@@ -81,6 +81,29 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessDispatcher", () => {
+  it.each([
+    { closed: true, closeCommandInFlight: false },
+    { closed: false, closeCommandInFlight: true },
+  ])("does not send consumed-frame or checkpoint acknowledgements after close begins: %o", async (state) => {
+    const send = vi.fn(async () => {});
+    const dispatcher = Object.assign(Object.create(RunnerProcessDispatcher.prototype), {
+      closed: false,
+      closeCommandInFlight: false,
+      connection: { send },
+      options: { logger: { warn: vi.fn() } },
+    }) as RunnerProcessDispatcher;
+
+    await dispatcher["acknowledgeConsumedFrame"](1);
+    await dispatcher["synchronizeChildCheckpoint"](1);
+    expect(send).toHaveBeenCalledTimes(2);
+    send.mockClear();
+    Object.assign(dispatcher, state);
+
+    await dispatcher["acknowledgeConsumedFrame"](2);
+    await dispatcher["synchronizeChildCheckpoint"](2);
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("wakes the runner pump after replay when its IPC connection is attached again", async () => {
     let available = false;
     const store = {
@@ -467,7 +490,6 @@ describe("RunnerProcessDispatcher", () => {
         }),
       },
       connection: { send: responseSent, close: vi.fn() },
-      sendBestEffort: async (frame: unknown) => await responseSent(frame),
     });
 
     const closing = dispatcher.close();

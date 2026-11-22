@@ -1516,7 +1516,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       await this.stoppedRunnerWriter.acknowledgeHostFrame(frameSeq);
       return;
     }
-    await this.sendBestEffort(hostFrameAppliedControlFrame(frameSeq));
+    if (!this.closed && !this.closeCommandInFlight) {
+      await this.sendBestEffort(hostFrameAppliedControlFrame(frameSeq));
+    }
   }
 
   private async synchronizeChildCheckpoint(acknowledgedThrough: number): Promise<void> {
@@ -1527,7 +1529,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       );
       return;
     }
-    if (this.latestConsumedFrameSeq !== undefined) {
+    if (!this.closed && !this.closeCommandInFlight && this.latestConsumedFrameSeq !== undefined) {
       await this.sendBestEffort(hostFrameAppliedControlFrame(this.latestConsumedFrameSeq));
     }
   }

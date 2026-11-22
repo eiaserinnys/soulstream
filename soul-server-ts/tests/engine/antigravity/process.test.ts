@@ -6,20 +6,34 @@ import { describe, expect, it, vi } from "vitest";
 import { AntigravityEventMapper } from "../../../src/engine/antigravity/events.js";
 import { snapshotAntigravityDescendants, cleanUpAntigravityDescendants, launchAntigravityProcess } from "../../../src/engine/antigravity/process.js";
 
-function live(pid: number) {
+type ProcessObservation = { state: "live" | "dead" | "unknown"; detail: string };
+
+function observeProcess(pid: number): ProcessObservation {
   try {
+    let state: string;
     if (process.platform === "darwin") {
-      return !execFileSync("/bin/ps", ["-p", String(pid), "-o", "stat="], { encoding: "utf8" })
-        .trim().startsWith("Z");
+      process.kill(pid, 0);
+      state = execFileSync("/bin/ps", ["-p", String(pid), "-o", "stat="], { encoding: "utf8" }).trim();
+    } else {
+      state = readFileSync(`/proc/${pid}/stat`, "utf8").split(") ").at(-1)!.split(" ")[0]!;
     }
-    return readFileSync(`/proc/${pid}/stat`, "utf8").split(") ").at(-1)!.split(" ")[0] !== "Z";
+    return { state: state.startsWith("Z") ? "dead" : "live", detail: state };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return { state: code === "ENOENT" || code === "ESRCH" ? "dead" : "unknown", detail: code ?? String(error) };
   }
-  catch { return false; }
 }
-async function gone(pid: number) {
-  const deadline = Date.now() + 2000;
-  while (live(pid) && Date.now() < deadline) await new Promise(done => setTimeout(done, 20));
-  expect(live(pid)).toBe(false);
+function mayNeedCleanup(pid: number) {
+  return observeProcess(pid).state !== "dead";
+}
+async function gone(pid: number, observe = observeProcess) {
+  const deadline = performance.now() + 2000;
+  let observation = observe(pid);
+  while (observation.state !== "dead" && performance.now() < deadline) {
+    await new Promise(done => setTimeout(done, 20));
+    observation = observe(pid);
+  }
+  expect(observation.state, `last process observation: ${observation.detail}`).toBe("dead");
 }
 async function detachedSleep() {
   const parent = spawn(process.execPath, ["-e", `
@@ -32,6 +46,27 @@ async function detachedSleep() {
 }
 
 describe("Antigravity process descendants", () => {
+  it("waits through an unknown observation and stops on the observed death", async () => {
+    const observe = vi.fn()
+      .mockReturnValueOnce({ state: "unknown", detail: "EIO" })
+      .mockReturnValueOnce({ state: "dead", detail: "Z" })
+      .mockReturnValueOnce({ state: "live", detail: "S" });
+    await gone(123, observe);
+    expect(observe).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports the last observation when death is not observed by the deadline", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    try {
+      const observe = vi.fn(() => ({ state: "unknown" as const, detail: "EIO" }));
+      const result = expect(gone(123, observe)).rejects.toThrow("EIO");
+      await vi.advanceTimersByTimeAsync(2000);
+      await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps a completed result when Windows tree termination fails", async () => {
     const terminateProcessTree = vi.fn(async (pid: number) => {
       process.kill(-pid, "SIGKILL");
@@ -81,11 +116,12 @@ describe("Antigravity process descendants", () => {
         expect(Number(stat[2])).toBe(pid); // separate PGID
       }
       expect(cleanUpAntigravityDescendants([{ ...child, startTime: "different-starttime" }])).toBe(0);
-      expect(live(pid)).toBe(true);
+      const seen = observeProcess(pid);
+      expect(seen.state, `process observation: ${seen.detail}`).toBe("live");
       expect(cleanUpAntigravityDescendants(snapshot)).toBe(1);
       await gone(pid);
     } finally {
-      if (live(pid)) process.kill(pid, "SIGTERM");
+      if (mayNeedCleanup(pid)) process.kill(pid, "SIGTERM");
       parent.kill("SIGTERM"); await once(parent, "close");
     }
   });
@@ -109,7 +145,7 @@ describe("Antigravity process descendants", () => {
       await gone(pid);
       expect(warn).toHaveBeenCalledWith({ terminatedProcessCount: 1 }, expect.any(String));
     } finally {
-      if (pid && live(pid)) process.kill(pid, "SIGTERM");
+      if (pid && mayNeedCleanup(pid)) process.kill(pid, "SIGTERM");
     }
   });
   it("force-kills a CLI that stays alive after a successful result and keeps the completion", async () => {

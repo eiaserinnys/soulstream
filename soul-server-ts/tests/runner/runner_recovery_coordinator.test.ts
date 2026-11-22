@@ -2,7 +2,7 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import { CLAUDE_BACKGROUND_RUNNER_DEAD_SENTENCE } from
@@ -17,6 +17,7 @@ import { SessionDataHostError } from "../../src/control_plane/session_data_host_
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
 import { RunnerSessionGarbageCollector } from "../../src/runner/runner_session_gc.js";
+import { RunnerRecoveryStorage } from "../../src/runner/runner_recovery_storage.js";
 import { scanRunnerRegistrations, type RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { readRunnerRegistrationSummary } from "../../src/runner/runner_registration_reader.js";
 import {
@@ -42,6 +43,8 @@ import { makeEventPersistenceTestDouble } from
 import { makeDeliveryRepository } from "../task/delivery_repository_test_fake.js";
 
 const RECOVERY_NOW_MS = Date.parse("2026-08-11T00:00:30.000Z");
+const recoveryStorage = new RunnerRecoveryStorage();
+afterAll(async () => { await recoveryStorage.close(); });
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -77,11 +80,12 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       const host = RunnerHostStateStore.open(runnerHostStatePath(fixture.paths.databasePath));
       host.initializeEventCheckpoint({ streamId, sessionId: "session-a", acknowledgedThrough: 1 });
       host.close();
-      const current = await readRunnerRegistrationSummary(fixture.paths.sessionDirectory);
+      const current = await readRunnerRegistrationSummary(fixture.paths.sessionDirectory, { recoveryStorage });
       expect(current.closedTailState).toMatchObject({
         status: "requires_drain", acknowledgedThrough: 1, latestDurableSourceSeq: 2,
       });
       const pending = deferred<void>();
+      const registered = deferred<void>();
       const register = vi.fn((pump: import("../../src/upstream/event_outbox_pump.js").EventOutboxPump) => {
         pump.connect(async (batch) => {
           await pending.promise;
@@ -91,6 +95,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
             events: batch.events.map((event) => ({ source_seq: event.source_seq, event_id: 100 + event.source_seq })),
           });
         });
+        registered.resolve();
         return () => pump.disconnect();
       });
       const drainer = new ClosedRunnerTailDrainer({
@@ -100,7 +105,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       const subject = makeSubject([current], RECOVERY_NOW_MS, [], { closedTailDrainer: drainer });
       await expect(withinBudget(subject.coordinator.scanOnce(), 1_000)).resolves.toBeUndefined();
       expect(drain).toHaveBeenCalledOnce();
-      await vi.waitFor(() => expect(register).toHaveBeenCalledOnce());
+      await registered.promise;
+      expect(register).toHaveBeenCalledOnce();
       await expect(withinBudget(subject.coordinator.scanOnce(), 1_000)).resolves.toBeUndefined();
       expect(drain).toHaveBeenCalledOnce();
       pending.resolve();
@@ -108,7 +114,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect(subject.logger.info).toHaveBeenCalledWith(expect.objectContaining({
         sessionId: "session-a", startAck: 1, endAck: 2, outcome: "acknowledged",
       }), "retired runner tail drain completed");
-      const acknowledged = await readRunnerRegistrationSummary(fixture.paths.sessionDirectory);
+      const acknowledged = await readRunnerRegistrationSummary(fixture.paths.sessionDirectory, { recoveryStorage });
       const after = makeSubject([acknowledged], RECOVERY_NOW_MS, [], {
         closedTailDrainer: {
           drain: async (registration, phaseObservation) =>
@@ -4291,6 +4297,7 @@ function makeSubject(
     hydrate: async (registration) => registration,
     now: () => now,
     markReaped,
+    recoveryStorage,
     ...overrides,
     taskExecutor: {
       recoverRegisteredRunner,
@@ -4566,7 +4573,7 @@ async function releasedTerminalSidecarFixture(options: {
     `${JSON.stringify(completedLifecycle)}\n`,
     { mode: 0o600 },
   );
-  const current = await readRunnerRegistrationSummary(paths.sessionDirectory);
+  const current = await readRunnerRegistrationSummary(paths.sessionDirectory, { recoveryStorage });
   const spawner = new RunnerProcessSpawner({
     prepareDatabase: async () => {},
     validateEntry: async () => {},
