@@ -26,6 +26,7 @@ import { ProjectHeaderAddButton, useCreateProject } from '../screens/ProjectList
 import { SessionFeedScreen } from '../screens/SessionFeedScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { ChatScreen } from '../screens/ChatScreen';
+import { SessionFilesScreen } from '../screens/SessionFilesScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { useSessionsStream } from '../hooks/useSessionsStream';
 import { useNodeConnectivityStream } from '../hooks/useNodeConnectivityStream';
@@ -291,6 +292,7 @@ export type FolderStackParamList = {
   MarkdownDocument: MarkdownDocumentRouteParams;
 };
 export type FeedStackParamList = {
+  SessionFiles: { sessionId: string };
   Feed: undefined;
   Search: { initialQuery?: string } | undefined;
   Chat: {
@@ -585,6 +587,7 @@ function FeedNavigator() {
       <FeedStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드', headerShown: false }} />
       <FeedStack.Screen name="MarkdownDocument" component={PhoneMarkdownDocument} options={{ headerShown: false }} />
       <FeedStack.Screen name="Chat" component={ChatScreen} options={{ ...rootScreenOptions('ChatTab'), gestureEnabled: false, headerShown: !duo }} />
+      <FeedStack.Screen name="SessionFiles" component={SessionFilesScreen} options={{ headerShown: !duo }} />
     </FeedStack.Navigator>
   );
 }

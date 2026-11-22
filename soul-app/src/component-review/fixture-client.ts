@@ -2,6 +2,8 @@ import { useSessionStore } from '../store/sessionStore';
 import type { ApiClient } from '../api/client';
 import { createApiRequestContext } from '../api/clientCore';
 import { createUsageEndpoints } from '../api/usageEndpoints';
+import { createAttachmentEndpoints } from '../api/attachmentEndpoints';
+import { createSessionEndpoints } from '../api/sessionEndpoints';
 import type { FeedPage } from '../api/feedPage';
 import { Alert, Platform, type AlertButton } from 'react-native';
 import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
@@ -425,8 +427,11 @@ export function createCardColorReviewClient(mode: CardColorReviewMode = 'success
 export function createApiClient(baseUrl = ''): ApiClient {
   const section = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('section') : null;
   const usageEndpoints = createUsageEndpoints(createApiRequestContext(baseUrl));
+  const context = createApiRequestContext(baseUrl);
+  const fileEndpoints = { ...createAttachmentEndpoints(context), getSessionWorkspace: createSessionEndpoints(context).getSessionWorkspace };
   if (section === 'attachments' || section === 'cardImages') return createAttachmentReviewApi();
-  if (section === 'chatUiRenderer') return createChatUiFlowReviewApi(window.location.search);
+  if (section === 'chatUiRenderer') return { ...createChatUiFlowReviewApi(window.location.search), ...fileEndpoints } as ApiClient;
+  if (section === 'sessionFiles') return { ...api, ...fileEndpoints } as unknown as ApiClient;
   if (section === 'contentLinks' || section === 'contentLinkDocument') {
     const value = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('documentState');
     const state = value === 'loading' || value === 'slow' || value === 'error' ? value : 'ready';

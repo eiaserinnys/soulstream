@@ -92,7 +92,10 @@ test('session이 있는 phone Chat header menu는 44×44 touch target과 기존 
   expect(options.headerRight).toEqual(expect.any(Function));
 
   const header = render(React.createElement(options.headerRight));
+  const files = header.getByLabelText('세션 파일');
   const menu = header.getByLabelText('세션 메뉴');
+  fireEvent.press(files);
+  expect(navigation.navigate).toHaveBeenCalledWith('SessionFiles', { sessionId: 'session-1' });
   const style = StyleSheet.flatten(menu.props.style);
   expect(style.minWidth).toBeGreaterThanOrEqual(44);
   expect(style.minHeight).toBeGreaterThanOrEqual(44);
@@ -326,10 +329,13 @@ test('Chat focus hides the parent tab bar for keyboard events and restores it on
 });
 
 test('듀오 세션 메뉴는 접히는 action 대신 menu 성격으로 등록한다', () => {
+  const navigate = jest.fn();
   const screen = render(<DuoSideBandContext.Provider value><PhonePanelHistoryProvider>
     <ChatScreen route={{ key: 'chat-menu', name: 'Chat', params: { sessionId: 'session-1' } } as any}
-      navigation={{ getParent: jest.fn(), navigate: jest.fn(), setOptions: jest.fn(), setParams: jest.fn() } as any} />
+      navigation={{ getParent: jest.fn(), navigate, setOptions: jest.fn(), setParams: jest.fn() } as any} />
   </PhonePanelHistoryProvider></DuoSideBandContext.Provider>);
   expect(usePhoneRailActions.getState().overrides.at(-1)?.actions.find(action => action.id === 'menu')?.kind).toBe('menu');
+  act(() => usePhoneRailActions.getState().overrides.at(-1)?.actions.find(action => action.id === 'files')?.onPress());
+  expect(navigate).toHaveBeenCalledWith('SessionFiles', { sessionId: 'session-1' });
   screen.unmount();
 });
