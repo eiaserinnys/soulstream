@@ -32,6 +32,9 @@
   --v3-live: var(--success);
   --v3-favorite: var(--warning);
   --v3-error: var(--destructive);
+  --v3-file-read: var(--color-accent-purple);
+  --v3-file-write: var(--color-accent-orange);
+  --v3-file-commit: var(--color-accent-green);
   --v3-complete: var(--info);
   --v3-progress-complete: var(--success);
   --v3-task-state-column: 156px;

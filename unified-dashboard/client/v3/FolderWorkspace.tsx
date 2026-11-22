@@ -20,6 +20,8 @@ import {
   type RunSessionLoadState,
   workspaceSplitForKey,
 } from "./folder-workspace-run-model";
+import { SessionFilesPane } from "./SessionFilesPanel";
+import { useSessionFilesToggle } from "./use-session-files-toggle";
 import { FolderDetailPane } from "./FolderDetailPane";
 import type { FolderSectionFocusRequest } from "./FolderSectionNavigation";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
@@ -118,6 +120,7 @@ export function FolderWorkspace({
   markdownDocumentsRevision: number;
   onMarkdownDocumentEditorClosed(): void;
 }) {
+  const files = useSessionFilesToggle();
   const workspaceRef = useRef<HTMLDivElement>(null);
   const chatSurfaceRef = useRef<HTMLElement>(null);
   const draggingPointer = useRef<number | null>(null);
@@ -204,9 +207,10 @@ export function FolderWorkspace({
           ref={workspaceRef}
           className="v3-workspace is-chat-open"
           data-mobile-view={mobileMode ? mobileTab : undefined}
+          data-mobile-files={mobileMode && mobileTab === "chat" && files.open ? "true" : undefined}
           style={!mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 8px)) 16px minmax(0, 1fr)` } : undefined}
         >
-          <section className="v3-detail-pane border border-glass-border glass-strong glass-chrome lg-rim" data-testid="v3-standalone-task-empty" aria-label="빈 폴더 창">
+          <div className={files.open && activeSession ? "v3-files-detail-hidden" : "v3-files-detail-visible"}><section className="v3-detail-pane border border-glass-border glass-strong glass-chrome lg-rim" data-testid="v3-standalone-task-empty" aria-label="빈 폴더 창">
             <header className="v3-workspace-toolbar">
               <strong>폴더</strong>
               <span className="v3-spacer" />
@@ -220,7 +224,8 @@ export function FolderWorkspace({
                 ? "폴더 귀속을 다시 확인해 주세요. 이 세션의 채팅은 그대로 확인할 수 있습니다."
                 : "이 세션의 채팅은 그대로 확인할 수 있습니다."}</p>
             </div>
-          </section>
+          </section></div>
+          {files.open && activeSession && <SessionFilesPane sessionId={activeSession.agentSessionId} onClose={files.close}/>}
           {divider("폴더와 채팅 너비 조절")}
           <section
             ref={chatSurfaceRef}
@@ -230,7 +235,7 @@ export function FolderWorkspace({
             aria-label="세션 채팅"
           >
             <SessionPanelHeader session={activeSession} streamActive={sessionStreamActive}
-                connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} emptyTitle="세션" onClose={onCloseWorkspace}/>
+                connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} emptyTitle="세션" filesOpen={files.open} onToggleFiles={files.toggle} onClose={onCloseWorkspace}/>
             {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
             <div className="v3-chat-content">
               {activeSession ? <PersistentSessionChatView sessionId={activeSession.agentSessionId} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled} /> : <div className="v3-chat-empty"><strong>세션을 찾을 수 없습니다.</strong></div>}
@@ -247,9 +252,10 @@ export function FolderWorkspace({
         ref={workspaceRef}
         className={`v3-workspace${chatOpen ? " is-chat-open" : ""}`}
         data-mobile-view={mobileMode ? mobileTab : undefined}
+          data-mobile-files={mobileMode && mobileTab === "chat" && files.open ? "true" : undefined}
         style={chatOpen && !mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 8px)) 16px minmax(0, 1fr)` } : undefined}
       >
-        <FolderDetailPane
+        <div className={files.open && activeSession && chatOpen ? "v3-files-detail-hidden" : "v3-files-detail-visible"}><FolderDetailPane
           task={visibleTitle === task.page.title ? task : { ...task, page: { ...task.page, title: visibleTitle } }}
           folderSections={folderSections}
           parentFolder={parentFolder}
@@ -282,7 +288,8 @@ export function FolderWorkspace({
 
           onFolderBlocksChanged={onFolderBlocksChanged}
           onArchiveFolder={onArchiveFolder}
-        />
+        /></div>
+        {files.open && activeSession && chatOpen && <SessionFilesPane sessionId={activeSession.agentSessionId} onClose={files.close}/>}
         {chatOpen ? (
           <>
             {divider("상세와 채팅 너비 조절")}
@@ -293,7 +300,7 @@ export function FolderWorkspace({
               aria-label="세션 채팅"
             >
               <SessionPanelHeader session={activeSession} streamActive={sessionStreamActive}
-                connectionStatus={sessionConnectionStatus} reconnect={reconnectSession}/>
+                connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} filesOpen={files.open} onToggleFiles={files.toggle}/>
               {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
               <div className="v3-chat-content">
                 {activeSession ? (

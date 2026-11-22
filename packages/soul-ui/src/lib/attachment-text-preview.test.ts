@@ -20,6 +20,16 @@ function rangedResponse(
 describe("attachment text preview", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("discovers an unknown size with a range request before reading the file", async () => {
+    const bytes = new TextEncoder().encode("hello");
+    const request = vi.fn().mockResolvedValueOnce(rangedResponse(bytes.slice(0, 1), bytes.length))
+      .mockResolvedValueOnce(rangedResponse(bytes, bytes.length));
+    vi.stubGlobal("fetch", request);
+    await expect(readAttachmentText({ url: "/workspace/file", byteSize: null })).resolves.toMatchObject({ text: "hello", bytesRead: 5 });
+    expect(request.mock.calls[0][1].headers.Range).toBe("bytes=0-0");
+    expect(request.mock.calls[1][1].headers.Range).toBe("bytes=0-4");
+  });
+
   it("does not fetch an empty attachment", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Button, DashboardIconCap, FrameLoading, FrameNotice, LiquidGlassProvider, PersistentSessionPortraitIcon, PersistentSessionPortraitOffIcon, SwayCharacter, createChatSessionStore, initTheme, nextUsageSummaryNodeId, useAuth, useDashboardStore, useInitialCatalogLoad, useIsMobile, useSessionProvider, useUserPreferencesSync, type SessionReviewAcknowledgeResult, type SessionSummary } from '@seosoyoung/soul-ui';
-import { ArrowLeft, ListTodo, X } from 'lucide-react';
+import { Button, DashboardIconCap, FrameLoading, FrameNotice, LiquidGlassProvider, PersistentSessionPortraitIcon, PersistentSessionPortraitOffIcon, SessionHeaderPill, SwayCharacter, createChatSessionStore, initTheme, nextUsageSummaryNodeId, useAuth, useDashboardStore, useInitialCatalogLoad, useIsMobile, useSessionProvider, useUserPreferencesSync, type SessionReviewAcknowledgeResult, type SessionSummary } from '@seosoyoung/soul-ui';
+import { ArrowLeft, FolderOpen, ListTodo, X } from 'lucide-react';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import { usePersistentSessionDetailsController } from '../components/PersistentSessionDetails';
 import { usePersistentSessionGeometry } from './use-persistent-session-geometry';
@@ -28,6 +28,8 @@ import { useMobilePlannerMode } from './MobilePlannerTabs';
 import type { MobilePlannerTab } from './mobile-planner-state';
 import type { CardSessionSelection } from './CardSessionHistory';
 import { InternalLinkViewers } from './InternalLinkViewers';
+import { SessionFilesPane } from './SessionFilesPanel';
+import { useSessionFilesToggle } from './use-session-files-toggle';
 import { useRegisterDashboardLinkOpeners } from './DashboardInternalLinks';
 import { V3_CARD_GAP_PX, V3_PANEL_GAP_PX, V3_OUTER_INSET_PX } from './v3-layout-metrics';
 import './v3-dashboard-styles';
@@ -60,6 +62,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   const [configOpen, setConfigOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const files = useSessionFilesToggle();
   const isMobile = useIsMobile();
   const mobileMode = useMobilePlannerMode();
   const [mobileTab, setMobileTab] = useState<MobilePlannerTab>('today');
@@ -333,6 +336,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     style={{ ...shellStyle, '--pas-usage-height': `${usageHeight}px`, '--pas-baseline-bottom': geometry ? `calc(100% - ${geometry.lineY}px)` : undefined } as CSSProperties} data-testid="persistent-session-screen">
     <V3GlobalToolbar headerRef={headerRef} variant="minimal" appearance="bare" sessionName={resource?.display_name ?? undefined} agentName={resource?.agent_name ?? undefined} agentOnly={isMobile} showHome={!isMobile} onOpenHome={() => navigateDashboard('/')} onOpenConfig={() => setSettingsOpen(true)}
       sessionSwitch={sessionId ? <PersistentSessionSwitch sessions={listing?.sessions ?? []} currentSessionId={sessionId}/> : undefined}
+      sessionAction={sessionId ? <SessionHeaderPill aria-pressed={files.open} onClick={files.toggle}><FolderOpen className="size-3.5" aria-hidden="true"/>파일</SessionHeaderPill> : undefined}
       showWeeklyUsage={sessionId && usageAvailable && user?.email ? showWeeklyUsage : undefined}
       onToggleUsage={sessionId && usageAvailable && user?.email ? toggleWeeklyUsage : undefined}/>
     <main ref={mainRef} className="persistent-session-main">
@@ -341,8 +345,9 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
       {frameReady && <PersistentSessionChatView key={sessionId} sessionId={sessionId!} showReport reportSeat={{ ready: geometry !== null && (!geometry.reportBubble || reportTarget !== null), inlineWidth: geometry?.mainWidth, inlineMaxHeight: geometry?.reportInlineMaxHeight, target: reportTarget, layout: geometry?.reportBubble ?? null, body: geometry?.body ?? null }} presentation="manuscript" composerAnchorRef={composerAnchorRef} chatInputDisabled={disabled} fileUploadUrl={chatReady && !disabled && activeSessionSummary?.nodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSessionSummary.nodeId)}` : undefined} historyEnabled={chatReady && stream.synchronizedSessionKey === activeSessionKey} loadDisplaySettings={chatReady} transcriptFallbackLayout={error || streamErrorHeld ? "content" : "fill"} transcriptFallback={error ? errorContent : (!chatReady || stream.synchronizedSessionKey !== activeSessionKey) ? streamErrorHeld ? <SessionStreamStatus active status="error" reconnect={reconnectStream}/> : <FrameLoading label="대화를 불러오는 중" /> : undefined} showRuntimeStrips={!isMobile && showWorkDetails}/>}
     </main>
     {frameReady && <>
-      {!tasksOpen && <div className="persistent-session-task-toggle"><DashboardIconCap appearance="bare" label="작업 목록" disabled={!chatReady || Boolean(error)} aria-expanded={tasksOpen} onClick={() => setTasksOpen(value => !value)}><ListTodo className="size-5" strokeWidth={1.4} absoluteStrokeWidth/></DashboardIconCap></div>}
-      {tasksOpen && <aside className={`persistent-session-tasks${selectedCardId ? ' is-card-open' : ''}`} aria-label="작업">
+      {!tasksOpen && !files.open && <div className="persistent-session-task-toggle"><DashboardIconCap appearance="bare" label="작업 목록" disabled={!chatReady || Boolean(error)} aria-expanded={tasksOpen} onClick={() => setTasksOpen(value => !value)}><ListTodo className="size-5" strokeWidth={1.4} absoluteStrokeWidth/></DashboardIconCap></div>}
+      {files.open && sessionId && <aside className="persistent-session-tasks v3-session-files-seat"><SessionFilesPane sessionId={sessionId} onClose={files.close}/></aside>}
+      {tasksOpen && !files.open && <aside className={`persistent-session-tasks${selectedCardId ? ' is-card-open' : ''}`} aria-label="작업">
         <div className="persistent-session-task-head">
           {selectedCardId ? <DashboardIconCap appearance="bare" label="작업 목록으로" onClick={() => setSelectedCardId(null)}><ArrowLeft className="size-5" strokeWidth={1.4} absoluteStrokeWidth/></DashboardIconCap> : <h2>작업</h2>}
           <DashboardIconCap appearance="bare" label="작업 목록 닫기" onClick={() => setTasksOpen(false)}><X className="size-5" strokeWidth={1.4} absoluteStrokeWidth/></DashboardIconCap>

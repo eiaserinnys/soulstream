@@ -119,7 +119,7 @@ export function AttachmentViewer({
       ? Promise.reject(new Error("Attachment is unavailable"))
       : localFile
         ? readLocalAttachmentText(localFile, controller.signal)
-        : item.previewUrl !== null && item.byteSize !== null
+        : item.previewUrl !== null
           ? readAttachmentText({ url: item.previewUrl, byteSize: item.byteSize, signal: controller.signal })
           : Promise.reject(new Error("Attachment preview metadata is unavailable"));
 

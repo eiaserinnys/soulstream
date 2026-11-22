@@ -1,3 +1,4 @@
+import { SessionFilesPanel } from "./SessionFilesPanel";
 import {CardCreateSample} from "./CardCreateSample";
 import { SessionMenuProvider } from "./SessionMenuProvider";
 import { SessionMenuReviewSample } from "./SessionMenuReviewSample";
@@ -22,7 +23,7 @@ import { FolderDescriptionPanel } from "./FolderDescriptionPanel";
 import { FolderTodayToggle } from "./FolderTodayToggle";
 import { ComponentsReviewControls } from "./ComponentsReviewControls";
 import { ProjectNavigationTree } from "./ProjectNavigationTree";
-import { reviewCard, reviewCardItems, reviewDeliveryFailureMessages, reviewDetail, reviewFolder, reviewFolders, reviewNow, reviewSession, reviewTitle } from "./components-review-fixtures";
+import { reviewCard, reviewCardItems, reviewDeliveryFailureMessages, reviewDetail, reviewFolder, reviewFolders, reviewNow, reviewSession, reviewSessionFiles, reviewTitle } from "./components-review-fixtures";
 import "./components-review.css";
 import { PostItCardSamples } from "./PostItCardSamples";
 import { ReadOnlyCardListSample } from "./ReadOnlyCardListSample";
@@ -293,6 +294,17 @@ export function ComponentsReviewPage() {
           </section>
           <section id="components-heads" className="v3-detail-section">
             <div className="v3-components-samples">
+            <Sample name="SessionFilesPanel" state="준비 · 첫 조회 · 노드 끊김 · Git 아님 · 실패 · 긴 이름">
+              <div className="v3-components-panel-pair v3-session-files-review-grid">{(["ready", "loading", "offline", "not-git", "error", "long"] as const).map(scene => {
+                const data = scene === "loading" || scene === "error" ? null : {
+                  ...reviewSessionFiles,
+                  node: { ...reviewSessionFiles.node, status: scene === "offline" ? "offline" as const : "ok" as const },
+                  snapshot: reviewSessionFiles.snapshot && { ...reviewSessionFiles.snapshot, state: scene === "not-git" ? "not_git" as const : "ready" as const, ...(scene === "not-git" ? { branch: null, upstream: null, ahead: 0, behind: 0 } : {}) },
+                  files: scene === "not-git" ? [] : scene === "long" ? [{ ...reviewSessionFiles.files[0], path: "아주-긴-폴더-이름/매우-긴-파일-이름을-좁은-화면에서도-확인하는-예제.ts" }] : reviewSessionFiles.files,
+                };
+                return <section key={scene} className="v3-detail-pane v3-session-files-pane border border-glass-border glass-strong glass-chrome lg-rim" data-session-files-scene={scene}><SessionFilesPanel sessionId="components-session" data={data} loading={scene === "loading"} error={scene === "error"} onRefresh={() => {}} onClose={() => {}}/></section>;
+              })}</div>
+            </Sample>
             <Sample name="FolderPanelHeader / SessionPanelHeader" state="운영 머리와 첫 본문 · 긴 제목 · 모델 · 상태 · 스토리">
               <div className="v3-components-panel-pair" data-testid="components-panel-headers">
                 <article className="v3-detail-pane">
@@ -311,7 +323,7 @@ export function ComponentsReviewPage() {
                 </article>
                 <section className="v3-chat-pane">
                   <SessionPanelHeader session={{...reviewSession,displayName:reviewTitle,modelLabel:"Claude Opus",modelPreset:"qa-opus",backend:"claude"}}
-                    streamActive connectionStatus="connected" reconnect={() => open("다시 연결")} onClose={() => open("닫기")}/>
+                    streamActive connectionStatus="connected" reconnect={() => open("다시 연결")} filesOpen={false} onToggleFiles={() => open("파일")} onClose={() => open("닫기")}/>
                   <div className="v3-chat-content"><AssistantMessage portraitUrl="/system-portrait.png"
                     msg={{id:"header-first-message",role:"assistant",treeNodeId:"header-first-message",treeNodeType:"text",content:"머리 아래 첫 채팅입니다. 구분선 양쪽 여백을 함께 확인합니다."}}/></div>
                 </section>

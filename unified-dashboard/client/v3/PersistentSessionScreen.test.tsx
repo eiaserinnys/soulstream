@@ -23,7 +23,7 @@ vi.mock('../dashboard-navigation',()=>({navigateDashboard:(...args:any[])=>mocks
 vi.mock('./use-v3-live-data-plane',()=>({useV3LiveDataPlane:vi.fn()}));
 vi.mock('../hooks/useNodes',()=>({useNodes:vi.fn()}));
 vi.mock('./use-session-node-connectivity',()=>({useSessionNodeConnectivity:()=>({nodes:new Map([['node-1',{status:'connected'}]])})}));
-vi.mock('./V3GlobalToolbar',()=>({V3GlobalToolbar:(p:any)=> <header data-testid="v3-global-toolbar" data-agent-only={String(p.agentOnly)} data-show-home={String(p.showHome)} data-agent-name={p.agentName}><span data-testid="scene-title">{p.agentName}</span>{p.sessionSwitch}{p.showHome&&<button aria-label="홈" onClick={p.onOpenHome}/>} {p.onToggleUsage&&<button data-testid="usage-toggle" aria-pressed={p.showWeeklyUsage} onClick={p.onToggleUsage}>주간 사용량</button>}<button onClick={p.onOpenConfig}>PAS 설정</button></header>}));
+vi.mock('./V3GlobalToolbar',()=>({V3GlobalToolbar:(p:any)=> <header data-testid="v3-global-toolbar" data-agent-only={String(p.agentOnly)} data-show-home={String(p.showHome)} data-agent-name={p.agentName}><span data-testid="scene-title">{p.agentName}</span>{p.sessionSwitch}{p.showHome&&<button aria-label="홈" onClick={p.onOpenHome}/>} {p.sessionAction}{p.onToggleUsage&&<button data-testid="usage-toggle" aria-pressed={p.showWeeklyUsage} onClick={p.onToggleUsage}>주간 사용량</button>}<button onClick={p.onOpenConfig}>PAS 설정</button></header>}));
 vi.mock('../hooks/useUsageSummary', async()=>{
  const {selectUsageSummaryNode,weeklyUsageGauges}=await vi.importActual<typeof import('@seosoyoung/soul-ui')>('@seosoyoung/soul-ui');
  return {useUsageSummary:(options:any)=>{
@@ -124,6 +124,18 @@ it('keeps the usage toggle visible while switching PAS before chat is ready',asy
 it('does not show the PAS switch for a single session',async()=>{
  mocks.list.mockResolvedValue({sessions:[session('one')]});await mount('one');
  expect(host.querySelector('[data-testid="persistent-session-switch"]')).toBeNull();
+});
+it('opens files in the PAS task seat and restores the task list on close',async()=>{
+ mocks.list.mockResolvedValue({sessions:[session('one')]});await mount('one');
+ await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="작업 목록"]')!.click());
+ const {reviewSessionFiles}=await import('./components-review-fixtures');
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({...reviewSessionFiles,session_id:'one'}),{status:200,headers:{'Content-Type':'application/json'}})));
+ const button=[...host.querySelectorAll('button')].find(el=>el.textContent?.trim()==='파일')!;
+ await act(async()=>button.click());
+ expect(host.querySelector('.v3-session-files-seat .v3-session-files-pane')?.textContent).toContain('outbox_retry.ts');
+ expect(host.querySelector('.persistent-session-task-scroll')).toBeNull();
+ await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="파일 닫기"]')!.click());
+ expect(host.querySelector('.persistent-session-task-scroll')).not.toBeNull();
 });
 it('seeds the active display settings from its PAS list before opening chat',async()=>{
  mocks.list.mockResolvedValue({sessions:[session('one'),session('two')]});await mount('two');
