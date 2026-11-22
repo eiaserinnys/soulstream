@@ -1,5 +1,5 @@
 import { BookOpenText, ChevronDown } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState, type ComponentProps } from "react";
+import { forwardRef, useCallback, useEffect, useId, useRef, useState, type ComponentPropsWithoutRef } from "react";
 
 import { cn } from "../lib/cn";
 import { FrameLoading } from "./FrameLoading";
@@ -10,9 +10,9 @@ import {
 import { Button } from "./ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 
-export function SessionHeaderPill({ className, ...props }: ComponentProps<typeof Button>) {
-  return <Button variant="ghost" className={cn("h-8 gap-1.5 rounded-full border border-glass-border bg-input/60 px-2.5 text-xs sm:text-xs font-semibold text-muted-foreground hover:bg-input hover:text-foreground aria-pressed:bg-input aria-pressed:text-foreground", className)} {...props}/>;
-}
+export const SessionHeaderPill = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<"button">>(function SessionHeaderPill({ className, ...props }, ref) {
+  return <button ref={ref} type="button" className={cn("inline-flex h-8 items-center gap-1.5 rounded-full border border-glass-border bg-input/60 px-2.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-input hover:text-foreground aria-pressed:bg-input aria-pressed:text-foreground", className)} {...props}/>;
+});
 
 export function SessionStoryDisclosure({
   className,

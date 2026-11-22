@@ -27,6 +27,7 @@ delete legacyReviewDetail.nowHistory;
 /** The actual board and card, with fixture-only state and no operational writes. */
 export function CardBoardSamples() {
   const queryClient=useQueryClient();
+  const filesReview = new URLSearchParams(window.location.search).get("filesReview") === "1";
   const [scope,setScope]=useState<"folder"|"all">("folder");
   const [mode,setMode]=useState<"board"|"grid">("board");
   const [scenario,setScenario]=useState<"mixed"|"none"|"done"|"empty">("mixed");
@@ -133,7 +134,7 @@ export function CardBoardSamples() {
       folders={reviewFolders} onClose={()=>setSelected(null)} onCloseChat={()=>setMobileTab("today")} onOpenSession={(session,selection)=>{
         activateRunSession(session,useDashboardStore.getState());setSelectedSession(session);if(selection?.source!=='automatic')setMobileTab("chat");
       }}
-      mobileMode={mobileMode} mobileTab={mobileTab} activeSession={selectedSession} chatInputDisabled historyEnabled={false} sessionStreamActive={false}
+      mobileMode={mobileMode} mobileTab={mobileTab} activeSession={selectedSession} chatInputDisabled={!filesReview} historyEnabled={filesReview} sessionStreamActive={false}
       sessionConnectionStatus="disconnected" reconnectSession={()=>{}} onAcknowledgedReview={()=>{}}/>:null}
     {mobileTabsHost?createPortal(<MobilePlannerTabs activeTab={mobileTab} onSelect={setMobileTab}/>,mobileTabsHost):null}
   </div>;

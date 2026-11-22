@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, DashboardIconCap, FrameLoading, type ChatSessionStoreScope } from "@seosoyoung/soul-ui";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Button, DashboardIconCap, FrameLoading, formatWorkspaceTime, type ChatSessionStoreScope } from "@seosoyoung/soul-ui";
 import { AttachmentViewer } from "@seosoyoung/soul-ui/components/AttachmentViewer";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import type { SessionWorkspaceResponse } from "../../../packages/wire-schema/src/session_workspace";
@@ -48,7 +48,7 @@ export function useSessionFiles(sessionId: string, turnKey?: string | number | n
 
 function activity(file: Entry): "read" | "write" | "commit" | "none" {
   if (!("wrote" in file)) return "read";
-  return file.committed && !file.git_status ? "commit" : file.wrote ? "write" : file.read ? "read" : "none";
+  return file.committed ? "commit" : file.wrote ? "write" : file.read ? "read" : "none";
 }
 function grouped(files: Entry[]) {
   const groups = new Map<string, Entry[]>();
@@ -65,14 +65,16 @@ function asAttachment(sessionId: string, file: Entry): ChatAttachmentItem {
   return { key: file.path, name, mimeType: null, byteSize: file.size, previewKind: image ? "image" : "text", availability: "ready", previewUrl: url, originalUrl: `${url}&download=true`, legacySources: [], source: { kind: "unavailable", path: file.path, context: { type: "session", id: sessionId } } };
 }
 
-export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, onClose, focusOnMount = false }: {
-  sessionId: string; data: SessionWorkspaceResponse | null; loading: boolean; error: boolean; onRefresh(): void; onClose(): void; focusOnMount?: boolean;
+export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, onClose, focusOnMount = false, scrollTop = 0, onScroll }: {
+  sessionId: string; data: SessionWorkspaceResponse | null; loading: boolean; error: boolean; onRefresh(): void; onClose(): void; focusOnMount?: boolean; scrollTop?: number; onScroll?(position: number): void;
 }) {
   const [showRead, setShowRead] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [trigger, setTrigger] = useState<HTMLElement | null>(null);
   const refreshRef = useRef<HTMLButtonElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (focusOnMount) refreshRef.current?.focus({ preventScroll: true }); }, [focusOnMount]);
+  useLayoutEffect(() => { if (data && scrollRef.current) scrollRef.current.scrollTop = scrollTop; }, [data?.session_id, data?.snapshot?.state, Boolean(data), scrollTop]);
   useEffect(() => { setShowRead(false); setSelected(null); }, [sessionId]);
   const changed = data?.files ?? [];
   const readOnly = data?.read_only ?? [];
@@ -104,14 +106,14 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
       <DashboardIconCap ref={refreshRef} size="small" label="다시 읽기" onClick={onRefresh}><RefreshCw className={`h-4 w-4${busy ? " animate-spin" : ""}`} aria-hidden="true"/></DashboardIconCap>
       <DashboardIconCap size="small" label="파일 닫기" onClick={onClose}><X className="h-4 w-4" aria-hidden="true"/></DashboardIconCap></div>
     </header>
-    <div className="v3-session-panel-scroll v3-session-files-body">
-      {data?.node.status === "offline" && <div className="v3-session-files-notice" role="status"><WifiOff className="h-4 w-4" aria-hidden="true"/>노드 끊김{data.snapshot?.observed_at && ` · ${new Date(data.snapshot.observed_at).toLocaleString()} 기준`}</div>}
-      {error || data?.node.status === "error" ? <div className="v3-session-files-notice" role="alert">파일을 불러오지 못했습니다. <Button size="sm" variant="outline" onClick={onRefresh}>다시 시도</Button></div>
+    <div ref={scrollRef} onScroll={event => onScroll?.(event.currentTarget.scrollTop)} className="v3-session-panel-scroll v3-session-files-body">
+      {data?.node.status === "offline" && <div className="v3-session-files-notice" role="status"><WifiOff className="h-4 w-4" aria-hidden="true"/>노드 끊김{data.snapshot?.observed_at && ` · ${formatWorkspaceTime(data.snapshot.observed_at)} 기준`}</div>}
+      {error || data?.node.status === "error" ? <div className="v3-session-files-notice" role="alert"><span data-slot="dialog-error-message">파일을 불러오지 못했습니다.</span> <Button size="sm" variant="outline" onClick={onRefresh}>다시 시도</Button></div>
         : data?.node.status === "unsupported" ? <p>이 노드는 파일 보기를 지원하지 않습니다.</p>
         : data?.node.status === "no_workspace" ? <p>작업 폴더가 없습니다.</p>
         : initial && data?.node.status !== "offline" ? <FrameLoading label="파일 상태를 읽는 중"/>
         : <>
-          {data?.snapshot?.state === "not_git" && <div className="v3-session-files-notice">Git 폴더가 아닙니다.</div>}
+          {data?.snapshot?.state === "not_git" && <div className="v3-session-files-notice">Git 작업 폴더가 아닙니다</div>}
           <nav className="v3-nav-list v3-session-files-list" aria-label="세션 파일">
             {data?.attribution === "partial" && readOnly.length === 0 && <p title="이 엔진은 읽은 파일을 일부만 기록합니다">읽음 일부</p>}
             {changed.length ? tree(changed) : data?.snapshot?.state !== "not_git" && <p>바뀐 파일 없음</p>}
@@ -123,8 +125,8 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
   </>;
 }
 
-export function SessionFilesPane({ sessionId, storeScope, onClose }: { sessionId: string; storeScope?: ChatSessionStoreScope; onClose(): void }) {
+export function SessionFilesPane({ sessionId, storeScope, onClose, scrollTop, onScroll }: { sessionId: string; storeScope?: ChatSessionStoreScope; onClose(): void; scrollTop?: number; onScroll?(position: number): void }) {
   const turnKey = useSessionFilesTurn(sessionId, storeScope);
   const state = useSessionFiles(sessionId, turnKey);
-  return <section onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="v3-detail-pane v3-session-files-pane border border-glass-border glass-strong glass-chrome lg-rim" aria-label="세션 파일"><SessionFilesPanel sessionId={sessionId} {...state} onRefresh={state.refresh} onClose={onClose} focusOnMount/></section>;
+  return <section onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="v3-detail-pane v3-session-files-pane border border-glass-border glass-strong glass-chrome lg-rim" aria-label="세션 파일"><SessionFilesPanel sessionId={sessionId} {...state} onRefresh={state.refresh} onClose={onClose} scrollTop={scrollTop} onScroll={onScroll} focusOnMount/></section>;
 }

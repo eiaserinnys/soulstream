@@ -4,8 +4,9 @@
 .v3-session-files-title > span { flex: none; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
 .v3-session-files-skeleton { width: calc(var(--v3-space-8) * 2); height: var(--v3-space-4); background: var(--muted); border-radius: var(--radius-pill); }
 .v3-session-panel-scroll.v3-session-files-body { display: flex; flex: 1; flex-direction: column; min-height: 0; gap: var(--v3-space-3); overflow-y: auto; padding: var(--v3-space-3) var(--v3-space-3) var(--v3-space-5); }
-.v3-session-files-list { gap: var(--v3-space-4); }
+.v3-nav-list.v3-session-files-list { gap: 0; }
 .v3-session-files-group { display: flex; flex-direction: column; }
+.v3-session-files-group + .v3-session-files-group { margin-block-start: var(--v3-space-4); }
 .v3-nav-list p.v3-session-files-dir { margin: 0 var(--v3-space-2) var(--v3-space-1); overflow-wrap: anywhere; }
 .v3-session-files-row { width: 100%; }
 .v3-session-files-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

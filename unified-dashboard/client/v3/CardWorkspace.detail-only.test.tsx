@@ -29,9 +29,11 @@ it('replaces the card detail with files and restores it when closed', async () =
  const trigger=[...host.querySelectorAll('button')].find(node=>node.textContent?.trim()==='파일'); expect(trigger).toBeDefined();
  await act(async()=>{trigger!.click();});
  expect(host.querySelector('.v3-session-files-pane')?.textContent).toContain('outbox_retry.ts');
+ const scroll=host.querySelector<HTMLElement>('.v3-session-files-body')!;scroll.scrollTop=123;await act(async()=>scroll.dispatchEvent(new Event('scroll',{bubbles:true})));
  expect(host.querySelector('.v3-files-detail-hidden [data-testid="card-detail"]')).not.toBeNull();
  await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="파일 닫기"]')!.click());
  expect(host.querySelector('.v3-session-files-pane')).toBeNull(); expect(host.querySelector('.v3-files-detail-visible [data-testid="card-detail"]')).not.toBeNull();
+ await act(async()=>trigger!.click());expect(host.querySelector<HTMLElement>('.v3-session-files-body')!.scrollTop).toBe(123);
  vi.unstubAllGlobals();
 });
 
@@ -44,4 +46,19 @@ it('observes complete events from the matching chat session', async () => {
  expect(host.textContent).toBe('1');
  await act(async()=>scope.store.getState().processEvent({type:'user_message',user:'u',text:'다음'} as any,2));
  expect(host.textContent).toBe('1');
+});
+
+it('keeps the chat and open file pane mounted across mobile and desktop', async () => {
+ const {reviewSessionFiles}=await import('./components-review-fixtures');
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(reviewSessionFiles),{status:200,headers:{'Content-Type':'application/json'}})));
+ const render=(mobileMode:boolean)=><CardWorkspace cardId={detail.card.id} sampleDetail={detail as any} folders={reviewFolders} onClose={()=>{}} onOpenSession={()=>{}} mobileMode={mobileMode} mobileTab="chat" activeSession={reviewSession} chatInputDisabled historyEnabled={false} sessionStreamActive={false} sessionConnectionStatus="disconnected" reconnectSession={()=>{}} onAcknowledgedReview={()=>{}}/>;
+ await act(async()=>root.render(render(false)));
+ await act(async()=>[...host.querySelectorAll('button')].find(node=>node.textContent?.trim()==='파일')!.click());
+ const pane=host.querySelector('.v3-session-files-pane'); const chat=host.querySelector('[data-testid="v3-card-session-chat"]');
+ expect(pane).not.toBeNull();
+ await act(async()=>root.render(render(true)));
+ expect(host.querySelector('.v3-session-files-pane')).toBe(pane); expect(host.querySelector('[data-testid="v3-card-session-chat"]')).toBe(chat);
+ await act(async()=>root.render(render(false)));
+ expect(host.querySelector('.v3-session-files-pane')).toBe(pane); expect(host.querySelector('[data-testid="v3-card-session-chat"]')).toBe(chat);
+ vi.unstubAllGlobals();
 });

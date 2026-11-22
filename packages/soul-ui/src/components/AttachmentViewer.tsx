@@ -328,7 +328,8 @@ export function AttachmentViewer({
         <DialogPanel
           scrollFade={false}
           scrollable={item.previewKind !== "image" && textFormat !== "html" && mediaFormat === null}
-          className="chat-image-viewer-panel"
+          tabIndex={item.previewKind === "text" && textFormat !== "html" ? 0 : undefined}
+          className="chat-image-viewer-panel focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
         >
           {panelContent ?? (item.availability === "missing" ? (
             <div className="chat-attachment-state chat-image-status" role="status" data-slot="dialog-error-message">첨부를 찾을 수 없습니다.</div>

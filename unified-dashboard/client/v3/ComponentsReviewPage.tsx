@@ -1,3 +1,4 @@
+import { SessionFilesFolderReviewSample } from "./SessionFilesFolderReviewSample";
 import { SessionFilesPanel } from "./SessionFilesPanel";
 import {CardCreateSample} from "./CardCreateSample";
 import { SessionMenuProvider } from "./SessionMenuProvider";
@@ -159,6 +160,7 @@ export function ComponentsReviewPage() {
   };
 
   const sampleParams = new URLSearchParams(window.location.search);
+  if (sampleParams.get('sample') === 'session-files-folder') return <SessionFilesFolderReviewSample/>;
   if (sampleParams.get('sample') === 'runtime-loading') return <RuntimeLoadingReviewSample />;
   if (sampleParams.get('sample') === 'external-sender') return <div className="v3-detail-pane v3-detail-pane--inline"><ExternalSenderSamples presentation={sampleParams.get('presentation') === 'manuscript' ? 'manuscript' : 'default'} /></div>;
   if (sampleParams.get('sample') === 'delivery-failure') return <div className="v3-detail-pane v3-detail-pane--inline"><DeliveryFailureSamples /></div>;

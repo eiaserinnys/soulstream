@@ -9,6 +9,7 @@ vi.mock('@seosoyoung/soul-ui', () => ({
   Button: ({ children, ...props }: any) => <button {...props}>{children}</button>,
   DashboardIconCap: ({ label, children, ...props }: any) => <button aria-label={label} {...props}>{children}</button>,
   FrameLoading: ({ label }: any) => <div role="status">{label}</div>,
+  formatWorkspaceTime: (value: string) => value,
 }));
 vi.mock('@seosoyoung/soul-ui/components/AttachmentViewer', () => ({
   AttachmentViewer: ({ items, index }: any) => index === null ? null : <div data-testid="viewer">{items[index].previewUrl}|{items[index].originalUrl}|{String(items[index].byteSize)}</div>,
@@ -33,10 +34,14 @@ describe('session files panel', () => {
   });
   it('renders offline, not-git, unsupported and failure in the panel', async () => {
     await render({ ...reviewSessionFiles, node: { ...reviewSessionFiles.node, status: 'offline' } }); expect(host.textContent).toContain('노드 끊김');
-    await render({ ...reviewSessionFiles, snapshot: { ...reviewSessionFiles.snapshot!, state: 'not_git' }, files: [] }); expect(host.textContent).toContain('Git 폴더가 아닙니다');
+    await render({ ...reviewSessionFiles, snapshot: { ...reviewSessionFiles.snapshot!, state: 'not_git' }, files: [] }); expect(host.textContent).toContain('Git 작업 폴더가 아닙니다');
     await render({ ...reviewSessionFiles, node: { ...reviewSessionFiles.node, status: 'unsupported' }, snapshot: null }); expect(host.textContent).toContain('지원하지 않습니다');
     await render({ ...reviewSessionFiles, node: { ...reviewSessionFiles.node, status: 'no_workspace' }, snapshot: null }); expect(host.textContent).toContain('작업 폴더가 없습니다');
     await render(null, true); expect(host.textContent).toContain('다시 시도');
+  });
+  it('shows committed activity even when the file has subsequent git changes', async () => {
+    await render({ ...reviewSessionFiles, files: [{ ...reviewSessionFiles.files[0], wrote: true, committed: true }] });
+    expect(host.querySelector('[data-activity="commit"]')).not.toBeNull();
   });
   it('retries pending snapshots ten times and stops when unmounted', async () => {
     vi.useFakeTimers();

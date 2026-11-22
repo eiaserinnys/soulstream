@@ -130,12 +130,22 @@ it('opens files in the PAS task seat and restores the task list on close',async(
  await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="작업 목록"]')!.click());
  const {reviewSessionFiles}=await import('./components-review-fixtures');
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({...reviewSessionFiles,session_id:'one'}),{status:200,headers:{'Content-Type':'application/json'}})));
- const button=[...host.querySelectorAll('button')].find(el=>el.textContent?.trim()==='파일')!;
+ const button=host.querySelector<HTMLButtonElement>('[aria-label="세션 파일"]')!;
  await act(async()=>button.click());
  expect(host.querySelector('.v3-session-files-seat .v3-session-files-pane')?.textContent).toContain('outbox_retry.ts');
  expect(host.querySelector('.persistent-session-task-scroll')).toBeNull();
  await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="파일 닫기"]')!.click());
  expect(host.querySelector('.persistent-session-task-scroll')).not.toBeNull();
+});
+it('refreshes the open PAS files on a complete event from the global session store',async()=>{
+ mocks.list.mockResolvedValue({sessions:[session('one')]});await mount('one');
+ const {reviewSessionFiles}=await import('./components-review-fixtures');
+ const request=vi.fn(async()=>new Response(JSON.stringify({...reviewSessionFiles,session_id:'one'}),{status:200,headers:{'Content-Type':'application/json'}}));
+ vi.stubGlobal('fetch',request);
+ await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="세션 파일"]')!.click());
+ expect(request).toHaveBeenCalledTimes(1);
+ await act(async()=>useDashboardStore.getState().processEvent({type:'complete',result:'끝',attachments:[]} as any,190));
+ expect(request).toHaveBeenCalledTimes(2);
 });
 it('seeds the active display settings from its PAS list before opening chat',async()=>{
  mocks.list.mockResolvedValue({sessions:[session('one'),session('two')]});await mount('two');

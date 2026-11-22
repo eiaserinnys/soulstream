@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Button, DashboardIconCap, FrameLoading, FrameNotice, LiquidGlassProvider, PersistentSessionPortraitIcon, PersistentSessionPortraitOffIcon, SessionHeaderPill, SwayCharacter, createChatSessionStore, initTheme, nextUsageSummaryNodeId, useAuth, useDashboardStore, useInitialCatalogLoad, useIsMobile, useSessionProvider, useUserPreferencesSync, type SessionReviewAcknowledgeResult, type SessionSummary } from '@seosoyoung/soul-ui';
+import { Button, DashboardIconCap, FrameLoading, FrameNotice, LiquidGlassProvider, PersistentSessionPortraitIcon, PersistentSessionPortraitOffIcon, SwayCharacter, createChatSessionStore, initTheme, nextUsageSummaryNodeId, useAuth, useDashboardStore, useInitialCatalogLoad, useIsMobile, useSessionProvider, useUserPreferencesSync, type SessionReviewAcknowledgeResult, type SessionSummary } from '@seosoyoung/soul-ui';
 import { ArrowLeft, FolderOpen, ListTodo, X } from 'lucide-react';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import { usePersistentSessionDetailsController } from '../components/PersistentSessionDetails';
@@ -336,7 +336,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     style={{ ...shellStyle, '--pas-usage-height': `${usageHeight}px`, '--pas-baseline-bottom': geometry ? `calc(100% - ${geometry.lineY}px)` : undefined } as CSSProperties} data-testid="persistent-session-screen">
     <V3GlobalToolbar headerRef={headerRef} variant="minimal" appearance="bare" sessionName={resource?.display_name ?? undefined} agentName={resource?.agent_name ?? undefined} agentOnly={isMobile} showHome={!isMobile} onOpenHome={() => navigateDashboard('/')} onOpenConfig={() => setSettingsOpen(true)}
       sessionSwitch={sessionId ? <PersistentSessionSwitch sessions={listing?.sessions ?? []} currentSessionId={sessionId}/> : undefined}
-      sessionAction={sessionId ? <SessionHeaderPill aria-pressed={files.open} onClick={files.toggle}><FolderOpen className="size-3.5" aria-hidden="true"/>파일</SessionHeaderPill> : undefined}
+      sessionAction={sessionId ? <DashboardIconCap appearance="bare" label="세션 파일" aria-pressed={files.open} onClick={files.toggle}><FolderOpen className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true"/></DashboardIconCap> : undefined}
       showWeeklyUsage={sessionId && usageAvailable && user?.email ? showWeeklyUsage : undefined}
       onToggleUsage={sessionId && usageAvailable && user?.email ? toggleWeeklyUsage : undefined}/>
     <main ref={mainRef} className="persistent-session-main">
@@ -346,7 +346,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     </main>
     {frameReady && <>
       {!tasksOpen && !files.open && <div className="persistent-session-task-toggle"><DashboardIconCap appearance="bare" label="작업 목록" disabled={!chatReady || Boolean(error)} aria-expanded={tasksOpen} onClick={() => setTasksOpen(value => !value)}><ListTodo className="size-5" strokeWidth={1.4} absoluteStrokeWidth/></DashboardIconCap></div>}
-      {files.open && sessionId && <aside className="persistent-session-tasks v3-session-files-seat"><SessionFilesPane sessionId={sessionId} onClose={files.close}/></aside>}
+      {files.open && sessionId && <aside className="persistent-session-tasks v3-session-files-seat"><SessionFilesPane sessionId={sessionId} onClose={files.close} scrollTop={files.readScroll(sessionId)} onScroll={position=>files.saveScroll(sessionId,position)}/></aside>}
       {tasksOpen && !files.open && <aside className={`persistent-session-tasks${selectedCardId ? ' is-card-open' : ''}`} aria-label="작업">
         <div className="persistent-session-task-head">
           {selectedCardId ? <DashboardIconCap appearance="bare" label="작업 목록으로" onClick={() => setSelectedCardId(null)}><ArrowLeft className="size-5" strokeWidth={1.4} absoluteStrokeWidth/></DashboardIconCap> : <h2>작업</h2>}
