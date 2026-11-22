@@ -10,6 +10,7 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     exclude: [...configDefaults.exclude, ...postgres.exclude],
     passWithNoTests: postgres.passWithNoTests,
+    globalSetup: ["tests/setup/postgres_global_container.ts"],
     setupFiles: ["tests/setup/temp_dir_cleanup.ts", "tests/setup/require_postgres_in_ci.ts"],
     testTimeout: 10000,
     hookTimeout: 10000,
