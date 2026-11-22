@@ -11,6 +11,13 @@ import {
 
 const machineDirectory='src/session/state/';
 
+const sourceCache=new Map<string,string[]>();
+async function sourceLines(file:string): Promise<string[]>{
+ let lines=sourceCache.get(file);
+ if(!lines){lines=(await readFile(new URL(`../${file}`,import.meta.url),'utf8')).split('\n');sourceCache.set(file,lines);}
+ return lines;
+}
+
 async function sourceFiles(): Promise<string[]>{
  const files:string[]=[];
  async function walk(directory:string){
@@ -29,7 +36,7 @@ it('matches every SQL session writer call by file and count',async()=>{
  for(const writer of SESSION_SQL_WRITERS){
  const found:Array<{file:string;count:number}>=[];
  for(const file of await sourceFiles()){
- const lines=(await readFile(new URL(`../${file}`,import.meta.url),'utf8')).split('\n');
+ const lines=await sourceLines(file);
  const pattern=new RegExp(`(?<![A-Za-z0-9_])${writer.name}\\s*\\(`);
  const count=lines.filter(line=>pattern.test(line)).length;
  if(count)found.push({file,count});
@@ -53,7 +60,7 @@ it('matches every SQL session writer call by file and count',async()=>{
 it('matches every direct session write in file order and checks its status flag',async()=>{
  const found=new Map<string,{line:string;statement:string}[]>();
  for(const file of await sourceFiles()){
- const lines=(await readFile(new URL(`../${file}`,import.meta.url),'utf8')).split('\n');
+ const lines=await sourceLines(file);
  lines.forEach((line,index)=>{
  if(!/\b(INSERT\s+INTO|UPDATE)\s+sessions\b/.test(line))return;
  const remaining=lines.slice(index).join('\n');
@@ -83,7 +90,7 @@ it('pins every session status literal to the allowlist with its meaning',async()
  const sql=new RegExp(SESSION_STATUS_LITERAL_SQL_PATTERN,'i');
  const counts=new Map<string,{comparisons:number;lists:number;sql:number}>();
  for(const file of await sourceFiles()){
- const lines=(await readFile(new URL(`../${file}`,import.meta.url),'utf8')).split('\n');
+ const lines=await sourceLines(file);
  for(const line of lines){
  const row=counts.get(file)??{comparisons:0,lists:0,sql:0};
  if(compare.test(line))row.comparisons+=1;
