@@ -51,6 +51,9 @@
       "hint": "reportActionParts를 쓴다"
     }
   ],
+  "cyclePackages": ["orch", "worker", "soul-ui", "web", "app", "wire", "mcpc"],
+  "packageScopes": ["@soulstream/", "@seosoyoung/"],
+  "packageAliases": { "@shared/": "soul-ui" },
   "reexportPackages": ["orch", "worker", "soul-ui", "web", "app"],
   "crossPackages": ["orch", "worker", "soul-ui", "web", "app"],
   "packagePairs": [

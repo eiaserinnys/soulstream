@@ -1,10 +1,5 @@
-/**
- * SessionDB — worker persistence facade. Durable reads and writes cross the
- * orchestrator host boundary; this facade owns no database connection.
- */
 import { projectSessionBindingWarnings } from "@soulstream/page-model";
 
-import { DEFAULT_FOLDERS as SYSTEM_DEFAULT_FOLDERS } from "../system_folders.js";
 import type { ScheduleHostClient } from "../schedule/schedule_host_client.js";
 import type {
   SessionDataHost,
@@ -38,9 +33,6 @@ import type { CatalogBoardItemRow, ListFolderItemsParams, ListFolderItemsResult,
 import type { CatalogFolderRow, CatalogSessionAssignmentRow, FolderRow, ListSessionSummaryRow, RunningSessionSummaryRow, SessionExecutionChain, SessionOwnerNode, SessionRow, FolderSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
 
 export type * from "./session_db_types.js";
-
-/** 표시 이름 하위 호환 export. 기본 폴더 식별 정본은 system_folders.ts의 id 상수다. */
-export const DEFAULT_FOLDERS = SYSTEM_DEFAULT_FOLDERS;
 
 export class SessionDB {
   private folderReader?: Pick<FolderService, "getFolder" | "getCard">;

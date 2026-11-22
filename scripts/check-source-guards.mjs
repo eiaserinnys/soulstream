@@ -6,7 +6,7 @@
  */
 
 import { existsSync, opendirSync, readFileSync, statSync } from 'node:fs';
-import { basename, join, relative, sep } from 'node:path';
+import { basename, join, posix, relative, sep } from 'node:path';
 
 const root = process.cwd();
 const files = new Map();
@@ -14,15 +14,7 @@ const listings = new Map();
 let config;
 
 function read(rel) {
-  if (!files.has(rel)) {
-    let text = '';
-    try {
-      text = readFileSync(join(root, rel), 'utf8');
-    } catch {
-      text = '';
-    }
-    files.set(rel, text);
-  }
+  if (!files.has(rel)) files.set(rel, readFileSync(join(root, rel), 'utf8'));
   return files.get(rel);
 }
 
@@ -295,6 +287,201 @@ function renamedReexport() {
   return items;
 }
 
+function commentStripped(text) {
+  const stripped = text.replace(/\/\*[\s\S]*?\*\//g, (match) => '\n'.repeat((match.match(/\n/g) ?? []).length));
+  return stripped.replace(/(^|[^:'"\\])\/\/.*$/gm, '$1');
+}
+
+function packageAt(rel) {
+  let path = posix.normalize(rel);
+  while (path && path !== '.') {
+    if (existsSync(join(root, path, 'package.json'))) {
+      return { dir: path, name: JSON.parse(read(`${path}/package.json`)).name ?? '' };
+    }
+    path = posix.dirname(path);
+    if (path === '.') path = '';
+  }
+  throw new Error(`${rel}: package.json을 찾지 못함`);
+}
+
+function crossesPackage(spec, file, pkgDir, pkgName, ownPackage) {
+  if (spec.startsWith('.')) {
+    const target = posix.normalize(posix.join(posix.dirname(file), spec));
+    return !(target === pkgDir || target.startsWith(`${pkgDir}/`));
+  }
+  if (config.packageScopes.some((scope) => spec.startsWith(scope))) {
+    return spec.split('/').slice(0, 2).join('/') !== pkgName;
+  }
+  for (const [prefix, owner] of Object.entries(config.packageAliases)) {
+    if (spec.startsWith(prefix)) return owner !== ownPackage;
+  }
+  return false;
+}
+
+function importBindings(clause) {
+  const match = /\{([\s\S]*)\}/.exec(clause);
+  if (!match) return [];
+  const found = [];
+  for (const part of match[1].split(',')) {
+    const cleaned = part.trim().replace(/^type\s+/, '');
+    if (!cleaned) continue;
+    const split = /\s+as\s+/.exec(cleaned);
+    if (split) {
+      found.push([cleaned.slice(0, split.index).trim(), cleaned.slice(split.index + split[0].length).trim()]);
+    } else {
+      found.push([cleaned, cleaned]);
+    }
+  }
+  return found;
+}
+
+function crossPackageReexport() {
+  const items = [];
+  for (const packageName of config.reexportPackages) {
+    const packageRoot = config.packages[packageName];
+    const pkg = packageAt(packageRoot);
+    for (const file of walk(packageRoot)) {
+      const text = commentStripped(read(file));
+      for (const match of text.matchAll(/^[ \t]*export\s+(?:type\s+)?(\*(?:\s+as\s+[\w$]+)?|\{[^}]*\})\s*from\s*['"]([^'"]+)['"]/gm)) {
+        if (!crossesPackage(match[2], file, pkg.dir, pkg.name, packageName)) continue;
+        const names = truncate(match[1].replace(/\s+/g, ' ').trim(), 80);
+        items.push(`${file}:${line(text, match.index)} ${match[2]} ${names}  → 쓰는 곳이 ${match[2]}에서 바로 가져온다`);
+      }
+      const imported = new Map();
+      for (const match of text.matchAll(/^[ \t]*import\s+(?:type\s+)?([^;]*?)\s*from\s*['"]([^'"]+)['"]/gm)) {
+        if (!crossesPackage(match[2], file, pkg.dir, pkg.name, packageName)) continue;
+        for (const [orig, alias] of importBindings(match[1])) imported.set(alias, [orig, match[2]]);
+      }
+      for (const match of text.matchAll(/^[ \t]*export\s+(?:type\s+)?\{([^}]*)\}(?!\s*from)/gm)) {
+        for (const [orig] of importBindings(`{${match[1]}}`)) {
+          if (!imported.has(orig)) continue;
+          const spec = imported.get(orig)[1];
+          items.push(`${file}:${line(text, match.index)} ${spec} ${orig}  → 쓰는 곳이 ${spec}에서 바로 가져온다`);
+        }
+      }
+    }
+  }
+  return items;
+}
+
+function sameNameAlias() {
+  const items = [];
+  for (const packageName of config.reexportPackages) {
+    for (const file of walk(config.packages[packageName])) {
+      const text = commentStripped(read(file));
+      const imported = new Map();
+      for (const match of text.matchAll(/^[ \t]*import\s+(?:type\s+)?([^;]*?)\s*from\s*['"]([^'"]+)['"]/gm)) {
+        for (const [orig, alias] of importBindings(match[1])) imported.set(alias, [orig, match[2]]);
+      }
+      for (const [alias, [orig, spec]] of imported) {
+        if (alias === orig) continue;
+        const pattern = new RegExp(`^[ \\t]*export\\s+(?:declare\\s+)?(?:type|const|let|var)\\s+${escapeRegExp(orig)}\\s*(?:<[^=;]*>)?\\s*=\\s*${escapeRegExp(alias)}\\b\\s*(?:<[^;]*>)?\\s*;?[ \\t]*$`, 'gm');
+        for (const match of text.matchAll(pattern)) {
+          items.push(`${file}:${line(text, match.index)} ${orig} = ${alias} (${spec})  → 별칭 없이 가져오고, 쓰는 곳은 원래 자리에서 가져온다`);
+        }
+      }
+    }
+  }
+  return items;
+}
+
+function resolveImport(fileSet, importer, spec) {
+  const target = posix.normalize(posix.join(posix.dirname(importer), spec));
+  const candidates = [];
+  if (target.endsWith('.js')) candidates.push(`${target.slice(0, -3)}.ts`, `${target.slice(0, -3)}.tsx`);
+  candidates.push(target, `${target}.ts`, `${target}.tsx`, `${target}/index.ts`, `${target}/index.tsx`);
+  return candidates.find((candidate) => fileSet.has(candidate)) ?? null;
+}
+
+function stronglyConnected(edges) {
+  const index = new Map();
+  const low = new Map();
+  const onStack = new Set();
+  const stack = [];
+  const components = [];
+  let counter = 0;
+  for (const rootNode of edges.keys()) {
+    if (index.has(rootNode)) continue;
+    index.set(rootNode, counter);
+    low.set(rootNode, counter);
+    counter += 1;
+    stack.push(rootNode);
+    onStack.add(rootNode);
+    const work = [{ node: rootNode, children: [...edges.get(rootNode)].sort().values() }];
+    while (work.length) {
+      const frame = work[work.length - 1];
+      const node = frame.node;
+      let descended = false;
+      for (let next = frame.children.next(); !next.done; next = frame.children.next()) {
+        const child = next.value;
+        if (!edges.has(child)) continue;
+        if (!index.has(child)) {
+          index.set(child, counter);
+          low.set(child, counter);
+          counter += 1;
+          stack.push(child);
+          onStack.add(child);
+          work.push({ node: child, children: [...edges.get(child)].sort().values() });
+          descended = true;
+          break;
+        }
+        if (onStack.has(child)) low.set(node, Math.min(low.get(node), index.get(child)));
+      }
+      if (descended) continue;
+      work.pop();
+      if (work.length) {
+        const parent = work[work.length - 1].node;
+        low.set(parent, Math.min(low.get(parent), low.get(node)));
+      }
+      if (low.get(node) === index.get(node)) {
+        const component = [];
+        for (;;) {
+          const member = stack.pop();
+          onStack.delete(member);
+          component.push(member);
+          if (member === node) break;
+        }
+        if (component.length > 1) components.push(component.sort());
+      }
+    }
+  }
+  return components;
+}
+
+function runtimeCycle() {
+  const items = [];
+  for (const packageName of config.cyclePackages) {
+    const packageRoot = config.packages[packageName];
+    const listed = walk(packageRoot);
+    const fileSet = new Set(listed);
+    const edges = new Map();
+    for (const file of listed) {
+      const text = read(file).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      const targets = new Set();
+      for (const match of text.matchAll(/(import|export)\s+(type\s+)?([^;]*?)\s*from\s*["'](\.[^"']*)["']|import\s*["'](\.[^"']*)["']/gs)) {
+        if (match[4]) {
+          if (match[2]) continue;
+          const clause = match[3].trim();
+          if (clause.startsWith('{') && clause.endsWith('}')) {
+            const names = clause.slice(1, -1).split(',').map((part) => part.trim()).filter(Boolean);
+            if (names.length && names.every((part) => part.startsWith('type '))) continue;
+          }
+          const target = resolveImport(fileSet, file, match[4]);
+          if (target) targets.add(target);
+        } else {
+          const target = resolveImport(fileSet, file, match[5]);
+          if (target) targets.add(target);
+        }
+      }
+      edges.set(file, targets);
+    }
+    for (const component of stronglyConnected(edges)) {
+      items.push(`${component.join(' ')}  → 한쪽 선언을 다른 모듈로 옮겨 런타임 import 고리를 끊는다`);
+    }
+  }
+  return items.sort();
+}
+
 function crossIdentical() {
   const exported = {};
   for (const packageName of config.crossPackages) exported[packageName] = declarations(config.packages[packageName]);
@@ -401,16 +588,16 @@ function singleStateMachine() {
 
 function main() {
   config = JSON.parse(readFileSync(join(root, 'scripts', 'source-guards.config.json'), 'utf8'));
-  if (!existsSync(join(root, config.generatedIndex))) {
-    throw new Error(`생성 타입 파일을 읽을 수 없습니다: ${config.generatedIndex}`);
-  }
   const rules = [
     ['canonical-redecl', canonicalRedecl],
     ['cross-identical', crossIdentical],
+    ['cross-package-reexport', crossPackageReexport],
     ['dead-module', deadModule],
     ['fingerprints', fingerprints],
     ['intra-identical', intraIdentical],
     ['renamed-reexport', renamedReexport],
+    ['runtime-cycle', runtimeCycle],
+    ['same-name-alias', sameNameAlias],
     ['single-state-machine', singleStateMachine],
     ['sse-alias-only', sseAliasOnly],
     ['sse-sender', sseSender],

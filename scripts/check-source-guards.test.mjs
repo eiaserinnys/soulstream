@@ -14,15 +14,22 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function fixture() {
+function fixture(overrides = {}) {
   const root = mkdtempSync(join(tmpdir(), 'source-guards-'));
   roots.push(root);
   const write = (path, contents) => {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), contents);
   };
-  write('scripts/source-guards.config.json', JSON.stringify(config));
+  write('scripts/source-guards.config.json', JSON.stringify({ ...config, canonicalModules: {}, ...overrides }));
   write('packages/wire-schema/generated/typescript/index.ts', 'export const SSE_EVENT_TYPES = [] as const;\n');
+  write('packages/wire-schema/package.json', '{}');
+  write('packages/soul-ui/src/shared/sse-events.ts', '');
+  write('packages/soul-ui/src/index.ts', "export * from './shared/sse-events';\n");
+  for (const packageName of config.reexportPackages) {
+    const parent = dirname(config.packages[packageName]);
+    write(`${parent}/package.json`, JSON.stringify({ name: parent.split('/').pop() }));
+  }
   return {
     write,
     run() {
@@ -89,12 +96,13 @@ test('fingerprints는 정본 파일 밖의 지문을 잡는다', () => {
 
 test('canonical-redecl은 정본 모듈 export 이름의 재선언을 잡는다', () => {
   const module = 'export function badRequest(): string {\n  return "bad";\n}\n';
-  const failure = fixture();
+  const overrides = { canonicalModules: { orch: ['http/route_validation.ts'] } };
+  const failure = fixture(overrides);
   failure.write('orch-server-ts/src/http/route_validation.ts', module);
   failure.write('orch-server-ts/src/index.ts', module);
   violates(failure.run(), 'canonical-redecl');
 
-  const pass = fixture();
+  const pass = fixture(overrides);
   pass.write('orch-server-ts/src/http/route_validation.ts', module);
   pass.write('orch-server-ts/src/index.ts', 'import { badRequest } from "./http/route_validation";\nexport const toBad = badRequest;\n');
   clean(pass.run());
@@ -154,4 +162,41 @@ test('single-state-machine은 전이 없는 상태 기계를 잡는다', () => {
   const pass = fixture();
   pass.write('orch-server-ts/src/index.ts', 'export const machine = factory.createMachine({\n  always: [],\n  states: { idle: {} },\n});\n');
   clean(pass.run());
+});
+
+test('runtime-cycle은 값 import 고리를 잡고 type import 고리는 통과한다', () => {
+  const failure = fixture();
+  failure.write('orch-server-ts/src/zz_cycle_a.ts', 'import { zzCycleB } from "./zz_cycle_b";\nexport const zzCycleA = zzCycleB;\n');
+  failure.write('orch-server-ts/src/zz_cycle_b.ts', 'import { zzCycleA } from "./zz_cycle_a";\nexport const zzCycleB = zzCycleA;\n');
+  violates(failure.run(), 'runtime-cycle');
+
+  const pass = fixture();
+  pass.write('orch-server-ts/src/zz_cycle_a.ts', 'import type { ZzCycleB } from "./zz_cycle_b";\nexport const zzCycleA = (value: ZzCycleB): ZzCycleB => value;\n');
+  pass.write('orch-server-ts/src/zz_cycle_b.ts', 'import { zzCycleA } from "./zz_cycle_a";\nexport type ZzCycleB = string;\nexport const zzCycleBValue = zzCycleA;\n');
+  clean(pass.run());
+});
+
+test('cross-package-reexport는 다른 패키지에서 다시 내보내기를 잡는다', () => {
+  const failure = fixture();
+  failure.write('orch-server-ts/src/index.ts', 'export { isRecord } from "@soulstream/wire-schema/json-record";\n');
+  violates(failure.run(), 'cross-package-reexport');
+
+  const pass = fixture();
+  pass.write('orch-server-ts/src/index.ts', 'export { alpha } from "./other";\n');
+  clean(pass.run());
+});
+
+test('same-name-alias는 별칭을 원래 이름으로 다시 내놓기를 잡는다', () => {
+  const failure = fixture();
+  failure.write('orch-server-ts/src/index.ts', 'import { alpha as baseAlpha } from "./other";\nexport const alpha = baseAlpha;\n');
+  violates(failure.run(), 'same-name-alias');
+
+  const pass = fixture();
+  pass.write('orch-server-ts/src/index.ts', 'import { alpha } from "./other";\nexport const beta = alpha;\n');
+  clean(pass.run());
+});
+
+test('설정이 가리키는 파일이 없으면 종료 2로 끝난다', () => {
+  const result = fixture({ canonicalModules: { orch: ['http/missing_route_validation.ts'] } }).run();
+  assert.equal(result.status, 2, result.stdout + result.stderr);
 });
