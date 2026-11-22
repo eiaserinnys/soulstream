@@ -249,7 +249,7 @@ describe("PAS defaults follow the node's advertised models", () => {
   });
 
   it("uses the catalog fallback preset as the default on a Codex-only node", async () => {
-    const { app, service } = buildApp({ advertisedPresets: ["codex-6.2-sol"] });
+    const { app, service, createBodies, sentSettings } = buildApp({ advertisedPresets: ["codex-6.2-sol"] });
 
     expect(await service.createDefaults()).toMatchObject({
       settings: {
@@ -257,6 +257,19 @@ describe("PAS defaults follow the node's advertised models", () => {
         fallback_models: [],
       },
       unavailable_reason: null,
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/persistent-sessions",
+      payload: createBody({ settings: undefined }),
+    });
+    expect(response.statusCode).toBe(201);
+    expect(createBodies[0]).toMatchObject({ model_preset: "codex-6.2-sol", reasoningEffort: "high" });
+    expect(sentSettings.at(-1)).toMatchObject({
+      settings: {
+        default_model: { model_preset: "codex-6.2-sol", reasoning_effort: "high" },
+        fallback_models: [],
+      },
     });
     await app.close();
   });

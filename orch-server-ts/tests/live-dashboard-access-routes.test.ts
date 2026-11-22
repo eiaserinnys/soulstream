@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AUTH_COOKIE_NAME,
   createApp,
+  createLiveAuthTokenResolver,
   createLiveDashboardAccessProvider,
   parseOrchServerConfig,
   type AuthJwtHelper,
@@ -178,6 +179,24 @@ describe("live dashboard access provider route wiring", () => {
     await app.close();
   });
 
+  it("requires password login in development without a service token", async () => {
+    for (const productionGuard of [false, true]) {
+      const { app } = createPasswordRouteApp({ development: true, productionGuard });
+      for (const url of ["/api/folders", "/api/board-items?folderId=folder-a-child"]) {
+        expect((await app.inject({ method: "GET", url })).statusCode).toBe(401);
+      }
+      const login = await app.inject({
+        method: "POST", url: "/api/auth/password-login", payload: { password: "hunter2" },
+      });
+      expect(login.statusCode).toBe(200);
+      const cookie = String(login.headers["set-cookie"]).split(";")[0] ?? "";
+      for (const url of ["/api/folders", "/api/board-items?folderId=folder-a-child"]) {
+        expect((await app.inject({ method: "GET", url, headers: { cookie } })).statusCode).toBe(200);
+      }
+      await app.close();
+    }
+  });
+
   it("adds DB-backed isAdmin and dashboardAccess to auth status", async () => {
     const { app } = createRouteApp();
 
@@ -210,12 +229,12 @@ describe("live dashboard access provider route wiring", () => {
   });
 });
 
-function createPasswordRouteApp() {
+function createPasswordRouteApp(options: { development?: boolean; productionGuard?: boolean } = {}) {
   const configProvider = configWith({
-    auth_bearer_token: "service-token",
+    auth_bearer_token: options.development ? "" : "service-token",
     google_client_id: "",
     dashboard_admin_password: "hunter2",
-    environment: "production",
+    environment: options.development ? "development" : "production",
   });
   const jwt: AuthJwtHelper = {
     issueToken: vi.fn(async (user) =>
@@ -235,6 +254,11 @@ function createPasswordRouteApp() {
   });
   const app = createApp({
     config,
+    ...(options.productionGuard ? {
+      productionAuth: { resolveTokenAccess: createLiveAuthTokenResolver({
+        configProvider, jwt, nodeCredentials: null,
+      }) },
+    } : {}),
     authRoutes: {
       configProvider: {
         getConfig: vi.fn(async () => ({
@@ -273,6 +297,7 @@ function createPasswordRouteApp() {
       resolveDashboardUserId: async (request) =>
         request.headers.cookie?.includes("owner-token") === true ? "owner@local" : null,
     },
+    boardItemRoutes: { provider: createBoardItemProvider(), accessProvider, host: {} as never },
   });
   return { app };
 }

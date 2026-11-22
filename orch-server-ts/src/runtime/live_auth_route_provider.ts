@@ -180,6 +180,7 @@ export function createLiveAuthTokenResolver(
       configuredBearer ?? "",
       environment,
       options.nodeCredentials,
+      loginMode === "password",
     );
     if (bearer.ok) return { ok: true };
 
@@ -369,6 +370,7 @@ function verifyServiceBearer(
   configuredBearer: string,
   environment: string,
   nodeCredentials: NodeCredentialResolver | null,
+  rejectDevelopmentBypass: boolean,
 ): AuthTokenAccessResult {
   const verification = verifyServiceBearerAuthorization(
     request.headers.authorization,
@@ -378,6 +380,9 @@ function verifyServiceBearer(
       nodeCredentials,
     },
   );
+  if (verification.ok && verification.developmentBypass && rejectDevelopmentBypass) {
+    return serviceBearerFailure({ ok: false, reason: "missing", statusCode: 401 });
+  }
   return verification.ok ? { ok: true } : serviceBearerFailure(verification);
 }
 

@@ -47,12 +47,41 @@ describe("live auth token access resolver", () => {
       }),
       jwt: jwtVerifier(),
     });
+    const developmentWithoutLogin = createLiveAuthTokenResolver({
+      nodeCredentials: null,
+      configProvider: configWith({
+        auth_bearer_token: "",
+        environment: "development",
+        google_client_id: "",
+        jwt_secret: "jwt-secret",
+      }),
+      jwt: jwtVerifier(),
+    });
 
     await expect(production(request({}))).resolves.toMatchObject({
       ok: false,
       statusCode: 503,
     });
     await expect(development(request({}))).resolves.toEqual({ ok: true });
+    await expect(developmentWithoutLogin(request({}))).resolves.toEqual({ ok: true });
+  });
+
+  it("requires a password cookie instead of a development bearer bypass", async () => {
+    const resolver = createLiveAuthTokenResolver({
+      nodeCredentials: null,
+      configProvider: configWith({
+        auth_bearer_token: "",
+        environment: "development",
+        google_client_id: "",
+        dashboard_admin_password: "hunter2",
+        jwt_secret: "jwt-secret",
+      }),
+      jwt: jwtVerifier("dashboard-jwt"),
+    });
+
+    await expect(resolver(request({}))).resolves.toMatchObject({ ok: false, statusCode: 401 });
+    await expect(resolver(request({ cookie: "soul_dashboard_auth=dashboard-jwt" })))
+      .resolves.toEqual({ ok: true });
   });
 
   it("falls back to dashboard JWT cookie or Bearer only when auth is enabled", async () => {
