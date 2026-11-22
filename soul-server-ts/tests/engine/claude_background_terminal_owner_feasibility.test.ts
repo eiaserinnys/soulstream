@@ -7,7 +7,7 @@ import type {
   AgentInput,
   BashInput,
 } from "@anthropic-ai/claude-agent-sdk/sdk-tools";
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expectTypeOf, it } from "vitest";
 
 describe("Claude background terminal owner feasibility", () => {
   it("keeps the SDK free of handled-result and task-adoption seams", () => {
@@ -44,32 +44,8 @@ describe("Claude background terminal owner feasibility", () => {
   });
 
   it("covers both SDK background-capable tool inputs, including remote Agent execution", () => {
-    const agent = {
-      description: "Inspect source",
-      prompt: "Inspect the source",
-      run_in_background: true,
-      isolation: "remote",
-    } satisfies AgentInput;
-    const bash = {
-      command: "printf done",
-      run_in_background: true,
-    } satisfies BashInput;
-
-    expect(agent).toMatchObject({ run_in_background: true, isolation: "remote" });
-    expect(bash).toMatchObject({ run_in_background: true });
-  });
-
-  it("records the upstream seams whose appearance resumes A GREEN", () => {
-    const compileProof = {
-      preToolUseCanHandleResult: false,
-      spawnOverrideCanAttachTask: false,
-      queryCanAdoptOrInjectTerminal: false,
-    } as const;
-
-    expect(compileProof).toEqual({
-      preToolUseCanHandleResult: false,
-      spawnOverrideCanAttachTask: false,
-      queryCanAdoptOrInjectTerminal: false,
-    });
+    expectTypeOf<true>().toExtend<NonNullable<AgentInput["run_in_background"]>>();
+    expectTypeOf<"remote">().toExtend<NonNullable<AgentInput["isolation"]>>();
+    expectTypeOf<true>().toExtend<NonNullable<BashInput["run_in_background"]>>();
   });
 });

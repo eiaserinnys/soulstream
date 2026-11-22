@@ -91,3 +91,61 @@ test('인자가 없거나 설정 파일이 없으면 오류로 끝난다', () =>
     assert.match(result.stderr, /.+/);
   }
 });
+
+test('넘기는 곳이 없는 목을 잡고 실제로 쓰는 목은 통과한다', () => {
+  const declarations = [
+    'declare const vi: { fn<T>(impl?: T): T & { mock: { calls: unknown[] }; mockClear(): void } };',
+    'declare const jest: typeof vi;',
+    'declare function expect(value: unknown, message?: string): any;',
+  ];
+  const failure = fixture({ 'src/index.ts': [...declarations,
+    'const probe = vi.fn(() => {});',
+    'const other = jest.fn<() => void>();',
+    'expect(probe.mock.calls.length).toBe(0);',
+    'expect(probe).not.toHaveBeenCalled();',
+    'other.mockClear();',
+  ].join('\n') }).run();
+  assert.equal(failure.status, 1, failure.stderr);
+  assert.match(failure.stdout, /^unwired-mock: src\/index\.ts:4 probe [^\n]*\nunwired-mock: src\/index\.ts:5 other [^\n]*\n$/);
+  const pass = fixture({ 'src/index.ts': [...declarations,
+    'declare function run(callback: () => void): void;',
+    'const passed = vi.fn(() => {});',
+    'run(passed);',
+    'const shorthand = vi.fn(() => {});',
+    'const deps = { shorthand };',
+    'run(deps.shorthand);',
+    'const called = vi.fn(() => {});',
+    'called();',
+    'const valued = vi.fn(() => {});',
+    'run({ callback: valued }.callback);',
+    'expect(passed).toHaveBeenCalled();',
+  ].join('\n') }).run();
+  clean(pass);
+});
+
+test('상수끼리 견주는 단언을 잡고 시험 대상이 있는 단언은 통과한다', () => {
+  const failure = fixture({ 'src/index.ts': [
+    'declare function expect(value: unknown, message?: string): any;',
+    "const proof = { ready: false, count: -1, tags: ['a', `b`] } as const;",
+    "expect(proof).toEqual({ ready: false, count: -1, tags: ['a', 'b'] });",
+    'expect(31 + 7).not.toBe(39);',
+    'expect(true).toBeTruthy();',
+  ].join('\n') }).run();
+  assert.equal(failure.status, 1, failure.stderr);
+  assert.match(failure.stdout, /^constant-expect: src\/index\.ts:3 expect\(proof\) [^\n]*\nconstant-expect: src\/index\.ts:4 expect\(31 \+ 7\) [^\n]*\nconstant-expect: src\/index\.ts:5 expect\(true\) [^\n]*\n$/);
+  const pass = fixture({ 'src/index.ts': [
+    'declare const expect: { (value: unknown, message?: string): any; objectContaining(value: unknown): unknown };',
+    'declare function mutate(value: { ready: boolean }): void;',
+    'declare const actual: string;',
+    "expect(['a', 'b']).toContain(actual);",
+    "expect(actual).toBe('a');",
+    'const input = { ready: false };',
+    'mutate(input);',
+    'expect(input).toEqual({ ready: true });',
+    "const label = 'a';",
+    'expect(label).toBe(actual);',
+    'expect(480).toBeGreaterThan(Math.floor(834 * 0.5));',
+    'expect({ id: 1 }).toEqual(expect.objectContaining({ id: 1 }));',
+  ].join('\n') }).run();
+  clean(pass);
+});

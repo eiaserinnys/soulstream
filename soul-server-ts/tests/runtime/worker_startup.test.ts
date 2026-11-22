@@ -17,11 +17,6 @@ describe("worker startup ordering", () => {
     const info = vi.fn();
     const onRunnerRecoveryFailure = vi.fn();
     const waitForApplication = new Promise<void>(() => {});
-    const ownerNullRunningSession = {
-      sessionId: "owner-null-running",
-      status: "running",
-      executionOwner: null,
-    } as const;
     const upstreamAdapter = {
       run: vi.fn(async () => {
         order.push("adapter");
@@ -30,10 +25,6 @@ describe("worker startup ordering", () => {
     };
     const runnerRecoveryCoordinator = {
       start: vi.fn(async () => {
-        expect(ownerNullRunningSession).toMatchObject({
-          status: "running",
-          executionOwner: null,
-        });
         order.push("scan");
         await waitForApplication;
       }),

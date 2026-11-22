@@ -277,10 +277,6 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       });
 
       if (terminalStatus !== "running") task.status = terminalStatus;
-      const transcriptProbe = vi.fn(async () => ({
-        kind: "absent" as const,
-        inputUuid: buildDeliveryInputUuid(deliveryId),
-      }));
       const recoveryDispatch = vi.fn(async (
         recovered: Parameters<TaskInterventionRoute["addIntervention"]>[0],
       ) => {
@@ -296,13 +292,11 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       await coordinator.recoverPending(10);
 
       expect({
-        transcriptProbe: transcriptProbe.mock.calls.length,
         recoveryDispatch: recoveryDispatch.mock.calls.length,
         modelStart: modelStart.mock.calls.length,
         autoResume: autoResume.mock.calls.length,
         liveDeliver: liveDeliver.mock.calls.length,
       }).toEqual({
-        transcriptProbe: 0,
         recoveryDispatch: 0,
         modelStart: 0,
         autoResume: 0,
@@ -459,10 +453,6 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       aggregate_state: "pending",
     });
 
-    const transcriptProbe = vi.fn(async () => ({
-      kind: "absent" as const,
-      inputUuid: buildDeliveryInputUuid(deliveryId),
-    }));
     const recoveryDispatch = vi.fn(async (
       recovered: Parameters<TaskInterventionRoute["addIntervention"]>[0],
     ) => {
@@ -478,12 +468,10 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await coordinator.recoverPending(10);
 
     expect({
-      transcriptProbe: transcriptProbe.mock.calls.length,
       recoveryDispatch: recoveryDispatch.mock.calls.length,
       autoResume: autoResume.mock.calls.length,
       modelStart: modelStart.mock.calls.length,
     }).toEqual({
-      transcriptProbe: 0,
       recoveryDispatch: 0,
       autoResume: 1,
       modelStart: 1,
