@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, DashboardIconCap, FrameLoading } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, FrameLoading, type ChatSessionStoreScope } from "@seosoyoung/soul-ui";
 import { AttachmentViewer } from "@seosoyoung/soul-ui/components/AttachmentViewer";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import type { SessionWorkspaceResponse } from "../../../packages/wire-schema/src/session_workspace";
 import { ChevronRight, Eye, File, GitBranch, GitCommitHorizontal, PencilLine, RefreshCw, WifiOff, X } from "lucide-react";
 import "./session-files.css";
 import { useSessionFilesTurn } from "./use-session-files-turn";
-import type { ChatSessionStoreScope } from "@seosoyoung/soul-ui";
 
 type Entry = SessionWorkspaceResponse["files"][number] | SessionWorkspaceResponse["read_only"][number];
 type ViewState = { data: SessionWorkspaceResponse | null; loading: boolean; error: boolean };
