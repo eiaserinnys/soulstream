@@ -10,6 +10,7 @@ on:
       - 'packages/search-contract/**'
       - 'packages/wire-schema/**'
       - '.easignore'
+      - 'scripts/check-ts-guards.mjs'
       - '.github/workflows/soul-app.yml'
   pull_request:
     paths:
@@ -19,6 +20,7 @@ on:
       - 'packages/search-contract/**'
       - 'packages/wire-schema/**'
       - '.easignore'
+      - 'scripts/check-ts-guards.mjs'
       - '.github/workflows/soul-app.yml'
   workflow_dispatch:
 
@@ -46,6 +48,9 @@ jobs:
       - name: Check source guards
         working-directory: .
         run: node scripts/check-source-guards.mjs
+      - name: Check TypeScript guards
+        working-directory: .
+        run: node scripts/check-ts-guards.mjs soul-app/tsconfig.json
       - name: Typecheck app
         run: npx --no-install tsc --noEmit
       - name: Test app

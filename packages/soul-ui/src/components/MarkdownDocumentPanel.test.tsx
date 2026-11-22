@@ -11,8 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
-import type { BoardYjsRuntime } from "../lib/board-yjs-client";
 import {
+  type BoardYjsRuntime,
   catalogBoardItemsFromYDoc,
   createMarkdownYjsDocument,
   deleteBoardYjsItem,
