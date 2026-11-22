@@ -1,4 +1,3 @@
-import { filenameFromContentDisposition } from '../lib/attachment-link-view';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,6 +14,7 @@ import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 import { getAttachmentImageSize } from '../lib/attachment-image-size';
 import { restoreAttachmentFocus } from '../lib/attachment-focus';
 import { isLegacyAttachmentImage, isSvgAttachmentImage, type AttachmentView } from '../lib/attachment-view';
+import { filenameFromContentDisposition } from '../lib/attachment-link-view';
 import { ImageViewerModal } from './ImageViewerModal';
 import { AttachmentSvg } from './AttachmentSvg';
 
