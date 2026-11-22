@@ -940,9 +940,9 @@ state "한도 재개 예약" as sessionReservation {
 | src/usage/provider_usage_wire.ts | 1 | 0 | 0 | 공급자 오류·사용 상태. |
 | src/usage/session_statistics_normalizer.ts | 0 | 1 | 0 | 공급자 오류·사용 상태. |
 | src/usage/session_statistics_usage_candidates.ts | 2 | 0 | 0 | 공급자 오류·사용 상태. |
-| src/usage/usage_summary_service.ts | 3 | 0 | 0 | 공급자 오류·사용 상태. |
+| src/usage/usage_summary_service.ts | 4 | 0 | 0 | 공급자 오류·사용 상태. |
 
-파일 84개, 비교 87줄, 목록 27줄, SQL 60줄이다.
+파일 84개, 비교 88줄, 목록 27줄, SQL 60줄이다.
 
 ## 다시 만들기
 

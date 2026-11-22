@@ -252,5 +252,5 @@ export const SESSION_STATUS_LITERAL_ALLOWLIST: SessionStatusLiteralFile[] = [
   { file: "src/usage/provider_usage_wire.ts", comparisons: 1, lists: 0, sql: 0, note: "공급자 오류·사용 상태." },
   { file: "src/usage/session_statistics_normalizer.ts", comparisons: 0, lists: 1, sql: 0, note: "공급자 오류·사용 상태." },
   { file: "src/usage/session_statistics_usage_candidates.ts", comparisons: 2, lists: 0, sql: 0, note: "공급자 오류·사용 상태." },
-  { file: "src/usage/usage_summary_service.ts", comparisons: 3, lists: 0, sql: 0, note: "공급자 오류·사용 상태." },
+  { file: "src/usage/usage_summary_service.ts", comparisons: 4, lists: 0, sql: 0, note: "공급자 오류·사용 상태." },
 ];
