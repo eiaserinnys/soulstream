@@ -17,6 +17,7 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { asRecord } from "@soulstream/wire-schema/json-record";
 
 type Scenario =
   | "persistent_interrupt"
@@ -148,11 +149,6 @@ function makeUserMessage(
     uuid: uuid as NonNullable<SDKUserMessage["uuid"]>,
     origin: { kind: "human" },
   };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
 }
 
 function normalizeMessage(message: SDKMessage): Record<string, unknown> {

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import postgres from "postgres";
@@ -453,7 +454,6 @@ function asRecord(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) throw new MessageRefBackfillError(MESSAGE_REF_CONFLICT, "message payload must be a JSON object");
   return value;
 }
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function asIsoTimestamp(value: Date | string): string {
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) throw new MessageRefBackfillError(SOURCE_CHANGED, "source timestamp is invalid");

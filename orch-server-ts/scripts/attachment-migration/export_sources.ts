@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { createReadStream } from "node:fs";
 import { open, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -334,7 +335,6 @@ function numberOrNull(value: unknown): number | null {
   if (typeof value === "string" && /^\d+$/.test(value)) return Number(value);
   return null;
 }
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function errorCode(value: unknown): string { return isRecord(value) && typeof value.code === "string" ? value.code : "INVENTORY_EXPORT_FAILED"; }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

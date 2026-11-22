@@ -1,4 +1,5 @@
 import type { SessionDeliveryNotificationOutboxRow } from "@soulstream/wire-schema/session-delivery";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { localInternalMcpUrlFromEnv } from "../src/mcp/endpoint_paths.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -97,8 +98,4 @@ function errorDetail(text: string): string {
     // 본문이 JSON이 아니면 상태 코드만 남긴다.
   }
   return "";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

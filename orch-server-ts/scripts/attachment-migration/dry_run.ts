@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createReadStream } from "node:fs";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { createHash } from "node:crypto";
 import { mkdir, open, readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
@@ -370,7 +371,6 @@ function isWindowsPath(value: string): boolean {
   return /^[A-Za-z]:\//.test(value) || value.startsWith("//");
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function sha256(value: string): string { return createHash("sha256").update(value, "utf8").digest("hex"); }
 function isInventoryError(value: unknown): value is Error & { code: string } { return value instanceof Error && "code" in value; }
 
