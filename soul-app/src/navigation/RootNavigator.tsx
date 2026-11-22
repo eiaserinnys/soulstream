@@ -47,31 +47,16 @@ import {
   openPhoneSearchSessionFromRoot,
   type PhoneRootNavigation,
 } from './phoneSessionNavigation';
-import { parseSessionSearchIntentUrl, type SessionSearchIntent } from './sessionSearchIntent';
+import { parseSessionSearchIntentUrl, type SessionSearchLinkIntent } from './sessionSearchIntent';
 import { useAuthenticatedStartupReady } from './authenticatedStartupReady';
 import { openTabletCardFromRoot, openTabletSessionFromRoot } from './tabletSessionNavigation';
 import { parseNotificationTarget, type NotificationTarget } from './notificationTarget';
 
 type PendingSessionSearchIntent = {
   readonly id: number;
-  readonly intent: SessionSearchIntent;
+  readonly intent: SessionSearchLinkIntent;
 };
 
-/**
- * 앱 진입점 내비게이터.
- *
- * serverUrl 없음                     → SettingsScreen
- * serverUrl 있음 + authEnabled       → LoginScreen (PKCE OAuth, jwt 없음)
- * serverUrl 있음 + jwt 저장됨        → TabNavigator
- *
- * authDone은 로컬 state가 아닌 `useAuthStore`의 jwt 파생 값으로 관리한다.
- * 현재 인증 scope의 401은 transient authRejected도 세워 설정 조회 결과와 무관하게
- * LoginScreen으로 복귀한다. 이 신호는 JWT와 함께 영속하지 않는다.
- *
- * OAuth 진행: LoginScreen이 expo-auth-session(SFSafariViewController)으로 Google
- * id_token을 받아 백엔드 `/api/auth/google/native`에 POST → JWT를 받아 authStore에 저장.
- * 저장 직후 jwt 파생이 true가 되어 이 컴포넌트가 TabNavigator로 자동 전환한다.
- */
 export function RootNavigator({
   onUiUsageEventsEnabled,
 }: {

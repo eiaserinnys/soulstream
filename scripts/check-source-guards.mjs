@@ -246,21 +246,15 @@ function fingerprints() {
 
 function canonicalRedecl() {
   const items = [];
-  for (const [packageName, modules] of Object.entries(config.canonicalModules)) {
-    const packageRoot = config.packages[packageName];
-    const canonical = new Map();
-    for (const module of modules) {
-      for (const match of read(`${packageRoot}/${module}`).matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let|class|interface|type|enum)\s+(\w+)/gm)) {
-        canonical.set(match[1], module);
-      }
-    }
-    for (const file of walk(packageRoot)) {
-      if (modules.includes(file.slice(packageRoot.length + 1))) continue;
-      const text = read(file);
-      for (const match of text.matchAll(/^[ \t]*(export\s+)?(?:async\s+)?(?:function\*?\s+(\w+)\s*[(<]|(?:const|let|var)\s+(\w+)\s*[=:<]|class\s+(\w+)\b|interface\s+(\w+)\s*(?:<|\{|extends)|type\s+(\w+)\s*(?:<|=)|enum\s+(\w+))/gm)) {
-        const name = match.slice(2).find((group) => group);
-        if (canonical.has(name)) {
-          items.push(`${file}:${line(text, match.index)} ${name}  → ${canonical.get(name)}의 ${name}을 import하거나 다른 이름을 쓴다`);
+  for (const [module, packages] of Object.entries(config.canonicalModules)) {
+    const names = new Set([...read(module).matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let|class|interface|type|enum)\s+(\w+)/gm)].map((match) => match[1]));
+    for (const packageName of packages) {
+      for (const file of walk(config.packages[packageName])) {
+        if (file === module) continue;
+        const text = read(file);
+        for (const match of text.matchAll(/^[ \t]*(export\s+)?(?:async\s+)?(?:function\*?\s+(\w+)\s*[(<]|(?:const|let|var)\s+(\w+)\s*[=:<]|class\s+(\w+)\b|interface\s+(\w+)\s*(?:<|\{|extends)|type\s+(\w+)\s*(?:<|=)|enum\s+(\w+))/gm)) {
+          const name = match.slice(2).find((group) => group);
+          if (names.has(name)) items.push(`${file}:${line(text, match.index)} ${name}  → ${module}의 ${name}을 import하거나 다른 이름을 쓴다`);
         }
       }
     }
@@ -586,6 +580,260 @@ function singleStateMachine() {
   return items;
 }
 
+const recordId = '[A-Za-z_$][\\w$]*';
+const recordReturn = '(?::\\s*(\\{[^{}]*\\}[^{;=]*?|[^{;=]+?))?';
+const recordHeads = [
+  new RegExp(`^[ \\t]*(?:export\\s+)?function\\s+(${recordId})\\s*\\(\\s*(${recordId})\\s*:\\s*unknown\\s*,?\\s*\\)\\s*${recordReturn}\\s*\\{`, 'gm'),
+  new RegExp(`^[ \\t]*(?:(?:private|protected|public|static|readonly)\\s+)*(${recordId})\\s*\\(\\s*(${recordId})\\s*:\\s*unknown\\s*,?\\s*\\)\\s*${recordReturn}\\s*\\{`, 'gm'),
+  new RegExp(`^[ \\t]*(?:export\\s+)?const\\s+(${recordId})\\s*=\\s*\\(\\s*(${recordId})\\s*:\\s*unknown\\s*,?\\s*\\)\\s*${recordReturn}\\s*=>\\s*`, 'gm'),
+];
+const guardHeads = [
+  new RegExp(`^[ \\t]*(?:export\\s+)?function\\s+(${recordId})\\s*\\(\\s*(${recordId})\\s*:\\s*unknown\\s*,?\\s*\\)\\s*:\\s*(${recordId})\\s+is\\s+(\\{[^{}]*\\}|[^{]+?)\\s*\\{`, 'gm'),
+  new RegExp(`^[ \\t]*(?:export\\s+)?const\\s+(${recordId})\\s*=\\s*\\(\\s*(${recordId})\\s*:\\s*unknown\\s*,?\\s*\\)\\s*:\\s*(${recordId})\\s+is\\s+([\\s\\S]+?)\\s*=>\\s*`, 'gm'),
+];
+const recordKeywords = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'constructor']);
+
+function recordScan(text, start, stop) {
+  let depth = 0;
+  let quote = null;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === '\\') { i += 1; continue; }
+      if (ch === quote) quote = null;
+    } else if ('"\'`'.includes(ch)) quote = ch;
+    else if ('([{'.includes(ch)) depth += 1;
+    else if (')]}'.includes(ch)) {
+      depth -= 1;
+      if (depth < 0) return i;
+    }
+    if (depth === 0 && !quote && stop(text, i)) return i;
+  }
+  return text.length;
+}
+
+function recordBlock(text, start) {
+  return text.slice(start + 1, recordScan(text, start + 1, () => false));
+}
+
+function recordStrip(expr) {
+  expr = expr.trim();
+  while (expr.startsWith('(') && expr.endsWith(')')) {
+    if (recordScan(expr, 1, () => false) !== expr.length - 1) break;
+    expr = expr.slice(1, -1).trim();
+  }
+  return expr;
+}
+
+function guardStrip(expr) {
+  expr = expr.trim();
+  while (expr.startsWith('(') && expr.endsWith(')')) {
+    let depth = 0;
+    let whole = true;
+    for (let i = 0; i < expr.length; i += 1) {
+      if (expr[i] === '(') depth += 1;
+      if (expr[i] === ')') depth -= 1;
+      if (depth === 0 && i < expr.length - 1) { whole = false; break; }
+    }
+    if (!whole) break;
+    expr = expr.slice(1, -1).trim();
+  }
+  return expr;
+}
+
+function recordSplit(expr, op) {
+  const parts = [];
+  let depth = 0;
+  let quote = null;
+  let last = 0;
+  for (let i = 0; i < expr.length; i += 1) {
+    const ch = expr[i];
+    if (quote) {
+      if (ch === '\\') { i += 1; continue; }
+      if (ch === quote) quote = null;
+    } else if ('"\'`'.includes(ch)) quote = ch;
+    else if ('([{'.includes(ch)) depth += 1;
+    else if (')]}'.includes(ch)) depth -= 1;
+    else if (depth === 0 && expr.startsWith(op, i)) {
+      parts.push(expr.slice(last, i));
+      i += op.length - 1;
+      last = i + 1;
+    }
+  }
+  parts.push(expr.slice(last));
+  return parts.map((part) => recordStrip(part).replace(/\s+/g, ' '));
+}
+
+function recordTernary(expr) {
+  let q = null;
+  let depth = 0;
+  let quote = null;
+  let nested = 0;
+  for (let i = 0; i < expr.length; i += 1) {
+    const ch = expr[i];
+    if (quote) {
+      if (ch === '\\') { i += 1; continue; }
+      if (ch === quote) quote = null;
+    } else if ('"\'`'.includes(ch)) quote = ch;
+    else if ('([{'.includes(ch)) depth += 1;
+    else if (')]}'.includes(ch)) depth -= 1;
+    else if (depth === 0 && ch === '?') {
+      const next = expr[i + 1];
+      if (next === '?' || (next === '.' && !/\d/.test(expr[i + 2] ?? ''))) { i += 1; continue; }
+      if (q === null) { q = i; nested = 0; } else nested += 1;
+    } else if (depth === 0 && ch === ':' && q !== null) {
+      if (nested === 0) return [expr.slice(0, q), expr.slice(q + 1, i), expr.slice(i + 1)];
+      nested -= 1;
+    }
+  }
+  return null;
+}
+
+function fullMatch(pattern, text) {
+  return new RegExp(`^(?:${pattern})$`).test(text);
+}
+
+function unwrapBoolean(expr, strip) {
+  expr = strip(expr);
+  if (expr.startsWith('Boolean(')) {
+    const inner = expr.slice('Boolean'.length);
+    const stripped = strip(inner);
+    if (stripped !== inner) expr = stripped;
+  }
+  return expr;
+}
+
+function guardCopy(param, expr) {
+  expr = unwrapBoolean(expr, guardStrip);
+  const p = escapeRegExp(param);
+  if (fullMatch(`isRecord\\(\\s*${p}\\s*\\)`, expr)) return true;
+  const type = [`typeof ${p} === ("object"|'object')`, `("object"|'object') === typeof ${p}`];
+  const allowed = [...type, `${p} !== null`, `null !== ${p}`, `${p} != null`, `!!${p}`, p, `Boolean\\(${p}\\)`, `!Array\\.isArray\\(${p}\\)`];
+  const terms = expr.split('&&').map((term) => guardStrip(term).replace(/\s+/g, ' '));
+  return type.some((pattern) => terms.some((term) => fullMatch(pattern, term))) && terms.every((term) => allowed.some((pattern) => fullMatch(pattern, term)));
+}
+
+function recordCondition(param, expr, positive) {
+  expr = positive ? unwrapBoolean(expr, recordStrip) : recordStrip(expr);
+  const p = escapeRegExp(param);
+  if (fullMatch(`${positive ? '' : '!\\s*'}isRecord\\(\\s*${p}\\s*\\)`, expr)) return true;
+  const op = positive ? '===?' : '!==?';
+  const type = [`typeof ${p} ${op} ("object"|'object')`, `("object"|'object') ${op} typeof ${p}`];
+  const allowed = positive
+    ? [...type, `!Array\\.isArray\\(${p}\\)`, `${p} !==? (null|undefined)`, `(null|undefined) !==? ${p}`, `!!${p}`, p, `Boolean\\(${p}\\)`]
+    : [...type, `Array\\.isArray\\(${p}\\)`, `${p} ===? (null|undefined)`, `(null|undefined) ===? ${p}`, `!${p}`];
+  const terms = recordSplit(expr, positive ? '&&' : '||');
+  return type.some((pattern) => terms.some((term) => fullMatch(pattern, term))) && terms.every((term) => allowed.some((pattern) => fullMatch(pattern, term)));
+}
+
+function recordDefault(expr) {
+  return ['null', 'undefined', '{}'].includes(recordStrip(expr).replace(/\s+/g, ''));
+}
+
+function recordValue(param, expr) {
+  expr = recordStrip(expr);
+  return expr === param || fullMatch(`${escapeRegExp(param)}\\s+as\\s+[\\s\\S]+`, expr);
+}
+
+function recordReturned(stmt) {
+  stmt = stmt.trim();
+  const block = /^\{\s*([\s\S]*?)\s*\}$/.exec(stmt);
+  if (block) stmt = block[1].trim();
+  return /^return\s+([\s\S]+?)\s*;?$/.exec(stmt)?.[1] ?? null;
+}
+
+function recordIfReturn(body) {
+  const match = /^\s*if\s*\(/.exec(body);
+  if (!match) return null;
+  const close = recordScan(body, match[0].length, () => false);
+  const condition = body.slice(match[0].length, close);
+  const rest = body.slice(close + 1).trim();
+  const end = rest.startsWith('{') ? recordScan(rest, 1, () => false) : recordScan(rest, 0, (text, i) => text[i] === ';');
+  const first = recordReturned(rest.slice(0, end + 1));
+  const second = recordReturned(rest.slice(end + 1));
+  return first === null || second === null ? null : [condition, first, second];
+}
+
+function recordCopyValue(param, body, expression = false) {
+  let expr = expression ? body.trim().replace(/;+$/, '').trim() : recordReturned(body);
+  if (expr !== null) {
+    expr = recordStrip(expr);
+    const match = new RegExp(`^asRecord\\(\\s*${escapeRegExp(param)}\\s*\\)(?:\\s*\\?\\?\\s*([\\s\\S]+))?$`).exec(expr);
+    if (match && (match[1] === undefined || recordDefault(match[1]))) return true;
+    const parts = recordTernary(expr);
+    return !!parts && recordDefault(parts[2]) && recordValue(param, parts[1]) && recordCondition(param, parts[0], true);
+  }
+  const parts = recordIfReturn(body);
+  if (!parts) return false;
+  return (recordDefault(parts[1]) && recordValue(param, parts[2]) && recordCondition(param, parts[0], false)) ||
+    (recordDefault(parts[2]) && recordValue(param, parts[1]) && recordCondition(param, parts[0], true));
+}
+
+function recordCopies() {
+  const items = [];
+  for (const sourceRoot of config.codeRoots) {
+    for (const file of walk(sourceRoot, ['.ts', '.tsx'], false)) {
+      if (file === config.recordCanonical) continue;
+      const text = read(file);
+      const found = new Map();
+      for (const [index, regex] of guardHeads.entries()) {
+        for (const match of text.matchAll(regex)) {
+          const [, name, param, predParam, predType] = match;
+          if (param !== predParam || predType.includes('[]')) continue;
+          const rest = text.slice(match.index + match[0].length);
+          let body;
+          if (index === 0 || rest.startsWith('{')) {
+            const source = index === 0 ? text.slice(match.index + match[0].length - 1) : rest;
+            let depth = 0;
+            let end = 0;
+            for (; end < source.length; end += 1) {
+              if (source[end] === '{') depth += 1;
+              if (source[end] === '}' && --depth === 0) break;
+            }
+            body = source.slice(1, end);
+            const result = /^\s*return\s+([\s\S]+?);?\s*$/.exec(body);
+            body = result?.[1];
+          } else body = rest.split(';', 1)[0];
+          if (body && guardCopy(param, body)) found.set(`${match.index}:${name}`, [match.index, name]);
+        }
+      }
+      const seen = new Set();
+      for (const [index, regex] of recordHeads.entries()) {
+        for (const match of text.matchAll(regex)) {
+          const [, name, param] = match;
+          if (index < 2 && (recordKeywords.has(name) || seen.has(match.index))) continue;
+          if (index < 2) seen.add(match.index);
+          const rest = text.slice(match.index + match[0].length);
+          const block = index < 2 ? text.slice(match.index + match[0].length - 1) : rest;
+          const expression = index === 2 && !rest.startsWith('{');
+          const body = expression ? rest.slice(0, recordScan(rest, 0, (source, i) => source[i] === ';')) : recordBlock(block, 0);
+          if (recordCopyValue(param, body, expression)) found.set(`${match.index}:${name}`, [match.index, name]);
+        }
+      }
+      for (const [index, name] of found.values()) items.push(`${file}:${line(text, index)} ${name}  → ${config.recordCanonical}의 isRecord나 asRecord를 가져다 쓴다`);
+    }
+  }
+  return items;
+}
+
+function reflectKey() {
+  const items = [];
+  for (const sourceRoot of config.codeRoots) {
+    for (const file of walk(sourceRoot, ['.ts', '.tsx'], false)) {
+      const text = read(file);
+      for (const match of text.matchAll(/\bReflect\.(get|set|has)\s*\(/g)) {
+        const start = match.index + match[0].length;
+        const comma = recordScan(text, start, (source, i) => source[i] === ',');
+        const rest = text.slice(comma + 1);
+        const key = /^\s*(["'`])((?:\\[\s\S]|(?!\1)[^\\])*)\1\s*(?=[,)])/s.exec(rest);
+        if (!key || (key[1] === '`' && key[2].includes('${'))) continue;
+        items.push(`${file}:${line(text, match.index)} Reflect.${match[1]} "${key[2]}"  → obj["${key[2]}"]나 "${key[2]}" in obj로 바로 쓴다`);
+      }
+    }
+  }
+  return items;
+}
+
 function main() {
   config = JSON.parse(readFileSync(join(root, 'scripts', 'source-guards.config.json'), 'utf8'));
   const rules = [
@@ -595,6 +843,8 @@ function main() {
     ['dead-module', deadModule],
     ['fingerprints', fingerprints],
     ['intra-identical', intraIdentical],
+    ['record-copy', recordCopies],
+    ['reflect-key', reflectKey],
     ['renamed-reexport', renamedReexport],
     ['runtime-cycle', runtimeCycle],
     ['same-name-alias', sameNameAlias],

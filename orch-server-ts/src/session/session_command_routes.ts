@@ -1,6 +1,6 @@
 import { isRecord } from "@soulstream/wire-schema/json-record";
 import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
-import { sessionCreateBadRequest as createBadRequest, serviceUnavailable as createUnavailable, sendMappedError as createMappedError, sendCreateAckError as createAckError, createAckErrorStatus, type SessionCreateRouteResponse } from "./session_create_route_response.js";
+import { sessionCreateBadRequest, serviceUnavailable, sendMappedError, sendCreateAckError, type SessionCreateRouteResponse } from "./session_create_route_response.js";
 import { randomUUID } from "node:crypto";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -19,15 +19,11 @@ import {
   type RespondNodeCommandPayload,
 } from "../node/pending_commands.js";
 import type { CreateSessionNodeCommandPayload } from "../node/registry_types.js";
-import { mapNodeCommandError, sendApiError } from "../http/api_errors.js";
 import {
-  ModelPresetAvailabilityError,
   type ModelPresetAvailabilityService,
 } from "../model/model_preset_availability.js";
 import {
-  SessionCommandRouteError,
   SessionCommandRouter,
-  sessionCommandRouteErrorResponse,
   type SessionOwnerNodeIdLookup,
 } from "./session_command_router.js";
 import {
@@ -36,11 +32,9 @@ import {
 } from "./session_resource_access.js";
 import type { SessionCommandTransportBridge } from "./session_command_transport.js";
 import {
-  SessionCreateLifecycleError,
   type PreparedSessionCreate,
   type SessionCreateLifecycle,
 } from "./session_create_lifecycle.js";
-import { SessionCreateNodeSelectionError } from "./session_create_node_selector.js";
 
 export type SessionCreateAttachmentAdmission = (
   caller: FastifyRequest | ServiceCaller,
@@ -74,23 +68,6 @@ export const sessionCommandRouteAuthRequirements = {
   "POST /api/sessions": true,
   "POST /api/sessions/{session_id}/respond": true,
 } as const;
-
-function sendCreateAckError(
-  reply: FastifyReply,
-  response: { code?: unknown; message?: unknown },
-): FastifyReply {
-  const statusCode = createAckErrorStatus(response.code);
-  if (statusCode === undefined) return serviceUnavailable(reply, response);
-  return reply.code(statusCode).send({
-    error: {
-      code: response.code,
-      message:
-        typeof response.message === "string"
-          ? response.message
-          : "Session creation rejected",
-    },
-  });
-}
 
 const RESPOND_ACK_ERROR_HTTP_STATUS: Readonly<Record<string, number>> = {
   SESSION_NOT_FOUND: 404,
@@ -162,7 +139,8 @@ export function registerSessionCommandRoutes(
           return sendRespondAckError(reply, response);
         }
       }
-      return sendMappedError(reply, error);
+      const mapped = sendMappedError(error);
+      return reply.code(mapped.status).send(mapped.body);
     }
   });
 }
@@ -177,7 +155,7 @@ export async function executeCreateSessionRoute(
 ): Promise<SessionCreateRouteResponse> {
     const parsedBody = parseObjectBody(input);
     if (!parsedBody.ok) {
-      return createBadRequest(parsedBody.message);
+      return sessionCreateBadRequest(parsedBody.message);
     }
     const body = parsedBody.value;
     if (body.worktree_id !== undefined) {
@@ -201,29 +179,29 @@ export async function executeCreateSessionRoute(
         typeof body.worktree_actor_session_id !== "string"
         || body.worktree_actor_session_id.length === 0
       ) {
-        return createBadRequest(
+        return sessionCreateBadRequest(
           "worktree_actor_session_id is required for worktree-bound sessions",
         );
       }
     }
     const attachmentPaths = parseAttachmentPaths(body);
-    if (!attachmentPaths.ok) return createBadRequest(attachmentPaths.message);
+    if (!attachmentPaths.ok) return sessionCreateBadRequest(attachmentPaths.message);
     const attachmentIds = parseAttachmentIds(body);
-    if (!attachmentIds.ok) return createBadRequest(attachmentIds.message);
+    if (!attachmentIds.ok) return sessionCreateBadRequest(attachmentIds.message);
     if (attachmentIds.value?.length && options.admitAttachmentInput === undefined) {
-      return createUnavailable({
+      return serviceUnavailable({
         code: "ATTACHMENT_INPUT_UNAVAILABLE",
         message: "Attachment input is unavailable",
       });
     }
     const resolvedPrompt = resolveCreateSessionPrompt(body);
-    if ("error" in resolvedPrompt) return createBadRequest(resolvedPrompt.error);
+    if ("error" in resolvedPrompt) return sessionCreateBadRequest(resolvedPrompt.error);
     const { prompt } = resolvedPrompt;
     if (body.pageAnchor !== undefined && !isPageAnchor(body.pageAnchor)) {
-      return createBadRequest("pageAnchor must include pageId, blockId, and a positive expectedVersion");
+      return sessionCreateBadRequest("pageAnchor must include pageId, blockId, and a positive expectedVersion");
     }
     if (body.pageAnchor !== undefined && prompt.trim().length === 0) {
-      return createBadRequest("prompt is required for page-anchored session creation");
+      return sessionCreateBadRequest("prompt is required for page-anchored session creation");
     }
     if (
       body.predecessor_session_id !== undefined &&
@@ -231,7 +209,7 @@ export async function executeCreateSessionRoute(
       (typeof body.predecessor_session_id !== "string" ||
         body.predecessor_session_id.trim().length === 0)
     ) {
-      return createBadRequest("predecessor_session_id must be a non-empty string or null");
+      return sessionCreateBadRequest("predecessor_session_id must be a non-empty string or null");
     }
     if (
       body.model_preset !== undefined
@@ -241,7 +219,7 @@ export async function executeCreateSessionRoute(
         || body.model_preset.trim().length === 0
       )
     ) {
-      return createBadRequest("model_preset must be a non-empty string or null");
+      return sessionCreateBadRequest("model_preset must be a non-empty string or null");
     }
     if (body.model_preset_fallbacks !== undefined) {
       const fallbacks = body.model_preset_fallbacks;
@@ -249,10 +227,10 @@ export async function executeCreateSessionRoute(
         !Array.isArray(fallbacks)
         || fallbacks.some((item) => typeof item !== "string")
       ) {
-        return createBadRequest("model_preset_fallbacks must be a string array");
+        return sessionCreateBadRequest("model_preset_fallbacks must be a string array");
       }
       if (fallbacks.some((item) => (item as string).trim().length === 0)) {
-        return createBadRequest("model_preset_fallbacks must contain non-blank strings");
+        return sessionCreateBadRequest("model_preset_fallbacks must contain non-blank strings");
       }
     }
 
@@ -298,7 +276,7 @@ export async function executeCreateSessionRoute(
         }
         if (outcome === "not_created" || outcome === "unknown") {
           return withCreateOutcome(
-            createMappedError(error),
+            sendMappedError(error),
             payload.agentSessionId,
             outcome,
           );
@@ -306,14 +284,14 @@ export async function executeCreateSessionRoute(
         throw error;
       }
       if (isErrorAck(result)) {
-        return createAckError(result);
+        return sendCreateAckError(result);
       }
       const agentSessionId = payload.agentSessionId;
       if (
         typeof result.agentSessionId === "string" &&
         result.agentSessionId !== agentSessionId
       ) {
-        return createUnavailable({
+        return serviceUnavailable({
           code: "SESSION_ID_MISMATCH",
           message: "create_session ack changed the server-generated agentSessionId",
         });
@@ -325,7 +303,7 @@ export async function executeCreateSessionRoute(
         ...(Array.isArray(result.warnings) ? { warnings: result.warnings } : {}),
       } };
     } catch (error) {
-      return createMappedError(error);
+      return sendMappedError(error);
     }
 }
 
@@ -611,70 +589,6 @@ function isErrorAck(response: NodeCommandResponse): boolean {
 
 function isRespondAckError(response: NodeCommandResponse): boolean {
   return response.status === "error";
-}
-
-function serviceUnavailable(
-  reply: FastifyReply,
-  response: { code?: unknown; message?: unknown },
-): FastifyReply {
-  return sendApiError(reply, 503, {
-    code: typeof response.code === "string" ? response.code : "NODE_COMMAND_FAILED",
-    message: typeof response.message === "string" ? response.message : "Node command failed",
-  });
-}
-
-function sendMappedError(reply: FastifyReply, error: unknown): FastifyReply {
-  if (error instanceof ModelPresetAvailabilityError) {
-    return reply.code(error.statusCode).send({
-      error: {
-        code: error.code,
-        message: error.message,
-      },
-    });
-  }
-  if (error instanceof SessionCreateNodeSelectionError) {
-    return reply.code(error.statusCode).send({
-      error: {
-        code: error.code,
-        message: error.message,
-        nodeId: error.nodeId,
-        profile: error.profileId,
-        backend: error.backend,
-      },
-    });
-  }
-  if (error instanceof SessionCreateLifecycleError) {
-    return reply.code(error.statusCode).send({
-      error: {
-        code: error.code,
-        message: error.message,
-      },
-    });
-  }
-  if (error instanceof SessionCommandRouteError) {
-    const response = sessionCommandRouteErrorResponse(error);
-    return reply.code(response.status).send(response.body);
-  }
-
-  const nodeCommandError = mapNodeCommandError(error);
-  if (nodeCommandError?.kind === "rejected") {
-    // A rejection carrying a structured input-error code is the caller's
-    // problem; without one it stays an upstream failure.
-    return sendCreateAckError(reply, {
-      code: nodeCommandError.response?.code ?? nodeCommandError.apiError.code,
-      message: nodeCommandError.apiError.message,
-    });
-  }
-  if (nodeCommandError !== undefined) {
-    return sendApiError(reply, nodeCommandError.statusCode, nodeCommandError.apiError);
-  }
-
-  return reply.code(500).send({
-    error: {
-      code: "SESSION_COMMAND_ROUTE_ERROR",
-      message: error instanceof Error ? error.message : String(error),
-    },
-  });
 }
 
 function sendRespondAckError(

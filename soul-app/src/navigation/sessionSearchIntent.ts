@@ -1,13 +1,12 @@
-export type SessionSearchIntent = {
+export type SessionSearchLinkIntent = {
   readonly sessionId: string;
   readonly eventId?: number;
 };
 
 export type ParsedSessionSearchIntent =
-  | { readonly kind: 'intent'; readonly intent: SessionSearchIntent }
+  | { readonly kind: 'intent'; readonly intent: SessionSearchLinkIntent }
   | { readonly kind: 'invalid'; readonly reason: 'empty_session' | 'invalid_event' };
 
-/** Parse the canonical root query from app-scheme and universal links. */
 export function parseSessionSearchIntentUrl(
   value: string,
 ): ParsedSessionSearchIntent | null {

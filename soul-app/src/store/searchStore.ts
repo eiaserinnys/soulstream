@@ -7,7 +7,7 @@ import { isRecord } from '../../../packages/wire-schema/src/json_record';
 
 export type SearchScope = 'all' | 'sessions' | 'messages';
 export type SearchPeriod = 'today' | '7d' | '30d' | 'all';
-export type SearchEventCategory =
+export type HumanSearchEventCategory =
   | 'messages'
   | 'responses'
   | 'thinking';
@@ -18,7 +18,7 @@ export interface SearchFilters {
   statuses: string[];
   backends: string[];
   period: SearchPeriod;
-  eventCategories: SearchEventCategory[];
+  eventCategories: HumanSearchEventCategory[];
   includeTurnSummaries: boolean;
   includeHighlight: boolean;
   includeStory: boolean;
@@ -41,7 +41,7 @@ const HUMAN_SEARCH_EVENT_CATEGORIES = [
   'messages',
   'responses',
   'thinking',
-] as const satisfies readonly SearchEventCategory[];
+] as const satisfies readonly HumanSearchEventCategory[];
 
 interface SearchState {
   query: string;
@@ -189,14 +189,14 @@ function moveToFront(values: string[], value: string, limit: number): string[] {
 
 function normalizeHumanSearchEventCategories(
   value: unknown,
-): SearchEventCategory[] {
+): HumanSearchEventCategory[] {
   if (!Array.isArray(value)) {
     return [...DEFAULT_SEARCH_FILTERS.eventCategories];
   }
   const categories = value.filter(
-    (item): item is SearchEventCategory =>
+    (item): item is HumanSearchEventCategory =>
       typeof item === 'string'
-      && HUMAN_SEARCH_EVENT_CATEGORIES.includes(item as SearchEventCategory),
+      && HUMAN_SEARCH_EVENT_CATEGORIES.includes(item as HumanSearchEventCategory),
   );
   const uniqueCategories = [...new Set(categories)];
   return uniqueCategories.length > 0

@@ -1,3 +1,4 @@
+import { filenameFromContentDisposition } from '../lib/attachment-link-view';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -371,14 +372,4 @@ async function readProtectedAttachmentMetadata(source: ImageURISource, serverUrl
   } catch {
     return {};
   }
-}
-
-function filenameFromContentDisposition(value: string | null): string | undefined {
-  if (!value) return undefined;
-  const encoded = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(value)?.[1]?.trim();
-  if (encoded) {
-    try { return decodeURIComponent(encoded.replace(/^"|"$/g, '')); } catch { return undefined; }
-  }
-  const plain = /filename\s*=\s*(?:"([^"]+)"|([^;]+))/i.exec(value);
-  return (plain?.[1] ?? plain?.[2])?.trim() || undefined;
 }

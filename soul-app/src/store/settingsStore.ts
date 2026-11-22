@@ -6,7 +6,7 @@ import type { CardAssignment } from '../api/cardTypes';
 import {
   DEFAULT_USER_PREFERENCES,
   normalizeUserPreferences,
-  normalizeWallpaperSettings,
+  normalizeAppWallpaperSettings,
   type UserPreferencesSnapshot,
 } from '../api/preferencesEndpoints';
 import type { Appearance } from '../../../packages/soul-ui/src/lib/user-preferences-envelope';
@@ -91,10 +91,10 @@ export const useSettingsStore = create<SettingsState>()(
       setNodeId: (nodeId) => set({ nodeId }),
       setAppearance: (appearance) => set({ appearance }),
       setWallpaper: (wallpaper) =>
-        set({ wallpaper: normalizeWallpaperSettings(wallpaper) }),
+        set({ wallpaper: normalizeAppWallpaperSettings(wallpaper) }),
       setWallpaperMode: (mode) =>
         set((state) => ({
-          wallpaper: normalizeWallpaperSettings(
+          wallpaper: normalizeAppWallpaperSettings(
             mode === 'photo' ? { ...state.wallpaper, mode } : { mode },
           ),
         })),

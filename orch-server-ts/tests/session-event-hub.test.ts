@@ -170,7 +170,7 @@ describe("RuntimeSessionEventHub live text snapshots", () => {
       }, `sess-${index}`);
     }
 
-    const retainedStates = Reflect.get(hub, "liveTextBySession") as Map<string, unknown>;
+    const retainedStates = hub["liveTextBySession"];
     expect(retainedStates.size).toBe(LIVE_TEXT_SNAPSHOT_MAX_SESSIONS);
     expect(hub.snapshotLiveText("sess-0").streams).toEqual([
       expect.objectContaining({ text: null, resetRequired: true }),

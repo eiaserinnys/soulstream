@@ -74,11 +74,11 @@ export function normalizeUserPreferences(value: unknown): UserPreferencesSnapsho
   const source = value as Partial<UserPreferencesSnapshot>;
   return {
     appearance: normalizeAppearance(source.appearance),
-    wallpaper: normalizeWallpaperSettings(source.wallpaper),
+    wallpaper: normalizeAppWallpaperSettings(source.wallpaper),
   };
 }
 
-export function normalizeWallpaperSettings(value: unknown): WallpaperSettings {
+export function normalizeAppWallpaperSettings(value: unknown): WallpaperSettings {
   if (!value || typeof value !== 'object') return DEFAULT_USER_PREFERENCES.wallpaper;
   const source = value as Partial<WallpaperSettings>;
   const mode = WALLPAPER_MODES.has(source.mode as WallpaperMode)

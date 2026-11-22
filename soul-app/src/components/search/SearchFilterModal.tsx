@@ -4,7 +4,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type { Folder } from '../../api/types';
 import {
   DEFAULT_SEARCH_FILTERS,
-  type SearchEventCategory,
+  type HumanSearchEventCategory,
   type SearchFilters,
   type SearchPeriod,
 } from '../../store/searchStore';
@@ -25,7 +25,7 @@ const PERIOD_OPTIONS: Array<[SearchPeriod, string]> = [
   ['30d', '30일'],
   ['all', '전체'],
 ];
-const EVENT_OPTIONS: Array<[SearchEventCategory, string]> = [
+const EVENT_OPTIONS: Array<[HumanSearchEventCategory, string]> = [
   ['messages', '메시지'],
   ['responses', '응답'],
   ['thinking', '생각'],
@@ -119,7 +119,7 @@ export function SearchFilterModal({
           values={filters.eventCategories}
           options={EVENT_OPTIONS}
           onChange={(eventCategories) => onChange({
-            eventCategories: eventCategories as SearchEventCategory[],
+            eventCategories: eventCategories as HumanSearchEventCategory[],
           })}
           styles={styles}
         />

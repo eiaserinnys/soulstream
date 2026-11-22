@@ -38,7 +38,7 @@ function resetDate(resetAt: number | string | null): Date | null {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
-function localClock(date: Date): string {
+function formatLocalClock(date: Date): string {
   return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
@@ -53,10 +53,10 @@ export function quotaResetLabel(
   const monthDay = `${date.getMonth() + 1}/${date.getDate()}`;
   const longWindow = kind === 'monthly' || date.getTime() - Date.now() > 7 * DAY_MS;
   if (usedPercent >= 100) {
-    return longWindow && !short ? `${monthDay} 해제` : `${localClock(date)} 해제`;
+    return longWindow && !short ? `${monthDay} 해제` : `${formatLocalClock(date)} 해제`;
   }
   if (longWindow) return monthDay;
-  if (!short) return `${weekdays[date.getDay()]} ${localClock(date)}`;
+  if (!short) return `${weekdays[date.getDay()]} ${formatLocalClock(date)}`;
   const minutes = Math.max(0, Math.ceil((date.getTime() - Date.now()) / 60_000));
   if (minutes < 60) return `${minutes}분 후`;
   return `${Math.ceil(minutes / 60)}시간 후`;

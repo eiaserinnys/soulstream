@@ -76,7 +76,7 @@ export type SearchNavigationResult = {
     project_page_id: string;
   };
 
-export function buildSessionSearchUrl(
+export function buildSessionSearchRequestUrl(
   query: string,
   filters: SearchFilters,
   topK: number,
@@ -203,7 +203,7 @@ export function useSessionSearch(request: typeof fetch = fetch) {
       setError(null);
       let lexicalPublished = false;
       try {
-        const res = await request(buildSessionSearchUrl(query, filters, topK, "lexical"), {
+        const res = await request(buildSessionSearchRequestUrl(query, filters, topK, "lexical"), {
           signal: controller.signal,
         });
         if (!res.ok) {
@@ -233,7 +233,7 @@ export function useSessionSearch(request: typeof fetch = fetch) {
           return;
         }
         setExpansionPending(true);
-        const expandedRes = await request(buildSessionSearchUrl(query, filters, topK, "expanded"), {
+        const expandedRes = await request(buildSessionSearchRequestUrl(query, filters, topK, "expanded"), {
           signal: controller.signal,
         });
         if (!expandedRes.ok) throw new Error(`Expanded search failed: ${expandedRes.status}`);
