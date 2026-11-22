@@ -2,6 +2,7 @@ import type { ApiRequestContext } from './clientCore';
 import { toSession } from './mappers';
 import type { Session } from './types';
 import type { SearchMatchSource } from '../../../packages/search-contract/src/search_core';
+import { asRecord } from '../../../packages/wire-schema/src/json_record';
 
 export interface SessionMetadataSearchParams {
   query: string;
@@ -253,7 +254,7 @@ function toSessionSearchProjection(
 ): SessionSearchProjection[] {
   const sessionId = stringValue(row.session_id ?? row.sessionId);
   if (!sessionId) return [];
-  const bestMatch = recordValue(row.best_match ?? row.bestMatch);
+  const bestMatch = asRecord(row.best_match ?? row.bestMatch) ?? {};
   return [{
     sessionId,
     title: stringValue(row.title) ?? '제목 없음',
@@ -277,8 +278,8 @@ function toSessionSearchProjection(
 function toSessionMessageSearchStatus(
   value: unknown,
 ): SessionMessageSearchStatus | null {
-  const status = recordValue(value);
-  const expansion = recordValue(status.query_expansion);
+  const status = asRecord(value) ?? {};
+  const expansion = asRecord(status.query_expansion) ?? {};
   const expansionStatus = expansion.status;
   if (
     expansionStatus !== 'expanded'
@@ -303,7 +304,7 @@ function toSessionMessageSearchStatus(
 }
 
 function validSearchStatus(value: unknown): SessionMessageSearchStatus['search'] | null {
-  const search = recordValue(value);
+  const search = asRecord(value) ?? {};
   if (search.status !== 'partial') return null;
   const stage = search.stage;
   if (stage !== 'lexical' && stage !== 'semantic' && stage !== 'navigation') return null;
@@ -335,12 +336,6 @@ export function normalizeSearchMatchSource(
 
 function stringValue(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }
 
 function numberValue(value: unknown): number | null {

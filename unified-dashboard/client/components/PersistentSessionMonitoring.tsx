@@ -4,7 +4,7 @@ import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-pres
 import { pairTurnUsage } from "@seosoyoung/soul-ui/lib/persistent-turn-usage";
 import { formatTurnUsageCaptionTitle } from "@seosoyoung/soul-ui/lib/turn-usage-format";
 import { HISTORY_PAGE_SIZE } from "@seosoyoung/soul-ui/components/chat/useMessageHistoryBuffer";
-
+import { asRecord } from "../../../packages/wire-schema/src/json_record";
 import type { PersistentSession } from "../lib/persistent-sessions";
 import { fetchNodeModelPresets } from "@seosoyoung/soul-ui/shared/model-presets";
 import { SettingFieldWidget, type SettingField } from "./config/SettingFieldWidget";
@@ -380,10 +380,6 @@ function displayTime(value: string): string {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return value;
   return date.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
 function asString(value: unknown): string | null {
