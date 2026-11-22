@@ -35,7 +35,7 @@ export function createLiveSessionWorkspaceProvider(options: Options): SessionWor
       } catch(error) {
         const code=error instanceof WorkspaceRouteError ? error.statusCode : 502;
         status=code === 503 ? "offline" : code === 501 ? "unsupported" : code === 404 ? "no_workspace" : "error";
-        if(status === "offline" || status === "error") snapshot=last.get(sessionId);
+        if(code !== 501 && code !== 404) snapshot=last.get(sessionId);
       }
       const sql=await options.sqlResolver.resolveSql();
       const rows=await sql`SELECT event_type, payload->>'tool_name' AS tool_name, payload->>'tool_use_id' AS tool_use_id, created_at,
@@ -47,7 +47,7 @@ export function createLiveSessionWorkspaceProvider(options: Options): SessionWor
         FROM events WHERE session_id = ${sessionId} AND (event_type = 'tool_start' OR (event_type = 'tool_result' AND payload->>'tool_name' = 'file_change')) ORDER BY id DESC LIMIT 5000`;
       const activity=collectSessionFileActivity(snapshot?.root ?? null, rows as FileActivityRow[]);
       const git=snapshot?.git; const changed=new Map((git?.files ?? []).map(file=>[file.path,file]));
-      const committed=new Set((git?.commits ?? []).filter(commit=>commit.committed_at >= since).flatMap(commit=>commit.files));
+      const committed=new Set((git?.commits ?? []).filter(commit=>Date.parse(commit.committed_at) >= Date.parse(since)).flatMap(commit=>commit.files));
       const names=new Set([...changed.keys(), ...[...activity].filter(([,v])=>v.wrote).map(([p])=>p)]);
       const files=[...names].sort().map(file=>{
         const change=changed.get(file), act=activity.get(file);
@@ -68,6 +68,7 @@ function mapError(error:unknown):WorkspaceRouteError {
   if(error instanceof PendingNodeCommandTimeoutError) return new WorkspaceRouteError(504,error.message);
   if(error instanceof NodeCommandTransportError) return new WorkspaceRouteError(503,error.message);
   if(error instanceof PendingNodeCommandRejectedError) {
+    if(error.response?.code === "CONTROL_RESULT_TIMEOUT") return new WorkspaceRouteError(504,error.message);
     if(error.response?.code === "CONTROL_COMMAND_NOT_IN_INVENTORY" || error.message.startsWith("Not implemented in soul-server-ts:")) return new WorkspaceRouteError(501,error.message);
     if(error.message.startsWith("Node disconnected:")) return new WorkspaceRouteError(503,error.message);
     for(const [prefix,code] of [["NOT_FOUND:",404],["TOO_LARGE:",413],["INVALID_REQUEST:",400]] as const) if(error.message.startsWith(prefix)) return new WorkspaceRouteError(code,error.message);

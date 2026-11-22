@@ -13,20 +13,20 @@ export class WorkspaceSnapshotCache {
     const root = await realpath(workspace).catch(() => { throw new Error("NOT_FOUND: workspace not found"); });
     let entry = this.entries.get(root);
     if (!entry) { entry = { since, checkedAt: 0 }; this.entries.set(root, entry); }
-    const marker = await gitMarker(root);
+    const marker = await gitMarker(this.roots.get(root) ?? root);
     const stale = !entry.value || Date.now() - entry.checkedAt > 10_000 || marker !== entry.marker || since < entry.since;
     if (stale && !entry.promise) {
       entry.since = since < entry.since ? since : entry.since;
       const current = entry;
-      entry.promise = this.compute(root, entry.since).then(value => {
-        current.value = value; current.marker = marker; current.checkedAt = Date.now(); return value;
+      entry.promise = this.compute(root, entry.since).then(async value => {
+        current.value = value; current.marker = await gitMarker(this.roots.get(root) ?? root); current.checkedAt = Date.now(); return value;
       }).finally(() => { current.promise = undefined; });
       // The calculation may finish after the first caller receives pending.
       void entry.promise.catch(() => {});
     }
-    if (entry.value) return { ...entry.value, refreshing: !!entry.promise };
+    if (entry.value) return filterSince({ ...entry.value, refreshing: !!entry.promise }, since);
     const value = await Promise.race([entry.promise!, new Promise<null>(resolve => setTimeout(() => resolve(null), this.pendingMs))]);
-    return value ?? EMPTY(root);
+    return value ? filterSince(value, since) : EMPTY(root);
   }
   private async compute(root: string, since: string): Promise<NodeWorkspaceSnapshot> {
     let gitRoot = this.roots.get(root);
@@ -55,6 +55,11 @@ export class WorkspaceSnapshotCache {
     result.truncated = result.files.length > 1000; result.files = result.files.slice(0, 1000);
     return { root, state: "ready", observed_at: new Date().toISOString(), refreshing: false, git: result };
   }
+}
+function filterSince(snapshot: NodeWorkspaceSnapshot, since: string): NodeWorkspaceSnapshot {
+  if (!snapshot.git) return snapshot;
+  const threshold = Date.parse(since);
+  return { ...snapshot, git: { ...snapshot.git, commits: snapshot.git.commits.filter(commit => Date.parse(commit.committed_at) >= threshold) } };
 }
 async function git(cwd: string, args: string[]): Promise<string> {
   return (await runBoundedProcess({ command: "git", args: ["--no-optional-locks", "-c", "core.quotepath=false", ...args], cwd, timeoutMs: 30_000 })).stdout;
