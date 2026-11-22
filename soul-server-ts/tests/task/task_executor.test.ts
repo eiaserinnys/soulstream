@@ -4235,6 +4235,48 @@ describe("TaskExecutor runner process boundary", () => {
     expect(dispatcher.close).toHaveBeenCalledOnce();
   });
 
+  it.each([true, false])("recovers an adopted fatal turn with accepted successor: %s", async (hasSuccessor) => {
+    const mocks = makeMocks();
+    const fatal = { type: "error", message: "Antigravity exited without a successful result (1)",
+      fatal: true, timestamp: 1 } as SSEEventPayload;
+    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
+    (runner as { engine: EnginePort }).engine = new RunnerProcessEngineProxy(
+      "antigravity", agent.workspace_dir, dispatcher as never,
+    );
+    dispatcher.recoverFrames.mockReturnValue(frameStream([fatal]));
+    dispatcher.executeFrames.mockReturnValue(frameStream([
+      { type: "complete", result: "followup complete", timestamp: 2 } as SSEEventPayload,
+    ]));
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger,
+    );
+    const task = makeTask();
+    task.modelPresetBackend = "antigravity";
+    if (hasSuccessor) task.interventionQueue.push({
+      text: "continue after interruption", user: "user", deliveryId: "accepted-successor",
+    });
+
+    const recovery = executor.recoverRunnerExecution(task, agent, runner, "execute-old", "adopt");
+    if (hasSuccessor) {
+      await expect(recovery).resolves.toBeUndefined();
+      expect(dispatcher.executeFrames).toHaveBeenCalledOnce();
+      expect(dispatcher.executeFrames.mock.calls[0]![0]).toMatchObject({
+        prompt: expect.stringContaining("continue after interruption"),
+      });
+      expect(task.interventionQueue).toHaveLength(0);
+      expect(task.status).toBe("completed");
+      expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
+        "sess-1", expect.objectContaining({ type: "session_ended", status: "completed" }),
+        expect.anything(),
+      );
+    } else {
+      await expect(recovery).rejects.toThrow("Antigravity exited without a successful result (1)");
+      expect(dispatcher.executeFrames).not.toHaveBeenCalled();
+      expect(task.status).toBe("error");
+      expect(task.error).toBe("Antigravity exited without a successful result (1)");
+    }
+  });
+
   it.each([
     {
       label: "success",

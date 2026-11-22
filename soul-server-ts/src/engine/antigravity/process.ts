@@ -198,7 +198,10 @@ export function launchAntigravityProcess(options: {
     if (closed || !child.pid) return false;
     if (platform === "win32") {
       terminateWindowsTree(child.pid);
-      if (armGraceAfterInterrupt) armExitGraceTimer();
+      if (armGraceAfterInterrupt) {
+        interruptSignalled = true;
+        armExitGraceTimer();
+      }
       return true;
     }
     descendants = snapshotDescendants(child.pid);
