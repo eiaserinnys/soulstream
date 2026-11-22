@@ -17,6 +17,7 @@ import { decodeAuthJwt } from '../auth/jwt-payload';
 import { buildSoulAppCallerInfo } from '../auth/caller-info';
 import { appendAttachmentPathNotes } from '../../../packages/wire-schema/src/attachment_path_notes';
 import { parseReviewAcknowledgeResponse } from './reviewAcknowledge';
+import type { SessionWorkspaceResponse } from '../../../packages/wire-schema/src/session_workspace';
 
 export interface CreateSessionRequest {
   prompt: string;
@@ -89,6 +90,9 @@ export function createSessionEndpoints({
   buildQuery,
 }: ApiRequestContext) {
   return {
+    getSessionWorkspace: (sessionId: string, signal?: AbortSignal): Promise<SessionWorkspaceResponse> =>
+      authFetch(`${base}/api/sessions/${encodeURIComponent(sessionId)}/workspace`, signal ? { signal } : undefined)
+        .then(response => readJson(response, 'getSessionWorkspace')),
     getSessionStory: async (
       sessionId: string,
     ): Promise<SessionStoryResponse | null> => {

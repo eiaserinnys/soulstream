@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -26,6 +27,8 @@ export function AttachmentViewerModal(props: ImageViewerModalProps) {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="미리보기 배경 닫기"
+          focusable={false}
+          {...(Platform.OS === 'web' ? { tabIndex: -1 } : {})}
           testID="chat-image-viewer-backdrop"
           style={[StyleSheet.absoluteFill, { minWidth: t.hitTarget.min, minHeight: t.hitTarget.min }]}
           onPress={props.onClose}
@@ -54,6 +57,16 @@ function ChatRefinedImageViewerContent({
   const insets = useSafeAreaInsets();
   const attachment = createSessionVisualRoles(t).chat.attachment;
   const [currentIndex, setCurrentIndex] = useState(clampIndex(initialIndex, sources.length));
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof globalThis.window === 'undefined') return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      setCurrentIndex(index => clampIndex(index + (event.key === 'ArrowRight' ? 1 : -1), sources.length));
+    };
+    globalThis.window.addEventListener('keydown', onKeyDown);
+    return () => globalThis.window.removeEventListener('keydown', onKeyDown);
+  }, [sources.length]);
   const documentLayout = layout === 'document';
   // 듀오 펼침에서는 가용 폭을 이미 다 쓰므로 A4 비율 폭 제한을 두지 않는다.
   const duoBand = useDuoSideBand() || useDuoTopBand();

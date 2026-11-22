@@ -34,6 +34,7 @@ export function createAttachmentEndpoints({
   const readBoundedAttachmentText = async (
     url: string,
     signal?: AbortSignal,
+    emptyRangeIsEmpty = false,
   ): Promise<{ text: string; truncated: boolean }> => {
     let response: Response;
     try {
@@ -45,6 +46,7 @@ export function createAttachmentEndpoints({
       if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
       throw new AttachmentReadError('retryable');
     }
+    if (emptyRangeIsEmpty && response.status === 416 && response.headers.get('content-range') === 'bytes */0') return { text: '', truncated: false };
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       throw attachmentReadError(response.status);
@@ -113,6 +115,10 @@ export function createAttachmentEndpoints({
   };
 
   return {
+    readSessionWorkspaceText: (sessionId: string, path: string, signal?: AbortSignal) =>
+      readBoundedAttachmentText(`${base}/api/sessions/${encodeURIComponent(sessionId)}/workspace/file?path=${encodeURIComponent(path)}`, signal, true),
+    readSessionWorkspaceMedia: (sessionId: string, path: string, signal?: AbortSignal, options?: { mimeType?: string | null; name?: string }) =>
+      readAuthenticatedAttachmentMedia(`${base}/api/sessions/${encodeURIComponent(sessionId)}/workspace/file?path=${encodeURIComponent(path)}`, signal, options),
     getAttachmentMetadata: async (
       id: string,
       context: AttachmentReadContext,

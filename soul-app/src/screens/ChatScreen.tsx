@@ -82,6 +82,7 @@ export function ChatScreen({ route, navigation }: Props) {
     ...(sessionId ? [
       { id: 'story', label: '지난 줄거리', icon: 'book-outline' as const,
         selected: storyExpanded && storyAvailable, disabled: !storyAvailable, onPress: handleToggleStory },
+      { id: 'files', label: '세션 파일', icon: 'folder-open-outline' as const, onPress: () => navigation.navigate('SessionFiles', { sessionId }) },
       { id: 'menu', kind: 'menu' as const, label: '세션 메뉴', icon: 'ellipsis-horizontal' as const, onPress: () => menus.openSessionMenu({ sessionId }) },
     ] : []),
   ]);
@@ -123,6 +124,11 @@ export function ChatScreen({ route, navigation }: Props) {
         </View>
       ),
       headerRight: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="세션 파일"
+          style={styles.headerMenu} onPress={() => navigation.navigate('SessionFiles', { sessionId })}>
+          <Ionicons name="folder-open-outline" color={t.colors.accent} size={t.iconSize.navigation} />
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={() => menus.openSessionMenu({ sessionId })}
           accessibilityRole="button"
@@ -131,6 +137,7 @@ export function ChatScreen({ route, navigation }: Props) {
         >
           <Text style={styles.headerMenuText}>•••</Text>
         </TouchableOpacity>
+        </View>
       ),
     });
   }, [menus.openSessionMenu, navigation, panelHistory, route.params?.returnTab, session, sessionId, styles, t]);

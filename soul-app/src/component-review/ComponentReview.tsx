@@ -63,8 +63,10 @@ import { ReviewAttachments } from './ReviewAttachments';
 import { ReviewIphoneDuo } from './ReviewIphoneDuo';
 import { ReviewClaudeAccountPool } from './ReviewClaudeAccountPool';
 import { ReviewClaudePoolPas } from './ReviewClaudePoolPas';
+import { ReviewSessionFiles } from './ReviewSessionFiles';
 
 const sections = [
+  { value: 'sessionFiles', label: '세션 파일' },
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
   { value: 'chatUiComposer', label: '채팅 입력창' },
   { value: 'project', label: '프로젝트' }, { value: 'settings', label: '선택·설정' },
@@ -121,7 +123,7 @@ export function initializeReview() {
   const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
   const chat = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'chat';
-  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || pasCardExpand || cardQuestion || chat || contentLinks || contentLinkDocument || attachments || chatUiComposer || chatUiFlow ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent || iphoneDuo ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || pasCardExpand || cardQuestion || chat || contentLinks || contentLinkDocument || attachments || chatUiComposer || chatUiFlow || settingsSection === 'sessionFiles' ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent || iphoneDuo ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
   if (pasImageSample) useAuthStore.setState({ jwt: null, authRejected: false });
   if (attachments) useAuthStore.setState({ jwt: null, authRejected: false });
   if (chat) {
@@ -211,6 +213,7 @@ function Gallery() {
     backgroundColor: t.colors.background,
   }), [t]);
   if (section === 'pasCardExpand') return <ReviewPasCardExpand />;
+  if (section === 'sessionFiles') return <ReviewSessionFiles />;
   if (section === 'cardQuestion') return <ReviewCardQuestion />;
   if (section === 'chatUiComposer') return <ReviewChatUiComposer />;
   if (section === 'nativeSettings' || section === 'pasSettings') return <ReviewNativeSettings/>;
@@ -328,7 +331,7 @@ function getNativeSettingsSafeAreaFixture(search: string, width: number, height:
   const cardChecks = params.get('section') === 'cardChecks' || params.get('section') === 'persistent'
     || params.get('section') === 'entryShell' || params.get('section') === 'contentLinks'
     || params.get('section') === 'contentLinkDocument' || params.get('section') === 'chatUi' || params.get('section') === 'chatUiRenderer';
-  const fullHeightSample = params.get('section') === 'pasCardExpand' || params.get('section') === 'cardQuestion' || cardChecks || chatUiComposerSample || params.get('section') === 'cardImages'
+  const fullHeightSample = params.get('section') === 'sessionFiles' || params.get('section') === 'pasCardExpand' || params.get('section') === 'cardQuestion' || cardChecks || chatUiComposerSample || params.get('section') === 'cardImages'
     || params.get('section') === 'attachments' || params.get('section') === 'claudePool'
     || params.get('section') === 'claudePoolPas';
   if (!pasImageSample && !fullHeightSample && params.get('section') !== 'nativeSettings' && params.get('section') !== 'pasSettings') return null;

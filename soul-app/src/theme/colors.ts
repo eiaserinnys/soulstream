@@ -40,6 +40,9 @@ export interface ColorScheme {
   statusIdle: string;
   statusCompleted: string;
   statusError: string;
+  fileRead: string;
+  fileWrite: string;
+  fileCommit: string;
 }
 
 export interface PersistentSessionColors {
@@ -61,6 +64,9 @@ export const LIGHT_PERSISTENT_SESSION_COLORS: PersistentSessionColors = {
 };
 
 export const DARK_COLORS: ColorScheme = {
+  fileRead: 'hsl(258, 65%, 72%)',
+  fileWrite: 'hsl(25, 70%, 60%)',
+  fileCommit: 'hsl(160, 60%, 52%)',
   background: '#0f0f0f',
   surface: '#1c1c1e',
   surfaceMuted: '#181818',
@@ -104,6 +110,9 @@ export const DARK_COLORS: ColorScheme = {
 };
 
 export const LIGHT_COLORS: ColorScheme = {
+  fileRead: '#8b5cf6',
+  fileWrite: '#f97316',
+  fileCommit: '#10b981',
   background: '#ffffff',
   surface: '#f2f2f7',
   surfaceMuted: '#fafafc',

@@ -2,6 +2,8 @@ import { useSessionStore } from '../store/sessionStore';
 import type { ApiClient } from '../api/client';
 import { createApiRequestContext } from '../api/clientCore';
 import { createUsageEndpoints } from '../api/usageEndpoints';
+import { createAttachmentEndpoints } from '../api/attachmentEndpoints';
+import { createSessionEndpoints } from '../api/sessionEndpoints';
 import type { FeedPage } from '../api/feedPage';
 import { Alert, Platform, type AlertButton } from 'react-native';
 import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
@@ -35,6 +37,7 @@ import { createChatUiFlowReviewApi } from './chat-ui-flow-client';
 import { createPersistentReportReviewApi } from './persistent-report-fixtures';
 import { createUsageStatsReviewApi } from './usage-stats-review-api';
 import { createReviewCardApi } from './ReviewPasCardExpand';
+import { reviewWorkspace } from './session-files-fixtures';
 
 const ownedAgentsReviewApi = createOwnedAgentsReviewApi('normal');
 const nativeSettingsApi = { ...nativeSettingsReviewApi, ...ownedAgentsReviewApi };
@@ -425,14 +428,35 @@ export function createCardColorReviewClient(mode: CardColorReviewMode = 'success
 export function createApiClient(baseUrl = ''): ApiClient {
   const section = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('section') : null;
   const usageEndpoints = createUsageEndpoints(createApiRequestContext(baseUrl));
+  const context = createApiRequestContext(section === 'cardChecks' ? (window.location.origin ?? baseUrl) : baseUrl);
+  const fileEndpoints = { ...createAttachmentEndpoints(context), getSessionWorkspace: createSessionEndpoints(context).getSessionWorkspace };
   if (section === 'attachments' || section === 'cardImages') return createAttachmentReviewApi();
-  if (section === 'chatUiRenderer') return createChatUiFlowReviewApi(window.location.search);
+  if (section === 'chatUiRenderer') return { ...createChatUiFlowReviewApi(window.location.search), ...fileEndpoints } as ApiClient;
+  if (section === 'sessionFiles') {
+    const sample = new URLSearchParams(window.location.search).get('sample');
+    let attempts = 0;
+    return { ...api, ...fileEndpoints, sessionEventsUrl: () => '', getSessionWorkspace: async () => {
+      attempts++;
+      if (sample === 'loading') return new Promise<never>(() => {});
+      if (sample === 'error' && attempts === 1) throw new Error('공개 예시: 조회 실패');
+      const noRows = sample === 'empty' || sample === 'unsupported' || sample === 'no_workspace' || sample === 'not_git';
+      return { ...reviewWorkspace,
+        node: { ...reviewWorkspace.node, status: sample === 'offline' ? 'offline' : sample === 'unsupported' ? 'unsupported' : sample === 'no_workspace' ? 'no_workspace' : 'ok' },
+        snapshot: sample === 'long' ? { ...reviewWorkspace.snapshot!, branch: '아주-긴-브랜치-이름-레이아웃을-살펴봅니다-1234567890' }
+          : sample === 'not_git' || sample === 'not_git_reads' ? { ...reviewWorkspace.snapshot!, state: 'not_git', branch: null, ahead: 0, behind: 0 }
+          : sample === 'pending' ? { ...reviewWorkspace.snapshot!, state: 'pending', refreshing: true }
+          : sample === 'refreshing' ? { ...reviewWorkspace.snapshot!, refreshing: true } : reviewWorkspace.snapshot,
+        files: noRows || sample === 'not_git_reads' || sample === 'pending' ? [] : sample === 'long' ? reviewWorkspace.files.map(file => ({ ...file, path: `${file.path}-아주-긴-파일-이름이-있는-경우-레이아웃을-살펴봅니다-1234567890.ts` })) : reviewWorkspace.files,
+        read_only: noRows || sample === 'pending' ? [] : reviewWorkspace.read_only,
+      };
+    } } as unknown as ApiClient;
+  }
   if (section === 'contentLinks' || section === 'contentLinkDocument') {
     const value = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('documentState');
     const state = value === 'loading' || value === 'slow' || value === 'error' ? value : 'ready';
     return createContentLinkReviewApi(state);
   }
-  if (section === 'cardChecks') return cardChecksApi;
+  if (section === 'cardChecks') return { ...cardChecksApi, ...fileEndpoints } as ApiClient;
   if (section === 'folderTabs') {
     const empty = new URLSearchParams(window.location.search).get('state') === 'empty';
     return { ...api, getCatalog: async () => ({ folders: empty ? [] : folderTabReviewFolders, sessions: {}, sessionList: [], total: 0 }),
