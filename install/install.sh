@@ -307,7 +307,7 @@ finish_message() {
   printf '\nInstalled %s; backends: %s\n' "$(as_soul git -C "$root" rev-parse --short=12 HEAD)" "$BACKENDS"
   printf 'Connect: ssh -L 127.0.0.1:5200:127.0.0.1:5200 <user>@<server>\nOpen http://127.0.0.1:5200\n'
   printf 'Administrator password: %s\nStored in: %s/.admin-password\n' "$(cat "$root/.admin-password")" "$root"
-  if has_backend claude; then printf 'Claude: sudo -Hu soulstream /home/soulstream/.local/bin/claude auth login (open the URL on another device).\n'; fi
+  if has_backend claude; then printf 'Claude: sudo -Hu soulstream env BROWSER=/bin/false /home/soulstream/.local/bin/claude auth login (open the URL on another device).\n'; fi
   if has_backend codex; then printf 'Codex: sudo -Hu soulstream /usr/local/bin/codex login --device-auth (enable device code login in ChatGPT security settings).\n'; fi
   if has_backend antigravity; then printf 'Antigravity: ssh soulstream@<server>, run ~/.local/bin/agy, sign in, then /exit.\n'; fi
   printf 'After login, presets update within five minutes. To refresh now as root:\n'
