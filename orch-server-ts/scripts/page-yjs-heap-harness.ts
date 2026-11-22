@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { EventEmitter, once } from "node:events";
 
 import Fastify from "fastify";
 import {
@@ -13,6 +14,8 @@ interface HarnessSample {
   queuedHeapBytes: number;
   retainedHeapBytes: number;
   storeCalls: number;
+  storedEdits: number;
+  unsyncedChanges: boolean;
 }
 
 interface PageModelModule {
@@ -47,6 +50,8 @@ async function main(): Promise<void> {
   const app = Fastify({ logger: false });
   const service = new pageService.PageYjsService({
     repository,
+    storeDebounceMs: 5_000,
+    storeMaxDebounceMs: 20_000,
     auth: {
       authBearerToken: "service-token",
       environment: "production",
@@ -78,16 +83,18 @@ async function main(): Promise<void> {
 
     for (let round = 1; round <= rounds; round += 1) {
       for (let index = 0; index < editsPerRound; index += 1) text.insert(text.length, "x");
-      await delay(100);
+      await waitForProviderChanges(provider);
       gc();
       const queuedHeapBytes = process.memoryUsage().heapUsed;
-      await delay(2_500);
+      const storedEdits = await repository.waitForStoredEdits(round * editsPerRound);
       gc();
       samples.push({
         round,
         queuedHeapBytes,
         retainedHeapBytes: process.memoryUsage().heapUsed,
         storeCalls: repository.storeCalls,
+        storedEdits,
+        unsyncedChanges: provider.hasUnsyncedChanges,
       });
     }
 
@@ -124,11 +131,11 @@ async function main(): Promise<void> {
   }
 }
 
-class SlowMemoryPageRepository {
+class SlowMemoryPageRepository extends EventEmitter {
   readonly snapshots = new Map<string, Uint8Array>();
   storeCalls = 0;
 
-  constructor(private readonly createSnapshot: PageModelModule["createPageYDocSnapshot"]) {}
+  constructor(private readonly createSnapshot: PageModelModule["createPageYDocSnapshot"]) { super(); }
 
   seed(pageId: string): void {
     this.snapshots.set(`page:${pageId}`, this.createSnapshot({
@@ -163,6 +170,21 @@ class SlowMemoryPageRepository {
     this.storeCalls += 1;
     await delay(1);
     this.snapshots.set(input.documentName, input.snapshot);
+    this.emit("stored");
+  }
+
+  async waitForStoredEdits(expected: number): Promise<number> {
+    for (;;) {
+      const snapshot = this.snapshots.get("page:page-heap");
+      if (snapshot) {
+        const document = new Y.Doc();
+        Y.applyUpdate(document, snapshot);
+        const length = getText(document).length;
+        document.destroy();
+        if (length >= expected) return length;
+      }
+      await once(this, "stored");
+    }
   }
 
   async hasPageOperation(): Promise<boolean> { return false; }
@@ -194,6 +216,18 @@ function waitForSync(provider: HocuspocusProvider): Promise<void> {
       clearTimeout(timer);
       reject(new Error(reason));
     });
+  });
+}
+
+function waitForProviderChanges(provider: HocuspocusProvider): Promise<void> {
+  if (!provider.hasUnsyncedChanges) return Promise.resolve();
+  return new Promise((resolve) => {
+    const onChange = () => {
+      if (provider.hasUnsyncedChanges) return;
+      provider.off("unsyncedChanges", onChange);
+      resolve();
+    };
+    provider.on("unsyncedChanges", onChange);
   });
 }
 

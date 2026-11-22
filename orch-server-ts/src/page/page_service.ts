@@ -85,6 +85,8 @@ export interface PageServiceRepository extends PageYjsPersistenceRepository {
 
 export interface PageYjsServiceConfig {
   documentGate?: HandoverGate;
+  storeDebounceMs?: number;
+  storeMaxDebounceMs?: number;
   repository: PageServiceRepository;
   mutationCore?: PageMutationCore;
   createOperationId?: () => string;
@@ -161,8 +163,8 @@ export class PageYjsService {
     this.hocuspocus = new Hocuspocus({
       name: "soulstream-page-yjs",
       quiet: true,
-      debounce: 500,
-      maxDebounce: 5_000,
+      debounce: config.storeDebounceMs ?? 500,
+      maxDebounce: config.storeMaxDebounceMs ?? 5_000,
       extensions: [
         ...(config.auth === undefined
           ? []
