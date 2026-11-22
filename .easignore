@@ -121,3 +121,5 @@ coverage/
 .local/
 /soul-app/ios/
 /soul-app/android/
+
+!/packages/wire-schema/src/session_workspace.ts

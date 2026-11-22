@@ -156,6 +156,7 @@ import {
   registerSessionHistoryRoutes,
   type SessionHistoryRouteOptions,
 } from "./session/session_history_routes.js";
+import { registerSessionWorkspaceRoutes, type SessionWorkspaceRouteOptions } from "./session/session_workspace_routes.js";
 import { registerSessionEventAttachmentRoutes } from
   "./session/session_event_attachment_routes.js";
 import {
@@ -248,6 +249,7 @@ export type CreateAppOptions = {
   conversationRoutes?: ConversationRouteOptions;
   sessionCommandRoutes?: SessionCommandRouteOptions;
   sessionHistoryRoutes?: SessionHistoryRouteOptions;
+  sessionWorkspaceRoutes?: SessionWorkspaceRouteOptions;
   sessionSnapshotRoutes?: SessionSnapshotRouteOptions;
   sseReplayRoutes?: SseReplayRouteOptions;
   systemConfigRoutes?: SystemConfigRouteOptions;
@@ -396,6 +398,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerSessionHistoryRoutes(app, options.sessionHistoryRoutes);
     registerSessionEventAttachmentRoutes(app, options.sessionHistoryRoutes);
   }
+  if (options.sessionWorkspaceRoutes !== undefined) registerSessionWorkspaceRoutes(app, options.sessionWorkspaceRoutes);
   if (options.sessionSnapshotRoutes !== undefined) {
     registerSessionSnapshotRoutes(app, options.sessionSnapshotRoutes);
   }

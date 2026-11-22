@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CONTROL_COMMAND_TYPES } from "@soulstream/wire-schema";
 
+import { createWorkspaceCommandFamily } from "../../src/upstream/workspace_command_family.js";
 import { createAgentConfigCommandFamily } from "../../src/upstream/agent_config_command_family.js";
 import { createAttachmentCommandFamily } from "../../src/upstream/attachment_command_family.js";
 import { createAuthCommandFamily } from "../../src/upstream/auth_command_family.js";
@@ -25,13 +26,14 @@ describe("control command inventory", () => {
       ...createClaudeRuntimeCommandFamily({} as never),
       ...createRealtimeCommandFamily({} as never),
       ...createAttachmentCommandFamily({} as never),
+      ...createWorkspaceCommandFamily({} as never),
       ...createAuthCommandFamily({} as never),
       ...createReflectionCommandFamily({} as never),
       ...createAgentConfigCommandFamily({} as never),
     }).sort();
     const inventoryTypes = CONTROL_COMMAND_INVENTORY.map(({ type }) => type).sort();
 
-    expect(inventoryTypes).toHaveLength(54);
+    expect(inventoryTypes).toHaveLength(56);
     expect(new Set(inventoryTypes).size).toBe(inventoryTypes.length);
     expect(inventoryTypes).toEqual(handlerTypes);
     expect(inventoryTypes).toEqual([...CONTROL_COMMAND_TYPES].sort());
@@ -46,6 +48,7 @@ describe("control command inventory", () => {
         "claude-runtime",
         "realtime",
         "attachment",
+        "workspace",
         "auth/provider-usage",
         "reflection",
         "agent-config",
@@ -95,6 +98,8 @@ describe("control command inventory", () => {
       { type: "delete_session_attachments", family: "attachment", policy: "durable_mutation" },
       { type: "download_attachment", family: "attachment", policy: "bounded_result" },
       { type: "read_attachment_source", family: "attachment", policy: "bounded_result" },
+      { type: "workspace_snapshot", family: "workspace", policy: "bounded_result" },
+      { type: "workspace_file_read", family: "workspace", policy: "bounded_result" },
       { type: "claude_auth_status", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "claude_auth_set_token", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "claude_auth_delete_token", family: "auth/provider-usage", policy: "bounded_result" },

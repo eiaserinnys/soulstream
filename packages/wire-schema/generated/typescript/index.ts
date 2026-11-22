@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 199개 $defs (top-level wire 95 + supporting/SSE 104). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 203개 $defs (top-level wire 99 + supporting/SSE 104). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -98,7 +98,11 @@ export type SoulstreamUpstreamProtocol =
   | ClaudeRuntimeListSchedules
   | ClaudeRuntimeDeleteSchedule
   | ProviderUsageGet
-  | ReflectBrief;
+  | ReflectBrief
+  | WorkspaceSnapshot
+  | WorkspaceFileRead
+  | WorkspaceSnapshotResult
+  | WorkspaceFileReadResult;
 export type CallerInfoSource =
   | "agent"
   | "api"
@@ -3549,6 +3553,70 @@ export interface ReflectBrief {
   brief?: unknown;
   [k: string]: unknown;
 }
+export interface WorkspaceSnapshot {
+  type: "workspace_snapshot";
+  requestId?: string;
+  session_id: string;
+  agent_id: string;
+  worktree_id: string | null;
+  since: string;
+  [k: string]: unknown;
+}
+export interface WorkspaceFileRead {
+  type: "workspace_file_read";
+  requestId?: string;
+  session_id: string;
+  agent_id: string;
+  worktree_id: string | null;
+  path: string;
+  offset?: number;
+  length?: number;
+  [k: string]: unknown;
+}
+export interface WorkspaceSnapshotResult {
+  type: "workspace_snapshot_result";
+  requestId: string;
+  root: string;
+  state: "ready" | "pending" | "not_git";
+  observed_at: string | null;
+  refreshing: boolean;
+  git: {
+    branch: string | null;
+    head: string | null;
+    upstream: string | null;
+    ahead: number;
+    behind: number;
+    truncated: boolean;
+    files: {
+      path: string;
+      status: "modified" | "added" | "deleted" | "renamed" | "untracked" | "conflicted" | "typechange";
+      orig_path: string | null;
+      added: number | null;
+      deleted: number | null;
+      size: number | null;
+      [k: string]: unknown;
+    }[];
+    commits: {
+      sha: string;
+      subject: string;
+      committed_at: string;
+      files: string[];
+      [k: string]: unknown;
+    }[];
+    [k: string]: unknown;
+  } | null;
+  [k: string]: unknown;
+}
+export interface WorkspaceFileReadResult {
+  type: "workspace_file_read_result";
+  requestId: string;
+  content_b64: string;
+  content_type: string;
+  size: number;
+  offset: number;
+  length: number;
+  [k: string]: unknown;
+}
 
 /**
  * Event persistence policy generated from upstream.schema.json.
@@ -3828,6 +3896,8 @@ export const CONTROL_COMMAND_TYPES = [
   "apply_agent_profile_update",
   "list_agents_config_snapshots",
   "rollback_agents_config",
+  "workspace_snapshot",
+  "workspace_file_read",
 ] as const;
 export type ControlCommandType = (typeof CONTROL_COMMAND_TYPES)[number];
 

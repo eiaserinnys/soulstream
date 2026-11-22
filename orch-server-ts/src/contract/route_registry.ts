@@ -322,6 +322,8 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
     authRequired: true,
     family: "session",
   },
+  { methods: ["GET"], path: "/api/sessions/{session_id}/workspace", name: "get_session_workspace", authRequired: true, family: "session" },
+  { methods: ["GET"], path: "/api/sessions/{session_id}/workspace/file", name: "get_session_workspace_file", authRequired: true, family: "session" },
   {
     methods: ["GET"],
     path: "/api/sessions/{session_id}/story",

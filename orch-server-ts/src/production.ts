@@ -1961,6 +1961,7 @@ export function buildProductionRouteOptions(
       accessProvider: sessionRequestAccess,
     },
     sessionHistoryRoutes: providers.runtime.sessionHistoryRoutes,
+    ...(providers.sessionWorkspaceRoutes ? { sessionWorkspaceRoutes: providers.sessionWorkspaceRoutes } : {}),
     sessionSnapshotRoutes: providers.runtime.sessionSnapshotRoutes,
     sseReplayRoutes: providers.runtime.sseReplayRoutes,
     systemConfigRoutes: providers.systemConfigRoutes,

@@ -333,6 +333,10 @@ def test_schema_has_all_message_types() -> None:
         "DeleteSessionAttachmentsResult",
         "DownloadAttachmentResult",
         "ReadAttachmentSourceResult",
+        "WorkspaceSnapshot",
+        "WorkspaceFileRead",
+        "WorkspaceSnapshotResult",
+        "WorkspaceFileReadResult",
         "CreateSession",
         "CreateCardOrchestrationDecision",
         "PrepareCardOrchestrationDecision",
@@ -399,7 +403,7 @@ def test_schema_has_all_message_types() -> None:
         "ControlResultAck",
         "ControlAckMetric",
     }
-    assert len(wire_types) == 95
+    assert len(wire_types) == 99
 
     sse_types = {
         "SSEEventInit",
@@ -769,6 +773,10 @@ def test_oneof_covers_all_wire_messages() -> None:
         "DeleteSessionAttachmentsResult",
         "DownloadAttachmentResult",
         "ReadAttachmentSourceResult",
+        "WorkspaceSnapshot",
+        "WorkspaceFileRead",
+        "WorkspaceSnapshotResult",
+        "WorkspaceFileReadResult",
         "CreateSession",
         "CreateCardOrchestrationDecision",
         "PrepareCardOrchestrationDecision",
