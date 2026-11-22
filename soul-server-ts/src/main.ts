@@ -6,10 +6,6 @@ import { fileURLToPath } from "node:url";
 import { loadAgentRegistry } from "./agent_registry.js";
 import { AgentProfileSource } from "./agent_profile_source.js";
 import { parseEnv } from "./config.js";
-import {
-  configureClaudeExecutablePath,
-  resolveClaudeExecutableFromPath,
-} from "./engine/claude_executable_path.js";
 import { resolveCodexCliPath } from "@soulstream/executable-path";
 import { resolveAntigravityCliPath } from "./engine/antigravity_cli_path.js";
 import { createLogger } from "./logger.js";
@@ -25,7 +21,7 @@ import {
   type ModelCatalogFileStore,
 } from "@soulstream/model-catalog/file-loader";
 import { composeWorkerRuntime } from "./runtime/worker_composition.js";
-import { startWorkerRuntime } from "./runtime/worker_startup.js";
+import { configureWorkerClaudeExecutable, startWorkerRuntime } from "./runtime/worker_startup.js";
 import { startNodeStallMonitor } from "./runtime/node_stall_monitor.js";
 import { installProcessErrorHandlers } from "./runtime/process_error_handlers.js";
 import { assertRunnerNodeRuntime } from "./runner/runner_node_runtime_preflight.js";
@@ -102,6 +98,7 @@ async function main(): Promise<void> {
     modelCatalog = new ModelCatalog(modelCatalogStore, {
       logger,
       effortCapabilities,
+      enabledBackends: env.SOULSTREAM_BACKENDS,
       enabledGroups: parseModelCatalogGroups(
         env.MODEL_CATALOG_GROUPS,
         modelCatalogStore.snapshot(),
@@ -175,13 +172,13 @@ async function main(): Promise<void> {
     "soul-server-ts starting (orchestrator-hosted persistence)",
   );
 
-  const configuredBackends = new Set([
-    ...agentRegistry.supportedBackends(),
-    ...modelCatalog.list().map((preset) => preset.backend),
-  ]);
+  const configuredBackends = new Set(env.SOULSTREAM_BACKENDS);
   const hasClaudeBackend = configuredBackends.has("claude");
   const hasCodexBackend = configuredBackends.has("codex");
-  if (configuredBackends.has("opencode")) {
+  if (configuredBackends.has("opencode") && (
+    agentRegistry.supportedBackends().includes("opencode")
+    || modelCatalog.list().some((preset) => preset.backend === "opencode")
+  )) {
     if (env.OPENCODE_CLI_PATH) {
       logger.info("OpenCode CLI path configured");
     } else {
@@ -201,19 +198,14 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
-  let claudeExecutablePath = resolveClaudeExecutableFromPath(process.env, process.platform);
+  const claudeExecutablePath = configureWorkerClaudeExecutable(env.SOULSTREAM_BACKENDS, process.env, process.platform, logger);
   if (hasClaudeBackend) {
-    claudeExecutablePath = configureClaudeExecutablePath(
-      process.env,
-      process.platform,
-      logger,
-    );
     logger.info(
       { path: claudeExecutablePath },
       "Claude Code executable path resolved",
     );
   }
-  const codexCliPath = resolveCodexCliPath(env.CODEX_CLI_PATH, process.env);
+  const codexCliPath = hasCodexBackend ? resolveCodexCliPath(env.CODEX_CLI_PATH, process.env) : undefined;
   if (hasCodexBackend) {
     if (codexCliPath) {
       logger.info(
@@ -227,7 +219,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const antigravityCliPath = resolveAntigravityCliPath(process.env);
+  const antigravityCliPath = configuredBackends.has("antigravity") ? resolveAntigravityCliPath(process.env) : undefined;
   if (configuredBackends.has("antigravity")) {
     if (antigravityCliPath) {
       logger.info({ source: antigravityCliPath.source, path: antigravityCliPath.path }, "Antigravity CLI path resolved");

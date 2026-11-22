@@ -80,6 +80,7 @@ export interface ModelCatalogOptions {
   effortCapabilities?: EffortCapabilities;
   /** Node opt-in groups, already resolved against the first snapshot at startup. */
   enabledGroups?: readonly string[];
+  enabledBackends?: readonly ModelPreset["backend"][];
 }
 
 /**
@@ -101,6 +102,7 @@ export class ModelCatalog {
 
   list(): ModelPreset[] {
     return selectModelPresets(this.store.snapshot(), this.enabledGroups)
+      .filter((preset) => !this.options.enabledBackends || this.options.enabledBackends.includes(preset.backend))
       .map((preset) => this.narrowEfforts(preset));
   }
 
@@ -141,7 +143,8 @@ export class ModelCatalog {
 
   resolve(presetId: string): ModelPreset {
     const preset = selectModelPresets(this.store.snapshot(), this.enabledGroups)
-      .find((candidate) => candidate.id === presetId);
+      .find((candidate) => candidate.id === presetId
+        && (!this.options.enabledBackends || this.options.enabledBackends.includes(candidate.backend)));
     if (!preset) throw new UnknownModelPresetError(presetId);
     return this.narrowEfforts(preset);
   }

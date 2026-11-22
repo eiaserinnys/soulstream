@@ -63,6 +63,7 @@ export interface ProviderUsageCommandHandler {
 }
 
 export interface ProviderUsageServiceConfig {
+  enabledBackends?: readonly ("claude" | "codex" | "antigravity" | "opencode")[];
   antigravity?: AntigravityUsageConfig;
   opencodeGo?: OpencodeGoUsageConfig;
   claudeAuth?: ClaudeAuthCommandHandler;
@@ -132,6 +133,7 @@ function isRefreshableCodexAuthError(error: unknown): boolean {
 }
 
 export class ProviderUsageService implements ProviderUsageCommandHandler {
+  private antigravitySucceeded = false;
   private readonly homeDir: string;
   private readonly fetchImpl: typeof fetch;
   private readonly requestTimeoutMs: number;
@@ -200,6 +202,10 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
   }
 
   async fetchProvider(provider: ProviderUsageName): Promise<ProviderLimits> {
+    const backend = provider === "opencode_go" ? "claude" : provider;
+    if (this.config.enabledBackends && !this.config.enabledBackends.includes(backend)) {
+      return emptyLimits("not_configured");
+    }
     const endpoint = providerUsageEndpoint(primaryProviderEndpoint(provider));
     const startedAtMs = Date.now();
     const attempts: ProviderUsageAttempt[] = [];
@@ -217,10 +223,16 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
         deadline.scheduledAbortAtMs,
         attempts,
       );
-      const limits =
+      let limits =
         provider === "claude" && this.config.claudeAccounts
           ? await rawPromise
           : await withinProviderUsageTimeout(deadline.signal, rawPromise);
+      if (provider === "antigravity") {
+        if (limits.status === "auto") this.antigravitySucceeded = true;
+        else if (limits.status === "error" && !this.antigravitySucceeded) {
+          limits = emptyLimits("not_configured");
+        }
+      }
       if ((provider === "claude" || provider === "codex" || provider === "antigravity") && limits.status !== "error") {
         rememberProviderUsageObservation(provider, limits);
       }
@@ -255,7 +267,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
         attempts,
       });
       return emptyLimits(
-        "error",
+        provider === "antigravity" && !this.antigravitySucceeded ? "not_configured" : "error",
         result === "timeout"
           ? `Provider usage timed out after ${this.requestTimeoutMs}ms`
           : stringifyError(err),

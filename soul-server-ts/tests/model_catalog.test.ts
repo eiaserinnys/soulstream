@@ -109,6 +109,20 @@ persistent_defaults:
 `;
 
 describe("ModelCatalog", () => {
+  it.each(["claude", "codex", "antigravity"] as const)("exposes only the selected %s backend", (backend) => {
+    const catalog = openRepositoryCatalog({ enabledBackends: [backend] });
+    const presets = catalog.list();
+    expect(presets.length).toBeGreaterThan(0);
+    expect(presets.every((preset) => preset.backend === backend)).toBe(true);
+    expect(catalog.advertise().map((preset) => preset.id)).toEqual(presets.map((preset) => preset.id));
+    const excluded = openRepositoryCatalog().list().find((preset) => preset.backend !== backend)!;
+    expect(() => catalog.resolve(excluded.id)).toThrow(`Unknown model preset: ${excluded.id}`);
+  });
+
+  it("preserves the existing advertised preset inventory with no backend setting", () => {
+    expect(openRepositoryCatalog().advertise().map((preset) => preset.id)).toEqual(COMMON_PRESET_IDS);
+    expect(openRepositoryCatalog({ enabledGroups: ["china"] }).advertise()).toHaveLength(27);
+  });
   it("lists only presets whose group this node enabled and keeps the full snapshot", () => {
     const defaultView = openRepositoryCatalog();
     expect(defaultView.list().map((preset) => preset.id)).toEqual(COMMON_PRESET_IDS);

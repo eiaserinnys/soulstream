@@ -21,6 +21,8 @@ export type NodeWsFrameControllerOptions = {
    * present, every registration frame must name that node.
    */
   principal?: NodePrincipal | null;
+  onRegistered?: (nodeId: string) => Promise<unknown>;
+  onRegistrationRefreshError?: (nodeId: string, error: unknown) => void;
 };
 
 export type NodeWsFrameRegistrationRejectedResult = {
@@ -94,6 +96,8 @@ export type NodeWsFrameCloseResult =
 export class NodeWsFrameController {
   private readonly registry: InMemoryNodeRegistry;
   private readonly principal: NodePrincipal | null;
+  private readonly onRegistered: NodeWsFrameControllerOptions["onRegistered"];
+  private readonly onRegistrationRefreshError: NodeWsFrameControllerOptions["onRegistrationRefreshError"];
   private registered:
     | {
         nodeId: string;
@@ -105,6 +109,8 @@ export class NodeWsFrameController {
   constructor(options: NodeWsFrameControllerOptions) {
     this.registry = options.registry;
     this.principal = options.principal ?? null;
+    this.onRegistered = options.onRegistered;
+    this.onRegistrationRefreshError = options.onRegistrationRefreshError;
   }
 
   handleFrame(frame: Record<string, unknown>): NodeWsFrameControllerResult {
@@ -190,6 +196,11 @@ export class NodeWsFrameController {
       nodeId: result.node.nodeId,
       connectionId: result.node.connectionId,
     };
+    // Defer until the route has attached the command transport and sent its ACK.
+    if (this.onRegistered) {
+      void Promise.resolve().then(() => this.onRegistered!(result.node.nodeId))
+        .catch((error: unknown) => this.onRegistrationRefreshError?.(result.node.nodeId, error));
+    }
     return {
       type: "registered",
       nodeId: result.node.nodeId,

@@ -1,4 +1,17 @@
 import type { Logger } from "pino";
+import { configureClaudeExecutablePath } from "../engine/claude_executable_path.js";
+
+/** Resolve Claude only when the configured worker can run that backend. */
+export function configureWorkerClaudeExecutable(
+  enabledBackends: readonly string[],
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+  logger: Pick<Logger, "error">,
+): string | undefined {
+  return enabledBackends.includes("claude")
+    ? configureClaudeExecutablePath(environment, platform, logger)
+    : undefined;
+}
 
 export interface WorkerStartupAdapter {
   run(): Promise<void>;

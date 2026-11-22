@@ -718,6 +718,7 @@ export async function createLiveProductionApplication(
     },
     onWarning: (message, error) => context.warn(warningMessage(message, error)),
   });
+  runtimeServices.routeOptions.nodeWsRoute.onRegistered = (nodeId) => usageSummaryService!.refreshNode(nodeId);
   try {
     const attachmentStorageResolver = createR2StorageResolver(
       async () => await sqlResolver.resolveSql() as unknown as SqlClient,

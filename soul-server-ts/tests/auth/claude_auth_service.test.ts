@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,6 +15,7 @@ import {
   type ClaudeAuthHttpGet,
 } from "../../src/auth/claude_auth.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
+import { ProviderUsageService } from "../../src/auth/provider_usage.js";
 
 const silentLogger = pino({ level: "silent" });
 const VALID_TOKEN = "sk-ant-oat01-valid_token";
@@ -65,6 +66,19 @@ function captureLogger(): { logger: Logger; entries: Array<Record<string, unknow
 }
 
 describe("ClaudeAuthService token storage", () => {
+  it("uses CLI credentials for pool-off usage immediately after login", async () => {
+    await withTempStore(async (tokenPath) => {
+      const httpGet = vi.fn<ClaudeAuthHttpGet>(async () => ({
+        status: 200, text: async () => "", json: async () => ({ five_hour: { utilization: 25, resets_at: null } }),
+      }));
+      const usage = new ProviderUsageService({ claudeAuth: makeService(tokenPath, httpGet) });
+      expect(await usage.fetchProvider("claude")).toMatchObject({ status: "not_configured" });
+      expect(httpGet).not.toHaveBeenCalled();
+      await writeFile(tokenPath, JSON.stringify({ claudeAiOauth: { accessToken: VALID_TOKEN, refreshToken: "refresh", expiresAt: 2000000000000, scopes: ["user:inference"] } }));
+      expect(await usage.fetchProvider("claude")).toMatchObject({ status: "auto", shortUsedPercent: 25 });
+      expect(httpGet).toHaveBeenCalledWith(ANTHROPIC_USAGE_URL, expect.objectContaining({ headers: expect.objectContaining({ Authorization: `Bearer ${VALID_TOKEN}` }) }));
+    });
+  });
   it("storage path가 없으면 status는 secret 없이 missing-config error를 싣는다", () => {
     const svc = makeService(undefined);
 
