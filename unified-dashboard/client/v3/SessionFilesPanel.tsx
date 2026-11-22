@@ -109,8 +109,8 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
     <div ref={scrollRef} onScroll={event => onScroll?.(event.currentTarget.scrollTop)} className="v3-session-panel-scroll v3-session-files-body">
       {data?.node.status === "offline" && <div className="v3-session-files-notice" role="status"><WifiOff className="h-4 w-4" aria-hidden="true"/>노드 끊김{data.snapshot?.observed_at && ` · ${formatWorkspaceTime(data.snapshot.observed_at)} 기준`}</div>}
       {error || data?.node.status === "error" ? <div className="v3-session-files-notice" role="alert"><span data-slot="dialog-error-message">파일을 불러오지 못했습니다.</span> <Button size="sm" variant="outline" onClick={onRefresh}>다시 시도</Button></div>
-        : data?.node.status === "unsupported" ? <p>이 노드는 파일 보기를 지원하지 않습니다.</p>
-        : data?.node.status === "no_workspace" ? <p>작업 폴더가 없습니다.</p>
+        : data?.node.status === "unsupported" ? <div className="v3-nav-list v3-session-files-list"><p>이 노드는 파일 보기를 지원하지 않습니다.</p></div>
+        : data?.node.status === "no_workspace" ? <div className="v3-nav-list v3-session-files-list"><p>작업 폴더가 없습니다.</p></div>
         : initial && data?.node.status !== "offline" ? <FrameLoading label="파일 상태를 읽는 중"/>
         : <>
           {data?.snapshot?.state === "not_git" && <div className="v3-session-files-notice">Git 작업 폴더가 아닙니다</div>}

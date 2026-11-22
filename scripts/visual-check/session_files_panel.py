@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DIST = ROOT / "unified-dashboard" / "dist"
 SHORT_TEXT = b"// session file preview\n"
 LONG_TEXT = ("// session file preview\n" + "".join(f"export const eventType{i:02} = 'session:{i:02}';\n" for i in range(40))).encode()
+LONG_BRANCH = "feature/" + "very-long-session-files-branch-" * 5
 FILE = dict(orig_path=None, added=None, deleted=None, size=len(SHORT_TEXT), wrote=False, read=False, committed=False, last_activity_at=None)
 DATA = {
     "session_id": "components-session", "root": "/workspace/card1789", "node": {"id": "eiaserinnys", "status": "ok"},
@@ -72,6 +73,16 @@ def install_routes(page, scene="ready", requests=None):
             if scene == "loading": data["snapshot"]["state"] = "pending"
             if scene == "offline": data["node"]["status"] = "offline"
             if scene == "long": data["files"][0]["path"] = "매우-긴-폴더-이름/아주-긴-파일-이름을-좁은-화면에서-읽기-위한-이름-123456789.ts"
+            if scene == "matrix": data["snapshot"].update(branch=LONG_BRANCH, ahead=12)
+            if scene in ("unsupported", "no_workspace"):
+                data.update(node={"id": "eiaserinnys", "status": scene}, snapshot=None, files=[], read_only=[])
+            if scene == "empty":
+                data.update(files=[], read_only=[], attribution="full")
+                data["snapshot"].update(branch=None, ahead=0, behind=0)
+            if scene == "not_git":
+                data["snapshot"].update(state="not_git", branch=None, ahead=0, behind=0)
+                data["files"] = []
+            if scene == "expanded": data["read_only"].append({"path": "soul-server-ts/src/config/defaults.ts", "size": None, "last_read_at": None})
             if scene == "interaction":
                 data["files"][0]["size"] = 0
                 data["files"] += [{**FILE, "path": f"fixtures/folder-{i // 10}/example-{i:02}.ts", "git_status": "modified", "wrote": True} for i in range(40)]
@@ -166,8 +177,12 @@ def capture_retention(browser, base):
     read_toggle = pane.get_by_role('button', name='읽기만 한 파일', exact=False)
     expect(pane).to_be_visible(timeout=5000)
     expect(read_toggle).to_be_visible(timeout=5000)
-    read_toggle.click(); expect(read_toggle).to_have_attribute('aria-expanded', 'true')
     body = pane.locator('.v3-session-files-body')
+    read_toggle.scroll_into_view_if_needed()
+    toggle_scroll_before = body.evaluate('e => e.scrollTop')
+    read_toggle.click(); expect(read_toggle).to_have_attribute('aria-expanded', 'true')
+    toggle_scroll_after = body.evaluate('e => e.scrollTop')
+    assert abs(toggle_scroll_before - toggle_scroll_after) <= 2, (toggle_scroll_before, toggle_scroll_after)
     body.evaluate("e => {e.scrollTop = e.scrollHeight - e.clientHeight - 100; e.dispatchEvent(new Event('scroll'))}")
     page.wait_for_timeout(200)
     file_before = body.evaluate('e => e.scrollTop')
@@ -188,14 +203,116 @@ def capture_retention(browser, base):
     page.set_viewport_size({"width": 1440, "height": 900}); page.wait_for_timeout(500)
     expect(draft).to_have_value('파일 확인 중인 임시 글')
     chat_wide = scroller.evaluate('e => e.scrollTop'); file_wide = body.evaluate('e => e.scrollTop')
-    result = {"draft": draft.input_value(), "chat_scroll": [chat_before, chat_after_close, chat_wide], "file_scroll": [file_before, file_after_open, file_narrow, file_wide], "file_geometry": [before_geometry, narrow_geometry, geometry()], "read_only_expanded": read_toggle.get_attribute('aria-expanded'), "stale_size_preview_ranges": ranges}
+    result = {"draft": draft.input_value(), "chat_scroll": [chat_before, chat_after_close, chat_wide], "file_scroll": [file_before, file_after_open, file_narrow, file_wide], "toggle_scroll": [toggle_scroll_before, toggle_scroll_after], "file_geometry": [before_geometry, narrow_geometry, geometry()], "read_only_expanded": read_toggle.get_attribute('aria-expanded'), "stale_size_preview_ranges": ranges}
     assert abs(chat_before - chat_after_close) <= 2 and abs(chat_before - chat_wide) <= 2, result
     assert all(abs(file_before - value) <= 2 for value in [file_after_open, file_narrow, file_wide]), result
     context.close()
     return result
 
+def capture_layout_checks(browser, base, out):
+    """검수에서 반려된 화면의 실측값과 단언을 함께 남긴다."""
+    results, errors = {"surfaces": {}, "states": {}, "expanded": {}}, []
+    def check(condition, label, detail):
+        if not condition: errors.append({"check": label, "detail": detail})
+    def open_surface(surface, scene):
+        context = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme="dark", reduced_motion="reduce", locale="ko-KR", timezone_id="Asia/Seoul", service_workers="block")
+        page = context.new_page()
+        page.add_init_script("localStorage.setItem('soul-dashboard-theme','dark'); localStorage.setItem('ls.webglGlass','0');")
+        install_routes(page, scene)
+        if surface == 'pas':
+            page.goto(base + '/persistent/components-session', wait_until='domcontentloaded')
+            trigger = page.get_by_role('button', name='세션 파일')
+            workspace = None
+        elif surface == 'folder':
+            page.goto(base + '/components?sample=session-files-folder', wait_until='domcontentloaded')
+            trigger = page.get_by_role('button', name='파일', exact=True)
+            workspace = None
+        else:
+            page.goto(base + '/components', wait_until='domcontentloaded')
+            page.get_by_test_id('card-board-sample').locator('[data-card-id="board-size-comparison"] .v3-postit-open').first.click()
+            workspace = page.get_by_test_id('v3-card-workspace')
+            trigger = workspace.get_by_role('button', name='파일', exact=True)
+        expect(trigger).to_be_visible(timeout=15000); trigger.click()
+        pane = page.get_by_role('region', name='세션 파일') if workspace is None else workspace.get_by_role('region', name='세션 파일')
+        expect(pane).to_be_visible()
+        return context, page, workspace, pane
+    def resize(page, workspace, pane, width):
+        page.set_viewport_size({"width": width, "height": 900})
+        if workspace is not None and width <= 760 and workspace.get_attribute('data-mobile-view') != 'chat':
+            page.get_by_test_id('v3-mobile-tab-chat').click()
+        expect(pane).to_be_visible(); page.wait_for_timeout(150)
+    for surface in ('card', 'folder', 'pas'):
+        context, page, workspace, pane = open_surface(surface, 'matrix')
+        expect(pane.locator('.v3-session-files-title strong')).to_have_text(LONG_BRANCH)
+        page.evaluate('document.fonts.ready')
+        results['surfaces'][surface] = {}
+        for width in (1440, 1150, 900, 390, 360):
+            resize(page, workspace, pane, width)
+            m = pane.evaluate("""el => {
+                const title=el.querySelector('.v3-session-files-title'), svg=title.querySelector('svg'), strong=title.querySelector('strong');
+                const header=el.querySelector('.v3-chat-header'), caps=[...header.querySelectorAll('.dashboard-icon-cap')];
+                const rect=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}};
+                const probe=document.createElement('span');probe.style.color='var(--v3-text-tertiary)';el.append(probe);const tertiary=getComputedStyle(probe).color;probe.remove();
+                const css=getComputedStyle(strong);
+                return {pane:rect(el),header:rect(header),title:rect(title),icon:rect(svg),iconColor:getComputedStyle(svg).color,tertiary,
+                  iconShrink:getComputedStyle(svg).flexShrink,strong:rect(strong),strongScroll:strong.scrollWidth,strongClient:strong.clientWidth,
+                  strongOverflow:css.overflow,strongEllipsis:css.textOverflow,strongWhiteSpace:css.whiteSpace,strongFontSize:parseFloat(css.fontSize),
+                  ahead:rect(title.querySelector('span')),aheadText:title.querySelector('span').textContent,
+                  caps:caps.map(rect),radius:getComputedStyle(el).borderRadius,border:getComputedStyle(el).borderTopWidth};
+            }""")
+            results['surfaces'][surface][str(width)] = m
+            key = f'{surface}-{width}'
+            check(abs(m['icon']['width'] - 16) <= .5 and abs(m['icon']['height'] - 16) <= .5, key + ' icon', m)
+            check(m['iconShrink'] == '0' and m['iconColor'] == m['tertiary'], key + ' icon style', m)
+            check(m['strongScroll'] > m['strongClient'] and m['strong']['width'] >= m['strongFontSize'] and m['strongOverflow'] == 'hidden' and m['strongEllipsis'] == 'ellipsis' and m['strongWhiteSpace'] == 'nowrap', key + ' title ellipsis', m)
+            check(m['aheadText'] == '↑12' and m['ahead']['width'] > 0 and len(m['caps']) == 2 and all(cap['width'] >= 32 and cap['height'] >= 32 and cap['left'] >= m['header']['left'] - .5 and cap['right'] <= m['header']['right'] + .5 for cap in m['caps']) and m['title']['right'] <= m['caps'][0]['left'] + .5 and m['caps'][0]['right'] <= m['caps'][1]['left'] + .5, key + ' caps', m)
+            if width <= 390:
+                expected = '24px' if surface == 'pas' else '0px'
+                check(m['radius'] == expected and (surface != 'pas' or m['border'] != '0px'), key + ' radius', m)
+            if surface == 'pas' or (width <= 390 and surface in ('card', 'folder')):
+                page.screenshot(path=str(out / f'{surface}-{width}.png'), animations='disabled')
+        context.close()
+    labels = {'unsupported': '이 노드는 파일 보기를 지원하지 않습니다.', 'no_workspace': '작업 폴더가 없습니다.', 'empty': '바뀐 파일 없음'}
+    for scene in ('offline', 'error', 'not_git', 'unsupported', 'no_workspace', 'empty', 'expanded'):
+        context, page, workspace, pane = open_surface('card', scene)
+        if scene == 'error': expect(pane.get_by_role('button', name='다시 시도')).to_be_visible()
+        elif scene in labels: expect(pane.get_by_text(labels[scene], exact=True)).to_be_visible()
+        else: expect(pane.get_by_text('읽기만 한 파일', exact=False)).to_be_visible()
+        if scene == 'expanded': pane.get_by_role('button', name='읽기만 한 파일', exact=False).click()
+        results['states'][scene] = {}
+        for width in (1440, 360):
+            resize(page, workspace, pane, width)
+            if scene in ('offline', 'error', 'not_git'):
+                notice = pane.locator('.v3-session-files-notice')
+                m = notice.evaluate("""el => {const r=el.getBoundingClientRect(),s=getComputedStyle(el), b=el.querySelector('button'), br=b?.getBoundingClientRect(), range=document.createRange();if(b)range.selectNodeContents(b);return {radius:s.borderRadius,right:r.right,top:r.top,bottom:r.bottom,paddingRight:parseFloat(s.paddingRight), button:br?{left:br.left,right:br.right,top:br.top,bottom:br.bottom,width:br.width,height:br.height,textRects:range.getClientRects().length}:null}}""")
+                results['states'][scene][str(width)] = m
+                check(m['radius'] == '12px', f'{scene}-{width} radius', m)
+                if scene == 'error':
+                    b = m['button']
+                    check(b and b['textRects'] == 1 and b['width'] > 0 and b['left'] >= 0 and b['right'] <= width and b['top'] >= m['top'] and b['bottom'] <= m['bottom'] and abs(m['right'] - b['right'] - m['paddingRight']) <= 1, f'error-{width} retry position', m)
+                    text = pane.locator('[data-slot="dialog-error-message"]'); r = text.bounding_box()
+                    page.mouse.move(r['x'] + 1, r['y'] + r['height'] / 2); page.mouse.down(); page.mouse.move(r['x'] + r['width'] - 1, r['y'] + r['height'] / 2, steps=12); page.mouse.up()
+                    m['selection'] = page.evaluate('window.getSelection().toString()')
+                    check('파일을 불러오지 못했습니다' in m['selection'], f'error-{width} selectable', m)
+            elif scene in labels:
+                m = pane.evaluate("""(el, label) => {const p=[...el.querySelectorAll('p')].find(e=>e.textContent===label),t=el.querySelector('.v3-session-files-title strong'),s=getComputedStyle(p);return {left:p.getBoundingClientRect().left,titleLeft:t.getBoundingClientRect().left,font:s.font,color:s.color}}""", labels[scene])
+                results['states'][scene][str(width)] = m
+                check(abs(m['left'] - m['titleLeft']) <= 1, f'{scene}-{width} alignment', m)
+            else:
+                m = pane.evaluate("""el => {const toggle=el.querySelector('.v3-session-files-row[aria-expanded=true]'),a=toggle.nextElementSibling,b=a.nextElementSibling,p=a.querySelector('p'),row=a.querySelector('button');return {first:a.getBoundingClientRect().top-toggle.getBoundingClientRect().bottom,next:b.getBoundingClientRect().top-a.getBoundingClientRect().bottom,pathToRow:row.getBoundingClientRect().top-p.getBoundingClientRect().bottom}}""")
+                results['expanded'][str(width)] = m
+                check(m['pathToRow'] < m['first'] <= m['next'] and m['next'] == 16, f'expanded-{width} spacing', m)
+            if scene != 'empty': page.screenshot(path=str(out / f'{"read-expanded" if scene == "expanded" else scene}-{width}.png'), animations='disabled')
+        context.close()
+    for width in ('1440', '360'):
+        reference = results['states']['empty'][width]
+        for scene in ('unsupported', 'no_workspace'):
+            m = results['states'][scene][width]
+            check(m['font'] == reference['font'] and m['color'] == reference['color'], f'{scene}-{width} typography', {'actual': m, 'empty': reference})
+    return results, errors
+
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument("--output", required=True); parser.add_argument("--baseline-dist", required=True); parser.add_argument("--story-only", action="store_true"); parser.add_argument("--retention-only", action="store_true"); args = parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument("--output", required=True); parser.add_argument("--baseline-dist", required=True); parser.add_argument("--story-only", action="store_true"); parser.add_argument("--retention-only", action="store_true"); parser.add_argument("--layout-only", action="store_true"); args = parser.parse_args()
     out = Path(args.output).resolve(); out.mkdir(parents=True, exist_ok=True)
     server, base = serve(DIST)
     baseline_server, baseline_base = serve(Path(args.baseline_dist))
@@ -203,6 +320,10 @@ def main():
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
+            if args.layout_only:
+                measurements['layout'], failures = capture_layout_checks(browser, base, out)
+                assert not failures, json.dumps(failures, ensure_ascii=False)
+                return
             if args.retention_only:
                 measurements['retention'] = capture_retention(browser, base)
                 return
@@ -316,6 +437,8 @@ def main():
                 measurements[f"{scene}-{width}"] = info
                 context.close()
             measurements['retention'] = capture_retention(browser, base)
+            measurements['layout'], failures = capture_layout_checks(browser, base, out)
+            assert not failures, json.dumps(failures, ensure_ascii=False)
             browser.close()
     finally:
         server.shutdown(); server.server_close(); baseline_server.shutdown(); baseline_server.server_close()
