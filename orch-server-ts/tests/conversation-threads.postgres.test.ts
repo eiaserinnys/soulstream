@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { readFileSync } from "node:fs";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from "./board_yjs_postgres_harness.js";
 import { ConversationService } from "../src/conversation/conversation_service.js";
 import { ConversationCatalog } from "../src/conversation/conversation_catalog.js";
@@ -12,12 +12,25 @@ import { PendingNodeCommandTimeoutError } from "../src/node/pending_commands.js"
 
 const request = JSON.parse(readFileSync(new URL("./fixtures/conversation-v1/request.json", import.meta.url), "utf8"));
 const logger = { warn() {} };
+function createGate() {
+  let open!: () => void;
+  let markEntered!: () => void;
+  const wait = new Promise<void>(resolve => { open = resolve; });
+  const entered = new Promise<void>(resolve => { markEntered = resolve; });
+  return { open, wait, entered, markEntered };
+}
+function expectSuccess<T extends { statusCode: number; body: string }>(response: T): T {
+  expect(response.statusCode, `Response ${response.statusCode}: ${response.body}`).toBe(200);
+  return response;
+}
 describe("conversation thread API", () => {
   let db: FullSchemaPostgresHarness;
   let app: ReturnType<typeof Fastify>;
+  let timeoutApp: ReturnType<typeof Fastify>;
   let service: ConversationService;
+  let timeoutService: ConversationService;
   let created = 0;
-  let delay = 0;
+  let createGateForTest: ReturnType<typeof createGate> | undefined;
   const rows = new Map<string, any>();
   const instructions = new Map<string, Array<{ id: string; text: string }>>();
   const settings = new Map<string, any>();
@@ -92,14 +105,18 @@ describe("conversation thread API", () => {
         return { status: 200, body: { instruction: item } };
       },
     };
-    service = new ConversationService({ sql: db.sql as never, access: access as never, catalog,
+    const serviceOptions = { sql: db.sql as never, access: access as never, catalog,
       persistent: persistent as never, reads: async () => ({ getSession: async (id: string) => rows.get(id) ?? null }) as never,
       create: async (_request: unknown, body: any, id: string) => {
         createCalls.push({ nodeId: body.nodeId, profile: body.profile, model_preset: body.model_preset,
           ...(body.predecessor_session_id ? {predecessor_session_id:body.predecessor_session_id} : {}) });
         if (unavailableNodeOnce) { unavailableNodeOnce = false; return { status: 404, body: { error: { code: "NODE_NOT_FOUND", message: "offline" } } }; }
         if (rejectModelOnce) { rejectModelOnce = false; return { status: 400, body: { error: { code: "MODEL_PRESET_UNAVAILABLE", message: "quota" } } }; }
-        created++; if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+        created++;
+        if (createGateForTest) {
+          createGateForTest.markEntered();
+          await createGateForTest.wait;
+        }
         await db.sql`INSERT INTO sessions(session_id,node_id,model_preset,agent_id,created_at) VALUES (${id},${body.nodeId},${body.model_preset},${body.profile},now())`;
         rows.set(id, { session_id: id, folder_id: body.folderId, display_name: null, node_id: body.nodeId,
           agent_id:body.profile, created_at: new Date("2026-10-30T00:00:00.000Z"), status: "completed", model_preset: body.model_preset });
@@ -108,9 +125,12 @@ describe("conversation thread API", () => {
           runtime: { current_model: { model_preset: body.model_preset } } });
         return { status: 201, body: { agentSessionId: id } };
       },
-      waitForCreatedSession: async (id: string) => rows.has(id), responseTimeoutMs: 250,
-    });
+      waitForCreatedSession: async (id: string) => rows.has(id),
+    };
+    service = new ConversationService(serviceOptions);
+    timeoutService = new ConversationService({ ...serviceOptions, responseTimeoutMs: 250 });
     app = Fastify({ logger: false });
+    timeoutApp = Fastify({ logger: false });
     const messages = new ConversationMessageService(db.sql as never, {
       caller:async () => ({source:"browser"}),
       upload:async () => { throw new Error("unexpected upload"); },
@@ -118,17 +138,21 @@ describe("conversation thread API", () => {
       read:async (_request,target) => new Response(target),
     });
     registerConversationRoutes(app, { service, messages, resolveAccount: async () => "account-a" });
+    registerConversationRoutes(timeoutApp, { service: timeoutService, messages, resolveAccount: async () => "account-a" });
     await app.ready();
+    await timeoutApp.ready();
   }, 60_000);
-  afterAll(async () => { await app?.close(); await db?.cleanup(); });
+  afterAll(async () => { await timeoutApp?.close(); await app?.close(); await db?.cleanup(); });
   const ensure = (key: string, payload: unknown = request) => app.inject({ method: "PUT", url: `/api/conversations/v1/threads/by-key?namespace=n&key=${key}`, payload });
+  const ensureOk = async (key: string, payload: unknown = request) => expectSuccess(await ensure(key, payload));
   it("switches an execution idempotently and finishes an offline release on a later request", async () => {
-    const made = await ensure("switch-offline");
+    const made = await ensureOk("switch-offline");
     const original = made.json().thread;
     const payload = { ...request, expected_execution_id: original.execution_id, profile: "roselin", selected_model: "n1:node-b:remote", model_order: ["n1:node-b:remote"] };
     const url = `/api/conversations/v1/threads/${original.id}/execution`;
     offlineRelease = true;
     const switched = await app.inject({ method: "PUT", url, payload });
+    expectSuccess(switched);
     expect(switched.statusCode).toBe(200);
     const current = switched.json().thread;
     expect(current).toMatchObject({ id: original.id, profile: { id: "roselin", label: "로젤린" } });
@@ -137,7 +161,7 @@ describe("conversation thread API", () => {
     const [old] = await db.sql`SELECT release_pending FROM conversation_executions WHERE session_id=${original.execution_id}`;
     expect(old?.release_pending).toBe(true);
     const count = created;
-    expect((await app.inject({ method: "PUT", url, payload })).json().thread.execution_id).toBe(current.execution_id);
+    expect(expectSuccess(await app.inject({ method: "PUT", url, payload })).json().thread.execution_id).toBe(current.execution_id);
     expect(created).toBe(count);
     expect((await app.inject({ method:"PUT", url, payload:{...payload,profile:"seosoyoung"} })).statusCode).toBe(409);
     offlineRelease = false;
@@ -147,7 +171,7 @@ describe("conversation thread API", () => {
     expect(settings.get(original.execution_id).persistent).toBe(false);
   });
   it("rejects a switch while an answer is in progress", async () => {
-    const made = await ensure("switch-busy");
+    const made = await ensureOk("switch-busy");
     const thread = made.json().thread;
     await db.sql`INSERT INTO events(session_id,id,event_type,payload) VALUES
       (${thread.execution_id},1,'intervention_sent',${db.sql.json({text:"working",caller_info:{source:"browser"}})})`;
@@ -159,7 +183,7 @@ describe("conversation thread API", () => {
     expect(created).toBe(before);
   });
   it("allows a limit-stopped thread to switch and records model fallback notices", async () => {
-    const thread = (await ensure("switch-limited")).json().thread;
+    const thread = (await ensureOk("switch-limited")).json().thread;
     rows.get(thread.execution_id).status = "error";
     rows.get(thread.execution_id).termination_reason = "limit_hit";
     await db.sql`INSERT INTO events(session_id,id,event_type,payload) VALUES (${thread.execution_id},1,'intervention_sent',${db.sql.json({text:"stopped"})})`;
@@ -167,6 +191,7 @@ describe("conversation thread API", () => {
     expect(info.json().busy).toBe(false);
     const result = await app.inject({method:"PUT",url:`/api/conversations/v1/threads/${thread.id}/execution`,
       payload:{...request,expected_execution_id:thread.execution_id,profile:"roselin",selected_model:"argon",model_order:["n1:node-b:remote"]}});
+    expectSuccess(result);
     expect(result.statusCode).toBe(200);
     expect(result.json().notices).toHaveLength(1);
     const executionId = result.json().thread.execution_id;
@@ -181,14 +206,14 @@ describe("conversation thread API", () => {
     expect(history.json().items.filter((item:{kind:string;id:string}) => item.kind === "notice" && item.id.startsWith("1:"))).toHaveLength(2);
   });
   it("stores an empty searchable text when event_append receives null", async () => {
-    const thread = (await ensure("switch-null-searchable-text")).json().thread;
+    const thread = (await ensureOk("switch-null-searchable-text")).json().thread;
     const dedupeKey = `test-null-searchable-text:${thread.execution_id}`;
     await db.sql`SELECT event_append(${thread.execution_id}, 'notification', ${JSON.stringify({_conversation_notice:"empty text"})}, NULL, now(), ${dedupeKey})`;
     const [event] = await db.sql`SELECT searchable_text FROM events WHERE session_id=${thread.execution_id} AND dedupe_key=${dedupeKey}`;
     expect(event?.searchable_text).toBe("");
   });
   it("keeps the predecessor active on another release failure and completes the same reservation on retry", async () => {
-    const original = (await ensure("switch-release-failure")).json().thread;
+    const original = (await ensureOk("switch-release-failure")).json().thread;
     const url = `/api/conversations/v1/threads/${original.id}/execution`;
     const payload = {...request,expected_execution_id:original.execution_id,profile:"roselin",selected_model:"n1:node-b:remote"};
     failRelease = true;
@@ -199,30 +224,45 @@ describe("conversation thread API", () => {
     const count = created;
     failRelease = false;
     const retried = await app.inject({method:"PUT",url,payload});
+    expectSuccess(retried);
     expect(retried.statusCode).toBe(200);
     expect(created).toBe(count);
     expect(retried.json().thread.execution_id).not.toBe(original.execution_id);
   });
   it("finishes a timed-out switch with the same reserved session", async () => {
-    const thread = (await ensure("switch-slow")).json().thread;
+    const thread = (await ensureOk("switch-slow")).json().thread;
     const url = `/api/conversations/v1/threads/${thread.id}/execution`;
     const payload = {...request,expected_execution_id:thread.execution_id,profile:"roselin",selected_model:"n1:node-b:remote"};
-    delay = 300;
+    const gate = createGate();
+    createGateForTest = gate;
+    const locked = vi.spyOn((timeoutService as any).executions, "locked");
     const before = created;
-    const timedOut = await app.inject({method:"PUT",url,payload});
-    expect(timedOut.statusCode).toBe(504);
-    await new Promise(resolve => setTimeout(resolve, 330));
-    delay = 0;
-    const retried = await app.inject({method:"PUT",url,payload});
-    expect(retried.statusCode).toBe(200);
-    expect(created - before).toBe(1);
+    try {
+      const response = timeoutApp.inject({method:"PUT",url,payload});
+      await gate.entered;
+      const timedOut = await response;
+      expect(timedOut.statusCode).toBe(504);
+      const finished = locked.mock.results[0]!.value as Promise<unknown>;
+      createGateForTest = undefined;
+      gate.open();
+      await finished;
+      const retried = await app.inject({method:"PUT",url,payload});
+      expectSuccess(retried);
+      expect(retried.statusCode).toBe(200);
+      expect(created - before).toBe(1);
+    } finally {
+      createGateForTest = undefined;
+      gate.open();
+      locked.mockRestore();
+    }
   });
   it("releases a connected predecessor and cancels its scheduled resume", async () => {
-    const original = (await ensure("switch-connected")).json().thread;
+    const original = (await ensureOk("switch-connected")).json().thread;
     await db.sql`INSERT INTO soulstream_schedules(schedule_id,session_id,kind,status,prompt,source_tool,recurring,next_run_at)
       VALUES ('switch-resume',${original.execution_id},'wakeup','active','resume','ResumeAfterLimit',false,now())`;
     const result = await app.inject({method:"PUT",url:`/api/conversations/v1/threads/${original.id}/execution`,
       payload:{...request,expected_execution_id:original.execution_id,profile:"roselin",selected_model:"n1:node-b:remote"}});
+    expectSuccess(result);
     expect(result.statusCode).toBe(200);
     expect(result.json().thread.id).toBe(original.id);
     expect(settings.get(original.execution_id).persistent).toBe(false);
@@ -232,7 +272,7 @@ describe("conversation thread API", () => {
     expect(history.json().items).toContainEqual(expect.objectContaining({id:"1:1",kind:"notice",text:"프로필을 로젤린(으)로 바꿔 새 세션으로 이었습니다."}));
   });
   it("keeps a pending receipt on its original execution and reads an old attachment after switching", async () => {
-    const thread = (await ensure("switch-receipt")).json().thread;
+    const thread = (await ensureOk("switch-receipt")).json().thread;
     const body = {request_id:"old-request",text:"hello",attachments:[]};
     const hash = createHash("sha256").update(JSON.stringify(body)).digest("hex");
     await db.sql`INSERT INTO conversation_message_receipts(session_id,request_id,request_hash,delivery_id,caller_info,status,target_session_id)
@@ -242,6 +282,7 @@ describe("conversation thread API", () => {
     await db.sql`INSERT INTO events(session_id,id,event_type,payload) VALUES (${thread.execution_id},2,'complete','{}'::jsonb)`;
     const switched = await app.inject({method:"PUT",url:`/api/conversations/v1/threads/${thread.id}/execution`,
       payload:{...request,expected_execution_id:thread.execution_id,profile:"roselin",selected_model:"n1:node-b:remote"}});
+    expectSuccess(switched);
     expect(switched.statusCode).toBe(200);
     const active = switched.json().thread.execution_id;
     const url = `/api/conversations/v1/threads/${thread.id}/messages`;
@@ -257,7 +298,7 @@ describe("conversation thread API", () => {
     expect(attachment.body).toBe(thread.execution_id);
   });
   it("closes the live event stream when the execution changes", async () => {
-    const thread = (await ensure("switch-stream")).json().thread;
+    const thread = (await ensureOk("switch-stream")).json().thread;
     const streaming = Fastify();
     registerConversationRoutes(streaming, {service,resolveAccount:async () => "account-a",liveEvents:{subscribe:() => () => {}}});
     const address = await streaming.listen({port:0,host:"127.0.0.1"});
@@ -268,6 +309,7 @@ describe("conversation thread API", () => {
       expect(new TextDecoder().decode((await reader.read()).value)).toContain('"kind":"snapshot"');
       const switched = await app.inject({method:"PUT",url:`/api/conversations/v1/threads/${thread.id}/execution`,
         payload:{...request,expected_execution_id:thread.execution_id,profile:"roselin",selected_model:"n1:node-b:remote"}});
+      expectSuccess(switched);
       expect(switched.statusCode).toBe(200);
       expect((await reader.read()).done).toBe(true);
     } finally { abort.abort(); await streaming.close(); }
@@ -275,7 +317,7 @@ describe("conversation thread API", () => {
   it("serializes the fixture request and converges concurrent creation on one session with fallback and instructions", async () => {
     expect(JSON.parse(JSON.stringify(request))).toEqual(request);
     const before = created;
-    const [a, b] = await Promise.all([ensure("concurrent"), ensure("concurrent")]);
+    const [a, b] = await Promise.all([ensureOk("concurrent"), ensureOk("concurrent")]);
     expect([a.statusCode, b.statusCode]).toEqual([200, 200]);
     expect(a.json().thread.id).toBe(b.json().thread.id);
     expect(created - before).toBe(1);
@@ -290,7 +332,7 @@ describe("conversation thread API", () => {
   });
   it("falls through on an availability error at dispatch", async () => {
     rejectModelOnce = true;
-    const response = await ensure("late-model-limit");
+    const response = await ensureOk("late-model-limit");
     expect(response.statusCode).toBe(200);
     expect(response.json().thread.model.id).toBe("sol");
     expect(response.json().notices).toHaveLength(1);
@@ -319,7 +361,7 @@ describe("conversation thread API", () => {
   });
   it("creates a selected secondary-node model with its selected profile", async () => {
     const payload = { ...request, selected_model: "n1:node-b:remote", model_order: ["n1:node-b:remote"], profile: "roselin" };
-    const response = await ensure("remote-model", payload);
+    const response = await ensureOk("remote-model", payload);
     expect(response.statusCode).toBe(200);
     expect(response.json().thread.model).toEqual({
       id: "n1:node-b:remote", label: "Remote", group: { id: "node-b", label: "node-b" },
@@ -327,7 +369,7 @@ describe("conversation thread API", () => {
     expect(createCalls.at(-1)).toEqual({ nodeId: "node-b", profile: "roselin", model_preset: "remote" });
   });
   it("keeps legacy default-node model ids through by-key, info, and same-node PATCH", async () => {
-    const made = await ensure("legacy-model");
+    const made = await ensureOk("legacy-model");
     const id = made.json().thread.id;
     const byKey = await app.inject({ method: "GET", url: "/api/conversations/v1/threads/by-key?namespace=n&key=legacy-model" });
     expect(byKey.json().thread.model).toMatchObject({ id: "opus", group: { id: "eiaserinnys" } });
@@ -342,7 +384,7 @@ describe("conversation thread API", () => {
   });
   it("falls from a limited preferred model to a usable model on another node", async () => {
     const payload = { ...request, selected_model: "argon", model_order: ["n1:node-b:remote"], profile: "seosoyoung" };
-    const response = await ensure("cross-node-fallback", payload);
+    const response = await ensureOk("cross-node-fallback", payload);
     expect(response.statusCode).toBe(200);
     expect(response.json().thread.model.id).toBe("n1:node-b:remote");
     expect(response.json().notices).toEqual([
@@ -351,7 +393,7 @@ describe("conversation thread API", () => {
     expect(createCalls.at(-1)).toEqual({ nodeId: "node-b", profile: "seosoyoung", model_preset: "remote" });
   });
   it("rejects switching a thread to another node through PATCH", async () => {
-    const made = await ensure("patch-cross-node");
+    const made = await ensureOk("patch-cross-node");
     const id = made.json().thread.id;
     const response = await app.inject({ method: "PATCH", url: `/api/conversations/v1/threads/${id}`, payload: { model: "n1:node-b:remote" } });
     expect(response.statusCode).toBe(409);
@@ -364,7 +406,7 @@ describe("conversation thread API", () => {
     const first = await ensure("offline", payload);
     expect(first.statusCode).toBe(422); expect(first.json().error.code).toBe("model_unavailable");
     expect(createCalls.slice(before).map(call => call.nodeId)).toEqual(["node-b"]);
-    const second = await ensure("offline", payload);
+    const second = await ensureOk("offline", payload);
     expect(second.statusCode).toBe(200); expect(second.json().thread.model.id).toBe("n1:node-b:remote");
     expect(createCalls.slice(before).map(call => call.nodeId)).toEqual(["node-b", "node-b"]);
   });
@@ -380,21 +422,35 @@ describe("conversation thread API", () => {
     expect(sent[0].agentSessionId).not.toBe(id); expect(sent[1].agentSessionId).toBe(id);
   });
   it("continues after the response times out and a retry observes the same thread", async () => {
-    delay = 300;
+    const gate = createGate();
+    createGateForTest = gate;
+    const initialize = vi.spyOn(timeoutService as any, "initialize");
     const payload = { ...request, selected_model: "n1:node-b:remote", model_order: ["opus"] };
-    const before = created; const beforeCalls = createCalls.length; const first = await ensure("slow", payload);
-    expect(first.statusCode).toBe(504); expect(first.json().error.code).toBe("pending");
-    expect(createCalls.slice(beforeCalls).map(call => call.nodeId)).toEqual(["node-b"]);
-    await new Promise(resolve => setTimeout(resolve, 330)); delay = 0;
-    const second = await ensure("slow", payload);
-    expect(second.statusCode).toBe(200); expect(created - before).toBe(1);
-    expect(createCalls.slice(beforeCalls).map(call => call.nodeId)).toEqual(["node-b"]);
-    expect(second.json().thread.id).toBe(first.json().thread_id);
+    const before = created; const beforeCalls = createCalls.length;
+    try {
+      const response = timeoutApp.inject({method:"PUT",url:"/api/conversations/v1/threads/by-key?namespace=n&key=slow",payload});
+      await gate.entered;
+      const first = await response;
+      expect(first.statusCode).toBe(504); expect(first.json().error.code).toBe("pending");
+      expect(createCalls.slice(beforeCalls).map(call => call.nodeId)).toEqual(["node-b"]);
+      const finished = initialize.mock.results[0]!.value as Promise<void>;
+      createGateForTest = undefined;
+      gate.open();
+      await finished;
+      const second = await ensureOk("slow", payload);
+      expect(second.statusCode).toBe(200); expect(created - before).toBe(1);
+      expect(createCalls.slice(beforeCalls).map(call => call.nodeId)).toEqual(["node-b"]);
+      expect(second.json().thread.id).toBe(first.json().thread_id);
+    } finally {
+      createGateForTest = undefined;
+      gate.open();
+      initialize.mockRestore();
+    }
   });
   it("reconciles an instruction saved before its acknowledgement was lost", async () => {
     loseInstructionAck = true;
     const first = await ensure("instruction-ack"); expect(first.statusCode).toBe(503);
-    const second = await ensure("instruction-ack"); expect(second.statusCode).toBe(200);
+    const second = await ensureOk("instruction-ack"); expect(second.statusCode).toBe(200);
     expect(instructions.get(second.json().thread.id)).toHaveLength(1);
   });
   it("returns pending on a node command timeout and reconnects the same thread on retry", async () => {
@@ -404,7 +460,7 @@ describe("conversation thread API", () => {
     expect(first.statusCode).toBe(504);
     expect(first.json().error.code).toBe("pending");
     expect(first.json().thread_id).toEqual(expect.any(String));
-    const second = await ensure("persistent-command-timeout");
+    const second = await ensureOk("persistent-command-timeout");
     expect(second.statusCode).toBe(200);
     expect(second.json().thread.id).toBe(first.json().thread_id);
     expect(created - before).toBe(1);
@@ -429,7 +485,7 @@ describe("conversation thread API", () => {
     expect(binding?.first_input_is_initial_instruction).toBe(true);
   });
   it("enforces session folder access and updates existing thread", async () => {
-    const made = await ensure("patch"); const id = made.json().thread.id;
+    const made = await ensureOk("patch"); const id = made.json().thread.id;
     deny = true; const hidden = await app.inject({ method: "GET", url: `/api/conversations/v1/threads/${id}` }); deny = false;
     expect(hidden.statusCode).toBe(403);
     const patched = await app.inject({ method: "PATCH", url: `/api/conversations/v1/threads/${id}`, payload: { title: "Changed", archived: true } });
