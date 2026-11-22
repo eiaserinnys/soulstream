@@ -12,6 +12,8 @@ bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl
 
 설치기는 필수 패키지, 전용 사용자, Node.js, 선택한 CLI와 PostgreSQL을 준비하고 소스를 클론해 설정·빌드·스키마 초기화를 마친 뒤 systemd 서비스를 시작합니다. 로컬 작업실을 만들고 서비스 연결과 인증을 확인합니다. 로그는 `/var/log/soulstream-install.log`에 남습니다.
 
+설치가 끝나기 전에 모델 프리셋 상태를 갱신합니다. 최대 여섯 번 시도하며 각 요청은 최대 60초, 재시도 간격은 10초입니다. 갱신에 실패해도 설치는 계속됩니다.
+
 설치가 끝나면 안내된 명령으로 선택한 CLI에 로그인합니다. Codex는 ChatGPT 보안 설정에서 기기 코드 로그인을 켜야 합니다. Antigravity는 `ssh soulstream@<서버>`로 직접 접속해 `~/.local/bin/agy`에서 로그인하고 `/exit`로 나옵니다. 로그인 후 프리셋은 5분 안에 갱신되며, 즉시 갱신 명령도 설치 결과에 표시됩니다.
 
 대시보드는 SSH 터널을 연 뒤 로컬 브라우저에서 접속합니다.
