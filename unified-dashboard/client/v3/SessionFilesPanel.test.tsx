@@ -43,6 +43,11 @@ describe('session files panel', () => {
     await render({ ...reviewSessionFiles, files: [{ ...reviewSessionFiles.files[0], wrote: true, committed: true }] });
     expect(host.querySelector('[data-activity="commit"]')).not.toBeNull();
   });
+  it.each([0, 5])('opens a text file using its current size rather than snapshot size %s', async size => {
+    await render({ ...reviewSessionFiles, files: [{ ...reviewSessionFiles.files[0], size }] });
+    click([...host.querySelectorAll('button')].find(el => el.textContent?.includes('config.ts'))!);
+    expect(host.querySelector('[data-testid="viewer"]')?.textContent).toContain('&download=true|null');
+  });
   it('retries pending snapshots ten times and stops when unmounted', async () => {
     vi.useFakeTimers();
     const request = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...reviewSessionFiles, snapshot: { ...reviewSessionFiles.snapshot!, state: 'pending' } }) });

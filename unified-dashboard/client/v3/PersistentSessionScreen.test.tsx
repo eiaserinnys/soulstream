@@ -133,9 +133,12 @@ it('opens files in the PAS task seat and restores the task list on close',async(
  const button=host.querySelector<HTMLButtonElement>('[aria-label="세션 파일"]')!;
  await act(async()=>button.click());
  expect(host.querySelector('.v3-session-files-seat .v3-session-files-pane')?.textContent).toContain('outbox_retry.ts');
+ await act(async()=>host.querySelector<HTMLButtonElement>('.v3-session-files-pane [aria-expanded="false"]')!.click());
  expect(host.querySelector('.persistent-session-task-scroll')).toBeNull();
  await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="파일 닫기"]')!.click());
  expect(host.querySelector('.persistent-session-task-scroll')).not.toBeNull();
+ await act(async()=>button.click());
+ expect(host.querySelector('.v3-session-files-pane [aria-expanded="true"]')?.textContent).toContain('읽기만 한 파일');
 });
 it('refreshes the open PAS files on a complete event from the global session store',async()=>{
  mocks.list.mockResolvedValue({sessions:[session('one')]});await mount('one');

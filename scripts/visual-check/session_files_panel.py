@@ -61,6 +61,7 @@ def install_routes(page, scene="ready", requests=None):
         if path.endswith('/story'): return route.fulfill(json={"highlight": None, "narrative": "", "unfolded_turn_summaries": [], "narrative_through_event_id": 0, "fold_count": 0, "updated_at": None})
         if path.endswith("/workspace/file"):
             requested = parse_qs(urlsplit(route.request.url).query).get('path', [''])[0]
+            requests.setdefault('file_ranges', []).append({'path': requested, 'range': route.request.headers.get('range')})
             raw = LONG_TEXT if requested.endswith('event_outbox_types.ts') else SHORT_TEXT
             data = raw[:1] if route.request.headers.get('range') == 'bytes=0-0' else raw
             return route.fulfill(status=206, body=data, headers={"Content-Type": "text/plain", "Content-Range": f"bytes 0-{len(data)-1}/{len(raw)}", "Content-Length": str(len(data))})
@@ -71,7 +72,10 @@ def install_routes(page, scene="ready", requests=None):
             if scene == "loading": data["snapshot"]["state"] = "pending"
             if scene == "offline": data["node"]["status"] = "offline"
             if scene == "long": data["files"][0]["path"] = "매우-긴-폴더-이름/아주-긴-파일-이름을-좁은-화면에서-읽기-위한-이름-123456789.ts"
-            if scene == "interaction": data["files"] += [{**FILE, "path": f"fixtures/folder-{i // 10}/example-{i:02}.ts", "git_status": "modified", "wrote": True} for i in range(40)]
+            if scene == "interaction":
+                data["files"][0]["size"] = 0
+                data["files"] += [{**FILE, "path": f"fixtures/folder-{i // 10}/example-{i:02}.ts", "git_status": "modified", "wrote": True} for i in range(40)]
+                data["read_only"] += [{"path": f"fixtures/read-only/read-{i:02}.ts", "size": None, "last_read_at": None} for i in range(50)]
             return route.fulfill(json=data)
         return route.continue_()
     page.route("**/api/**", route_handler)
@@ -130,7 +134,8 @@ def capture_retention(browser, base):
     context = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme="dark", reduced_motion="reduce", service_workers="block")
     page = context.new_page()
     page.add_init_script("localStorage.setItem('soul-dashboard-theme','dark'); localStorage.setItem('ls.webglGlass','0');")
-    install_routes(page, "interaction")
+    requests = {"workspace": 0}
+    install_routes(page, "interaction", requests)
     page.goto(base + "/components?filesReview=1", wait_until="domcontentloaded")
     sample = page.get_by_test_id("card-board-sample")
     sample.locator('[data-card-id="board-size-comparison"] .v3-postit-open').first.click()
@@ -150,31 +155,47 @@ def capture_retention(browser, base):
     trigger.click()
     pane = workspace.get_by_role("region", name="세션 파일")
     expect(pane.get_by_text('example-39.ts')).to_be_attached()
+    pane.get_by_text('config.ts', exact=True).click()
+    dialog = page.get_by_role('dialog')
+    expect(dialog.locator('pre')).to_contain_text('// session file preview')
+    expect(dialog.locator('.chat-image-viewer-metadata')).to_have_text(f'{len(SHORT_TEXT)} B')
+    page.wait_for_function("document.querySelector('[data-slot=dialog-popup][data-attachment-kind]')?.contains(document.activeElement)", timeout=5000)
+    page.keyboard.press('Escape'); expect(dialog).to_have_count(0)
+    ranges = [entry['range'] for entry in requests['file_ranges'] if entry['path'].endswith('config.ts')]
+    assert ranges == ['bytes=0-0', f'bytes=0-{len(SHORT_TEXT)-1}'], ranges
+    read_toggle = pane.get_by_role('button', name='읽기만 한 파일', exact=False)
+    expect(pane).to_be_visible(timeout=5000)
+    expect(read_toggle).to_be_visible(timeout=5000)
+    read_toggle.click(); expect(read_toggle).to_have_attribute('aria-expanded', 'true')
     body = pane.locator('.v3-session-files-body')
-    body.evaluate("e => {e.scrollTop = 250; e.dispatchEvent(new Event('scroll'))}")
+    body.evaluate("e => {e.scrollTop = e.scrollHeight - e.clientHeight - 100; e.dispatchEvent(new Event('scroll'))}")
     page.wait_for_timeout(200)
     file_before = body.evaluate('e => e.scrollTop')
+    def geometry(): return body.evaluate("e => ({top:e.scrollTop, height:e.scrollHeight, client:e.clientHeight, anchor:getComputedStyle(e).overflowAnchor})")
+    before_geometry = geometry()
     assert chat_before > 0 and file_before > 0, (chat_before, file_before)
     pane.get_by_role('button', name='파일 닫기').click()
     expect(draft).to_have_value('파일 확인 중인 임시 글')
     chat_after_close = scroller.evaluate('e => e.scrollTop')
     trigger.click(); expect(pane.get_by_text('example-39.ts')).to_be_attached()
+    expect(read_toggle).to_have_attribute('aria-expanded', 'true')
     page.wait_for_timeout(200)
     file_after_open = body.evaluate('e => e.scrollTop')
     page.set_viewport_size({"width": 390, "height": 900}); page.wait_for_timeout(500)
     if workspace.get_attribute('data-mobile-view') != 'chat': page.get_by_test_id('v3-mobile-tab-chat').click()
     expect(pane).to_be_visible(); file_narrow = body.evaluate('e => e.scrollTop')
+    narrow_geometry = geometry()
     page.set_viewport_size({"width": 1440, "height": 900}); page.wait_for_timeout(500)
     expect(draft).to_have_value('파일 확인 중인 임시 글')
     chat_wide = scroller.evaluate('e => e.scrollTop'); file_wide = body.evaluate('e => e.scrollTop')
-    result = {"draft": draft.input_value(), "chat_scroll": [chat_before, chat_after_close, chat_wide], "file_scroll": [file_before, file_after_open, file_narrow, file_wide]}
+    result = {"draft": draft.input_value(), "chat_scroll": [chat_before, chat_after_close, chat_wide], "file_scroll": [file_before, file_after_open, file_narrow, file_wide], "file_geometry": [before_geometry, narrow_geometry, geometry()], "read_only_expanded": read_toggle.get_attribute('aria-expanded'), "stale_size_preview_ranges": ranges}
     assert abs(chat_before - chat_after_close) <= 2 and abs(chat_before - chat_wide) <= 2, result
     assert all(abs(file_before - value) <= 2 for value in [file_after_open, file_narrow, file_wide]), result
     context.close()
     return result
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument("--output", required=True); parser.add_argument("--baseline-dist", required=True); parser.add_argument("--story-only", action="store_true"); args = parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument("--output", required=True); parser.add_argument("--baseline-dist", required=True); parser.add_argument("--story-only", action="store_true"); parser.add_argument("--retention-only", action="store_true"); args = parser.parse_args()
     out = Path(args.output).resolve(); out.mkdir(parents=True, exist_ok=True)
     server, base = serve(DIST)
     baseline_server, baseline_base = serve(Path(args.baseline_dist))
@@ -182,6 +203,9 @@ def main():
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
+            if args.retention_only:
+                measurements['retention'] = capture_retention(browser, base)
+                return
             measurements["story"] = story_comparison(browser, baseline_base, base, out)
             assert measurements["story"]["before"] == measurements["story"]["after"], measurements["story"]
             if args.story_only: return
@@ -242,8 +266,9 @@ def main():
                     assert info["tab"] == ["다시 읽기", "파일 닫기", "config.ts+3−1", "event_outbox_types.ts", "event_outbox.ts+42−18", "outbox_retry.ts새+33", "읽기만 한 파일일부1"], info["tab"]
                     pane.get_by_text("event_outbox_types.ts", exact=True).click()
                     expect(page.get_by_role("dialog")).to_be_visible()
-                    page.screenshot(path=str(out / "wide-preview.png"), animations="disabled")
                     dialog = page.get_by_role("dialog")
+                    expect(dialog.locator('pre')).to_contain_text('// session file preview')
+                    page.screenshot(path=str(out / "wide-preview.png"), animations="disabled")
                     info["preview_tab"] = []
                     for _ in range(7):
                         page.keyboard.press("Tab")

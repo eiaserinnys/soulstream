@@ -25,7 +25,7 @@ describe("attachment text preview", () => {
     const request = vi.fn().mockResolvedValueOnce(rangedResponse(bytes.slice(0, 1), bytes.length))
       .mockResolvedValueOnce(rangedResponse(bytes, bytes.length));
     vi.stubGlobal("fetch", request);
-    await expect(readAttachmentText({ url: "/workspace/file", byteSize: null })).resolves.toMatchObject({ text: "hello", bytesRead: 5 });
+    await expect(readAttachmentText({ url: "/workspace/file", byteSize: null })).resolves.toMatchObject({ text: "hello", bytesRead: 5, totalBytes: 5 });
     expect(request.mock.calls[0][1].headers.Range).toBe("bytes=0-0");
     expect(request.mock.calls[1][1].headers.Range).toBe("bytes=0-4");
   });
@@ -38,8 +38,16 @@ describe("attachment text preview", () => {
       text: "",
       truncated: false,
       bytesRead: 0,
+      totalBytes: 0,
     });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("recognizes an empty file when its size must be discovered", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(null, { status: 416, headers: { "Content-Range": "bytes */0" } }));
+    vi.stubGlobal("fetch", request);
+    await expect(readAttachmentText({ url: "/workspace/file", byteSize: null })).resolves.toEqual({ text: "", truncated: false, bytesRead: 0, totalBytes: 0 });
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it("reads exactly 1 MiB and marks larger originals as truncated", async () => {

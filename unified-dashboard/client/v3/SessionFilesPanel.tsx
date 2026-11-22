@@ -62,20 +62,20 @@ function asAttachment(sessionId: string, file: Entry): ChatAttachmentItem {
   const url = `/api/sessions/${encodeURIComponent(sessionId)}/workspace/file?path=${encodeURIComponent(file.path)}`;
   const name = file.path.split("/").at(-1) ?? file.path;
   const image = /\.(png|jpe?g|gif|webp|avif)$/i.test(name);
-  return { key: file.path, name, mimeType: null, byteSize: file.size, previewKind: image ? "image" : "text", availability: "ready", previewUrl: url, originalUrl: `${url}&download=true`, legacySources: [], source: { kind: "unavailable", path: file.path, context: { type: "session", id: sessionId } } };
+  return { key: file.path, name, mimeType: null, byteSize: image ? file.size : null, previewKind: image ? "image" : "text", availability: "ready", previewUrl: url, originalUrl: `${url}&download=true`, legacySources: [], source: { kind: "unavailable", path: file.path, context: { type: "session", id: sessionId } } };
 }
 
-export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, onClose, focusOnMount = false, scrollTop = 0, onScroll }: {
-  sessionId: string; data: SessionWorkspaceResponse | null; loading: boolean; error: boolean; onRefresh(): void; onClose(): void; focusOnMount?: boolean; scrollTop?: number; onScroll?(position: number): void;
+export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, onClose, focusOnMount = false, scrollTop = 0, onScroll, initiallyExpanded = false, onExpandedChange }: {
+  sessionId: string; data: SessionWorkspaceResponse | null; loading: boolean; error: boolean; onRefresh(): void; onClose(): void; focusOnMount?: boolean; scrollTop?: number; onScroll?(position: number): void; initiallyExpanded?: boolean; onExpandedChange?(value: boolean): void;
 }) {
-  const [showRead, setShowRead] = useState(false);
+  const [showRead, setShowRead] = useState(initiallyExpanded);
   const [selected, setSelected] = useState<string | null>(null);
   const [trigger, setTrigger] = useState<HTMLElement | null>(null);
   const refreshRef = useRef<HTMLButtonElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (focusOnMount) refreshRef.current?.focus({ preventScroll: true }); }, [focusOnMount]);
   useLayoutEffect(() => { if (data && scrollRef.current) scrollRef.current.scrollTop = scrollTop; }, [data?.session_id, data?.snapshot?.state, Boolean(data), scrollTop]);
-  useEffect(() => { setShowRead(false); setSelected(null); }, [sessionId]);
+  useEffect(() => { setShowRead(initiallyExpanded); setSelected(null); }, [sessionId]);
   const changed = data?.files ?? [];
   const readOnly = data?.read_only ?? [];
   const entries = useMemo(() => [...grouped(changed).flatMap(([, files]) => files), ...(showRead ? grouped(readOnly).flatMap(([, files]) => files) : [])], [data, showRead]);
@@ -117,7 +117,7 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
           <nav className="v3-nav-list v3-session-files-list" aria-label="세션 파일">
             {data?.attribution === "partial" && readOnly.length === 0 && <p title="이 엔진은 읽은 파일을 일부만 기록합니다">읽음 일부</p>}
             {changed.length ? tree(changed) : data?.snapshot?.state !== "not_git" && <p>바뀐 파일 없음</p>}
-            {readOnly.length > 0 && <div className="v3-session-files-group"><button type="button" className="v3-session-files-row" aria-expanded={showRead} onClick={() => setShowRead(value => !value)}><span className="v3-session-files-mark" data-activity="read"><Eye className="h-4 w-4" aria-hidden="true"/></span><span className="v3-session-files-name">읽기만 한 파일</span>{data?.attribution === "partial" && <span className="v3-session-files-new" title="이 엔진은 읽은 파일을 일부만 기록합니다">일부</span>}<span>{readOnly.length}</span><ChevronRight className={`h-4 w-4${showRead ? " v3-session-files-chevron-open" : ""}`} aria-hidden="true"/></button>{showRead && tree(readOnly)}</div>}
+            {readOnly.length > 0 && <div className="v3-session-files-group"><button type="button" className="v3-session-files-row" aria-expanded={showRead} onClick={() => { const next = !showRead; setShowRead(next); onExpandedChange?.(next); }}><span className="v3-session-files-mark" data-activity="read"><Eye className="h-4 w-4" aria-hidden="true"/></span><span className="v3-session-files-name">읽기만 한 파일</span>{data?.attribution === "partial" && <span className="v3-session-files-new" title="이 엔진은 읽은 파일을 일부만 기록합니다">일부</span>}<span>{readOnly.length}</span><ChevronRight className={`h-4 w-4${showRead ? " v3-session-files-chevron-open" : ""}`} aria-hidden="true"/></button>{showRead && tree(readOnly)}</div>}
           </nav>
         </>}
     </div>
@@ -125,8 +125,8 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
   </>;
 }
 
-export function SessionFilesPane({ sessionId, storeScope, onClose, scrollTop, onScroll }: { sessionId: string; storeScope?: ChatSessionStoreScope; onClose(): void; scrollTop?: number; onScroll?(position: number): void }) {
+export function SessionFilesPane({ sessionId, storeScope, onClose, scrollTop, onScroll, initiallyExpanded, onExpandedChange }: { sessionId: string; storeScope?: ChatSessionStoreScope; onClose(): void; scrollTop?: number; onScroll?(position: number): void; initiallyExpanded?: boolean; onExpandedChange?(value: boolean): void }) {
   const turnKey = useSessionFilesTurn(sessionId, storeScope);
   const state = useSessionFiles(sessionId, turnKey);
-  return <section onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="v3-detail-pane v3-session-files-pane border border-glass-border glass-strong glass-chrome lg-rim" aria-label="세션 파일"><SessionFilesPanel sessionId={sessionId} {...state} onRefresh={state.refresh} onClose={onClose} scrollTop={scrollTop} onScroll={onScroll} focusOnMount/></section>;
+  return <section onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="v3-detail-pane v3-session-files-pane border border-glass-border glass-strong glass-chrome lg-rim" aria-label="세션 파일"><SessionFilesPanel sessionId={sessionId} {...state} onRefresh={state.refresh} onClose={onClose} scrollTop={scrollTop} onScroll={onScroll} initiallyExpanded={initiallyExpanded} onExpandedChange={onExpandedChange} focusOnMount/></section>;
 }

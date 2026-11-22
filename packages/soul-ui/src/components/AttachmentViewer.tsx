@@ -213,13 +213,14 @@ export function AttachmentViewer({
 
   if (!item || index === null) return null;
 
-  const metadata = item.byteSize === null ? null : formatFileSize(item.byteSize);
+  const text = textState?.key === previewKey ? textState : null;
+  const byteSize = item.byteSize ?? (text?.state === "ready" ? text.result.totalBytes : null);
+  const metadata = byteSize === null ? null : formatFileSize(byteSize);
   const canPreview = item.availability !== "missing" && item.availability !== "unavailable";
   const canSave = canPreview && (localFile !== undefined || item.originalUrl !== null);
   const multiItem = items.length > 1;
   const imageGallery = items.every(attachment => attachment.source.kind === "markdown-image");
   const saveMessage = saveFailure?.key === previewKey ? saveFailure.message : null;
-  const text = textState?.key === previewKey ? textState : null;
   const textFormat = item.previewKind === "text" ? attachmentTextFormat(item) : null;
   const mediaFailure = mediaFailureKey === previewKey
     ? {

@@ -18,6 +18,7 @@ export interface AttachmentTextPreview {
   text: string;
   truncated: boolean;
   bytesRead: number;
+  totalBytes: number;
 }
 
 export async function readAttachmentText(input: {
@@ -28,7 +29,7 @@ export async function readAttachmentText(input: {
   const byteSize = input.byteSize ?? await readRemoteSize(input.url, input.signal);
   validateByteSize(byteSize);
   input.signal?.throwIfAborted();
-  if (byteSize === 0) return { text: "", truncated: false, bytesRead: 0 };
+  if (byteSize === 0) return { text: "", truncated: false, bytesRead: 0, totalBytes: 0 };
 
   const expectedBytes = Math.min(byteSize, TEXT_PREVIEW_MAX_BYTES);
   const response = await fetch(input.url, {
@@ -58,7 +59,7 @@ export async function readAttachmentText(input: {
     if (bytesRead !== expectedBytes) throw invalidResponse(response.status);
     const truncated = byteSize > TEXT_PREVIEW_MAX_BYTES;
     if (!truncated) text += decodeFinal(decoder);
-    return { text, truncated, bytesRead };
+    return { text, truncated, bytesRead, totalBytes: byteSize };
   } catch (error) {
     await reader?.cancel(error).catch(() => undefined);
     input.signal?.throwIfAborted();
@@ -82,7 +83,7 @@ export async function readLocalAttachmentText(
   signal?: AbortSignal,
 ): Promise<AttachmentTextPreview> {
   signal?.throwIfAborted();
-  if (file.size === 0) return { text: "", truncated: false, bytesRead: 0 };
+  if (file.size === 0) return { text: "", truncated: false, bytesRead: 0, totalBytes: 0 };
   const bytesRead = Math.min(file.size, TEXT_PREVIEW_MAX_BYTES);
   const bytes = new Uint8Array(await file.slice(0, bytesRead).arrayBuffer());
   signal?.throwIfAborted();
@@ -91,6 +92,7 @@ export async function readLocalAttachmentText(
     text: decodeBytes(bytes, truncated),
     truncated,
     bytesRead: bytes.byteLength,
+    totalBytes: file.size,
   };
 }
 
