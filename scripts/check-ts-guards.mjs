@@ -47,6 +47,29 @@ function main() {
       for (const [module, list] of imports) {
         if (list.length > 1) record('duplicate-import', list[1], `"${module}" ${list.length}문  → 한 import 문으로 합친다(형은 이름 앞에 type)`, module);
       }
+      const isConstant = (input) => {
+        let node = input;
+        while (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isTypeAssertionExpression(node)) node = node.expression;
+        if (ts.isStringLiteral(node) || ts.isNumericLiteral(node) || ts.isBigIntLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
+          || node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword || node.kind === ts.SyntaxKind.NullKeyword) return true;
+        if (ts.isPrefixUnaryExpression(node)) {
+          return [ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken, ts.SyntaxKind.ExclamationToken, ts.SyntaxKind.TildeToken].includes(node.operator) && isConstant(node.operand);
+        }
+        if (ts.isBinaryExpression(node)) {
+          const operator = node.operatorToken.kind;
+          return !(operator >= ts.SyntaxKind.FirstAssignment && operator <= ts.SyntaxKind.LastAssignment) && isConstant(node.left) && isConstant(node.right);
+        }
+        if (ts.isArrayLiteralExpression(node)) return node.elements.every((element) => !ts.isSpreadElement(element) && !ts.isOmittedExpression(element) && isConstant(element));
+        if (ts.isObjectLiteralExpression(node)) {
+          return node.properties.every((property) => ts.isPropertyAssignment(property)
+            && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name) || ts.isNumericLiteral(property.name)) && isConstant(property.initializer));
+        }
+        return false;
+      };
+      const identifiers = new Map();
+      const mocks = [];
+      const constants = [];
+      const expects = [];
       const visit = (node) => {
         const isOmit = (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && node.typeName.text === 'Omit')
           || (ts.isExpressionWithTypeArguments(node) && ts.isIdentifier(node.expression) && node.expression.text === 'Omit');
@@ -56,9 +79,50 @@ function main() {
             record('omit-index', node, `${node.getText(sourceFile).replace(/\s+/g, ' ')}  → 키를 다시 매기는 매핑형으로 쓴다`, node.getStart(sourceFile));
           }
         }
+        if (ts.isIdentifier(node)) {
+          const list = identifiers.get(node.text) ?? [];
+          list.push(node);
+          identifiers.set(node.text, list);
+        }
+        if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer
+          && ts.isVariableDeclarationList(node.parent) && ts.isVariableStatement(node.parent.parent)
+          && !node.parent.parent.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) {
+          const init = node.initializer;
+          if (ts.isCallExpression(init) && ts.isPropertyAccessExpression(init.expression) && ts.isIdentifier(init.expression.expression)
+            && ['vi', 'jest'].includes(init.expression.expression.text) && init.expression.name.text === 'fn') mocks.push(node);
+          if ((node.parent.flags & ts.NodeFlags.Const) !== 0 && isConstant(init)) constants.push(node);
+        }
+        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'expect' && node.arguments.length) expects.push(node);
         ts.forEachChild(node, visit);
       };
       visit(sourceFile);
+      const referencesOf = (declaration) => {
+        const symbol = checker.getSymbolAtLocation(declaration.name);
+        return (identifiers.get(declaration.name.text) ?? []).filter((id) => id !== declaration.name
+          && (ts.isShorthandPropertyAssignment(id.parent) && id.parent.name === id
+            ? checker.getShorthandAssignmentValueSymbol(id.parent) : checker.getSymbolAtLocation(id)) === symbol);
+      };
+      const isExpectSubject = (id) => ts.isCallExpression(id.parent) && ts.isIdentifier(id.parent.expression)
+        && id.parent.expression.text === 'expect' && id.parent.arguments[0] === id;
+      for (const mock of mocks) {
+        if (referencesOf(mock).every((id) => (ts.isPropertyAccessExpression(id.parent) && id.parent.expression === id) || isExpectSubject(id))) {
+          record('unwired-mock', mock.name, `${mock.name.text}  → 넘기는 곳이 없는 목이다. 목과 그 단언을 지운다`, mock.name.getStart(sourceFile));
+        }
+      }
+      for (const call of expects) {
+        let current = call;
+        while (ts.isPropertyAccessExpression(current.parent) && current.parent.expression === current && ['not', 'resolves', 'rejects'].includes(current.parent.name.text)) current = current.parent;
+        const access = current.parent;
+        if (!ts.isPropertyAccessExpression(access) || access.expression !== current) continue;
+        const matcher = access.parent;
+        if (!ts.isCallExpression(matcher) || matcher.expression !== access || !matcher.arguments.every(isConstant)) continue;
+        const subject = call.arguments[0];
+        const declaration = ts.isIdentifier(subject) && constants.find((candidate) => candidate.name.text === subject.text
+          && checker.getSymbolAtLocation(candidate.name) === checker.getSymbolAtLocation(subject));
+        if (isConstant(subject) || (declaration && referencesOf(declaration).every(isExpectSubject))) {
+          record('constant-expect', call, `${call.getText(sourceFile).replace(/\s+/g, ' ')}  → 상수끼리 견주는 단언을 지운다`, call.getStart(sourceFile));
+        }
+      }
     }
   }
   const sorted = [...findings.values()].sort((a, b) => a.rule.localeCompare(b.rule) || a.file.localeCompare(b.file) || a.line - b.line || a.position - b.position);
