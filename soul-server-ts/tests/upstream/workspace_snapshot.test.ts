@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -30,6 +30,27 @@ describe("workspace snapshot", () => {
     expect(later.observed_at).toBe(first.observed_at);
     expect(later.git?.commits).toEqual([]);
     expect((await cache.get(root, "2024-01-01T00:00:00.000Z")).git?.commits).toHaveLength(1);
+  });
+  it("reports every untracked file in a new folder with its size", async () => {
+    const root=await mkdtemp(path.join(tmpdir(),"workspace-nested-")); roots.push(root);
+    execFileSync("git",["init"],{cwd:root});
+    execFileSync("git",["-c","user.name=Test","-c","user.email=test@example.com","commit","--allow-empty","-m","initial"],{cwd:root});
+    await mkdir(path.join(root,"src","new"),{recursive:true});
+    await writeFile(path.join(root,"src","new","a.ts"),"one");
+    await writeFile(path.join(root,"src","new","b.ts"),"four");
+    const snapshot=await new WorkspaceSnapshotCache().get(root,"2024-01-01T00:00:00.000Z");
+    expect(snapshot.git?.files).toEqual([
+      expect.objectContaining({path:"src/new/a.ts",status:"untracked",size:3}),
+      expect.objectContaining({path:"src/new/b.ts",status:"untracked",size:4}),
+    ]);
+  });
+  it("truncates more than 1000 changed files", async () => {
+    const root=await mkdtemp(path.join(tmpdir(),"workspace-limit-")); roots.push(root);
+    execFileSync("git",["init"],{cwd:root});
+    execFileSync("git",["-c","user.name=Test","-c","user.email=test@example.com","commit","--allow-empty","-m","initial"],{cwd:root});
+    await Promise.all(Array.from({length:1001},(_,i)=>writeFile(path.join(root,`file-${i}.txt`),"x")));
+    const snapshot=await new WorkspaceSnapshotCache().get(root,"2024-01-01T00:00:00.000Z");
+    expect(snapshot.git?.truncated).toBe(true); expect(snapshot.git?.files).toHaveLength(1000);
   });
   it("returns pending when a calculation outlives its wait, then returns its result", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "workspace-pending-")); roots.push(root);

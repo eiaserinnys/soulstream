@@ -40,19 +40,19 @@ export class WorkspaceSnapshotCache {
     }
     if (gitRoot === null) return { root, state: "not_git", observed_at: new Date().toISOString(), refreshing: false, git: null };
     const [status, diff, log] = await Promise.all([
-      git(root, ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal", "--", "."]),
+      git(root, ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all", "--", "."]),
       git(root, ["diff", "HEAD", "--numstat", "-z", "--", "."]).catch(e => { if (e instanceof GitProcessError && /unknown revision|ambiguous argument|bad revision/i.test(e.stderr ?? "")) return ""; throw e; }),
       git(root, ["log", `--since=${since}`, "-n", "50", "--format=%x1e%H%x00%s%x00%cI", "--name-only", "-z", "HEAD", "--", "."]).catch(e => { if (e instanceof GitProcessError && /does not have any commits|unknown revision|ambiguous argument/i.test(e.stderr ?? "")) return ""; throw e; }),
     ]);
     const convert = (p: string) => path.relative(root, path.resolve(gitRoot!, p.replaceAll("\\", "/"))).split(path.sep).join("/");
     const result = parseStatus(status, convert);
     const counts = parseNumstat(diff, convert);
+    result.truncated = result.files.length > 1000; result.files = result.files.slice(0, 1000);
     await Promise.all(result.files.map(async file => {
       const n = counts.get(file.path); if (n && file.status !== "untracked") { file.added = n[0]; file.deleted = n[1]; }
       if (file.status !== "deleted") { const info = await stat(path.resolve(root, file.path)).catch(() => null); file.size = info?.isFile() ? info.size : null; }
     }));
     result.commits = parseLog(log, convert);
-    result.truncated = result.files.length > 1000; result.files = result.files.slice(0, 1000);
     return { root, state: "ready", observed_at: new Date().toISOString(), refreshing: false, git: result };
   }
 }

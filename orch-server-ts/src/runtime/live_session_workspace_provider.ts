@@ -43,7 +43,7 @@ export function createLiveSessionWorkspaceProvider(options: Options): SessionWor
         payload->'tool_input'->>'filePath' AS file_path_camel, payload->'tool_input'->>'AbsolutePath' AS absolute_path,
         payload->'tool_input'->>'Path' AS path_arg, payload->'tool_input'->>'TargetFile' AS target_file,
         CASE WHEN event_type = 'tool_result' AND payload->>'tool_name' = 'file_change'
-          THEN jsonb_path_query_array((payload->>'result')::jsonb, '$[*].path')::text ELSE NULL END AS result
+          THEN payload->>'result' ELSE NULL END AS result
         FROM events WHERE session_id = ${sessionId} AND (event_type = 'tool_start' OR (event_type = 'tool_result' AND payload->>'tool_name' = 'file_change')) ORDER BY id DESC LIMIT 5000`;
       const activity=collectSessionFileActivity(snapshot?.root ?? null, rows as FileActivityRow[]);
       const git=snapshot?.git; const changed=new Map((git?.files ?? []).map(file=>[file.path,file]));

@@ -21,6 +21,24 @@ describe("session file activity", () => {
     for(const name of ["Edit.txt","Write.txt","MultiEdit.txt","book.ipynb","codex.txt","write_file.txt","write_to_file.txt","edit_file.txt","replace_file_content.txt","multi_replace_file_content.txt","notebook_edit.txt","open-edit.txt","open-write.txt"]) expect(files.get(name)).toMatchObject({read:false,wrote:true});
     expect(files.has("ignored")).toBe(false); expect(files.has("../outside")).toBe(false);
   });
+  it("skips malformed Codex results and attributes paths from object arrays", async () => {
+    const sql=async (parts:TemplateStringsArray)=>{
+      const query=parts.join("?");
+      if(query.includes("FROM sessions")) return [{session_id:"s",node_id:"n",agent_id:"a",worktree_id:null,created_at:new Date("2026-01-01T00:00:00Z"),model_preset:null}];
+      expect(query).toContain("payload->>'result'");
+      expect(query).not.toContain("jsonb_path_query_array");
+      return [
+        {event_type:"tool_result",tool_name:"file_change",result:"not json",created_at:at},
+        {event_type:"tool_result",tool_name:"file_change",result:'[{"path":"/repo/valid.ts","kind":"update"}]',created_at:at},
+        {event_type:"tool_start",tool_name:"Read",file_path:"/repo/read.txt",created_at:at},
+      ];
+    };
+    const snapshot={root:"/repo",state:"ready",observed_at:at,refreshing:false,git:{branch:"main",head:"a",upstream:null,ahead:0,behind:0,truncated:false,files:[],commits:[]}};
+    const provider=createLiveSessionWorkspaceProvider({sqlResolver:{resolveSql:async()=>sql} as never,registry:{getConnectedNode:()=>({nodeId:"n",connectionId:"c"}),createCommand:()=>({})} as never,bridge:{sendPendingCommand:async()=>snapshot} as never,modelCatalog:{snapshot:()=>({presets:[]})} as never});
+    const response=await provider.readWorkspace("s");
+    expect(response.files).toEqual([expect.objectContaining({path:"valid.ts",wrote:true})]);
+    expect(response.read_only).toEqual([expect.objectContaining({path:"read.txt"})]);
+  });
   it("marks committed only for files both written by this session and committed since it began", async () => {
     const sql=async (parts:TemplateStringsArray)=>parts.join("?").includes("FROM sessions")
       ? [{session_id:"s",node_id:"n",agent_id:"a",worktree_id:null,created_at:new Date("2026-01-01T00:00:00Z"),model_preset:null}]
