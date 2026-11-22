@@ -236,10 +236,12 @@ def capture_layout_checks(browser, base, out):
         pane = page.get_by_role('region', name='세션 파일') if workspace is None else workspace.get_by_role('region', name='세션 파일')
         expect(pane).to_be_visible()
         return context, page, workspace, pane
-    def resize(page, workspace, pane, width):
+    def resize(page, workspace, pane, width, surface='card'):
         page.set_viewport_size({"width": width, "height": 900})
         if workspace is not None and width <= 760 and workspace.get_attribute('data-mobile-view') != 'chat':
             page.get_by_test_id('v3-mobile-tab-chat').click()
+        if surface == 'folder' and width <= 760:
+            expect(page.locator('.v3-workspace[data-mobile-view="chat"][data-mobile-files="true"]')).to_be_visible(timeout=15000)
         expect(pane).to_be_visible(); page.wait_for_timeout(150)
     for surface in ('card', 'folder', 'pas'):
         context, page, workspace, pane = open_surface(surface, 'matrix')
@@ -247,7 +249,7 @@ def capture_layout_checks(browser, base, out):
         page.evaluate('document.fonts.ready')
         results['surfaces'][surface] = {}
         for width in (1440, 1150, 900, 390, 360):
-            resize(page, workspace, pane, width)
+            resize(page, workspace, pane, width, surface)
             m = pane.evaluate("""el => {
                 const title=el.querySelector('.v3-session-files-title'), svg=title.querySelector('svg'), strong=title.querySelector('strong');
                 const header=el.querySelector('.v3-chat-header'), caps=[...header.querySelectorAll('.dashboard-icon-cap')];
@@ -268,7 +270,7 @@ def capture_layout_checks(browser, base, out):
             check(m['aheadText'] == '↑12' and m['ahead']['width'] > 0 and len(m['caps']) == 2 and all(cap['width'] >= 32 and cap['height'] >= 32 and cap['left'] >= m['header']['left'] - .5 and cap['right'] <= m['header']['right'] + .5 for cap in m['caps']) and m['title']['right'] <= m['caps'][0]['left'] + .5 and m['caps'][0]['right'] <= m['caps'][1]['left'] + .5, key + ' caps', m)
             if width <= 390:
                 expected = '24px' if surface == 'pas' else '0px'
-                check(m['radius'] == expected and (surface != 'pas' or m['border'] != '0px'), key + ' radius', m)
+                check(m['radius'] == expected and m['pane']['left'] >= -.5 and m['pane']['right'] <= width + .5 and (surface != 'pas' or m['border'] != '0px'), key + ' radius and viewport', m)
             if surface == 'pas' or (width <= 390 and surface in ('card', 'folder')):
                 page.screenshot(path=str(out / f'{surface}-{width}.png'), animations='disabled')
         context.close()
