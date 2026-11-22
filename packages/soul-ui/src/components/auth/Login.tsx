@@ -112,7 +112,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
           </div>
         )}
 
-        {tailscaleAuthEnabled && <p className="text-sm text-muted-foreground">Only the permitted Tailscale account can access this dashboard.</p>}
+        {tailscaleAuthEnabled && <p className="text-sm text-muted-foreground">Tailscale에 허용된 계정으로 로그인한 기기에서 이 서버의 Serve 주소로 접속하세요.</p>}
 
         {/* 설치 비밀번호 로그인 (password 모드) */}
         {passwordLoginEnabled && !tailscaleAuthEnabled && (
