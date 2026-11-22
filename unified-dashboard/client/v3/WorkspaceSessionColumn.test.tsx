@@ -9,6 +9,7 @@ vi.mock("@seosoyoung/soul-ui",()=>({
  ChatView:()=>createElement("div",{"data-testid":"chat-content"},"선택한 세션 대화"),
  DashboardIconCap:({label,...props}:HTMLAttributes<HTMLButtonElement>&{label:string})=>createElement("button",{...props,"aria-label":label}),
  DragHandle:()=>null,SessionModelPresetBadge:()=>null,SessionStoryDisclosure:()=>null,
+ SessionHeaderPill:({children,...props}:any)=>createElement("button",props,children),
  STATUS_CONFIG:{completed:{label:"완료"},unknown:{label:"알 수 없음"}},useGlassSurface:()=>false,useSessionMenu:()=>vi.fn(),
 }));
 vi.mock("./V3SessionReviewBanner",()=>({V3SessionReviewBanner:()=>null}));
@@ -32,5 +33,18 @@ it("shows the selected session in the existing resizable column without an overl
  flushSync(()=>separator.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowLeft",bubbles:true,cancelable:true})));
  expect(resize).toHaveBeenCalledOnce();expect(resize.mock.calls[0][0]).toBeCloseTo(-24*100/1440);
  flushSync(()=>container.querySelector<HTMLButtonElement>('button[aria-label="채팅 닫기"]')!.click());expect(close).toHaveBeenCalledOnce();
+ flushSync(()=>root.unmount());
+});
+
+it("opens the selected session's files from the chat header",()=>{
+ const container=document.createElement("div");document.body.append(container);const root=createRoot(container);const toggle=vi.fn();
+ flushSync(()=>root.render(createElement(WorkspaceSessionColumn,{
+  activeSession:{agentSessionId:"s",displayName:"작업",status:"completed"} as any,
+  chatClassName:"",chatTestId:"chat",resizeClassName:"",resizeTestId:"resize",onResize:()=>{},
+  chatInputDisabled:false,historyEnabled:true,sessionStreamActive:true,sessionConnectionStatus:"connected" as any,reconnectSession:()=>{},onAcknowledgedReview:()=>{},
+  filesOpen:false,onToggleFiles:toggle,
+ } as any)));
+ const button=[...container.querySelectorAll('button')].find(item=>item.textContent?.includes('파일'));
+ expect(button).toBeDefined();flushSync(()=>button!.click());expect(toggle).toHaveBeenCalledOnce();
  flushSync(()=>root.unmount());
 });

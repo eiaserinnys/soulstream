@@ -13,7 +13,7 @@ import { PersistentSessionEntry } from './PersistentSessionEntry';
 export function V3GlobalToolbar({
   onOpenConfig,
   onOpenSearch,
-  variant = 'default', agentName, agentOnly = false, showHome = true, onOpenHome, headerRef, showWeeklyUsage, onToggleUsage, sessionSwitch,
+  variant = 'default', agentName, agentOnly = false, showHome = true, onOpenHome, headerRef, showWeeklyUsage, onToggleUsage, sessionSwitch, sessionAction,
   appearance = 'default',
 }: {
   onOpenConfig(): void;
@@ -25,6 +25,7 @@ export function V3GlobalToolbar({
   showHome?: boolean;
   onOpenHome?(): void;
   sessionSwitch?: ReactNode;
+  sessionAction?: ReactNode;
   headerRef?: RefObject<HTMLElement | null>;
   appearance?: "default" | "bare";
   showWeeklyUsage?: boolean;
@@ -58,6 +59,7 @@ export function V3GlobalToolbar({
           ? <House className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
           : <span aria-hidden="true" className="text-base leading-none">⌂</span>}
       </DashboardIconCap> : null}
+      {sessionAction}
       <ThemeToggle variant="chrome" appearance={appearance}/>
       {onToggleUsage && showWeeklyUsage !== undefined ? <DashboardIconCap appearance={appearance} label="주간 사용량"
         aria-pressed={showWeeklyUsage} className={`persistent-session-weekly-usage-toggle${showWeeklyUsage ? " persistent-session-weekly-usage-toggle--selected" : ""}`}

@@ -16,7 +16,7 @@ export function WorkspaceSessionColumn({
   onResize, onResizeKeyDown, onClose, chatInputDisabled, fileUploadUrl,
   historyEnabled, sessionStreamActive, sessionConnectionStatus, reconnectSession,
   onAcknowledgedReview,separatorAria,
-  storeScope,onSessionChange,loadDisplaySettings,
+  storeScope,onSessionChange,loadDisplaySettings,filesOpen,onToggleFiles,
 }: {
   activeSession: SessionSummary | undefined;
   chatClassName: string; chatTestId: string;
@@ -32,6 +32,7 @@ export function WorkspaceSessionColumn({
   storeScope?: ChatSessionStoreScope;
   onSessionChange?(sessionId: string): void;
   loadDisplaySettings?: boolean;
+  filesOpen?: boolean; onToggleFiles?(): void;
   separatorAria?:Pick<AriaAttributes,"aria-valuenow"|"aria-valuemin"|"aria-valuemax"|"aria-valuetext">;
 }) {
   const chatSurfaceRef = useRef<HTMLElement>(null);
@@ -52,7 +53,7 @@ export function WorkspaceSessionColumn({
       data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
       data-testid={chatTestId} aria-label="세션 채팅">
       <SessionPanelHeader session={activeSession} streamActive={sessionStreamActive}
-        connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} onClose={onClose}/>
+        connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} onClose={onClose} filesOpen={filesOpen} onToggleFiles={onToggleFiles}/>
       {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview}/> : null}
       <div className="v3-chat-content">
         {activeSession ? <PersistentSessionChatView sessionId={activeSession.agentSessionId} storeScope={storeScope} onSessionChange={onSessionChange} loadDisplaySettings={loadDisplaySettings} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}/> :

@@ -58,7 +58,7 @@ export type { AtomNodeSelectorProps } from "./AtomNodeSelector";
 
 // === Dashboard Components ===
 export { SessionModelPresetBadge } from "./SessionModelPresetBadge";
-export { SessionStoryDisclosure } from "./SessionStoryDisclosure";
+export { SessionStoryDisclosure, SessionHeaderPill } from "./SessionStoryDisclosure";
 export { ThemeToggle } from "./ThemeToggle";
 export { DashboardIconCap } from "./DashboardIconCap";
 export type { DashboardIconCapProps } from "./DashboardIconCap";

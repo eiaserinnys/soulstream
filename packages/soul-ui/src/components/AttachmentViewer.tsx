@@ -119,7 +119,7 @@ export function AttachmentViewer({
       ? Promise.reject(new Error("Attachment is unavailable"))
       : localFile
         ? readLocalAttachmentText(localFile, controller.signal)
-        : item.previewUrl !== null && item.byteSize !== null
+        : item.previewUrl !== null
           ? readAttachmentText({ url: item.previewUrl, byteSize: item.byteSize, signal: controller.signal })
           : Promise.reject(new Error("Attachment preview metadata is unavailable"));
 
@@ -213,13 +213,14 @@ export function AttachmentViewer({
 
   if (!item || index === null) return null;
 
-  const metadata = item.byteSize === null ? null : formatFileSize(item.byteSize);
+  const text = textState?.key === previewKey ? textState : null;
+  const byteSize = item.byteSize ?? (text?.state === "ready" ? text.result.totalBytes : null);
+  const metadata = byteSize === null ? null : formatFileSize(byteSize);
   const canPreview = item.availability !== "missing" && item.availability !== "unavailable";
   const canSave = canPreview && (localFile !== undefined || item.originalUrl !== null);
   const multiItem = items.length > 1;
   const imageGallery = items.every(attachment => attachment.source.kind === "markdown-image");
   const saveMessage = saveFailure?.key === previewKey ? saveFailure.message : null;
-  const text = textState?.key === previewKey ? textState : null;
   const textFormat = item.previewKind === "text" ? attachmentTextFormat(item) : null;
   const mediaFailure = mediaFailureKey === previewKey
     ? {
@@ -328,7 +329,8 @@ export function AttachmentViewer({
         <DialogPanel
           scrollFade={false}
           scrollable={item.previewKind !== "image" && textFormat !== "html" && mediaFormat === null}
-          className="chat-image-viewer-panel"
+          tabIndex={item.previewKind === "text" && textFormat !== "html" ? 0 : undefined}
+          className="chat-image-viewer-panel focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
         >
           {panelContent ?? (item.availability === "missing" ? (
             <div className="chat-attachment-state chat-image-status" role="status" data-slot="dialog-error-message">첨부를 찾을 수 없습니다.</div>

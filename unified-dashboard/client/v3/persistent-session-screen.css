@@ -8,6 +8,7 @@
 }
 .persistent-session-screen {
   --pas-main-width: 520px;
+  --pas-main-min-width: 360px;
   --pas-header-height: 76px;
   --pas-compact-header-height: 56px;
   --pas-task-toggle-right: var(--v3-space-8);
@@ -78,6 +79,18 @@
 @media (min-width: 1101px) {
   .persistent-session-screen { --pas-task-panel-width: min(var(--pas-list-width), calc((100% - var(--pas-main-width)) / 2 - var(--v3-space-8) - var(--v3-space-4))); }
 }
+@media (min-width: 768px) {
+  .persistent-session-screen.has-session-files {
+    --pas-files-width: min(calc(var(--v3-space-8) * 12), calc(100% - var(--pas-main-min-width) - var(--v3-space-8) * 2 - var(--v3-space-4)));
+    --pas-files-main-width: min(var(--pas-main-width), calc(100% - var(--pas-files-width) - var(--v3-space-8) * 2 - var(--v3-space-4)));
+  }
+  .persistent-session-screen.has-session-files .persistent-session-main {
+    width: var(--pas-files-main-width);
+    margin-inline-start: min(calc((100% - var(--pas-files-main-width)) / 2), calc(100% - var(--v3-space-8) - var(--pas-files-width) - var(--v3-space-4) - var(--pas-files-main-width)));
+    margin-inline-end: 0;
+  }
+  .persistent-session-screen.has-session-files .v3-session-files-seat { width: var(--pas-files-width); }
+}
 @media (max-width: 1100px) {
   .persistent-session-usage-seat { display: none; }
 }
@@ -91,7 +104,7 @@
   .persistent-session-screen { --pas-main-width: 480px; --pas-list-width: 240px; }
 }
 @media (min-width: 768px) and (max-width: 1100px) {
-  .persistent-session-screen { --pas-main-width: clamp(360px, calc(100vw - 420px), 500px); --pas-list-width: clamp(160px, calc((100vw - var(--pas-main-width)) / 2 - 40px), 240px); }
+  .persistent-session-screen { --pas-main-width: clamp(var(--pas-main-min-width), calc(100vw - 420px), 500px); --pas-list-width: clamp(160px, calc((100vw - var(--pas-main-width)) / 2 - 40px), 240px); }
 }
 /* Empty history has no Virtuoso flex child; retain the same composer seat. */
 .persistent-session-main [data-slot="chat-root"] > [data-testid="chat-input"] { margin-top: auto; }

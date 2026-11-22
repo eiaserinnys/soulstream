@@ -147,6 +147,22 @@ describe("AttachmentViewer", () => {
     expect(anchorClick).toHaveBeenCalledOnce();
   });
 
+  it("includes the text reading area in the dialog's keyboard focus cycle", async () => {
+    await act(async () => root.render(<ViewerHarness items={[attachment()]} />));
+    const readingArea = document.body.querySelector<HTMLElement>('[data-slot="dialog-panel"]');
+    expect(readingArea?.tabIndex).toBe(0);
+    readingArea?.focus();
+    expect(document.activeElement).toBe(readingArea);
+  });
+
+  it("shows the discovered size when a remote text preview had no size", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response("h", {status: 206, headers: {"Content-Range": "bytes 0-0/5", "Content-Length": "1"}})).mockResolvedValueOnce(rangeResponse("hello")));
+    await act(async () => root.render(<ViewerHarness items={[attachment({ byteSize: null })]} />));
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog?.querySelector('pre')?.textContent).toBe("hello");
+    expect(dialog?.querySelector('.chat-image-viewer-metadata')?.textContent).toBe("5 B");
+  });
+
   it("renders markdown through the shared document renderer", async () => {
     const markdown = [
       "# 톤 제안",
@@ -491,7 +507,7 @@ describe("AttachmentViewer", () => {
     ["file", { name: "data.bin", mimeType: "application/octet-stream", previewKind: "info" as const, previewUrl: null }],
   ])("marks the popup as %s so the frame follows the content kind", async (kind, overrides) => {
     vi.stubGlobal("fetch", vi.fn(async () => rangeResponse("본문")));
-    await act(() => root.render(<ViewerHarness items={[attachment(overrides)]} />));
+    await act(async () => root.render(<ViewerHarness items={[attachment(overrides)]} />));
     const popup = document.body.querySelector('[data-slot="dialog-popup"]');
     expect(popup?.getAttribute("data-attachment-kind")).toBe(kind);
   });

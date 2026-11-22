@@ -1,5 +1,5 @@
 import { BookOpenText, ChevronDown } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useId, useRef, useState, type ComponentPropsWithoutRef } from "react";
 
 import { cn } from "../lib/cn";
 import { FrameLoading } from "./FrameLoading";
@@ -9,6 +9,10 @@ import {
 } from "../shared/session-story-api";
 import { Button } from "./ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
+
+export const SessionHeaderPill = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<"button">>(function SessionHeaderPill({ className, ...props }, ref) {
+  return <button ref={ref} type="button" className={cn("inline-flex h-8 items-center gap-1.5 rounded-full border border-glass-border bg-input/60 px-2.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-input hover:text-foreground aria-pressed:bg-input aria-pressed:text-foreground", className)} {...props}/>;
+});
 
 export function SessionStoryDisclosure({
   className,
@@ -108,8 +112,8 @@ export function SessionStoryDisclosure({
     <span className={cn("relative inline-flex shrink-0", className)}>
       <Popover open={open} onOpenChange={handleOpenChange}>
         <PopoverTrigger
+          render={<SessionHeaderPill/>}
           type="button"
-          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-glass-border bg-input/60 px-2.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-input hover:text-foreground"
           aria-controls={panelId}
           aria-expanded={open}
           data-testid="session-story-trigger"

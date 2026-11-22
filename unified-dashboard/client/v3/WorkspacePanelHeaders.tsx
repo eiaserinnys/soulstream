@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import {
-  useSessionMenu, DashboardIconCap, SessionModelPresetBadge, SessionStoryDisclosure, STATUS_CONFIG,
+  useSessionMenu, DashboardIconCap, SessionModelPresetBadge, SessionStoryDisclosure, SessionHeaderPill, STATUS_CONFIG,
   type SessionProviderConnectionStatus, type SessionSummary,
 } from "@seosoyoung/soul-ui";
-import { ArrowLeft, X } from "lucide-react";
+import { ArrowLeft, FolderOpen, X } from "lucide-react";
 import { FolderTitleEditor } from "./FolderTitleEditor";
 import { SessionStreamStatus } from "./SessionStreamStatus";
 import { sessionPanelTitle } from "./v3-session-panel-model";
@@ -22,10 +22,10 @@ export function FolderPanelHeader({ title, onRename, backLabel, onBack, inline, 
   </header>;
 }
 
-export function SessionPanelHeader({ session, emptyTitle = "선택된 세션 없음", streamActive, connectionStatus, reconnect, onClose }: {
+export function SessionPanelHeader({ session, emptyTitle = "선택된 세션 없음", streamActive, connectionStatus, reconnect, onClose, filesOpen, onToggleFiles }: {
   session: SessionSummary | undefined; emptyTitle?: string;
   streamActive: boolean; connectionStatus: SessionProviderConnectionStatus;
-  reconnect(): void; onClose?(): void;
+  reconnect(): void; onClose?(): void; filesOpen?: boolean; onToggleFiles?(): void;
 }) {
   const openMenu = useSessionMenu();
   return <header className="v3-panel-header v3-chat-header"
@@ -40,5 +40,6 @@ export function SessionPanelHeader({ session, emptyTitle = "선택된 세션 없
     </span>
     {session ? <SessionStreamStatus active={streamActive} status={connectionStatus} reconnect={reconnect}/> : null}
     {session ? <SessionStoryDisclosure sessionId={session.agentSessionId}/> : null}
+    {session && onToggleFiles ? <span className="relative inline-flex shrink-0"><SessionHeaderPill aria-pressed={filesOpen} onClick={onToggleFiles}><FolderOpen className="size-3.5" aria-hidden="true"/>파일</SessionHeaderPill></span> : null}
   </header>;
 }
