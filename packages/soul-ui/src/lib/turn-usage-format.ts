@@ -1,9 +1,7 @@
-// soul-app directly imports this source file, so keep it free of imports.
-// Avoid destructuring, spread, and other syntax that can inject Babel runtime helpers.
+import { asRecord } from "../../../wire-schema/src/json_record";
+
 export const TURN_COMPLETE_LABEL = "턴 완료";
 export const TURN_USAGE_SEPARATOR = " · ";
-
-type UnknownRecord = Record<string, unknown>;
 
 export function formatTurnCompleteStats(input: {
   usage?: unknown;
@@ -89,11 +87,6 @@ function formatPrice(value: number): string {
   const whole = fixed.slice(0, decimalIndex);
   const fraction = fixed.slice(decimalIndex + 1);
   return `$${Number(whole).toLocaleString("en-US")}.${fraction}`;
-}
-
-function asRecord(value: unknown): UnknownRecord | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  return value as UnknownRecord;
 }
 
 function asFiniteNumber(value: unknown): number | undefined {

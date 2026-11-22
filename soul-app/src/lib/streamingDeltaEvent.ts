@@ -1,10 +1,5 @@
+import { asRecord } from '../../../packages/wire-schema/src/json_record';
 import type { SessionEvent } from '../api/types';
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
 
 function textPayload(event: SessionEvent): string {
   const data = asRecord(event.data);
@@ -30,7 +25,7 @@ function withTextPayload(event: SessionEvent, text: string): SessionEvent {
 }
 
 export function isAssistantUiPublication(type: string, data: unknown): boolean {
-  return type === 'assistant_message' && asRecord(asRecord(data)?.ui) !== null;
+  return type === 'assistant_message' && asRecord(asRecord(data)?.ui) !== undefined;
 }
 
 export function appendOnlyStreamingKey(event: SessionEvent): string | null {

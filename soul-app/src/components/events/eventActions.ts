@@ -6,6 +6,7 @@ import {
   TURN_USAGE_SEPARATOR,
 } from '../../../../packages/soul-ui/src/lib/turn-usage-format';
 import { formatRateLimitNotice } from '../../../../packages/soul-ui/src/lib/rate-limit-notice';
+import { asRecord } from '../../../../packages/wire-schema/src/json_record';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -24,11 +25,6 @@ const EVENT_LABELS: Partial<Record<string, string>> = {
   realtime_status: '음성',
   guardrail_tripwire: '가드레일',
 };
-
-function asRecord(value: unknown): UnknownRecord | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  return value as UnknownRecord;
-}
 
 function asNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;

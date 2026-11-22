@@ -1,22 +1,8 @@
-// SSE 세션 이벤트 → ChatBody 머지 게이트.
-//
-// ChatBody.tsx의 useSSEStream onEvent 본문을 그대로 옮긴 함수다.
-// 외부 인터페이스로 추출한 이유는 (1) ChatBody 풀 mount는 expo / navigation /
-// zustand 스토어 의존성이 막대해 통합 테스트 비용이 합리화되지 않고,
-// (2) 게이트의 핵심 동작(catchup 단계의 LayoutAnimation 차단 + historyLoading 중
-// 라이브 SSE 큐잉)이 한 곳에 집중되어야 design-principles §3(정본은 하나),
-// §10(인터페이스가 테스트 표면)을 모두 만족하기 때문이다.
-
+import { asRecord } from '../../../../packages/wire-schema/src/json_record';
 import type { SessionEvent } from '../../api/types';
 
 export const CATCHUP_REPLAY_CHUNK_SIZE = 50;
 const CATCHUP_REPLAY_YIELD_MS = 0;
-
-function asRecord(data: unknown): Record<string, unknown> | null {
-  return typeof data === 'object' && data !== null
-    ? data as Record<string, unknown>
-    : null;
-}
 
 function stringField(
   record: Record<string, unknown>,
