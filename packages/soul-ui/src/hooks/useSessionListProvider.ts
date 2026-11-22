@@ -20,13 +20,11 @@ import { useCardStore } from "../cards/card-store";
 import { useFolderCardStore } from "../stores/folder-card-store";
 import { useCustomViewStore } from "../stores/custom-view-store";
 import type { DashboardState } from "../stores/dashboard-store-types";
-import type { SessionSummary } from "../shared/types";
-import type { CatalogState } from "../shared/types";
+import type { SessionSummary, CatalogState } from "../shared/types";
 import type { SessionStreamEvent } from "../shared/stream-events";
 import type { SessionStorageProvider } from "../providers/types";
 import { useInitialCatalogLoad } from "./useInitialCatalogLoad";
-import { useSessionStreamCacheSync } from "./useSessionStreamCacheSync";
-import type { HydrateSessionSnapshots } from "./useSessionStreamCacheSync";
+import { useSessionStreamCacheSync, type HydrateSessionSnapshots } from "./useSessionStreamCacheSync";
 import {
   buildCatalogStreamUrl,
   reconcileReplayGap,

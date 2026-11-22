@@ -1,23 +1,5 @@
 import { describe, expect, it } from "vitest";
-
-import {
-  canonicalJson,
-  composeText,
-  evaluate,
-  initialState,
-  isNodeVisible,
-  reduce,
-  renderParts,
-  renderText,
-  unreferencedSourceKeys,
-  validateChatUiDocument,
-} from "../src/index.js";
-import type {
-  ChatUiDocumentV1,
-  Expr,
-  NormalizedChatUiDocumentV1,
-  Unit,
-} from "../src/index.js";
+import { canonicalJson, composeText, evaluate, initialState, isNodeVisible, reduce, renderParts, renderText, unreferencedSourceKeys, validateChatUiDocument, type ChatUiDocumentV1, type Expr, type NormalizedChatUiDocumentV1, type Unit } from "../src/index.js";
 
 function validDocument(input: unknown): NormalizedChatUiDocumentV1 {
   const result = validateChatUiDocument(input);

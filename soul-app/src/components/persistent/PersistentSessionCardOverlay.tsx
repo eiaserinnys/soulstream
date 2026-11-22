@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import { CardDetailChatPanes, CardPanelOverlayFrame, DuoTopBandRailScope, FolderWorkspaceSinglePanel } from '../planner/FolderWorkspaceReadOverlay';

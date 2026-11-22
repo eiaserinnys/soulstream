@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import { ClaudeRuntimeTasksStrip, ClaudeRuntimeTaskOutputModal } from '../components/chat/ClaudeRuntimeTasksStrip';
 import { CardBoardWorkspace, type CardBoardWorkspaceHandle } from '../components/planner/CardBoardWorkspace';

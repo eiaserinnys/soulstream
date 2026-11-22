@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { DisclosureIcon } from '../DisclosureIcon';

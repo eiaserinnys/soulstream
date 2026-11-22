@@ -5,7 +5,6 @@ const SRC_ROOT = path.resolve(__dirname, '../..');
 
 describe('N5 settings and adaptive overlay contract', () => {
   test('Settings owns one explicit primary save action and semantic secondary controls', () => {
-    const screen = read('screens/SettingsScreen.tsx');
     const connection = read('components/settings/ConnectionSettingsSection.tsx');
     const segments = read('components/settings/SettingsSegmentedControl.tsx');
     const auth = read('components/settings/ClaudeProviderSection.tsx');

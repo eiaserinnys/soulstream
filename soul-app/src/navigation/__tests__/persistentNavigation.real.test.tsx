@@ -23,7 +23,6 @@ jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent
 jest.mock('../../components/split/SplitLayout', () => ({ SplitLayout: () => require('react').createElement(require('react-native').View, { testID: 'real-main' }) }));
 jest.mock('../../screens/PersistentSessionScreen', () => ({ PersistentSessionScreen: () => null }));
 
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { TabNavigator } from '../TabNavigator';

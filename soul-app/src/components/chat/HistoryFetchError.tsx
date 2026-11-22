@@ -1,17 +1,3 @@
-// fetch 영구 실패 시 ListFooterComponent 자리에 표시되는 에러 + 재시도 박스.
-//
-// useChatHistoryPagination 훅이 자동 retry 1회 후에도 실패하면 hasFetchError=true로
-// 전환하고, 본 박스의 재시도 버튼이 retryFromError를 호출하여 사용자 수동 재시도를
-// 트리거한다.
-//
-// 위치: inverted FlatList의 ListFooterComponent → 화면 위쪽(=가장 오래된 메시지의 위).
-// spinner와 같은 자리이므로 사용자 시야가 "로딩 → 실패" 흐름을 그대로 이어받는다.
-//
-// 자연 재시도 경로(onEndReached / SSE 도착) 성공 시 훅의 success branch가
-// setHasFetchError(false)로 자동 해제 → 박스 자연 사라짐 (사용자에게 "수동 재시도
-// 안 해도 됐네" 인지).
-
-import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTokens } from '../../theme';

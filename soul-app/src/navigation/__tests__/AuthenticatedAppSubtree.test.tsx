@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { AuthenticatedAppSubtree } from '../AuthenticatedAppSubtree';

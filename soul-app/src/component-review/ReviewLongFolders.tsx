@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import { ProjectListScreen } from '../screens/ProjectListScreen';
 import { FolderSelectionSheet } from '../components/planner/FolderSelectionSheet';

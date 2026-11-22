@@ -1,4 +1,3 @@
-import React from 'react';
 import { Animated, StyleSheet } from 'react-native';
 import { render, within } from '@testing-library/react-native';
 import type { Session } from '../../api/types';

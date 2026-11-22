@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import type { AttachmentView } from '../lib/attachment-view';
 import { useTokens } from '../theme';

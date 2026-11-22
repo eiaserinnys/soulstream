@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef } from 'react';
+import { createContext, useContext, useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
 import type { SettingsCategory } from './settingsCategories';
 

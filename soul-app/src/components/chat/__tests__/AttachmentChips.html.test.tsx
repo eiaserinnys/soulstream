@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 import { useTokens } from '../../../theme';
 import { AttachmentChips } from '../AttachmentChips';

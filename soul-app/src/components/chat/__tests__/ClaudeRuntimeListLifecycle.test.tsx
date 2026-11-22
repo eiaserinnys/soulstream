@@ -1,4 +1,3 @@
-import React from 'react';
 import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';

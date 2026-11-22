@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { openPlannerSessionWorkspace } from '../../lib/planner-folder-workspace';
 import { openFeedSessionCardWorkspace } from '../../lib/session-feed-card-workspace';

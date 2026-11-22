@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { useTokens } from '../../theme';
 import { GroupedGlassSheet } from './GroupedGlassSheet';

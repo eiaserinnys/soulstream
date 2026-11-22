@@ -2,8 +2,7 @@ import React, { createContext, useCallback, useContext, useMemo, useState } from
 import * as Clipboard from 'expo-clipboard';
 import { composeText, initialState, reduce, renderText, type Action, type ChatUiState, type FieldValue } from '@soulstream/chat-ui';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
-import type { ChatUiRichPublication } from './chatUiPublication';
-import { readChatUiPublication } from './chatUiPublication';
+import { type ChatUiRichPublication, readChatUiPublication } from './chatUiPublication';
 import type { ReportReplyDraft } from '../../lib/persistent-report';
 
 export type AppendGeneratedText = (sessionId: string, text: string, reportReply?: ReportReplyDraft) =>

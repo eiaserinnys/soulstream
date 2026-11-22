@@ -1,7 +1,5 @@
 import { useDraftStore } from '../../../store/draftStore';
-import { Alert } from 'react-native';
-import React from 'react';
-import { StyleSheet } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { ProjectContextEditor } from '../ProjectContextEditor';
 import { useAuthStore } from '../../../store/authStore';

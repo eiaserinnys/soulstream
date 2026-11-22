@@ -1,4 +1,3 @@
-import React from 'react';
 import { AppState, StyleSheet, Text } from 'react-native';
 import { render } from '@testing-library/react-native';
 import { DARK_COLORS } from '../../theme/tokens';

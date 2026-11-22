@@ -1,4 +1,3 @@
-import React from 'react';
 import { Platform, Text } from 'react-native';
 import type { Source } from '@soulstream/chat-ui';
 import { useTokens } from '../../theme';

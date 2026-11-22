@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 jest.mock('../../../api/client', () => ({ createApiClient: jest.fn() }));

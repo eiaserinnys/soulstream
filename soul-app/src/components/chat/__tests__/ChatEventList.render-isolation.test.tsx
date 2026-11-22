@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
-import type { FlatList, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+import type { FlatList } from 'react-native';
 import type { StreamingSlots } from '../../../store/chatStore';
 import type { SessionEvent } from '../../../api/types';
 import type { ChatBodyStyles } from '../ChatBody.styles';

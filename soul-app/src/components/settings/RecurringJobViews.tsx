@@ -360,7 +360,6 @@ export function RecurringJobHistory({
   jobId: string;
   onOpenSession(sessionId: string): void;
 }) {
-  const t = useTokens();
   const styles = useSettingsFormStyles();
   const [loading, setLoading] = useState(true);
   const [runs, setRuns] = useState<RecurringJobRunDto[]>([]);

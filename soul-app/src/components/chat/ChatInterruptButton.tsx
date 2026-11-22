@@ -1,4 +1,3 @@
-import React from 'react';
 import { ActivityIndicator } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ChatBodyStyles } from './ChatBody.styles';

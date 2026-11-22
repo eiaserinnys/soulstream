@@ -1,6 +1,5 @@
 import { parseStandaloneImageLine } from "./standalone-image-line";
-import { isImagePreviewMimeType, mimeTypeForFileName } from "@soulstream/wire-schema/attachments";
-import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments";
+import { isImagePreviewMimeType, mimeTypeForFileName, type AttachmentReadContext } from "@soulstream/wire-schema/attachments";
 import { contextParams, type ChatAttachmentItem } from "./chat-attachment-model";
 
 export type ChatImageRole = "assistant" | "user";

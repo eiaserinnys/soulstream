@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  AttachmentTextPreviewError,
-  TEXT_PREVIEW_MAX_BYTES,
-  readAttachmentText,
-  readLocalAttachmentText,
-} from "./attachment-text-preview";
+import { TEXT_PREVIEW_MAX_BYTES, readAttachmentText, readLocalAttachmentText } from "./attachment-text-preview";
 
 function rangedResponse(
   body: BodyInit,

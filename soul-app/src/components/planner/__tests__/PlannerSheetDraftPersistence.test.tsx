@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { ActionSheetIOS } from 'react-native';
 import type { ApiClient } from '../../../api/client';

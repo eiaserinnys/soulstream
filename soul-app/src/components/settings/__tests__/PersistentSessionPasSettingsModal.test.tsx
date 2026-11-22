@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { Modal, Platform, Text } from 'react-native';
 import { ApiHttpError } from '../../../api/clientCore';

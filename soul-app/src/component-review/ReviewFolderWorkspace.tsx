@@ -1,7 +1,6 @@
-import React,{useMemo} from 'react';
+import { useMemo } from 'react';
 import {FolderWorkspace} from '../components/planner/FolderWorkspace';
 import {createReviewApi,folders,type FolderSessionPageScenario} from './fixtures';
-/** Actual folder owner, including its one vertical list, header and footer. */
 export function ReviewFolderWorkspace(){
   const api=useMemo(()=>{
     const requestedScenario=typeof window==='undefined'?null:new URLSearchParams(window.location.search).get('folderSessionPages');

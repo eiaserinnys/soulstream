@@ -17,9 +17,8 @@ jest.mock('../../../lib/attachment-focus', () => ({ restoreAttachmentFocus: jest
 jest.mock('react-native-webview', () => ({ WebView: 'WebView' }));
 jest.mock('../../../api/client', () => ({ createApiClient: jest.fn() }));
 jest.mock('../../../lib/attachment-image-size', () => ({ getAttachmentImageSize: jest.fn(() => new Promise(() => {})) }));
-// Native markdown's link event is supplied by the OS; keep the production link hook and host.
 jest.mock('../PlannerMarkdownText', () => ({ PlannerMarkdownText: ({ markdown }: { markdown: string }) => {
-  const React = require('react');
+  require('react');
   const { Pressable, Text } = require('react-native');
   const open = require('../../../hooks/useOpenContentLink').useOpenContentLink();
   const href = markdown.match(/\]\(([^)]+)\)/)?.[1] ?? markdown.match(/\[a\]:\s*(\S+)/)?.[1];

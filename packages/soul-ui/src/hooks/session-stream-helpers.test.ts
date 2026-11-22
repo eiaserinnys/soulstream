@@ -8,30 +8,8 @@
 import { describe, it, expect, vi } from "vitest";
 import type { InfiniteData } from "@tanstack/react-query";
 import type { CatalogState, SessionSummary } from "../shared/types";
-import {
-  applyCatalogDisplayNames,
-  applySessionCreated,
-  applySessionUpdated,
-  applySessionDeleted,
-  buildSessionUpdates,
-  countLoadedSessionsForQuery,
-  dedupeSessionSnapshots,
-  filterFeedSessions,
-  mergeCatalogBoardItemsDelta,
-  mergeCatalogSessionsDelta,
-  mergeSessionAssignmentsFromSummaries,
-  mergeSessionCreatedSummary,
-  normalizeSessionStatus,
-  preserveCatalogSessionList,
-  reconcileSessionPagesForCatalog,
-  removeSessionFromCatalogSessionList,
-  shouldApplySessionCreatedToCache,
-  updateSessionInCatalogSessionList,
-  upsertSessionAssignmentInCatalog,
-  upsertSessionInCatalogSessionList,
-} from "./session-stream-helpers";
+import { applyCatalogDisplayNames, applySessionCreated, applySessionUpdated, applySessionDeleted, buildSessionUpdates, countLoadedSessionsForQuery, dedupeSessionSnapshots, filterFeedSessions, mergeCatalogBoardItemsDelta, mergeCatalogSessionsDelta, mergeSessionAssignmentsFromSummaries, mergeSessionCreatedSummary, normalizeSessionStatus, preserveCatalogSessionList, reconcileSessionPagesForCatalog, removeSessionFromCatalogSessionList, shouldApplySessionCreatedToCache, updateSessionInCatalogSessionList, upsertSessionAssignmentInCatalog, upsertSessionInCatalogSessionList, type SessionPage } from "./session-stream-helpers";
 import { normalizeSessionStatus as normalizeSharedSessionStatus } from "../shared/session-status";
-import type { SessionPage } from "./session-stream-helpers";
 import type { SessionUpdatedStreamEvent } from "../shared/stream-events";
 import { toSessionSummary } from "../shared/mappers";
 

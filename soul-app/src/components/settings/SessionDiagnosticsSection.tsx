@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import {
   AccessibilityInfo,
@@ -137,10 +137,6 @@ export function SessionDiagnosticsSection({
       </SettingsSurface>
     </View>
   );
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function makeStyles(t: DesignTokens) {

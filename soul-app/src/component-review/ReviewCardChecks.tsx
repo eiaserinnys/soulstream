@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { ReviewEntryShell } from './ReviewEntryShell';
 import { useDeviceType } from '../theme';
 import { useUIStore } from '../store/uiStore';

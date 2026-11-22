@@ -1,10 +1,8 @@
-import React from 'react';
 import { fireEvent, render, renderHook, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { createPlannerVisualRoles, createSessionVisualRoles, useTokens } from '../../../theme';
 import { LIGHT_COLORS } from '../../../theme/colors';
 import { createAssistantMarkdownStyle } from '../../../theme/assistantMarkdownStyle';
-import { plannerMarkdownStyle } from '../PlannerMarkdownText';
 import { useSettingsStore } from '../../../store/settingsStore';
 
 jest.mock('react-native-enriched-markdown', () => ({ EnrichedMarkdownText: (props: any) => require('react').createElement(require('react-native').Text, { ...props, testID: 'markdown' }, props.markdown) }));

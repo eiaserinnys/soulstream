@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { View, type ImageSourcePropType } from 'react-native';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSwayCharacterAnimation } from './useSwayCharacterAnimation';

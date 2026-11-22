@@ -35,8 +35,6 @@ jest.mock('../../components/split/SplitLayout', () => ({ SplitLayout: () => {
 jest.mock('../../screens/PersistentSessionScreen', () => ({ PersistentSessionScreen: () => null }));
 jest.mock('../../api/client', () => ({ createApiClient: jest.fn(() => mockApi) }));
 
-
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { createNavigationContainerRef } from '@react-navigation/native';
 import { AdaptiveNavigationHost } from '../AdaptiveNavigationHost';

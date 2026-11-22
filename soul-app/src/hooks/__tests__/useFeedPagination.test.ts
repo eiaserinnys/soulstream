@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react-native';
+import { act, renderHook } from '@testing-library/react-native';
 import { createApiClient } from '../../api/client';
 import type { Session } from '../../api/types';
 import { useSessionStore } from '../../store/sessionStore';

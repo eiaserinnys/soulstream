@@ -1,7 +1,5 @@
-import React from 'react';
 import { View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { ChatNewMessageButton } from '../components/chat/ChatNewMessageButton';
 import { useTokens } from '../theme';

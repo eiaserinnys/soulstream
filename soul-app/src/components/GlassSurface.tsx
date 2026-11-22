@@ -34,7 +34,6 @@ import {
 } from '../lib/session-succession-diagnostics';
 import { reportSanitizedEasObserveError } from '../lib/eas-observe-crash-reporting';
 
-type GlassStyle = 'clear' | 'regular' | 'none';
 export type GlassColorScheme = 'auto' | 'light' | 'dark' | 'adaptive';
 
 type ExpoGlassEffectModule = {

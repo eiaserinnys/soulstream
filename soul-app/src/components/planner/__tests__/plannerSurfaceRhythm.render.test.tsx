@@ -30,7 +30,6 @@ jest.mock('../../../hooks/usePlannerFolder', () => ({
   usePlannerFolder: (...args: unknown[]) => mockUsePlannerFolder(...args),
 }));
 
-import React from 'react';
 import { PixelRatio, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { PlannerBlock } from '../../../api/plannerTypes';

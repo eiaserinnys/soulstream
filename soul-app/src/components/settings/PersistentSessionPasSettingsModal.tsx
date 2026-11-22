@@ -1,6 +1,5 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import { AppModalSurface } from '../AppModalSurface';
 import { GlassButton } from '../GlassSurface';

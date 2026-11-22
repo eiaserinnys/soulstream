@@ -10,7 +10,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUIStore } from '../../store/uiStore';
 import { SidebarPane } from './SidebarPane';
-import { MainListPane } from './MainListPane';
+import { MainListPane, type MainListPaneHandle } from './MainListPane';
 import { Splitter } from './Splitter';
 import { FolderWorkspaceReadOverlay } from '../planner/FolderWorkspaceReadOverlay';
 import { useTokens, type DesignTokens } from '../../theme';
@@ -28,14 +28,12 @@ import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from '../navigation/
 import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { MainListPaneHandle } from './MainListPane';
-import { useActiveDuoRailOverrideEntry } from '../../navigation/phoneRailActions';
+import { useActiveDuoRailOverrideEntry, type PhoneRailAction } from '../../navigation/phoneRailActions';
 import { DuoRailOverride } from '../navigation/DuoRailOverride';
 import { NavigationContext } from '@react-navigation/native';
 import { useOptionalPersistentSessionHost } from '../../navigation/PersistentSessionContext';
 import { ROOT_SECTION_CONFIG } from '../../navigation/rootSectionConfig';
 import { duoRailLayout } from '../../navigation/duoRailLayout';
-import type { PhoneRailAction } from '../../navigation/phoneRailActions';
 
 const DRAWER_WIDTH = 280;
 const FEED_DRAWER_WIDTH = 360;

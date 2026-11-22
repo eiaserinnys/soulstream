@@ -1,4 +1,3 @@
-import React from 'react';
 import { ActivityIndicator, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useTokens } from '../theme';
 

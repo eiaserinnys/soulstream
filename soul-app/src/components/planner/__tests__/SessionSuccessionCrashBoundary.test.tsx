@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { PlannerFolder } from '../../../api/plannerTypes';
 

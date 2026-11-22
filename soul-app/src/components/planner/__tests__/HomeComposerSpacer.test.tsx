@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { HomeComposerSpacer } from '../HomeComposerSpacer';

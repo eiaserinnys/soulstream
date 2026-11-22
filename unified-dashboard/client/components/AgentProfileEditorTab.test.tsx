@@ -586,13 +586,6 @@ function setSelect(label: string, value: string) {
   });
 }
 
-function effectiveRows(): string[] {
-  return Array.from(
-    document.body.querySelectorAll<HTMLElement>('[data-testid="effective-context-row"]'),
-    (row) => row.dataset.source ?? "",
-  );
-}
-
 async function settle() {
   await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 0));

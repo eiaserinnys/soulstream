@@ -1,6 +1,5 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
-import React from 'react';
 import { Alert, StyleSheet } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { CardBoard } from '../CardBoard';

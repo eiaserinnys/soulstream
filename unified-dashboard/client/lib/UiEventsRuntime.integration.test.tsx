@@ -1,17 +1,7 @@
 /** @vitest-environment jsdom */
-/**
- * 실제 배선 통합 증거.
- *
- * 순수 `subscribeNavigationUiEvents` 단위 검사는 살아 있는 tracker 를 직접 넘기므로
- * 부팅 순서를 통과하지 못한다. 진짜 순서는
- *   Provider 마운트(수집기 NOOP) → 비동기 config 도착 → 수집 켜짐 → 구독
- * 이고, 이 파일은 그 순서를 그대로 밟아 최초 화면이 서버로 나가는지 본다.
- */
-import { createElement } from "react";
-import { act } from "react";
+import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
 import { useDashboardStore } from "@seosoyoung/soul-ui";
 
 import { UiEventsRuntime } from "./UiEventsRuntime";

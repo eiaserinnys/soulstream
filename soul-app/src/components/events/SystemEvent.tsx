@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import type { SessionEvent } from '../../api/types';
 import { useTokens, type DesignTokens } from '../../theme';

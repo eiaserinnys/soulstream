@@ -1,6 +1,5 @@
 import type { Folder, Session } from '../api/types';
-import type { FeedPage } from '../api/feedPage';
-import { FEED_PAGE_SIZE } from '../api/feedPage';
+import { type FeedPage, FEED_PAGE_SIZE } from '../api/feedPage';
 import { entryShellFolders, entryShellSessions } from './fixtures';
 
 export const FEED_FIXTURE_RANGE_TOTAL = 9_387;

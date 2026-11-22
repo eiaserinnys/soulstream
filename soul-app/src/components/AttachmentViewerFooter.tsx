@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { findNodeHandle, Platform, Text, View } from 'react-native';
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 import { GlassButton } from './GlassSurface';

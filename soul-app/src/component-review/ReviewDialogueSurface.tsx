@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useDeviceType } from '../theme';
 import { CardCreateSheet } from '../components/planner/CardCreateSheet';
 import { CardAssignmentSheet } from '../components/planner/CardAssignmentSheet';

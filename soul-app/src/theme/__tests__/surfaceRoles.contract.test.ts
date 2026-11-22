@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { DesignTokens } from '../tokens';
-import { DARK_COLORS, DESIGN_SPACING, LIGHT_COLORS } from '../tokens';
+import { type DesignTokens, DARK_COLORS, DESIGN_SPACING, LIGHT_COLORS } from '../tokens';
 import {
   SURFACE_ROLE_NAMES,
   createSurfaceRoles,

@@ -1,4 +1,3 @@
-import React from 'react';
 import { Alert, StyleSheet } from 'react-native';
 import { fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 

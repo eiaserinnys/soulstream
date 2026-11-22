@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { PlannerToday } from '../../api/plannerTypes';

@@ -152,7 +152,7 @@ function installGeometry(scroll: HTMLDivElement) {
     scrollTop: { configurable: true, writable: true, value: 200 },
   });
   scroll.getBoundingClientRect = () => rect(100);
-  for (const [id, top] of Object.entries(tops)) {
+  for (const [id] of Object.entries(tops)) {
     const section = scroll.querySelector<HTMLElement>(`[data-section-id="${id}"]`);
     if (!section) throw new Error(`${id} 섹션을 찾지 못했습니다.`);
     section.getBoundingClientRect = () => rect(tops[id as keyof typeof tops]);

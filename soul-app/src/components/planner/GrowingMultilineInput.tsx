@@ -1,14 +1,6 @@
-import { Platform } from 'react-native';
+import { Platform, TextInput, type NativeSyntheticEvent, type ScrollView, type TextInputContentSizeChangeEventData, type TextInputProps, type TextInputSelectionChangeEventData } from 'react-native';
 import { useTextInputContentHeight } from '../chat/useTextInputContentHeight';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  TextInput,
-  type NativeSyntheticEvent,
-  type ScrollView,
-  type TextInputContentSizeChangeEventData,
-  type TextInputProps,
-  type TextInputSelectionChangeEventData,
-} from 'react-native';
 
 interface GrowingMultilineInputProps extends Omit<
   TextInputProps,

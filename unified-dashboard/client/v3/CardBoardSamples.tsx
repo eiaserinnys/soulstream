@@ -75,10 +75,8 @@ export function CardBoardSamples() {
   },[cards]);
   const completed=useCompletedCards(undefined,includeCompleted,loader);
   const visibleCards=[...cards.filter(card=>card.status!=='done'),...completed.cards];
-  const doneCount=cards.filter(card=>card.status==="done").length;
   const renderCard=(card:CardRow,variant:PostItVariant="compact")=><PostItCardView card={card} variant={variant} activity={card.latestActivity??null} assignee={reviewSession}
     onOpen={()=>{
-      // Seed the existing ID query with review fixtures; keep the operational resolver.
       queryClient.setQueryData(["sessions","ids",null,[reviewSession.agentSessionId],"card-history"],{
         pages:[{sessions:[assignmentSession],total:1}],pageParams:[0],
       });

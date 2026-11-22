@@ -1,7 +1,6 @@
 import { removeRepresentedAttachmentPathNotes } from "../../lib/attachment-path-notes";
 import { stripEventTruncationSuffix } from "../../lib/event-truncation-display";
-import { memo, useState } from "react";
-import type { ReactNode } from "react";
+import { memo, useState, type ReactNode } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import type { ChatAttachmentItem } from "../../lib/chat-attachment-model";
 import { useChatAttachments } from "../../hooks/useChatAttachments";

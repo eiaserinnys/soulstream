@@ -213,7 +213,7 @@ test('ID and unresolved legacy projection remain ordered when the legacy node is
     attachment_id: 'asset-1', name: 'photo.png', mime_type: 'image/png', byte_size: 24,
     checksum_sha256: null, width: 4, height: 3, preview_kind: 'image', preview_mime_type: 'image/png',
   };
-  const fetch = jest.spyOn(global, 'fetch')
+  jest.spyOn(global, 'fetch')
     .mockResolvedValueOnce(response({ event_id: 53, items: [
       { kind: 'unavailable', attachment_id: 'asset-1', name: null,
         availability: 'unavailable', read_context: readContext },

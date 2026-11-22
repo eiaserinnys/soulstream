@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
 import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { useStore } from 'zustand';
-import type { StoreApi } from 'zustand';
+import { useStore, type StoreApi } from 'zustand';
 import { createApiClient } from '../api/client';
 import type { PersistentSessionCreateDefaults, PersistentSessionResource } from '../api/persistentSessionEndpoints';
 import { decodeAuthJwt } from '../auth/jwt-payload';

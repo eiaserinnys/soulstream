@@ -1,10 +1,9 @@
 import {FolderDetailArchiveDialog} from "./FolderDetailArchiveDialog";
 import { FolderCardSection } from "./FolderCardSection";
 import { useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from "react";
-import { Button, DashboardIconCap, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPopup, DialogTitle, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { MoreHorizontal, Star } from "lucide-react";
-
 import type { PlannerFolder } from "./planner-data";
 import { plannerStatusPresentation } from "./planner-model";
 import type { PageSessionDefaults } from "./folder-workspace-page-api";

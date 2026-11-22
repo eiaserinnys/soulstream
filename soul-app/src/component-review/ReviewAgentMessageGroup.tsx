@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { View } from 'react-native';
 import type { SessionEvent } from '../api/types';
 import { EventContextMenu } from '../components/events/EventContextMenu';

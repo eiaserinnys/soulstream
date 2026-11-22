@@ -1,14 +1,6 @@
 import {requestOrchestratorCheck} from "@seosoyoung/soul-ui/lib/orchestrator-connection";
-/**
- * useNodes - /api/nodes/stream SSE 노드 변경 이벤트 구독 (unified-dashboard)
- *
- * orchestrator-dashboard의 useNodes.ts에서 포팅.
- * orchestrator 모드에서만 사용된다.
- */
-
 import { useEffect, useRef } from "react";
-import { useOrchestratorStore } from "../store/orchestrator-store";
-import type { OrchestratorNode } from "../store/orchestrator-store";
+import { useOrchestratorStore, type OrchestratorNode } from "../store/orchestrator-store";
 
 export function useNodes(onConnectionError?: () => void) {
   const { setNode, removeNode, setNodes, setConnectionStatus } =

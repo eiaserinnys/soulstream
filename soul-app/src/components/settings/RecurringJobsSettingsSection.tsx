@@ -1,6 +1,5 @@
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
-
 import { openPlannerSessionWorkspace } from '../../lib/planner-folder-workspace';
 import { useTokens } from '../../theme';
 import { useSettingsWorkspace } from './SettingsWorkspaceContext';

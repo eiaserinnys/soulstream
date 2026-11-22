@@ -4,7 +4,6 @@ jest.mock('../../../hooks/useCardActions', () => ({
   useCardActions: () => ({ run: jest.fn(), pending: false }),
 }));
 
-import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import type { Session } from '../../../api/types';

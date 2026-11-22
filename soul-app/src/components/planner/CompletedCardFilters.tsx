@@ -1,4 +1,3 @@
-import React from 'react';
 import { Text,TextInput,View } from 'react-native';
 import { completedPeriods,type CompletedPeriod } from '../../../../packages/soul-ui/src/cards/completed-cards';
 import { useTokens } from '../../theme';

@@ -272,17 +272,6 @@ async function savePageDescription(
   return api.applyPageOperations(pageId, pageWrite(current, prefix, operations));
 }
 
-async function mountPage(
-  api: PlannerMutationApi,
-  pageId: string,
-  title: string,
-  prefix: string,
-) {
-  const current = await api.getPage(pageId);
-  if (current.blocks.some((block) => mountTitle(block) === title)) return null;
-  return appendMount(api, current, title, prefix);
-}
-
 function appendMount(api: PlannerMutationApi, page: PageReadResult, title: string, prefix: string) {
   return appendBlock(api, page, `[[${title}]]`, prefix);
 }

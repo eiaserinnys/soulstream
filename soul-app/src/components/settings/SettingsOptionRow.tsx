@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { StyleSheet, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useTokens } from '../../theme';
 import { AppModalSurface } from '../AppModalSurface';

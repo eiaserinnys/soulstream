@@ -43,7 +43,6 @@ jest.mock('../../planner/FolderWorkspaceReadOverlay', () => ({
   ),
 }));
 
-import React from 'react';
 import { render } from '@testing-library/react-native';
 import { useCardStore } from '../../../store/cardStore';
 import { useUIStore } from '../../../store/uiStore';

@@ -60,7 +60,6 @@ export function SidebarPane({
   showSearch = false,
 }: Props) {
   const t = useTokens();
-  const planner = useMemo(() => createPlannerVisualRoles(t), [t]);
   const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
   const bottomSafeAreaPadding = resolveTabletBottomSafeAreaPadding(

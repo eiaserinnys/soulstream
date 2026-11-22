@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Text, View } from 'react-native';
 import type { Field } from '@soulstream/chat-ui';
 import { useTokens } from '../../theme';

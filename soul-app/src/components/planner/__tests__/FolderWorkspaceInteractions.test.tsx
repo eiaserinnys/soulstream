@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import type { PlannerPage, PlannerFolder } from '../../../api/plannerTypes';
 import { usePlannerStore } from '../../../store/plannerStore';

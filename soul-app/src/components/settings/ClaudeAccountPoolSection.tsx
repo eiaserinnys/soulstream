@@ -184,7 +184,6 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
   const api = props.api;
   const central = props.central === true;
   const centralApi: ClaudeCentralPoolApi | null = props.central === true ? props.api : null;
-  const nodeApi: ClaudeAccountPoolApi = props.api;
   const nodeId = props.central === true ? '' : props.nodeId;
   const scopeKey = props.central === true ? 'central' : props.nodeId;
   const t = useTokens();

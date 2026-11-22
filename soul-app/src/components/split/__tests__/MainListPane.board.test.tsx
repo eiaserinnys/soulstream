@@ -9,7 +9,6 @@ jest.mock('../../../screens/DailyPlannerScreen', () => ({ DailyPlannerScreen: ()
 jest.mock('../../planner/DailyHeaderActions', () => ({ DailyHeaderActions: () => null }));
 jest.mock('../../../api/client', () => ({ createApiClient: () => ({ listCards: mockList, listCompletedCards: mockCompleted, listNodes: async () => ({ nodes: [] }) }) }));
 jest.mock('../../planner/CardDetailSheet', () => ({ CardDetailSheet: () => null }));
-import React from 'react';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { MainListPane } from '../MainListPane';
 import { useUIStore } from '../../../store/uiStore';

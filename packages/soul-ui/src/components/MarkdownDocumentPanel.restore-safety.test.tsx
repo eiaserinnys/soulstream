@@ -8,18 +8,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
-
-import type { BoardYjsRuntime } from "../lib/board-yjs-client";
-import {
-  catalogBoardItemsFromYDoc,
-  createMarkdownYjsDocument,
-  deleteBoardYjsItem,
-  getOrCreateMarkdownText,
-  registerBoardYjsRuntime,
-  updateMarkdownYjsBody,
-  updateMarkdownYjsTitle,
-  upsertBoardYjsItem,
-} from "../lib/board-yjs-client";
+import { type BoardYjsRuntime, catalogBoardItemsFromYDoc, createMarkdownYjsDocument, deleteBoardYjsItem, registerBoardYjsRuntime, updateMarkdownYjsBody, updateMarkdownYjsTitle, upsertBoardYjsItem } from "../lib/board-yjs-client";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
 

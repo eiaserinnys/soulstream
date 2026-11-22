@@ -1,7 +1,5 @@
-import React from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Text, View } from 'react-native';
-
 import { SessionCardById } from '../components/SessionCardById';
 import { AppGlassPressable } from '../components/AppGlassCard';
 import { GlassButton } from '../components/GlassSurface';

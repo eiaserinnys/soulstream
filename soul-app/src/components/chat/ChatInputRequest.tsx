@@ -126,8 +126,6 @@ export const ChatInputRequest = memo(function ChatInputRequest({
   const isTimedOut = isExpired || (timerExpired && !isDone);
   const isSubmitting = submissionState === 'submitting';
   const interactionDisabled = isDone || isTimedOut || isSubmitting;
-  const canSubmit =
-    !interactionDisabled && allQuestionsAnswered(questions, selections);
 
   const reportSubmissionFailure = (
     reason: string,

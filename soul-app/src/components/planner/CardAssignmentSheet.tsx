@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SelectedModelPresetName } from '../sheets/SelectedModelPresetName';
 import { ActionSheetIOS, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import type { ApiClient } from '../../api/client';

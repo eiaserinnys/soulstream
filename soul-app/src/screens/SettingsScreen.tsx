@@ -1,6 +1,6 @@
 import { useOptionalLayoutContinuity } from '../navigation/LayoutContinuityContext';
 import { SETTINGS_WORKSPACE_CONTINUITY_KEY, type SettingsWorkspaceContinuityState } from '../navigation/settingsWorkspaceContinuity';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BackHandler, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';

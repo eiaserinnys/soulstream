@@ -1,11 +1,10 @@
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, renderHook } from '@testing-library/react-native';
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import type { CardCheckItem } from '../../../api/cardTypes';
 import { summarizeCardItems } from '../../../lib/card-check-item-summary';
 import { CardCheckItems as CardCheckItemsComponent } from '../CardCheckItems';
 import { StyleSheet } from 'react-native';
 import type { ComponentProps } from 'react';
-import { renderHook } from '@testing-library/react-native';
 import { useTokens } from '../../../theme';
 import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';

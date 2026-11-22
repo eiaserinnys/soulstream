@@ -1,4 +1,3 @@
-import React from 'react';
 import { Alert, Animated } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { Session } from '../../api/types';

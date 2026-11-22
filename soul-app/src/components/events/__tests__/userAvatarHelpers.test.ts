@@ -5,22 +5,9 @@ import {
   type MessageCaller,
 } from '../userAvatarHelpers';
 import type { GoogleProfile } from '../../../auth/jwt-payload';
-import type { Session, SessionEvent } from '../../../api/types';
+import type { SessionEvent } from '../../../api/types';
 
 const SERVER = 'https://soul.example.com';
-
-function makeSession(overrides: Partial<Session> = {}): Session {
-  return {
-    session_id: 'sess-test',
-    node_id: 'node-1',
-    agent_id: 'agent-1',
-    created_at: '2026-01-01T00:00:00Z',
-    display_name: 'test session',
-    userName: 'Jubok Kim',
-    userPortraitUrl: '/api/users/me/portrait',
-    ...overrides,
-  } as Session;
-}
 
 const PROFILE: GoogleProfile = {
   email: 'eiaserinnys@gmail.com',

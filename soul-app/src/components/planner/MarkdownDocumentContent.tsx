@@ -1,5 +1,5 @@
 import { useContinuityScroll } from '../../hooks/useContinuityScroll';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';

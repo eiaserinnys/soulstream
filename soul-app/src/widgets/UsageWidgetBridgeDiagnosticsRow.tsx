@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useTokens, type DesignTokens } from '../theme';
 import { useUsageWidgetBridgeDiagnostics } from './usageWidgetBridge';

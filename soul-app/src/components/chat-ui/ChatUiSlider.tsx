@@ -1,4 +1,3 @@
-import React from 'react';
 import { Text, View } from 'react-native';
 import NativeSlider from '@react-native-community/slider';
 import { renderParts, type NormalizedChatUiDocumentV1 } from '@soulstream/chat-ui';

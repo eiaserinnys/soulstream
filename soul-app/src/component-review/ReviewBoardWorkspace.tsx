@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Text, View, useWindowDimensions } from 'react-native';
 import { CardBoardWorkspace } from '../components/planner/CardBoardWorkspace';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';

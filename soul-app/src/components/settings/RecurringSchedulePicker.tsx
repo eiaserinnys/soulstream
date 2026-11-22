@@ -1,6 +1,5 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-
 import { useTokens, type DesignTokens } from '../../theme';
 import type { RecurringScheduleDraft, RecurringScheduleMode } from '../../../../packages/soul-ui/src/lib/recurring-schedule';
 

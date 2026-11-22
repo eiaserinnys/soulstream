@@ -1,6 +1,5 @@
-import { DashboardIconCap, formatUsageResetCountdown, formatUsageUpdatedLabel, formatWeeklyUsedPercent, weeklyUsedPercent } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, formatUsageResetCountdown, formatUsageUpdatedLabel, formatWeeklyUsedPercent, weeklyUsedPercent, type UsageSummaryGauge } from "@seosoyoung/soul-ui";
 import { ChevronRight, RefreshCw } from "lucide-react";
-import type { UsageSummaryGauge } from "@seosoyoung/soul-ui";
 import type { UseUsageSummaryResult } from "../hooks/useUsageSummary";
 
 type Props = Pick<UseUsageSummaryResult, "node" | "gauges" | "loading" | "loadState" | "evaluatedAtMs"> & {

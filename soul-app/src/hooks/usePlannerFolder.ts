@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { MutableRefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject, useMemo } from 'react';
 import type { ApiClient } from '../api/client';
 import type { FolderSnapshot } from '../api/cardTypes';
-import { useMemo } from 'react';
 import { mergeCardRows, useCardStore } from '../store/cardStore';
 import { usePlannerStore } from '../store/plannerStore';
 import { captureAuthScope, useAuthScopeGeneration } from '../lib/auth-scope';

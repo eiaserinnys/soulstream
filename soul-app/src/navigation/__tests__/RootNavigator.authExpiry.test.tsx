@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, render, waitFor } from '@testing-library/react-native';
 import * as Notifications from 'expo-notifications';
 import { Alert, Linking } from 'react-native';

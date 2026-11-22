@@ -78,7 +78,6 @@ it("distinguishes missing records, loading, and query failure without substituti
   expect(container.querySelectorAll("[role=alert]")).toHaveLength(0);
 
   const emptyRequest: typeof fetch = vi.fn(async (input) => {
-    const url = new URL(String(input), "https://sample.invalid");
     return Response.json({ messages: [], next_cursor: null });
   });
   await act(async () => root.render(<PersistentSessionMonitoring sessionId="empty-pas" nodeId="sample-node" request={emptyRequest} />));

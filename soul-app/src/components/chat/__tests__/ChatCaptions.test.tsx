@@ -1,4 +1,3 @@
-import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { fireEvent, render, within } from '@testing-library/react-native';
 import { CAPSULE_RADIUS, DESIGN_AVATAR_SIZE, DESIGN_SPACING, TABLET_CHAT_TYPOGRAPHY, TABLET_SPACING } from '../../../theme';

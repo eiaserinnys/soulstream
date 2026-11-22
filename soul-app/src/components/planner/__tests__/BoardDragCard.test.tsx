@@ -1,6 +1,5 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../../menus/AppContextMenu', () => ({ showAppContextMenu: jest.fn() }));
-import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { State } from 'react-native-gesture-handler';
 import { fireGestureHandler, getByGestureTestId } from 'react-native-gesture-handler/jest-utils';

@@ -4,10 +4,8 @@ import { act, useMemo, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useDashboardStore } from "@seosoyoung/soul-ui";
-
 import { PersistentSessionSettingsDialog } from "./PersistentSessionSettingsDialog";
-import type { PersistentSession } from "../lib/persistent-sessions";
-import { createPersistentSessionsApi } from "../lib/persistent-sessions";
+import { type PersistentSession, createPersistentSessionsApi } from "../lib/persistent-sessions";
 import { PersistentSessionDetails, usePersistentSessionDetailsController } from "./PersistentSessionDetails";
 import { persistentSessionQuotaRows } from "./PersistentSessionMonitoring";
 

@@ -1,6 +1,5 @@
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
-
 import { useTokens } from '../../theme';
 import { PersistentSessionEditor, PersistentSessionsList } from './PersistentSessionViews';
 import { settingsPanelPage } from './SettingsFormParts';

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { ActionSheetIOS, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { InitialFolderSessionDefaults } from '../../api/initialFolderContext';

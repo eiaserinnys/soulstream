@@ -1,13 +1,10 @@
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
-// Existing title/description editing stays together; this change extracts the virtual scroll owner.
-// The remaining 500+ line coordinator is preserved to avoid changing unrelated editing behavior.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Platform, Pressable, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { createApiClient, type ApiClient } from '../../api/client';
-import type { PlannerFolder } from '../../api/plannerTypes';
-import { plannerFolderDetailToSummary } from '../../api/plannerTypes';
+import { type PlannerFolder, plannerFolderDetailToSummary } from '../../api/plannerTypes';
 import { usePlannerActions } from '../../hooks/usePlannerActions';
 import { usePlannerContextMenus } from '../../hooks/usePlannerContextMenus';
 import { usePlannerDaily, usePlannerFolderDetail, usePlannerPageDetail } from '../../hooks/usePlannerReads';

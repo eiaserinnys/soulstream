@@ -1,5 +1,4 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { act, fireEvent, render, type RenderAPI } from '@testing-library/react-native';
 import { SettingsSegmentedControl, evenRowColumns } from '../SettingsSegmentedControl';

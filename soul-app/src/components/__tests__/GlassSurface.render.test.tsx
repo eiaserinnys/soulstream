@@ -5,7 +5,6 @@ const removeTransparencyListener = jest.fn();
 const mockBlurProps = new Map<string, Record<string, unknown>>();
 const devGlobal = globalThis as typeof globalThis & { __DEV__?: boolean };
 const originalDev = devGlobal.__DEV__;
-let reduceTransparency = false;
 let transparencyListener: ((enabled: boolean) => void) | undefined;
 
 jest.mock('expo-glass-effect', () => {
@@ -35,7 +34,6 @@ jest.mock('../../lib/eas-observe-crash-reporting', () => ({
   ),
 }));
 
-import React from 'react';
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -61,7 +59,6 @@ describe('GlassSurface render paths and composition', () => {
     mockApiAvailable.mockReturnValue(true);
     mockBlurProps.clear();
     useSettingsStore.setState({ appearance: 'dark' });
-    reduceTransparency = false;
     transparencyListener = undefined;
     removeTransparencyListener.mockClear();
     (AccessibilityInfo.isReduceTransparencyEnabled as jest.Mock) = jest.fn(
@@ -240,7 +237,6 @@ describe('GlassSurface render paths and composition', () => {
   });
 
   test('Reduce Transparency initial/event/recovery/unsubscribe를 반영한다', async () => {
-    reduceTransparency = true;
     (AccessibilityInfo.isReduceTransparencyEnabled as jest.Mock).mockResolvedValue(true);
     const screen = render(<GlassSurface role="chrome" testID="surface" />);
 

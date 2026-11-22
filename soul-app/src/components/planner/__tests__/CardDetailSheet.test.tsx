@@ -31,7 +31,7 @@ jest.mock('../../useSessionCardAnimation', () => ({ useSessionCardAnimation: () 
 } }));
 jest.mock('../CardAssignmentSheet', () => ({ CardAssignmentSheet: () => null }));
 import { CardCreateSheet } from '../CardCreateSheet';
-import { CardDetailContent, CardDetailSheet } from '../CardDetailSheet';
+import { CardDetailContent } from '../CardDetailSheet';
 import { DuoSideBandContext } from '../../../navigation/tabContract';
 import { AppKeyboardAvoidingView } from '../../AppKeyboardAvoidingView';
 import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
@@ -456,7 +456,7 @@ test('카드의 루트 1개·자식 33개를 폴더 정본 컴포넌트로 hydra
     getSessionsByIds: jest.fn(async (ids: string[]) => sessions.filter(session => ids.includes(session.agentSessionId))) };
   const onClose = jest.fn();
   const onOpenSession = jest.fn();
-  const { result } = renderHook(() => useTokens());
+  renderHook(() => useTokens());
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={onClose} onOpenSession={onOpenSession} />);
   fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
   await waitFor(() => expect(screen.getByTestId('card-sessions')).toBeTruthy());

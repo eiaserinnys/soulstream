@@ -1,4 +1,3 @@
-import React from 'react';
 import { AccessibilityInfo, StyleSheet } from 'react-native';
 import { act, render, renderHook } from '@testing-library/react-native';
 import { Easing, useSharedValue, withTiming } from 'react-native-reanimated';

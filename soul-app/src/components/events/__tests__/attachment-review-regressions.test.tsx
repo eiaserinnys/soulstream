@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { EventRenderer } from '../EventRenderer';
 import { ContentLinkProvider } from '../../../navigation/ContentLinkProvider';

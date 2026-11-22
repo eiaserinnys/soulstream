@@ -1,5 +1,4 @@
-import React from 'react';
-import { Platform, Text } from 'react-native';
+import { Platform } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Contract from '@soulstream/chat-ui';

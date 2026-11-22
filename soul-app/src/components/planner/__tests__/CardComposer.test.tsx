@@ -144,7 +144,7 @@ test('오늘 입력창의 iOS 높이·칩 배치 계약과 콘텐츠 이벤트 �
   expect(twoLineInput.props.scrollEnabled).toBe(false);
   expect(twoLineInput.props.textAlignVertical).toBe('top');
   expect(StyleSheet.flatten(screen.getByTestId('card-composer-chips').props.style)).toMatchObject({ flexDirection: 'row', flexWrap: 'nowrap' });
-  const chips = screen.getByTestId('card-composer-chips');
+  screen.getByTestId('card-composer-chips');
   const frame = screen.getByTestId('card-composer-layout');
   expect(React.Children.toArray(frame.props.children)[0]).toEqual(expect.objectContaining({ props: expect.objectContaining({ testID: 'card-composer-chips' }) }));
   const layout = StyleSheet.flatten(frame.props.style);

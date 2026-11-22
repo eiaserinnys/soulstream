@@ -7,11 +7,10 @@ import { readFileSync } from "node:fs";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { useDashboardStore } from "@seosoyoung/soul-ui";
 import { useCardNavigation } from "./card-navigation";
-import { CardRow } from "./CardRow";
+import { CardRow, CardRowView } from "./CardRow";
 import { RichSessionRow } from "./RichSessionRow";
 import { CardCommentInput } from "./CardCommentInput";
 import { CardDetailPane } from "./CardDetailPane";
-import { CardRowView } from "./CardRow";
 import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 vi.mock("./useCardSessionPages",async original=>({...await original<typeof import("./useCardSessionPages")>(),useCardSessionPages:()=>({sessions:[],loading:false})}));
 

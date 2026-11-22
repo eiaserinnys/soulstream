@@ -50,7 +50,6 @@ jest.mock('../SessionSuccessionHost', () => ({ SessionSuccessionHost: () => null
 
 import fs from 'node:fs';
 import path from 'node:path';
-import React from 'react';
 import { TextInput } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { PlannerFolder } from '../../../api/plannerTypes';

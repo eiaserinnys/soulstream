@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, within } from '@testing-library/react-native';
 import { useSettingsStore } from '../../store/settingsStore';
 import { ReviewAttachments } from '../ReviewAttachments';

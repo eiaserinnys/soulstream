@@ -33,8 +33,7 @@ import type {
   InputRequestEvent,
   ToolApprovalRequestedEvent,
 } from "@shared/types";
-import type { ProcessingContext, TextTargetNode } from "./processing-context";
-import { ensureRoot, makeNode, registerNode } from "./processing-context";
+import { type ProcessingContext, type TextTargetNode, ensureRoot, makeNode, registerNode } from "./processing-context";
 import { diag } from "../lib/diag";
 import { extractNodeEventId as readNodeEventId } from "../lib/event-tree-id";
 

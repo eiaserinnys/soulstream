@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ProjectContextEditorView } from '../components/planner/ProjectContextEditorView';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 import { guidance } from './fixtures';

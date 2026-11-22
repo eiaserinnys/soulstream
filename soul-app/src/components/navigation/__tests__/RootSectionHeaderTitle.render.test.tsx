@@ -6,7 +6,6 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   default: () => mockDimensions,
 }));
 
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { render } from '@testing-library/react-native';
 import { ROOT_SECTION_CONFIG } from '../../../navigation/rootSectionConfig';

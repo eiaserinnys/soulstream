@@ -1,12 +1,4 @@
-/**
- * 사용 로그 런타임 마운트.
- *
- * AuthGate 안쪽에 두어 사용자가 확정된 뒤에만 수집을 시작한다.
- * 화면 전환 구독은 여기 한 곳에서만 건다.
- */
-import { useEffect } from "react";
-import type { ReactNode } from "react";
-
+import { useEffect, type ReactNode } from "react";
 import {
   UiEventsProvider,
   useDashboardStore,

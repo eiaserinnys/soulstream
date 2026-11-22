@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Platform, Text, View } from 'react-native';
 import { captureAuthScope } from '../lib/auth-scope';
 import type { AttachmentView } from '../lib/attachment-view';

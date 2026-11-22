@@ -1,8 +1,6 @@
-import React from 'react';
-import { Animated, StyleSheet, Text } from 'react-native';
+import { Animated, StyleSheet, AccessibilityInfo } from 'react-native';
 import { cancelAnimation } from 'react-native-reanimated';
 import { render, act, fireEvent } from '@testing-library/react-native';
-import { AccessibilityInfo } from 'react-native';
 import { SessionCard } from '../SessionCard';
 import type { Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';

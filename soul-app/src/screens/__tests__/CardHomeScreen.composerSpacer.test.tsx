@@ -50,7 +50,6 @@ jest.mock('../../components/planner/PostItCard', () => {
   };
 });
 
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Keyboard, Platform, StyleSheet, View } from 'react-native';
 import { CardHomeScreen } from '../CardHomeScreen';

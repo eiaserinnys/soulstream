@@ -44,8 +44,7 @@ import { formatAssignedCardContextSnapshot } from "../lib/assigned-card-context-
 import { isCacheKeepaliveInput } from "../lib/persistent-cache-keepalive";
 import { isPersistentJevCandidatesDebugEvent } from "../lib/persistent-jev-candidates";
 import { isPersistentInstructionRecordedDebugEvent } from "../lib/persistent-instruction-recorded";
-import type { ProcessingContext } from "./processing-context";
-import { makeNode } from "./processing-context";
+import { type ProcessingContext, makeNode } from "./processing-context";
 import { TRUNCATE_THRESHOLD } from "./event-update";
 
 export { applyPendingResolution, applyUpdate } from "./event-update";

@@ -5,16 +5,7 @@ import type {
   SessionEventAttachmentResponse,
   SessionEventAttachmentView,
 } from "@soulstream/wire-schema/attachments";
-import {
-  attachmentTextFormat,
-  attachmentMediaFormat,
-  attachmentMediaSourceUrl,
-  attachmentContentUrl,
-  contextualLegacyUrl,
-  loadChatAttachments,
-  projectChatAttachmentItems,
-} from "./chat-attachment-model";
-import type { ChatAttachmentItem } from "./chat-attachment-model";
+import { attachmentTextFormat, attachmentMediaFormat, attachmentMediaSourceUrl, attachmentContentUrl, contextualLegacyUrl, loadChatAttachments, projectChatAttachmentItems, type ChatAttachmentItem } from "./chat-attachment-model";
 
 const sessionContext: AttachmentReadContext = { type: "session", id: "session-a" };
 

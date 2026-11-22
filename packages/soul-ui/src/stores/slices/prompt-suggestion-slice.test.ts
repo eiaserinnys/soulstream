@@ -12,7 +12,6 @@ import {
   createPromptSuggestionSlice,
   getPromptSuggestionInitialState,
 } from "./prompt-suggestion-slice";
-import type { DashboardState, DashboardActions } from "../dashboard-store-types";
 
 type Slice = ReturnType<typeof createPromptSuggestionSlice>;
 

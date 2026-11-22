@@ -1,12 +1,6 @@
 import { useMemo, useRef, useState, type MouseEvent } from "react";
-import {
-  DashboardIconCap,
-  useSessionMenu,
-  type SessionSummary,
-} from "@seosoyoung/soul-ui";
+import { DashboardIconCap, useSessionMenu, type SessionSummary, retainEqualValue } from "@seosoyoung/soul-ui";
 import { Plus } from "lucide-react";
-import { retainEqualValue } from "@seosoyoung/soul-ui";
-
 import {
   buildRunTree,
   type RunSessionLoadState,
@@ -16,9 +10,6 @@ import {
   latestFolderRun,
 } from "./session-succession-model";
 import type { PageSessionDefaults } from "./folder-workspace-page-api";
-import {
-  type FolderMoveTarget,
-} from "./folder-move-targets";
 import {
   SessionSuccessionModal,
   type SuccessionContextItem,

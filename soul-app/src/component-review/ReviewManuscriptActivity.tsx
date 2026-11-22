@@ -1,4 +1,3 @@
-import React from 'react';
 import { ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useTokens } from '../theme';
 import type { SessionEvent } from '../api/types';

@@ -1,4 +1,3 @@
-import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { render } from '@testing-library/react-native';
 import type { SessionEvent } from '../../../api/types';

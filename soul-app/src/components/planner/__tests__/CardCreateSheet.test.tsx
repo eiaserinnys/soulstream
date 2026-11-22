@@ -4,7 +4,6 @@ jest.mock('expo-image-picker', () => ({ requestMediaLibraryPermissionsAsync: jes
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import React from 'react';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { ActionSheetIOS, Alert, Modal, ScrollView } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
