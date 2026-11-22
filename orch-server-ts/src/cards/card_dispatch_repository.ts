@@ -15,6 +15,7 @@ export type CardSession = {
     status: string;
     model_preset: string | null;
     termination_reason: string | null;
+    termination_detail?: string | null;
     termination_event_id: number | null;
     /** 일반 세션 모델 대체 pending 판정에 쓴다. */
     metadata?: unknown;
@@ -101,6 +102,14 @@ export class CardDispatchRepository {
         const sql = await this.resolveSql();
         return (await sql<CardSession[]> `SELECT session_id,card_id,node_id,status,model_preset,termination_reason,termination_event_id,metadata
       FROM sessions WHERE session_id=${sessionId} AND card_id IS NOT NULL`)[0] ?? null;
+    }
+    /** A manually assigned owner need not have sessions.card_id pointing at the card. */
+    async assigneeErrorSession(sessionId: string): Promise<CardSession | null> {
+        const sql = await this.resolveSql();
+        return (await sql<CardSession[]>`SELECT s.session_id,c.id AS card_id,s.node_id,s.status,s.model_preset,
+          s.termination_reason,s.termination_detail,s.termination_event_id,s.metadata
+          FROM sessions s JOIN cards c ON c.assignee_session_id=s.session_id AND NOT c.archived
+          WHERE s.session_id=${sessionId}`)[0] ?? null;
     }
     async latestSession(cardId: string): Promise<CardSession | null> {
         const sql = await this.resolveSql();

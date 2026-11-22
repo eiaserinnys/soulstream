@@ -1,6 +1,7 @@
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import { hasPendingSessionModelFallback } from "@soulstream/wire-schema/model-preset-fallbacks";
 import { cardAttachmentPaths } from "./card_attachment_paths.js";
+import { blockAssigneeError, isAssigneeError } from "./card_assignee_error.js";
 import { buildCardChangeNotification, buildCardQuestionAnswerNotice, buildCardQuestionThreadNotice, cardQuestionDeliveryTarget, type CardChangeDelivery } from "./card_change_notification.js";
 import { buildCardStatusReminder, buildOwnerSilentAction, MAX_REMINDERS_PER_TICK, type CardReminderFacts } from "./card_status_reminder.js";
 import { buildCardBlockedNotice, buildCardDoneNotice, buildCardQuestionNotice, buildCardReviewNotice, selectCardBoardNotice } from "./card_board_notice.js";
@@ -105,6 +106,7 @@ export class CardDispatcher {
     }
     sessionEnded(sessionId: string): Promise<void> {
         return this.enqueue(async () => {
+            await this.blockAssigneeErrors(sessionId);
             await this.checkReminders(sessionId);
             if (await this.options.orchestration?.ownsSession(sessionId)) { await this.options.orchestration?.decisionEnded?.(sessionId); return; }
             for (const work of await this.options.repository.endedWork(sessionId)) {
@@ -119,6 +121,24 @@ export class CardDispatcher {
             await this.reconcileTerminal(sessionId);
             await this.dispatchOnce();
         });
+    }
+    private async blockAssigneeErrors(sessionId: string): Promise<void> {
+        const owner = await this.options.repository.ownerSession(sessionId);
+        if (!owner || !isAssigneeError(owner)) return;
+        for (const work of await this.options.repository.endedWork(sessionId)) {
+            if (!isAssigneeError(work.terminal_session) || hasPendingSessionModelFallback(work.metadata)) continue;
+            const cards = await this.options.cards(), detail = await cards.getCard(work.card_id);
+            if (detail?.card.status === "running" && detail.card.assignee_session_id === sessionId)
+                await blockAssigneeError(cards, detail.card, work.terminal_session, this.options.warn);
+        }
+        const linked = await this.options.repository.session(sessionId);
+        // 직접 지정된 담당은 sessions.card_id가 없거나 다른 카드를 가리킬 수 있다.
+        const session = await this.options.repository.assigneeErrorSession(sessionId) ?? linked;
+        if (!session || !isAssigneeError(session) || hasPendingSessionModelFallback(session.metadata)) return;
+        const cards = await this.options.cards(), detail = await cards.getCard(session.card_id);
+        if (!detail || detail.card.status !== "running" || detail.card.assignee_session_id !== sessionId) return;
+        if (await this.options.repository.hasExplicitWork(session.card_id)) return;
+        await blockAssigneeError(cards, detail.card, session, this.options.warn);
     }
     acceptMutation(change: CardMutationChange): void {
         if (change.result.idempotent)
