@@ -6,8 +6,7 @@ import type { FlatList, NativeScrollEvent, NativeSyntheticEvent } from 'react-na
 import { flushQueuedSseEvents, isStateOnlySseEventType } from './sseGate';
 import { clampScrollIfNeeded } from './scrollClamp';
 import { decideAutoSupplement } from './autoSupplement';
-import type { ChatRenderItem } from './groupChatEvents';
-import { toSessionEvent } from './groupChatEvents';
+import { toSessionEvent, type ChatRenderItem } from './groupChatEvents';
 import type { SessionEvent } from '../../api/types';
 import type { MessagesResponse } from '../../api/client';
 import {

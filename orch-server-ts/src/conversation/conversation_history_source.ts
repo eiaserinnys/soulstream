@@ -4,7 +4,7 @@ import type { SourceEvent } from "./conversation_projection.js";
 // 투영 결과를 정하는 코드(conversation_history_source.ts, conversation_projection.ts,
 // packages/wire-schema/src/conversation_visibility.ts)를 바꾸면 버전을 올리고 지문을 고친다.
 export const CONVERSATION_HISTORY_PROJECTION_VERSION = 2;
-export const CONVERSATION_HISTORY_PROJECTION_FINGERPRINT = "d5cc9b7c5dfa07a5405bf76d69de03e0f976d9673b8e72de36d75048067adaa9";
+export const CONVERSATION_HISTORY_PROJECTION_FINGERPRINT = "f314ac8e9f2c35001f849bb27a4eb6adb49e06f6d172bb5f10523e01449f9f60";
 
 export type Row = { id: number; event_type: string; payload: Record<string, unknown> | null; created_at: Date };
 export const TYPES = ["user_message", "intervention_sent", "notification", "assistant_message", "tool_start", "tool_result", "complete", "error", "assistant_error"];

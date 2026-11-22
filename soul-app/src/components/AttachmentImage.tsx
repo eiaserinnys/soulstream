@@ -1,5 +1,5 @@
 import { filenameFromContentDisposition } from '../lib/attachment-link-view';
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -8,7 +8,6 @@ import {
   StyleSheet,
   Text,
   View,
-  useWindowDimensions,
   type ImageSourcePropType,
   type ImageURISource,
 } from 'react-native';
