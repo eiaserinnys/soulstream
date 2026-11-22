@@ -180,11 +180,21 @@ describe("durable card status reminders", () => {
     await dispatcher.sessionEnded("child"); expect(messages).not.toHaveBeenCalled();
     await dispatcher.sessionEnded("root"); expect(messages.mock.calls[0]![0]).toBe("root"); await unchanged(id, "review");
   });
-  it.each(["completed", "error"])("stalled sends to a %s root after its status clock", async status => {
+  it.each(["completed"])("stalled sends to a %s root after its status clock", async status => {
     const id = await seed("running", undefined, status); await dispatcher.sessionEnded("root");
     expect(messages).toHaveBeenCalledTimes(1);
     expect(messages.mock.calls[0]![1]).toBe(`[카드 상태 확인] 카드 ${id}는 진행 중인데 담당 세션과 맡긴 작업 세션이 모두 멈췄습니다.`);
     expect(messages.mock.calls[0]![3]!.deliveryId).toContain(":stalled:"); await unchanged(id, "running");
+  });
+  it("blocks an erroring directly assigned root even without sessions.card_id", async () => {
+    const id = await seed("running", undefined, "error", "error_aborted");
+    await dispatcher.sessionEnded("root");
+    const card = (await cards.getCard(id))!.card;
+    expect(card).toMatchObject({ status: "blocked", blocked_kind: "no_report",
+      blocked_detail: "담당 세션이 오류로 끝났습니다(error_aborted)",
+      now: { text: "담당 세션이 오류로 끝나 멈췄습니다", turn: "outside" } });
+    expect(messages).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
   });
   it.each(["interrupted", "limit", "active", "older", "archived"])("stalled excludes %s", async kind => {
     const id = await seed("running", kind === "active" ? "initializing" : undefined, kind === "interrupted" ? "interrupted" : kind === "limit" ? "error" : "completed", kind === "limit" ? "limit_hit" : null);

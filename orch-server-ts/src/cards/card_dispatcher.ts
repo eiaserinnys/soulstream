@@ -1,6 +1,7 @@
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import { hasPendingSessionModelFallback } from "@soulstream/wire-schema/model-preset-fallbacks";
 import { cardAttachmentPaths } from "./card_attachment_paths.js";
+import { blockAssigneeError, isAssigneeError } from "./card_assignee_error.js";
 import { buildCardChangeNotification, buildCardQuestionAnswerNotice, buildCardQuestionThreadNotice, cardQuestionDeliveryTarget, type CardChangeDelivery } from "./card_change_notification.js";
 import { buildCardStatusReminder, buildOwnerSilentAction, MAX_REMINDERS_PER_TICK, type CardReminderFacts } from "./card_status_reminder.js";
 import { buildCardBlockedNotice, buildCardDoneNotice, buildCardQuestionNotice, buildCardReviewNotice, selectCardBoardNotice } from "./card_board_notice.js";
@@ -105,18 +106,21 @@ export class CardDispatcher {
     }
     sessionEnded(sessionId: string): Promise<void> {
         return this.enqueue(async () => {
-            await this.checkReminders(sessionId);
-            if (await this.options.orchestration?.ownsSession(sessionId)) { await this.options.orchestration?.decisionEnded?.(sessionId); return; }
+            if (await this.options.orchestration?.ownsSession(sessionId)) { await this.checkReminders(sessionId); await this.options.orchestration?.decisionEnded?.(sessionId); return; }
             for (const work of await this.options.repository.endedWork(sessionId)) {
-              if (!isUsageLimitTermination(work.terminal_session)) continue;
+              const limit = isUsageLimitTermination(work.terminal_session);
+              if (!limit && !isAssigneeError(work.terminal_session)) continue;
               // 일반 세션 모델 대체 pending이면 다음 세대가 이어받으므로 막힘으로 다루지 않는다.
               if (hasPendingSessionModelFallback(work.metadata)) continue;
               const cards=await this.options.cards(),detail=await cards.getCard(work.card_id);
-              const owner=await this.options.repository.ownerSession(sessionId);
-              if (detail?.card.status === "running" && detail.card.assignee_session_id === sessionId && owner)
-                await this.blockForLimit(detail.card, owner);
+              if (detail?.card.status !== "running" || detail.card.assignee_session_id !== sessionId) continue;
+              if (limit) {
+                const owner=await this.options.repository.ownerSession(sessionId);
+                if (owner) await this.blockForLimit(detail.card, owner);
+              } else await blockAssigneeError(cards, detail.card, work.terminal_session, this.options.warn);
             }
             await this.reconcileTerminal(sessionId);
+            await this.checkReminders(sessionId);
             await this.dispatchOnce();
         });
     }
@@ -284,7 +288,11 @@ export class CardDispatcher {
         }
     }
     private async reconcileTerminal(sessionId: string): Promise<void> {
-        const session = await this.options.repository.session(sessionId);
+        let session = await this.options.repository.session(sessionId);
+        // 직접 지정된 담당은 sessions.card_id가 없거나 다른 카드를 가리킬 수 있다.
+        const owner = session ?? await this.options.repository.ownerSession(sessionId);
+        if (owner && isAssigneeError(owner))
+            session = await this.options.repository.assigneeErrorSession(sessionId) ?? session;
         if (!session || !isTerminalSessionStatus(session.status))
             return;
         const cards = await this.options.cards();
@@ -292,10 +300,12 @@ export class CardDispatcher {
         if (!detail || detail.card.status !== "running" || detail.card.assignee_session_id !== sessionId)
             return;
         if (await this.options.repository.hasExplicitWork(session.card_id)) return;
-        if (!isUsageLimitTermination(session)) return;
+        const limit = isUsageLimitTermination(session);
+        if (!limit && !isAssigneeError(session)) return;
         // 일반 세션 모델 대체 pending이면 다음 세대가 이어받으므로 막힘으로 다루지 않는다.
         if (hasPendingSessionModelFallback(session.metadata)) return;
-        await this.blockForLimit(detail.card, session);
+        if (limit) await this.blockForLimit(detail.card, session);
+        else await blockAssigneeError(cards, detail.card, session, this.options.warn);
     }
     private async blockForLimit(card: CardRow, session: LimitResumeOwner): Promise<void> {
         const cards = await this.options.cards();
