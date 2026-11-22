@@ -394,6 +394,53 @@ wait_and_create_workspace() {
   rm -f "$header" "$cookie"
   [[ "$status" == 401 ]]
 }
+refresh_model_presets() {
+  local root=$1 header token response result attempt presets counts
+  PRESET_REFRESH_PENDING=true
+  if ! header=$(mktemp); then
+    printf 'Model preset refresh: could not create authorization header.\n' || true
+    return 0
+  fi
+  if ! chmod 600 "$header" || ! token=$(read_env_value "$root/.env.orch" AUTH_BEARER_TOKEN) ||
+     ! printf 'Authorization: Bearer %s\n' "$token" > "$header"; then
+    printf 'Model preset refresh: could not prepare authorization header.\n' || true
+    rm -f "$header" || true
+    return 0
+  fi
+  for ((attempt=1; attempt<=6; attempt++)); do
+    result='pending|local unavailable'
+    if response=$(curl --max-time 60 -fsS -X POST -H "@$header" http://127.0.0.1:5200/api/usage/refresh 2>/dev/null); then
+      if result=$(jq -r '
+        (first(.nodes[]? | select(.nodeId == "local")) // null) as $node |
+        ["claude", "codex", "antigravity", "opencode_go"] as $names |
+        ($node.providers // {}) as $providers |
+        (if $node != null and $node.stale == false and
+            all($names[]; . as $name | $providers[$name] != null and
+              ($providers[$name].status == "auto" or $providers[$name].status == "not_configured") and
+              $providers[$name].stale == false)
+          then "confirmed" else "pending" end) + "|" +
+        (if $node == null then "local unavailable" else
+          [$names[] | . as $name | $providers[$name] as $p |
+            "\($name):status=\(if $p.status == "auto" or $p.status == "not_configured" or $p.status == "error" then $p.status else "unknown" end),stale=\(if $p.stale == true then "true" elif $p.stale == false then "false" else "unknown" end)"] | join(" ")
+          end)
+      ' <<< "$response" 2>/dev/null); then :; else result='pending|local unavailable'; fi
+    fi
+    printf 'Preset refresh attempt %s: %s\n' "$attempt" "${result#*|}" || true
+    if [[ "$result" == confirmed\|* ]]; then
+      unset PRESET_REFRESH_PENDING
+      if presets=$(curl --max-time 60 -fsS -H "@$header" http://127.0.0.1:5200/api/nodes/local/model-presets 2>/dev/null) &&
+         counts=$(jq -er '[.model_presets[] | {backend, available, reason}] | group_by([.backend, .available, .reason]) | map("\(.[0].backend) available=\(.[0].available) reason=\(.[0].reason) count=\(length)") | join("; ")' <<< "$presets" 2>/dev/null); then
+        printf 'Model presets: %s\n' "$counts" || true
+      else
+        printf 'Model preset counts unavailable; skipping.\n' || true
+      fi
+      break
+    fi
+    if ((attempt < 6)); then sleep 10 || true; fi
+  done
+  rm -f "$header" || true
+  return 0
+}
 finish_message() {
   local root=$1
   printf '\nInstalled %s; backends: %s\n' "$(as_soul git -C "$root" rev-parse --short=12 HEAD)" "$BACKENDS"
@@ -410,6 +457,7 @@ finish_message() {
   if has_backend antigravity; then printf 'Antigravity: ssh soulstream@<server>, run ~/.local/bin/agy, sign in, then /exit.\n'; fi
   printf 'After login, presets update within five minutes. To refresh now as root:\n'
   printf '%s\n' "awk -F= '/^AUTH_BEARER_TOKEN=/{print \"Authorization: Bearer \" substr(\$0,index(\$0,\"=\")+1)}' $root/.env.orch | curl -fsS -X POST -H @- http://127.0.0.1:5200/api/usage/refresh"
+  if [[ "${PRESET_REFRESH_PENDING:-false}" == true ]]; then printf 'Model preset status is not confirmed yet; it updates within five minutes.\n'; fi
 }
 on_error() { trap - ERR; printf '\nInstallation failed at: %s\nLog: %s\n' "$STEP" "$LOG" >&3; tail -n 30 "$LOG" >&3; exit 1; }
 run_step() { STEP=$1; shift; printf '%s\n' "$STEP"; "$@" >> "$LOG" 2>&1; }
@@ -436,6 +484,7 @@ main() {
   run_step 'Starting services' install_units "$root"
   if [[ "$TAILSCALE" == true ]]; then run_step 'Enabling Tailscale Serve' setup_tailscale_serve; fi
   run_step 'Checking services and workspace' wait_and_create_workspace "$root"
+  run_step 'Checking model presets' refresh_model_presets "$root"
   finish_message "$root"
 }
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
