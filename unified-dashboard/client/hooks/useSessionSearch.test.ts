@@ -3,12 +3,11 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useSessionSearch } from "./useSessionSearch";
-
 import {
   DEFAULT_SEARCH_FILTERS,
-  buildSessionSearchUrl,
+  buildSessionSearchRequestUrl,
   hasExactNormalizedSessionTitle,
+  useSessionSearch,
   type SearchFilters,
 } from "./useSessionSearch";
 
@@ -36,10 +35,10 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe("buildSessionSearchUrl", () => {
+describe("buildSessionSearchRequestUrl", () => {
   it("requests product session results without changing the existing search filters", () => {
     const url = new URL(
-      buildSessionSearchUrl("needle", DEFAULT_SEARCH_FILTERS, 20),
+      buildSessionSearchRequestUrl("needle", DEFAULT_SEARCH_FILTERS, 20),
       "https://dashboard.test",
     );
 
@@ -55,11 +54,11 @@ describe("buildSessionSearchUrl", () => {
 
   it("selects the lexical or expanded stage explicitly", () => {
     const lexical = new URL(
-      buildSessionSearchUrl("needle", DEFAULT_SEARCH_FILTERS, 20, "lexical"),
+      buildSessionSearchRequestUrl("needle", DEFAULT_SEARCH_FILTERS, 20, "lexical"),
       "https://dashboard.test",
     );
     const expanded = new URL(
-      buildSessionSearchUrl("needle", DEFAULT_SEARCH_FILTERS, 20, "expanded"),
+      buildSessionSearchRequestUrl("needle", DEFAULT_SEARCH_FILTERS, 20, "expanded"),
       "https://dashboard.test",
     );
 
@@ -87,7 +86,7 @@ describe("buildSessionSearchUrl", () => {
       includeStory: true,
     };
     const url = new URL(
-      buildSessionSearchUrl("story needle", filters, 7),
+      buildSessionSearchRequestUrl("story needle", filters, 7),
       "https://dashboard.test",
     );
 

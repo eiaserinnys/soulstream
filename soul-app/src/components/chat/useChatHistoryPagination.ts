@@ -6,8 +6,7 @@ import type { FlatList, NativeScrollEvent, NativeSyntheticEvent } from 'react-na
 import { flushQueuedSseEvents, isStateOnlySseEventType } from './sseGate';
 import { clampScrollIfNeeded } from './scrollClamp';
 import { decideAutoSupplement } from './autoSupplement';
-import type { ChatRenderItem } from './groupChatEvents';
-import { toSessionEvent } from './groupChatEvents';
+import { toSessionEvent, type ChatRenderItem } from './groupChatEvents';
 import type { SessionEvent } from '../../api/types';
 import type { MessagesResponse } from '../../api/client';
 import {
@@ -137,7 +136,7 @@ export function useChatHistoryPagination(
     before: string | undefined;
   } | null>(null);
 
-  const isCurrentRequest = (
+  const isActiveHistoryRequest = (
     generation: number,
     requestAuthScope: AuthScopeSnapshot,
     requestSessionId: string,
@@ -194,7 +193,7 @@ export function useChatHistoryPagination(
           params.eventTypes = [...timelineEventTypes];
         }
         const res = await api.getTimeline(requestSessionId, params);
-        if (!isCurrentRequest(requestGeneration, requestAuthScope, requestSessionId, controller)) {
+        if (!isActiveHistoryRequest(requestGeneration, requestAuthScope, requestSessionId, controller)) {
           return;
         }
         const cursorDidNotAdvance = before !== undefined && res.next_cursor === before;
@@ -264,7 +263,7 @@ export function useChatHistoryPagination(
           });
         }
       } catch (err) {
-        if (!isCurrentRequest(requestGeneration, requestAuthScope, requestSessionId, controller)) {
+        if (!isActiveHistoryRequest(requestGeneration, requestAuthScope, requestSessionId, controller)) {
           return;
         }
         if (controller?.signal.aborted) {
@@ -306,7 +305,7 @@ export function useChatHistoryPagination(
           setHasFetchError(true);
         }
       } finally {
-        if (!isCurrentRequest(requestGeneration, requestAuthScope, requestSessionId, controller)) {
+        if (!isActiveHistoryRequest(requestGeneration, requestAuthScope, requestSessionId, controller)) {
           return;
         }
         activeRequestRef.current = null;

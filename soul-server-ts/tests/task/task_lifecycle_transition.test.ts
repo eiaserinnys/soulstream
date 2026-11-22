@@ -284,10 +284,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
       lifecycleTransition: transition,
       logger: silentLogger,
     });
-    const holdExecutionSlot = Reflect.get(
-      TaskExecutor.prototype,
-      "holdExecutionSlot",
-    ) as (task: Task, promise: Promise<void>) => Promise<void>;
+    const holdExecutionSlot = TaskExecutor.prototype["holdExecutionSlot"];
 
     await expect(transition.cancelRunningTask(task)).resolves.toBe(false);
     await holdExecutionSlot.call(

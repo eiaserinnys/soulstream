@@ -95,16 +95,43 @@ test('fingerprints는 정본 파일 밖의 지문을 잡는다', () => {
 });
 
 test('canonical-redecl은 정본 모듈 export 이름의 재선언을 잡는다', () => {
-  const module = 'export function badRequest(): string {\n  return "bad";\n}\n';
-  const overrides = { canonicalModules: { orch: ['http/route_validation.ts'] } };
+  const module = 'export function badgeLabel(): string {\n  return "badge";\n}\n';
+  const overrides = { canonicalModules: { 'packages/soul-ui/src/lib/badge_label.ts': ['soul-ui', 'app'] } };
   const failure = fixture(overrides);
-  failure.write('orch-server-ts/src/http/route_validation.ts', module);
-  failure.write('orch-server-ts/src/index.ts', module);
-  violates(failure.run(), 'canonical-redecl');
+  failure.write('packages/soul-ui/src/lib/badge_label.ts', module);
+  failure.write('soul-app/src/index.ts', module);
+  const result = failure.run();
+  violates(result, 'canonical-redecl');
+  assert.match(result.stdout, /soul-app\/src\/index\.ts:1 badgeLabel/);
 
   const pass = fixture(overrides);
-  pass.write('orch-server-ts/src/http/route_validation.ts', module);
-  pass.write('orch-server-ts/src/index.ts', 'import { badRequest } from "./http/route_validation";\nexport const toBad = badRequest;\n');
+  pass.write('packages/soul-ui/src/lib/badge_label.ts', module);
+  pass.write('soul-app/src/index.ts', 'import { badgeLabel } from "../../packages/soul-ui/src/lib/badge_label";\nexport const label = badgeLabel;\n');
+  clean(pass.run());
+});
+
+test('record-copy는 객체 판정과 값 사본을 시험 파일까지 잡는다', () => {
+  const failure = fixture();
+  failure.write('orch-server-ts/src/index.ts', 'export function isPlainRecord(value: unknown): value is Record<string, unknown> {\n  return typeof value === "object" && value !== null;\n}\n');
+  failure.write('orch-server-ts/tests/record.test.ts', 'function record(value: unknown) {\n  return value && typeof value === "object" ? value : undefined;\n}\n');
+  const result = failure.run();
+  violates(result, 'record-copy');
+  assert.match(result.stdout, /orch-server-ts\/src\/index\.ts:1 isPlainRecord/);
+  assert.match(result.stdout, /orch-server-ts\/tests\/record\.test\.ts:1 record/);
+
+  const pass = fixture();
+  pass.write('orch-server-ts/src/index.ts', 'import { isRecord } from "@soulstream/wire-schema/json-record";\nexport const accepts = (value: unknown): boolean => isRecord(value);\n');
+  pass.write('orch-server-ts/tests/record.test.ts', 'import { asRecord } from "@soulstream/wire-schema/json-record";\nexport const readId = (value: unknown): unknown => asRecord(value)?.id;\n');
+  clean(pass.run());
+});
+
+test('reflect-key는 문자열 키를 잡고 변수 키는 통과한다', () => {
+  const failure = fixture();
+  failure.write('orch-server-ts/src/index.ts', 'export const readSecret = (target: object): unknown => Reflect.get(target, "secret");\n');
+  violates(failure.run(), 'reflect-key');
+
+  const pass = fixture();
+  pass.write('orch-server-ts/src/index.ts', 'export const readKey = (target: object, key: string): unknown => Reflect.get(target, key);\n');
   clean(pass.run());
 });
 
@@ -197,6 +224,6 @@ test('same-name-alias는 별칭을 원래 이름으로 다시 내놓기를 잡�
 });
 
 test('설정이 가리키는 파일이 없으면 종료 2로 끝난다', () => {
-  const result = fixture({ canonicalModules: { orch: ['http/missing_route_validation.ts'] } }).run();
+  const result = fixture({ canonicalModules: { 'orch-server-ts/src/http/missing_route_validation.ts': ['orch'] } }).run();
   assert.equal(result.status, 2, result.stdout + result.stderr);
 });

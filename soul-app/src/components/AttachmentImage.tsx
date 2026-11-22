@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Text,
   View,
-  useWindowDimensions,
   type ImageSourcePropType,
   type ImageURISource,
 } from 'react-native';
@@ -15,6 +14,7 @@ import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 import { getAttachmentImageSize } from '../lib/attachment-image-size';
 import { restoreAttachmentFocus } from '../lib/attachment-focus';
 import { isLegacyAttachmentImage, isSvgAttachmentImage, type AttachmentView } from '../lib/attachment-view';
+import { filenameFromContentDisposition } from '../lib/attachment-link-view';
 import { ImageViewerModal } from './ImageViewerModal';
 import { AttachmentSvg } from './AttachmentSvg';
 
@@ -371,14 +371,4 @@ async function readProtectedAttachmentMetadata(source: ImageURISource, serverUrl
   } catch {
     return {};
   }
-}
-
-function filenameFromContentDisposition(value: string | null): string | undefined {
-  if (!value) return undefined;
-  const encoded = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(value)?.[1]?.trim();
-  if (encoded) {
-    try { return decodeURIComponent(encoded.replace(/^"|"$/g, '')); } catch { return undefined; }
-  }
-  const plain = /filename\s*=\s*(?:"([^"]+)"|([^;]+))/i.exec(value);
-  return (plain?.[1] ?? plain?.[2])?.trim() || undefined;
 }
