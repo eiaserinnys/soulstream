@@ -22,6 +22,8 @@ on:
       - 'scripts/check-source-guards.mjs'
       - 'scripts/check-source-guards.test.mjs'
       - 'scripts/source-guards.config.json'
+      - 'scripts/check-ts-guards.mjs'
+      - 'scripts/check-ts-guards.test.mjs'
       - 'deploy/haniel/build-core.sh'
       - 'deploy/haniel/pack_portable_node_release.sh'
       - 'deploy/macos/check-macos-node.sh'
@@ -47,6 +49,8 @@ on:
       - 'scripts/check-source-guards.mjs'
       - 'scripts/check-source-guards.test.mjs'
       - 'scripts/source-guards.config.json'
+      - 'scripts/check-ts-guards.mjs'
+      - 'scripts/check-ts-guards.test.mjs'
       - 'deploy/haniel/build-core.sh'
       - 'deploy/haniel/pack_portable_node_release.sh'
       - 'deploy/macos/check-macos-node.sh'
@@ -161,7 +165,7 @@ jobs:
           elif [[ "${{ matrix.package }}" == "packages/search-contract" ]]; then
             corepack pnpm --dir packages/search-contract test
           elif [[ "${{ matrix.package }}" == "scripts" ]]; then
-            node --test scripts/tests/verify_bundle_load.test.mjs scripts/verify-workspace-bundle.test.mjs scripts/check-ui-css.test.mjs scripts/check-source-guards.test.mjs
+            node --test scripts/tests/verify_bundle_load.test.mjs scripts/verify-workspace-bundle.test.mjs scripts/check-ui-css.test.mjs scripts/check-source-guards.test.mjs scripts/check-ts-guards.test.mjs
           elif [[ "${{ matrix.kind }}" == "python" ]]; then
             python -m pytest deploy/haniel/test_build_core_darwin.py -q --timeout=60
           elif [[ "${{ matrix.package }}" == "packages/chat-ui" ]]; then
@@ -213,6 +217,20 @@ jobs:
 
       - name: Check source guards
         run: node scripts/check-source-guards.mjs
+
+      - name: Check TypeScript guards
+        run: >-
+          node scripts/check-ts-guards.mjs
+          chrome-extension/tsconfig.json
+          orch-server-ts/tsconfig.json
+          packages/chat-ui/tsconfig.json
+          packages/mcp-contract/tsconfig.json
+          packages/page-model/tsconfig.json
+          packages/soul-ui/tsconfig.json
+          soul-desktop/tsconfig.json
+          soul-server-ts/tsconfig.contracts.json
+          soul-server-ts/tsconfig.typecheck.json
+          unified-dashboard/tsconfig.json
 
       - name: Build orch-server-ts bundle (includes verify:bundle)
         run: corepack pnpm --dir orch-server-ts build
