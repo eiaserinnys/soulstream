@@ -70,3 +70,61 @@ it("uses Git's null path on Windows and disables text conversion for both diff m
   expect(calls[0]?.slice(-3)).toEqual(["--", "/dev/null", "new.txt"]);
   expect(calls[1]).toContain("--no-textconv");
 });
+
+it("treats pathspec characters as literal file names", async () => {
+  if (process.platform === "win32") return;
+  const {root,git}=await repo();
+  await writeFile(path.join(root,"*.txt"),"before\n"); git("add","*.txt"); git("commit","-qm","literal");
+  await writeFile(path.join(root,"*.txt"),"literal-only\n");
+  await writeFile(path.join(root,"modified.txt"),"not-allowed\n");
+  const result=await diffWorkspaceFile(root,"*.txt",null);
+  expect(result.text).toContain("+literal-only");
+  expect(result.text).not.toContain("not-allowed");
+});
+
+it("diffs a staged file before the first commit", async () => {
+  const root=await mkdtemp(path.join(tmpdir(),"workspace-initial-")); roots.push(root);
+  execFileSync("git",["init","-q"],{cwd:root});
+  await writeFile(path.join(root,"initial.txt"),"first\n");
+  execFileSync("git",["add","initial.txt"],{cwd:root});
+  expect(await diffWorkspaceFile(root,"initial.txt",null)).toMatchObject({status:"added",text:expect.stringContaining("+first")});
+});
+
+it("selects the requested status and ignores a stale rename source", async () => {
+  const {root,git}=await repo();
+  await writeFile(path.join(root,"modified.txt"),"requested change\n");
+  await writeFile(path.join(root,"old.txt"),"other change\n");
+  const result=await diffWorkspaceFile(root,"modified.txt","old.txt");
+  expect(result.status).toBe("modified");
+  expect(result.text).toContain("+requested change");
+  expect(result.text).not.toContain("other change");
+  git("add","old.txt");
+  const other=await diffWorkspaceFile(root,"modified.txt","old.txt");
+  expect(other.status).toBe("modified");
+  expect(other.text).not.toContain("other change");
+});
+
+it("settles as truncated when the output limit and timeout overlap", async () => {
+  const script="process.on('SIGTERM',()=>{}); setTimeout(()=>process.stdout.write('x'.repeat(4096)),900); setInterval(()=>{},1000)";
+  const result=await runBoundedProcess({command:process.execPath,args:["-e",script],cwd:tmpdir(),timeoutMs:1000,maxStdoutBytes:64});
+  expect(result.truncated).toBe(true); expect(result.stdout).toHaveLength(64);
+},60000);
+
+it("treats a no-index exit of one with stderr as an error", async () => {
+  const {root}=await repo(); await writeFile(path.join(root,"new.txt"),"new\n");
+  vi.mocked(runBoundedProcess)
+    .mockResolvedValueOnce({stdout:root,stderr:"",exitCode:0})
+    .mockResolvedValueOnce({stdout:"?? new.txt\0",stderr:"",exitCode:0})
+    .mockResolvedValueOnce({stdout:"",stderr:"git failed",exitCode:1});
+  await expect(diffWorkspaceFile(root,"new.txt",null)).rejects.toThrow("git failed");
+});
+
+it("uses the requested file's status when both supplied paths have changes", async () => {
+  const {root}=await repo();
+  await unlink(path.join(root,"modified.txt"));
+  await writeFile(path.join(root,"old.txt"),"requested only\n");
+  const result=await diffWorkspaceFile(root,"old.txt","modified.txt");
+  expect(result.status).toBe("modified");
+  expect(result.text).toContain("+requested only");
+  expect(result.text).not.toContain("modified.txt");
+});

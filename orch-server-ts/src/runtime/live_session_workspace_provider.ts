@@ -10,7 +10,7 @@ import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 type SessionRow = { session_id:string; node_id:string; agent_id:string; worktree_id:string|null; created_at:Date|string; model_preset:string|null };
 type Options = { sqlResolver: LiveDbSqlResolver; registry: NodeCommandRegistryPort; bridge: Pick<SessionCommandTransportBridge,"sendPendingCommand">; modelCatalog: ModelCatalogSource };
 export function createLiveSessionWorkspaceProvider(options: Options): SessionWorkspaceProvider {
-  const last = new Map<string, NodeWorkspaceSnapshot>();
+  const last = new Map<string, {snapshot:NodeWorkspaceSnapshot; node_id:string; agent_id:string; worktree_id:string|null}>();
   async function session(id:string):Promise<SessionRow> {
     const sql=await options.sqlResolver.resolveSql();
     const rows=await sql`SELECT session_id, node_id, agent_id, worktree_id, created_at, model_preset FROM sessions WHERE session_id = ${id}`;
@@ -25,20 +25,19 @@ export function createLiveSessionWorkspaceProvider(options: Options): SessionWor
       return await options.bridge.sendPendingCommand({node,command});
     } catch(error) { throw mapError(error); }
   }
-  return {
-    async readWorkspace(sessionId) {
-      const row=await session(sessionId); const since = dateString(row.created_at);
+  async function workspace(sessionId:string, row:SessionRow):Promise<SessionWorkspaceResponse> {
+      const since = dateString(row.created_at);
       let snapshot: NodeWorkspaceSnapshot | undefined; let status:SessionWorkspaceResponse["node"]["status"]="ok";
       try {
         snapshot = await send(row,{type:"workspace_snapshot",session_id:sessionId,agent_id:row.agent_id,worktree_id:row.worktree_id,since},10_000) as unknown as NodeWorkspaceSnapshot;
         if (snapshot.state === "pending" && !snapshot.git) {
           const previous=last.get(sessionId);
-          if (previous) snapshot={...snapshot,git:previous.git};
-        } else { last.delete(sessionId); last.set(sessionId,snapshot); if(last.size>200) last.delete(last.keys().next().value!); }
+          if (previous && previous.node_id === row.node_id && previous.agent_id === row.agent_id && previous.worktree_id === row.worktree_id && previous.snapshot.root === snapshot.root) snapshot={...snapshot,git:previous.snapshot.git};
+        } else { last.delete(sessionId); last.set(sessionId,{snapshot,node_id:row.node_id,agent_id:row.agent_id,worktree_id:row.worktree_id}); if(last.size>200) last.delete(last.keys().next().value!); }
       } catch(error) {
         const code=error instanceof WorkspaceRouteError ? error.statusCode : 502;
         status=code === 503 ? "offline" : code === 501 ? "unsupported" : code === 404 ? "no_workspace" : "error";
-        if(code !== 501 && code !== 404) snapshot=last.get(sessionId);
+        if(code !== 501 && code !== 404) { const previous=last.get(sessionId); if(previous?.node_id === row.node_id && previous.agent_id === row.agent_id && previous.worktree_id === row.worktree_id) snapshot=previous.snapshot; }
       }
       const sql=await options.sqlResolver.resolveSql();
       const rows=await sql`SELECT event_type, payload->>'tool_name' AS tool_name, MAX(created_at) AS created_at,
@@ -60,16 +59,21 @@ export function createLiveSessionWorkspaceProvider(options: Options): SessionWor
       });
       const read_only=[...activity].filter(([file,act])=>act.read && !act.wrote && !changed.has(file)).map(([file,act])=>({path:file,size:null,last_read_at:act.last_read_at})).sort((a,b)=>a.path.localeCompare(b.path));
       return {session_id:sessionId,root:snapshot?.root ?? null,node:{id:row.node_id,status},snapshot:snapshot ? {state:snapshot.state,observed_at:snapshot.observed_at,refreshing:snapshot.refreshing,branch:git?.branch ?? null,head:git?.head ?? null,upstream:git?.upstream ?? null,ahead:git?.ahead ?? 0,behind:git?.behind ?? 0,truncated:git?.truncated ?? false} : null,attribution:options.modelCatalog.snapshot().presets.find(p=>p.id===row.model_preset)?.backend === "claude" ? "full" : "partial",files,read_only};
-    },
-    async readDiff(sessionId,file,origPath) {
+  }
+  return {
+    async readWorkspace(sessionId) { return workspace(sessionId,await session(sessionId)); },
+    async openWorkspace(sessionId) {
       const row=await session(sessionId);
+      const listing=await workspace(sessionId,row);
+      return {workspace:listing,
+    async readDiff(file,origPath) {
       const result=await send(row,{type:"workspace_file_diff",session_id:sessionId,agent_id:row.agent_id,worktree_id:row.worktree_id,path:file,orig_path:origPath},60_000);
       const diff=result as unknown as import("@soulstream/wire-schema/session-workspace").SessionWorkspaceDiffResponse;
       return {path:file,status:diff.status,text:diff.text,truncated:diff.truncated,binary:diff.binary};
     },
-    async readFile(sessionId,file,offset,length) {
-      const row=await session(sessionId);
+    async readFile(file,offset,length) {
       return await send(row,{type:"workspace_file_read",session_id:sessionId,agent_id:row.agent_id,worktree_id:row.worktree_id,path:file,offset,...(length === undefined ? {} : {length})},60_000) as unknown as WorkspaceFile;
+    }};
     },
   };
 }

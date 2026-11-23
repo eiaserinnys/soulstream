@@ -75,3 +75,8 @@ it("keeps the newest 5000 distinct paths from timestamp-ordered activity", () =>
   expect(activity.has("file-5000.txt")).toBe(false);
   expect(activity.truncated).toBe(true);
 });
+
+it("normalizes a trailing slash when the workspace root is unknown", () => {
+  const activity=collectSessionFileActivity(null,[{event_type:"tool_start",tool_name:"Read",file_path:"dir/file/",created_at:at}]);
+  expect([...activity.keys()]).toEqual(["dir/file"]);
+});

@@ -1,4 +1,5 @@
-import { open } from "node:fs/promises";
+import path from "node:path";
+import { open, realpath } from "node:fs/promises";
 import { validateWorkspacePath } from "./workspace_file_path.js";
 import { inferContentType } from "../attachments/file_manager.js";
 
@@ -8,6 +9,11 @@ export async function readWorkspaceFile(root: string, file: string, offset = 0, 
   if (length !== undefined && length > MAX_BYTES) throw new Error("TOO_LARGE: requested range exceeds 25 MiB");
   const { target, info } = await validateWorkspacePath(root, file);
   if (!info) throw new Error("NOT_FOUND: file not found");
+  const base=await realpath(root);
+  const requested=path.relative(base,path.resolve(base,file));
+  const resolved=path.relative(base,target);
+  const same=process.platform === "win32" ? requested.toLowerCase() === resolved.toLowerCase() : requested === resolved;
+  if (!same) throw new Error("INVALID_REQUEST: path resolves to a different file");
   if (length === undefined && info.size > MAX_BYTES) throw new Error("TOO_LARGE: file exceeds 25 MiB");
   const size = Math.max(0, Math.min(length ?? info.size, info.size - offset));
   const buffer = Buffer.alloc(size);

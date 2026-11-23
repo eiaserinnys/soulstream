@@ -62,7 +62,7 @@ export async function runBoundedProcess(
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
-    let timedOut = false;
+    let terminating = false;
     let truncated = false;
     let stdoutBytes = 0;
     let settled = false;
@@ -88,9 +88,9 @@ export async function runBoundedProcess(
         Buffer.concat(stderr).toString("utf8"),
       ));
     };
-    const terminate = () => {
-      if (timedOut || settled) return;
-      timedOut = true;
+    const terminate = (reason: "timeout" | "truncated" = "timeout") => {
+      if (terminating || settled) return;
+      terminating = true;
       void (async () => {
         const terminationConfirmed = child.pid === undefined
           ? false
@@ -101,7 +101,10 @@ export async function runBoundedProcess(
           closePromise.then(() => true),
           delay(WORKTREE_PROCESS_CLOSE_CONFIRM_TIMEOUT_MS).then(() => false),
         ]);
-        timeoutError(terminationConfirmed && closeConfirmed, child.exitCode);
+        if (reason === "timeout" || !terminationConfirmed || !closeConfirmed) { timeoutError(terminationConfirmed && closeConfirmed, child.exitCode); return; }
+        if (settled) return;
+        settled = true; cleanup();
+        resolve({stdout:new StringDecoder("utf8").write(Buffer.concat(stdout)), stderr:Buffer.concat(stderr).toString("utf8"), exitCode:child.exitCode ?? 0, truncated:true});
       })();
     };
 
@@ -112,25 +115,20 @@ export async function runBoundedProcess(
       stdoutBytes += Math.min(chunk.length, remaining);
       if (chunk.length > remaining) {
         truncated = true;
-        void (async () => {
-          if (child.pid !== undefined) {
-            if (process.platform === "win32") await terminateWindowsProcessTree(child.pid, child);
-            else await terminatePosixProcessGroup(child.pid, child);
-          }
-        })();
+        terminate("truncated");
       }
     });
     child.stderr!.on("data", (chunk: Buffer) => stderr.push(chunk));
     if (input.stdin !== undefined) child.stdin!.end(input.stdin);
 
-    const timer = setTimeout(terminate, input.timeoutMs);
+    const timer = setTimeout(() => terminate(), input.timeoutMs);
     timer.unref();
     const abort = () => terminate();
     input.signal?.addEventListener("abort", abort, { once: true });
     if (input.signal?.aborted) terminate();
 
     child.once("error", (error) => {
-      if (settled || timedOut) return;
+      if (settled || terminating) return;
       settled = true;
       cleanup();
       reject(new GitProcessError(
@@ -142,7 +140,7 @@ export async function runBoundedProcess(
     child.once("close", (code, signal) => {
       closed = true;
       closeWaiter?.();
-      if (settled || timedOut) return;
+      if (settled || terminating) return;
       settled = true;
       cleanup();
       const bytes = Buffer.concat(stdout);

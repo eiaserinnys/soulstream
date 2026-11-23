@@ -17,3 +17,10 @@ describe("workspace file read", () => {
     await expect(readWorkspaceFile(root, "a.txt", 0, 25*1024*1024+1)).rejects.toThrow("TOO_LARGE:");
   });
 });
+
+it("rejects a listed symlink to another file inside the workspace", async () => {
+  const root=await mkdtemp(path.join(tmpdir(),"workspace-link-")); roots.push(root);
+  await writeFile(path.join(root,".env"),"secret");
+  await symlink(path.join(root,".env"),path.join(root,"listed"));
+  await expect(readWorkspaceFile(root,"listed")).rejects.toThrow("INVALID_REQUEST:");
+});

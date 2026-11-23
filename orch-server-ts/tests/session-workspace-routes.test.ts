@@ -6,10 +6,12 @@ import { registerSessionWorkspaceRoutes } from "../src/session/session_workspace
 
 function harness() {
   let connected=true; let restricted=false; let fileError:Error | null=null;
+  let sessionReads=0; let moveOnSecondRead=false;
+  let activities:any[]=[{event_type:"tool_start",tool_name:"Read",file_path:"read.txt",created_at:new Date("2026-01-02T00:00:00Z")}];
   let outcome: any = {root:"/repo",state:"ready",observed_at:"2026-01-02T00:00:00.000Z",refreshing:false,git:{branch:"main",head:"abc",upstream:null,ahead:0,behind:0,truncated:false,files:[],commits:[]}};
   const sql=async (strings:TemplateStringsArray) => strings.join("?").includes("FROM sessions")
-    ? [{session_id:"s",node_id:"n",agent_id:"a",worktree_id:null,created_at:new Date("2026-01-01T00:00:00Z"),model_preset:"claude"}]
-    : [{event_type:"tool_start",tool_name:"Read",file_path:"read.txt",created_at:new Date("2026-01-02T00:00:00Z")}];
+    ? [{session_id:"s",node_id:"n",agent_id:moveOnSecondRead && ++sessionReads > 1 ? "other" : "a",worktree_id:null,created_at:new Date("2026-01-01T00:00:00Z"),model_preset:"claude"}]
+    : activities;
   const registry={getConnectedNode:()=>connected ? {nodeId:"n",connectionId:"c"} : undefined,createCommand:(_node:string,payload:any)=>({message:payload})};
   const bridge={sendPendingCommand:vi.fn(async ({command}:any) => {
     if(command.message.type === "workspace_snapshot" && outcome instanceof Error) throw outcome;
@@ -24,7 +26,7 @@ function harness() {
   })};
   const provider=createLiveSessionWorkspaceProvider({sqlResolver:{resolveSql:async()=>sql} as never,registry:registry as never,bridge:bridge as never,modelCatalog:{snapshot:()=>({presets:[{id:"claude",backend:"claude"}]})} as never});
   const app=Fastify(); registerSessionWorkspaceRoutes(app,{provider,accessProvider:{requireSessionAccess:async()=>{},resolveAccess:async()=>({restricted})} as never});
-  return {app,bridge,setConnected:(value:boolean)=>{connected=value;},setOutcome:(value:any)=>{outcome=value;},setRestricted:(value:boolean)=>{restricted=value;},setFileError:(value:Error|null)=>{fileError=value;}};
+  return {app,bridge,setConnected:(value:boolean)=>{connected=value;},setOutcome:(value:any)=>{outcome=value;},setRestricted:(value:boolean)=>{restricted=value;},setFileError:(value:Error|null)=>{fileError=value;},setActivities:(value:any[])=>{activities=value;},moveOnSecondRead:()=>{moveOnSecondRead=true;}};
 }
 function rejected(commandType:string,message:string,code?:string) {return new PendingNodeCommandRejectedError({commandType,requestId:"r",message,response:{type:"error",code}});}
 describe("session workspace routes", () => {
@@ -86,7 +88,7 @@ it("filters git-only paths for restricted users and shares authorization with di
   expect((await h.app.inject({url:"/api/sessions/s/workspace/file?path=other%5Cfile.txt"})).statusCode).toBe(200);
   expect((await h.app.inject({url:"/api/sessions/s/workspace/diff?path=other%2Ffile.txt"})).json()).toMatchObject({path:"other/file.txt",status:"renamed"});
   const command=h.bridge.sendPendingCommand.mock.calls.map(([arg]:any)=>arg.command.message).find((cmd:any)=>cmd.type === "workspace_file_diff");
-  expect(command.orig_path).toBe("old.txt");
+  expect(command.orig_path).toBeNull();
   await h.app.close();
 });
 
@@ -107,4 +109,61 @@ it("uses the last git list while a fresh snapshot is pending", async () => {
   expect((await h.app.inject({url:"/api/sessions/s/workspace"})).json()).toMatchObject({snapshot:{state:"pending"},files:[{path:"git.txt"}]});
   expect((await h.app.inject({url:"/api/sessions/s/workspace/file?path=git.txt"})).statusCode).toBe(200);
   await h.app.close();
+});
+
+it("does not reuse git paths from a different pending root", async () => {
+  const h=harness();
+  h.setOutcome({root:"/repo",state:"ready",observed_at:"2026-01-02T00:00:00Z",refreshing:false,git:{branch:"main",head:"abc",upstream:null,ahead:0,behind:0,truncated:false,files:[{path:"git.txt",orig_path:null,status:"modified",added:1,deleted:0,size:1}],commits:[]}});
+  await h.app.inject({url:"/api/sessions/s/workspace"});
+  h.setOutcome({root:"/other",state:"pending",observed_at:null,refreshing:true,git:null});
+  expect((await h.app.inject({url:"/api/sessions/s/workspace"})).json().files).toEqual([]);
+  expect((await h.app.inject({url:"/api/sessions/s/workspace/file?path=git.txt"})).statusCode).toBe(403);
+  await h.app.close();
+});
+
+it("does not pass an unauthorized rename source for a restricted caller", async () => {
+  const h=harness(); h.setRestricted(true);
+  h.setOutcome({root:"/repo",state:"ready",observed_at:"2026-01-02T00:00:00Z",refreshing:false,git:{branch:"main",head:"abc",upstream:null,ahead:0,behind:0,truncated:false,files:[{path:"read.txt",orig_path:"secret.txt",status:"renamed",added:1,deleted:0,size:1}],commits:[]}});
+  expect((await h.app.inject({url:"/api/sessions/s/workspace/diff?path=read.txt"})).statusCode).toBe(200);
+  const command=h.bridge.sendPendingCommand.mock.calls.map(([arg]:any)=>arg.command.message).find((cmd:any)=>cmd.type === "workspace_file_diff");
+  expect(command.orig_path).toBeNull(); await h.app.close();
+});
+
+it("uses the session identity that produced the authorized file list", async () => {
+  const h=harness(); h.moveOnSecondRead();
+  expect((await h.app.inject({url:"/api/sessions/s/workspace/file?path=read.txt"})).statusCode).toBe(200);
+  const commands=h.bridge.sendPendingCommand.mock.calls.map(([arg]:any)=>arg.command.message);
+  expect(commands.find((cmd:any)=>cmd.type === "workspace_file_read").agent_id).toBe("a");
+  await h.app.close();
+});
+
+it("permits only activity paths for restricted callers on both endpoints", async () => {
+  const h=harness(); h.setRestricted(true);
+  const created_at=new Date("2026-01-02T00:00:00Z");
+  h.setActivities([{event_type:"tool_start",tool_name:"Read",file_path:"read.txt",created_at},{event_type:"tool_start",tool_name:"Read",file_path:"read-only.txt",created_at},{event_type:"tool_start",tool_name:"Write",file_path:"wrote.txt",created_at}]);
+  const changed=(path:string)=>({path,orig_path:null,status:"modified",added:1,deleted:0,size:1});
+  h.setOutcome({root:"/repo",state:"ready",observed_at:"2026-01-02T00:00:00Z",refreshing:false,git:{branch:"main",head:"abc",upstream:null,ahead:0,behind:0,truncated:false,files:[changed("git-only.txt"),changed("read.txt"),changed("wrote.txt")],commits:[]}});
+  for(const endpoint of ["file","diff"]) for(const [name,code] of [["git-only.txt",403],["read.txt",200],["wrote.txt",200],["read-only.txt",200]] as const) {
+    expect((await h.app.inject({url:`/api/sessions/s/workspace/${endpoint}?path=${name}`})).statusCode).toBe(code);
+  }
+  await h.app.close();
+});
+
+it("matches Windows paths case insensitively and sends the listed spelling", async () => {
+  const h=harness();
+  h.setActivities([{event_type:"tool_start",tool_name:"Read",file_path:"C:\\Repo\\Folder\\Read.txt",created_at:new Date("2026-01-02T00:00:00Z")}]);
+  h.setOutcome({root:"C:\\Repo",state:"not_git",observed_at:"2026-01-02T00:00:00Z",refreshing:false,git:null});
+  expect((await h.app.inject({url:"/api/sessions/s/workspace/file?path=folder%2Fread.txt"})).statusCode).toBe(200);
+  const command=h.bridge.sendPendingCommand.mock.calls.map(([arg]:any)=>arg.command.message).find((cmd:any)=>cmd.type === "workspace_file_read");
+  expect(command.path).toBe("Folder/Read.txt"); await h.app.close();
+});
+
+it("passes a rename source when it is also in the restricted caller's list", async () => {
+  const h=harness(); h.setRestricted(true);
+  const created_at=new Date("2026-01-02T00:00:00Z");
+  h.setActivities([{event_type:"tool_start",tool_name:"Read",file_path:"read.txt",created_at},{event_type:"tool_start",tool_name:"Read",file_path:"old.txt",created_at}]);
+  h.setOutcome({root:"/repo",state:"ready",observed_at:"2026-01-02T00:00:00Z",refreshing:false,git:{branch:"main",head:"abc",upstream:null,ahead:0,behind:0,truncated:false,files:[{path:"read.txt",orig_path:"old.txt",status:"renamed",added:1,deleted:0,size:1}],commits:[]}});
+  expect((await h.app.inject({url:"/api/sessions/s/workspace/diff?path=read.txt"})).statusCode).toBe(200);
+  const command=h.bridge.sendPendingCommand.mock.calls.map(([arg]:any)=>arg.command.message).find((cmd:any)=>cmd.type === "workspace_file_diff");
+  expect(command.orig_path).toBe("old.txt"); await h.app.close();
 });

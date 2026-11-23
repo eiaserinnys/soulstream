@@ -64,3 +64,14 @@ describe("workspace snapshot", () => {
     expect((await cache.get(root,"2024-01-01T00:00:00.000Z")).state).toBe("not_git");
   });
 });
+
+it("preserves backslashes in POSIX file names", async () => {
+  if (process.platform === "win32") return;
+  const root=await mkdtemp(path.join(tmpdir(),"workspace-backslash-")); roots.push(root);
+  execFileSync("git",["init","-q"],{cwd:root});
+  execFileSync("git",["-c","user.name=Test","-c","user.email=test@example.com","commit","--allow-empty","-qm","initial"],{cwd:root});
+  await writeFile(path.join(root,"a\\b"),"x");
+  const snapshot=await new WorkspaceSnapshotCache().get(root,"2024-01-01T00:00:00.000Z");
+  expect(snapshot.git?.files.map(file=>file.path)).toContain("a\\b");
+  expect(snapshot.git?.files.map(file=>file.path)).not.toContain("a/b");
+});

@@ -41,7 +41,7 @@ export function relativePath(root: string | null, value: string): string | null 
   const input=windows ? value : value.replaceAll("\\", "/");
   if (!root) {
     if (path.win32.isAbsolute(value) || path.posix.isAbsolute(input)) return null;
-    const normalized = path.posix.normalize(input);
+    const normalized = path.posix.normalize(input).replace(/\/$/, "");
     return normalized === "." || normalized === ".." || normalized.startsWith("../") ? null : normalized;
   }
   const rel=impl.relative(root,impl.resolve(root,input));
