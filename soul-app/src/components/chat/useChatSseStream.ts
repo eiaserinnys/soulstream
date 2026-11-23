@@ -57,7 +57,7 @@ interface UseChatSseStreamOptions {
     baselineCursor: string | null,
     commitRecovery: () => boolean,
   ) => void;
-  mergeEvents: (sessionId: string, events: SessionEvent[]) => void;
+  mergeEvents: (sessionId: string, events: SessionEvent[], lastEventId?: string) => void;
   setLastEventId: (sessionId: string, id: string) => void;
   setStreamingEvent: (
     sessionId: string,
@@ -248,6 +248,7 @@ export function useChatSseStream({
         { pendingLiveQueueRef, isCatchingUpRef },
         {
           triggerAnimation: () => undefined,
+          ingestEvent: (event, cursor) => mergeEvents(sessionId, [event], cursor),
           ingestEventsBatch: (events) => mergeEvents(sessionId, events),
           setLastEventId: (id) => setLastEventId(sessionId, id),
         },
@@ -388,7 +389,7 @@ export function useChatSseStream({
       {
         triggerAnimation: () =>
           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut),
-        ingestEvent: (event) => mergeEvents(sessionId, [event]),
+        ingestEvent: (event, lastEventId) => mergeEvents(sessionId, [event], lastEventId),
         ingestEventsBatch: (events) => mergeEvents(sessionId, events),
         setLastEventId: (id) => setLastEventId(sessionId, id),
         resetToSnapshot: (baselineCursor) => {

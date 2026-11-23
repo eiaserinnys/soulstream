@@ -38,6 +38,164 @@ function makeActions() {
 }
 
 describe('handleSessionSseEvent', () => {
+  test('queued single durable event commits event and cursor in one notification', () => {
+    const refs = makeRefs(false, true);
+    const store = useChatStore.getState();
+    store.clearSession(SID);
+    store.mergeEvents(SID, [{ id: '1', type: 'tool_start', data: {} }]);
+    store.setLastEventId(SID, '1');
+    const actions = {
+      ...makeActions(),
+      ingestEvent: (event: SessionEvent, cursor?: string) => store.mergeEvents(SID, [event], cursor),
+      ingestEventsBatch: (events: SessionEvent[]) => store.mergeEvents(SID, events),
+      setLastEventId: (cursor: string) => store.setLastEventId(SID, cursor),
+    };
+    handleSessionSseEvent('tool_start', {}, '2', refs, actions);
+    let notifications = 0;
+    const unsubscribe = useChatStore.subscribe(() => { notifications += 1; });
+    refs.historyLoadingRef.current = false;
+    flushQueuedSseEvents(refs, actions);
+    unsubscribe();
+    expect(notifications).toBe(1);
+    expect(useChatStore.getState().eventsBySession[SID].map((event) => event.id)).toEqual(['1', '2']);
+    expect(useChatStore.getState().lastEventIdBySession[SID]).toBe('2');
+    expect(refs.pendingLiveQueueRef.current).toHaveLength(0);
+  });
+
+  test('queued duplicate durable event does not advance its cursor', () => {
+    const refs = makeRefs(false, true);
+    const store = useChatStore.getState();
+    store.clearSession(SID);
+    store.mergeEvents(SID, [{ id: '5', type: 'tool_start', data: {} }]);
+    store.setLastEventId(SID, '5');
+    const actions = {
+      ...makeActions(),
+      ingestEvent: (event: SessionEvent, cursor?: string) => store.mergeEvents(SID, [event], cursor),
+      ingestEventsBatch: (events: SessionEvent[]) => store.mergeEvents(SID, events),
+      setLastEventId: (cursor: string) => store.setLastEventId(SID, cursor),
+    };
+    handleSessionSseEvent('tool_start', { _event_id: 5 }, '6', refs, actions);
+    refs.historyLoadingRef.current = false;
+    flushQueuedSseEvents(refs, actions);
+    expect(useChatStore.getState().lastEventIdBySession[SID]).toBe('5');
+    expect(refs.pendingLiveQueueRef.current).toHaveLength(0);
+  });
+
+  test('queued single commit failure preserves the queue and cursor', () => {
+    const refs = makeRefs(false, true);
+    const actions = makeActions();
+    handleSessionSseEvent('system', { message: 'retry' }, '10', refs, actions);
+    refs.historyLoadingRef.current = false;
+    actions.ingestEvent.mockImplementationOnce(() => { throw new Error('commit failed'); });
+    expect(() => flushQueuedSseEvents(refs, actions)).toThrow('commit failed');
+    expect(refs.pendingLiveQueueRef.current.map((entry) => entry.eid)).toEqual(['10']);
+    expect(actions.setLastEventId).not.toHaveBeenCalled();
+  });
+
+  test('multiple queued events and a single event without a durable cursor use the batch path', () => {
+    const refs = makeRefs(false, true);
+    const actions = makeActions();
+    handleSessionSseEvent('system', {}, '10', refs, actions);
+    handleSessionSseEvent('system', {}, '11', refs, actions);
+    refs.historyLoadingRef.current = false;
+    flushQueuedSseEvents(refs, actions);
+    expect(actions.ingestEventsBatch).toHaveBeenCalledTimes(1);
+    expect(actions.setLastEventId).toHaveBeenCalledWith('11');
+    expect(actions.ingestEvent).not.toHaveBeenCalled();
+
+    refs.historyLoadingRef.current = true;
+    handleSessionSseEvent('system', { _live_only: true }, '11', refs, actions);
+    refs.historyLoadingRef.current = false;
+    flushQueuedSseEvents(refs, actions);
+    expect(actions.ingestEventsBatch).toHaveBeenCalledTimes(2);
+    expect(actions.ingestEvent).not.toHaveBeenCalled();
+    expect(actions.setLastEventId).toHaveBeenCalledTimes(1);
+  });
+
+  test('live durable event commits event and cursor in one notification', () => {
+    const refs = makeRefs(false, false);
+    const store = useChatStore.getState();
+    store.clearSession(SID);
+    store.mergeEvents(SID, [{ id: '1', type: 'tool_start', data: {} }]);
+    store.setLastEventId(SID, '1');
+    let notifications = 0;
+    const unsubscribe = useChatStore.subscribe(() => { notifications += 1; });
+    const actions = {
+      ...makeActions(),
+      ingestEvent: (event: SessionEvent, cursor?: string) =>
+        store.mergeEvents(SID, [event], cursor),
+      setLastEventId: (id: string) => store.setLastEventId(SID, id),
+    };
+
+    handleSessionSseEvent('tool_start', {}, '2', refs, actions);
+    unsubscribe();
+
+    expect(notifications).toBe(1);
+    expect(useChatStore.getState().eventsBySession[SID].map((event) => event.id)).toEqual(['1', '2']);
+    expect(useChatStore.getState().lastEventIdBySession[SID]).toBe('2');
+  });
+
+  test('a duplicate event and a failed event do not advance the durable cursor', () => {
+    const refs = makeRefs(false, false);
+    const store = useChatStore.getState();
+    store.clearSession(SID);
+    store.mergeEvents(SID, [{ id: '5', type: 'tool_start', data: {} }]);
+    store.setLastEventId(SID, '5');
+    const actions = {
+      ...makeActions(),
+      ingestEvent: (event: SessionEvent, cursor?: string) =>
+        store.mergeEvents(SID, [event], cursor),
+      setLastEventId: (id: string) => store.setLastEventId(SID, id),
+    };
+    handleSessionSseEvent('tool_start', { _event_id: 5 }, '6', refs, actions);
+    expect(useChatStore.getState().lastEventIdBySession[SID]).toBe('5');
+
+    const throwingActions = {
+      ...actions,
+      ingestEvent: () => { throw new Error('commit failed'); },
+    };
+    expect(() => handleSessionSseEvent('tool_start', {}, '7', refs, throwingActions))
+      .toThrow('commit failed');
+    expect(useChatStore.getState().lastEventIdBySession[SID]).toBe('5');
+  });
+
+  test('applied older events do not move the cursor backwards', () => {
+    const store = useChatStore.getState();
+    store.clearSession(SID);
+    store.mergeEvents(SID, [{ id: '10', type: 'tool_start', data: {} }]);
+    store.setLastEventId(SID, '10');
+    store.mergeEvents(SID, [{ id: '9', type: 'tool_start', data: {} }], '9');
+    expect(useChatStore.getState().eventsBySession[SID].map((event) => event.id)).toEqual(['9', '10']);
+    expect(useChatStore.getState().lastEventIdBySession[SID]).toBe('10');
+  });
+
+  test('a store merge failure leaves both event and cursor unchanged', () => {
+    const store = useChatStore.getState();
+    store.clearSession(SID);
+    store.setLastEventId(SID, '5');
+    const event: SessionEvent = {
+      id: '6',
+      get type(): SessionEvent['type'] { throw new Error('invalid event'); },
+      data: {},
+    };
+    expect(() => store.mergeEvents(SID, [event], '6')).toThrow('invalid event');
+    expect(useChatStore.getState().eventsBySession[SID]).toBeUndefined();
+    expect(useChatStore.getState().lastEventIdBySession[SID]).toBe('5');
+  });
+
+  test('duplicate cleanup can remove synthetic text without advancing the cursor', () => {
+    const store = useChatStore.getState();
+    const event: SessionEvent = { id: '5', type: 'user_message', data: {} };
+    store.clearSession(SID);
+    store.mergeEvents(SID, [event, {
+      id: 'live:text_delta:a', type: 'text_delta', data: { _live_only: true },
+    }]);
+    store.setLastEventId(SID, '5');
+    store.mergeEvents(SID, [event], '6');
+    expect(useChatStore.getState().eventsBySession[SID]).toEqual([event]);
+    expect(useChatStore.getState().lastEventIdBySession[SID]).toBe('5');
+  });
+
   test('history_sync는 게이트를 false로 전환하고 머지하지 않는다', () => {
     const refs = makeRefs(true, false);
     const actions = makeActions();
@@ -105,10 +263,9 @@ describe('handleSessionSseEvent', () => {
 
     refs.historyLoadingRef.current = false;
     flushQueuedSseEvents(refs, actions);
-    expect(actions.ingestEventsBatch).toHaveBeenCalledWith([
-      expect.objectContaining({ id: '251' }),
-    ]);
-    expect(actions.setLastEventId).toHaveBeenLastCalledWith('251');
+    expect(actions.ingestEvent).toHaveBeenCalledWith(expect.objectContaining({ id: '251' }), '251');
+    expect(actions.ingestEventsBatch).not.toHaveBeenCalled();
+    expect(actions.setLastEventId).not.toHaveBeenCalled();
   });
 
   test.each([
@@ -246,7 +403,8 @@ describe('handleSessionSseEvent', () => {
 
     expect(actions.triggerAnimation).toHaveBeenCalledTimes(1);
     expect(actions.ingestEvent).toHaveBeenCalledTimes(1);
-    expect(actions.setLastEventId).toHaveBeenCalledWith('200');
+    expect(actions.ingestEvent).toHaveBeenCalledWith(expect.objectContaining({ id: '200' }), '200');
+    expect(actions.setLastEventId).not.toHaveBeenCalled();
   });
 
   test('REST history 로딩 중: 라이브 SSE는 큐에 적재되고 ingestEvent/setLastEventId/triggerAnimation 모두 호출되지 않는다 (F-B)', () => {
@@ -356,8 +514,8 @@ describe('handleSessionSseEvent', () => {
     useChatStore.getState().clearSession(SID);
     const actions = {
       ...makeActions(),
-      ingestEvent: (event: SessionEvent) =>
-        useChatStore.getState().mergeEvents(SID, [event]),
+      ingestEvent: (event: SessionEvent, cursor?: string) =>
+        useChatStore.getState().mergeEvents(SID, [event], cursor),
     };
     const payload = {
       text: 'repeat',
@@ -379,8 +537,8 @@ describe('handleSessionSseEvent', () => {
     useChatStore.getState().clearSession(SID);
     const actions = {
       ...makeActions(),
-      ingestEvent: (event: SessionEvent) =>
-        useChatStore.getState().mergeEvents(SID, [event]),
+      ingestEvent: (event: SessionEvent, cursor?: string) =>
+        useChatStore.getState().mergeEvents(SID, [event], cursor),
     };
     const payload = {
       text: 'repeat',
@@ -426,8 +584,8 @@ describe('handleSessionSseEvent', () => {
     useChatStore.getState().clearSession(SID);
     const actions = {
       ...makeActions(),
-      ingestEvent: (event: SessionEvent) =>
-        useChatStore.getState().mergeEvents(SID, [event]),
+      ingestEvent: (event: SessionEvent, cursor?: string) =>
+        useChatStore.getState().mergeEvents(SID, [event], cursor),
     };
     const payload = {
       text: 'x',
@@ -471,8 +629,8 @@ describe('handleSessionSseEvent', () => {
     useChatStore.getState().clearSession(SID);
     const actions = {
       ...makeActions(),
-      ingestEvent: (event: SessionEvent) =>
-        useChatStore.getState().mergeEvents(SID, [event]),
+      ingestEvent: (event: SessionEvent, cursor?: string) =>
+        useChatStore.getState().mergeEvents(SID, [event], cursor),
     };
     const payload = {
       text: 'x',
@@ -538,7 +696,8 @@ describe('handleSessionSseEvent', () => {
 
     const event = actions.ingestEvent.mock.calls[0][0] as SessionEvent;
     expect(event.id).toBe('79');
-    expect(actions.setLastEventId).toHaveBeenCalledWith('80');
+    expect(actions.ingestEvent).toHaveBeenCalledWith(event, '80');
+    expect(actions.setLastEventId).not.toHaveBeenCalled();
   });
 
   test('history_sync last_event_id가 없거나 0이면 lastEventId를 갱신하지 않는다', () => {
