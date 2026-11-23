@@ -110,7 +110,10 @@ export async function createClusterRoundtripFixture() {
   const access = createSessionResourceAccessProvider({ accessProvider, repository: { getSessionAccessRecord: async () => null, listFoldersForAccess: async () => folders } });
   const sessions = { nodeCredentials: null, router: new SessionCommandRouter({ registry }), bridge,
     createSessionLifecycle: createSessionCreateLifecycle({ resolveCallerInfo: createLiveAuthenticatedUserResolvers({ jwt }).resolveCallerInfo,
-      access, boardItems: { getCatalogSnapshot: async () => ({ folders, boardItems: [] }) } as never }) };
+      access, boardItems: {
+        listFolders: async () => folders,
+        getCatalogSnapshot: async () => ({ folders, boardItems: [] }),
+      } as never }) };
   const recurring = recurringFixture();
   const recurringJobs = { authBearerToken: "service-token", nodeCredentials: null, service: recurring.service };
   let settings: OrchestrationSettings;
