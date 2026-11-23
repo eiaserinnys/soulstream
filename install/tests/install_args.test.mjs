@@ -1,24 +1,32 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { createFakeCommands } from './support/fake_commands.mjs';
 
 const script = resolve('install/install.sh');
 function parse(...args) {
-  return spawnSync('bash', ['-c', 'source "$1"; shift; parse_args "$@"; printf "backends=%s ref=%s\\n" "$BACKENDS" "$REF"', 'bash', script, ...args], { encoding: 'utf8' });
+  return spawnSync('bash', ['-c', 'source "$1"; shift; parse_args "$@"; printf "backends=%s ref=%s atom_ref=%s\\n" "$BACKENDS" "$REF" "$ATOM_REF"', 'bash', script, ...args], { encoding: 'utf8' });
 }
 test('backend defaults, ordering, deduplication, ref and help', () => {
-  for (const [args, expected] of [ [[], 'backends=claude,codex ref='], [['--backends','codex'], 'backends=codex ref='], [['--backends','claude,antigravity'], 'backends=claude,antigravity ref='], [['--backends','codex,codex'], 'backends=codex ref='], [['--ref','abc'], 'backends=claude,codex ref=abc'] ]) {
+  for (const [args, expected] of [ [[], 'backends=claude,codex ref='], [['--backends','codex'], 'backends=codex ref='], [['--backends','claude,antigravity'], 'backends=claude,antigravity ref='], [['--backends','codex,codex'], 'backends=codex ref='], [['--ref','abc'], 'backends=claude,codex ref=abc'], [['--atom-ref','def'], 'backends=claude,codex ref= atom_ref=def'] ]) {
     const result = parse(...args); assert.equal(result.status, 0, result.stderr); assert.match(result.stdout, new RegExp(expected));
   }
   assert.equal(parse('--help').status, 0);
 });
 test('rejects invalid or missing options with usage', () => {
-  for (const args of [['--backends',''], ['--backends','foo'], ['--backends','claude,foo'], ['--foo'], ['--ref'], ['--tailscale-user','a'], ['--tailscale-auth-key','k'], ['--tailscale','--tailscale-user'], ['--tailscale','--tailscale-auth-key']]) {
-    const result = parse(...args); assert.equal(result.status, 2, JSON.stringify(args)); assert.match(result.stdout + result.stderr, /usage|사용법/i);
-  }
+  const dir = mkdtempSync(join(tmpdir(), 'install-key-file-'));
+  try {
+    const keyFile = join(dir, 'key'); writeFileSync(keyFile, 'k');
+    for (const args of [['--backends',''], ['--backends','foo'], ['--backends','claude,foo'], ['--foo'], ['--ref'], ['--atom-ref'], ['--tailscale-user','a'], ['--tailscale-auth-key','k'], ['--tailscale','--tailscale-user'], ['--tailscale','--tailscale-auth-key'],
+      ['--tailscale','--tailscale-auth-key-file'], ['--tailscale','--tailscale-auth-key-file','--tailscale-user'], ['--tailscale-auth-key-file',keyFile], ['--tailscale','--tailscale-auth-key','k','--tailscale-auth-key-file',keyFile]]) {
+      const result = parse(...args); assert.equal(result.status, 2, JSON.stringify(args)); assert.match(result.stdout + result.stderr, /usage|사용법/i);
+    }
+    const missing = parse('--tailscale', '--tailscale-auth-key-file', join(dir, 'missing'));
+    assert.equal(missing.status, 2); assert.equal(missing.stderr, 'Tailscale auth key file is not readable.\n');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 test('accepts Tailscale mode and optional identity', () => {
   assert.equal(parse('--tailscale').status, 0);
@@ -45,5 +53,20 @@ test('Claude login guidance works without a local browser', () => {
     const result = spawnSync('bash', ['-c', 'source "$1"; as_soul() { printf abc; }; BACKENDS=claude; finish_message "$2"', 'bash', script, dir], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /sudo -Hu soulstream env BROWSER=\/bin\/false \/home\/soulstream\/\.local\/bin\/claude auth login/);
+    assert.ok(!result.stdout.includes('test-password'));
+    assert.ok(result.stdout.includes(`Password for both: sudo cat ${dir}/.admin-password\n`));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+test('an auth key file reaches tailscale up by path only', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'install-tailscale-key-file-'));
+  try {
+    const fake = createFakeCommands(dir), keyFile = join(dir, 'auth-key'), log = join(dir, 'install.log');
+    writeFileSync(keyFile, 'tskey-auth-content-7c1d', { mode: 0o600 });
+    const result = spawnSync('bash', ['-ec', 'source "$1"; LOG="$2"; parse_args --tailscale --tailscale-auth-key-file "$3"; exec 3>&2; setup_tailscale; printf "%s" "$TAILSCALE_DNS"', 'bash', script, log, keyFile], { env: fake.env(), encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, 'node.tailnet.ts.net');
+    const argv = fake.argv();
+    assert.ok(argv.includes(`== tailscale\nup\n--auth-key=file:${keyFile}\n`));
+    assert.ok(!(argv + result.stdout + result.stderr + readFileSync(log, 'utf8')).includes('tskey-auth-content-7c1d'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

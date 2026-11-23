@@ -4,13 +4,23 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { createFakeCommands } from './support/fake_commands.mjs';
 const script = resolve('install/install.sh');
+const ATOM_KEY = 'test-atom-api-key';
+// Files the earlier installation steps leave for render_config: the seed map and the atom API key.
+function prepareRoot(dir, root) {
+ mkdirSync(join(root,'config'),{recursive:true});
+ writeFileSync(join(root,'config','.atom-seed-map.json'),JSON.stringify({skill_catalog:'11111111-2222-4333-8444-555555555555',domain_catalog:null}));
+ writeFileSync(join(root,'.atom-api-key'),`${ATOM_KEY}\n`);
+ return createFakeCommands(dir);
+}
 const env = (p) => Object.fromEntries(readFileSync(p, 'utf8').trim().split('\n').filter(x => /^[A-Z_]+=/.test(x)).map(x => { const i=x.indexOf('='); return [x.slice(0,i), x.slice(i+1).replace(/^"|"$/g,'')]; }));
-function render(home, root, backends) { return spawnSync('bash', ['-c', 'source "$1"; BACKENDS="$4"; render_config "$2" "$3"', 'bash', script, home, root, backends], {encoding:'utf8'}); }
+function render(home, root, backends, fake) { return spawnSync('bash', ['-c', 'set -Eeuo pipefail; source "$1"; BACKENDS="$4"; setup_secrets "$3" "$2/atom"; render_config "$2" "$3"', 'bash', script, home, root, backends], {encoding:'utf8', env:fake.env()}); }
 test('configuration rendering preserves secrets and unmanaged lines across backend changes', () => {
  const dir=mkdtempSync(join(tmpdir(),'install-render-')), home=join(dir,'home'), root=join(home,'soulstream');
  try {
-  let run=render(home,root,'claude,codex,antigravity'); assert.equal(run.status,0,run.stderr);
+  const fake=prepareRoot(dir,root);
+  let run=render(home,root,'claude,codex,antigravity',fake); assert.equal(run.status,0,run.stderr);
   const orchPath=join(root,'.env.orch'), workerPath=join(root,'.env.soul-server-ts'), passwordPath=join(root,'.admin-password');
   for (const p of [orchPath,workerPath,passwordPath]) assert.equal(statSync(p).mode & 0o777,0o600);
   for (const p of ['agents.yaml','mcp-registry.yaml','mcp-profiles.yaml']) assert.ok(statSync(join(root,'config',p)).isFile());
@@ -21,29 +31,34 @@ test('configuration rendering preserves secrets and unmanaged lines across backe
   assert.equal(readFileSync(passwordPath,'utf8').trim(),initial.DASHBOARD_ADMIN_PASSWORD);
   appendFileSync(orchPath,'GOOGLE_CLIENT_ID=x\n');
   for (const backends of ['claude,codex,antigravity','codex','claude','antigravity','claude,codex,antigravity']) {
-    run=render(home,root,backends); assert.equal(run.status,0,run.stderr);
+    run=render(home,root,backends,fake); assert.equal(run.status,0,run.stderr);
     const orch=env(orchPath), worker=env(workerPath), agents=readFileSync(join(root,'config','agents.yaml'),'utf8');
     for (const k of keys) { assert.equal(orch[k],initial[k]); assert.ok(!(run.stdout+run.stderr).includes(initial[k])); }
     assert.equal(orch.GOOGLE_CLIENT_ID,'x'); assert.equal(readFileSync(passwordPath,'utf8').trim(),orch.DASHBOARD_ADMIN_PASSWORD);
     for (const k of keys) assert.equal(readFileSync(orchPath,'utf8').split('\n').filter(x=>x.startsWith(k+'=')).length,1);
-    const selected=backends.split(','); assert.equal(orch.DEFAULT_PAS_AGENT_ID,selected[0]+'-default'); assert.equal(worker.SOULSTREAM_BACKENDS,backends);
+    const selected=backends.split(','); assert.equal(orch.DEFAULT_PAS_AGENT_ID,'seosoyoung-pas'); assert.equal(worker.SOULSTREAM_BACKENDS,backends);
     assert.equal(Boolean(worker.CLAUDE_AUTH_TOKEN_PATH),selected.includes('claude')); assert.equal(worker.CODEX_ADAPTER_MODE,selected.includes('codex')?'app-server':undefined);
     assert.equal(worker.CLAUDE_CODE_EXECPATH,undefined); assert.equal(worker.CODEX_CLI_PATH,undefined);
-    for (const name of ['claude','codex','antigravity']) assert.equal(agents.includes(`id: ${name}-default`),selected.includes(name));
+    assert.deepEqual([...agents.matchAll(/^  - id: (.+)$/gm)].map(m=>m[1]),['seosoyoung','seosoyoung-pas',...(selected.includes('claude')?['card-orchestrator']:[]),...selected.map(name=>`${name}-default`)]);
   }
+  const files=[orchPath,workerPath,passwordPath,...['agents.yaml','mcp-registry.yaml','mcp-profiles.yaml'].map(p=>join(root,'config',p)),join(home,'workspace','AGENTS.md')];
+  const before=files.map(p=>readFileSync(p));
+  run=render(home,root,'claude,codex,antigravity',fake); assert.equal(run.status,0,run.stderr);
+  files.forEach((p,i)=>assert.ok(readFileSync(p).equals(before[i]),p));
  } finally { rmSync(dir,{recursive:true,force:true}); }
 });
 test('database password prepared before rendering is retained', () => {
  const dir=mkdtempSync(join(tmpdir(),'install-db-password-')), home=join(dir,'home'), root=join(home,'soulstream');
  try {
-  const run=spawnSync('bash',['-c','source "$1"; BACKENDS=codex; prepare_secrets "$3"; previous=$DB_PASSWORD; render_config "$2" "$3" "$previous"; [[ "$previous" == "$DB_PASSWORD" ]]','bash',script,home,root],{encoding:'utf8'});
+  const fake=prepareRoot(dir,root);
+  const run=spawnSync('bash',['-ec','source "$1"; BACKENDS=codex; setup_secrets "$3" "$2/atom"; previous=$DB_PASSWORD; render_config "$2" "$3"; grep -qx "DATABASE_URL=postgresql://soulstream:${previous}@127.0.0.1:5432/soulstream" "$3/.env.orch"','bash',script,home,root],{encoding:'utf8',env:fake.env()});
   assert.equal(run.status,0,run.stderr);
  } finally { rmSync(dir,{recursive:true,force:true}); }
 });
 test('clone reruns ignore untracked installer files and protect tracked changes', () => {
  const dir=mkdtempSync(join(tmpdir(),'install-clone-')), origin=join(dir,'origin.git'), source=join(dir,'source'), root=join(dir,'clone');
  const git=(...args)=>execFileSync('git',args,{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
- const run=(ref,refSet)=>spawnSync('bash',['-ec','source "$1"; as_soul() { "$@"; }; REF="$3"; REF_SET="$4"; clone_repository "$2"','bash',script,root,ref,refSet],{encoding:'utf8'});
+ const run=(ref,refSet)=>spawnSync('bash',['-ec','source "$1"; as_soul() { "$@"; }; clone_repository "$2" https://example.invalid/unused.git "$3" "$4"','bash',script,root,ref,refSet],{encoding:'utf8'});
  try {
   git('init','--bare','--initial-branch=main',origin);
   git('init','--initial-branch=main',source);
@@ -92,12 +107,14 @@ test('Tailscale identity selection handles personal and tagged devices', () => {
 
 test('Tailscale rendering preserves secrets and password across mode changes', () => {
  const dir=mkdtempSync(join(tmpdir(),'install-tailscale-')), home=join(dir,'home'), root=join(home,'soulstream');
- const renderMode=(mode)=>spawnSync('bash',['-c','source "$1"; BACKENDS=codex; TAILSCALE="$4"; TAILSCALE_DNS=node.tailnet.ts.net; TAILSCALE_USER=owner@example.com; TAILSCALE_AUTH_KEY=secret-key; render_config "$2" "$3"','bash',script,home,root,mode],{encoding:'utf8'});
+ let fake;
+ const renderMode=(mode)=>spawnSync('bash',['-c','set -Eeuo pipefail; source "$1"; BACKENDS=codex; TAILSCALE="$4"; TAILSCALE_DNS=node.tailnet.ts.net; TAILSCALE_USER=owner@example.com; TAILSCALE_AUTH_KEY=secret-key; setup_secrets "$3" "$2/atom"; render_config "$2" "$3"','bash',script,home,root,mode],{encoding:'utf8',env:fake.env()});
  try {
+  fake=prepareRoot(dir,root);
   let run=renderMode('true'); assert.equal(run.status,0,run.stderr);
   const orchPath=join(root,'.env.orch'), passwordPath=join(root,'.admin-password');
   assert.equal(statSync(orchPath).mode & 0o777,0o600);
-  assert.throws(()=>statSync(passwordPath));
+  assert.equal(statSync(passwordPath).mode & 0o777,0o600);
   let orch=env(orchPath); assert.equal(orch.TAILSCALE_AUTH_ENABLED,'true'); assert.equal(orch.TAILSCALE_ALLOWED_LOGIN,'owner@example.com');
   assert.equal(orch.SOULSTREAM_PUBLIC_URL,'https://node.tailnet.ts.net'); assert.equal(orch.CORS_ALLOWED_ORIGINS,'https://node.tailnet.ts.net,http://127.0.0.1:5200');
   assert.equal(orch.DASHBOARD_ADMIN_PASSWORD,undefined); assert.ok(!(run.stdout+run.stderr+readFileSync(orchPath,'utf8')).includes('secret-key'));

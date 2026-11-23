@@ -171,6 +171,24 @@ jobs:
           node packages/db-schema/scripts/verify-vitest-contract-result.mjs \
             soul-server-ts/database-release-postgres-results.json 29
 
+  linux-installer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Check installer syntax
+        run: bash -n install/install.sh
+
+      - name: Run installer tests
+        run: node --test install/tests/*.test.mjs
+
   test-install:
     runs-on: windows-latest
     timeout-minutes: 30

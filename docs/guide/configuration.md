@@ -38,12 +38,14 @@ endpoint remains unavailable until login and consent are integrated.
 
 ### Knowledge, search, usage, and runner controls
 
-- `ATOM_ENABLED`: enables optional Atom knowledge tree integration.
-- `ATOM_SERVER_URL`: base URL of the Atom server.
-- `ATOM_API_KEY`: API key for Atom requests.
-- `ATOM_ROOT_NODE_ID`: root node ID for Atom tree lookups.
+- `ATOM_ENABLED`: enables optional Atom knowledge tree integration. The Linux installer sets `true`.
+- `ATOM_SERVER_URL`: base URL of the Atom server. The Linux installer sets `http://127.0.0.1:4200`.
+- `ATOM_API_KEY`: API key for Atom requests. The Linux installer issues a write-scoped agent key and keeps it in `/home/soulstream/soulstream/.atom-api-key` (`0600`).
+- `ATOM_ROOT_NODE_ID`: root node ID for Atom tree lookups. The Linux installer does not set it.
 - `SKILL_CATALOG_NODE_ID`: Atom node ID for the shared skill catalog.
 - `DOMAIN_CATALOG_NODE_ID`: Atom node ID for domain catalogs used by `load_skill`.
+
+The Linux installer always writes `SKILL_CATALOG_NODE_ID` and `DOMAIN_CATALOG_NODE_ID`, taking the values from the seed map `config/.atom-seed-map.json` written when the default instructions are loaded. When the map has no value (for example, because Atom already had a tree), the line is written with an empty value: the orchestrator still starts, and `search_skills` and `load_skill` return a catalog lookup error until you set the node IDs. Leaving the lines out would fall back to built-in node IDs that do not exist on a new Atom installation.
 - `TYPESAFE_API_KEY`: optional API key for Jev reranking in expanded session search (when absent, expanded search returns partial RRF results; see [`orch-server-ts/docs/session-search-deployment.md`](../../orch-server-ts/docs/session-search-deployment.md)).
 - `CODEX_CLI_PATH`: optional path override for the Codex CLI binary on ephemeral routes.
 - `AGY_CLI_PATH`: optional path override for the Antigravity (`agy`) CLI binary.
@@ -72,6 +74,14 @@ Defined in [`.env.soul-server-ts.example`](../../.env.soul-server-ts.example):
 - `SOULSTREAM_NODE_ID`: unique node identifier advertised to `orch-server-ts`.
 - `SOULSTREAM_UPSTREAM_URL`: `ws://` or `wss://` URL of the orchestrator's `/ws/node` endpoint.
 - `EVENT_OUTBOX_DIR`: node-local directory for durable event buffering and retry.
+
+### Atom
+
+- `ATOM_ENABLED`: `true` or `false`; enables Atom context injection for agent profiles. The Linux installer sets `true`.
+- `ATOM_SERVER_URL`: base URL of the Atom server (`http://127.0.0.1:4200` on a Linux installation).
+- `ATOM_API_KEY`: API key sent as `x-api-key`; the installer writes the same key as the orchestrator's `ATOM_API_KEY`. The `atom` MCP server entry in `mcp-registry.yaml` reads it from this environment.
+
+The worker build hashes `.env.soul-server-ts`, so the installer finalizes these values before building.
 
 ### Local HTTP listener and auth
 
@@ -131,6 +141,45 @@ agents:
 - Required fields: `id`, `name`, `backend`, `workspace_dir`.
 - Optional fields: `model`, `default_preset`, `max_turns`, `allowed_tools`, `disallowed_tools`, `portrait_path`, `context_scope` (`full` by default; `minimal` omits folder-inherited `page_context`, folder `atom_context`, `board_workspace`, `running_sessions`, and `cogito_context`), `claude_auto_memory_enabled` (Claude-only; `false` disables reading and writing `MEMORY.md`), `mcp_profile`, `atom_contexts`, and `env`.
 - For Claude sessions, the runner always adds `Monitor` to `disallowed_tools` to block this background task entry point (#1673).
+
+### Profiles created by the Linux installer
+
+The installer rewrites `config/agents.yaml` on every run with these profiles, in this order. "First backend" is the first value of `--backends`; its preset is `claude-opus` for `claude`, `codex-6.2-sol` for `codex`, and `gemini-4-carbon` for `antigravity`.
+
+| Profile | Backend and preset | Other settings |
+|---|---|---|
+| `seosoyoung` (서소영) | first backend | `mcp_profile: default`, `claude_auto_memory_enabled: false`, a short `disallowed_tools` list, `portrait_path` under `install/assets/portraits/` |
+| `seosoyoung-pas` (서소영 (PAS)) | first backend | `mcp_profile: pas`, `context_scope: minimal`, `claude_auto_memory_enabled: false`, the PAS `disallowed_tools` list, its own portrait; set as the orchestrator's `DEFAULT_PAS_AGENT_ID` |
+| `card-orchestrator` (카드 오케스트레이터) | `claude`, `claude-sonnet`; only when `claude` is selected | `context_scope: minimal`; card orchestration itself stays disabled until it is turned on in the dashboard |
+| `<backend>-default` (Claude, Codex, Antigravity) | each selected backend in `--backends` order | `mcp_profile: default` |
+
+Each profile receives `atom_contexts` from the nodes loaded with the default instructions (depth in parentheses; "index" entries use `mode: index` with depth 1):
+
+| Profile | `atom_contexts` |
+|---|---|
+| `seosoyoung` | common rules (5), common extra rules (index), backend rules (5), 서소영 rules (5), 서소영 skills (1) |
+| `seosoyoung-pas` | common rules (5), backend rules (5), 서소영 general rules (0), PAS rules (5), PAS extra rules (index), PAS skills (1) |
+| `card-orchestrator` | card orchestrator rules (5) |
+| `<backend>-default` | common rules (5), common extra rules (index), coding rules (5), coding extra rules (0), backend rules (5) |
+
+Backend rules are the Claude rules for `claude` and the Codex rules for `codex`; `antigravity` has none. A node missing from the seed map is left out, and a profile with no remaining node has no `atom_contexts`.
+
+## MCP servers (`mcp-registry.yaml`, `mcp-profiles.yaml`)
+
+The Linux installer registers two MCP servers in `config/mcp-registry.yaml`: `soulstream` (`http://127.0.0.1:4205/mcp`, `Authorization` from `PORTABLE_LOCAL_MCP_AUTHORIZATION`) and `atom` (`http://127.0.0.1:4200/mcp`, `x-api-key` from `ATOM_API_KEY`). `config/mcp-profiles.yaml` defines `default` and `pas` (named `PAS`), and both use `mcp_servers: [soulstream, atom]`.
+
+## Atom (`/home/soulstream/atom/.env`)
+
+The Linux installer manages these keys in Atom's `.env` (`0600`, owned by `soulstream`) and keeps any other line you add:
+
+- `NODE_ENV=production`, `API_HOST=127.0.0.1`, `API_PORT=4200`
+- `DATABASE_URL`: the `atom` database on the local PostgreSQL, with the same `soulstream` role and password as Soulstream.
+- `JWT_SECRET`: generated once and kept across reruns.
+- `DASHBOARD_ADMIN_PASSWORD`: the administrator password shared with Soulstream (`/home/soulstream/soulstream/.admin-password`).
+- `DASHBOARD_DIR`: `/home/soulstream/atom/dashboard/dist`.
+- `FRONTEND_URL`: `http://127.0.0.1:4200`, or `https://<MagicDNS name>:8443` with `--tailscale`.
+
+Atom runs as `soulstream-atom.service`, which starts before the Soulstream services.
 
 ## Model catalog (`packages/model-catalog/data/model-catalog.yaml`)
 
