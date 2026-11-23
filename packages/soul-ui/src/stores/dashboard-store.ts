@@ -21,7 +21,13 @@
 
 import { create, type StateCreator } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import { createJSONStorage, persist } from "zustand/middleware";
+import {
+  createJSONStorage,
+  persist,
+  type PersistStorage,
+  type StateStorage,
+  type StorageValue,
+} from "zustand/middleware";
 import type { SessionSummary } from "@shared/types";
 import { createProcessingContext } from "./processing-context";
 import type { DashboardState, DashboardActions } from "./dashboard-store-types";
@@ -143,11 +149,10 @@ export function createChatSessionStore(sessionId: string | null): ChatSessionSto
 
 // === Store ===
 
-type PersistStorage = {
-  getItem: (name: string) => string | null;
-  setItem: (name: string, value: string) => void;
-  removeItem: (name: string) => void;
-};
+type DashboardPersistedState = Pick<
+  DashboardState,
+  "drafts" | "folderSortMode" | "leftNavigationMode" | "folderBoardLayouts"
+>;
 
 const dashboardMemoryStorage = (() => {
   const store = new Map<string, string>();
@@ -159,10 +164,10 @@ const dashboardMemoryStorage = (() => {
     removeItem: (name: string) => {
       store.delete(name);
     },
-  } satisfies PersistStorage;
+  } satisfies StateStorage;
 })();
 
-function getDashboardPersistStorage(): PersistStorage {
+function getDashboardPersistStorage(): StateStorage {
   if (typeof window === "undefined") return dashboardMemoryStorage;
   try {
     return window.localStorage;
@@ -171,12 +176,53 @@ function getDashboardPersistStorage(): PersistStorage {
   }
 }
 
+function isSameDashboardPersistedState(
+  previous: StorageValue<DashboardPersistedState>,
+  next: StorageValue<DashboardPersistedState>,
+): boolean {
+  return (
+    previous.version === next.version
+    && previous.state.drafts === next.state.drafts
+    && previous.state.folderSortMode === next.state.folderSortMode
+    && previous.state.leftNavigationMode === next.state.leftNavigationMode
+    && previous.state.folderBoardLayouts === next.state.folderBoardLayouts
+  );
+}
+
+// zustand persist는 영속 필드와 무관한 set()에도 매번 partialize -> JSON.stringify
+// -> localStorage.setItem을 실행한다. 스트리밍 플러시처럼 set()이 쏟아질 때를
+// 막기 위해, 직전 성공 쓰기와 영속 필드 참조 및 저장 버전이 모두 같으면
+// 직렬화와 쓰기를 건너뛴다. 실패한 쓰기는 기억하지 않고, removeItem과 재수화
+// 시점에는 캐시를 비워 저장소와의 정합을 맞춘다.
+function createDashboardPersistStorage(): PersistStorage<DashboardPersistedState> {
+  const jsonStorage = createJSONStorage<DashboardPersistedState>(getDashboardPersistStorage);
+  if (jsonStorage === undefined) {
+    throw new Error("dashboard persist storage is unavailable");
+  }
+  let lastWritten: StorageValue<DashboardPersistedState> | null = null;
+  return {
+    getItem: (name) => {
+      lastWritten = null;
+      return jsonStorage.getItem(name);
+    },
+    setItem: (name, value) => {
+      if (lastWritten !== null && isSameDashboardPersistedState(lastWritten, value)) return;
+      jsonStorage.setItem(name, value);
+      lastWritten = value;
+    },
+    removeItem: (name) => {
+      lastWritten = null;
+      jsonStorage.removeItem(name);
+    },
+  };
+}
+
 export const useDashboardStore = create<DashboardState & DashboardActions>()(
   persist(
     createDashboardStateCreator(),
     {
       name: "soul-dashboard-storage",
-      storage: createJSONStorage(getDashboardPersistStorage),
+      storage: createDashboardPersistStorage(),
       // 입력창 draft + 폴더 정렬 영속화 (세션 데이터는 제외)
       // wallpaper는 요구사항상 별도 localStorage 키(soul-wallpaper)를 사용한다.
       partialize: (state) => ({

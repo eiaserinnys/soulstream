@@ -51,6 +51,9 @@ interface MarkdownRenameState {
 }
 
 const COLLAPSED_BOARD_ITEM_LIMIT = 5;
+const ITEM_INVALIDATION_SOURCES = ["catalog", "folder", "replay"] as const;
+const REPLAY_INVALIDATION_SOURCES = ["replay"] as const;
+const CUSTOM_VIEW_INVALIDATION_SOURCES = ["custom_view", "replay"] as const;
 
 export function FolderInlineBoard({
   folderId,
@@ -73,11 +76,11 @@ export function FolderInlineBoard({
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
-  const itemInvalidationKey = useV3InvalidationKey(["catalog", "folder", "replay"]);
+  const itemInvalidationKey = useV3InvalidationKey(ITEM_INVALIDATION_SOURCES);
   const pageInvalidationKey = useV3PageInvalidationKey(
     items.filter((item) => item.itemType === "markdown").map((item) => item.itemId),
-  ) + useV3InvalidationKey(["replay"]) + markdownDocumentsRevision;
-  const customViewInvalidationKey = useV3InvalidationKey(["custom_view", "replay"]);
+  ) + useV3InvalidationKey(REPLAY_INVALIDATION_SOURCES) + markdownDocumentsRevision;
+  const customViewInvalidationKey = useV3InvalidationKey(CUSTOM_VIEW_INVALIDATION_SOURCES);
   const itemsRef = useRef(items);
   const departedItemIdsRef = useRef(new Set<string>());
   const addBoardItem = useDashboardStore((state) => state.addBoardItem);

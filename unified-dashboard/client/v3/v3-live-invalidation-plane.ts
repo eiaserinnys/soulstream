@@ -112,9 +112,41 @@ export function selectV3PlannerInvalidationKeys(
   };
 }
 
+function isSamePlannerInvalidationKeys(
+  previous: V3PlannerInvalidationKeys,
+  next: V3PlannerInvalidationKeys,
+): boolean {
+  return (
+    previous.daily === next.daily
+    && previous.project === next.project
+    && previous.starred === next.starred
+    && previous.runHistory === next.runHistory
+    && previous.pageDetail === next.pageDetail
+  );
+}
+
+// useSyncExternalStore는 스냅샷 참조가 바뀌면 리렌더하므로, 다섯 값이 그대로면
+// 직전 객체를 그대로 돌려줘 플래너 무관 사건에서 구독자 렌더를 막는다.
+let lastPlannerInvalidationKeys: V3PlannerInvalidationKeys | null = null;
+
+function getPlannerInvalidationKeysSnapshot(): V3PlannerInvalidationKeys {
+  const next = selectV3PlannerInvalidationKeys(snapshot);
+  if (
+    lastPlannerInvalidationKeys !== null
+    && isSamePlannerInvalidationKeys(lastPlannerInvalidationKeys, next)
+  ) {
+    return lastPlannerInvalidationKeys;
+  }
+  lastPlannerInvalidationKeys = next;
+  return next;
+}
+
 export function useV3PlannerInvalidationKeys(): V3PlannerInvalidationKeys {
-  const current = useSyncExternalStore(subscribe, getV3InvalidationSnapshot, getV3InvalidationSnapshot);
-  return selectV3PlannerInvalidationKeys(current);
+  return useSyncExternalStore(
+    subscribe,
+    getPlannerInvalidationKeysSnapshot,
+    getPlannerInvalidationKeysSnapshot,
+  );
 }
 
 export function selectV3InvalidationKey(
@@ -125,8 +157,15 @@ export function selectV3InvalidationKey(
 }
 
 export function useV3InvalidationKey(sources: readonly V3InvalidationSource[]): number {
-  const current = useSyncExternalStore(subscribe, getV3InvalidationSnapshot, getV3InvalidationSnapshot);
-  return selectV3InvalidationKey(current, sources);
+  const sourcesKey = sources.join("\0");
+  const getSnapshot = useCallback(
+    () => selectV3InvalidationKey(
+      snapshot,
+      sourcesKey === "" ? [] : (sourcesKey.split("\0") as V3InvalidationSource[]),
+    ),
+    [sourcesKey],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 export function trackedV3PageIds(
@@ -189,6 +228,7 @@ export function useV3PageInvalidationKey(pageIds: readonly (string | null | unde
 
 export function resetV3InvalidationForTest(): void {
   snapshot = createSnapshot();
+  lastPlannerInvalidationKeys = null;
   pageListeners.clear();
   pageRevisions.clear();
 }
