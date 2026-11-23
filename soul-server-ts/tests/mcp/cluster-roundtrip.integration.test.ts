@@ -113,6 +113,15 @@ describe("cluster MCP roundtrip", () => {
       return await withMcpRequestContext(requestContext, () => client.callTool({ name, arguments: args }));
     } finally { await client.close(); await server.close(); }
   }
+  it("creates a session with the source session's folder through the HTTP route", async () => {
+    fixture.seed();
+    const response = await fixture.app.inject({ method: "POST", url: "/api/sessions", headers: { authorization: "Bearer service-token" }, payload: {
+      nodeId: "node-a", profile: "roselin", prompt: "수행", sourceSessionId: "caller",
+    } });
+    expect(response.statusCode, response.body).toBe(201);
+    expect(fixture.sent[0]).toMatchObject({ type: "create_session", folderId: "inherited-folder" });
+    expect(fixture.sent[0]).not.toHaveProperty("sourceSessionId");
+  });
   it.each(cases.map(([label, name, args, requestContext = context, fails = false, offline = false]) =>
     [label, name, args, requestContext, fails, offline] as [string, string, Record<string, unknown>, McpRequestContext, boolean, boolean]))("preserves %s", async (label, name, args, requestContext = context, fails = false, offline = false) => {
     fixture.seed(offline);
