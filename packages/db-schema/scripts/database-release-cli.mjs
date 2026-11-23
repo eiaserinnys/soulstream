@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 
+import { resolveDatabaseReleaseAuthority } from "./database-release-installer.mjs";
 import {
   databaseReleaseFailure,
   serializeDatabaseReleaseResult,
@@ -24,6 +25,10 @@ function assignCanonicalEnvironmentValue(env, name, actual) {
 }
 
 export async function applyManifestContract(manifestPath, databaseContractPath, env) {
+  return (await loadManifestContract(manifestPath, databaseContractPath, env))?.migration ?? null;
+}
+
+async function loadManifestContract(manifestPath, databaseContractPath, env) {
   if (!manifestPath && !databaseContractPath) return null;
   if (!manifestPath || !databaseContractPath) {
     throw new Error("JOURNAL_GATE_FAILED: manifest and database contract must be paired");
@@ -62,7 +67,7 @@ export async function applyManifestContract(manifestPath, databaseContractPath, 
     "HANIEL_DATABASE_CONTRACT_DIGEST",
     sha256(contractBytes),
   );
-  return manifest.migration;
+  return { migration: manifest.migration, contract };
 }
 
 export async function runDatabaseReleaseCli(
@@ -78,15 +83,17 @@ export async function runDatabaseReleaseCli(
   try {
     const manifestPath = optionArgument(args, "--manifest");
     const databaseContractPath = optionArgument(args, "--database-contract");
-    const manifestMigration = await applyManifestContract(
+    const loaded = await loadManifestContract(manifestPath, databaseContractPath, env);
+    const authority = await resolveDatabaseReleaseAuthority({
       manifestPath,
       databaseContractPath,
-      env,
-    );
+      contract: loaded?.contract ?? null,
+    });
     const separator = args.indexOf("--");
     stdout(serializeDatabaseReleaseResult(await runDatabaseRelease(command, {
       env,
-      manifestMigration,
+      authority,
+      manifestMigration: loaded?.migration ?? null,
       subphase: optionArgument(args, "--subphase"),
       childCommand: separator < 0 ? undefined : args.slice(separator + 1),
     }), env));

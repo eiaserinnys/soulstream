@@ -1,16 +1,26 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { provisionTestDatabase, type TestDatabaseLease } from "./database_test_harness.js";
+import { makeTempDirSync } from "../helpers/temp_dir.js";
+import { runDatabaseReleaseCli } from
+  "../../../packages/db-schema/scripts/database-release-cli.mjs";
 import {
   classifyLedgerReconciliation,
   inspectUserObjectInventory,
 } from "../../../packages/db-schema/scripts/database-release-journal.mjs";
-import { classifyDatabaseOperation } from
-  "../../../packages/db-schema/scripts/release-executor.mjs";
+import {
+  classifyDatabaseOperation,
+  databaseReleaseJournalPath,
+  readDatabaseReleaseJournal,
+  runDatabaseRelease,
+} from "../../../packages/db-schema/scripts/release-executor.mjs";
 
 const hasDocker = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
 const externalDatabaseUrl = process.env.TEST_DATABASE_URL?.trim() ?? "";
@@ -19,6 +29,17 @@ const describeWithTestDatabase = hasTestDatabase ? describe : describe.skip;
 const USER = "release_inventory_test";
 const PASSWORD = "release_inventory_secret";
 const DATABASE = "release_inventory_test_db";
+const INSTALLER_MANIFEST = fileURLToPath(new URL(
+  "../../../install/release-manifest-installer.json",
+  import.meta.url,
+));
+const INSTALLER_CONTRACT = fileURLToPath(new URL(
+  "../../../install/database-release-installer.json",
+  import.meta.url,
+));
+const INSTALLER_UNITS = ["soulstream-orch.service", "soulstream-worker.service"];
+const DROP_MIGRATION = "172_drop_claude_transcript_store.sql";
+const ADD_MIGRATION = "173_mcp_central_config.sql";
 let databaseUrl = "";
 let databaseLease: TestDatabaseLease | undefined;
 
@@ -254,7 +275,167 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
       }
     }
   });
+
+  it("upgrades a 171 database with user rows through the installer pair", async () => {
+    const admin = postgres(databaseUrlFor(databaseUrl, "postgres"), {
+      max: 1,
+      idle_timeout: 1,
+    });
+    const database = `release_installer_test_${process.pid}_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+    const root = makeTempDirSync("release-installer-postgres-");
+    let databaseCreated = false;
+    let sql: ReturnType<typeof postgres> | undefined;
+    try {
+      await admin.unsafe(`CREATE DATABASE ${database}`);
+      databaseCreated = true;
+      sql = postgres(safeTestDatabaseUrl(databaseUrlFor(databaseUrl, database)), {
+        max: 1,
+        idle_timeout: 1,
+      });
+      // The executor fence reads this local soulstream target. The test
+      // connection is injected, so nothing dials this address.
+      writeFileSync(
+        join(root, ".env.orch"),
+        "DATABASE_URL=postgresql://soulstream@127.0.0.1:9/soulstream\n",
+        "utf8",
+      );
+
+      const firstInstall = installerRun(sql, root, "1a".repeat(20), async () => (
+        "LoadState=not-found\nActiveState=inactive\nSubState=dead\nMainPID=0\n"
+      ));
+      await expect(firstInstall.phase("preflight")).resolves.toMatchObject({
+        operation: "fresh_install",
+      });
+      await expect(firstInstall.phase("apply")).resolves.toMatchObject({ status: "applied" });
+      await expect(firstInstall.phase("verify")).resolves.toMatchObject({ status: "verified" });
+      expect(firstInstall.units).toEqual([]);
+
+      // Back to the 171 schema: 173 objects gone, the 172 store present, user rows kept.
+      await sql.unsafe(`
+        DELETE FROM schema_migrations
+         WHERE ordinal >= (
+           SELECT ordinal FROM schema_migrations WHERE migration_id = '${DROP_MIGRATION}'
+         );
+        DROP TABLE mcp_agent_bindings, mcp_server_icons, mcp_config_revisions, mcp_profiles,
+          mcp_servers, mcp_secrets, mcp_managed_nodes, mcp_config_state;
+        CREATE TABLE claude_transcript_entries (
+            id          BIGSERIAL PRIMARY KEY,
+            project_key TEXT NOT NULL,
+            session_id  TEXT NOT NULL,
+            subpath     TEXT NOT NULL DEFAULT '',
+            entry_uuid  TEXT,
+            entry       JSONB NOT NULL,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        INSERT INTO claude_transcript_entries (project_key, session_id, entry)
+        VALUES ('installer', 'session-1', '{}'::jsonb);
+        INSERT INTO users (email, display_name, is_admin)
+        VALUES ('owner@local', 'Owner', TRUE);
+      `);
+
+      const upgrade = installerRun(sql, root, "2b".repeat(20), async () => (
+        "LoadState=loaded\nActiveState=inactive\nSubState=dead\nMainPID=0\n"
+      ));
+      await expect(upgrade.phase("preflight")).resolves.toMatchObject({
+        operation: "upgrade",
+        pending_count: 2,
+        pending_additive_only: false,
+        status: "preflight_complete",
+      });
+      await expect(upgrade.phase("apply")).resolves.toMatchObject({ status: "applied" });
+      await expect(upgrade.phase("verify")).resolves.toMatchObject({ status: "verified" });
+      expect(upgrade.units).toEqual([...INSTALLER_UNITS, ...INSTALLER_UNITS]);
+
+      const [objects] = await sql`
+        SELECT to_regclass('claude_transcript_entries')::text AS transcript,
+               to_regclass('mcp_servers')::text AS mcp_servers
+      `;
+      expect(objects).toEqual({ transcript: null, mcp_servers: "mcp_servers" });
+      const ledger = await sql`
+        SELECT migration_id, release_id FROM schema_migrations
+         WHERE migration_id IN (${DROP_MIGRATION}, ${ADD_MIGRATION})
+         ORDER BY ordinal
+      `;
+      expect(ledger.map((row) => ({ ...row }))).toEqual([
+        { migration_id: DROP_MIGRATION, release_id: upgrade.releaseId },
+        { migration_id: ADD_MIGRATION, release_id: upgrade.releaseId },
+      ]);
+      expect(await sql`SELECT email FROM users WHERE email = 'owner@local'`).toHaveLength(1);
+      const journal = await readDatabaseReleaseJournal(databaseReleaseJournalPath(upgrade.env));
+      expect(journal).toMatchObject({ status: "verified", haniel_journal_path: null });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      try {
+        await sql?.end({ timeout: 5 });
+      } finally {
+        try {
+          if (databaseCreated) {
+            await admin.unsafe(`DROP DATABASE ${database}`);
+            expect(await admin`SELECT 1 FROM pg_database WHERE datname = ${database}`).toHaveLength(0);
+          }
+        } finally {
+          await admin.end({ timeout: 5 });
+        }
+      }
+    }
+  }, 120_000);
 });
+
+/**
+ * Runs one installer release phase through the CLI with the identity U11b
+ * setup_schema passes after checkout. Only the connection and systemctl are
+ * injected.
+ */
+function installerRun(
+  sql: ReturnType<typeof postgres>,
+  root: string,
+  head: string,
+  systemctlShow: (unit: string) => Promise<string>,
+) {
+  const releaseId = `clean-${head.slice(0, 12)}`;
+  const env: Record<string, string> = {
+    HANIEL_SERVICE_ENV_FILE: join(root, ".env.orch"),
+    HANIEL_TARGET_HEAD: head,
+    HANIEL_PREVIOUS_HEAD: head,
+    HANIEL_RELEASE_ID: releaseId,
+    HANIEL_REQUEST_ID: `installer-${head}`,
+    HANIEL_DEPLOY_REPO: "soulstream",
+    HANIEL_BACKUP_DIR: join(root, ".local", "database-release", releaseId),
+  };
+  const units: string[] = [];
+  const recordedSystemctl = async (unit: string) => {
+    units.push(unit);
+    return await systemctlShow(unit);
+  };
+  return {
+    env,
+    releaseId,
+    units,
+    async phase(command: string) {
+      const lines: string[] = [];
+      const code = await runDatabaseReleaseCli(async (cliCommand, { subphase, ...options }) => (
+        await runDatabaseRelease(cliCommand, {
+          ...options,
+          subphase: subphase ?? undefined,
+          sql,
+          systemctlShow: recordedSystemctl,
+        })
+      ), {
+        argv: [
+          command,
+          "--manifest", INSTALLER_MANIFEST,
+          "--database-contract", INSTALLER_CONTRACT,
+        ],
+        env: { ...env },
+        stdout: (line) => lines.push(line),
+        stderr: (line) => lines.push(line),
+      });
+      expect(code, lines.join("\n")).toBe(0);
+      return JSON.parse(lines.at(-1) ?? "null") as Record<string, unknown>;
+    },
+  };
+}
 
 function safeTestDatabaseUrl(value: string) {
   const database = new URL(value).pathname.slice(1);

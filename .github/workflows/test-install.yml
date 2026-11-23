@@ -100,6 +100,7 @@ jobs:
         shell: bash
         run: |
           corepack pnpm --dir soul-server-ts exec vitest run \
+            tests/scripts/release_executor_installer.test.ts \
             tests/scripts/release_executor_concurrency_review.test.ts \
             tests/scripts/release_executor_cli_review.test.ts \
             tests/scripts/release_executor_review.test.ts \
@@ -169,7 +170,7 @@ jobs:
             --reporter=default --reporter=json \
             --outputFile.json=database-release-postgres-results.json
           node packages/db-schema/scripts/verify-vitest-contract-result.mjs \
-            soul-server-ts/database-release-postgres-results.json 29
+            soul-server-ts/database-release-postgres-results.json 30
 
   linux-installer:
     runs-on: ubuntu-latest

@@ -1,0 +1,26 @@
+{
+  "schema_version": "haniel.release.v1",
+  "release_id": "soulstream-linux-installer-v1",
+  "environment_service": "soulstream-orch.service",
+  "migration": {
+    "operation": "discover",
+    "result_contract": "soulstream.database-release.v1",
+    "preflight": {
+      "name": "migration-preflight",
+      "command": "node packages/db-schema/scripts/release-executor.mjs preflight --manifest install/release-manifest-installer.json --database-contract install/database-release-installer.json",
+      "timeout_seconds": 300
+    },
+    "apply": {
+      "name": "apply-migrations",
+      "command": "node packages/db-schema/scripts/release-executor.mjs apply --manifest install/release-manifest-installer.json --database-contract install/database-release-installer.json",
+      "timeout_seconds": 300
+    }
+  },
+  "post_start_verify": [
+    {
+      "name": "verify-migration-ledger",
+      "command": "node packages/db-schema/scripts/release-executor.mjs verify --manifest install/release-manifest-installer.json --database-contract install/database-release-installer.json",
+      "timeout_seconds": 300
+    }
+  ]
+}

@@ -23,6 +23,11 @@ import {
   sameJson,
 } from "./database-release-plan-identity.mjs";
 import { readHanielReleaseEvidence, readStringList } from "./database-release-evidence.mjs";
+import {
+  INSTALLER_DATABASE_AUTHORITY,
+  assertInstallerQuiescence,
+  databaseReleaseAuthority,
+} from "./database-release-installer.mjs";
 import { classifyMigrationSql } from "./migration-additive.mjs";
 
 export { fingerprintInventory, inspectUserObjectInventory };
@@ -85,7 +90,10 @@ export function databaseReleaseJournalArchivePath(path, journal) {
   );
 }
 
-export function journalIdentity(env, operation) {
+export function journalIdentity(env, operation, authority) {
+  // The installer has no Haniel deployment journal; its identity keeps the key
+  // with null so the Haniel identity shape and old journal comparisons stay.
+  const installer = databaseReleaseAuthority(authority) === INSTALLER_DATABASE_AUTHORITY;
   return {
     request_id: required(env, "HANIEL_REQUEST_ID"),
     repo: required(env, "HANIEL_DEPLOY_REPO"),
@@ -95,7 +103,7 @@ export function journalIdentity(env, operation) {
     target_head: required(env, "HANIEL_TARGET_HEAD"),
     manifest_checksum: required(env, "HANIEL_MANIFEST_DIGEST"),
     database_contract_checksum: required(env, "HANIEL_DATABASE_CONTRACT_DIGEST"),
-    haniel_journal_path: required(env, "HANIEL_DEPLOYMENT_JOURNAL"),
+    haniel_journal_path: installer ? null : required(env, "HANIEL_DEPLOYMENT_JOURNAL"),
     affected_services: readStringList(env, "HANIEL_DATABASE_AFFECTED_SERVICES"),
     required_subphases: optionalList(env, "HANIEL_DATABASE_REQUIRED_SUBPHASES"),
   };
@@ -268,10 +276,11 @@ export async function createDatabaseReleaseJournal({
   plan,
   inventory,
   now = () => new Date(),
+  authority,
 }) {
   const path = databaseReleaseJournalPath(env);
   return await withDatabaseReleaseLease(databaseReleaseJournalLockPath(path), async () => {
-    const identity = journalIdentity(env, operation);
+    const identity = journalIdentity(env, operation, authority);
     try {
       const current = await readDatabaseReleaseJournal(path);
       try {
@@ -421,11 +430,18 @@ export function classifyLedgerReconciliation(journal, plan, inventory) {
   return exact ? "full" : "ambiguous";
 }
 
-export async function assertDatabaseReleaseApplyGate({ env, operation, plan, inventory }) {
+export async function assertDatabaseReleaseApplyGate({
+  env,
+  operation,
+  plan,
+  inventory,
+  authority,
+  systemctlShow,
+}) {
   const path = databaseReleaseJournalPath(env);
   const journal = await readDatabaseReleaseJournal(path);
   try {
-    assertDatabaseReleaseIdentity(journal, journalIdentity(env, operation));
+    assertDatabaseReleaseIdentity(journal, journalIdentity(env, operation, authority));
   } catch (error) {
     throw new Error(`JOURNAL_GATE_FAILED: ${error.message}`);
   }
@@ -436,7 +452,15 @@ export async function assertDatabaseReleaseApplyGate({ env, operation, plan, inv
   if (!Number.isInteger(expectedRevision) || expectedRevision !== journal.revision) {
     throw new Error("JOURNAL_GATE_FAILED: journal revision differs");
   }
-  if (requiresQuiescence(journal)) {
+  if (requiresQuiescence(journal)
+    && databaseReleaseAuthority(authority) === INSTALLER_DATABASE_AUTHORITY) {
+    // Second live check, inside the advisory lock and before any DDL.
+    await assertInstallerQuiescence({
+      operation: journal.operation,
+      services: journal.affected_services,
+      systemctlShow,
+    });
+  } else if (requiresQuiescence(journal)) {
     const evidence = await readHanielReleaseEvidence({ env, journal, phase: "apply" });
     if (
       evidence.receipt_digest !== journal.quiescence_receipt_digest

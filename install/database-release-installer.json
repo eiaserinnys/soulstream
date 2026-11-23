@@ -1,0 +1,6 @@
+{
+  "schema_version": "soulstream.database-release-manifest.v2",
+  "authority": "linux-systemd-installer",
+  "affected_services": ["soulstream-orch.service", "soulstream-worker.service"],
+  "required_subphases": []
+}

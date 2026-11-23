@@ -196,7 +196,7 @@ function planReport(mode, plan) {
   };
 }
 
-async function applyPending(sql, migrations, releaseId, appliedKind, env) {
+async function applyPending(sql, migrations, releaseId, appliedKind, env, releaseGate) {
   return await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_NAMESPACE}, ${MIGRATION_LOCK_ID})`;
     let plan;
@@ -206,6 +206,7 @@ async function applyPending(sql, migrations, releaseId, appliedKind, env) {
       throw new Error(`JOURNAL_GATE_FAILED: current migration plan is invalid: ${error.message}`);
     }
     await assertDatabaseReleaseApplyGate({
+      ...releaseGate,
       env,
       operation: "upgrade",
       plan,
@@ -226,7 +227,7 @@ async function applyPending(sql, migrations, releaseId, appliedKind, env) {
   });
 }
 
-async function freshInstall(sql, migrations, releaseId, env) {
+async function freshInstall(sql, migrations, releaseId, env, releaseGate) {
   return await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_NAMESPACE}, ${MIGRATION_LOCK_ID})`;
     let plan;
@@ -236,6 +237,7 @@ async function freshInstall(sql, migrations, releaseId, env) {
       throw new Error(`JOURNAL_GATE_FAILED: current migration plan is invalid: ${error.message}`);
     }
     await assertDatabaseReleaseApplyGate({
+      ...releaseGate,
       env,
       operation: "fresh_install",
       plan,
@@ -280,9 +282,14 @@ export async function runMigrations(
     env = process.env,
     cwd = process.cwd(),
     sql: injectedSql = null,
+    authority,
+    systemctlShow,
   } = {},
 ) {
   if (!MODES.has(mode)) throw new Error(`unknown migration mode: ${mode}`);
+  // The executor's authority travels as an option. Reloading the service env
+  // below cannot change it.
+  const releaseGate = { authority, systemctlShow };
   dotenv.config({
     path: releaseServiceEnvironmentPath(env, cwd),
     override: true,
@@ -317,7 +324,7 @@ export async function runMigrations(
       return planReport(mode, initial);
     }
     if (mode === "fresh-install" || (mode === "initialize" && initial.state === "empty")) {
-      await freshInstall(sql, migrations, releaseId, env);
+      await freshInstall(sql, migrations, releaseId, env, releaseGate);
     } else {
       await applyPending(
         sql,
@@ -325,6 +332,7 @@ export async function runMigrations(
         releaseId,
         "migration",
         env,
+        releaseGate,
       );
     }
     const finalPlan = await readMigrationPlan(sql, migrations);

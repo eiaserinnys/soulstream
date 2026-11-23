@@ -103,6 +103,7 @@ describe("database release CI contract", () => {
     expect(job.strategy.matrix.os).toEqual(["ubuntu-latest", "windows-latest"]);
     const commands = job.steps.map((step: { run?: string }) => step.run ?? "").join("\n");
     for (const test of [
+      "release_executor_installer.test.ts",
       "release_executor_concurrency_review.test.ts",
       "release_executor_cli_review.test.ts",
       "release_executor_review.test.ts",
@@ -126,7 +127,7 @@ describe("database release CI contract", () => {
     for (const test of databaseTestFiles) expect(commands).toContain(test);
     expect(commands).toContain("verify-vitest-contract-result.mjs");
     expect(commands).toContain(
-      "soul-server-ts/database-release-postgres-results.json 29",
+      "soul-server-ts/database-release-postgres-results.json 30",
     );
     expect(commands).toContain("--maxWorkers=2 --minWorkers=1");
     expect(commands).toContain("--reporter=default --reporter=json");
