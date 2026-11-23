@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, type RefObject, useRef } from "react";
+import { memo, type ReactElement, type ReactNode, type RefObject, useRef } from "react";
 import { ProfileAvatar, useDashboardStore, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow as Card, CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
@@ -11,18 +11,19 @@ import "./v3-cards.css";
 import { cardActivityPreview } from "@seosoyoung/soul-ui/cards/card-activity-preview";
 import { summarizeCardItems } from "./card-item-summary";
 import { CardProgressSummary } from "./CardProgressSummary";
+import { cardAssignee } from "./card-assignee";
 const NO_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
 type SummaryRowWrapper = (row: ReactElement, titleRef: RefObject<HTMLSpanElement | null>) => ReactNode;
-export function CardRow({card,folderLabel,handle,variant="default",onOpenCard,summaryNumberTemplate,summaryRowWrapper}:{card:Card;folders?:readonly CatalogFolder[];placement?:"inline"|"overlay";handle?:ReactNode;showQueueAction?:boolean;folderLabel?:string;variant?:"default"|"summary";onOpenCard?(cardId:string):void;summaryNumberTemplate?:string;summaryRowWrapper?:SummaryRowWrapper}) {
+export const CardRow = memo(function CardRow({card,folderLabel,handle,variant="default",onOpenCard,summaryNumberTemplate,summaryRowWrapper}:{card:Card;folders?:readonly CatalogFolder[];placement?:"inline"|"overlay";handle?:ReactNode;showQueueAction?:boolean;folderLabel?:string;variant?:"default"|"summary";onOpenCard?(cardId:string):void;summaryNumberTemplate?:string;summaryRowWrapper?:SummaryRowWrapper}) {
  const open=useCardNavigation(s=>s.open);
  const currentCard=useCardStore(s=>s.byId[card.id]??card);
  const pendingConfirmations=useCardStore(s=>s.pendingItemConfirmations[card.id]??NO_PENDING_CONFIRMATIONS);
  const completion=useCardCompletion(currentCard);
- const assignee=useDashboardStore(s=>s.catalog?.sessionList?.find(session=>session.agentSessionId===currentCard.assigneeSessionId));
+ const assignee=useDashboardStore(s=>cardAssignee(s.catalog?.sessionList,currentCard.assigneeSessionId));
  const detail=useCardStore(s=>s.details[currentCard.id]);
  return <CardRowView card={currentCard} pendingConfirmations={pendingConfirmations} folderLabel={folderLabel} handle={handle} assignee={assignee} detail={detail}
   onOpen={()=>onOpenCard?onOpenCard(currentCard.id):open(currentCard.id,"overlay")} completion={completion} variant={variant} summaryNumberTemplate={summaryNumberTemplate} summaryRowWrapper={summaryRowWrapper} />;
-}
+});
 /** Shared row presentation; the operational wrapper owns navigation and completion. */
 export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,completion,pendingConfirmations=NO_PENDING_CONFIRMATIONS,variant="default",summaryNumberTemplate,summaryRowWrapper}: {
  card:Card;folderLabel?:string;handle?:ReactNode;assignee?:SessionSummary;detail?:CardDetail;

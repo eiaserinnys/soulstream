@@ -1,5 +1,6 @@
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { CardRow } from "./CardRow";
+import { useShallow } from "zustand/react/shallow";
 import {
   forwardRef,
   memo,
@@ -48,8 +49,8 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
   onOpenSession,
   onAcknowledged,
 }, forwardedRef) {
-  const cards = useCardStore(s=>s.byId);
-  const reviewCards = Object.values(cards).filter(card=>card.status==="review"&&!card.archived);
+  const reviewCardIds = useCardStore(useShallow(s=>Object.values(s.byId).filter(card=>card.status==="review"&&!card.archived).map(card=>card.id)));
+  const cardTitles = useCardStore(useShallow(s=>sessions.map(session=>session.cardId ? s.byId[session.cardId]?.title : undefined)));
   const surfaceRef = useRef<HTMLElement>(null);
   const pendingRef = useRef(false);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
@@ -57,10 +58,10 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
     () => sessionPanelGroups(sessions, nodeConnectivity, acknowledgedReviewIds),
     [acknowledgedReviewIds, nodeConnectivity, sessions],
   );
-  const affiliations = useMemo(() => new Map(sessions.map((session) => [
+  const affiliations = useMemo(() => new Map(sessions.map((session, index) => [
     session.agentSessionId,
-    (session.cardId ? cards[session.cardId]?.title : null) ?? sessionPanelAffiliation(folders, session.folderId),
-   ])), [folders, sessions, cards]);
+    cardTitles[index] ?? sessionPanelAffiliation(folders, session.folderId),
+   ])), [folders, sessions, cardTitles]);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const openSessionMenu = useSessionMenu();
@@ -134,14 +135,19 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
           onContextMenu={openContextMenu}
           onAcknowledge={acknowledge}
           review
-          extraCount={reviewCards.length}
-          children={reviewCards.map(card=><CardRow key={card.id} card={card} folders={folders}/>)}
+          extraCount={reviewCardIds.length}
+          children={reviewCardIds.map(id=><ReviewCardRow key={id} id={id} folders={folders}/>)}
         />
         {error ? <p className="v3-session-panel-error" role="alert">{error}</p> : null}
       </div>
 
     </aside>
   );
+});
+
+const ReviewCardRow = memo(function ReviewCardRow({id,folders}:{id:string;folders:readonly CatalogFolder[]}) {
+  const card=useCardStore(state=>state.byId[id]);
+  return card ? <CardRow card={card} folders={folders}/> : null;
 });
 
 function SessionGroup({

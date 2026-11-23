@@ -7,6 +7,8 @@ import {
 } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import { cardRequest } from "@seosoyoung/soul-ui/cards/card-api";
+import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
+import { getV3InvalidationSnapshot } from "./v3-live-invalidation-plane";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 
 import { loadPlannerFolderById, type PlannerFolder } from "./planner-data";
@@ -117,7 +119,11 @@ export function useV3SessionPanelController({
   const openFeedSession = useCallback(async (session: SessionSummary) => {
     const requestSequence = ++openRequestSequence.current;
     try {
-      const cardId = session.cardId || (await cardRequest<{ cards: CardRow[] }>(
+      const store = useCardStore.getState();
+      store.observeReplay(getV3InvalidationSnapshot().sources.replay);
+      const cached = Object.values(store.byId).find(card =>
+        card.assigneeSessionId === session.agentSessionId && !card.archived && store.isCardCurrent(card.id));
+      const cardId = session.cardId || cached?.id || (await cardRequest<{ cards: CardRow[] }>(
         `/api/cards?${new URLSearchParams({ includeCompleted: "true" })}`,
       )).cards.find((card) => card.assigneeSessionId === session.agentSessionId)?.id;
       if (requestSequence !== openRequestSequence.current) return false;

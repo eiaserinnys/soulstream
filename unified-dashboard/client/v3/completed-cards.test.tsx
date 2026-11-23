@@ -14,6 +14,7 @@ it('keeps 7-day instants, local date exclusive end and existing paper widths',()
  expect([390,600,1100].map(width=>completedGridLayout(width,256,8,8).columns)).toEqual([1,2,3]);
 });
 it('refreshes preset bounds while retaining cards and reuses those bounds for later pages',async()=>{
+ vi.useFakeTimers();
  const now=vi.spyOn(Date,'now').mockReturnValue(1000000000);
  let resolve!:(value:{cards:typeof reviewCard[];nextCursor:string|null})=>void;
  const newCard={...reviewCard,id:'new-completed'};
@@ -25,6 +26,7 @@ it('refreshes preset bounds while retaining cards and reuses those bounds for la
  const resetKey=browser!.resetKey;
  now.mockReturnValue(1000005000);
  await act(()=>invalidateV3('card'));
+ await act(async()=>vi.advanceTimersByTimeAsync(500));
  expect(browser!.resetKey).toBe(resetKey);
  expect(browser!.loaded).toBe(true);expect(browser!.cards).toHaveLength(1);
  expect(Date.parse(loader.mock.calls[1][0].completedBefore!)).toBeGreaterThan(Date.parse(loader.mock.calls[0][0].completedBefore!));
@@ -33,7 +35,7 @@ it('refreshes preset bounds while retaining cards and reuses those bounds for la
  now.mockReturnValue(1000010000);
  await act(async()=>browser!.loadMore());
  expect(loader.mock.calls[2][0]).toEqual({...loader.mock.calls[1][0],cursor:'next'});
- await act(()=>root.unmount());now.mockRestore();
+ await act(()=>root.unmount());now.mockRestore();vi.useRealTimers();
 });
 it('merges a refreshed first page with the older loaded tail and its cursor',()=>{
  const card=(id:string,completedAt:string|null)=>({...reviewCard,id,completedAt});

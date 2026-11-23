@@ -10,11 +10,12 @@ import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { reviewCard, reviewDetail } from "./components-review-fixtures";
 (globalThis as typeof globalThis & {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 let element:HTMLDivElement,root:Root;
-beforeEach(()=>{vi.stubGlobal('ResizeObserver',class {observe(){}disconnect(){}});vi.stubGlobal("matchMedia",(query:string)=>({matches:false,media:query,onchange:null,addListener:vi.fn(),removeListener:vi.fn(),addEventListener:vi.fn(),removeEventListener:vi.fn(),dispatchEvent:vi.fn()}));resetV3InvalidationForTest();useCardStore.getState().reset();element=document.createElement("div");document.body.append(element);root=createRoot(element);});
-afterEach(async()=>{await act(()=>root.unmount());element.remove();vi.unstubAllGlobals();});
+beforeEach(()=>{vi.useFakeTimers();vi.stubGlobal('ResizeObserver',class {observe(){}disconnect(){}});vi.stubGlobal("matchMedia",(query:string)=>({matches:false,media:query,onchange:null,addListener:vi.fn(),removeListener:vi.fn(),addEventListener:vi.fn(),removeEventListener:vi.fn(),dispatchEvent:vi.fn()}));resetV3InvalidationForTest();useCardStore.getState().reset();element=document.createElement("div");document.body.append(element);root=createRoot(element);});
+afterEach(async()=>{await act(()=>root.unmount());element.remove();vi.unstubAllGlobals();vi.useRealTimers();});
 const row=(id:string)=>({...reviewCard,id,status:"todo" as const});
 const response=(cards:typeof reviewCard[])=>new Response(JSON.stringify({cards}),{status:200});
 const event=()=>acceptV3SessionStreamEvent({type:"card_updated",cardId:"new",folderId:reviewCard.folderId});
+const flushWindow=async()=>act(async()=>vi.advanceTimersByTimeAsync(500));
 it("keeps folder controls but hides unknown membership in both views and restores the board on retry",async()=>{
  let finish!:(value:Response)=>void;
  const fetch=vi.fn().mockImplementationOnce(()=>new Promise<Response>(resolve=>{finish=resolve;})).mockResolvedValue(response([row("loaded")]));
@@ -40,6 +41,7 @@ it("keeps the known folder board when a later refresh fails",async()=>{
  let fail=false;vi.stubGlobal("fetch",vi.fn(async()=>{if(fail)throw new Error("connection lost");return response([row("known")]);}));
  await act(async()=>root.render(<FolderCardSection folderId={reviewCard.folderId}/>));
  fail=true;await act(async()=>event());
+ await flushWindow();
  expect(element.querySelector('[role="alert"]')).not.toBeNull();expect(element.querySelector('[data-card-id="known"]')).not.toBeNull();
  expect(element.querySelector('button[aria-label="보드 확대"]')).not.toBeNull();expect(element.textContent).toContain("1개 표시");
 });
@@ -50,6 +52,7 @@ it("refetches authorized global membership on SSE, coalesces duplicates and remo
  expect(element.querySelector('[data-card-id="old"]')).not.toBeNull();
  rows=[row("new"),row("new"),{...row("archived"),archived:true},{...row("cancelled"),status:"cancelled"}];
  await act(async()=>{event();event();});
+ await flushWindow();
  expect(element.querySelectorAll('[data-card-id="new"]')).toHaveLength(1);
  expect(element.querySelector('[data-card-id="old"]')).toBeNull();expect(element.querySelector('[data-card-id="unlisted"]')).toBeNull();
  expect(element.querySelector('[data-card-id="archived"]')).toBeNull();expect(element.querySelector('[data-card-id="cancelled"]')).toBeNull();
@@ -60,6 +63,7 @@ it("does not publish a pre-event initial list or an old folder response into the
  await act(()=>root.render(<FolderCardSection folderId="first"/>));
  await act(()=>event());
  await act(async()=>resolve[0](response([{...row("stale"),folderId:"first"}])));
+ await flushWindow();
  expect(element.querySelector('[data-card-id="stale"]')).toBeNull();expect(fetch).toHaveBeenCalledTimes(2);
  await act(()=>root.render(<FolderCardSection folderId="second"/>));
  await act(async()=>resolve[1](response([{...row("wrong-scope"),folderId:"first"}])));
@@ -72,9 +76,10 @@ it("removes folder move-outs and updates visible status without exposing cached 
  await act(async()=>root.render(<FolderCardSection folderId={reviewCard.folderId}/>));
  rows=[{...row("incoming"),status:"review"}];
  await act(async()=>{useCardStore.getState().putCards([{...row("moving"),folderId:"elsewhere"},row("unlisted")]);event();});
+ await flushWindow();
  expect(element.querySelector('[data-card-id="moving"]')).toBeNull();expect(element.querySelector('[data-card-id="incoming"][data-card-status="review"]')).not.toBeNull();
  expect(element.querySelector('[data-card-id="unlisted"]')).toBeNull();
- rows=[{...row("incoming"),status:"done",version:reviewCard.version+1}];await act(async()=>event());
+ rows=[{...row("incoming"),status:"done",version:reviewCard.version+1}];await act(async()=>event());await flushWindow();
  expect(element.querySelector('[data-card-id="incoming"]')).toBeNull();expect(element.querySelector('[data-board-column="done"]')).toBeNull();
 });
 
@@ -85,6 +90,32 @@ it("keeps an open status menu and expanded board through an SSE list refetch fai
  await act(()=>element.querySelector<HTMLButtonElement>('button[aria-label="보드 확대"]')!.click());
  await act(async()=>{element.querySelector<HTMLButtonElement>('button[aria-label="카드 상태 변경"]')!.click();});
  fail=true;await act(async()=>event());
+ await flushWindow();
  expect(document.querySelector('[data-card-status-picker]')).not.toBeNull();
  expect(element.querySelector('[data-card-board-expanded="true"]')).not.toBeNull();
+});
+
+it("bounds a stream of spaced events and refreshes replay immediately",async()=>{
+ const fetch=vi.fn(async()=>response([row("known")]));vi.stubGlobal("fetch",fetch);
+ await act(async()=>root.render(<CardInboxBoard/>));
+ expect(fetch).toHaveBeenCalledTimes(1);
+ for(let i=0;i<4;i++){await act(()=>event());await act(async()=>vi.advanceTimersByTimeAsync(100));}
+ expect(fetch).toHaveBeenCalledTimes(1);
+ await act(async()=>vi.advanceTimersByTimeAsync(100));expect(fetch).toHaveBeenCalledTimes(2);
+ await act(()=>event());
+ await act(()=>acceptV3SessionStreamEvent({type:"replay_gap",latest_id:5,instance_id:"orch"}));
+ expect(fetch).toHaveBeenCalledTimes(3);
+});
+
+it("refreshes immediately after a direct card mutation",async()=>{
+ const known=row("known");
+ const fetch=vi.fn(async(input:RequestInfo|URL)=>{
+  const url=String(input);
+  if(url.includes("/status"))return new Response(JSON.stringify({card:{...known,status:"done"}}));
+  if(url===`/api/cards/${known.id}`)return new Response(JSON.stringify({card:{...known,status:"done",version:2},reports:[],questions:[],sessions:[]}));
+  return response([known]);
+ });vi.stubGlobal("fetch",fetch);
+ await act(async()=>root.render(<CardInboxBoard/>));
+ await act(async()=>{await useCardStore.getState().mutate("known","/status",{status:"done"});});
+ expect(fetch.mock.calls.filter(call=>String(call[0]).startsWith("/api/cards?"))).toHaveLength(2);
 });

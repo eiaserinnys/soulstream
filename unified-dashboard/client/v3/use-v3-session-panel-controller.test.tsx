@@ -4,6 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 import { useV3SessionPanelController } from "./use-v3-session-panel-controller";
+import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
+import { reviewCard } from "./components-review-fixtures";
+import { acceptV3SessionStreamEvent, resetV3InvalidationForTest } from "./v3-live-invalidation-plane";
 
 const cardRequest = vi.hoisted(() => vi.fn());
 vi.mock("@seosoyoung/soul-ui/cards/card-api", () => ({ cardRequest }));
@@ -26,6 +29,8 @@ beforeEach(()=>{
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   cardRequest.mockReset();openCard.mockReset();clearCard.mockReset();selectFolder.mockClear();clearFolder.mockClear();setChatOpen.mockClear();notify.mockClear();
   useDashboardStore.setState({catalog:null,drafts:{}});
+  useCardStore.getState().reset();
+  resetV3InvalidationForTest();
   host=document.createElement("div");document.body.append(host);root=createRoot(host);
 });
 afterEach(async()=>{await act(()=>root.unmount());host.remove();vi.restoreAllMocks();(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false;});
@@ -42,6 +47,27 @@ it("resolves an assignee card from the authenticated completed-inclusive list",a
   await click(owner);
   expect(cardRequest).toHaveBeenCalledWith("/api/cards?includeCompleted=true");
   expect(openCard).toHaveBeenCalledWith("card-1","overlay",null,"owner");
+});
+
+it("uses a cached current assignee and falls back when the cached card belongs to someone else",async()=>{
+  useCardStore.getState().putCards([{...reviewCard,id:"cached",assigneeSessionId:"owner"}]);
+  await click(owner);
+  expect(cardRequest).not.toHaveBeenCalled();
+  expect(openCard).toHaveBeenCalledWith("cached","overlay",null,"owner");
+  useCardStore.getState().putCards([{...reviewCard,id:"cached",assigneeSessionId:"other"}]);
+  cardRequest.mockResolvedValue({cards:[{id:"current",assigneeSessionId:"owner"}]});
+  await click(owner);
+  expect(cardRequest).toHaveBeenCalledWith("/api/cards?includeCompleted=true");
+  expect(openCard).toHaveBeenLastCalledWith("current","overlay",null,"owner");
+});
+
+it("falls back after a replay gap until cached membership is refreshed",async()=>{
+  useCardStore.getState().putCards([{...reviewCard,id:"cached",assigneeSessionId:"owner"}]);
+  acceptV3SessionStreamEvent({type:"replay_gap",latest_id:7,instance_id:"orch"});
+  cardRequest.mockResolvedValue({cards:[{id:"current",assigneeSessionId:"owner"}]});
+  await click(owner);
+  expect(cardRequest).toHaveBeenCalledWith("/api/cards?includeCompleted=true");
+  expect(openCard).toHaveBeenCalledWith("current","overlay",null,"owner");
 });
 
 it("clears an old card before the existing folder path handles a session without a card",async()=>{

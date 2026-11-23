@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type HTMLAttributes, type Ref } from "react";
+import { memo, useEffect, useRef, useState, type HTMLAttributes, type Ref } from "react";
 import { ProfileAvatar, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardStatus } from "../../../packages/wire-schema/generated/typescript/index";
@@ -18,6 +18,7 @@ import "./v3-postit-cards.css";
 import {PostItCardView as Paper, PostItGrid as PaperGrid, type PostItVariant} from "./PostItCardPresentation";
 import { summarizeCardItems } from "./card-item-summary";
 import { CardProgressSummary } from "./CardProgressSummary";
+import { cardAssignee } from "./card-assignee";
 export {postItRotation} from "./PostItCardPresentation";
 export type {PostItVariant} from "./PostItCardPresentation";
 const NO_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
@@ -28,16 +29,16 @@ export function PostItGrid(props: HTMLAttributes<HTMLDivElement> & { variant?: P
 }
 
 /** List data already carries the latest original activity; mounting never loads detail. */
-export function PostItCard({ card, variant = "default", statusActivator }: { card: CardRow; variant?: PostItVariant; statusActivator?:CardQueueStatusActivator }) {
+export const PostItCard = memo(function PostItCard({ card, variant = "default", statusActivator }: { card: CardRow; variant?: PostItVariant; statusActivator?:CardQueueStatusActivator }) {
   const currentCard=useCardStore(state=>state.byId[card.id]??card);
   const pendingConfirmations=useCardStore(state=>state.pendingItemConfirmations[card.id]??NO_PENDING_CONFIRMATIONS);
   const open = useCardNavigation(s => s.open);
   const status = usePostItStatus(currentCard);
-  const assignee = useDashboardStore(s => s.catalog?.sessionList?.find(session => session.agentSessionId === currentCard.assigneeSessionId));
+  const assignee = useDashboardStore(s => cardAssignee(s.catalog?.sessionList, currentCard.assigneeSessionId));
   const error = useCardStore(s => s.errors[currentCard.id]);
   return <PostItCardView card={currentCard} pendingConfirmations={pendingConfirmations} variant={variant} activity={currentCard.latestActivity ?? null} assignee={assignee}
     onOpen={() => open(currentCard.id, "overlay")} statusControl={status} statusActivator={statusActivator} error={error}/>;
-}
+});
 
 export function PostItCardView({ card, activity, assignee, onOpen, statusControl, statusActivator, error, variant = "default", pendingConfirmations=NO_PENDING_CONFIRMATIONS }: {
   card: CardRow; activity: Pick<CardActivity, "kind" | "body" | "format"> | null;

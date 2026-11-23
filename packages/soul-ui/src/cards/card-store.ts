@@ -2,10 +2,16 @@ import {executeCard,resetCardExecutions,type CardExecutionResult} from "./card-e
 import { create } from "zustand";
 import { cardRequest, cardPath, cardMutationKey, confirmCardItem, fetchCards } from "./card-api";
 import type { CardComment, CardDetail, CardRow } from "./card-types";
+let globalLists=0;
+const pendingListUpdates=new Map<string,number>();
+const staleCards=new Map<string,number>();
+let updateSequence=0;
+let observedReplay=0;
 interface CardState {
   byId: Record<string, CardRow>; details: Record<string, CardDetail>; errors: Record<string, string>;
   pendingItemConfirmations: Record<string, Record<number, boolean>>;
   folderIds: Record<string, string[]>;
+  localRevision: number;
   putCards(cards: readonly CardRow[]): void;
   loadFolder(folderId: string): Promise<void>;
   loadCard(id: string): Promise<CardDetail>;
@@ -14,21 +20,25 @@ interface CardState {
   confirmItem(id:string,itemId:number,confirmed:boolean):Promise<CardRow>;
   addComment(id: string, body: string, idempotencyKey: string, itemId?:number, questionId?: string): Promise<CardComment>;
   create(body: object): Promise<CardRow>;
-  handleCardUpdated(event: {cardId: string; folderId: string}): Promise<CardDetail>;
+  handleCardUpdated(event: {cardId: string; folderId: string}): Promise<CardDetail | undefined>;
+  registerGlobalList(): () => void;
+  reconcileGlobalList(cards: readonly CardRow[]): void;
+  isCardCurrent(id: string): boolean;
+  observeReplay(revision: number): void;
   reset(): void;
 }
 export const useCardStore = create<CardState>((set,get) => ({
-  byId: {}, details: {}, errors: {}, pendingItemConfirmations:{}, folderIds: {},
+  byId: {}, details: {}, errors: {}, pendingItemConfirmations:{}, folderIds: {}, localRevision: 0,
   // 늦게 도착한 오래된 목록이 이미 최신인 행을 과거 상태로 되돌리지 않게 버전을 본다.
   putCards(cards) { set(s=>{
     let byId=s.byId,details=s.details;
     for(const card of cards){
       const current=byId[card.id];
       if(current!==undefined&&current.version>card.version)continue;
-      if(current!==card)byId={...byId,[card.id]:card};
+      if(current!==card){if(byId===s.byId)byId={...byId};byId[card.id]=card;}
       const detail=details[card.id];
       if(detail!==undefined&&detail.card.version<=card.version&&detail.card!==card)
-        details={...details,[card.id]:{...detail,card}};
+        {if(details===s.details)details={...details};details[card.id]={...detail,card};}
     }
     return byId===s.byId&&details===s.details?s:{byId,details};
   }); },
@@ -54,17 +64,21 @@ export const useCardStore = create<CardState>((set,get) => ({
   async mutate(id,suffix,body,method="POST") {
     try {
       await cardRequest(cardPath(id)+suffix,method,{...body,idempotencyKey:cardMutationKey()});
-      return await get().loadCard(id);
+      const detail=await get().loadCard(id);
+      set(s=>({localRevision:s.localRevision+1}));
+      return detail;
     } catch(error) {
       set(state=>({errors:{...state.errors,[id]:error instanceof Error ? error.message : String(error)}}));
       throw error;
     }
   },
   async execute(id,version){
-    return executeCard(id,version,result=>set(state=>{
+    const result=await executeCard(id,version,result=>set(state=>{
       if((state.byId[id]?.version??0)>result.card.version)return state;
       return {byId:{...state.byId,[id]:result.card},details:state.details[id]?{...state.details,[id]:{...state.details[id],card:result.card}}:state.details};
     }));
+    set(s=>({localRevision:s.localRevision+1}));
+    return result;
   },
   async confirmItem(id,itemId,confirmed) {
     set(state=>({pendingItemConfirmations:{...state.pendingItemConfirmations,[id]:{...state.pendingItemConfirmations[id],[itemId]:confirmed}},errors:{...state.errors,[id]:""}}));
@@ -77,6 +91,7 @@ export const useCardStore = create<CardState>((set,get) => ({
         const currentCard=(state.byId[id]?.version??0)>card.version?state.byId[id]:card;
         return {byId:{...state.byId,[id]:currentCard},details:state.details[id]?{...state.details,[id]:{...state.details[id],card:currentCard}}:state.details,pendingItemConfirmations,errors:{...state.errors,[id]:""}};
       });
+      set(s=>({localRevision:s.localRevision+1}));
       return card;
     } catch(error) {
       set(state=>{
@@ -102,6 +117,7 @@ export const useCardStore = create<CardState>((set,get) => ({
       patch(comment);
       set(state => ({errors:{...state.errors,[id]:""}}));
       if(itemId!==undefined)try{await get().loadCard(id);}catch{/* loadCard keeps the saved comment and exposes its refresh error */}
+      set(s=>({localRevision:s.localRevision+1}));
       return comment;
     } catch (error) {
       patch(null);
@@ -113,12 +129,43 @@ export const useCardStore = create<CardState>((set,get) => ({
     const result=await cardRequest<{card:CardRow}>("/api/cards","POST",body);
     get().putCards([result.card]);
     set(s=>({folderIds:{...s.folderIds,[result.card.folderId]:[...new Set([...(s.folderIds[result.card.folderId]??[]),result.card.id])]}}));
+    set(s=>({localRevision:s.localRevision+1}));
     return result.card;
   },
   async handleCardUpdated(event) {
+    const revision=++updateSequence;
+    staleCards.set(event.cardId,revision);
+    // Only a mounted global list can reconcile every affected card. Scoped
+    // lists may omit a moved, completed or otherwise out-of-scope card.
+    if(globalLists>0&&get().byId[event.cardId]&&!get().details[event.cardId]){
+      pendingListUpdates.set(event.cardId,revision);return;
+    }
+    pendingListUpdates.delete(event.cardId);
     const detail=await get().loadCard(event.cardId);
+    if(staleCards.get(event.cardId)===revision)staleCards.delete(event.cardId);
     set(s=>({folderIds:Object.fromEntries(Object.entries(s.folderIds).map(([id,ids])=>[id,id===detail.card.folderId ? [...new Set([...ids,event.cardId])] : ids.filter(c=>c!==event.cardId)]))}));
     return detail;
   },
-  reset(){resetCardExecutions();set({byId:{},details:{},errors:{},pendingItemConfirmations:{},folderIds:{}});},
+  registerGlobalList(){
+    globalLists++;
+    return ()=>{if(--globalLists===0)get().reconcileGlobalList([]);};
+  },
+  reconcileGlobalList(cards){
+    const ids=new Set(cards.map(card=>card.id));
+    for(const id of ids)staleCards.delete(id);
+    for(const [id,revision] of pendingListUpdates){
+      pendingListUpdates.delete(id);
+      if(ids.has(id)){if(staleCards.get(id)===revision)staleCards.delete(id);continue;}
+      void get().loadCard(id).then(()=>{
+        if(staleCards.get(id)===revision)staleCards.delete(id);
+      }).catch(()=>undefined);
+    }
+  },
+  isCardCurrent(id){return !staleCards.has(id);},
+  observeReplay(revision){
+    if(revision===observedReplay)return;
+    observedReplay=revision;
+    for(const id of Object.keys(get().byId))staleCards.set(id,++updateSequence);
+  },
+  reset(){resetCardExecutions();pendingListUpdates.clear();staleCards.clear();observedReplay=0;set({byId:{},details:{},errors:{},pendingItemConfirmations:{},folderIds:{},localRevision:0});},
 }));
