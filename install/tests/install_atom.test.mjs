@@ -409,6 +409,21 @@ finish_message "$ROOT"
     assert.notEqual(failed.status, 0);
     assert.match(t.log(), /Failed to create PostgreSQL role soulstream\./);
     for (const output of [t.log(), failed.stdout, failed.stderr]) assert.ok(!output.includes(secrets.db));
+
+    // An existing role is updated to the current DB password through stdin; a failure leaves one line in the log.
+    const dbSteps = "parse_args\nrun_step 'Preparing secrets' setup_secrets \"$ROOT\" \"$ATOM_ROOT\"\nrun_step 'Preparing databases' setup_database\n";
+    writeFileSync(join(t.dir, 'install.log'), '');
+    const altered = await t.run(dbSteps, { FAKE_ROLE_EXISTS: '1' });
+    assert.equal(altered.status, 0, altered.stderr);
+    assert.ok(t.fake.psqlStdin().includes(`ALTER ROLE soulstream LOGIN PASSWORD '${secrets.db}';`));
+    const alterFailed = await t.run(dbSteps, { FAKE_ROLE_EXISTS: '1', FAKE_PSQL_FAIL: '1' });
+    assert.notEqual(alterFailed.status, 0);
+    assert.match(t.log(), /Failed to update PostgreSQL role soulstream\./);
+    assert.doesNotMatch(t.log(), /Failed to create PostgreSQL role/);
+    for (const output of [t.fake.argv(), t.log(), altered.stdout, altered.stderr, alterFailed.stdout, alterFailed.stderr]) {
+      assert.ok(!output.includes(secrets.db));
+      assert.ok(!output.includes('ALTER ROLE'));
+    }
   } finally { await server.close(); t.cleanup(); }
 });
 

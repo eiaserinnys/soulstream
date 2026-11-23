@@ -58,7 +58,7 @@ describe("database release CI contract", () => {
     expect(workflow.env.PNPM_VERSION).toBe("10.32.1");
     expect(workflowText.match(/corepack prepare pnpm@\$\{\{ env\.PNPM_VERSION \}\} --activate/g))
       .toHaveLength(3);
-    expect(workflowText.match(/node-version: '22'/g)).toHaveLength(3);
+    expect(workflowText.match(/node-version: '22'/g)).toHaveLength(4);
     const allWorkflowSources = readdirSync(workflowsDirectory)
       .filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
       .map((name) => readFileSync(`${workflowsDirectory}/${name}`, "utf8"))

@@ -577,6 +577,9 @@ setup_database() {
   local name
   if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='soulstream'" | grep -qx 1; then
     if ! printf "CREATE ROLE soulstream LOGIN PASSWORD '%s';\n" "$DB_PASSWORD" | sudo -u postgres psql -q -v ON_ERROR_STOP=1 >/dev/null 2>/dev/null; then printf 'Failed to create PostgreSQL role soulstream.\n' >>"$LOG"; return 1; fi
+  else
+    # A rerun after a failure between here and Writing configuration has a new DB_PASSWORD; both env files are rewritten in this run.
+    if ! printf "ALTER ROLE soulstream LOGIN PASSWORD '%s';\n" "$DB_PASSWORD" | sudo -u postgres psql -q -v ON_ERROR_STOP=1 >/dev/null 2>/dev/null; then printf 'Failed to update PostgreSQL role soulstream.\n' >>"$LOG"; return 1; fi
   fi
   for name in soulstream atom; do
     if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${name}'" | grep -qx 1; then sudo -u postgres createdb -O soulstream "$name"; fi

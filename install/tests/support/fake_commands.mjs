@@ -30,6 +30,7 @@ if [[ "$args" == *pg_roles* ]]; then if [[ "\${FAKE_ROLE_EXISTS:-0}" == 1 ]]; th
 if [[ "$args" == *pg_database* ]]; then exit 0; fi
 if [[ "$args" == *to_regclass* ]]; then printf 't\\n'; exit 0; fi
 input=$(cat)
+printf '%s\\n' "$input" >> "$FAKE_DIR/psql-stdin.log"
 if [[ "\${FAKE_PSQL_FAIL:-0}" == 1 ]]; then printf 'ERROR: %s\\n' "$input"; printf 'ERROR: %s\\n' "$input" >&2; exit 3; fi
 exit 0`,
     createdb: `${RECORD}`,
@@ -90,6 +91,7 @@ export function createFakeCommands(dir) {
       ...extra,
     }),
     argv: () => (existsSync(argvLog) ? readFileSync(argvLog, 'utf8') : ''),
+    psqlStdin: () => (existsSync(join(dir, 'psql-stdin.log')) ? readFileSync(join(dir, 'psql-stdin.log'), 'utf8') : ''),
     // Fails the test when any command tried to reach a production port.
     assertNoProtectedRequests: () => {
       if (existsSync(blockedLog)) throw new Error(`request to a protected port: ${readFileSync(blockedLog, 'utf8')}`);
