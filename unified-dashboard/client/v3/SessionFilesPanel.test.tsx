@@ -23,6 +23,12 @@ const click = (button: Element) => act(() => (button as HTMLElement).click());
 const render = async (data: typeof reviewSessionFiles | null, error = false, loading = false) => act(async () => root.render(<SessionFilesPanel sessionId="a/b" data={data} loading={loading} error={error} onRefresh={() => {}} onClose={() => {}}/>));
 
 describe('session files panel', () => {
+  it('hides zero additions on a deleted file', async () => {
+    await render({ ...reviewSessionFiles, files: [{ ...reviewSessionFiles.files[2], git_status: 'deleted', added: 0, deleted: 7 }] });
+    const row = [...host.querySelectorAll('button')].find(button => button.textContent?.includes('event_outbox.ts'))!;
+    expect(row.textContent).toContain('−7');
+    expect(row.textContent).not.toContain('+0');
+  });
   it('separates session files from other changes and starts both secondary groups collapsed', async () => {
     await render(reviewSessionFiles);
     const session = [...host.querySelectorAll('button')].find(el => el.textContent?.includes('이번 세션'));

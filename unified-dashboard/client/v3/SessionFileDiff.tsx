@@ -21,6 +21,7 @@ export function parseUnifiedDiff(text: string): DiffLine[] {
   let newLine = 0;
   let inHunk = false;
   for (const raw of text.split("\n")) {
+    if (raw.startsWith("diff --git ")) { inHunk = false; continue; }
     const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@ ?(.*)$/.exec(raw);
     if (hunk) {
       oldLine = Number(hunk[1]);
@@ -40,39 +41,41 @@ export function parseUnifiedDiff(text: string): DiffLine[] {
 
 export function useSessionFileDiff(sessionId: string, file: ChangedFile, observedAt: string | null) {
   const [state, setState] = useState<DiffState>({ kind: "loading" });
+  const [busy, setBusy] = useState(true);
   const [attempt, setAttempt] = useState(0);
   const request = useContext(SessionFileDiffFetchContext) ?? fetch;
   useEffect(() => {
     const controller = new AbortController();
-    setState({ kind: "loading" });
+    setBusy(true);
+    setState(previous => previous.kind === "ready" ? previous : { kind: "loading" });
     const url = `/api/sessions/${encodeURIComponent(sessionId)}/workspace/diff?path=${encodeURIComponent(file.path)}`;
     request(url, { credentials: "same-origin", signal: controller.signal })
       .then(async response => {
         // 새 명령을 모르는 노드는 501로 온다. 다시 시도해도 같으니 실패와 가른다.
         if (controller.signal.aborted) return;
-        if (response.status === 501) { setState({ kind: "unsupported" }); return; }
+        if (response.status === 501) { setState({ kind: "unsupported" }); setBusy(false); return; }
         if (!response.ok) throw new Error("diff request failed");
         const data = await response.json() as SessionWorkspaceDiffResponse;
-        if (!controller.signal.aborted) setState({ kind: "ready", data });
+        if (!controller.signal.aborted) { setState({ kind: "ready", data }); setBusy(false); }
       })
-      .catch(() => { if (!controller.signal.aborted) setState({ kind: "error" }); });
+      .catch(() => { if (!controller.signal.aborted) { setState({ kind: "error" }); setBusy(false); } });
     return () => controller.abort();
   }, [request, sessionId, file.path, file.git_status, file.added, file.deleted, observedAt, attempt]);
-  return { state, retry: () => setAttempt(value => value + 1) };
+  return { state, busy, retry: () => setAttempt(value => value + 1) };
 }
 
 export function SessionFileDiff({ id, sessionId, file, observedAt, onOpenFull }: {
   id: string; sessionId: string; file: ChangedFile; observedAt: string | null; onOpenFull(trigger: HTMLElement): void;
 }) {
-  const { state, retry } = useSessionFileDiff(sessionId, file, observedAt);
+  const { state, busy, retry } = useSessionFileDiff(sessionId, file, observedAt);
   const status: WorkspaceDiffStatus = state.kind === "ready" ? state.data.status : file.git_status ?? "modified";
   const lines = useMemo(() => state.kind === "ready" && !state.data.binary ? parseUnifiedDiff(state.data.text) : [], [state]);
-  const digits = String(lines.reduce((max, line) => line.kind === "hunk" ? max : Math.max(max, line.number), 1)).length;
+  const digits = String(lines.reduce((max, line) => line.kind === "hunk" || line.kind === "del" ? max : Math.max(max, line.number), 1)).length;
   const name = file.path.split("/").at(-1) ?? file.path;
   // 같은 폴더 안의 이름 바꿈이면 옛 이름만, 폴더가 바뀌었으면 옛 경로 전체를 보인다.
   const dir = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));
   const from = status === "renamed" && file.orig_path ? (dir(file.orig_path) === dir(file.path) ? file.orig_path.split("/").at(-1) ?? file.orig_path : file.orig_path) : null;
-  return <div id={id} role="region" aria-label={`${name} 변경분`} aria-busy={state.kind === "loading"} className="v3-session-file-diff">
+  return <div id={id} role="region" aria-label={`${name} 변경분`} aria-busy={busy} className="v3-session-file-diff">
     <div className="v3-session-file-diff-head">
       <span className="v3-session-file-diff-status">{STATUS_LABEL[status]}</span>
       {from && <span className="v3-session-file-diff-from" title={file.orig_path ?? undefined}><span>{from}</span><span>에서</span></span>}

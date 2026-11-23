@@ -131,7 +131,7 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
         <span className="v3-session-files-mark" data-activity={kind}><Icon className="h-4 w-4" aria-label={label}/></span>
         <span className="v3-session-files-name">{file.path.split("/").at(-1)}</span>
         {git && (git.git_status === "added" || git.git_status === "untracked") && <span className="v3-session-files-new">새</span>}
-        {git && (git.added !== null || git.deleted !== null) && <span className="v3-session-files-diff">{git.added !== null && <span className="is-add">+{git.added}</span>}{git.deleted !== null && git.deleted > 0 && <span className="is-del">−{git.deleted}</span>}</span>}
+        {git && (git.added !== null || git.deleted !== null) && <span className="v3-session-files-diff">{git.added !== null && git.added > 0 && <span className="is-add">+{git.added}</span>}{git.deleted !== null && git.deleted > 0 && <span className="is-del">−{git.deleted}</span>}</span>}
       </button>
       {open && <SessionFileDiff id={rowDiffId} sessionId={sessionId} file={file} observedAt={data?.snapshot?.observed_at ?? null} onOpenFull={button => view(file, button)}/>}
     </div>;
