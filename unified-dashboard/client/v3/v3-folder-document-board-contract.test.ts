@@ -73,6 +73,8 @@ describe("v3 task document board unification", () => {
   it("expands every fenced code block in explicit document surfaces only", () => {
     const globals = read("../../../packages/soul-ui/src/styles/globals.css");
     const markdown = read("../../../packages/soul-ui/src/components/markdown-components.tsx");
+    // 코드 블록 className의 정본은 markdown-classes.ts다(카드 #1808에서 리터럴 상수로 뺐다).
+    const markdownClasses = read("../../../packages/soul-ui/src/components/markdown-classes.ts");
 
     expect(globals).toMatch(
       /pre\[data-markdown-code-layout="document"\]\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s,
@@ -80,7 +82,7 @@ describe("v3 task document board unification", () => {
     expect(globals).not.toMatch(/\[data-markdown-blockquote\]\s+pre/);
     expect(markdown).toContain('data-markdown-code-layout="document"');
     expect(markdown).toContain('data-markdown-code-scroll="horizontal"');
-    expect(markdown).toContain("overflow-auto max-h-60");
+    expect(markdownClasses).toContain("overflow-auto max-h-60");
     expect(markdown).toContain("overflow-auto max-h-24");
   });
 });
