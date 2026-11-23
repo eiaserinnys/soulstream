@@ -18,7 +18,7 @@ import {
   type AttachmentMediaKind,
   type AttachmentView,
 } from '../lib/attachment-view';
-import { attachmentPdfViewerUri } from '../lib/attachment-pdf';
+import { attachmentPdfViewerUri, releaseTemporaryPdf } from '../lib/attachment-pdf';
 import { captureAuthScope } from '../lib/auth-scope';
 import { buildCustomViewBindings, escapeHtml, renderDocumentHtml } from '../lib/custom-view-renderer';
 import { LIGHT_COLORS } from '../theme/colors';
@@ -127,19 +127,23 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
       const scope = captureAuthScope();
       const pdfSource = attachmentImageSource({ ...item, source }, scope.serverUrl, scope.jwt);
       let blobUri: string | null = null;
+      let temporaryPdfUri: string | null = null;
       setState({ kind: 'loading' });
       void attachmentPdfViewerUri({
         uri: pdfSource.uri,
         ...(pdfSource.headers ? { headers: pdfSource.headers } : {}),
         cacheKey: source.attachmentId,
+        cache: item.pdfCache,
         signal: controller.signal,
       })
         .then((uri) => {
           if (controller.signal.aborted) {
             releaseBlobUri(uri.startsWith('blob:') ? uri : null);
+            if (item.pdfCache === 'none' && uri.startsWith('file:') && uri !== pdfSource.uri) releaseTemporaryPdf(uri);
             return;
           }
           if (uri.startsWith('blob:') && uri !== pdfSource.uri) blobUri = uri;
+          if (item.pdfCache === 'none' && uri.startsWith('file:') && uri !== pdfSource.uri) temporaryPdfUri = uri;
           setState({ kind: 'pdf', uri });
         })
         .catch((error: unknown) => {
@@ -148,6 +152,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
       return () => {
         controller.abort();
         releaseBlobUri(blobUri);
+        if (temporaryPdfUri) releaseTemporaryPdf(temporaryPdfUri);
         blobUri = null;
       };
     }

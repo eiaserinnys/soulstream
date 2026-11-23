@@ -12,6 +12,7 @@ export type AttachmentView = {
   /** Loads a bounded body for views whose content is not fetched by ID (legacy paths). */
   loadText?: (signal: AbortSignal) => Promise<{ text: string; truncated: boolean }>;
   loadMedia?: (signal: AbortSignal) => Promise<AttachmentMediaContent>;
+  pdfCache?: 'persistent' | 'none';
   key: string;
   name: string;
   mimeType: string | null;

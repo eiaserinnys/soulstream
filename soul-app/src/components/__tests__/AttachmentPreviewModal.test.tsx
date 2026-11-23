@@ -24,22 +24,27 @@ jest.mock('expo-file-system', () => {
 
     create() {}
   }
+  const deleted: string[] = [];
   class File {
     uri: string;
+    existing: boolean;
 
     constructor(_parent: unknown, name: string) {
-      this.uri = `file:///mock/cache/attachment-pdf/${name}`;
+      this.existing = !name;
+      this.uri = name ? `file:///mock/cache/attachment-pdf/${name}` : String(_parent);
     }
 
     get exists() {
-      return false;
+      return this.existing;
     }
+
+    delete() { deleted.push(this.uri); }
 
     static readonly downloadFileAsync = jest.fn(async (_url: string, destination: { uri: string }) => ({
       uri: destination.uri,
     }));
   }
-  return { Directory, File, Paths: { cache: { uri: 'file:///mock/cache' } } };
+  return { Directory, File, deleted, Paths: { cache: { uri: 'file:///mock/cache' } } };
 });
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('react-native-enriched-markdown', () => ({
@@ -479,4 +484,14 @@ test('media 403 failures have no retry and 503 failures can be retried', async (
   fireEvent.press(retryable.getByText('다시 시도'));
   await waitFor(() => expect(mockReadAttachmentMedia).toHaveBeenCalledTimes(3));
   expect(retryable.getByTestId('attachment-preview-audio')).toBeTruthy();
+});
+
+ test('세션 파일 PDF는 임시 파일을 닫을 때 삭제한다', async () => {
+  const fs = require('expo-file-system') as { deleted: string[] };
+  fs.deleted.length = 0;
+  const screen = render(<AttachmentPreviewModal item={pdfView({ pdfCache: 'none' })} onClose={jest.fn()} />);
+  const preview = await waitFor(() => screen.getByTestId('attachment-preview-pdf'));
+  const uri = preview.props.source.uri;
+  screen.unmount();
+  expect(fs.deleted).toContain(uri);
 });

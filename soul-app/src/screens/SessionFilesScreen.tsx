@@ -148,7 +148,7 @@ export function SessionFilesView({ data, error, refreshing, onRefresh, onPullRef
     const name = file.path.split('/').pop() || file.path;
     const image = isLegacyAttachmentImage(name);
     return { key: file.path, name, byteSize: file.size, mimeType: image ? null : 'text/plain', previewKind: image ? 'image' : 'text',
-      readContext: { type: 'session', id: sessionId }, source: { kind: 'ready', attachmentId: file.path, previewUrl: image ? url : null, originalUrl: `${url}&download=true` },
+      pdfCache: 'none', readContext: { type: 'session', id: sessionId }, source: { kind: 'ready', attachmentId: file.path, previewUrl: image ? url : null, originalUrl: `${url}&download=true` },
       loadText: signal => api.readSessionWorkspaceText(sessionId, file.path, signal),
       loadMedia: signal => api.readSessionWorkspaceMedia(sessionId, file.path, signal, { name }) };
   });

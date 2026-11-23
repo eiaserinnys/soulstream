@@ -21,6 +21,7 @@ export class AttachmentReadFailure extends Error {
 }
 
 const PDF_CACHE_DIRECTORY = 'attachment-pdf';
+let temporarySequence = 0;
 
 /**
  * Resolve a URI the platform document viewer can open without HTTP headers.
@@ -34,11 +35,13 @@ export async function attachmentPdfViewerUri({
   uri,
   headers,
   cacheKey,
+  cache = 'persistent',
   signal,
 }: {
   uri: string;
   headers?: Record<string, string>;
   cacheKey: string;
+  cache?: 'persistent' | 'none';
   signal: AbortSignal;
 }): Promise<string> {
   if (!uri) throw new AttachmentReadFailure('preview-failed');
@@ -59,8 +62,8 @@ export async function attachmentPdfViewerUri({
   if (/^file:/i.test(uri)) return uri;
   const directory = new Directory(Paths.cache, PDF_CACHE_DIRECTORY);
   if (!directory.exists) directory.create({ idempotent: true, intermediates: true });
-  const file = new File(directory, `${pdfCacheName(cacheKey)}.pdf`);
-  if (file.exists) return file.uri;
+  const file = new File(directory, `${pdfCacheName(cacheKey)}${cache === 'none' ? `-${Date.now()}-${temporarySequence++}` : ''}.pdf`);
+  if (cache === 'persistent' && file.exists) return file.uri;
   try {
     const downloaded = await File.downloadFileAsync(uri, file, {
       ...(headers ? { headers } : {}),
@@ -102,4 +105,13 @@ export function pdfCacheName(cacheKey: string): string {
   }
   const readable = cacheKey.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(-60);
   return `${readable || 'attachment'}-${(hash >>> 0).toString(16)}`;
+}
+
+export function releaseTemporaryPdf(uri: string): void {
+  try {
+    const file = new File(uri);
+    if (file.exists) file.delete();
+  } catch (error) {
+    console.warn('Failed to remove temporary PDF', error);
+  }
 }
