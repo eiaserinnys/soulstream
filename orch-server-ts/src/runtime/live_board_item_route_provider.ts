@@ -19,6 +19,10 @@ export function createLiveBoardItemRouteProvider(
       const item = await boardItems.getBoardItemById(id);
       return item ? { ...item } : null;
     },
+    async getPrimarySessionBoardItem(sessionId) {
+      const item = await boardItems.getPrimarySessionBoardItem(sessionId);
+      return item ? { ...item } : null;
+    },
     async getCatalogSnapshot() {
       return { folders: await folderProvider.listFolders(), boardItems: (await boardItems.getBoardItems()).map(item => ({ ...item })) };
     },

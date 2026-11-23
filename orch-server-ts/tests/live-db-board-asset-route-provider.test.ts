@@ -402,6 +402,7 @@ function createProvider(
       listFolders: async () => [serializeFolderRow(folderRow())],
       listBoardItems: async () => [],
       getBoardItemById: async () => null,
+      getPrimarySessionBoardItem: async () => null,
 
       getCatalogSnapshot: async () => ({
         folders: [serializeFolderRow(folderRow())],

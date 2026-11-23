@@ -45,16 +45,8 @@ describe("session create lifecycle", () => {
       .resolves.toMatchObject({ payload: { folderId: "folder-a" } });
   });
 
-  it("inherits a source session folder and removes sourceSessionId", async () => {
-    const boardItems = boardItemProvider({
-      boardItems: [{
-        id: "session:source",
-        folderId: "folder-a",
-        membershipKind: "primary",
-        itemType: "session",
-        itemId: "source",
-      }],
-    });
+  it("inherits a source session folder from a single lookup and removes sourceSessionId", async () => {
+    const boardItems = boardItemProvider({ sessionFolders: { source: "folder-a" } });
     const lifecycle = createSessionCreateLifecycle({
       resolveCallerInfo: vi.fn(async () => ({ source: "browser" })),
       boardItems,
@@ -65,7 +57,6 @@ describe("session create lifecycle", () => {
       request: request(),
       body: {
         prompt: "continue",
-        folderId: "folder-a",
         sourceSessionId: "source",
       },
     });
@@ -75,6 +66,45 @@ describe("session create lifecycle", () => {
       caller_info: { source: "browser" },
     });
     expect(prepared.payload).not.toHaveProperty("sourceSessionId");
+    expect(boardItems.getPrimarySessionBoardItem).toHaveBeenCalledWith("source");
+    expect(boardItems.getCatalogSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("leaves the folder unset when the source session has no folder", async () => {
+    const boardItems = boardItemProvider();
+    const lifecycle = createSessionCreateLifecycle({
+      resolveCallerInfo: vi.fn(async () => ({ source: "browser" })),
+      boardItems,
+      access: accessProvider({ restricted: false, allowedFolderIds: [] }),
+    });
+
+    const prepared = await lifecycle.prepare({
+      request: request(),
+      body: { prompt: "continue", sourceSessionId: "missing" },
+    });
+
+    expect(prepared.payload).not.toHaveProperty("folderId");
+    expect(boardItems.getPrimarySessionBoardItem).toHaveBeenCalledWith("missing");
+    expect(boardItems.getCatalogSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("does not look up the source session when folderId is already set", async () => {
+    const boardItems = boardItemProvider({ sessionFolders: { source: "folder-other" } });
+    const lifecycle = createSessionCreateLifecycle({
+      resolveCallerInfo: vi.fn(async () => ({ source: "browser" })),
+      boardItems,
+      access: accessProvider({ restricted: false, allowedFolderIds: [] }),
+    });
+
+    const prepared = await lifecycle.prepare({
+      request: request(),
+      body: { prompt: "continue", folderId: "folder-a", sourceSessionId: "source" },
+    });
+
+    expect(prepared.payload.folderId).toBe("folder-a");
+    expect(prepared.payload).not.toHaveProperty("sourceSessionId");
+    expect(boardItems.getPrimarySessionBoardItem).not.toHaveBeenCalled();
+    expect(boardItems.getCatalogSnapshot).not.toHaveBeenCalled();
   });
 
   it("defaults restricted users to their first allowed folder and rejects forbidden folders", async () => {
@@ -91,14 +121,15 @@ describe("session create lifecycle", () => {
       { restricted: true, allowedFolderIds: ["folder-allowed"] },
       requireFolderAccess,
     );
+    const boardItems = boardItemProvider({
+      folders: [
+        { id: "folder-allowed" },
+        { id: "folder-child", parentFolderId: "folder-allowed" },
+      ],
+    });
     const lifecycle = createSessionCreateLifecycle({
       resolveCallerInfo: vi.fn(async () => ({ source: "browser" })),
-      boardItems: boardItemProvider({
-        folders: [
-          { id: "folder-allowed" },
-          { id: "folder-child", parentFolderId: "folder-allowed" },
-        ],
-      }),
+      boardItems,
       access,
     });
 
@@ -108,6 +139,8 @@ describe("session create lifecycle", () => {
     });
 
     expect(prepared.payload.folderId).toBe("folder-allowed");
+    expect(boardItems.listFolders).toHaveBeenCalled();
+    expect(boardItems.getCatalogSnapshot).not.toHaveBeenCalled();
     expect(requireFolderAccess).toHaveBeenCalledWith(expect.objectContaining({
       folderId: "folder-allowed",
     }));
@@ -129,14 +162,25 @@ function request(): FastifyRequest {
 function boardItemProvider(input: {
   folders?: readonly BoardAccessFolderRecord[];
   boardItems?: readonly BoardItemRecord[];
+  sessionFolders?: Readonly<Record<string, string>>;
 } = {}): BoardItemRouteProvider {
   const folders = input.folders ?? [];
   const boardItems = input.boardItems ?? [];
+  const sessionFolders = input.sessionFolders ?? {};
   return {
     listFolders: vi.fn(async () => folders),
     listBoardItems: vi.fn(async () => boardItems),
     getBoardItemById: vi.fn(async () => boardItems[0] ?? null),
-
+    getPrimarySessionBoardItem: vi.fn(async (sessionId: string) => {
+      const folderId = sessionFolders[sessionId];
+      return folderId === undefined ? null : {
+        id: `session:${sessionId}`,
+        folderId,
+        membershipKind: "primary",
+        itemType: "session",
+        itemId: sessionId,
+      };
+    }),
     getCatalogSnapshot: vi.fn(async () => ({ folders, boardItems })),
   };
 }

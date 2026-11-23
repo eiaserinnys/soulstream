@@ -59,6 +59,9 @@ function createHarness(overrides: Partial<BoardItemRouteProvider> = {}) {
       calls.push(["getBoardItemById", boardItemId]);
       return boardItems.find((item) => item.id === boardItemId) ?? null;
     },
+    async getPrimarySessionBoardItem(sessionId) {
+      return boardItems.find((item) => item.itemId === sessionId) ?? null;
+    },
     async getCatalogSnapshot() {
       calls.push(["catalog"]);
       return { folders, boardItems };
