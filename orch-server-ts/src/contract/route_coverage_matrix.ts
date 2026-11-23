@@ -153,6 +153,7 @@ export const tsOnlyRouteKeys = [
   "GET /x/{key}", "POST /x/{key}/messages", "GET /x/{key}/messages/{requestId}",
   "GET /x/{key}/history", "POST /x/{key}/stop", "POST /x/{key}/hook",
   "POST /api/mcp/host/{tool}",
+  ...Object.keys(mcpCentralRouteAuthRequirements),
   "POST /api/persistent-context/host/evaluate",
   "POST /api/attachments/sessions/multipart/init",
   "POST /api/attachments/sessions/multipart/complete",

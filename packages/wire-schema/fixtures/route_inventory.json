@@ -130,20 +130,6 @@
     {"order": 226, "methods": ["POST"], "path": "/api/cards/{id}/questions", "name": "ask_card_question", "authRequired": true},
     {"order": 227, "methods": ["POST"], "path": "/api/cards/{id}/comments", "name": "add_card_comment", "authRequired": true},
     {"order": 228, "methods": ["GET"], "path": "/api/settings/card-dispatch", "name": "get_card_dispatch", "authRequired": true},
-    {"order": 229, "methods": ["PUT"], "path": "/api/settings/card-dispatch", "name": "put_card_dispatch", "authRequired": true},
-    {"order": 230, "methods": ["GET"], "path": "/api/mcp/config", "name": "mcp_config", "authRequired": true},
-    {"order": 231, "methods": ["PUT"], "path": "/api/mcp/managed-nodes/{node_id}", "name": "mcp_add_managed_node", "authRequired": true},
-    {"order": 232, "methods": ["DELETE"], "path": "/api/mcp/managed-nodes/{node_id}", "name": "mcp_remove_managed_node", "authRequired": true},
-    {"order": 233, "methods": ["PUT"], "path": "/api/mcp/servers/{server_id}", "name": "mcp_put_server", "authRequired": true},
-    {"order": 234, "methods": ["DELETE"], "path": "/api/mcp/servers/{server_id}", "name": "mcp_delete_server", "authRequired": true},
-    {"order": 235, "methods": ["POST"], "path": "/api/mcp/server-icons", "name": "mcp_upload_icon", "authRequired": true},
-    {"order": 236, "methods": ["GET"], "path": "/api/mcp/server-icons/{ref}", "name": "mcp_get_icon", "authRequired": true},
-    {"order": 237, "methods": ["PUT"], "path": "/api/mcp/profiles/{profile_id}", "name": "mcp_put_profile", "authRequired": true},
-    {"order": 238, "methods": ["DELETE"], "path": "/api/mcp/profiles/{profile_id}", "name": "mcp_delete_profile", "authRequired": true},
-    {"order": 239, "methods": ["PUT"], "path": "/api/mcp/agents/{agent_id}", "name": "mcp_bind_agent", "authRequired": true},
-    {"order": 240, "methods": ["PUT"], "path": "/api/mcp/secrets/{name}", "name": "mcp_put_secret", "authRequired": true},
-    {"order": 241, "methods": ["DELETE"], "path": "/api/mcp/secrets/{name}", "name": "mcp_delete_secret", "authRequired": true},
-    {"order": 242, "methods": ["GET"], "path": "/api/mcp/revisions", "name": "mcp_list_revisions", "authRequired": true},
-    {"order": 243, "methods": ["POST"], "path": "/api/mcp/revisions/{revision_id}/rollback", "name": "mcp_rollback", "authRequired": true}
+    {"order": 229, "methods": ["PUT"], "path": "/api/settings/card-dispatch", "name": "put_card_dispatch", "authRequired": true}
   ]
 }
