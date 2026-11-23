@@ -27,7 +27,7 @@ DATA = {
     "session_id": "components-session", "root": "/workspace/card1789", "node": {"id": "eiaserinnys", "status": "ok"},
     "snapshot": {"state": "ready", "observed_at": "2026-11-22T15:12:00Z", "refreshing": False, "branch": "card1789-files-dashboard", "head": "abc", "upstream": "origin/main", "ahead": 1, "behind": 0, "truncated": False},
     "attribution": "partial", "files": [
-        {**FILE, "path": "soul-server-ts/src/config.ts", "git_status": "modified", "added": 3, "deleted": 1},
+        {**FILE, "path": "soul-server-ts/src/config.ts", "git_status": "modified", "added": _diff_fixture.CONFIG_ADD, "deleted": _diff_fixture.CONFIG_DEL},
         {**FILE, "path": "soul-server-ts/src/upstream/event_outbox_types.ts", "size": len(LONG_TEXT), "git_status": None, "committed": True, "wrote": True},
         {**FILE, "path": "soul-server-ts/src/upstream/event_outbox.ts", "git_status": "modified", "added": _diff_fixture.EVENT_ADD, "deleted": _diff_fixture.EVENT_DEL, "wrote": True},
         {**FILE, "path": "soul-server-ts/src/upstream/outbox_retry.ts", "git_status": "untracked", "added": len(_diff_fixture.NEW_LINES), "deleted": 0, "wrote": True},
@@ -80,8 +80,10 @@ def install_routes(page, scene="ready", requests=None):
             status = {"diff-new": "added", "diff-deleted": "deleted", "diff-renamed": "renamed"}.get(scene, "modified")
             text = _diff_fixture.EVENT_DIFF
             if scene == "diff-new": text = _diff_fixture.NEW_DIFF
-            if scene == "diff-deleted": text = _diff_fixture.DELETED_DIFF
-            if scene == "diff-renamed": text = ""
+            elif scene == "diff-deleted": text = _diff_fixture.DELETED_DIFF
+            elif scene == "diff-renamed": text = ""
+            elif requested.endswith("/outbox_retry.ts"): status, text = "untracked", _diff_fixture.NEW_DIFF
+            elif requested.endswith("/config.ts"): text = _diff_fixture.CONFIG_DIFF
             return route.fulfill(json={"path": requested, "status": status, "text": text, "truncated": scene == "diff-truncated", "binary": scene == "diff-binary"})
         if path.endswith("/workspace/file"):
             requested = parse_qs(urlsplit(route.request.url).query).get('path', [''])[0]
@@ -470,16 +472,30 @@ def capture_diff(browser, base, out):
         page.screenshot(path=str(out / (name + ".png")), animations="disabled")
         if "pending_diff" in requests: requests["pending_diff"].abort()
         if scene == "diff-ready" and surface == "card" and theme == "dark":
+            for path, expected_status, expected_counts in (
+                (f"{_diff_fixture.UP}/outbox_retry.ts", "untracked", (len(_diff_fixture.NEW_LINES), 0)),
+                ("soul-server-ts/src/config.ts", "modified", (_diff_fixture.CONFIG_ADD, _diff_fixture.CONFIG_DEL)),
+            ):
+                payload = page.evaluate("""async path => {
+                    const url='/api/sessions/components-session/workspace/diff?path='+encodeURIComponent(path);
+                    return (await fetch(url)).json();
+                }""", path)
+                changes = [line for line in payload["text"].splitlines() if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))]
+                counts = (sum(line.startswith("+") for line in changes), sum(line.startswith("-") for line in changes))
+                assert payload["status"] == expected_status and f"b/{path}" in payload["text"].splitlines()[0] and counts == expected_counts, (path, payload, counts)
             pane.get_by_role("button", name="이번 세션", exact=False).hover()
             pane.screenshot(path=str(out / "diff-hover-card-1440.png"), animations="disabled")
             page.mouse.move(2, 2)
             body = pane.locator(".v3-session-files-body")
             scroll_before = body.evaluate("e => e.scrollTop")
             page.set_viewport_size({"width": 1024, "height": 900})
-            page.wait_for_function("""wide => {
+            page.wait_for_function("""async wide => {
                 const pane=document.querySelector('[data-testid="v3-card-workspace"] .v3-session-files-pane');
                 const body=pane?.querySelector('.v3-session-file-diff-body');
-                return innerWidth === 1024 && body && body.clientWidth < wide - 1;
+                if (innerWidth !== 1024 || !body || body.clientWidth >= wide - 1) return false;
+                const width=body.clientWidth;
+                await new Promise(resolve => setTimeout(resolve, 200));
+                return innerWidth === 1024 && body.clientWidth === width;
             }""", arg=m["clientWidth"])
             expect(row).to_have_attribute("aria-expanded", "true")
             page.mouse.move(2, 2)
@@ -498,9 +514,12 @@ def capture_diff(browser, base, out):
             assert row.evaluate("e => getComputedStyle(e).outlineStyle") == "none"
             page.screenshot(path=str(out / "diff-card-1024.png"), animations="disabled")
             page.set_viewport_size({"width": 1440, "height": 900})
-            page.wait_for_function("""wide => {
+            page.wait_for_function("""async wide => {
                 const body=document.querySelector('[data-testid="v3-card-workspace"] .v3-session-file-diff-body');
-                return innerWidth === 1440 && body && Math.abs(body.clientWidth - wide) <= 1;
+                if (innerWidth !== 1440 || !body || Math.abs(body.clientWidth - wide) > 1) return false;
+                const width=body.clientWidth;
+                await new Promise(resolve => setTimeout(resolve, 200));
+                return innerWidth === 1440 && body.clientWidth === width;
             }""", arg=m["clientWidth"])
             expect(row).to_have_attribute("aria-expanded", "true")
             assert abs(body.evaluate("e => e.scrollTop") - scroll_before) <= 2

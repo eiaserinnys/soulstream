@@ -62,6 +62,17 @@ EVENT_DIFF, EVENT_ADD, EVENT_DEL = hunk_diff(f"{UP}/event_outbox.ts", [
     ]),
 ])
 
+CONFIG_DIFF, CONFIG_ADD, CONFIG_DEL = hunk_diff("soul-server-ts/src/config.ts", [
+    (31, "export const config = {", [
+        "   upstream: {",
+        "-    reconnectDelayMs: 1_000,",
+        "+    reconnectDelayMs: 2_000,",
+        "+    outboxRetryMaxMs: 30_000,",
+        "+    outboxRetryEnabled: true,",
+        "   },",
+    ]),
+])
+
 NEW_LINES = [
     "// 노드 이벤트 아웃박스의 재전송 간격.",
     "// 실패할 때 간격을 두 배씩 늘리고 30초에서 멈춘다.",
