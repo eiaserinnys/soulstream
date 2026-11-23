@@ -6,6 +6,7 @@ import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from 
 import { publishSubscription } from "../src/webhooks/outbound_publisher.js";
 import { sendNextDueDelivery, type OutboundSenderDependencies } from "../src/webhooks/outbound_sender.js";
 import { OutboundWebhookService } from "../src/webhooks/outbound_service.js";
+import { SessionResourceAccessError } from "../src/session/session_resource_access.js";
 
 const OWNER = "owner@example.com";
 const SECRET = `whsec_${Buffer.alloc(32, 4).toString("base64")}`;
@@ -105,8 +106,9 @@ async function subscriptionRow(subscriptionId: string) {
     disabled_reason: string | null;
     consecutive_failures: number;
     cursor_event_id: number;
+    updated_at: Date;
   }>>`
-    SELECT active, disabled_reason, consecutive_failures, cursor_event_id
+    SELECT active, disabled_reason, consecutive_failures, cursor_event_id, updated_at
     FROM webhook_subscriptions WHERE id = ${subscriptionId}
   `;
   return row!;
@@ -218,7 +220,7 @@ describe("outbound webhook sender", () => {
     const { deliveryId } = await seedPendingDelivery();
     const sender = makeSender({
       requireSessionAccess: async () => {
-        throw new Error("access revoked");
+        throw new SessionResourceAccessError("SESSION_ACCESS_DENIED", "Folder access denied", 403);
       },
     });
 
@@ -227,6 +229,63 @@ describe("outbound webhook sender", () => {
     const row = await deliveryRow(deliveryId);
     expect(row.state).toBe("dead");
     expect(row.last_error).toBe("access_revoked");
+  });
+
+  it("retries instead of dying when the access check throws a general error", async () => {
+    const { subscriptionId, deliveryId } = await seedPendingDelivery();
+    const sender = makeSender({
+      requireSessionAccess: async () => {
+        throw new Error("access store unavailable");
+      },
+    });
+
+    expect(await sendNextDueDelivery(sender)).toBe(true);
+    expect(post).not.toHaveBeenCalled();
+    const row = await deliveryRow(deliveryId);
+    expect(row.state).toBe("pending");
+    expect(row.attempt_count).toBe(1);
+    expect(row.last_error).toBe("access_check_failed: access store unavailable");
+    expect(row.next_attempt_at.getTime() - clock).toBe(10_000);
+    expect(await subscriptionRow(subscriptionId)).toMatchObject({
+      active: true,
+      consecutive_failures: 0,
+    });
+  });
+
+  it("retries when issuer authorization throws a general error", async () => {
+    const { deliveryId } = await seedPendingDelivery();
+    const sender = makeSender({
+      authorizeUser: () => {
+        throw new Error("auth store unavailable");
+      },
+    });
+
+    expect(await sendNextDueDelivery(sender)).toBe(true);
+    expect(post).not.toHaveBeenCalled();
+    const row = await deliveryRow(deliveryId);
+    expect(row.state).toBe("pending");
+    expect(row.attempt_count).toBe(1);
+    expect(row.last_error).toBe("access_check_failed: auth store unavailable");
+  });
+
+  it("does not close pending deliveries when an active subscription is re-enabled", async () => {
+    const { subscriptionId, deliveryId } = await seedPendingDelivery();
+    await harness.sql`
+      UPDATE webhook_subscriptions SET consecutive_failures = 3 WHERE id = ${subscriptionId}
+    `;
+    const before = await subscriptionRow(subscriptionId);
+    await harness.sql`UPDATE sessions SET last_event_id = 9 WHERE session_id = 's1'`;
+
+    const summary = await makeService().setActive(OWNER, subscriptionId, true);
+
+    expect(summary).toMatchObject({
+      active: true,
+      consecutive_failures: 3,
+      cursor_event_id: before.cursor_event_id,
+      updated_at: before.updated_at,
+    });
+    expect((await deliveryRow(deliveryId)).state).toBe("pending");
+    expect(await subscriptionRow(subscriptionId)).toEqual(before);
   });
 
   it("dies with access_revoked when issuer authorization returns a denial", async () => {
