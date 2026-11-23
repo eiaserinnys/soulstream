@@ -27,6 +27,7 @@ import {
   createLiveAuthNativeVerifier,
   createLiveAuthTokenResolver,
   createLiveAuthUserAuthorizer,
+  signJwt,
 } from "./live_auth_route_provider.js";
 import {
   createLiveCogitoRouteProviders,
@@ -259,12 +260,6 @@ export function createLiveOrchestratorProviderBundle(
     configProvider: options.dependencies.configProvider,
     nodeHttpClient: options.dependencies.nodeHttpClient,
   });
-  const nodeAgentProfileProviders = createLiveNodeAgentProfileRouteProviders({
-    registry: options.runtimeServices.registry,
-    bridge: options.runtimeServices.sessionBridge,
-    nodeHttpClient: options.dependencies.nodeHttpClient,
-    agentProfileRepository: options.dependencies.dbCatalogRepository.agentProfileRepository,
-  });
   const modelPresetAvailability = new ModelPresetAvailabilityService(
     options.runtimeServices.registry,
     options.usageSummaryRoutes.service,
@@ -296,6 +291,17 @@ export function createLiveOrchestratorProviderBundle(
           configuredToken: token,
           nodeCredentials: options.nodeCredentials,
         }).ok;
+    },
+  });
+  const nodeAgentProfileProviders = createLiveNodeAgentProfileRouteProviders({
+    registry: options.runtimeServices.registry,
+    bridge: options.runtimeServices.sessionBridge,
+    nodeHttpClient: options.dependencies.nodeHttpClient,
+    agentProfileRepository: options.dependencies.dbCatalogRepository.agentProfileRepository,
+    forwardAuth: {
+      resolveUser: headers => authenticatedUserResolvers.resolveUserFromHeaders(headers),
+      readJwtSecret: async () => (await options.dependencies.configProvider.getConfig()).jwt_secret,
+      signJwt,
     },
   });
   const dashboardAccessProvider = createLiveDashboardAccessProvider({
