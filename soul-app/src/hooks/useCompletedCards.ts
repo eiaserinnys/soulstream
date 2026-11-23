@@ -4,6 +4,7 @@ import type { CardDto } from '../api/cardTypes';
 import { completedBounds,localDate,mergeCompletedRefresh,type CompletedCardParams,type CompletedPeriod } from '../../../packages/soul-ui/src/cards/completed-cards';
 import { usePlannerStore } from '../store/plannerStore';
 import { useAuthScopeGeneration } from '../lib/auth-scope';
+import { cancelCardRefresh,createCardRefreshWindow,scheduleCardRefresh } from '../lib/card-refresh-window';
 
 type Accumulated={cards:CardDto[];cursor:string|null};
 export function useCompletedCards(api:ApiClient|null,folderId:string|undefined,enabled:boolean) {
@@ -57,6 +58,17 @@ export function useCompletedCards(api:ApiClient|null,folderId:string|undefined,e
   },[key,enabled,invalidRange,folderId,period,start,end,q,api]);
   const previousRevision=useRef(revision);
   useEffect(()=>{if(previousRevision.current!==revision){previousRevision.current=revision;refresh.current();}},[revision]);
+  // 카드 갱신만 한 창으로 묶는다. 폴더·재생 무효화는 위에서 그대로 즉시 다시 받는다.
+  const cardRevision=usePlannerStore(state=>state.invalidation.card);
+  const cardWindow=useRef(createCardRefreshWindow());
+  const previousCardRevision=useRef(cardRevision);
+  useEffect(()=>{
+    if(previousCardRevision.current===cardRevision)return;
+    previousCardRevision.current=cardRevision;
+    if(!enabled){cancelCardRefresh(cardWindow.current);return;}
+    scheduleCardRefresh(cardWindow.current,()=>refresh.current());
+  },[cardRevision,enabled]);
+  useEffect(()=>()=>cancelCardRefresh(cardWindow.current),[]);
   // error는 화면에 보일 글 하나다. invalidRange면 그 글은 범위 안내이고, 다시 받아도 고쳐지지 않는다.
   return {cards:enabled&&page.key===key?page.cards:[],loading,error:invalidRange?'시작일과 종료일을 확인해 주세요.':error,invalidRange,resetKey:key,
     period,setPeriod,start,setStart,end,setEnd,search,setSearch,loadMore:()=>more.current(),retry:()=>retry.current()};

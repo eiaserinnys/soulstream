@@ -5,6 +5,7 @@ import {usePlannerFolder} from '../usePlannerFolder';
 import {usePlannerFolderDetail} from '../usePlannerReads';
 import {cardFixture} from '../../test-support/cards';
 import {usePlannerStore} from '../../store/plannerStore';
+import {CARD_REFRESH_WINDOW_MS} from '../../lib/card-refresh-window';
 import {mergeCompletedRefresh} from '../../../../packages/soul-ui/src/cards/completed-cards';
 // useCompletedCards applies its 250ms search debounce after mount; let it fire inside act
 // before RNTL's cleanup yields to the event loop.
@@ -33,6 +34,33 @@ test('hidden skips reads; invalidation refreshes the first page and keeps the lo
   expect(Date.parse(listCompletedCards.mock.calls[2][0].completedBefore)).toBeGreaterThanOrEqual(Date.parse(first.completedBefore));
   expect(listCompletedCards.mock.calls[2][0].cursor).toBeUndefined();
   await settleTimers();
+});
+
+test('카드 갱신은 한 창으로 묶고 폴더 무효화는 즉시 다시 받는다',async()=>{
+  jest.useFakeTimers();
+  try {
+    const a=cardFixture({id:'a',status:'done',completedAt:'2026-01-02'});
+    const listCompletedCards=jest.fn().mockResolvedValue({cards:[a],nextCursor:null});
+    const api={listCompletedCards} as unknown as ApiClient;
+    const hook=renderHook(()=>useCompletedCards(api,'folder-1',true));
+    const flush=()=>act(async()=>{await Promise.resolve();await Promise.resolve();await Promise.resolve();});
+    await flush();
+    expect(listCompletedCards).toHaveBeenCalledTimes(1);
+
+    act(()=>{usePlannerStore.getState().invalidate('card');usePlannerStore.getState().invalidate('card');});
+    await act(async()=>{jest.advanceTimersByTime(CARD_REFRESH_WINDOW_MS-1);});
+    expect(listCompletedCards).toHaveBeenCalledTimes(1);
+    await act(async()=>{jest.advanceTimersByTime(1);await Promise.resolve();await Promise.resolve();});
+    expect(listCompletedCards).toHaveBeenCalledTimes(2);
+
+    act(()=>usePlannerStore.getState().invalidate('folder'));
+    await flush();
+    expect(listCompletedCards).toHaveBeenCalledTimes(3);
+    await flush();
+    expect(hook.result.current.loading).toBe(false);
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 test('refresh merges the older tail, or replaces it when the first page is complete',()=>{

@@ -16,7 +16,7 @@ export function usePlannerFolder(
   const [local, setLocal] = useState(() => emptyState(ownerKey));
   const current = local.ownerKey === ownerKey ? local : emptyState(ownerKey);
   const refreshKey = usePlannerStore((state) => (
-    state.invalidation.folder + state.invalidation.replay
+    state.invalidation.folder + state.invalidation.replay + state.invalidation.card
   ));
   const generationRef = useRef(0);
 

@@ -11,7 +11,7 @@ test.each([
   ['session_deleted', 'session_deleted'],
   ['catalog_updated', 'catalog'],
   ['folder_updated', 'folder'],
-  ['card_updated', 'folder'],
+  ['card_updated', 'card'],
   ['custom_view_updated', 'custom_view'],
   ['replay_gap', 'replay'],
   ['session_list', null],
@@ -35,29 +35,39 @@ test('daily/project/starred/runHistory/pageDetail은 source 표에 지정된 변
     starred: initial.starred + 1,
   });
 
-  counters = incrementPlannerInvalidation(counters, 'page');
+  // 카드 갱신(card_updated)은 폴더와 같은 planner 표면을 갱신하되, 카드 목록 훅이
+  // 자기 병합 창을 따로 열 수 있도록 별도 source로 센다.
+  counters = incrementPlannerInvalidation(counters, 'card');
   expect(selectPlannerInvalidationKeys(counters)).toEqual({
+    ...initial,
     daily: initial.daily + 2,
     project: initial.project + 2,
     starred: initial.starred + 2,
+  });
+
+  counters = incrementPlannerInvalidation(counters, 'page');
+  expect(selectPlannerInvalidationKeys(counters)).toEqual({
+    daily: initial.daily + 3,
+    project: initial.project + 3,
+    starred: initial.starred + 3,
     runHistory: initial.runHistory,
     pageDetail: initial.pageDetail + 1,
   });
 
   counters = incrementPlannerInvalidation(counters, 'session_created');
   expect(selectPlannerInvalidationKeys(counters)).toEqual({
-    daily: initial.daily + 3,
-    project: initial.project + 3,
-    starred: initial.starred + 3,
+    daily: initial.daily + 4,
+    project: initial.project + 4,
+    starred: initial.starred + 4,
     runHistory: initial.runHistory + 1,
     pageDetail: initial.pageDetail + 1,
   });
 
   counters = incrementPlannerInvalidation(counters, 'replay');
   expect(selectPlannerInvalidationKeys(counters)).toEqual({
-    daily: initial.daily + 4,
-    project: initial.project + 4,
-    starred: initial.starred + 4,
+    daily: initial.daily + 5,
+    project: initial.project + 5,
+    starred: initial.starred + 5,
     runHistory: initial.runHistory + 2,
     pageDetail: initial.pageDetail + 2,
   });
@@ -69,6 +79,7 @@ test.each([
   ['session_deleted', ['daily', 'project', 'starred', 'runHistory']],
   ['catalog', []],
   ['folder', ['daily', 'project', 'starred']],
+  ['card', ['daily', 'project', 'starred']],
   ['custom_view', []],
   ['replay', ['daily', 'project', 'starred', 'runHistory', 'pageDetail']],
   ['page', ['daily', 'project', 'starred', 'pageDetail']],

@@ -13,7 +13,7 @@ import { useChatStore } from '../store/chatStore';
 import { useSSEStream, CATALOG_STREAM_EVENTS } from './useSSEStream';
 import { plannerSourceForStreamEvent } from '../lib/planner-invalidation';
 import { usePlannerStore } from '../store/plannerStore';
-import { refreshCard } from '../store/cardStore';
+import { refreshCard, useCardStore } from '../store/cardStore';
 import {
   captureAuthScope,
   isAuthScopeCurrent,
@@ -360,9 +360,13 @@ export function useSessionsStream() {
       }
       case 'card_updated':
         if (api && typeof data?.cardId === 'string') {
-          void refreshCard(api, data.cardId).catch((error) => {
-            console.warn('[cards] card refresh failed', error);
-          });
+          // 화면이 이미 아는 카드만 상세를 다시 읽는다. 새 카드는 목록 무효화가 목록 조회로 데려온다.
+          const cards = useCardStore.getState();
+          if (cards.rows[data.cardId] || cards.details[data.cardId]) {
+            void refreshCard(api, data.cardId).catch((error) => {
+              console.warn('[cards] card refresh failed', error);
+            });
+          }
         }
         break;
       case 'session_delivery_failed': {

@@ -4,6 +4,7 @@ export type PlannerInvalidationSource =
   | 'session_deleted'
   | 'catalog'
   | 'folder'
+  | 'card'
   | 'custom_view'
   | 'replay'
   | 'page';
@@ -25,6 +26,7 @@ const SOURCE_NAMES: readonly PlannerInvalidationSource[] = [
   'session_deleted',
   'catalog',
   'folder',
+  'card',
   'custom_view',
   'replay',
   'page',
@@ -54,8 +56,9 @@ export function plannerSourceForStreamEvent(
     case 'catalog_updated':
       return 'catalog';
     case 'folder_updated':
-    case 'card_updated':
       return 'folder';
+    case 'card_updated':
+      return 'card';
     case 'custom_view_updated':
       return 'custom_view';
     case 'page_updated':
@@ -74,6 +77,7 @@ export function selectPlannerInvalidationKeys(
     'session_created',
     'session_deleted',
     'folder',
+    'card',
     'page',
     'replay',
   ]);
@@ -84,6 +88,7 @@ export function selectPlannerInvalidationKeys(
       'page',
       'replay',
       'folder',
+      'card',
       'session_created',
       'session_deleted',
     ]),
