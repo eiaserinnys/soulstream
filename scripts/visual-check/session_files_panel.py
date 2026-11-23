@@ -534,6 +534,7 @@ def capture_diff(browser, base, out):
             full.click()
             dialog = page.get_by_role("dialog")
             expect(dialog).to_be_visible()
+            page.wait_for_function("document.querySelector('[data-slot=dialog-popup][data-attachment-kind]')?.contains(document.activeElement)", timeout=5000)
             page.keyboard.press("Escape"); expect(dialog).to_have_count(0); expect(full).to_be_focused()
             row.focus(); page.keyboard.press("Space"); expect(row).to_have_attribute("aria-expanded", "false"); expect(row).to_be_focused()
             page.keyboard.press("Space"); expect(row).to_have_attribute("aria-expanded", "true")
