@@ -696,6 +696,10 @@
     {
       "id": "172_drop_claude_transcript_store.sql",
       "sha256": "a034ae1f784c5cdb19ef851deae0cb03cd8ae67d2800c3ff1f80fb8518bc27d3"
+    },
+    {
+      "id": "173_mcp_central_config.sql",
+      "sha256": "284a202d6fb0b4bdd1df64594fe974cf41f1e792dd3df4e254cfa5d2307b8874"
     }
   ]
 }

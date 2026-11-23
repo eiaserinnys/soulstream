@@ -40,6 +40,7 @@
     "oidc-provider": "9.12.2",
     "openai": "6.37.0",
     "postgres": "3.4.9",
+    "simple-icons": "16.38.1",
     "standardwebhooks": "1.1.1",
     "y-protocols": "1.0.6",
     "yaml": "^2.9.0",
