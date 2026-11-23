@@ -3571,6 +3571,7 @@ export interface WorkspaceFileRead {
   agent_id: string;
   worktree_id: string | null;
   path: string;
+  expected_root?: string;
   offset?: number;
   length?: number;
   [k: string]: unknown;
@@ -3627,6 +3628,7 @@ export interface WorkspaceFileDiff {
   worktree_id: string | null;
   path: string;
   orig_path: string | null;
+  expected_root?: string;
   [k: string]: unknown;
 }
 export interface WorkspaceFileDiffResult {

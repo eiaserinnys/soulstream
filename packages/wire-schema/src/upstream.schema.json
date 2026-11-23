@@ -244,7 +244,8 @@
         "agent_id": { "type": "string" },
         "worktree_id": { "type": ["string", "null"] },
         "path": { "type": "string" },
-        "orig_path": { "type": ["string", "null"] }
+        "orig_path": { "type": ["string", "null"] },
+        "expected_root": { "type": "string" }
       }
     },
     "WorkspaceFileDiffResult": {
@@ -292,6 +293,7 @@
         "path": {
           "type": "string"
         },
+        "expected_root": { "type": "string" },
         "offset": {
           "type": "integer"
         },

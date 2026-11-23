@@ -101,7 +101,7 @@ export async function runBoundedProcess(
           closePromise.then(() => true),
           delay(WORKTREE_PROCESS_CLOSE_CONFIRM_TIMEOUT_MS).then(() => false),
         ]);
-        if (reason === "timeout" || !terminationConfirmed || !closeConfirmed) { timeoutError(terminationConfirmed && closeConfirmed, child.exitCode); return; }
+        if (reason === "timeout" || !closeConfirmed || (!terminationConfirmed && !(process.platform === "win32" && closed))) { timeoutError(terminationConfirmed && closeConfirmed, child.exitCode); return; }
         if (settled) return;
         settled = true; cleanup();
         resolve({stdout:new StringDecoder("utf8").write(Buffer.concat(stdout)), stderr:Buffer.concat(stderr).toString("utf8"), exitCode:child.exitCode ?? 0, truncated:true});

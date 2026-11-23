@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { PendingNodeCommandRejectedError } from "../src/node/pending_commands.js";
 import { createLiveSessionWorkspaceProvider } from "../src/runtime/live_session_workspace_provider.js";
 import { registerSessionWorkspaceRoutes } from "../src/session/session_workspace_routes.js";
@@ -54,6 +57,7 @@ describe("session workspace routes", () => {
   it("maps node file errors to the specified HTTP responses", async () => {
     const h=harness();
     const url="/api/sessions/s/workspace/file?path=read.txt";
+    await h.app.inject({method:"GET",url:"/api/sessions/s/workspace"});
     h.setConnected(false); expect((await h.app.inject({method:"GET",url})).statusCode).toBe(503); h.setConnected(true);
     for(const [message, code, expected] of [["NOT_FOUND: missing", undefined, 404], ["TOO_LARGE: too big", undefined, 413], ["Not implemented in soul-server-ts: workspace_file_read", undefined, 501], ["deadline", "CONTROL_RESULT_TIMEOUT", 504]] as const) {
       h.setFileError(rejected("workspace_file_read",message,code));
@@ -85,7 +89,7 @@ it("filters git-only paths for restricted users and shares authorization with di
   expect((await h.app.inject({url:"/api/sessions/s/workspace"})).json().files).toEqual([]);
   for (const endpoint of ["file","diff"]) expect((await h.app.inject({url:`/api/sessions/s/workspace/${endpoint}?path=other%2Ffile.txt`})).statusCode).toBe(403);
   h.setRestricted(false);
-  expect((await h.app.inject({url:"/api/sessions/s/workspace/file?path=other%5Cfile.txt"})).statusCode).toBe(200);
+  expect((await h.app.inject({url:"/api/sessions/s/workspace/file?path=other%2Ffile.txt"})).statusCode).toBe(200);
   expect((await h.app.inject({url:"/api/sessions/s/workspace/diff?path=other%2Ffile.txt"})).json()).toMatchObject({path:"other/file.txt",status:"renamed"});
   const command=h.bridge.sendPendingCommand.mock.calls.map(([arg]:any)=>arg.command.message).find((cmd:any)=>cmd.type === "workspace_file_diff");
   expect(command.orig_path).toBeNull();
@@ -94,7 +98,7 @@ it("filters git-only paths for restricted users and shares authorization with di
 
 it("maps diff node errors", async () => {
   const h=harness(); const url="/api/sessions/s/workspace/diff?path=read.txt";
-  for (const [message,code,expected] of [["NOT_FOUND: missing",undefined,404],["INVALID_REQUEST: bad",undefined,400],["NOT_GIT: bad",undefined,409],["Not implemented in soul-server-ts: workspace_file_diff",undefined,501],["deadline","CONTROL_RESULT_TIMEOUT",504]] as const) {
+  for (const [message,code,expected] of [["NOT_FOUND: missing",undefined,404],["INVALID_REQUEST: bad",undefined,400],["NOT_GIT: bad",undefined,409],["CONFLICT: workspace root changed",undefined,409],["Not implemented in soul-server-ts: workspace_file_diff",undefined,501],["deadline","CONTROL_RESULT_TIMEOUT",504]] as const) {
     h.setFileError(rejected("workspace_file_diff",message,code)); expect((await h.app.inject({url})).statusCode).toBe(expected);
   }
   h.setConnected(false); expect((await h.app.inject({url})).statusCode).toBe(503);
@@ -166,4 +170,44 @@ it("passes a rename source when it is also in the restricted caller's list", asy
   expect((await h.app.inject({url:"/api/sessions/s/workspace/diff?path=read.txt"})).statusCode).toBe(200);
   const command=h.bridge.sendPendingCommand.mock.calls.map(([arg]:any)=>arg.command.message).find((cmd:any)=>cmd.type === "workspace_file_diff");
   expect(command.orig_path).toBe("old.txt"); await h.app.close();
+});
+
+it("keeps POSIX backslash activity distinct from a slash path", async () => {
+  if (process.platform === "win32") return;
+  const root=await mkdtemp(path.join(tmpdir(),"posix-paths-"));
+  await mkdir(path.join(root,"a"));
+  await writeFile(path.join(root,"a\\b"),"backslash");
+  await writeFile(path.join(root,"a","b"),"slash");
+  const h=harness(); h.setRestricted(true);
+  h.setActivities([{event_type:"tool_start",tool_name:"Read",file_path:path.join(root,"a\\b"),created_at:new Date("2026-01-02T00:00:00Z")}]);
+  h.setOutcome({root,state:"ready",observed_at:"2026-01-02T00:00:00Z",refreshing:false,git:{branch:"main",head:"abc",upstream:null,ahead:0,behind:0,truncated:false,files:[{path:"a/b",orig_path:null,status:"modified",added:1,deleted:0,size:1}],commits:[]}});
+  const listing=(await h.app.inject({url:"/api/sessions/s/workspace"})).json();
+  expect(listing.files).toEqual([]); expect(listing.read_only.map((row:any)=>row.path)).toContain("a\\b");
+  for (const endpoint of ["file","diff"]) expect((await h.app.inject({url:`/api/sessions/s/workspace/${endpoint}?path=a%2Fb`})).statusCode).toBe(403);
+  await h.app.close(); await rm(root,{recursive:true,force:true});
+});
+
+it("requires a known root and sends the same root with file and diff commands", async () => {
+  const h=harness();
+  for(const endpoint of ["file","diff"]) {
+    expect((await h.app.inject({url:`/api/sessions/s/workspace/${endpoint}?path=read.txt`})).statusCode).toBe(200);
+  }
+  const commands=h.bridge.sendPendingCommand.mock.calls.map(([arg]:any)=>arg.command.message);
+  expect(commands.filter((cmd:any)=>cmd.type === "workspace_file_read" || cmd.type === "workspace_file_diff").map((cmd:any)=>cmd.expected_root)).toEqual(["/repo","/repo"]);
+  const unknown=harness(); unknown.setOutcome(rejected("workspace_snapshot","not implemented","CONTROL_COMMAND_NOT_IN_INVENTORY"));
+  for(const endpoint of ["file","diff"]) expect((await unknown.app.inject({url:`/api/sessions/s/workspace/${endpoint}?path=read.txt`})).statusCode).toBe(409);
+  expect(unknown.bridge.sendPendingCommand.mock.calls.some(([arg]:any)=>arg.command.message.type === "workspace_file_read" || arg.command.message.type === "workspace_file_diff")).toBe(false);
+  await h.app.close(); await unknown.app.close();
+});
+
+it("merges Windows git and activity paths ignoring case for restricted access", async () => {
+  const h=harness(); h.setRestricted(true);
+  const created_at=new Date("2026-01-02T00:00:00Z");
+  h.setActivities([{event_type:"tool_start",tool_name:"Write",file_path:"C:\\Repo\\folder\\read.txt",created_at},{event_type:"tool_start",tool_name:"Read",file_path:"C:\\Repo\\FOLDER\\READ.TXT",created_at}]);
+  h.setOutcome({root:"C:\\Repo",state:"ready",observed_at:"2026-01-02T00:00:00Z",refreshing:false,git:{branch:"main",head:"abc",upstream:null,ahead:0,behind:0,truncated:false,files:[{path:"Folder/Read.txt",orig_path:null,status:"modified",added:1,deleted:0,size:1}],commits:[]}});
+  const response=await h.app.inject({url:"/api/sessions/s/workspace"});
+  expect(response.json().files).toEqual([expect.objectContaining({path:"Folder/Read.txt",git_status:"modified",wrote:true,read:true})]);
+  expect(response.json().read_only).toEqual([]);
+  expect((await h.app.inject({url:"/api/sessions/s/workspace/file?path=folder%2Fread.txt"})).statusCode).toBe(200);
+  await h.app.close();
 });

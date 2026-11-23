@@ -61,6 +61,7 @@ async function authorizedFile(options:SessionWorkspaceRouteOptions, request:impo
   const access=await options.accessProvider.resolveAccess({request});
   const opened=await options.provider.openWorkspace(sessionId);
   const workspace=filterWorkspace(opened.workspace,access.restricted);
+  if (workspace.root === null) throw new WorkspaceRouteError(409,"workspace root unknown");
   const windows=!!workspace.root && (/^[a-z]:[\\/]/i.test(workspace.root) || workspace.root.startsWith("\\\\"));
   const same=(a:string,b:string) => windows ? a.toLowerCase() === b.toLowerCase() : a === b;
   const entries=[...workspace.files,...workspace.read_only];

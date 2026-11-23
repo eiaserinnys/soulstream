@@ -11,12 +11,12 @@ export function createWorkspaceCommandFamily(deps: {send: SendFn; workspace: Wor
     },
     workspace_file_diff: async raw => {
       const cmd = raw as WorkspaceFileDiff;
-      try { await deps.send({ type: "workspace_file_diff_result", requestId: commandRequestId(raw), ...await deps.workspace.diff(cmd, cmd.path, cmd.orig_path) }); }
+      try { await deps.send({ type: "workspace_file_diff_result", requestId: commandRequestId(raw), ...await deps.workspace.diff(cmd, cmd.path, cmd.orig_path, cmd.expected_root) }); }
       catch (error) { throw new CommandDispatchError(error instanceof Error ? error.message : String(error)); }
     },
     workspace_file_read: async raw => {
       const cmd = raw as WorkspaceFileRead;
-      try { await deps.send({ type: "workspace_file_read_result", requestId: commandRequestId(raw), ...await deps.workspace.read(cmd, cmd.path, cmd.offset, cmd.length) }); }
+      try { await deps.send({ type: "workspace_file_read_result", requestId: commandRequestId(raw), ...await deps.workspace.read(cmd, cmd.path, cmd.offset, cmd.length, cmd.expected_root) }); }
       catch (error) { throw new CommandDispatchError(error instanceof Error ? error.message : String(error)); }
     },
   };

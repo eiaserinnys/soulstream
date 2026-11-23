@@ -114,6 +114,7 @@ it("treats a no-index exit of one with stderr as an error", async () => {
   const {root}=await repo(); await writeFile(path.join(root,"new.txt"),"new\n");
   vi.mocked(runBoundedProcess)
     .mockResolvedValueOnce({stdout:root,stderr:"",exitCode:0})
+    .mockResolvedValueOnce({stdout:"",stderr:"",exitCode:0})
     .mockResolvedValueOnce({stdout:"?? new.txt\0",stderr:"",exitCode:0})
     .mockResolvedValueOnce({stdout:"",stderr:"git failed",exitCode:1});
   await expect(diffWorkspaceFile(root,"new.txt",null)).rejects.toThrow("git failed");
@@ -127,4 +128,28 @@ it("uses the requested file's status when both supplied paths have changes", asy
   expect(result.status).toBe("modified");
   expect(result.text).toContain("+requested only");
   expect(result.text).not.toContain("modified.txt");
+});
+
+it("diffs files in a workspace below the git root", async () => {
+  const {root,git}=await repo();
+  const sub=path.join(root,"nested"); await import("node:fs/promises").then(fs=>fs.mkdir(sub));
+  await writeFile(path.join(sub,"file.txt"),"before\n"); git("add","nested/file.txt"); git("commit","-qm","nested");
+  await writeFile(path.join(sub,"file.txt"),"after\n");
+  expect(await diffWorkspaceFile(sub,"file.txt",null)).toMatchObject({status:"modified",text:expect.stringContaining("+after")});
+});
+
+it("accepts a no-index patch accompanied by an autocrlf warning", async () => {
+  const {root,git}=await repo(); git("config","core.autocrlf","true");
+  await writeFile(path.join(root,"new.txt"),"new line\n");
+  expect(await diffWorkspaceFile(root,"new.txt",null)).toMatchObject({status:"untracked",text:expect.stringContaining("+new line")});
+});
+
+it("accepts a non-empty no-index patch even when git emits a warning", async () => {
+  const {root}=await repo(); await writeFile(path.join(root,"new.txt"),"new\n");
+  vi.mocked(runBoundedProcess)
+    .mockResolvedValueOnce({stdout:root,stderr:"",exitCode:0})
+    .mockResolvedValueOnce({stdout:"",stderr:"",exitCode:0})
+    .mockResolvedValueOnce({stdout:"?? new.txt\0",stderr:"",exitCode:0})
+    .mockResolvedValueOnce({stdout:"diff --git a/new.txt b/new.txt\n+new\n",stderr:"warning: LF will be replaced by CRLF",exitCode:1});
+  expect(await diffWorkspaceFile(root,"new.txt",null)).toMatchObject({status:"untracked",text:expect.stringContaining("+new")});
 });

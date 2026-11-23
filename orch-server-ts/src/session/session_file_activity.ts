@@ -38,7 +38,7 @@ export function collectSessionFileActivity(root: string | null, rows: readonly F
 export function relativePath(root: string | null, value: string): string | null {
   const windows = !!root && (/^[a-z]:[\\/]/i.test(root) || root.startsWith("\\\\"));
   const impl=windows ? path.win32 : path.posix;
-  const input=windows ? value : value.replaceAll("\\", "/");
+  const input=value;
   if (!root) {
     if (path.win32.isAbsolute(value) || path.posix.isAbsolute(input)) return null;
     const normalized = path.posix.normalize(input).replace(/\/$/, "");
@@ -46,5 +46,5 @@ export function relativePath(root: string | null, value: string): string | null 
   }
   const rel=impl.relative(root,impl.resolve(root,input));
   if (!rel || rel === ".." || rel.startsWith(`..${impl.sep}`) || impl.isAbsolute(rel)) return null;
-  return rel.replaceAll("\\", "/");
+  return windows ? rel.replaceAll("\\", "/") : rel;
 }

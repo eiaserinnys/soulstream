@@ -39,3 +39,5 @@ CI가 `scripts/verify.sh`로 schema ↔ generated 정합을 검증한다.
 - discriminator union (`type` 필드)
 - TS interface + discriminated union 출력
 - `NodeRegister.supported_backends` 신규 top-level 필드 (옵션 D — Codex 백엔드 라우팅 준비)
+
+`workspace_file_read`와 `workspace_file_diff`의 선택 필드 `expected_root`는 목록을 만든 작업 폴더와 노드의 현재 작업 폴더가 같은지 확인한다.
