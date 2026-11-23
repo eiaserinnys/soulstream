@@ -895,6 +895,23 @@ describe('ChatBody store subscription boundary', () => {
     expect(state.lastEventIdBySession[SID]).toBe('101');
   });
 
+  test('live durable event reaches the chat store with its cursor in one notification', async () => {
+    await renderSettled();
+    const sse = latestSseOptions();
+    act(() => {
+      sse.onOpen?.();
+      sse.onEvent('history_sync', { is_live: true, last_event_id: 100 }, '');
+    });
+    let notifications = 0;
+    const unsubscribe = useChatStore.subscribe(() => { notifications += 1; });
+    act(() => { sse.onEvent('tool_start', { tool_name: 'test' }, '101'); });
+    unsubscribe();
+    const state = useChatStore.getState();
+    expect(state.eventsBySession[SID]?.map((event) => event.id)).toEqual(['101']);
+    expect(state.lastEventIdBySession[SID]).toBe('101');
+    expect(notifications).toBe(1);
+  });
+
   test('catchup replay text_delta는 history_sync 전까지 store에 건별 merge되지 않고 sync 후 batch로 들어간다', async () => {
     await renderSettled();
     const sse = latestSseOptions();
@@ -1759,10 +1776,10 @@ describe('ChatBody store subscription boundary', () => {
     try {
       let commitCount = 0;
       useChatStore.setState({
-        mergeEvents: (sessionId, events) => {
+        mergeEvents: (sessionId, events, cursor) => {
           commitCount += 1;
           if (commitCount === 2) throw new Error('second chunk failed');
-          originalMergeEvents(sessionId, events);
+          originalMergeEvents(sessionId, events, cursor);
         },
       });
       await renderSettled();

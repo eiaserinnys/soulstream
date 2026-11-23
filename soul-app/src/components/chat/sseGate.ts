@@ -180,7 +180,7 @@ export interface SseGateActions {
   /** 새 메시지가 라이브로 도착했음을 시각화 (LayoutAnimation.configureNext 호출). */
   triggerAnimation: () => void;
   /** SessionEvent 한 건을 chatStore에 머지. */
-  ingestEvent: (event: SessionEvent) => void;
+  ingestEvent: (event: SessionEvent, lastEventId?: string) => void;
   /**
    * 큐 flush 시 한 번의 mergeEvents 호출로 N개 이벤트를 일괄 머지한다 (F-B).
    * chatStore.mergeEvents가 배열을 받으므로 자연 매핑.
@@ -275,8 +275,7 @@ export function handleSessionSseEvent(
   if (!refs.isCatchingUpRef.current) {
     actions.triggerAnimation();
   }
-  actions.ingestEvent(event);
-  if (eventId) actions.setLastEventId(eventId);
+  actions.ingestEvent(event, eventId || undefined);
 }
 
 /**

@@ -195,8 +195,9 @@ interface ChatStore {
    * 호출 경로:
    * - history REST 페이지(과거 이벤트, ASC 가정).
    * - 라이브 SSE 단건(가장 최신 → mergeSorted 끝에 정착).
+   * 라이브 durable cursor가 주어지면 실제로 추가한 사건과 함께 갱신한다.
    */
-  mergeEvents: (sessionId: string, events: SessionEvent[]) => void;
+  mergeEvents: (sessionId: string, events: SessionEvent[], lastEventId?: string) => void;
   /** streaming slot 최신값 교체 — events 배열에는 append하지 않는다. */
   setStreamingEvent: (
     sessionId: string,
@@ -351,8 +352,26 @@ function sameSnapshotStreams(
 
 function mergeSorted(
   existing: SessionEvent[],
-  fresh: SessionEvent[]
+  fresh: SessionEvent[],
+  liveDurableEvent = false,
 ): SessionEvent[] {
+  if (liveDurableEvent && fresh.length === 1 && existing.length > 0) {
+    const event = fresh[0];
+    const last = existing[existing.length - 1];
+    const eventKey = Number(event.id);
+    const lastKey = Number(last.id);
+    if (
+      event.data?._live_only !== true
+      && !isSyntheticLiveTextCleanupTrigger(event)
+      && /^\d+$/.test(event.id)
+      && /^\d+$/.test(last.id)
+      && Number.isSafeInteger(eventKey)
+      && Number.isSafeInteger(lastKey)
+      && eventKey > lastKey
+    ) {
+      return existing.concat(event);
+    }
+  }
   const minExistingNumericKey = existing
     .map(sortKey)
     .filter((key) => Number.isFinite(key) && key < Number.MAX_SAFE_INTEGER)
@@ -511,7 +530,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   deliveryFailureRefreshBySession: {},
   streamingSlotsBySession: {},
   claudeRuntimeBySession: {},
-  mergeEvents: (sessionId, events) =>
+  mergeEvents: (sessionId, events, lastEventId) =>
     set((state) => {
       const existing = state.eventsBySession[sessionId] ?? [];
       const slot = state.pendingOptimisticBySession[sessionId];
@@ -535,8 +554,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
-      const merged = mergeSorted(existing, events);
+      const merged = mergeSorted(existing, events, Boolean(lastEventId));
       const eventsChanged = merged !== existing;
+      // 길이가 늘었다면 단건이 추가됐다. 정리 울타리가 기존 항목을 지운 경우에는
+      // 새 객체가 결과에 들어갔는지 확인해 중복 사건으로 커서가 전진하지 않게 한다.
+      const eventApplied = Boolean(lastEventId) && events.length === 1 && eventsChanged && (
+        merged.length > existing.length
+        || (merged.includes(events[0]) && !existing.includes(events[0]))
+      );
       const slotChanged = nextSlot !== slot;
       const streamingSlots = state.streamingSlotsBySession[sessionId];
       let nextStreamingSlots = streamingSlots;
@@ -592,11 +617,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       const streamingSlotsChanged = nextStreamingSlots !== streamingSlots;
 
-      if (!eventsChanged && !slotChanged && !streamingSlotsChanged) {
+      const cursorChanged = Boolean(
+        lastEventId
+        && eventApplied
+        && shouldAdvanceLastEventId(state.lastEventIdBySession[sessionId], lastEventId),
+      );
+      if (!eventsChanged && !slotChanged && !streamingSlotsChanged && !cursorChanged) {
         return state;
       }
 
       const patch: Partial<ChatStore> = {};
+      if (cursorChanged && lastEventId) {
+        patch.lastEventIdBySession = { ...state.lastEventIdBySession, [sessionId]: lastEventId };
+      }
       if (eventsChanged) {
         patch.eventsBySession = { ...state.eventsBySession, [sessionId]: merged };
       }

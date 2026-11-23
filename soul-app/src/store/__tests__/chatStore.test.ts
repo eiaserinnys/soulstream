@@ -162,6 +162,63 @@ describe('chatStore.mergeEvents', () => {
   });
 });
 
+describe('live event merge parity', () => {
+  const cleanup: SessionEvent = { id: '11', type: 'user_message', data: {} };
+  const synthetic: SessionEvent = {
+    id: 'live:text_delta:a', type: 'text_delta', data: { _live_only: true },
+  };
+  const cases: Array<[string, SessionEvent[], SessionEvent[]]> = [
+    ['increasing', [evt('1'), evt('10')], [evt('11')]],
+    ['cleanup fence', [evt('1'), synthetic], [cleanup]],
+    ['synthetic incoming', [evt('1'), evt('10')], [synthetic]],
+    ['synthetic tail', [evt('1'), synthetic], [evt('11')]],
+    ['equal numeric key', [evt('1'), evt('10')], [evt('010')]],
+    ['reverse order', [evt('1'), evt('10')], [evt('5')]],
+    ['duplicate ID', [evt('1'), evt('10')], [evt('10')]],
+    ['batch', [evt('1'), evt('10')], [evt('12'), evt('11')]],
+    ['empty existing', [], [evt('11')]],
+    ['unsafe number', [evt('1'), evt('10')], [evt('9007199254740992')]],
+  ];
+
+  test.each(cases)('%s matches the existing merge path', (_name, initial, incoming) => {
+    const reference = `${SID}-reference`;
+    const live = `${SID}-live`;
+    const store = useChatStore.getState();
+    store.clearSession(reference);
+    store.clearSession(live);
+    store.mergeEvents(reference, initial);
+    store.mergeEvents(live, initial);
+    store.mergeEvents(reference, incoming);
+    // The optional durable cursor selects the live single-event path.
+    store.mergeEvents(live, incoming, '100');
+    expect(useChatStore.getState().eventsBySession[live]).toEqual(
+      useChatStore.getState().eventsBySession[reference],
+    );
+    store.clearSession(reference);
+    store.clearSession(live);
+  });
+
+  test('successive numeric IDs match the existing path', () => {
+    const reference = `${SID}-reference`;
+    const live = `${SID}-live`;
+    const store = useChatStore.getState();
+    store.clearSession(reference);
+    store.clearSession(live);
+    store.mergeEvents(reference, [evt('1')]);
+    store.mergeEvents(live, [evt('1')]);
+    for (let id = 2; id <= 101; id += 1) {
+      const incoming = [evt(String(id))];
+      store.mergeEvents(reference, incoming);
+      store.mergeEvents(live, incoming, String(id));
+      expect(useChatStore.getState().eventsBySession[live]).toEqual(
+        useChatStore.getState().eventsBySession[reference],
+      );
+    }
+    store.clearSession(reference);
+    store.clearSession(live);
+  });
+});
+
 describe('chatStore.streamingSlots — live delta append 제거', () => {
   beforeEach(() => {
     reset();

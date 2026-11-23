@@ -23,7 +23,7 @@ function makeActions() {
   const store = useChatStore.getState();
   return {
     triggerAnimation: jest.fn(),
-    ingestEvent: (event: SessionEvent) => store.mergeEvents(SID, [event]),
+    ingestEvent: (event: SessionEvent, cursor?: string) => store.mergeEvents(SID, [event], cursor),
     ingestEventsBatch: (events: SessionEvent[]) => store.mergeEvents(SID, events),
     setLastEventId: (id: string) => store.setLastEventId(SID, id),
   };
