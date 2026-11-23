@@ -18,7 +18,6 @@ type SqlFragmentMock = SqlCall & { readonly __sqlFragmentMock: true };
 describe("live DB session history provider", () => {
   it("reads viewport, last id, and raw events using the canonical DB queries", async () => {
     const harness = createSqlHarness((text) => {
-      if (text.includes("COUNT(*)::int")) return [{ count: 1 }];
       if (text.includes("events_viewport")) {
         return [
           {
@@ -75,8 +74,10 @@ describe("live DB session history provider", () => {
         sessionEffectApplied: false,
       },
     ]);
+    expect(
+      harness.normalizedCalls().some((text) => text.includes("COUNT(*)")),
+    ).toBe(false);
     expect(harness.normalizedCalls()).toEqual([
-      "SELECT COUNT(*)::int FROM events WHERE session_id = ? AND parent_event_id IS NULL",
       "SELECT * FROM events_viewport(?, ?, ?)",
       "SELECT COALESCE(MAX(id), 0)::int AS last_event_id FROM events WHERE session_id = ?",
       "SELECT raw_event.id, raw_event.event_type, raw_event.payload::text AS payload_text, semantic_receipt.effect_applied FROM events AS raw_event LEFT JOIN LATERAL ( SELECT (receipt.effect_application->>'applied')::boolean AS effect_applied FROM event_ingress_receipts AS receipt WHERE receipt.session_id = ? AND receipt.event_id = raw_event.id AND receipt.effect_application IS NOT NULL ORDER BY receipt.created_at ASC, receipt.source_seq ASC LIMIT 1 ) AS semantic_receipt ON TRUE WHERE raw_event.session_id = ? AND raw_event.id > ? AND (?::integer IS NULL OR raw_event.id <= ?) ORDER BY raw_event.id ASC LIMIT ?",
@@ -107,7 +108,6 @@ describe("live DB session history provider", () => {
   it("serializes messages, timeline tool pairs, and trace rows like Python", async () => {
     const createdAt = new Date("2026-07-09T00:00:00.000Z");
     const harness = createSqlHarness((text) => {
-      if (text.includes("COUNT(*)::int")) return [{ count: 1 }];
       if (text.includes("SELECT id, parent_event_id")) {
         if (text.includes("payload->>'tool_use_id'")) {
           return [
@@ -149,6 +149,9 @@ describe("live DB session history provider", () => {
       ],
       null,
     ]);
+    expect(
+      harness.normalizedCalls().some((text) => text.includes("COUNT(*)")),
+    ).toBe(false);
     await expect(provider.readTimeline("sess-1", null, 1)).resolves.toEqual([
       [
         expect.objectContaining({

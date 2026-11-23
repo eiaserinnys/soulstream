@@ -14,6 +14,7 @@ import type { RecurringJob, RecurringJobRun, RecurringJobRepository } from "../.
 import { registerCardOrchestrationRoutes } from "../../../orch-server-ts/src/cards/card_orchestration_routes.js";
 import { CardOrchestrationSettingsError } from "../../../orch-server-ts/src/cards/card_orchestration_settings.js";
 import type { OrchestrationSettings } from "@soulstream/wire-schema/card-orchestration";
+import type { BoardItemRouteProvider } from "../../../orch-server-ts/src/board/board_item_routes.js";
 import { createSessionCreateLifecycle } from "../../../orch-server-ts/src/session/session_create_lifecycle.js";
 import { createSessionResourceAccessProvider } from "../../../orch-server-ts/src/session/session_resource_access.js";
 import { createLiveDashboardAccessProvider } from "../../../orch-server-ts/src/runtime/live_dashboard_access_provider.js";
@@ -108,9 +109,20 @@ export async function createClusterRoundtripFixture() {
   const accessProvider = createLiveDashboardAccessProvider({ nodeCredentials: null, jwt, configProvider: { getConfig: async () => ({ auth_bearer_token: "service-token", environment: "production", google_client_id: "" }) } as never,
     repository: { findUserByEmail: async email => ({ email, isAdmin: email === "owner@example.com", allowedFolderIds: ["allowed-folder"] }) } });
   const access = createSessionResourceAccessProvider({ accessProvider, repository: { getSessionAccessRecord: async () => null, listFoldersForAccess: async () => folders } });
+  const readSession = vi.fn(async (id: string) => id === "missing-session" ? null : ({ folder_id: id === "limited" ? null : "inherited-folder" }));
+  const boardItems: BoardItemRouteProvider = {
+    listFolders: async () => folders,
+    listBoardItems: async () => { throw new Error("unused listBoardItems"); },
+    getBoardItemById: async () => { throw new Error("unused getBoardItemById"); },
+    getPrimarySessionBoardItem: async (sessionId) => {
+      const session = await readSession(sessionId);
+      return session ? { id: `session:${sessionId}`, folderId: session.folder_id, itemType: "session", itemId: sessionId, membershipKind: "primary" } : null;
+    },
+    getCatalogSnapshot: async () => ({ folders, boardItems: [] }),
+  };
   const sessions = { nodeCredentials: null, router: new SessionCommandRouter({ registry }), bridge,
     createSessionLifecycle: createSessionCreateLifecycle({ resolveCallerInfo: createLiveAuthenticatedUserResolvers({ jwt }).resolveCallerInfo,
-      access, boardItems: { getCatalogSnapshot: async () => ({ folders, boardItems: [] }) } as never }) };
+      access, boardItems }) };
   const recurring = recurringFixture();
   const recurringJobs = { authBearerToken: "service-token", nodeCredentials: null, service: recurring.service };
   let settings: OrchestrationSettings;
@@ -121,7 +133,6 @@ export async function createClusterRoundtripFixture() {
       if (input.expectedVersion !== settings.version) throw new CardOrchestrationSettingsError(409, "CARD_ORCHESTRATION_VERSION_CONFLICT", "Settings version changed");
       return settings = { ...settings, policy: input.policy as typeof policy, version: settings.version + 1, updatedBy: input.updatedBy };
     } };
-  const readSession = vi.fn(async (id: string) => id === "missing-session" ? null : ({ folder_id: id === "limited" ? null : "inherited-folder" }));
   const app = Fastify();
   registerNodeSnapshotRoutes(app, nodes); registerNodeAgentProfileRoutes(app, nodeAgentProfiles);
   registerCogitoRoutes(app, cogito); registerSessionCommandRoutes(app, sessions);

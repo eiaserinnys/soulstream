@@ -76,11 +76,6 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
 
   async readViewport(sessionId: string, yMin: number, yMax: number): Promise<unknown> {
     const sql = await this.sqlResolver.resolveSql();
-    await sql`
-      SELECT COUNT(*)::int
-      FROM events
-      WHERE session_id = ${sessionId} AND parent_event_id IS NULL
-    `;
     const rows = await sql`
       SELECT * FROM events_viewport(${sessionId}, ${yMin}, ${yMax})
     `;
@@ -96,11 +91,6 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
     limit: number,
   ): Promise<[unknown[], string | null]> {
     const sql = await this.sqlResolver.resolveSql();
-    await sql`
-      SELECT COUNT(*)::int
-      FROM events
-      WHERE session_id = ${sessionId} AND parent_event_id IS NULL
-    `;
     const cursor = before === null ? null : decodeCursor(before);
     const rows = await readMessagePage(sql, sessionId, cursor, limit);
     const { pageRows, nextCursor } = pageRowsAndCursor(rows, limit);

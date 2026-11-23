@@ -38,6 +38,9 @@ export type BoardItemRouteProvider = {
   getBoardItemById: (
     boardItemId: string,
   ) => Promise<BoardItemRecord | null> | BoardItemRecord | null;
+  getPrimarySessionBoardItem: (
+    sessionId: string,
+  ) => Promise<BoardItemRecord | null> | BoardItemRecord | null;
   getCatalogSnapshot: () =>
     | Promise<BoardItemCatalogSnapshot>
     | BoardItemCatalogSnapshot;

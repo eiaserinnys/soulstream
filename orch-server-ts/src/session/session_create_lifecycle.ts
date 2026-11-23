@@ -3,8 +3,6 @@ import type { ServiceCaller } from "../auth/service_caller.js";
 import type { FastifyRequest } from "fastify";
 
 import type {
-  BoardItemCatalogSnapshot,
-  BoardItemRecord,
   BoardItemRouteProvider,
 } from "../board/board_item_routes.js";
 import { type JsonObject } from "../http/route_validation.js";
@@ -80,15 +78,11 @@ async function prepareSessionCreate(
   if ("container" in body) throw new SessionCreateLifecycleError("INVALID_REQUEST", "folderId is required for folder placement", 422);
   optionalString(body, "folderId");
 
-  let snapshot: BoardItemCatalogSnapshot | undefined;
   delete payload.sourceSessionId;
-  if (sourceSessionId) {
-    if (!stringOrNull(payload.folderId)) {
-      snapshot = await options.boardItems.getCatalogSnapshot();
-      const sourceItem = primarySessionBoardItem(snapshot.boardItems, sourceSessionId);
-      const inherited = stringOrNull(sourceItem?.folderId);
-      if (inherited !== null) payload.folderId = inherited;
-    }
+  if (sourceSessionId && !stringOrNull(payload.folderId)) {
+    const sourceItem = await options.boardItems.getPrimarySessionBoardItem(sourceSessionId);
+    const inherited = stringOrNull(sourceItem?.folderId);
+    if (inherited !== null) payload.folderId = inherited;
   }
 
   const accessEmail = callerInfoEmail(bodyCallerInfo);
@@ -97,10 +91,9 @@ async function prepareSessionCreate(
     accessEmail,
   });
   if (access.restricted) {
-    snapshot ??= await options.boardItems.getCatalogSnapshot();
     let folderId = stringOrNull(payload.folderId);
     if (folderId === null) {
-      folderId = firstAllowedSessionFolderId(access, snapshot.folders);
+      folderId = firstAllowedSessionFolderId(access, await options.boardItems.listFolders());
       if (folderId !== null) payload.folderId = folderId;
     }
     await options.access.requireFolderAccess({
@@ -116,17 +109,6 @@ async function prepareSessionCreate(
     nodeId,
   );
   return { payload };
-}
-
-function primarySessionBoardItem(
-  boardItems: readonly BoardItemRecord[],
-  sourceSessionId: string,
-): BoardItemRecord | undefined {
-  return boardItems.find((item) =>
-    item.itemType === "session" &&
-    item.itemId === sourceSessionId &&
-    (item.membershipKind ?? "primary") === "primary"
-  );
 }
 
 function optionalObject(
