@@ -495,3 +495,18 @@ test('media 403 failures have no retry and 503 failures can be retried', async (
   screen.unmount();
   expect(fs.deleted).toContain(uri);
 });
+
+test('세션 파일 PDF는 같은 데이터로 다시 그려도 재다운로드하지 않고 파일 목록이 바뀌면 갱신한다', async () => {
+  const { SessionFilesView } = require('../../screens/SessionFilesScreen');
+  const { reviewWorkspace } = require('../../component-review/ReviewSessionFiles');
+  const { File } = require('expo-file-system') as { File: { downloadFileAsync: jest.Mock } };
+  const data = { ...reviewWorkspace, files: [{ ...reviewWorkspace.files[0], path: 'document.pdf' }], read_only: [] };
+  const props = { data, error: false, refreshing: false, onRefresh: jest.fn(), expanded: false, onToggle: jest.fn(), selected: 'document.pdf', onSelect: jest.fn(), sessionId: 'session' };
+  const screen = render(<SessionFilesView {...props} />);
+  await waitFor(() => expect(File.downloadFileAsync).toHaveBeenCalledTimes(1));
+  screen.rerender(<SessionFilesView {...props} refreshing />);
+  await act(async () => { await Promise.resolve(); });
+  expect(File.downloadFileAsync).toHaveBeenCalledTimes(1);
+  screen.rerender(<SessionFilesView {...props} data={{ ...data, files: [...data.files] }} />);
+  await waitFor(() => expect(File.downloadFileAsync).toHaveBeenCalledTimes(2));
+});

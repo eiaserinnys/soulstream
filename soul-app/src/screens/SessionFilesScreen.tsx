@@ -142,16 +142,18 @@ export function SessionFilesView({ data, error, refreshing, onRefresh, onPullRef
   const api = useMemo(() => createApiClient(serverUrl), [serverUrl]);
   const groups = groupFiles(data?.files ?? []);
   const reads = data?.read_only ?? [];
-  const visible = [...groups.flatMap(([, files]) => files), ...(expanded ? reads : [])];
-  const items: AttachmentView[] = visible.map(file => {
-    const url = `/api/sessions/${encodeURIComponent(sessionId)}/workspace/file?path=${encodeURIComponent(file.path)}`;
-    const name = file.path.split('/').pop() || file.path;
-    const image = isLegacyAttachmentImage(name);
-    return { key: file.path, name, byteSize: file.size, mimeType: image ? null : 'text/plain', previewKind: image ? 'image' : 'text',
-      pdfCache: 'none', readContext: { type: 'session', id: sessionId }, source: { kind: 'ready', attachmentId: file.path, previewUrl: image ? url : null, originalUrl: `${url}&download=true` },
-      loadText: signal => api.readSessionWorkspaceText(sessionId, file.path, signal),
-      loadMedia: signal => api.readSessionWorkspaceMedia(sessionId, file.path, signal, { name }) };
-  });
+  const items: AttachmentView[] = useMemo(() => {
+    const visible = [...groupFiles(data?.files ?? []).flatMap(([, files]) => files), ...(expanded ? data?.read_only ?? [] : [])];
+    return visible.map(file => {
+      const url = `/api/sessions/${encodeURIComponent(sessionId)}/workspace/file?path=${encodeURIComponent(file.path)}`;
+      const name = file.path.split('/').pop() || file.path;
+      const image = isLegacyAttachmentImage(name);
+      return { key: file.path, name, byteSize: file.size, mimeType: image ? null : 'text/plain', previewKind: image ? 'image' : 'text',
+        pdfCache: 'none', readContext: { type: 'session', id: sessionId }, source: { kind: 'ready', attachmentId: file.path, previewUrl: image ? url : null, originalUrl: `${url}&download=true` },
+        loadText: signal => api.readSessionWorkspaceText(sessionId, file.path, signal),
+        loadMedia: signal => api.readSessionWorkspaceMedia(sessionId, file.path, signal, { name }) };
+    });
+  }, [data?.files, data?.read_only, expanded, sessionId, api]);
   const index = items.findIndex(item => item.key === selected);
   const message = error ? '파일을 불러오지 못했습니다' : data?.node.status === 'unsupported' ? '이 노드는 파일 보기를 지원하지 않습니다'
     : data?.node.status === 'no_workspace' ? '작업 폴더가 없습니다' : data?.node.status === 'error' ? '파일을 불러오지 못했습니다'
