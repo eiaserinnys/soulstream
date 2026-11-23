@@ -7,6 +7,7 @@ import { VitePWA } from "vite-plugin-pwa";
 import { DASHBOARD_PWA_OPTIONS } from "./pwa-config";
 import { version as dashboardVersion } from "./package.json";
 import {dashboardBuildIdentity,dashboardBuildManifest} from "./build-identity";
+import { handleRollupWarning } from "./rollup-warning";
 
 function requireDevProxyApiBase(env: Record<string, string | undefined>): string {
   const apiBase = env.VITE_API_BASE?.trim();
@@ -72,6 +73,7 @@ export default defineConfig(({ command, mode, isPreview }: ConfigEnv) => {
       emptyOutDir: true,
       chunkSizeWarningLimit: 725,
       rollupOptions: {
+        onwarn: handleRollupWarning,
         output: {
           manualChunks(id) {
             if (id.includes("/packages/soul-ui/src/components/MarkdownCodeMirrorEditor.tsx")) {

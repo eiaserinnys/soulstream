@@ -149,3 +149,68 @@ test('상수끼리 견주는 단언을 잡고 시험 대상이 있는 단언은 
   ].join('\n') }).run();
   clean(pass);
 });
+
+test('결과를 버린 SELECT를 잡고 락, 부수효과, 연결 확인은 통과한다', () => {
+  const failure = fixture({ 'src/index.ts': [
+    'async function run() {',
+    '  await sql`SELECT * FROM sessions`;',
+    '  await db.sql` -- comment\n /* comment */ select id FROM sessions WHERE id = ${id}`;',
+    '  await sql`SELECT ${column} FROM sessions`;',
+    '  await sql`SELECT COUNT(*) FROM events`;',
+    '}',
+  ].join('\n') }).run();
+  assert.equal(failure.status, 1, failure.stderr);
+  assert.equal(failure.stdout.trim().split('\n').length, 4, failure.stdout);
+  assert.match(failure.stdout, /^discarded-select-query: src\/index\.ts:2 /);
+  const pass = fixture({ 'src/index.ts': [
+    'async function run() {',
+    '  const rows = await sql`SELECT * FROM sessions`;',
+    '  return await sql`SELECT * FROM sessions`;',
+    '  await sql`SELECT 1`;',
+    '  await sql`SELECT pg_advisory_lock(id) FROM sessions`;',
+    '  await sql`SELECT setval(name, 1) FROM sessions`;',
+    '  await sql`SELECT set_config(name, value, true) FROM sessions`;',
+    '  await sql`SELECT pg_notify(channel, message) FROM sessions`;',
+    '  await sql`SELECT * FROM session_apply_running_transition(${id})`;',
+    '  await sql`SELECT * FROM public."session_apply_terminal_transition"(${id})`;',
+    ...['UPDATE', 'SHARE', 'NO KEY UPDATE', 'KEY SHARE'].map(lock => `  await sql\`SELECT id FROM sessions FOR ${lock}\`;`),
+    '  await sql`UPDATE sessions SET active = true`;',
+    '  await other`SELECT * FROM sessions`;',
+    '}',
+  ].join('\n') }).run();
+  clean(pass);
+});
+
+test('불안정한 Zustand 선택자 반환을 잡고 안정적인 값과 useShallow는 통과한다', () => {
+  const expressions = [
+    '[]', '({ value: s.value })', 's.items.map(x => x)', 's.items.filter(Boolean)',
+    's.items.slice()', 's.items.concat(other)', 's.items.flat()', 's.items.flatMap(x => x)',
+    's.items.toSorted()', 's.items.toReversed()', 'Object.keys(s.byId)', 'Object.values(s.byId)',
+    'Object.entries(s.byId)', 'Array.from(s.items)', 'new Map()', 'new Set()', 'new Date()',
+    's.items ?? []', 's.row || {}', 's.ok ? s.items : []', '(s.items.slice() as string[])!',
+    's.ready && s.items.map(x => x.id)',
+  ];
+  const failure = fixture({ 'src/index.ts': [
+    ...expressions.map(expression => `useSessionStore(s => ${expression});`),
+    'stores.useSessionStore(function (s) { if (s.ok) return s.items; return { value: s.value }; });',
+  ].join('\n') }).run();
+  assert.equal(failure.status, 1, failure.stderr);
+  assert.equal(failure.stdout.trim().split('\n').length, expressions.length + 1, failure.stdout);
+  assert.match(failure.stdout, /^unstable-zustand-selector: src\/index\.ts:1 /);
+  const pass = fixture({ 'src/index.ts': [
+    'useSessionStore(useShallow(s => [s.value]));',
+    'useSessionStore(s => s.actions);',
+    'useSessionStore(s => s.byId[id] ?? DEFAULT_ROW);',
+    'useSessionStore(s => s.items.length);',
+    'useSessionStore(s => s.items.some(Boolean));',
+    'useSessionStore(s => s.items.find(Boolean));',
+    'useSessionStore(s => Boolean(s.items));',
+    'useSessionStore(s => s.ready && s.count > 0);',
+    'useSessionStore(s => s.ready && s.name);',
+    'useSessionStore(s => { const helper = () => []; return s.items; });',
+    'useSessionStore();',
+    'useSessionStore(selector);',
+    'notAStore(s => []);',
+  ].join('\n') }).run();
+  clean(pass);
+});
