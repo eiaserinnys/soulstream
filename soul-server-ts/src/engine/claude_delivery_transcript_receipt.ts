@@ -2,6 +2,8 @@ import {
   getSessionMessages,
   type SessionMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
@@ -12,6 +14,8 @@ import { parseClaudeNativeTaskNotification } from
 import { userMessageText } from "./claude_sdk_event_mapper_helpers.js";
 import { isTurnStartingUserInput } from
   "./claude_sdk_persistent_session_support.js";
+import { runnerProcessPaths } from "../runner/runner_process_paths.js";
+import { sessionSandboxDirectory } from "../runner/session_filesystem_plan.js";
 
 /** The transcript reader's reason for a backend that has no Claude transcript. */
 export const UNSUPPORTED_BACKEND_REASON = "unsupported_backend";
@@ -45,6 +49,7 @@ type ClaudeReceiptTarget =
 
 export interface ClaudeDeliveryTranscriptReceiptDeps {
   sourceNode: string;
+  runnerStateDirectory?: string;
   getSession(sessionId: string): Promise<SessionRow | null>;
   getAgent(agentId: string): AgentProfile | undefined;
   getModelPresetBackend?(
@@ -128,11 +133,35 @@ export class ClaudeDeliveryTranscriptReceiptReader {
     const local = await this.loadMessages(session.claude_session_id!, {
       dir: workspaceDir,
     });
-    return findClaudeDeliveryTranscriptReceipt(
+    const receipt = findClaudeDeliveryTranscriptReceipt(
       local,
       inputUuid,
       expectedAssistantUuid,
     );
+    if (receipt.kind !== "absent" || !this.deps.runnerStateDirectory) return receipt;
+    const sessionDirectory = runnerProcessPaths(this.deps.runnerStateDirectory, session.session_id).sessionDirectory;
+    const projects = join(sessionSandboxDirectory(sessionDirectory), "claude-config", "projects");
+    let directories;
+    try {
+      directories = await readdir(projects, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return receipt;
+      throw error;
+    }
+    for (const directory of directories) {
+      if (!directory.isDirectory()) continue;
+      let transcript: string;
+      try {
+        transcript = await readFile(join(projects, directory.name, `${session.claude_session_id}.jsonl`), "utf8");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+      const messages = transcript.split("\n").filter(line => line.trim()).map(line => JSON.parse(line)) as SessionMessage[];
+      const isolated = findClaudeDeliveryTranscriptReceipt(messages, inputUuid, expectedAssistantUuid);
+      if (isolated.kind !== "absent") return isolated;
+    }
+    return receipt;
   }
 
   private async resolveTarget(

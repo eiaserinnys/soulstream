@@ -194,6 +194,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   });
   const queuedRecoveryParams = {
     db, agentRegistry, modelCatalog,
+    runnerStateDirectory: env.SOUL_RUNNER_STATE_DIR,
     sourceNode: env.SOULSTREAM_NODE_ID, logger,
     resolveWorktreeWorkspace: (worktreeId: string) => resolveWorktreeWorkspace(worktreeService, worktreeId),
     redeliverContent: (row: SessionDeliveryRow) => redeliverStoredDeliveryContent(row, taskManager, taskRuntime.onResume),

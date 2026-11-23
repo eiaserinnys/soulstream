@@ -22,6 +22,7 @@ function makeRecovery() {
   const logger = {
     error: vi.fn(),
     warn: vi.fn(),
+    info: vi.fn(),
   } as unknown as Logger;
   const recovery = new TaskEngineFailureRecovery({
     logger,
@@ -34,6 +35,19 @@ function makeRecovery() {
 }
 
 describe("TaskEngineFailureRecovery", () => {
+  it.each([true, false])("routes offline replay failure separately from a live turn (offline=%s)", async (offline) => {
+    const { recovery } = makeRecovery();
+    const task = makeTask({
+      runnerIsOfflineReplay: offline,
+      interventionQueue: [{ text: "successor", user: "u", deliveryId: "next" }],
+    });
+    const result = await recovery.recoverFromExecuteFailure(task, new Error("replay failed"), [
+      { text: "active", user: "u", deliveryId: "previous" },
+    ]);
+    expect(result).toBe(offline ? "stop_on_error" : "continue_with_accepted_successor");
+    expect(task.status).toBe(offline ? "error" : "running");
+    expect(task.interventionQueue).toHaveLength(1);
+  });
   it("records engine errors on running tasks", async () => {
     const { recovery } = makeRecovery();
     const task = makeTask({ result: "stale success" });

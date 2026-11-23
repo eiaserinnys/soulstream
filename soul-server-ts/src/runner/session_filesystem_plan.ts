@@ -33,6 +33,10 @@ import {
 } from "./session_filesystem_policy.js";
 import { buildIsolationContextNotice } from "./session_isolation_notice.js";
 
+export function sessionSandboxDirectory(sessionDirectory: string): string {
+  return join(sessionDirectory, "sandbox");
+}
+
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 interface WorktreePaths {
@@ -381,7 +385,7 @@ export async function prepareIsolationPlan(
     "host workspace",
   );
   await ports.ensureDirectory(input.sessionDirectory, 0o700);
-  const sandboxInput = join(input.sessionDirectory, "sandbox");
+  const sandboxInput = sessionSandboxDirectory(input.sessionDirectory);
   await ports.ensureDirectory(sandboxInput, 0o700);
   const sandbox = await ports.resolveRealPath(sandboxInput);
 

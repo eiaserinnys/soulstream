@@ -3496,6 +3496,36 @@ describe("TaskExecutor runner process boundary", () => {
     expect(acquire).toHaveBeenCalledTimes(2);
   });
 
+  it("resumes queued input after offline replay fails without sending it to the dead runner", async () => {
+    const mocks = makeMocks();
+    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
+    dispatcher.recoverFrames.mockImplementation(async function* () {
+      throw new Error("offline replay failed");
+    });
+    const processFactory = (() => runner) as RunnerProcessRuntimeFactory;
+    processFactory.recover = vi.fn(() => runner);
+    const resume = vi.fn(async () => undefined);
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger,
+      undefined, undefined, undefined, undefined, undefined, undefined, processFactory,
+      undefined, resume,
+    );
+    const task = makeTask();
+    task.status = "initializing";
+    task.interventionQueue.push({ text: "queued", user: "u", deliveryId: "successor" });
+    const registration = {
+      config: { agent, sessionId: task.agentSessionId },
+      lifecycle: { execution_command_id: "execute-old", execution_state: "failed", terminal_error: null },
+    } as unknown as RunnerRegistration;
+
+    await executor.recoverRegisteredRunner(task, registration, "execute-old", "offline");
+    await waitFor(() => resume.mock.calls.length > 0);
+    expect(dispatcher.executeFrames).not.toHaveBeenCalled();
+    expect(resume).toHaveBeenCalledOnce();
+    expect(resume).toHaveBeenCalledWith(task);
+    expect(task.interventionQueue).toEqual([{ text: "queued", user: "u", deliveryId: "successor" }]);
+  });
+
   it.each([
     { executionState: "completed", expectedStatus: "completed", expectedFact: "completed" },
     { executionState: "failed", expectedStatus: "error", expectedFact: "failed" },
