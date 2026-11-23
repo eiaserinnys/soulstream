@@ -451,9 +451,11 @@ def capture_diff(browser, base, out):
             page.keyboard.press("Space"); expect(row).to_have_attribute("aria-expanded", "true")
             body = pane.locator(".v3-session-files-body")
             scroll_before = body.evaluate("e => e.scrollTop")
-            page.set_viewport_size({"width": 1024, "height": 900}); expect(row).to_have_attribute("aria-expanded", "true")
-            narrow = box.locator(".v3-session-file-diff-body").evaluate("el => ({width:el.clientWidth, scroll:el.scrollWidth})")
+            page.set_viewport_size({"width": 1024, "height": 900}); page.wait_for_timeout(500)
+            expect(row).to_have_attribute("aria-expanded", "true")
+            narrow = box.locator(".v3-session-file-diff-body").evaluate("el => ({width:el.clientWidth, scroll:el.scrollWidth, viewport:innerWidth})")
             assert narrow["width"] == narrow["scroll"], narrow
+            page.screenshot(path=str(out / "diff-card-1024.png"), animations="disabled")
             page.set_viewport_size({"width": 1440, "height": 900}); expect(row).to_have_attribute("aria-expanded", "true")
             assert abs(body.evaluate("e => e.scrollTop") - scroll_before) <= 2
             page.keyboard.press("Escape"); expect(pane).to_have_count(0)
