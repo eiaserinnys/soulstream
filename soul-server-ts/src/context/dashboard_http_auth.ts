@@ -22,6 +22,22 @@ export interface DashboardHttpAuthInput {
   config: DashboardHttpAuthConfig;
 }
 
+export interface DashboardAuthModeEnv {
+  readonly ENVIRONMENT: "development" | "production";
+  readonly GOOGLE_CLIENT_ID?: string | undefined;
+  readonly JWT_SECRET?: string | undefined;
+}
+
+/**
+ * Dashboard cookie auth is on when Google login is configured, or outside
+ * development when JWT_SECRET is set (password and Tailscale installs share
+ * the orchestrator's HS256 cookie but have no GOOGLE_CLIENT_ID).
+ */
+export function resolveDashboardAuthEnabled(env: DashboardAuthModeEnv): boolean {
+  if (env.GOOGLE_CLIENT_ID) return true;
+  return env.ENVIRONMENT !== "development" && Boolean(env.JWT_SECRET);
+}
+
 export async function authenticateDashboardHttpRequest({
   requestHeaders,
   config,

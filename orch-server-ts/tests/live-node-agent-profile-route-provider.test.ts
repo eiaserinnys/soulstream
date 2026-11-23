@@ -12,6 +12,7 @@ import {
   type RequestResponseNodeCommandPayload,
   type RoutedPendingSessionCommand,
 } from "../src/index.js";
+import { signJwt, verifySignedJwt } from "../src/runtime/live_auth_route_provider.js";
 
 type ProviderOptions = Parameters<typeof createLiveNodeAgentProfileRouteProviders>[0];
 
@@ -237,6 +238,46 @@ describe("live node agent profile route provider", () => {
     });
   });
 
+  it("mints the node dashboard cookie for previews and portraits when a Tailscale user has no cookie or authorization", async () => {
+    const { provider, requestNode } = createFixture({
+      requestNode: vi.fn(async () => ({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: {},
+      })),
+      forwardAuth: {
+        resolveUser: async (headers) => headers["tailscale-user-login"] === "owner@example.com"
+          ? { payload: { email: "owner@example.com", name: "owner@example.com" }, carrier: "tailscale" }
+          : null,
+        readJwtSecret: async () => "provider-test-secret",
+        signJwt,
+      },
+    });
+    const requestOptions = { headers: { "tailscale-user-login": "owner@example.com" } };
+
+    await provider.previewAgentContext("node-a", { agent_id: "agent-a" }, requestOptions);
+    await provider.getUserPortrait("node-a", requestOptions);
+    await provider.getAgentPortrait("node-a", "agent-a", requestOptions);
+
+    expect(requestNode).toHaveBeenCalledTimes(3);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const requests = vi.mocked(requestNode).mock.calls.map(
+      (call) => (call as unknown as Parameters<ProviderOptions["nodeHttpClient"]["requestNode"]>)[0],
+    );
+    for (const request of requests) {
+      expect(Object.keys(request.headers ?? {})).toEqual(["cookie"]);
+      const token = request.headers?.cookie?.match(/^soul_dashboard_auth=(.+)$/)?.[1];
+      expect(verifySignedJwt(token ?? "", "provider-test-secret", nowSeconds)).toMatchObject({
+        email: "owner@example.com",
+      });
+    }
+    expect(requests.map((request) => request.path)).toEqual([
+      "/api/context/preview",
+      "/api/dashboard/portrait/user",
+      "/api/agents/agent-a/portrait",
+    ]);
+  });
+
   it("forwards agent preview requests and preserves a node 404", async () => {
     const { provider, requestNode } = createFixture({
       requestNode: vi.fn(async () => ({
@@ -340,6 +381,7 @@ function createFixture(input: {
   requestNode?: ProviderOptions["nodeHttpClient"]["requestNode"];
   bridgeError?: unknown;
   agentProfileRepository?: ProviderOptions["agentProfileRepository"];
+  forwardAuth?: ProviderOptions["forwardAuth"];
 } = {}) {
   const registry = new InMemoryNodeRegistry({
     nowMs: () => 1_700_000_000_000,
@@ -387,6 +429,7 @@ function createFixture(input: {
       list: async () => [],
       getPortrait: async () => null,
     },
+    ...(input.forwardAuth ? { forwardAuth: input.forwardAuth } : {}),
   });
   return {
     provider: bundle.nodeAgentProfileRoutes.provider,

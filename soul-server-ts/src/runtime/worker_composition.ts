@@ -7,6 +7,7 @@ import { CatalogService } from "../catalog/catalog_service.js";
 import { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "../context/cogito_context.js";
 import { ExecutionContextBuilder } from "../context/context_builder.js";
+import { resolveDashboardAuthEnabled } from "../context/dashboard_http_auth.js";
 import { createAssignedCardSnapshotRecorder } from "../context/assigned_card_snapshot_recorder.js";
 import { createPersistentJevObserver } from "../context/persistent_jev_observer.js";
 import { DefaultPageContextAssembler } from "../context/page_context_assembler.js";
@@ -134,7 +135,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   const boardYjsAuth = {
     authBearerToken: env.AUTH_BEARER_TOKEN,
     environment: env.ENVIRONMENT,
-    dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
+    dashboardAuthEnabled: resolveDashboardAuthEnabled(env),
     jwtSecret: env.JWT_SECRET,
   };
   const folderContentHost = new FlatFolderContentHostClient(orchHostClientDeps);

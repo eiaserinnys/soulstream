@@ -27,6 +27,11 @@ import type {
 } from "./live_provider_dependencies.js";
 import { LiveNodeHttpClientError } from "./live_node_http_client.js";
 import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
+import {
+  buildNodeForwardAuthHeaders,
+  headerValue,
+  type NodeForwardAuthIssuer,
+} from "../node/node_forward_auth_headers.js";
 
 type AgentSnapshot = {
   readonly id: string;
@@ -57,6 +62,8 @@ export type CreateLiveNodeAgentProfileRouteProviderOptions = {
   readonly bridge: LiveNodeAgentProfileBridge;
   readonly nodeHttpClient: LiveNodeAgentProfileHttpClient;
   readonly agentProfileRepository: Pick<AgentProfileRepository, "list" | "getPortrait">;
+  /** Mints the node cookie for Tailscale callers; absent means cookie/authorization only. */
+  readonly forwardAuth?: NodeForwardAuthIssuer;
 };
 
 export type LiveNodeAgentProfileRouteProviderBundle = {
@@ -147,7 +154,10 @@ async function previewAgentContext(
   input: AgentContextPreviewInput,
   requestOptions?: NodePortraitRequestOptions,
 ): Promise<unknown> {
-  const headers = forwardAuthHeaders(requestOptions?.headers);
+  const headers = await buildNodeForwardAuthHeaders(
+    requestOptions?.headers,
+    options.forwardAuth,
+  );
   let response: LiveNodeHttpResponse;
   try {
     response = await options.nodeHttpClient.requestNode({
@@ -204,7 +214,10 @@ async function requestPortrait(
   requestOptions?: NodePortraitRequestOptions,
 ): Promise<NodePortraitResult> {
   try {
-    const headers = forwardAuthHeaders(requestOptions?.headers);
+    const headers = await buildNodeForwardAuthHeaders(
+      requestOptions?.headers,
+      options.forwardAuth,
+    );
     return upstreamPortrait(
       await options.nodeHttpClient.requestNode({
         nodeId,
@@ -220,17 +233,6 @@ async function requestPortrait(
     }
     throw error;
   }
-}
-
-function forwardAuthHeaders(
-  headers: NodePortraitRequestOptions["headers"],
-): Readonly<Record<string, string>> | undefined {
-  const forwarded: Record<string, string> = {};
-  const cookie = headerValue(headers, "cookie");
-  if (cookie) forwarded.cookie = cookie;
-  const authorization = headerValue(headers, "authorization");
-  if (authorization) forwarded.authorization = authorization;
-  return Object.keys(forwarded).length > 0 ? forwarded : undefined;
 }
 
 function upstreamPortrait(response: LiveNodeHttpResponse): NodePortraitResult {
@@ -249,21 +251,6 @@ function portraitBody(body: unknown): Buffer | Uint8Array | string | undefined {
   }
   if (body instanceof ArrayBuffer) return Buffer.from(body);
   return Buffer.from(String(body));
-}
-
-function headerValue(
-  headers:
-    | Readonly<Record<string, string | string[] | undefined>>
-    | undefined,
-  name: string,
-): string | undefined {
-  const normalized = name.toLowerCase();
-  for (const [key, value] of Object.entries(headers ?? {})) {
-    if (key.toLowerCase() === normalized) {
-      return Array.isArray(value) ? value.join("; ") : value;
-    }
-  }
-  return undefined;
 }
 
 type AgentProfileUpdateCommandPayload =
