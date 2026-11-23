@@ -54,21 +54,29 @@ export async function buildNodeSnapshot(sql: LivePostgresSql, nodeId: string): P
         return { id: server.id, type: definition.type, ...(definition.name === undefined ? {} : { name: definition.name }), ...definition.config };
       }) },
       profiles: { profiles: (await repository.listProfiles(tx)).filter(profile => profileIds.has(profile.id)).map(profile => ({
-        id: profile.id, ...(profile.name === null ? {} : { name: profile.name }),
+        id: profile.id, ...(profile.name ? { name: profile.name } : {}),
         ...(profile.description === null ? {} : { description: profile.description }),
         mcp_servers: profile.mcp_servers.filter(id => serverIds.has(id)), hosted_tools: profile.hosted_tools,
       })) },
       agent_bindings: Object.fromEntries(bindings.map(binding => [binding.agent_id, binding.mcp_profile_id])),
     };
     const names = new Set<string>();
-    mapValues(display, value => { collectSecretReferences(value, names); return value; });
+    const collect = (value: string) => { collectSecretReferences(value, names); return value; };
+    mapValues(display.registry.servers, collect);
+    const profiles = display.profiles.profiles as Array<Record<string, unknown>>;
+    for (const profile of profiles) mapValues(profile.hosted_tools, collect);
     const rows = names.size === 0 ? [] : await tx<{ name: string; value: string }[]>`
       SELECT name, value FROM mcp_secrets WHERE name = ANY(${[...names]})
     `;
     const secrets = new Map(rows.map(row => [row.name, row.value]));
     for (const name of names) if (!secrets.has(name)) throw new MissingMcpSecretError(name);
-    const runtime = mapValues(display, value => value.replace(SECRET_REF_PATTERN, (match, kind: string, name: string) =>
-      kind === "secret" ? secrets.get(name)! : match)) as McpCentralSnapshot;
+    const resolve = (value: string) => value.replace(SECRET_REF_PATTERN, (match, kind: string, name: string) =>
+      kind === "secret" ? secrets.get(name)! : match);
+    const runtime: McpCentralSnapshot = {
+      registry: { servers: mapValues(display.registry.servers, resolve) as object[] },
+      profiles: { profiles: profiles.map(profile => ({ ...profile, hosted_tools: mapValues(profile.hosted_tools, resolve) })) },
+      agent_bindings: display.agent_bindings,
+    };
     return { revision, runtime, display };
   });
 }

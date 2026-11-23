@@ -21,7 +21,7 @@ function harness() {
   let managed = true, bound = true, active = false, revision = 1;
   const status = vi.fn(async (_id: string, ack: Record<string, unknown>) => { if (ack.applied_mode === "central") active = true; });
   const readGate = vi.fn(async () => ({ managed: managed ? { activated_at: active ? "now" : null } : null, hasBindings: bound }));
-  const snapshot = vi.fn(async () => ({ revision, runtime: { registry: { servers: [] }, profiles: { profiles: [] }, agent_bindings: { a: "p" } }, display: { registry: { servers: [] }, profiles: { profiles: [] }, agent_bindings: { a: "p" } } }));
+  const snapshot = vi.fn(async () => ({ revision, runtime: { registry: { servers: [] as object[] }, profiles: { profiles: [] }, agent_bindings: { a: "p" } }, display: { registry: { servers: [] }, profiles: { profiles: [] }, agent_bindings: { a: "p" } } }));
   const onWarning = vi.fn();
   const service = new McpCentralSyncService({ registry, bridge, readGate, buildSnapshot: snapshot, updateAck: status,
     listManagedNodes: async () => managed ? [nodeId] : [], currentRevision: async () => revision, onWarning });
@@ -82,6 +82,9 @@ describe("central MCP sync", () => {
 
   it("records failure without forwarding node error text or snapshot values to logs", async () => {
     const h = harness(); h.setReject(true);
+    const snapshot = await h.snapshot.getMockImplementation()!();
+    h.snapshot.mockResolvedValueOnce({ ...snapshot, runtime: { ...snapshot.runtime,
+      registry: { servers: [{ id: "example", header: "fake-secret-payload" }] } } });
     expect(await h.service.sendManagedNodeMcpCommand(h.nodeId)).toBe(false);
     const output = JSON.stringify([h.status.mock.calls, h.onWarning.mock.calls]);
     expect(output).toContain("MCP_PORTABLE_NODE");

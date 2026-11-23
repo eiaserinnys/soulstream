@@ -442,7 +442,7 @@ describePostgres("node MCP snapshots", () => {
       node_overrides: { "node-a": { name: "override", type: "streamable_http", config: { url: "https://example.com/mcp?key=fake-secret-query%26value", headers: { Authorization: "fake-secret-header", Local: { env: "LOCAL_KEY" } } } } } });
     await service.putServer("stdio", { type: "stdio", config: { command: "run", env: { KEY: "fake-secret-env", LOCAL: { env: "LOCAL_ENV" } } }, node_scope: ["node-a"] });
     await service.putServer("other", { type: "stdio", config: { command: "run" }, node_scope: ["node-b"] });
-    await service.putProfile("a", { mcp_servers: ["http", "stdio", "other"], hosted_tools: [{ type: "hosted_mcp", server_label: "a", server_url: "https://example.com/mcp", authorization: "fake-secret-hosted" }] });
+    await service.putProfile("a", { name: "", description: "{{secret:label-only}}", mcp_servers: ["http", "stdio", "other"], hosted_tools: [{ type: "hosted_mcp", server_label: "a", server_url: "https://example.com/mcp", authorization: "fake-secret-hosted" }] });
     await service.putProfile("b", { hosted_tools: [{ type: "hosted_mcp", server_label: "b", server_url: "https://example.com/mcp", authorization: "fake-secret-other-node" }] });
     await service.setAgentBindings("agent-a", { node_ids: ["node-a"], mcp_profile_id: "a" });
     await service.setAgentBindings("agent-b", { node_ids: ["node-b"], mcp_profile_id: "b" });
@@ -450,7 +450,8 @@ describePostgres("node MCP snapshots", () => {
     expect(revision).toBe((await service.getConfig()).current_revision);
     expect(runtime.agent_bindings).toEqual({ "agent-a": "a" });
     expect(runtime.profiles.profiles).toHaveLength(1);
-    expect(runtime.profiles.profiles[0]).toMatchObject({ id: "a", mcp_servers: ["http", "stdio"], hosted_tools: [{ authorization: "fake-secret-hosted" }] });
+    expect(runtime.profiles.profiles[0]).toMatchObject({ id: "a", description: "{{secret:label-only}}", mcp_servers: ["http", "stdio"], hosted_tools: [{ authorization: "fake-secret-hosted" }] });
+    expect(runtime.profiles.profiles[0]).not.toHaveProperty("name");
     expect(runtime.registry.servers).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "http", name: "override", type: "streamable_http", url: "https://example.com/mcp?key=fake-secret-query%26value", headers: { Authorization: "fake-secret-header", Local: { env: "LOCAL_KEY" } } }),
       expect.objectContaining({ id: "stdio", env: { KEY: "fake-secret-env", LOCAL: { env: "LOCAL_ENV" } } }),

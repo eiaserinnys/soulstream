@@ -2,7 +2,6 @@ import { McpCentralSyncService } from "./mcp_central/sync_service.js";
 import { createMcpCentralRepository } from "./mcp_central/repository.js";
 import { buildNodeSnapshot } from "./mcp_central/node_snapshot.js";
 import { createMcpCentralAccessProvider } from "./mcp_central/agent_identity.js";
-import type { SessionOwnerResolver } from "./session/session_owner.js";
 import { createMcpCentralService, type McpCentralService } from "./mcp_central/service.js";
 import { ConversationMessageService } from "./conversation/conversation_messages.js";
 import { HandoverGate, guardMethods } from "./runtime/handover_gate.js";
@@ -16,7 +15,7 @@ import { SqlOwnedAgentRepository } from "./owned-agents/repository.js";
 import type { OnPersistentReportPosted, PublishPersistentReports } from "./session/persistent_report_service.js";
 import { createReportTimelineAppender, type AppendReportTimeline } from "./session/report_timeline_publisher.js";
 import { OwnedAgentService } from "./owned-agents/service.js";
-import { createSessionOwnerResolver } from "./session/session_owner.js";
+import { createSessionOwnerResolver, type SessionOwnerResolver } from "./session/session_owner.js";
 import { ExternalEventsService, credentialOwner } from "./external_events/service.js";
 import type { McpHostOptions } from "./mcp/types.js";
 import {DashboardBuildInfo,OrchestratorLifecycle} from "./runtime/orchestrator_lifecycle.js";
@@ -1386,8 +1385,10 @@ export async function createLiveProductionApplication(
       await runStopStep("sessionStatistics", () => providers.sessionStatisticsRoutes.stopBackground?.());
       await runStopStep("recurringJobScheduler", () => recurringJobScheduler?.stop());
       await runStopStep("usageSummary", () => usageSummaryService.stop());
-      await runStopStep("claudeCentral", () => claudeCentralService?.stop());
-      await runStopStep("mcpCentral", () => mcpCentralSync?.stop());
+      await runStopStep("claudeCentral", async () => {
+        mcpCentralSync?.stop();
+        await claudeCentralService?.stop();
+      });
       await runStopStep("dispatcher.pause", () => cardDispatchRuntime.dispatcher.pause());
       await runStopStep("turnSummary.drain", () => turnSummaryPipeline?.drain());
       await runStopStep("externalEvents.pauseWrites", () => externalEventsTarget?.pauseWrites());
@@ -1453,8 +1454,10 @@ export async function createLiveProductionApplication(
       await runShutdownStep("session_reconciliation_close", () => sessionReconciliation.close());
       await runShutdownStep("recurring_scheduler_stop", () => recurringJobScheduler?.stop());
       await runShutdownStep("usage_summary_stop", () => usageSummaryService.stop());
-      await runShutdownStep("claude_central_stop", () => claudeCentralService?.stop());
-      await runShutdownStep("mcp_central_stop", () => mcpCentralSync?.stop());
+      await runShutdownStep("claude_central_stop", async () => {
+        mcpCentralSync?.stop();
+        await claudeCentralService?.stop();
+      });
       await runShutdownStep("card_dispatch_drain", () => cardDispatchRuntime.dispatcher.drain());
       await runShutdownStep("turn_summary_drain", () => turnSummaryPipeline?.drain());
     }
