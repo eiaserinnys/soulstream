@@ -258,7 +258,8 @@
         "status": { "enum": ["modified", "added", "deleted", "renamed", "untracked", "conflicted", "typechange", "unchanged"] },
         "text": { "type": "string" },
         "truncated": { "type": "boolean" },
-        "binary": { "type": "boolean" }
+        "binary": { "type": "boolean" },
+        "root_checked": { "const": true }
       }
     },
     "WorkspaceFileRead": {
@@ -510,7 +511,8 @@
         },
         "length": {
           "type": "integer"
-        }
+        },
+        "root_checked": { "const": true }
       }
     },
     "SessionLifecycleStatus": {

@@ -61,16 +61,23 @@ async function authorizedFile(options:SessionWorkspaceRouteOptions, request:impo
   const access=await options.accessProvider.resolveAccess({request});
   const opened=await options.provider.openWorkspace(sessionId);
   const workspace=filterWorkspace(opened.workspace,access.restricted);
-  if (workspace.root === null) throw new WorkspaceRouteError(409,"workspace root unknown");
+  if (workspace.root === null) {
+    const code={offline:503,unsupported:501,no_workspace:404,error:502,ok:409}[workspace.node.status];
+    throw new WorkspaceRouteError(code,"workspace root unknown");
+  }
   const windows=!!workspace.root && (/^[a-z]:[\\/]/i.test(workspace.root) || workspace.root.startsWith("\\\\"));
   const same=(a:string,b:string) => windows ? a.toLowerCase() === b.toLowerCase() : a === b;
   const entries=[...workspace.files,...workspace.read_only];
+  const allEntries=[...opened.workspace.files,...opened.workspace.read_only];
   const normalized=relativePath(workspace.root,requested);
-  const match=entries.find(item=>same(item.path,requested)) ?? (normalized ? entries.find(item=>same(item.path,normalized)) : undefined);
+  const lookup=(name:string) => allEntries.find(item=>item.path === name) ?? allEntries.find(item=>same(item.path,name));
+  const candidate=lookup(requested) ?? (normalized ? lookup(normalized) : undefined);
+  const match=candidate && entries.find(item=>item.path === candidate.path);
   if (!match) throw new WorkspaceRouteError(403,"file not in session workspace");
-  const entry=workspace.files.find(item=>same(item.path,match.path));
+  const entry=workspace.files.find(item=>item.path === match.path);
   const orig=entry?.orig_path;
-  const allowedOrig=orig ? entries.find(item=>same(item.path,orig))?.path ?? null : null;
+  const original=orig ? lookup(orig) : undefined;
+  const allowedOrig=original && entries.some(item=>item.path === original.path) ? original.path : null;
   return {file:match.path,origPath:allowedOrig,opened};
 }
 function sendError(reply:FastifyReply,error:unknown): FastifyReply {

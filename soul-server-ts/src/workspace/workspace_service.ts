@@ -23,7 +23,8 @@ export class WorkspaceService {
   }
   async snapshot(target: WorkspaceTarget, since: string) { return this.snapshots.get(await this.root(target),since); }
   private async checkedRoot(target:WorkspaceTarget, expectedRoot?:string) {
-    const root=await this.root(target);
+    const cachedRoot=await this.root(target);
+    const root=await realpath(cachedRoot).catch(()=>{throw new Error(expectedRoot === undefined ? "NOT_FOUND: workspace unavailable" : "CONFLICT: workspace root changed");});
     const same=process.platform === "win32" ? root.toLowerCase() === expectedRoot?.toLowerCase() : root === expectedRoot;
     if (expectedRoot !== undefined && !same) throw new Error("CONFLICT: workspace root changed");
     return root;

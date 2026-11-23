@@ -1150,3 +1150,11 @@ def test_workspace_file_commands_accept_optional_expected_root() -> None:
         assert definition["properties"]["expected_root"] == {"type": "string"}
         assert "expected_root" not in definition["required"]
         assert definition["additionalProperties"] is True
+
+
+def test_workspace_file_results_accept_optional_root_confirmation() -> None:
+    schema = _load_schema()
+    for name in ("WorkspaceFileReadResult", "WorkspaceFileDiffResult"):
+        definition = schema["$defs"][name]
+        assert definition["properties"]["root_checked"] == {"const": True}
+        assert "root_checked" not in definition["required"]

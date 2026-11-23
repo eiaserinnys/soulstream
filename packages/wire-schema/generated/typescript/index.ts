@@ -3618,6 +3618,7 @@ export interface WorkspaceFileReadResult {
   size: number;
   offset: number;
   length: number;
+  root_checked?: true;
   [k: string]: unknown;
 }
 export interface WorkspaceFileDiff {
@@ -3638,6 +3639,7 @@ export interface WorkspaceFileDiffResult {
   text: string;
   truncated: boolean;
   binary: boolean;
+  root_checked?: true;
   [k: string]: unknown;
 }
 

@@ -2,7 +2,7 @@ import type { NodeWorkspaceSnapshot, SessionWorkspaceResponse } from "@soulstrea
 import type { NodeCommandRegistryPort } from "../node/registry_types.js";
 import { PendingNodeCommandRejectedError, PendingNodeCommandTimeoutError, type RequestResponseNodeCommandPayload } from "../node/pending_commands.js";
 import { NodeCommandTransportError, type SessionCommandTransportBridge } from "../session/session_command_transport.js";
-import { collectSessionFileActivity, type FileActivity, type FileActivityRow } from "../session/session_file_activity.js";
+import { collectSessionFileActivity, type FileActivityRow } from "../session/session_file_activity.js";
 import { WorkspaceRouteError, type SessionWorkspaceProvider, type WorkspaceFile } from "../session/session_workspace_routes.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
 import type { ModelCatalogSource } from "../model/model_catalog_source.js";
@@ -50,25 +50,14 @@ export function createLiveSessionWorkspaceProvider(options: Options): SessionWor
         GROUP BY event_type, payload->>'tool_name', payload->'tool_input'->>'file_path', payload->'tool_input'->>'notebook_path', payload->'tool_input'->>'filePath', payload->'tool_input'->>'AbsolutePath', payload->'tool_input'->>'Path', payload->'tool_input'->>'TargetFile', CASE WHEN event_type = 'tool_result' AND payload->>'tool_name' = 'file_change' THEN payload->>'result' ELSE NULL END
         ORDER BY MAX(created_at) DESC`;
       const activity=collectSessionFileActivity(snapshot?.root ?? null, rows as FileActivityRow[]);
-      const windows=!!snapshot?.root && (/^[a-z]:[\\/]/i.test(snapshot.root) || snapshot.root.startsWith("\\\\"));
-      const key=(name:string)=>windows ? name.toLowerCase() : name;
-      const activityByKey=new Map<string,{path:string; value:FileActivity}>();
-      for(const [name,value] of activity) {
-        const k=key(name), previous=activityByKey.get(k);
-        if (!previous) activityByKey.set(k,{path:name,value});
-        else {
-          const old=previous.value;
-          previous.value={read:old.read || value.read,wrote:old.wrote || value.wrote,last_activity_at:old.last_activity_at > value.last_activity_at ? old.last_activity_at : value.last_activity_at,last_read_at:old.last_read_at && value.last_read_at ? (old.last_read_at > value.last_read_at ? old.last_read_at : value.last_read_at) : old.last_read_at ?? value.last_read_at};
-        }
-      }
-      const git=snapshot?.git; const changed=new Map((git?.files ?? []).map(file=>[key(file.path),file]));
-      const committed=new Set((git?.commits ?? []).filter(commit=>Date.parse(commit.committed_at) >= Date.parse(since)).flatMap(commit=>commit.files.map(key)));
-      const names=new Set([...changed.keys(), ...[...activityByKey].filter(([,v])=>v.value.wrote).map(([p])=>p)]);
+      const git=snapshot?.git; const changed=new Map((git?.files ?? []).map(file=>[file.path,file]));
+      const committed=new Set((git?.commits ?? []).filter(commit=>Date.parse(commit.committed_at) >= Date.parse(since)).flatMap(commit=>commit.files));
+      const names=new Set([...changed.keys(), ...[...activity].filter(([,v])=>v.wrote).map(([p])=>p)]);
       const files=[...names].sort().map(file=>{
-        const change=changed.get(file), act=activityByKey.get(file)?.value;
-        return {path:change?.path ?? activityByKey.get(file)!.path,git_status:change?.status ?? null,orig_path:change?.orig_path ?? null,added:change?.added ?? null,deleted:change?.deleted ?? null,size:change?.size ?? null,wrote:act?.wrote ?? false,read:act?.read ?? false,committed:!!act?.wrote && committed.has(file),last_activity_at:act?.last_activity_at ?? null};
+        const change=changed.get(file), act=activity.get(file);
+        return {path:file,git_status:change?.status ?? null,orig_path:change?.orig_path ?? null,added:change?.added ?? null,deleted:change?.deleted ?? null,size:change?.size ?? null,wrote:act?.wrote ?? false,read:act?.read ?? false,committed:!!act?.wrote && committed.has(file),last_activity_at:act?.last_activity_at ?? null};
       });
-      const read_only=[...activityByKey].filter(([file,act])=>act.value.read && !act.value.wrote && !changed.has(file)).map(([,act])=>({path:act.path,size:null,last_read_at:act.value.last_read_at})).sort((a,b)=>a.path.localeCompare(b.path));
+      const read_only=[...activity].filter(([file,act])=>act.read && !act.wrote && !changed.has(file)).map(([file,act])=>({path:file,size:null,last_read_at:act.last_read_at})).sort((a,b)=>a.path.localeCompare(b.path));
       return {session_id:sessionId,root:snapshot?.root ?? null,node:{id:row.node_id,status},snapshot:snapshot ? {state:snapshot.state,observed_at:snapshot.observed_at,refreshing:snapshot.refreshing,branch:git?.branch ?? null,head:git?.head ?? null,upstream:git?.upstream ?? null,ahead:git?.ahead ?? 0,behind:git?.behind ?? 0,truncated:git?.truncated ?? false} : null,attribution:options.modelCatalog.snapshot().presets.find(p=>p.id===row.model_preset)?.backend === "claude" ? "full" : "partial",files,read_only};
   }
   return {
@@ -79,11 +68,14 @@ export function createLiveSessionWorkspaceProvider(options: Options): SessionWor
       return {workspace:listing,
     async readDiff(file,origPath) {
       const result=await send(row,{type:"workspace_file_diff",session_id:sessionId,agent_id:row.agent_id,worktree_id:row.worktree_id,path:file,orig_path:origPath,...(listing.root === null ? {} : {expected_root:listing.root})},60_000);
+      if (result.root_checked !== true) throw new WorkspaceRouteError(501,"node does not enforce workspace root");
       const diff=result as unknown as import("@soulstream/wire-schema/session-workspace").SessionWorkspaceDiffResponse;
       return {path:file,status:diff.status,text:diff.text,truncated:diff.truncated,binary:diff.binary};
     },
     async readFile(file,offset,length) {
-      return await send(row,{type:"workspace_file_read",session_id:sessionId,agent_id:row.agent_id,worktree_id:row.worktree_id,path:file,expected_root:listing.root!,offset,...(length === undefined ? {} : {length})},60_000) as unknown as WorkspaceFile;
+      const result=await send(row,{type:"workspace_file_read",session_id:sessionId,agent_id:row.agent_id,worktree_id:row.worktree_id,path:file,expected_root:listing.root!,offset,...(length === undefined ? {} : {length})},60_000);
+      if (result.root_checked !== true) throw new WorkspaceRouteError(501,"node does not enforce workspace root");
+      return result as unknown as WorkspaceFile;
     }};
     },
   };

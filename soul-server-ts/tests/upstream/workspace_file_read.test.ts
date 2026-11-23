@@ -58,3 +58,38 @@ it("passes expected roots through both workspace commands", async () => {
   const diffCommand={...target,type:"workspace_file_diff",orig_path:null};
   await expect(family.workspace_file_diff!(diffCommand)).rejects.toThrow("CONFLICT: workspace root changed");
 });
+
+it("rechecks a cached root after its path is replaced by a link", async () => {
+  if (process.platform === "win32") return;
+  const {WorkspaceService}=await import("../../src/workspace/workspace_service.js");
+  const {mkdir,rename}=await import("node:fs/promises");
+  const parent=await mkdtemp(path.join(tmpdir(),"workspace-replaced-")); roots.push(parent);
+  const root=path.join(parent,"a"), second=path.join(parent,"b");
+  await mkdir(root); await mkdir(second); await writeFile(path.join(second,"file"),"other");
+  const service=new WorkspaceService({get:()=>({workspace_dir:root})} as never);
+  const target={session_id:"s",agent_id:"a",worktree_id:null};
+  expect(await service.root(target)).toBe(root);
+  await rename(root,path.join(parent,"old")); await symlink(second,root);
+  await expect(service.read(target,"file",0,undefined,root)).rejects.toThrow("CONFLICT: workspace root changed");
+  await expect(service.diff(target,"file",null,root)).rejects.toThrow("CONFLICT: workspace root changed");
+});
+
+it("confirms root checking only when an expected root was checked", async () => {
+  const {WorkspaceService}=await import("../../src/workspace/workspace_service.js");
+  const {createWorkspaceCommandFamily}=await import("../../src/upstream/workspace_command_family.js");
+  const {execFileSync}=await import("node:child_process");
+  const root=await mkdtemp(path.join(tmpdir(),"workspace-proof-")); roots.push(root);
+  execFileSync("git",["init","-q"],{cwd:root}); await writeFile(path.join(root,"new.txt"),"new\n");
+  const workspace=new WorkspaceService({get:()=>({workspace_dir:root})} as never);
+  const sent:unknown[]=[];
+  const family=createWorkspaceCommandFamily({workspace,send:async(value)=>{sent.push(value);}});
+  const base={session_id:"s",agent_id:"a",worktree_id:null,path:"new.txt",requestId:"r"};
+  for(const expected_root of [undefined,root]) {
+    const read={...base,type:"workspace_file_read",expected_root};
+    const diff={...base,type:"workspace_file_diff",orig_path:null,expected_root};
+    await family.workspace_file_read!(read); await family.workspace_file_diff!(diff);
+  }
+  expect(sent).toHaveLength(4);
+  for(const result of sent.slice(0,2)) expect(result).not.toHaveProperty("root_checked");
+  for(const result of sent.slice(2)) expect(result).toHaveProperty("root_checked",true);
+});
