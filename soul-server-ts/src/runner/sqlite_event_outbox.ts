@@ -664,8 +664,8 @@ export class RunnerSqliteEventOutbox {
         UPDATE runner_ipc_journal SET host_acked = 1
         WHERE frame_seq = ?
       `).run(frameSeq);
+      this.deleteAcknowledgedJournalRows();
     });
-    await this.compactJournal();
     await this.compactIfNeeded();
   }
 
@@ -915,17 +915,34 @@ export class RunnerSqliteEventOutbox {
   }
 
   private async compactIfNeeded(): Promise<void> {
-    const rows = this.database.prepare(`
-      SELECT * FROM runner_event_outbox
+    // SQL aggregate approximation of the stored prefix footprint: the row count
+    // is exact, and byte totals count the UTF-8 lengths of the stored text
+    // columns while omitting JSON field names/escaping overhead and fixed-size
+    // columns. Compaction thresholds therefore stay in the same units.
+    const footprint = this.database.prepare(`
+      SELECT COUNT(*) AS row_count,
+        COALESCE(SUM(
+          COALESCE(length(CAST(stream_id AS BLOB)), 0)
+          + COALESCE(length(CAST(session_id AS BLOB)), 0)
+          + COALESCE(length(CAST(registration_id AS BLOB)), 0)
+          + COALESCE(length(CAST(event_type AS BLOB)), 0)
+          + COALESCE(length(CAST(payload_json AS BLOB)), 0)
+          + COALESCE(length(CAST(searchable_text AS BLOB)), 0)
+          + COALESCE(length(CAST(created_at AS BLOB)), 0)
+          + COALESCE(length(CAST(semantic_dedupe_key AS BLOB)), 0)
+          + COALESCE(length(CAST(session_effect_json AS BLOB)), 0)
+          + COALESCE(length(CAST(payload_hash AS BLOB)), 0)
+        ), 0) AS byte_count
+      FROM runner_event_outbox
       WHERE record_kind = 'event' AND source_seq <= ?
-      ORDER BY source_seq
-    `).all(this.acknowledgedThrough) as unknown as RunnerEventOutboxRow[];
-    const records = rows.map(runnerRowToRecord);
-    const bytes = records.reduce(
-      (total, record) => total + Buffer.byteLength(`${JSON.stringify(record)}\n`, "utf8"),
-      0,
-    );
-    if (records.length < EVENT_OUTBOX_COMPACT_ROWS && bytes < EVENT_OUTBOX_COMPACT_BYTES) {
+    `).get(this.acknowledgedThrough) as unknown as {
+      row_count: number;
+      byte_count: number;
+    };
+    if (
+      footprint.row_count < EVENT_OUTBOX_COMPACT_ROWS
+      && footprint.byte_count < EVENT_OUTBOX_COMPACT_BYTES
+    ) {
       return;
     }
     await this.transaction("compact_event_outbox", () => {
@@ -946,11 +963,15 @@ export class RunnerSqliteEventOutbox {
 
   private async compactJournal(): Promise<void> {
     await this.transaction("compact_ipc_journal", () => {
-      this.database.prepare(`
-        DELETE FROM runner_ipc_journal
-        WHERE host_acked = 1 AND outbox_source_seq <= ?
-      `).run(this.acknowledgedThrough);
+      this.deleteAcknowledgedJournalRows();
     });
+  }
+
+  private deleteAcknowledgedJournalRows(): void {
+    this.database.prepare(`
+      DELETE FROM runner_ipc_journal
+      WHERE host_acked = 1 AND outbox_source_seq <= ?
+    `).run(this.acknowledgedThrough);
   }
 
   private async settleStaleRegistrationIpcFrames(): Promise<void> {

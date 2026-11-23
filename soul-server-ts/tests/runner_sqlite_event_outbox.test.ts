@@ -1567,6 +1567,161 @@ describe("RunnerSqliteEventOutbox", () => {
     expect(readStoredSequences(path)).toEqual([1, eventCount + 2]);
   });
 
+  it("applies the host ACK journal update and journal compaction in one transaction", async () => {
+    const path = await temporaryDatabasePath();
+    const labels: string[] = [];
+    const outbox = await RunnerSqliteEventOutbox.create(path, {
+      transactionObserver: (event) => {
+        if (event.stage === "completed") labels.push(event.transactionLabel);
+      },
+    });
+    await outbox.initializeBootstrap(bootstrapInput());
+    const record = await outbox.appendEngineFrame(eventInput("one"), {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload: { type: "assistant_message", content: "one" },
+    });
+    labels.length = 0;
+
+    await outbox.acknowledgeHostFrame(record.ipc_frame_seq);
+
+    expect(labels).toEqual(["event_outbox.acknowledge_host_frame"]);
+    outbox.close();
+  });
+
+  it("rolls back the host ACK when journal compaction fails in the merged transaction", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
+    const first = await outbox.appendEngineFrame(eventInput("one"), {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload: { type: "assistant_message", content: "one" },
+    });
+    const second = await outbox.appendEngineFrame(eventInput("two"), {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload: { type: "assistant_message", content: "two" },
+    });
+    await outbox.acknowledge(bootstrap.stream_id, first.source_seq);
+    outbox.close();
+
+    const database = new DatabaseSync(path);
+    database.exec(`
+      CREATE TRIGGER fail_journal_delete
+      BEFORE DELETE ON runner_ipc_journal
+      BEGIN
+        SELECT RAISE(ABORT, 'journal delete blocked');
+      END
+    `);
+    database.close();
+
+    const failing = await RunnerSqliteEventOutbox.create(path);
+    await expect(failing.acknowledgeHostFrame(first.ipc_frame_seq)).rejects.toThrow(
+      "journal delete blocked",
+    );
+    failing.close();
+
+    const verified = new DatabaseSync(path);
+    try {
+      expect(verified.prepare(
+        "SELECT frame_seq, host_acked FROM runner_ipc_journal ORDER BY frame_seq",
+      ).all()).toEqual([
+        { frame_seq: first.ipc_frame_seq, host_acked: 0 },
+        { frame_seq: second.ipc_frame_seq, host_acked: 0 },
+      ]);
+    } finally {
+      verified.close();
+    }
+  });
+
+  it("decides compaction from aggregate counts without hydrating acknowledged rows", async () => {
+    const path = await temporaryDatabasePath();
+    const seed = await RunnerSqliteEventOutbox.create(path);
+    const bootstrap = await seed.initializeBootstrap(bootstrapInput());
+    seed.close();
+    insertFixtureEvents(path, bootstrap.stream_id, 900);
+
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    await outbox.acknowledge(bootstrap.stream_id, 901);
+
+    const parseSpy = vi.spyOn(JSON, "parse");
+    try {
+      parseSpy.mockClear();
+      await outbox.acknowledgeHostFrame(1);
+      expect(parseSpy).not.toHaveBeenCalled();
+    } finally {
+      parseSpy.mockRestore();
+    }
+    expect(readStoredSequences(path)).toHaveLength(901);
+    outbox.close();
+  });
+
+  it("compacts by UTF-8 byte volume below the row threshold", async () => {
+    const path = await temporaryDatabasePath();
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    const bootstrap = await outbox.initializeBootstrap(bootstrapInput());
+    const korean = "한".repeat(100_000);
+    let last = 1;
+    for (let index = 0; index < 29; index += 1) {
+      const record = await outbox.append({ ...eventInput(korean), searchable_text: null });
+      last = record.source_seq;
+    }
+    expect(Buffer.byteLength(korean, "utf8") * 29).toBeGreaterThan(EVENT_OUTBOX_COMPACT_BYTES);
+
+    await outbox.acknowledge(bootstrap.stream_id, last);
+
+    expect(outbox.ackedSeq).toBe(last);
+    expect(readStoredSequences(path)).toEqual([1]);
+    outbox.close();
+  });
+
+  it("preserves journal- and intervention-referenced rows through compaction and reopen", async () => {
+    const path = await temporaryDatabasePath();
+    const seed = await RunnerSqliteEventOutbox.create(path);
+    const bootstrap = await seed.initializeBootstrap(bootstrapInput());
+    seed.close();
+    insertFixtureEvents(path, bootstrap.stream_id, EVENT_OUTBOX_COMPACT_ROWS + 1);
+
+    const reference = new DatabaseSync(path);
+    reference.prepare(`
+      INSERT INTO runner_ipc_journal (outbox_source_seq, frame_kind, host_acked, created_at)
+      VALUES (2, 'engine_event', 0, '2026-08-11T00:00:02.000Z')
+    `).run();
+    reference.prepare(`
+      INSERT INTO runner_intervention_inbox (
+        intervention_id, payload_json, event_source_seq, queued_at
+      ) VALUES ('intervention-keep', '{"text":"keep"}', 3, '2026-08-11T00:00:03.000Z')
+    `).run();
+    reference.close();
+
+    const outbox = await RunnerSqliteEventOutbox.create(path);
+    await outbox.acknowledge(bootstrap.stream_id, EVENT_OUTBOX_COMPACT_ROWS + 2);
+    expect(readStoredSequences(path)).toEqual([1, 2, 3]);
+    expect(outbox.ackedSeq).toBe(EVENT_OUTBOX_COMPACT_ROWS + 2);
+    outbox.close();
+
+    const reopened = await RunnerSqliteEventOutbox.create(path);
+    expect(reopened.ackedSeq).toBe(EVENT_OUTBOX_COMPACT_ROWS + 2);
+    await expect(reopened.readBatch()).resolves.toBeNull();
+    await expect(reopened.readPendingIpcFrames()).resolves.toMatchObject([
+      { frame_seq: 1, outbox_source_seq: 2 },
+    ]);
+    reopened.close();
+
+    const verified = new DatabaseSync(path);
+    try {
+      expect(verified.prepare(
+        "SELECT intervention_id, event_source_seq FROM runner_intervention_inbox",
+      ).all()).toEqual([{ intervention_id: "intervention-keep", event_source_seq: 3 }]);
+    } finally {
+      verified.close();
+    }
+  });
+
   it("detects a durable payload hash mutation during recovery", async () => {
     const path = await temporaryDatabasePath();
     const outbox = await RunnerSqliteEventOutbox.create(path);
