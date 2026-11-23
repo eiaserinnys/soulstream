@@ -90,9 +90,9 @@ function cardHarness(
     questions: { items: [{ id: "question-1", text: "미답 질문", answer: null }], nextCursor: null, truncated: false },
     available: { request: true, brief: true, attachments: true, comments: 1, notes: 1, reports: 1, sessions: 1, now_history: 0 },
     changeToken: "change-token" };
-  const mutation = { snapshot: { folder: { id: "folder-1" }, cards: [card] },
+  const mutation = { snapshot: { folder: { id: "folder-1" }, card },
     operation: { id: "op-1", target_kind: "card", target_id: "card-1" } };
-  const createdMutation = { ...mutation, snapshot: { ...mutation.snapshot, cards: [{ ...card, status: "todo" }] } };
+  const createdMutation = { ...mutation, snapshot: { ...mutation.snapshot, card: { ...card, status: "todo" } } };
   const mcpRead = {
     listCards: vi.fn().mockResolvedValue({ cards: [], nextCursor: null, truncated: false }),
     searchCards: vi.fn().mockResolvedValue({ query: "키워드", results: [], truncated: false }),
@@ -234,21 +234,21 @@ describe("card MCP execution", () => {
       ],
     };
     const richMutation = {
-      snapshot: { folder: { id: "folder-1" }, cards: [richCard] },
+      snapshot: { folder: { id: "folder-1" }, card: richCard },
       operation: { id: "op-1", target_kind: "card", target_id: "card-1", payload_json: { brief: richCard.brief } },
       idempotent: false,
     } as typeof h.createdMutation;
     expect(richCard.brief.length).toBe(5000);
     const addedMutation = {
       ...richMutation,
-      snapshot: { folder: { id: "folder-1" }, cards: [{ ...richCard, items: [...richCard.items,
+      snapshot: { folder: { id: "folder-1" }, card: { ...richCard, items: [...richCard.items,
         { id: 8, title: "여덟 번째", state: "todo", result: null, evidence: [], caveat: null, rev: 0,
-          confirmed: null, fixOpen: 0, reopened: null }] }] },
+          confirmed: null, fixOpen: 0, reopened: null }] } },
     } as unknown as typeof h.createdMutation;
     const reportedMutation = {
       ...richMutation,
-      snapshot: { folder: { id: "folder-1" }, cards: [{ ...richCard, items: richCard.items.map(item =>
-        item.id === 3 ? { ...item, state: "done", result: "완료" } : item) }] },
+      snapshot: { folder: { id: "folder-1" }, card: { ...richCard, items: richCard.items.map(item =>
+        item.id === 3 ? { ...item, state: "done", result: "완료" } : item) } },
     } as unknown as typeof h.createdMutation;
     h.service.patchCard.mockResolvedValue(richMutation);
     h.service.updateCardBrief.mockResolvedValue(richMutation);
@@ -262,7 +262,7 @@ describe("card MCP execution", () => {
     h.service.updateCardNow.mockResolvedValue(richMutation);
     h.service.askQuestion.mockResolvedValue(richMutation);
     h.service.moveCard.mockResolvedValue({
-      ...richMutation, snapshot: { folder: { id: "folder-2" }, cards: [{ ...richCard, folder_id: "folder-2" }] },
+      ...richMutation, snapshot: { folder: { id: "folder-2" }, card: { ...richCard, folder_id: "folder-2" } },
     } as typeof h.createdMutation);
     h.service.createCard.mockResolvedValue(richMutation);
     h.service.addCardNote.mockResolvedValue({
@@ -335,7 +335,7 @@ describe("card MCP execution", () => {
     const cardRow = { id: "card-1", number: 12, folder_id: "folder-1", title: "카드", attachments,
       request: "원문", brief: "인계 요약".repeat(500), status: "running", version: 4 };
     const mutation = {
-      snapshot: { folder: { id: "folder-1" }, cards: [cardRow] },
+      snapshot: { folder: { id: "folder-1" }, card: cardRow },
       operation: { id: "op-1", target_kind: "card", target_id: "card-1", payload_json: { request: cardRow.request } },
       idempotent: false,
     } as typeof h.createdMutation;
@@ -378,7 +378,7 @@ describe("card MCP execution", () => {
     });
 
     const replay = {
-      ...mutation, snapshot: { folder: { id: "folder-1" }, cards: [{ ...cardRow, status: "review" }] }, idempotent: true,
+      ...mutation, snapshot: { folder: { id: "folder-1" }, card: { ...cardRow, status: "review" } }, idempotent: true,
     } as typeof h.createdMutation;
     h.service.createCard.mockResolvedValueOnce(replay);
     const replayed = await call(h.options, "create_card", {
@@ -390,8 +390,8 @@ describe("card MCP execution", () => {
     });
 
     h.service.createCard.mockResolvedValueOnce({
-      ...mutation, snapshot: { folder: { id: "folder-1" }, cards: [] }, idempotent: true,
-    } as typeof h.createdMutation);
+      ...mutation, snapshot: { folder: { id: "folder-1" }, card: null }, idempotent: true,
+    } as unknown as typeof h.createdMutation);
     const replayWithoutCard = await call(h.options, "create_card", {
       caller_session_id: "session-1", folder_id: "folder-1", title: "새 카드", request: "새 요청",
       idempotency_key: "create-replay-without-card",
@@ -445,7 +445,7 @@ describe("card MCP execution", () => {
   });
   it("uses the serialized operation target when create_card replay has no card snapshot", async () => {
     const h = cardHarness();
-    h.service.createCard.mockResolvedValueOnce({ ...h.createdMutation, snapshot: { ...h.createdMutation.snapshot, cards: [] }, idempotent: true });
+    h.service.createCard.mockResolvedValueOnce({ ...h.createdMutation, snapshot: { ...h.createdMutation.snapshot, card: null }, idempotent: true });
     h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [], notes: [], nowHistory: [] });
     const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true,
       idempotency_key: "create-replay", caller_session_id: "session-1" });

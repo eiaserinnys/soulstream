@@ -121,7 +121,7 @@ describe("card attachment evidence projection", () => {
     expect((await storedItems(cardId))[0]!.evidence).toStrictEqual([rawProof]);
 
     const expectedContent = CARD_CONTENT(cardId, "ready-image");
-    const mutationView = mutation.snapshot.cards[0]!.items[0]!.evidence[0] as unknown as Record<string, unknown>;
+    const mutationView = mutation.snapshot.card!.items[0]!.evidence[0] as unknown as Record<string, unknown>;
     expect(mutationView).toMatchObject({
       type: "image", label: "화면", url: expectedContent, attachment_id: "ready-image",
       descriptor: { attachment_id: "ready-image", name: "ready-image.bin", mime_type: "image/png", preview_kind: "image" },

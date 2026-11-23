@@ -311,7 +311,7 @@ export class CardControlPlaneService {
       }
     });
     if(result.snapshot.folder.id!==params.folderId) await this.broadcaster?.emitCardUpdated?.(params.cardId,params.folderId);
-    return {...result,snapshot:(await this.repo.getSnapshot(params.folderId))!};
+    return {...result,snapshot:(await this.repo.getMutationSnapshot(params.folderId,"card",params.cardId))!};
   }
   /** Records the requesting side's execution evidence; it is not an assignee session's declaration. */
   async recordExecution(params:CardMutationParams & {requestId:string;sessionId:string;execution?:CardWorkExecution}) {
@@ -454,7 +454,7 @@ export class CardControlPlaneService {
       await applyCardMoveTx(sql,card,params.folderId,params.afterCardId ?? null,params,eventId);
     });
     if (!result.idempotent && result.snapshot.folder.id !== params.folderId) await this.broadcaster?.emitCardUpdated?.(params.cardId,params.folderId);
-    return { ...result,snapshot:(await this.repo.getSnapshot(params.folderId))! };
+    return { ...result,snapshot:(await this.repo.getMutationSnapshot(params.folderId,"card",params.cardId))! };
   }
   async reorderQueue(params: CardMutationParams & { afterCardId?:string | null }) {
     if (params.actorKind !== "user") throw invalid("Only a human may reorder the queue");
@@ -768,7 +768,7 @@ export class CardControlPlaneService {
           questionChanged:false,cardChanged:change.cardChanged});
         if (folderId) await this.broadcaster?.emitCardUpdated?.(cardId,folderId);
         if (folderId) {
-          const snapshot=await this.repo.getSnapshot(folderId);
+          const snapshot=await this.repo.getMutationSnapshot(folderId,"card",cardId);
           if (snapshot) this.onMutation?.({result:{...change.result,eventId:change.result.eventId ?? 0,snapshot},previousStatus:change.previousStatus,
             previousAssigneeSessionId:change.previousAssigneeSessionId,committedCard:change.committedCard});
         }

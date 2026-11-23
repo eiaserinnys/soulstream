@@ -1,4 +1,4 @@
-import type { CardRow, FolderRow, FolderSnapshot, FolderOperationRow, SqlClient, RepositorySql } from "./card_types.js";
+import type { CardMutationSnapshot, CardRow, FolderRow, FolderSnapshot, FolderOperationRow, FolderOperationTargetKind, ProjectedCard, SqlClient, RepositorySql } from "./card_types.js";
 import { normalizeOperation } from "./card_models.js";
 import { projectCardActivity } from "../card_latest_activity.js";
 import { completedCardCursor, pagedCardCursor, type CompletedCardQuery, type PagedCardQuery } from "../completed_card_query.js";
@@ -22,6 +22,18 @@ export class CardRepositoryRead {
     const folder = await this.getFolder(folderId);
     if (!folder) return null;
     return { folder, cards: await this.projectCards(await this.listCards({ folderId, includeArchived: true, includeCompleted })) };
+  }
+  /**
+   * One-card answer for a mutation. Folder-target operations read no card at all;
+   * a card target is projected only when it still lives in that folder.
+   */
+  async getMutationSnapshot(folderId: string, targetKind: FolderOperationTargetKind, targetId: string): Promise<CardMutationSnapshot | null> {
+    const folder = await this.getFolder(folderId);
+    if (!folder) return null;
+    if (targetKind !== "card") return { folder, card: null };
+    const card = await this.getCard(targetId);
+    if (!card || card.folder_id !== folderId) return { folder, card: null };
+    return { folder, card: (await this.projectCards([card]))[0] as ProjectedCard };
   }
   async listFolders(params: { folderId: string | null; includeArchived?: boolean; limit?: number; offset?: number }) {
     return await this.sql<FolderRow[]>`SELECT * FROM folders

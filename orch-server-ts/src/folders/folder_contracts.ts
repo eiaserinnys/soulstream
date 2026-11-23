@@ -69,6 +69,6 @@ function serializeFolderOutlineCard(card: FolderSnapshot["cards"][number]) {
 export function serializeCardMutation(result:CardMutationResult) {
   const operation=serializeCardRow(result.operation);
   if (result.operation.target_kind === "folder") return { folder:serializeFolder(result.snapshot.folder),operation,idempotent:result.idempotent ?? false };
-  const card=result.snapshot.cards.find(c=>c.id === result.operation.target_id);
+  const card=result.snapshot.card;
   return { folderId:result.snapshot.folder.id,card:card ? serializeCardRow(card) : null,operation,idempotent:result.idempotent ?? false };
 }

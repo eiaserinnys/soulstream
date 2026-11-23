@@ -6,7 +6,7 @@ import type {
   RepositorySql,
   FolderOperationRow,
   FolderOperationTargetKind,
-  FolderSnapshot,
+  CardMutationSnapshot,
   FolderActorParams,
   FolderBroadcasterPort,
   FolderDbPort,
@@ -66,7 +66,7 @@ export class CardMutationCore {
     await params.afterCommit?.();
 
     const result = {
-      snapshot: await this.requireSnapshot(params.folderId),
+      snapshot: await this.requireMutationSnapshot(params.folderId, params.targetKind, params.targetId),
       operation,
       eventId: eventId ?? 0,
     };
@@ -128,7 +128,7 @@ export class CardMutationCore {
       });
     });
     return {
-      snapshot: await this.requireSnapshot(params.folderId),
+      snapshot: await this.requireMutationSnapshot(params.folderId, params.targetKind, params.targetId),
       operation,
       eventId: 0,
     };
@@ -195,7 +195,7 @@ export class CardMutationCore {
     });
 
     const result = {
-      snapshot: await this.requireSnapshot(params.folderId),
+      snapshot: await this.requireMutationSnapshot(params.folderId, "folder", params.folderId),
       operation,
       eventId: eventId ?? 0,
     };
@@ -218,7 +218,7 @@ export class CardMutationCore {
       throw Object.assign(new Error("Idempotency key belongs to a different request"), { statusCode: 409, code: "FOLDER_IDEMPOTENCY_CONFLICT" });
     }
     return {
-      snapshot: await this.requireSnapshot(operation.folder_id),
+      snapshot: await this.requireMutationSnapshot(operation.folder_id, operation.target_kind, operation.target_id),
       operation,
       eventId: operation.actor_event_id ?? 0,
       idempotent: true,
@@ -257,8 +257,12 @@ export class CardMutationCore {
     return await this.appendFolderEvent(sql, params, actorSessionId);
   }
 
-  private async requireSnapshot(folderId: string): Promise<FolderSnapshot> {
-    const snapshot = await this.repo.getSnapshot(folderId);
+  private async requireMutationSnapshot(
+    folderId: string,
+    targetKind: FolderOperationTargetKind,
+    targetId: string,
+  ): Promise<CardMutationSnapshot> {
+    const snapshot = await this.repo.getMutationSnapshot(folderId, targetKind, targetId);
     if (!snapshot) throw new Error(`folder not found: ${folderId}`);
     return snapshot;
   }
