@@ -84,6 +84,10 @@ STREAM_INCOMPLETE_SCENES = ("incomplete-bold", "incomplete-link", "incomplete-fe
 DIALOG_SURFACES = {"attachment", "document-reader"}
 EVIDENCE_TOLERANCE_PX = 1
 BLOCK_TOLERANCE_PX = 2
+SURFACE_ATTEMPTS = 3
+SURFACE_FIRST_WAIT_MS = 20_000
+SURFACE_RETRY_WAIT_MS = 60_000
+PAGE_ERRORS: list[str] = []
 
 MEASURE_SCRIPT = """
 (selector) => {
@@ -215,13 +219,36 @@ def open_surface(
     wait_selector: str | None = None,
 ) -> None:
     page.set_viewport_size({"width": width, "height": height})
-    page.goto(
+    url = (
         f"{base}/scripts/visual-check/markdown-narrow-fixture.html"
-        f"?surface={surface}&state={state}&theme=dark",
-        wait_until="load",
+        f"?surface={surface}&state={state}&theme=dark"
     )
     selector = wait_selector or dict(SURFACES)[surface]
-    page.wait_for_selector(selector, state="visible", timeout=15_000)
+    # 공유 호스트의 dev 서버가 같은 주소에 빈 문서를 한 번 돌려주면 본문이 끝내 서지
+    # 않았다(261123, 카드 #1808 봉인에서 두 번). 캐시를 피해 다시 열어 본다.
+    for attempt in range(SURFACE_ATTEMPTS):
+        suffix = f"&retry={attempt}" if attempt else ""
+        try:
+            page.goto(f"{url}{suffix}", wait_until="load")
+            page.wait_for_selector(
+                selector,
+                state="visible",
+                timeout=SURFACE_FIRST_WAIT_MS if attempt == 0 else SURFACE_RETRY_WAIT_MS,
+            )
+            break
+        except PlaywrightTimeoutError:
+            if PAGE_ERRORS:
+                print(
+                    f"surface {surface}/{state}: 페이지 오류 {PAGE_ERRORS[-1]}",
+                    file=sys.stderr,
+                )
+            if attempt == SURFACE_ATTEMPTS - 1:
+                raise
+            print(
+                f"surface {surface}/{state}: 본문이 서지 않아 다시 엽니다 "
+                f"({attempt + 1}/{SURFACE_ATTEMPTS})",
+                file=sys.stderr,
+            )
     if surface == "stream":
         # 스트리밍 본문이 words 모듈을 받아 마크다운으로 바뀔 때까지 기다린다.
         # 고치기 전 코드(평문 스트리밍)에서는 이 요소가 없으므로 기다리지 않고 잰다.
@@ -282,6 +309,8 @@ def run(args: argparse.Namespace) -> int:
         browser = playwright.chromium.launch()
         context = browser.new_context(device_scale_factor=1)
         page = context.new_page()
+        page.set_default_navigation_timeout(60_000)
+        page.on("pageerror", lambda error: PAGE_ERRORS.append(str(error)))
 
         for surface, selector in SURFACES:
             for width, height in WIDTHS:
