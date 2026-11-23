@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   runnerInventoryCommandType,
   supportsClaudeAccountPool,
+  supportsCentralMcpConfig,
 } from "../src/node/registry_helpers.js";
 
 describe("runner inventory rolling compatibility", () => {
@@ -26,5 +27,13 @@ describe("Claude account pool capability", () => {
     expect(supportsClaudeAccountPool({ claude_account_pool_v1: false })).toBe(false);
     expect(supportsClaudeAccountPool({ claude_account_pool_v1: "true" })).toBe(false);
     expect(supportsClaudeAccountPool(undefined)).toBe(false);
+  });
+});
+
+describe("central MCP capability", () => {
+  it("requires an explicit true capability", () => {
+    expect(supportsCentralMcpConfig({ central_mcp_config_v1: true })).toBe(true);
+    expect(supportsCentralMcpConfig({ central_mcp_config_v1: "true" })).toBe(false);
+    expect(supportsCentralMcpConfig(undefined)).toBe(false);
   });
 });

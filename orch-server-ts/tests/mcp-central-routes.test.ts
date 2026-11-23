@@ -130,3 +130,50 @@ describe("MCP central admin routes", () => {
     } finally { await app.close(); }
   });
 });
+
+describe("MCP central change notifications and node status", () => {
+  it("notifies only successful configuration writes and adds live status to config", async () => {
+    const service = fakeService();
+    service.getConfig.mockResolvedValue({ current_revision: 12, managed_nodes: [{ node_id: "n" }] } as never);
+    const notify = vi.fn();
+    const app = createApp({ config, mcpCentralRoutes: { service: service as never,
+      provider: { currentEmail: () => "admin@example.com", isAdminEmail: () => true },
+      onConfigWritten: notify, nodeStatus: () => ({ connected: true, central_sync_supported: true, ack: { revision: 12 } }) } });
+    try {
+      const response = await app.inject({ method: "GET", url: "/api/mcp/config" });
+      expect(response.json().managed_nodes[0]).toMatchObject({ connected: true, central_sync_supported: true, ack: { revision: 12 } });
+      for (const item of cases.filter(item => !["getConfig", "getServerIcon", "uploadServerIcon", "listRevisions"].includes(item.fn))) {
+        const before = notify.mock.calls.length;
+        const result = await app.inject({ method: item.method, url: item.url, payload: "payload" in item ? item.payload : undefined });
+        expect(result.statusCode).toBe(200);
+        expect(notify).toHaveBeenCalledTimes(before + 1);
+      }
+      service.putServer.mockRejectedValueOnce(new Error("failed"));
+      const before = notify.mock.calls.length;
+      await app.inject({ method: "PUT", url: "/api/mcp/servers/s", payload: {} });
+      expect(notify).toHaveBeenCalledTimes(before);
+    } finally { await app.close(); }
+  });
+});
+
+describe("MCP central agent identity", () => {
+  it("uses a verified service caller's session owner and retains the admin gate", async () => {
+    const { createMcpCentralAccessProvider } = await import("../src/mcp_central/agent_identity.js");
+    const provider = createMcpCentralAccessProvider({
+      provider: { currentEmail: () => null, isAdminEmail: email => email === "admin@example.com" },
+      auth: { configuredToken: "fake-secret-service", environment: "test", nodeCredentials: null },
+      resolveSessionOwner: async id => id === "admin" ? { ownerEmail: "admin@example.com", callerInfo: {} }
+        : id === "user" ? { ownerEmail: "user@example.com", callerInfo: {} } : null,
+    });
+    const app = createApp({ config, mcpCentralRoutes: { service: fakeService() as never, provider } });
+    try {
+      for (const [authorization, id, expected] of [
+        ["Bearer fake-secret-service", "admin", 200], ["Bearer fake-secret-service", "user", 403],
+        ["Bearer fake-secret-service", undefined, 401], ["Bearer fake-secret-wrong", "admin", 401],
+      ] as const) {
+        const response = await app.inject({ method: "PUT", url: "/api/mcp/managed-nodes/n", headers: { authorization, ...(id ? { "x-soulstream-agent-session-id": id } : {}) } });
+        expect(response.statusCode).toBe(expected);
+      }
+    } finally { await app.close(); }
+  });
+});

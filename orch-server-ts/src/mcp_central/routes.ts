@@ -7,6 +7,8 @@ import type { McpCentralService } from "./service.js";
 export type McpCentralRouteOptions = {
   service: McpCentralService;
   provider: AdminAccessProvider;
+  onConfigWritten?: () => void;
+  nodeStatus?: (nodeId: string) => { connected: boolean; central_sync_supported: boolean; ack: { revision: number } | null };
 };
 
 export const mcpCentralRouteAuthRequirements = {
@@ -45,23 +47,32 @@ export function registerMcpCentralRoutes(app: FastifyInstance, options: McpCentr
   };
   const params = (request: FastifyRequest): Params => request.params as Params;
 
-  app.get("/api/mcp/config", guarded(async () => service.getConfig()));
+  app.get("/api/mcp/config", guarded(async () => {
+    const config = await service.getConfig();
+    return { ...config, managed_nodes: config.managed_nodes?.map(node => ({ ...node,
+      ...(options.nodeStatus?.(node.node_id) ?? { connected: false, central_sync_supported: false, ack: null }),
+    })) };
+  }));
   app.put("/api/mcp/managed-nodes/:node_id", guarded(async (request) => {
     const { write } = bodyAndWrite(request.body);
     const { current_revision } = await service.addManagedNode(params(request).node_id, write);
+    options.onConfigWritten?.();
     return { current_revision };
   }));
   app.delete("/api/mcp/managed-nodes/:node_id", guarded(async (request) => {
     const { current_revision } = await service.removeManagedNode(params(request).node_id, queryWrite(request.query));
+    options.onConfigWritten?.();
     return { current_revision };
   }));
   app.put("/api/mcp/servers/:server_id", guarded(async (request) => {
     const { body, write } = bodyAndWrite(request.body);
     const { current_revision, result } = await service.putServer(params(request).server_id, body, write);
+    options.onConfigWritten?.();
     return { current_revision, server: result };
   }));
   app.delete("/api/mcp/servers/:server_id", guarded(async (request) => {
     const { current_revision } = await service.deleteServer(params(request).server_id, queryWrite(request.query));
+    options.onConfigWritten?.();
     return { current_revision };
   }));
   app.post("/api/mcp/server-icons", { bodyLimit: 524288 }, guarded(async (request) => service.uploadServerIcon(request.body)));
@@ -77,24 +88,29 @@ export function registerMcpCentralRoutes(app: FastifyInstance, options: McpCentr
   app.put("/api/mcp/profiles/:profile_id", guarded(async (request) => {
     const { body, write } = bodyAndWrite(request.body);
     const { current_revision, result } = await service.putProfile(params(request).profile_id, body, write);
+    options.onConfigWritten?.();
     return { current_revision, profile: result };
   }));
   app.delete("/api/mcp/profiles/:profile_id", guarded(async (request) => {
     const { current_revision } = await service.deleteProfile(params(request).profile_id, queryWrite(request.query));
+    options.onConfigWritten?.();
     return { current_revision };
   }));
   app.put("/api/mcp/agents/:agent_id", guarded(async (request) => {
     const { body, write } = bodyAndWrite(request.body);
     const { current_revision, result } = await service.setAgentBindings(params(request).agent_id, body, write);
+    options.onConfigWritten?.();
     return { current_revision, bindings: result };
   }));
   app.put("/api/mcp/secrets/:name", guarded(async (request) => {
     const { body, write } = bodyAndWrite(request.body);
     const { current_revision, result } = await service.putSecret(params(request).name, body.value, write);
+    options.onConfigWritten?.();
     return { current_revision, secret: result };
   }));
   app.delete("/api/mcp/secrets/:name", guarded(async (request) => {
     const { current_revision } = await service.deleteSecret(params(request).name, queryWrite(request.query));
+    options.onConfigWritten?.();
     return { current_revision };
   }));
   app.get("/api/mcp/revisions", guarded(async (request) => ({ revisions: await service.listRevisions(request.query) })));
@@ -102,6 +118,7 @@ export function registerMcpCentralRoutes(app: FastifyInstance, options: McpCentr
     const { write } = bodyAndWrite(request.body);
     const revisionId = integer(params(request).revision_id, "revision_id", true);
     const { current_revision } = await service.rollback(revisionId, write);
+    options.onConfigWritten?.();
     return { current_revision };
   }));
 }

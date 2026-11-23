@@ -426,3 +426,48 @@ describePostgres("MCP central config store (PostgreSQL)", () => {
   });
 
 });
+
+describePostgres("node MCP snapshots", () => {
+  let harness: FullSchemaPostgresHarness;
+  let service: ReturnType<typeof createMcpCentralService>;
+  beforeAll(async () => {
+    harness = await createFullSchemaPostgresHarness();
+    service = createMcpCentralService({ resolveSql: async () => harness.sql as unknown as LivePostgresSql });
+  }, 120_000);
+  afterAll(async () => { await harness?.cleanup(); });
+  it("filters by node and resolves only its secrets, preserving display references", async () => {
+    const { buildNodeSnapshot } = await import("../src/mcp_central/node_snapshot.js");
+    await service.addManagedNode("node-a"); await service.addManagedNode("node-b");
+    await service.putServer("http", { type: "sse", config: { url: "https://example.com/mcp?key=fake-secret-base" }, node_scope: ["node-a", "node-b"],
+      node_overrides: { "node-a": { name: "override", type: "streamable_http", config: { url: "https://example.com/mcp?key=fake-secret-query%26value", headers: { Authorization: "fake-secret-header", Local: { env: "LOCAL_KEY" } } } } } });
+    await service.putServer("stdio", { type: "stdio", config: { command: "run", env: { KEY: "fake-secret-env", LOCAL: { env: "LOCAL_ENV" } } }, node_scope: ["node-a"] });
+    await service.putServer("other", { type: "stdio", config: { command: "run" }, node_scope: ["node-b"] });
+    await service.putProfile("a", { name: "", description: "{{secret:label-only}}", mcp_servers: ["http", "stdio", "other"], hosted_tools: [{ type: "hosted_mcp", server_label: "a", server_url: "https://example.com/mcp", authorization: "fake-secret-hosted" }] });
+    await service.putProfile("b", { hosted_tools: [{ type: "hosted_mcp", server_label: "b", server_url: "https://example.com/mcp", authorization: "fake-secret-other-node" }] });
+    await service.setAgentBindings("agent-a", { node_ids: ["node-a"], mcp_profile_id: "a" });
+    await service.setAgentBindings("agent-b", { node_ids: ["node-b"], mcp_profile_id: "b" });
+    const { runtime, display, revision } = await buildNodeSnapshot(harness.sql as unknown as LivePostgresSql, "node-a");
+    expect(revision).toBe((await service.getConfig()).current_revision);
+    expect(runtime.agent_bindings).toEqual({ "agent-a": "a" });
+    expect(runtime.profiles.profiles).toHaveLength(1);
+    expect(runtime.profiles.profiles[0]).toMatchObject({ id: "a", description: "{{secret:label-only}}", mcp_servers: ["http", "stdio"], hosted_tools: [{ authorization: "fake-secret-hosted" }] });
+    expect(runtime.profiles.profiles[0]).not.toHaveProperty("name");
+    expect(runtime.registry.servers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "http", name: "override", type: "streamable_http", url: "https://example.com/mcp?key=fake-secret-query%26value", headers: { Authorization: "fake-secret-header", Local: { env: "LOCAL_KEY" } } }),
+      expect.objectContaining({ id: "stdio", env: { KEY: "fake-secret-env", LOCAL: { env: "LOCAL_ENV" } } }),
+    ]));
+    expect(runtime.registry.servers).toHaveLength(2);
+    expect(JSON.stringify(display)).toContain("secret:");
+    expect(JSON.stringify(display)).not.toContain("fake-secret-");
+    expect(JSON.stringify({ runtime, display })).not.toContain("fake-secret-other-node");
+    expect(JSON.stringify({ runtime, display })).not.toContain('"icon"');
+    await service.updateManagedNodeAck("node-a", { activate: true, applied_mode: "central", applied_revision: revision, last_sync_at: new Date().toISOString(), last_sync_error: null });
+    const managed = (await service.getConfig()).managed_nodes.find(node => node.node_id === "node-a");
+    expect(managed).toMatchObject({ central_active: true, applied_mode: "central", applied_revision: revision });
+    expect(managed?.activated_at).toBeTruthy();
+    await expect(service.removeManagedNode("node-a")).rejects.toMatchObject({ code: "MCP_NODE_ACTIVATED" });
+    await harness.sql`DELETE FROM mcp_secrets WHERE name = ${"prof-a-ht0-auth"}`;
+    await expect(buildNodeSnapshot(harness.sql as unknown as LivePostgresSql, "node-a"))
+      .rejects.toThrow("prof-a-ht0-auth");
+  });
+});
