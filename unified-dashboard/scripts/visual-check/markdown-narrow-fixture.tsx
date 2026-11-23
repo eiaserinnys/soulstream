@@ -67,9 +67,46 @@ const chatBody = [
   `- 짧은 해시 ${SHORT_HASH}`,
 ].join("\n");
 
-// 스트리밍 평문과 완료 마크다운이 같은 글이 되도록 마크다운 문법 없이 한 문단으로 쓴다.
-const streamText = "정리한 결과를 보고합니다. 좁은 폭에서도 한글 낱말은 낱말 단위로 접히고, 긴 해시 " + HASH
-  + " 같은 것만 글자 단위로 끊깁니다. 스트리밍 중과 완료 뒤에 줄이 바뀌는 자리가 같아야 화면이 튀지 않습니다. 확인합니다.";
+// 스트리밍과 완료를 같은 원문으로 그려, 맨 위 블록의 위쪽 끝·왼쪽 시작선·높이를 견준다.
+// 제목, 단일 줄바꿈 문단, 목록, 표, 코드 블록, 인라인 코드, 링크, 굵게, 인용이 모두 든다.
+const streamBody = [
+  "# 스트리밍 보고",
+  "",
+  "정리한 결과를 보고합니다. 좁은 폭에서도 한글 낱말은 낱말 단위로 접힙니다.",
+  "둘째 줄도 같은 문단으로 이어지고, 긴 해시 " + HASH + " 같은 것만 글자 단위로 끊깁니다.",
+  "",
+  "## 확인 목록",
+  "",
+  `- 커밋 ${HASH}의 변경분을 확인합니다.`,
+  `- [변경 파일 목록](${URL_LONG}) 링크도 함께 둡니다.`,
+  "- `corepack pnpm -C unified-dashboard exec vitest run`으로 단위 시험을 확인합니다.",
+  "",
+  "## 확인 표",
+  "",
+  "| 항목 | 상태 | 해시 |",
+  "| --- | --- | --- |",
+  `| 줄바꿈을 확인합니다 | 확인합니다 | \`${SHORT_HASH}\` |`,
+  `| 표 넘침을 확인합니다 | 확인합니다 | ${HASH} |`,
+  "",
+  "> 인용문입니다. 좁은 폭에서도 낱말 단위로 접힙니다.",
+  "> 둘째 줄도 인용 안에서 이어집니다.",
+  "",
+  "```ts",
+  `const commit = "${HASH}";`,
+  "console.log(commit);",
+  "```",
+  "",
+  "굵게 **강조한 낱말**과 *기울임*, 취소선 ~~지운 낱말~~도 있습니다.",
+].join("\n");
+
+// 미완성 지점에서 자른 스트리밍 장면. 강조·링크·코드 펜스·표가 중간에 끊겨도
+// 요소로 이어서 그려지는지 눈으로 본다.
+const incompleteBodies = {
+  "incomplete-bold": "정리한 결과를 보고합니다.\n\n이건 **굵",
+  "incomplete-link": "보세요 [문서](https://exa",
+  "incomplete-fence": "확인합니다.\n\n```ts\nconst a = 1;",
+  "incomplete-table": "확인합니다.\n\n| 항목 | 상태 |\n| --- | --- |\n| 하",
+} as const;
 
 const userBody = "이 화면에서 한글 낱말이 끊기는지 봐 줘. 주소는 " + URL_LONG + " 이고 해시는 " + HASH + " 이야.";
 
@@ -126,13 +163,13 @@ const userMessage: ChatMessage = {
   content: userBody,
 } as ChatMessage;
 
-function streamMessage(id: string, streaming: boolean): ChatMessage {
+function streamMessage(id: string, streaming: boolean, content: string = streamBody): ChatMessage {
   return {
     id,
     role: "assistant",
     treeNodeId: id,
     treeNodeType: "assistant_message",
-    content: streamText,
+    content,
     isStreaming: streaming,
   } as ChatMessage;
 }
@@ -251,6 +288,11 @@ function StreamSurface() {
       <div data-sel="completed"><AssistantMessage msg={streamMessage("stream-s2", false)} /></div>
       <div data-sel="streaming-m"><AssistantMessage presentation="manuscript" msg={streamMessage("stream-s3", true)} /></div>
       <div data-sel="completed-m"><AssistantMessage presentation="manuscript" msg={streamMessage("stream-s4", false)} /></div>
+      {Object.entries(incompleteBodies).map(([name, content]) => (
+        <div key={name} data-sel={name}>
+          <AssistantMessage msg={streamMessage(`stream-${name}`, true, content)} />
+        </div>
+      ))}
     </ChatRoot>
   );
 }

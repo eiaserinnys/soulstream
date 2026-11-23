@@ -242,6 +242,33 @@
 [data-markdown-block] :is(th, td) :is(code, a) {
   overflow-wrap: anywhere;
 }
+
+/* 스트리밍 마크다운(@pierre/words)의 구조 보정 (카드 #1808). words의 styles.css는
+   불러오지 않는다. 완료 렌더(MarkdownContent)와 같은 모양을 내는 데 필요한 구조
+   규칙만 여기에 토큰으로 쓴다. */
+[data-slot="chat-body"] [data-markdown="code-block"] {
+  position: relative;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+/* 코드 블록의 언어 머리줄은 완료 렌더에 없다. 자리도 차지하지 않게 감춘다. */
+[data-slot="chat-body"] [data-markdown="code-header"] {
+  display: none;
+}
+/* 64줄 묶음은 각각 레이아웃 블록으로 둔다(words 기본 구조와 같다). */
+[data-slot="chat-body"] [data-markdown="code-lines"] {
+  display: block;
+}
+/* 커서는 평문 스트리밍 커서와 같은 모양(전경색 60%, 글 끝)으로 붙인다. */
+[data-slot="chat-body"] [data-markdown="caret"] {
+  display: inline-block;
+  width: calc(var(--spacing) * 1.5);
+  height: calc(var(--spacing) * 3.5);
+  margin-inline-start: calc(var(--spacing) * 0.5);
+  background: color-mix(in srgb, var(--foreground) 60%, transparent);
+  vertical-align: text-bottom;
+  animation: caret-blink 1s steps(2, end) infinite;
+}
 /* 이미지 갤러리는 MarkdownContent의 div 부품이지만 ChatImageAttachments가
    그리므로 블록 표식을 받지 않는다. 같은 공용 규칙을 그 부품의 안정된 훅으로
    건다(설명·상태 글). */
@@ -442,6 +469,7 @@ pre[data-markdown-code-layout="document"] {
 @media (prefers-reduced-motion: reduce) {
   .message-enter { animation: none; }
   .animate-caret-blink { animation: none; opacity: 1; }
+  [data-slot="chat-body"] [data-markdown="caret"] { animation: none; }
   .mobile-tabs [data-slot="tabs-content"] { transition: none; }
   .folder-stack { transition: none; }
   .mobile-tabs [data-slot="tab-indicator"] { transition: none; }

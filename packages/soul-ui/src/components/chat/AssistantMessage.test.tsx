@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { AssistantMessage } from "./AssistantMessage";
+import { preloadStreamingMarkdown } from "./StreamingMarkdown";
 
 const message = {
   id: "assistant-message",
@@ -95,18 +96,23 @@ describe("AssistantMessage content layout", () => {
   });
 });
 
-describe("AssistantMessage wrapping", () => {
-  it("keeps the same Korean word wrapping while streaming and after completion", () => {
+describe("AssistantMessage streaming markdown", () => {
+  it("renders streaming text with words markdown and completed text with MarkdownContent", async () => {
+    await preloadStreamingMarkdown();
+    const streamingContent = "**굵게** 응답";
     const streaming = renderToStaticMarkup(createElement(AssistantMessage, {
-      msg: { ...message, isStreaming: true } as ChatMessage,
+      msg: { ...message, content: streamingContent, isStreaming: true } as ChatMessage,
     }));
-    const streamingBody = streaming.match(/data-slot="chat-body"[^>]*class="([^"]*)"/)?.[1];
-    if (!streamingBody) throw new Error("streaming body was not rendered");
-    // 스트리밍 평문도 완료 본문과 같은 규칙으로 접혀, 완료 순간에 줄이 바뀌지 않는다.
-    expect(streamingBody).toContain("[word-break:keep-all]");
-    expect(streamingBody).toContain("[overflow-wrap:anywhere]");
+    // 스트리밍 본문은 words가 그린다. 미완성 강조도 요소로 보인다.
+    expect(streaming).toContain('data-markdown="root"');
+    expect(streaming).toContain("<strong");
+    expect(streaming).toContain('data-slot="chat-body"');
 
-    const completed = renderToStaticMarkup(createElement(AssistantMessage, { msg: message }));
+    const completed = renderToStaticMarkup(createElement(AssistantMessage, {
+      msg: { ...message, content: streamingContent } as ChatMessage,
+    }));
+    // 완료 본문은 지금처럼 MarkdownContent가 그리고, words 본문은 남지 않는다.
+    expect(completed).not.toContain('data-markdown="root"');
     // 완료 본문의 줄바꿈 규칙은 MarkdownContent의 블록 표식이 맡는다(globals.css).
     expect(completed).toContain('data-markdown-block="true"');
   });
