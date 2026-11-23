@@ -464,8 +464,7 @@ def capture_diff(browser, base, out):
                 results[name] = {"alignment": m, "content": content}
         page.evaluate("document.fonts.ready")
         page.mouse.move(2, 2)
-        if scene != "not_git":
-            assert row.evaluate("e => getComputedStyle(e).outlineStyle") == "none", f"기본 그림에 행 초점 고리: {scene}"
+        assert page.evaluate("() => document.querySelector(':focus-visible') === null"), f"기본 그림에 키보드 초점 고리: {scene}"
         if scene == "diff-ready":
             outline = box.locator(".v3-session-file-diff-body").evaluate("e => getComputedStyle(e).outlineStyle")
             assert outline == "none", f"기본 그림에 본문 초점 고리: {outline}"
@@ -511,7 +510,7 @@ def capture_diff(browser, base, out):
             assert narrow["width"] < m["clientWidth"], narrow
             assert not narrow["outside"], narrow
             assert box.locator(".v3-session-file-diff-body").evaluate("e => getComputedStyle(e).outlineStyle") == "none"
-            assert row.evaluate("e => getComputedStyle(e).outlineStyle") == "none"
+            assert page.evaluate("() => document.querySelector(':focus-visible') === null"), "1024px 기본 그림에 키보드 초점 고리"
             page.screenshot(path=str(out / "diff-card-1024.png"), animations="disabled")
             page.set_viewport_size({"width": 1440, "height": 900})
             page.wait_for_function("""async wide => {
