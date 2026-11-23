@@ -9,7 +9,7 @@ interface CardState {
   details: Record<string, CardDetail>;
   pendingItemConfirmations: Record<string, Record<number, { confirmed: boolean; requestId: string }>>;
   putCard(card: CardDto): void;
-  putCards(cards: readonly CardDto[]): void;
+  putCards(cards: readonly CardDto[], snapshotSeq: number): void;
   putDetail(detail: CardDetail): void;
   putMutationCard(card: CardDto): void;
   beginItemConfirmation(cardId: string, itemId: number, confirmed: boolean, requestId: string): boolean;
@@ -26,14 +26,16 @@ export const useCardStore = create<CardState>((set, get) => ({
       rows: { ...state.rows, [card.id]: card },
     };
   }),
-  // 목록 응답도 버전이 높은 기존 행을 되돌리지 않게 행 순서를 남기며 쓴다.
-  putCards: (cards) => set((state) => {
+  putCards: (cards, snapshotSeq) => set((state) => {
     const rows = { ...state.rows };
     const rowSeq = { ...state.rowSeq };
     const details = { ...state.details };
     let seq = state.seq;
     for (const card of cards) {
-      if ((rows[card.id]?.version ?? 0) > card.version) continue;
+      const currentVersion = rows[card.id]?.version ?? 0;
+      if (currentVersion > card.version) continue;
+      // 최신 활동은 카드 버전이 그대로여도 요청을 기다리는 동안 바뀔 수 있다.
+      if (currentVersion === card.version && (state.rowSeq[card.id] ?? 0) > snapshotSeq) continue;
       seq += 1;
       rows[card.id] = card;
       rowSeq[card.id] = seq;

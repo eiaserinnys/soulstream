@@ -45,20 +45,27 @@ test('목록 일괄 쓰기는 낮은 version 행을 버리고 최신 행과 상�
   } as CardDetail;
   useCardStore.getState().putDetail(detail);
 
+  const snapshotSeq = useCardStore.getState().seq;
   useCardStore.getState().putCards([
     cardFixture({ id: 'card-a', version: 3, status: 'running' }),
     cardFixture({ id: 'card-b', version: 1 }),
-  ]);
+  ], snapshotSeq);
 
   const state = useCardStore.getState();
   expect(state.rows['card-a']).toMatchObject({ version: 5, status: 'review' });
   expect(state.rows['card-b']).toMatchObject({ version: 1 });
   expect(state.rowSeq).toEqual({ 'card-a': 2, 'card-b': 3 });
 
-  useCardStore.getState().putCards([cardFixture({ id: 'card-a', version: 5, status: 'done' })]);
+  useCardStore.getState().putCards([cardFixture({ id: 'card-a', version: 5, status: 'done' })], state.seq);
   expect(useCardStore.getState().rows['card-a']).toMatchObject({ version: 5, status: 'done' });
   expect(useCardStore.getState().details['card-a']?.card.status).toBe('done');
   expect(useCardStore.getState().seq).toBe(4);
+
+  const newer = cardFixture({ id: 'card-a', version: 6, status: 'done' });
+  useCardStore.getState().putCards([newer], snapshotSeq);
+  expect(useCardStore.getState().rows['card-a']).toBe(newer);
+  expect(useCardStore.getState().details['card-a']?.card).toBe(newer);
+  expect(useCardStore.getState()).toMatchObject({ seq: 5, rowSeq: { 'card-a': 5, 'card-b': 3 } });
 });
 
 test('목록 snapshot에 없던 행은 snapshot 이후 쓰인 경우에만 병합한다', () => {

@@ -48,7 +48,7 @@ export function useCardList(api: ApiClient | null, folderId?: string, enabled = 
         const result = await api.listCards(folderId,{includeCompleted:false});
         if (generationRef.current !== generation || captureAuthScope().generation !== scope) return;
         // 목록 응답도 전역 행을 최신 버전으로 맞춘 뒤 그 행을 기준으로 첫 스냅숏을 연다.
-        useCardStore.getState().putCards(result.cards);
+        useCardStore.getState().putCards(result.cards, snapshotSeq);
         setState({ owner, cards: result.cards, snapshotSeq, hasSnapshot: true, loading: false, error: null });
       } catch (cause) {
         if (generationRef.current !== generation || captureAuthScope().generation !== scope) return;
