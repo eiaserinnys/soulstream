@@ -78,7 +78,7 @@ describe("card completion reports as comments", () => {
     await expect(cards.requestCardReview({ ...owner, cardId, ask: "확인해 주세요", report: "   \n ", idempotencyKey: key() }))
       .rejects.toMatchObject({ statusCode: 422, message: "report를 비워 둘 수 없습니다" });
     await expect(cards.requestCardReview({ ...owner, cardId, ask: "확인해 주세요", report: "가".repeat(2001), idempotencyKey: key() }))
-      .rejects.toMatchObject({ statusCode: 422, message: "report는 2000자까지입니다. 지금 2001자입니다" });
+      .rejects.toMatchObject({ statusCode: 422, message: "report는 2000자까지입니다. 지금 2001자로 1자 넘습니다. 결과 보고는 300~800자가 보통이니 파일, 커밋, 시험 수 같은 세부는 add_card_note로 옮기고 800자 안팎으로 다시 쓰세요" });
     const detail = (await cards.getCard(cardId))!;
     expect(detail.card).toMatchObject({ status: "running", version });
     expect(await agentComments(cardId)).toHaveLength(0);
