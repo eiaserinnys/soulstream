@@ -68,7 +68,7 @@ const cases: Case[] = [
   ["skill atom error", "search_skills", { query: "atom-error" }, internal, true],
   ["skill atom empty", "search_skills", { query: "atom-empty" }, internal, true],
   ["skill atom exception", "search_skills", { query: "atom-exception" }, internal, true],
-  ["skill missing key", "search_skills", { query: "missing-key" }, internal, true],
+  ["skill missing key", "search_skills", { query: "missing-key" }, internal, false],
 ];
 
 describe("pages/live/skills MCP host roundtrip", () => {

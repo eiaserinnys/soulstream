@@ -825,11 +825,13 @@ describe("search_skills MCP execution", () => {
     expect((result.structuredContent as any).matches).toHaveLength(2);
     expect(h.fetchMock.mock.calls.filter(([input]) => input.toString() === "https://api.typesafe.ai/v1/systemone")).toHaveLength(1);
   });
-  it("returns the configured error when Typesafe key is missing", async () => {
+  it("falls back to lexical ranking when Typesafe key is missing", async () => {
     const h = skillsHarness("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "");
-    const result = await call(h.options, "search_skills", { query: "help with an unrelated request" });
-    expect(result.isError).toBe(true);
-    expect(result.content).toContainEqual({ type: "text", text: "TYPESAFE_API_KEY is not configured" });
+    const result = await call(h.options, "search_skills", { query: "work plan" });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ mode: "lexical" });
+    expect((result.structuredContent as any).matches.map((match: { name: string }) => match.name))
+      .toEqual(["work-plan-execute", "slack-member-recall"]);
     expect(h.fetchMock.mock.calls.filter(([input]) => input.toString() === "https://api.typesafe.ai/v1/systemone")).toHaveLength(0);
   });
 });

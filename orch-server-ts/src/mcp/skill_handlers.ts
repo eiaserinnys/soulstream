@@ -10,6 +10,7 @@ import {
   rankAndComposeCatalogs,
 } from "../skills/skill_catalog.js";
 import { compileSkill } from "../skills/skill_compile.js";
+import { rankSkillsLexically } from "../skills/skill_lexical_search.js";
 import type { McpToolHandler } from "./types.js";
 
 function catalogLoadError(error: unknown, fallback: string): string {
@@ -58,7 +59,16 @@ export const skillHandlers = {
       }
 
       const apiKey = skills.typesafeApiKey;
-      if (!apiKey) return errorResult("TYPESAFE_API_KEY is not configured");
+      if (!apiKey) return jsonResult({
+        mode: "lexical",
+        query,
+        matches: rankSkillsLexically(String(query), catalog, (limit as number | undefined) ?? 5).map(({ entry, score }) => ({
+          name: entry.name,
+          description: entry.description,
+          body_node_id: entry.bodyNodeId,
+          score,
+        })),
+      });
 
       try {
         const ranked = await rankByRelevance({
