@@ -11,7 +11,7 @@ import {
   type AgentsSdkMcpServer,
   type AgentProfile,
 } from "@soulstream/agent-profile-contract";
-import { CentralMcpState, type CentralSync } from "./mcp_central/state.js";
+import { CentralMcpState, isPortableMcpNode, type CentralSync } from "./mcp_central/state.js";
 import { sanitizeServer, sanitizeHostedTool } from "./mcp_central/display.js";
 import { resolveCentralTemplate, resolveHostedTool } from "./mcp_central/templates.js";
 
@@ -145,6 +145,8 @@ export class McpConfigService {
 
   configStatus() { return this.central.status(); }
 
+  isPortableNode(): boolean { return isPortableMcpNode(this.processEnv); }
+
   async applyCentralSync(input: CentralSync): Promise<void> { await this.central.apply(input); }
 
   waitForInitialCentralSync(timeoutMs: number): Promise<void> { return this.central.wait(timeoutMs); }
@@ -154,10 +156,6 @@ export class McpConfigService {
   effectiveAgentMcpProfileId(profile: AgentProfile): string | undefined {
     const central = this.central.current("runtime");
     return central ? central.agent_bindings[profile.id] : profile.mcp_profile;
-  }
-
-  exportLocal(): { registry: unknown; profiles: unknown } {
-    return { registry: readRawYaml(this.registryPath, { servers: [] }), profiles: readRawYaml(this.profilesPath, { profiles: [] }) };
   }
 
   readRegistry(): McpRegistryConfig {
@@ -312,11 +310,6 @@ export class McpConfigService {
       }
     }
   }
-}
-
-function readRawYaml(filePath: string, emptyValue: unknown): unknown {
-  try { return parseYaml(fs.readFileSync(filePath, "utf8")) ?? emptyValue; }
-  catch (err) { if (isNodeError(err) && err.code === "ENOENT") return emptyValue; throw err; }
 }
 
 function readOptionalYaml<T>(

@@ -30,7 +30,7 @@ describe("central MCP configuration", () => {
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
   it("uses runtime and central bindings, and exposes only display and the value-free marker", async () => {
-    await service.applyCentralSync({ mode: "central", revision: 4, runtime: snapshot("fake-secret-runtime"), display: snapshot("{{secret:ref}}") });
+    await service.applyCentralSync({ revision: 4, runtime: snapshot("fake-secret-runtime"), display: snapshot("{{secret:ref}}") });
     expect(service.resolveMcpProfile(agent)?.mcp_servers[0]).toMatchObject({ url: "https://example.test/?license=fake-secret-runtime" });
     expect(service.resolveMcpProfile(unbound)).toBeUndefined();
     expect(service.effectiveAgentMcpProfileId(agent)).toBe("central");
@@ -40,41 +40,39 @@ describe("central MCP configuration", () => {
   });
 
   it("expands node environment values in runtime fields and rejects unresolved values", async () => {
-    await service.applyCentralSync({ mode: "central", revision: 1, runtime: snapshot("{{env:FAKE_VAR}}"), display: snapshot("{{env:FAKE_VAR}}") });
+    await service.applyCentralSync({ revision: 1, runtime: snapshot("{{env:FAKE_VAR}}"), display: snapshot("{{env:FAKE_VAR}}") });
     const resolved = service.resolveMcpProfile(agent)!;
     expect(resolved.mcp_servers[0]).toMatchObject({ url: "https://example.test/?license=fake-secret-env", headers: { "X-License": "fake-secret-env" } });
     expect(resolved.mcp_servers[1]).toMatchObject({ env: { LICENSE: "fake-secret-env" } });
     expect(resolved.hosted_tools[0]).toMatchObject({ authorization: "fake-secret-env", server_url: "https://example.test/?license=fake-secret-env", headers: { "X-License": "fake-secret-env" } });
-    await service.applyCentralSync({ mode: "central", revision: 2, runtime: snapshot("{{env:MISSING}}"), display: snapshot("x") });
+    await service.applyCentralSync({ revision: 2, runtime: snapshot("{{env:MISSING}}"), display: snapshot("x") });
     expect(() => service.resolveMcpProfile(agent)).toThrow(/MISSING.*not set/);
-    await service.applyCentralSync({ mode: "central", revision: 3, runtime: snapshot("{{secret:x}}"), display: snapshot("x") });
+    await service.applyCentralSync({ revision: 3, runtime: snapshot("{{secret:x}}"), display: snapshot("x") });
     expect(() => service.resolveMcpProfile(agent)).toThrow(/secret/);
   });
 
-  it("restores local mode, waits for a first sync, and times out when none arrives", async () => {
+  it("waits for a first sync after restart, and times out when none arrives", async () => {
     fs.writeFileSync(marker, JSON.stringify({ central_mode: true, revision: 7 }));
     const restarted = new McpConfigService({ agentsConfigPath: path.join(dir, "agents.yaml"), modePath: marker });
     expect(() => restarted.resolveMcpProfile(agent)).toThrow(/CENTRAL_MCP_CONFIG_NOT_SYNCED/);
     const waiting = restarted.waitForInitialCentralSync(1000);
-    await restarted.applyCentralSync({ mode: "central", revision: 8, runtime: snapshot("x"), display: snapshot("x") });
+    await restarted.applyCentralSync({ revision: 8, runtime: snapshot("x"), display: snapshot("x") });
     await waiting;
-    await restarted.applyCentralSync({ mode: "local", revision: 9 });
-    expect(restarted.resolveMcpProfile(agent)?.mcp_servers[0]).toMatchObject({ command: "local-command" });
-    expect(JSON.parse(fs.readFileSync(marker, "utf8"))).toEqual({ central_mode: false, revision: 9 });
-    fs.writeFileSync(marker, JSON.stringify({ central_mode: true, revision: 10 }));
+    expect(restarted.resolveMcpProfile(agent)?.mcp_servers[0]).toMatchObject({ url: "https://example.test/?license=x" });
+    expect(JSON.parse(fs.readFileSync(marker, "utf8"))).toEqual({ central_mode: true, revision: 8 });
     const pending = new McpConfigService({ agentsConfigPath: path.join(dir, "agents.yaml"), modePath: marker });
     await pending.waitForInitialCentralSync(5);
     expect(() => pending.resolveMcpProfile(agent)).toThrow(/CENTRAL_MCP_CONFIG_NOT_SYNCED/);
   });
 
   it("keeps the previous snapshot and marker when validation fails", async () => {
-    await service.applyCentralSync({ mode: "central", revision: 1, runtime: snapshot("good"), display: snapshot("display") });
+    await service.applyCentralSync({ revision: 1, runtime: snapshot("good"), display: snapshot("display") });
     const duplicate = snapshot("bad");
     duplicate.registry.servers.push(duplicate.registry.servers[0]!);
-    await expect(service.applyCentralSync({ mode: "central", revision: 2, runtime: duplicate, display: snapshot("display") })).rejects.toThrow();
+    await expect(service.applyCentralSync({ revision: 2, runtime: duplicate, display: snapshot("display") })).rejects.toThrow();
     const missing = snapshot("bad");
     missing.agent_bindings.agent = "missing";
-    await expect(service.applyCentralSync({ mode: "central", revision: 3, runtime: missing, display: snapshot("display") })).rejects.toThrow();
+    await expect(service.applyCentralSync({ revision: 3, runtime: missing, display: snapshot("display") })).rejects.toThrow();
     expect(service.resolveMcpProfile(agent)?.mcp_servers[0]).toMatchObject({ url: "https://example.test/?license=good" });
     expect(JSON.parse(fs.readFileSync(marker, "utf8"))).toEqual({ central_mode: true, revision: 1 });
   });

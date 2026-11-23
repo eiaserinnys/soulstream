@@ -215,7 +215,7 @@ export class CommandDispatcher {
         providerUsageCommands,
       }),
       ...createMcpConfigCommandFamily({ send, commands: new McpConfigCommands(
-        reflectionRuntime?.mcpConfigService, reflectionRuntime?.agentsConfigPath,
+        reflectionRuntime?.mcpConfigService,
         agentProfileSource?.rebuild?.bind(agentProfileSource),
       ) }),
       ...createReflectionCommandFamily({ send, reflectionCommands }),

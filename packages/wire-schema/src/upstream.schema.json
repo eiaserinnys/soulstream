@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 205개 $defs (top-level wire 101 + supporting/SSE 104). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 208개 $defs (top-level wire 102 + supporting/SSE 106). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -53,7 +53,6 @@
     "claude_auth_login_cancel",
     "claude_central_pool_sync",
     "mcp_central_sync",
-    "mcp_local_export",
     "provider_usage_get",
     "reflect_brief",
     "plan_agent_profile_update",
@@ -3129,35 +3128,19 @@
       }
     },
     "McpCentralSync": {
-      "type": "object", "required": ["type", "requestId", "revision", "mode"], "additionalProperties": true,
+      "type": "object", "required": ["type", "requestId", "revision", "runtime", "display"], "additionalProperties": true,
       "properties": {
         "type": { "const": "mcp_central_sync" }, "requestId": { "type": "string" },
-        "revision": { "type": "integer", "minimum": 0 }, "mode": { "enum": ["central", "local"] },
+        "revision": { "type": "integer", "minimum": 0 },
         "runtime": { "$ref": "#/$defs/McpCentralSnapshot" }, "display": { "$ref": "#/$defs/McpCentralSnapshot" },
         "success": { "type": "boolean" }, "data": { "$ref": "#/$defs/McpCentralSyncResult" },
         "error": { "$ref": "#/$defs/ClaudeAuthError" }
       },
-      "allOf": [{ "if": { "properties": { "mode": { "const": "central" } } },
-        "then": { "required": ["runtime", "display"] },
-        "else": { "not": { "anyOf": [{ "required": ["runtime"] }, { "required": ["display"] }] } } }]
+      "not": { "required": ["mode"] }
     },
     "McpCentralSyncResult": {
-      "type": "object", "required": ["applied_mode", "applied_revision"], "additionalProperties": false,
-      "properties": { "applied_mode": { "enum": ["central", "local"] }, "applied_revision": { "type": "integer", "minimum": 0 } }
-    },
-    "McpLocalExport": {
-      "type": "object", "required": ["type", "requestId"], "additionalProperties": true,
-      "properties": { "type": { "const": "mcp_local_export" }, "requestId": { "type": "string" },
-        "success": { "type": "boolean" }, "data": { "$ref": "#/$defs/McpLocalExportResult" },
-        "error": { "$ref": "#/$defs/ClaudeAuthError" } }
-    },
-    "McpLocalExportResult": {
-      "type": "object", "required": ["registry", "profiles", "agent_mcp_profiles"], "additionalProperties": false,
-      "properties": {
-        "registry": { "type": "object", "required": ["servers"], "properties": { "servers": { "type": "array", "items": { "type": "object" } } } },
-        "profiles": { "type": "object", "required": ["profiles"], "properties": { "profiles": { "type": "array", "items": { "type": "object" } } } },
-        "agent_mcp_profiles": { "type": "object", "additionalProperties": { "type": "string" } }
-      }
+      "type": "object", "required": ["applied_revision"], "additionalProperties": false,
+      "properties": { "applied_revision": { "type": "integer", "minimum": 0 } }
     },
     "ClaudeRuntimeListTasks": {
       "type": "object",
@@ -5147,7 +5130,6 @@
     { "$ref": "#/$defs/ClaudeAuthLoginCancel" },
     { "$ref": "#/$defs/ClaudeCentralPoolSync" },
     { "$ref": "#/$defs/McpCentralSync" },
-    { "$ref": "#/$defs/McpLocalExport" },
     { "$ref": "#/$defs/ClaudeRuntimeListTasks" },
     { "$ref": "#/$defs/ClaudeRuntimeTaskOutput" },
     { "$ref": "#/$defs/ClaudeRuntimeStopTask" },

@@ -168,7 +168,7 @@ describe("central MCP agent bindings", () => {
     const registry = new AgentRegistry([]);
     const mcpConfigService = new McpConfigService({ agentsConfigPath, modePath: path.join(dir, "marker.json") });
     const snapshot = { registry: { servers: [] }, profiles: { profiles: [{ id: "central" }] }, agent_bindings: { agent: "central" } };
-    await mcpConfigService.applyCentralSync({ mode: "central", revision: 5, runtime: snapshot, display: snapshot });
+    await mcpConfigService.applyCentralSync({ revision: 5, runtime: snapshot, display: snapshot });
     const runtime = { agentsConfigPath, agentRegistry: registry, mcpConfigService } as unknown as McpRuntime;
     const server = new McpServer({ name: "central-test", version: "1" });
     const client = new Client({ name: "central-client", version: "1" });

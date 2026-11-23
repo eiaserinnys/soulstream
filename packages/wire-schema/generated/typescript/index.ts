@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 205개 $defs (top-level wire 101 + supporting/SSE 104). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 208개 $defs (top-level wire 102 + supporting/SSE 106). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -92,7 +92,6 @@ export type SoulstreamUpstreamProtocol =
   | ClaudeAuthLoginCancel
   | ClaudeCentralPoolSync
   | McpCentralSync
-  | McpLocalExport
   | ClaudeRuntimeListTasks
   | ClaudeRuntimeTaskOutput
   | ClaudeRuntimeStopTask
@@ -121,20 +120,6 @@ export type CallerInfoSource =
   | "trello_watcher";
 export type ClaudeRuntimeTaskStatus = "pending" | "running" | "completed" | "failed" | "stopped" | "killed";
 export type SessionLifecycleStatus = "initializing" | "running" | "completed" | "error" | "interrupted";
-export type McpCentralSync = {
-  [k: string]: unknown;
-} & {
-  type: "mcp_central_sync";
-  requestId: string;
-  revision: number;
-  mode: "central" | "local";
-  runtime?: McpCentralSnapshot;
-  display?: McpCentralSnapshot;
-  success?: boolean;
-  data?: McpCentralSyncResult;
-  error?: ClaudeAuthError;
-  [k: string]: unknown;
-};
 
 /**
  * 노드→orch: 등록. soul-server-ts/src/upstream/registration.ts.
@@ -3490,6 +3475,17 @@ export interface ClaudeCentralPoolSyncResult {
    */
   revision: number;
 }
+export interface McpCentralSync {
+  type: "mcp_central_sync";
+  requestId: string;
+  revision: number;
+  runtime: McpCentralSnapshot;
+  display: McpCentralSnapshot;
+  success?: boolean;
+  data?: McpCentralSyncResult;
+  error?: ClaudeAuthError;
+  [k: string]: unknown;
+}
 export interface McpCentralSnapshot {
   registry: {
     servers: {}[];
@@ -3502,27 +3498,7 @@ export interface McpCentralSnapshot {
   };
 }
 export interface McpCentralSyncResult {
-  applied_mode: "central" | "local";
   applied_revision: number;
-}
-export interface McpLocalExport {
-  type: "mcp_local_export";
-  requestId: string;
-  success?: boolean;
-  data?: McpLocalExportResult;
-  error?: ClaudeAuthError;
-  [k: string]: unknown;
-}
-export interface McpLocalExportResult {
-  registry: {
-    servers: {}[];
-  };
-  profiles: {
-    profiles: {}[];
-  };
-  agent_mcp_profiles: {
-    [k: string]: string;
-  };
 }
 /**
  * orch→노드: Claude runtime task 목록 조회.
@@ -3967,7 +3943,6 @@ export const CONTROL_COMMAND_TYPES = [
   "claude_auth_login_cancel",
   "claude_central_pool_sync",
   "mcp_central_sync",
-  "mcp_local_export",
   "provider_usage_get",
   "reflect_brief",
   "plan_agent_profile_update",

@@ -382,6 +382,7 @@ def test_schema_has_all_message_types() -> None:
         "ClaudeAuthLoginSubmitCode",
         "ClaudeAuthLoginCancel",
         "ClaudeCentralPoolSync",
+        "McpCentralSync",
         "ClaudeRuntimeListTasks",
         "ClaudeRuntimeTaskOutput",
         "ClaudeRuntimeStopTask",
@@ -405,7 +406,7 @@ def test_schema_has_all_message_types() -> None:
         "ControlResultAck",
         "ControlAckMetric",
     }
-    assert len(wire_types) == 101
+    assert len(wire_types) == 102
 
     sse_types = {
         "SSEEventInit",
@@ -824,6 +825,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "ClaudeAuthLoginSubmitCode",
         "ClaudeAuthLoginCancel",
         "ClaudeCentralPoolSync",
+        "McpCentralSync",
         "ClaudeRuntimeListTasks",
         "ClaudeRuntimeTaskOutput",
         "ClaudeRuntimeStopTask",
@@ -1158,3 +1160,17 @@ def test_workspace_file_results_accept_optional_root_confirmation() -> None:
         definition = schema["$defs"][name]
         assert definition["properties"]["root_checked"] == {"const": True}
         assert "root_checked" not in definition["required"]
+
+
+def test_mcp_central_sync_requires_both_snapshots_and_no_mode() -> None:
+    schema = _load_schema()
+    validator = jsonschema.Draft202012Validator(schema)
+    snapshot = {"registry": {"servers": []}, "profiles": {"profiles": []}, "agent_bindings": {}}
+    request = {"type": "mcp_central_sync", "requestId": "req", "revision": 1,
+               "runtime": snapshot, "display": snapshot}
+    validator.validate(request)
+    for invalid in [{**request, "mode": "central"}, {**request, "revision": -1},
+                    {key: value for key, value in request.items() if key != "display"}]:
+        with pytest.raises(jsonschema.ValidationError):
+            validator.validate(invalid)
+    assert "mcp_local_export" not in schema["x-soulstream-control-command-types"]

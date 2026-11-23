@@ -9,11 +9,14 @@ export interface CentralSnapshot<R, P> {
   agent_bindings: Record<string, string>;
 }
 export type CentralSync = {
-  mode: "central" | "local";
   revision: number;
-  runtime?: unknown;
-  display?: unknown;
+  runtime: unknown;
+  display: unknown;
 };
+
+export function isPortableMcpNode(env: Record<string, string | undefined>): boolean {
+  return env.PORTABLE_LOCAL_MCP_AUTHORIZATION !== undefined;
+}
 
 export function resolveMcpCentralModePath(env: { AGENT_PROFILE_CACHE_PATH: string }): string {
   return path.join(path.dirname(path.resolve(env.AGENT_PROFILE_CACHE_PATH)), "mcp-central-mode.json");
@@ -61,17 +64,12 @@ export class CentralMcpState<R, P> {
 
   async apply(input: CentralSync): Promise<void> {
     if (!Number.isInteger(input.revision) || input.revision < 0) throw new Error("Invalid MCP revision");
-    let next: typeof this.snapshot = null;
-    if (input.mode === "central") {
-      next = { runtime: this.validate(input.runtime), display: this.validate(input.display) };
-    } else if (input.mode !== "local" || input.runtime !== undefined || input.display !== undefined) {
-      throw new Error("Invalid MCP mode or snapshot");
-    }
+    const next = { runtime: this.validate(input.runtime), display: this.validate(input.display) };
     if (this.modePath) {
       await mkdir(path.dirname(this.modePath), { recursive: true });
-      await writeFileAtomically(this.modePath, JSON.stringify({ central_mode: input.mode === "central", revision: input.revision }));
+      await writeFileAtomically(this.modePath, JSON.stringify({ central_mode: true, revision: input.revision }));
     }
-    this.centralMode = input.mode === "central";
+    this.centralMode = true;
     this.revision = input.revision;
     this.snapshot = next;
     for (const resolve of this.waiters) resolve();
