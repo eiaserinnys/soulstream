@@ -1,20 +1,18 @@
-import { open, realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import { open, realpath } from "node:fs/promises";
+import { validateWorkspacePath } from "./workspace_file_path.js";
 import { inferContentType } from "../attachments/file_manager.js";
 
 const MAX_BYTES = 25 * 1024 * 1024;
 export async function readWorkspaceFile(root: string, file: string, offset = 0, length?: number) {
   if (!Number.isSafeInteger(offset) || offset < 0 || (length !== undefined && (!Number.isSafeInteger(length) || length < 0))) throw new Error("INVALID_REQUEST: invalid range");
   if (length !== undefined && length > MAX_BYTES) throw new Error("TOO_LARGE: requested range exceeds 25 MiB");
-  const base = await realpath(root).catch(() => { throw new Error("NOT_FOUND: workspace not found"); });
-  const candidate = path.resolve(base, file);
-  const relative = path.relative(base, candidate);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error("INVALID_REQUEST: path outside workspace");
-  const target = await realpath(candidate).catch(() => { throw new Error("NOT_FOUND: file not found"); });
-  const realRelative = path.relative(base, target);
-  if (realRelative === ".." || realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) throw new Error("INVALID_REQUEST: path outside workspace");
-  const info = await stat(target).catch(() => { throw new Error("NOT_FOUND: file not found"); });
-  if (!info.isFile()) throw new Error("NOT_FOUND: not a regular file");
+  const { target, info } = await validateWorkspacePath(root, file);
+  if (!info) throw new Error("NOT_FOUND: file not found");
+  const base=await realpath(root);
+  const requested=path.relative(base,path.resolve(base,file));
+  const resolved=path.relative(base,target);
+  if (requested !== resolved) throw new Error("INVALID_REQUEST: path resolves to a different file");
   if (length === undefined && info.size > MAX_BYTES) throw new Error("TOO_LARGE: file exceeds 25 MiB");
   const size = Math.max(0, Math.min(length ?? info.size, info.size - offset));
   const buffer = Buffer.alloc(size);

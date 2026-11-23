@@ -33,7 +33,7 @@ describe("control command inventory", () => {
     }).sort();
     const inventoryTypes = CONTROL_COMMAND_INVENTORY.map(({ type }) => type).sort();
 
-    expect(inventoryTypes).toHaveLength(56);
+    expect(inventoryTypes).toHaveLength(57);
     expect(new Set(inventoryTypes).size).toBe(inventoryTypes.length);
     expect(inventoryTypes).toEqual(handlerTypes);
     expect(inventoryTypes).toEqual([...CONTROL_COMMAND_TYPES].sort());
@@ -100,6 +100,7 @@ describe("control command inventory", () => {
       { type: "read_attachment_source", family: "attachment", policy: "bounded_result" },
       { type: "workspace_snapshot", family: "workspace", policy: "bounded_result" },
       { type: "workspace_file_read", family: "workspace", policy: "bounded_result" },
+      { type: "workspace_file_diff", family: "workspace", policy: "bounded_result" },
       { type: "claude_auth_status", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "claude_auth_set_token", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "claude_auth_delete_token", family: "auth/provider-usage", policy: "bounded_result" },

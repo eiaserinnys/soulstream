@@ -4,8 +4,8 @@
 
 ## 정본
 
-- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 203개 $defs (top-level wire 99 + supporting/SSE 104).
-  - wire 메시지 99종
+- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 205개 $defs (top-level wire 101 + supporting/SSE 104).
+  - wire 메시지 101종
   - SSE event payload 64종 (`event` 메시지의 `event` 키 안에 packed)
   - `x-soulstream-event-durability` — SSE event 64종과 outbox 내부 이벤트 1종의 `durable`/`transient` 명시 분류. 누락·미등록 타입은 생성 실패
   - `x-soulstream-control-command-types` — 노드 제어 요청 54종의 생성 상수·타입 정본
@@ -39,3 +39,7 @@ CI가 `scripts/verify.sh`로 schema ↔ generated 정합을 검증한다.
 - discriminator union (`type` 필드)
 - TS interface + discriminated union 출력
 - `NodeRegister.supported_backends` 신규 top-level 필드 (옵션 D — Codex 백엔드 라우팅 준비)
+
+`workspace_file_read`와 `workspace_file_diff`의 선택 필드 `expected_root`는 목록을 만든 작업 폴더와 노드의 현재 작업 폴더가 같은지 확인한다.
+
+`workspace_file_read_result`와 `workspace_file_diff_result`의 선택 필드 `root_checked: true`는 요청의 `expected_root`를 비교해 통과했을 때만 제공한다.

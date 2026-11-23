@@ -44,7 +44,7 @@ export class WorkspaceSnapshotCache {
       git(root, ["diff", "HEAD", "--numstat", "-z", "--", "."]).catch(e => { if (e instanceof GitProcessError && /unknown revision|ambiguous argument|bad revision/i.test(e.stderr ?? "")) return ""; throw e; }),
       git(root, ["log", `--since=${since}`, "-n", "50", "--format=%x1e%H%x00%s%x00%cI", "--name-only", "-z", "HEAD", "--", "."]).catch(e => { if (e instanceof GitProcessError && /does not have any commits|unknown revision|ambiguous argument/i.test(e.stderr ?? "")) return ""; throw e; }),
     ]);
-    const convert = (p: string) => path.relative(root, path.resolve(gitRoot!, p.replaceAll("\\", "/"))).split(path.sep).join("/");
+    const convert = (p: string) => path.relative(root, path.resolve(gitRoot!, path.sep === "\\" ? p.replaceAll("\\", "/") : p)).split(path.sep).join("/");
     const result = parseStatus(status, convert);
     const counts = parseNumstat(diff, convert);
     result.truncated = result.files.length > 1000; result.files = result.files.slice(0, 1000);

@@ -337,6 +337,8 @@ def test_schema_has_all_message_types() -> None:
         "WorkspaceFileRead",
         "WorkspaceSnapshotResult",
         "WorkspaceFileReadResult",
+        "WorkspaceFileDiff",
+        "WorkspaceFileDiffResult",
         "CreateSession",
         "CreateCardOrchestrationDecision",
         "PrepareCardOrchestrationDecision",
@@ -403,7 +405,7 @@ def test_schema_has_all_message_types() -> None:
         "ControlResultAck",
         "ControlAckMetric",
     }
-    assert len(wire_types) == 99
+    assert len(wire_types) == 101
 
     sse_types = {
         "SSEEventInit",
@@ -777,6 +779,8 @@ def test_oneof_covers_all_wire_messages() -> None:
         "WorkspaceFileRead",
         "WorkspaceSnapshotResult",
         "WorkspaceFileReadResult",
+        "WorkspaceFileDiff",
+        "WorkspaceFileDiffResult",
         "CreateSession",
         "CreateCardOrchestrationDecision",
         "PrepareCardOrchestrationDecision",
@@ -1137,3 +1141,20 @@ def test_attachment_identity_fields_are_optional_on_commands_and_events() -> Non
         assert props["attachment_ids"] == {"type": "array", "items": {"type": "string"}}
         assert props["attachment_count"] == {"type": "integer", "minimum": 0}
 
+
+
+def test_workspace_file_commands_accept_optional_expected_root() -> None:
+    schema = _load_schema()
+    for name in ("WorkspaceFileRead", "WorkspaceFileDiff"):
+        definition = schema["$defs"][name]
+        assert definition["properties"]["expected_root"] == {"type": "string"}
+        assert "expected_root" not in definition["required"]
+        assert definition["additionalProperties"] is True
+
+
+def test_workspace_file_results_accept_optional_root_confirmation() -> None:
+    schema = _load_schema()
+    for name in ("WorkspaceFileReadResult", "WorkspaceFileDiffResult"):
+        definition = schema["$defs"][name]
+        assert definition["properties"]["root_checked"] == {"const": True}
+        assert "root_checked" not in definition["required"]

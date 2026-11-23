@@ -26,6 +26,9 @@ describe("session file activity", () => {
       const query=parts.join("?");
       if(query.includes("FROM sessions")) return [{session_id:"s",node_id:"n",agent_id:"a",worktree_id:null,created_at:new Date("2026-01-01T00:00:00Z"),model_preset:null}];
       expect(query).toContain("payload->>'result'");
+      expect(query).toContain("MAX(created_at)");
+      expect(query).toMatch(/ORDER BY MAX\(created_at\) DESC/i);
+      expect(query).not.toMatch(/LIMIT\s+5000/i);
       expect(query).not.toContain("jsonb_path_query_array");
       return [
         {event_type:"tool_result",tool_name:"file_change",result:"not json",created_at:at},
@@ -48,4 +51,32 @@ describe("session file activity", () => {
     const response=await provider.readWorkspace("s");
     expect(response.files).toEqual(expect.arrayContaining([expect.objectContaining({path:"written.txt",wrote:true,committed:true}),expect.objectContaining({path:"only-git.txt",wrote:false,committed:false}),expect.objectContaining({path:"not-committed.txt",wrote:true,committed:false}),expect.objectContaining({path:"old-commit.txt",wrote:true,committed:false})]));
   });
+});
+
+it("excludes Windows absolute paths when the workspace root is unknown", () => {
+  const rows = ["D:\\repo\\a.txt", "D:/repo/b.txt", "\\\\server\\share\\c.txt"].map(file_path => ({event_type:"tool_start",tool_name:"Read",file_path,created_at:at}));
+  expect([...collectSessionFileActivity(null, rows).keys()]).toEqual([]);
+});
+
+it("keeps the oldest activity past 5000 events and records the distinct-path limit", () => {
+  const rows = Array.from({length:6000}, (_,i)=>({event_type:"tool_start",tool_name:"Read",file_path:i === 0 ? "/repo/oldest.txt" : "/repo/repeated.txt",created_at:at}));
+  const activity=collectSessionFileActivity("/repo",rows);
+  expect(activity.has("oldest.txt")).toBe(true);
+  expect(activity.truncated).toBe(false);
+  const many=collectSessionFileActivity("/repo",Array.from({length:5001},(_,i)=>({event_type:"tool_start",tool_name:"Read",file_path:`/repo/${i}.txt`,created_at:at})));
+  expect(many.size).toBe(5000); expect(many.truncated).toBe(true);
+});
+
+it("keeps the newest 5000 distinct paths from timestamp-ordered activity", () => {
+  const rows=Array.from({length:5001},(_,i)=>({event_type:"tool_start",tool_name:"Read",file_path:`/repo/file-${i}.txt`,created_at:new Date(Date.UTC(2026,0,1,0,0,5000-i))}));
+  const activity=collectSessionFileActivity("/repo",rows);
+  expect(activity.size).toBe(5000);
+  expect(activity.has("file-0.txt")).toBe(true);
+  expect(activity.has("file-5000.txt")).toBe(false);
+  expect(activity.truncated).toBe(true);
+});
+
+it("normalizes a trailing slash when the workspace root is unknown", () => {
+  const activity=collectSessionFileActivity(null,[{event_type:"tool_start",tool_name:"Read",file_path:"dir/file/",created_at:at}]);
+  expect([...activity.keys()]).toEqual(["dir/file"]);
 });

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 203개 $defs (top-level wire 99 + supporting/SSE 104). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 205개 $defs (top-level wire 101 + supporting/SSE 104). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -59,7 +59,8 @@
     "list_agents_config_snapshots",
     "rollback_agents_config",
     "workspace_snapshot",
-    "workspace_file_read"
+    "workspace_file_read",
+    "workspace_file_diff"
   ],
   "x-soulstream-event-ingress-rejection-codes": [
     "EVENT_INGRESS_TRANSIENT_FAILURE",
@@ -232,6 +233,35 @@
         }
       }
     },
+    "WorkspaceFileDiff": {
+      "type": "object",
+      "required": ["type", "requestId", "session_id", "agent_id", "worktree_id", "path", "orig_path"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "workspace_file_diff" },
+        "requestId": { "type": "string" },
+        "session_id": { "type": "string" },
+        "agent_id": { "type": "string" },
+        "worktree_id": { "type": ["string", "null"] },
+        "path": { "type": "string" },
+        "orig_path": { "type": ["string", "null"] },
+        "expected_root": { "type": "string" }
+      }
+    },
+    "WorkspaceFileDiffResult": {
+      "type": "object",
+      "required": ["type", "requestId", "status", "text", "truncated", "binary"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "workspace_file_diff_result" },
+        "requestId": { "type": "string" },
+        "status": { "enum": ["modified", "added", "deleted", "renamed", "untracked", "conflicted", "typechange", "unchanged"] },
+        "text": { "type": "string" },
+        "truncated": { "type": "boolean" },
+        "binary": { "type": "boolean" },
+        "root_checked": { "const": true }
+      }
+    },
     "WorkspaceFileRead": {
       "type": "object",
       "required": [
@@ -264,6 +294,7 @@
         "path": {
           "type": "string"
         },
+        "expected_root": { "type": "string" },
         "offset": {
           "type": "integer"
         },
@@ -480,7 +511,8 @@
         },
         "length": {
           "type": "integer"
-        }
+        },
+        "root_checked": { "const": true }
       }
     },
     "SessionLifecycleStatus": {
@@ -5083,7 +5115,9 @@
     { "$ref": "#/$defs/WorkspaceSnapshot" },
     { "$ref": "#/$defs/WorkspaceFileRead" },
     { "$ref": "#/$defs/WorkspaceSnapshotResult" },
-    { "$ref": "#/$defs/WorkspaceFileReadResult" }
+    { "$ref": "#/$defs/WorkspaceFileReadResult" },
+    { "$ref": "#/$defs/WorkspaceFileDiff" },
+    { "$ref": "#/$defs/WorkspaceFileDiffResult" }
   ],
   "discriminator": { "propertyName": "type" }
 }

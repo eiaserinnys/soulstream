@@ -205,6 +205,7 @@ export const tsOnlyRouteKeys = [
   "GET /api/sessions/{session_id}/events/{event_id}/attachments",
   "GET /api/sessions/{session_id}/workspace",
   "GET /api/sessions/{session_id}/workspace/file",
+  "GET /api/sessions/{session_id}/workspace/diff",
   "GET /api/sessions/{session_id}/resume-after-limit",
   "POST /api/sessions/{session_id}/resume-after-limit",
   "POST /api/ui-events",
