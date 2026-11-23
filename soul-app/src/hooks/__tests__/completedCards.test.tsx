@@ -5,6 +5,7 @@ import {usePlannerFolder} from '../usePlannerFolder';
 import {usePlannerFolderDetail} from '../usePlannerReads';
 import {cardFixture} from '../../test-support/cards';
 import {usePlannerStore} from '../../store/plannerStore';
+import {CARD_REFRESH_WINDOW_MS} from '../../lib/card-refresh-window';
 import {mergeCompletedRefresh} from '../../../../packages/soul-ui/src/cards/completed-cards';
 // useCompletedCards applies its 250ms search debounce after mount; let it fire inside act
 // before RNTL's cleanup yields to the event loop.
@@ -33,6 +34,66 @@ test('hidden skips reads; invalidation refreshes the first page and keeps the lo
   expect(Date.parse(listCompletedCards.mock.calls[2][0].completedBefore)).toBeGreaterThanOrEqual(Date.parse(first.completedBefore));
   expect(listCompletedCards.mock.calls[2][0].cursor).toBeUndefined();
   await settleTimers();
+});
+
+test('카드 갱신은 한 창으로 묶고 폴더 무효화는 즉시 다시 받는다',async()=>{
+  jest.useFakeTimers();
+  try {
+    const a=cardFixture({id:'a',status:'done',completedAt:'2026-01-02'});
+    const listCompletedCards=jest.fn().mockResolvedValue({cards:[a],nextCursor:null});
+    const api={listCompletedCards} as unknown as ApiClient;
+    const hook=renderHook(()=>useCompletedCards(api,'folder-1',true));
+    const flush=()=>act(async()=>{await Promise.resolve();await Promise.resolve();await Promise.resolve();});
+    await flush();
+    expect(listCompletedCards).toHaveBeenCalledTimes(1);
+
+    act(()=>{usePlannerStore.getState().invalidate('card');usePlannerStore.getState().invalidate('card');});
+    await act(async()=>{jest.advanceTimersByTime(CARD_REFRESH_WINDOW_MS-1);});
+    expect(listCompletedCards).toHaveBeenCalledTimes(1);
+    await act(async()=>{jest.advanceTimersByTime(1);await Promise.resolve();await Promise.resolve();});
+    expect(listCompletedCards).toHaveBeenCalledTimes(2);
+
+    act(()=>usePlannerStore.getState().invalidate('folder'));
+    await flush();
+    expect(listCompletedCards).toHaveBeenCalledTimes(3);
+    await flush();
+    expect(hook.result.current.loading).toBe(false);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test('완료 목록을 숨기면 예약을 취소하고 복귀 시 한 번만 읽는다',async()=>{
+  jest.useFakeTimers();
+  try {
+    const listCompletedCards=jest.fn().mockResolvedValue({cards:[],nextCursor:null});
+    const api={listCompletedCards} as unknown as ApiClient;
+    const hook=renderHook<CompletedBrowser,{shown:boolean}>(({shown})=>useCompletedCards(api,'folder-1',shown),{initialProps:{shown:true}});
+    await act(async()=>{await Promise.resolve();await Promise.resolve();});
+    act(()=>usePlannerStore.getState().invalidate('card'));
+    hook.rerender({shown:false});
+    hook.rerender({shown:true});
+    await act(async()=>{jest.advanceTimersByTime(CARD_REFRESH_WINDOW_MS);await Promise.resolve();await Promise.resolve();});
+    expect(listCompletedCards).toHaveBeenCalledTimes(2);
+  } finally { jest.useRealTimers(); }
+});
+
+test('폴더 카드 목록은 카드 사건을 묶고 폴더 사건은 즉시 반영한다',async()=>{
+  jest.useFakeTimers();
+  try {
+    const getFolderSnapshot=jest.fn().mockResolvedValue({folder:{id:'folder-1'},cards:[]});
+    const api={getFolderSnapshot} as unknown as ApiClient;
+    renderHook(()=>usePlannerFolder(api,'folder-1',true,false));
+    await act(async()=>{await Promise.resolve();await Promise.resolve();});
+    act(()=>usePlannerStore.getState().invalidate('card'));
+    await act(async()=>{jest.advanceTimersByTime(100);});
+    act(()=>usePlannerStore.getState().invalidate('card'));
+    expect(getFolderSnapshot).toHaveBeenCalledTimes(1);
+    await act(async()=>{jest.advanceTimersByTime(CARD_REFRESH_WINDOW_MS);await Promise.resolve();await Promise.resolve();});
+    expect(getFolderSnapshot).toHaveBeenCalledTimes(2);
+    await act(async()=>{usePlannerStore.getState().invalidate('folder');await Promise.resolve();await Promise.resolve();});
+    expect(getFolderSnapshot).toHaveBeenCalledTimes(3);
+  } finally { jest.useRealTimers(); }
 });
 
 test('refresh merges the older tail, or replaces it when the first page is complete',()=>{

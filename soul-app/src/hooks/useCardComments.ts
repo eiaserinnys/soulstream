@@ -4,6 +4,7 @@ import type { ApiClient } from '../api/client';
 import type { CardComment } from '../api/cardTypes';
 import { captureAuthScope } from '../lib/auth-scope';
 import { refreshCard, useCardStore } from '../store/cardStore';
+import { usePlannerStore } from '../store/plannerStore';
 import { cardOperationId } from './useCardActions';
 
 export function useCardComments(api: ApiClient | null, cardId: string) {
@@ -29,6 +30,8 @@ export function useCardComments(api: ApiClient | null, cardId: string) {
     setPending(true); replace(comment);
     try {
       replace(await api.addCardComment(cardId, { body, ...fields, idempotencyKey: id }));
+      // 사용자가 직접 남긴 변경은 목록에 바로 보이도록 즉시 무효화한다.
+      usePlannerStore.getState().invalidate('folder');
       if (target?.itemId !== undefined) {
         try { await refreshCard(api, cardId); }
         catch (cause) { console.warn('항목 커멘트 저장 후 카드 재조회 실패', cause); }

@@ -2,14 +2,16 @@ jest.mock('react-native-enriched-markdown', () => ({ EnrichedMarkdownText: (prop
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 import { useState } from 'react';
-import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
+import type { CardDetail, CardDto } from '../../../api/cardTypes';
 import type { ApiClient } from '../../../api/client';
+import { useCardList } from '../../../hooks/useCardList';
 import { cardFixture } from '../../../test-support/cards';
 import { CardBoard } from '../CardBoard';
 import { FolderCardList } from '../FolderCardList';
 import { CompletedCardsToggle } from '../CompletedCardsToggle';
 import { ReviewBoardActions } from '../../../component-review/ReviewBoardActions';
-import { useCardStore } from '../../../store/cardStore';
+import { refreshCard, useCardStore } from '../../../store/cardStore';
 
 const cards = (['todo', 'queued', 'running', 'blocked', 'awaiting_verification', 'review', 'on_hold', 'done', 'cancelled'] as const)
   .map((status) => cardFixture({ id: status, title: status, status }));
@@ -134,6 +136,40 @@ test('목록 활동 원문과 요청을 표시하고 상세는 카드 탭 전까
   fireEvent.press(screen.getByLabelText('카드 제목 카드 상세'));
   expect(open).toHaveBeenCalledWith(card.id);
   expect(setCardStatus).not.toHaveBeenCalled();
+});
+
+test('상세 조회가 먼저 끝나면 늦은 같은 version의 목록이 최신 활동을 되돌리지 않는다', async () => {
+  const previous = cardFixture({ id: 'activity-race', latestActivity: {
+    kind: 'instruction', body: '이전 지시 원문', format: 'markdown', createdAt: '2026-10-01',
+  } });
+  const latest = { ...previous, latestActivity: {
+    kind: 'report', body: '최신 보고 원문', format: 'markdown', createdAt: '2026-10-02',
+  } } satisfies CardDto;
+  const detail: CardDetail = { card: latest, reports: [], questions: [], sessions: [] };
+  let resolveList!: (result: { cards: CardDto[] }) => void;
+  const pendingList = new Promise<{ cards: CardDto[] }>((resolve) => { resolveList = resolve; });
+  const listCards = jest.fn(() => pendingList);
+  const getCard = jest.fn(async () => detail);
+  const api = { listCards, getCard } as unknown as ApiClient;
+
+  function Board() {
+    const { cards } = useCardList(api);
+    return <CardBoard api={api} cards={cards} onOpen={() => {}} />;
+  }
+
+  const screen = render(<Board />);
+  expect(listCards).toHaveBeenCalledTimes(1);
+  await act(async () => { await refreshCard(api, latest.id); });
+  expect(useCardStore.getState().details[latest.id]).toBe(detail);
+
+  await act(async () => { resolveList({ cards: [previous] }); });
+
+  const { rows, details } = useCardStore.getState();
+  expect({
+    row: rows[latest.id]?.latestActivity?.body,
+    detail: details[latest.id]?.card.latestActivity?.body,
+    board: screen.queryByText(/최신 보고 원문/) !== null,
+  }).toEqual({ row: '최신 보고 원문', detail: '최신 보고 원문', board: true });
 });
 
 test('보드의 시간과 완료 액션은 보조정보 옆 한 행이며 같은 본문 비교를 좁은 pane에도 렌더한다', () => {

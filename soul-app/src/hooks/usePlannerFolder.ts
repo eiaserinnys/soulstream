@@ -4,6 +4,7 @@ import type { FolderSnapshot } from '../api/cardTypes';
 import { mergeCardRows, useCardStore } from '../store/cardStore';
 import { usePlannerStore } from '../store/plannerStore';
 import { captureAuthScope, useAuthScopeGeneration } from '../lib/auth-scope';
+import { cancelCardRefresh, createCardRefreshWindow, scheduleCardRefresh } from '../lib/card-refresh-window';
 
 export function usePlannerFolder(
   api: ApiClient | null,
@@ -18,14 +19,25 @@ export function usePlannerFolder(
   const refreshKey = usePlannerStore((state) => (
     state.invalidation.folder + state.invalidation.replay
   ));
+  const cardRevision = usePlannerStore((state) => state.invalidation.card);
   const generationRef = useRef(0);
+  const inFlightRef = useRef<number | null>(null);
+  const queuedRef = useRef(false);
+  const cardWindow = useRef(createCardRefreshWindow());
+  const previousCardRevision = useRef(cardRevision);
+  const refreshRef = useRef<() => void>(() => {});
 
   const refresh = useCallback(async () => {
+    previousCardRevision.current = usePlannerStore.getState().invalidation.card;
+    cancelCardRefresh(cardWindow.current);
+    queuedRef.current = false;
     const generation = ++generationRef.current;
     if (!api || !folderId || !enabled) {
+      inFlightRef.current = null;
       setLocal(emptyState(ownerKey));
       return;
     }
+    inFlightRef.current = generation;
     setLocal((previous) => ({
       ownerKey,
       data: previous.ownerKey === ownerKey ? previous.data : undefined,
@@ -53,8 +65,13 @@ export function usePlannerFolder(
           ? { ...previous, loading: false }
           : previous);
       }
+      if (inFlightRef.current === generation) {
+        inFlightRef.current = null;
+        if (queuedRef.current) refreshRef.current();
+      }
     }
   }, [api, enabled, ownerKey, folderId, scopeGeneration,includeCompleted]);
+  refreshRef.current = () => { void refresh(); };
 
   useEffect(() => {
     generationRef.current += 1;
@@ -62,8 +79,16 @@ export function usePlannerFolder(
   }, [ownerKey]);
   useEffect(() => {
     void refresh();
-    return () => { generationRef.current += 1; };
+    return () => { generationRef.current += 1; inFlightRef.current = null; queuedRef.current = false; cancelCardRefresh(cardWindow.current); };
   }, [refresh, refreshKey]);
+  useEffect(() => {
+    if (previousCardRevision.current === cardRevision) return;
+    previousCardRevision.current = cardRevision;
+    if (enabled && api && folderId) scheduleCardRefresh(cardWindow.current, () => {
+      if (inFlightRef.current !== null) queuedRef.current = true;
+      else refreshRef.current();
+    });
+  }, [cardRevision, enabled, api, folderId, refresh]);
 
   const rows = useCardStore((state) => state.rows);
   const rowSeq = useCardStore((state) => state.rowSeq);

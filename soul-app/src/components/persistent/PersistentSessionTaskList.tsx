@@ -28,7 +28,7 @@ export function PersistentSessionTaskList({ api, onOpenCard, visible = true, con
   const email = decodeAuthJwt(jwt)?.email;
   const collapsedTaskGroups = useSettingsStore(state => state.getPersistentSessionDevicePreference(serverUrl, email).collapsedTaskGroups);
   const setCollapsedTaskGroups = useSettingsStore(state => state.setPersistentSessionCollapsedTaskGroups);
-  const { cards, loading, error, refresh } = useCardList(api);
+  const { cards, loading, error, refresh } = useCardList(api, undefined, visible);
   const groups = useMemo(() => groupPersistentSessionTasks(cards), [cards]);
   const summaryNumberTemplate = useMemo(() => {
     let longest: string | undefined;

@@ -7,6 +7,7 @@ import type { CardStatus } from '../../../../../packages/wire-schema/generated/t
 import { cardFixture } from '../../../test-support/cards';
 import { useAuthStore } from '../../../store/authStore';
 import { useCardStore } from '../../../store/cardStore';
+import { usePlannerStore } from '../../../store/plannerStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useTokens } from '../../../theme';
 import { PersistentSessionTaskList } from '../PersistentSessionTaskList';
@@ -16,6 +17,7 @@ beforeEach(() => {
   useAuthStore.setState({ jwt: `header.${payload}.signature` });
   useSettingsStore.setState({ serverUrl: 'https://task-list.test', persistentSessionDevicePrefs: {} });
   useCardStore.setState({ rows: {}, seq: 0, rowSeq: {}, details: {}, pendingItemConfirmations: {} });
+  usePlannerStore.getState().resetForTest();
 });
 
 test('전체 목록은 global useCardList 결과의 활성 카드를 묶고 행 열기를 전달한다', async () => {
@@ -175,5 +177,33 @@ test('요약 중 목록을 display none으로 숨겼다가 되돌아와도 요�
   expect(screen.getByTestId('card-row-visible-task-summary', { includeHiddenElements: true })).toBeTruthy();
   fireEvent.press(screen.getByTestId('toggle-summary'));
   expect(screen.getByTestId('persistent-task-list')).toBe(listBefore);
+  expect(listCards).toHaveBeenCalledTimes(2);
+  await act(async () => { await Promise.resolve(); });
+});
+
+test('숨김 동안 들어온 카드 갱신은 목록을 조회하지 않고, 보일 때 최신 목록을 한 번 받는다', async () => {
+  const first = [cardFixture({ id: 'visible-task', status: 'running' })];
+  const latest = [...first, cardFixture({ id: 'new-task', status: 'running' })];
+  const listCards = jest.fn().mockResolvedValueOnce({ cards: first }).mockResolvedValue({ cards: latest });
+  const api = { listCards } as any;
+  function Harness() {
+    const [visible, setVisible] = React.useState(true);
+    return <>
+      <PersistentSessionTaskList api={api} onOpenCard={jest.fn()} visible={visible} />
+      <Pressable testID="toggle-summary" onPress={() => setVisible(value => !value)} />
+    </>;
+  }
+  const screen = render(<Harness />);
+
+  await waitFor(() => expect(screen.getByTestId('card-row-visible-task-summary')).toBeTruthy());
+  fireEvent.press(screen.getByTestId('toggle-summary'));
+  act(() => {
+    usePlannerStore.getState().invalidate('card');
+    usePlannerStore.getState().invalidate('card');
+  });
   expect(listCards).toHaveBeenCalledTimes(1);
+
+  fireEvent.press(screen.getByTestId('toggle-summary'));
+  await waitFor(() => expect(screen.getByTestId('card-row-new-task-summary')).toBeTruthy());
+  expect(listCards).toHaveBeenCalledTimes(2);
 });

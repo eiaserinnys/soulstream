@@ -3,7 +3,12 @@ import { useSessionsStream } from '../useSessionsStream';
 
 const callOrder: string[] = [];
 const mockRefreshCard = jest.fn().mockResolvedValue(undefined);
-jest.mock('../../store/cardStore', () => ({ refreshCard: (...args: unknown[]) => mockRefreshCard(...args) }));
+var mockCardRows: Record<string, unknown>;
+var mockCardDetails: Record<string, unknown>;
+jest.mock('../../store/cardStore', () => ({
+  refreshCard: (...args: unknown[]) => mockRefreshCard(...args),
+  useCardStore: { getState: () => ({ rows: mockCardRows, details: mockCardDetails }) },
+}));
 const mockUpdateSession = jest.fn(() => callOrder.push('session-store'));
 const mockInvalidatePlanner = jest.fn(() => callOrder.push('planner-invalidation'));
 let capturedStreamOptions: any;
@@ -83,6 +88,8 @@ jest.mock('../useSSEStream', () => ({
 
 beforeEach(() => {
   mockRefreshCard.mockClear();
+  mockCardRows = {};
+  mockCardDetails = {};
   callOrder.length = 0;
   mockUpdateSession.mockClear();
   mockInvalidatePlanner.mockClear();
@@ -137,11 +144,28 @@ test('page_updated는 version dedup 없이 수신마다 page source를 무효화
   expect(mockInvalidatePlanner).toHaveBeenNthCalledWith(2, 'page');
 });
 
-test('card_updated는 해당 카드 재조회와 완료 목록의 folder source를 무효화한다', async () => {
+test('card_updated는 표시 중인 카드의 상세를 재조회하고 card source를 무효화한다', async () => {
+  mockCardRows = { 'card-1': { id: 'card-1' } };
   renderHook(() => useSessionsStream());
   await act(async () => capturedStreamOptions.onEvent('card_updated', { cardId: 'card-1', folderId: 'folder-1' }));
   expect(mockRefreshCard).toHaveBeenCalledTimes(1);
   expect(mockRefreshCard).toHaveBeenCalledWith(expect.any(Object), 'card-1');
   expect(mockInvalidatePlanner).toHaveBeenCalledTimes(1);
-  expect(mockInvalidatePlanner).toHaveBeenCalledWith('folder');
+  expect(mockInvalidatePlanner).toHaveBeenCalledWith('card');
+});
+
+test('card_updated는 열린 상세의 카드도 재조회한다', async () => {
+  mockCardDetails = { 'card-1': { card: { id: 'card-1' } } };
+  renderHook(() => useSessionsStream());
+  await act(async () => capturedStreamOptions.onEvent('card_updated', { cardId: 'card-1' }));
+  expect(mockRefreshCard).toHaveBeenCalledTimes(1);
+  expect(mockRefreshCard).toHaveBeenCalledWith(expect.any(Object), 'card-1');
+});
+
+test('card_updated는 목록에도 상세에도 없는 카드를 개별로 재조회하지 않고 목록 무효화만 한다', async () => {
+  renderHook(() => useSessionsStream());
+  await act(async () => capturedStreamOptions.onEvent('card_updated', { cardId: 'card-new', folderId: 'folder-1' }));
+  expect(mockRefreshCard).not.toHaveBeenCalled();
+  expect(mockInvalidatePlanner).toHaveBeenCalledTimes(1);
+  expect(mockInvalidatePlanner).toHaveBeenCalledWith('card');
 });
