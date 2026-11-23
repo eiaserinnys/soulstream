@@ -64,6 +64,7 @@ export const CONTROL_COMMAND_INVENTORY = [
   entry("read_attachment_source", "attachment", "bounded_result"),
   entry("workspace_snapshot", "workspace", "bounded_result"),
   entry("workspace_file_read", "workspace", "bounded_result"),
+  entry("workspace_file_diff", "workspace", "bounded_result"),
   entry("claude_auth_status", "auth/provider-usage", "bounded_result"),
   entry("claude_auth_set_token", "auth/provider-usage", "bounded_result"),
   entry("claude_auth_delete_token", "auth/provider-usage", "bounded_result"),
@@ -104,7 +105,8 @@ export const LIST_RUNNER_INVENTORY_CONTROL_TIMEOUT_MS = 85_000;
 export function boundedResultTimeoutMs(commandType: string, fallbackMs: number): number {
   switch (commandType) {
     case "workspace_snapshot": return 5_000;
-    case "workspace_file_read": return 30_000;
+    case "workspace_file_read":
+    case "workspace_file_diff": return 30_000;
     case "provider_usage_get":
       // The provider has 45s; respond before orch's 46s command timeout.
       return 45_500;

@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 203개 $defs (top-level wire 99 + supporting/SSE 104). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 205개 $defs (top-level wire 101 + supporting/SSE 104). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -102,7 +102,9 @@ export type SoulstreamUpstreamProtocol =
   | WorkspaceSnapshot
   | WorkspaceFileRead
   | WorkspaceSnapshotResult
-  | WorkspaceFileReadResult;
+  | WorkspaceFileReadResult
+  | WorkspaceFileDiff
+  | WorkspaceFileDiffResult;
 export type CallerInfoSource =
   | "agent"
   | "api"
@@ -3617,6 +3619,25 @@ export interface WorkspaceFileReadResult {
   length: number;
   [k: string]: unknown;
 }
+export interface WorkspaceFileDiff {
+  type: "workspace_file_diff";
+  requestId: string;
+  session_id: string;
+  agent_id: string;
+  worktree_id: string | null;
+  path: string;
+  orig_path: string | null;
+  [k: string]: unknown;
+}
+export interface WorkspaceFileDiffResult {
+  type: "workspace_file_diff_result";
+  requestId: string;
+  status: "modified" | "added" | "deleted" | "renamed" | "untracked" | "conflicted" | "typechange" | "unchanged";
+  text: string;
+  truncated: boolean;
+  binary: boolean;
+  [k: string]: unknown;
+}
 
 /**
  * Event persistence policy generated from upstream.schema.json.
@@ -3898,6 +3919,7 @@ export const CONTROL_COMMAND_TYPES = [
   "rollback_agents_config",
   "workspace_snapshot",
   "workspace_file_read",
+  "workspace_file_diff",
 ] as const;
 export type ControlCommandType = (typeof CONTROL_COMMAND_TYPES)[number];
 

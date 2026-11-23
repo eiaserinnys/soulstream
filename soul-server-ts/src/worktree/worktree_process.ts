@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 
 import {
   WORKTREE_PROCESS_CLOSE_CONFIRM_TIMEOUT_MS,
@@ -31,12 +32,15 @@ export interface BoundedProcessInput {
   env?: NodeJS.ProcessEnv;
   stdin?: string;
   signal?: AbortSignal;
+  maxStdoutBytes?: number;
+  acceptedExitCodes?: number[];
 }
 
 export interface BoundedProcessResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  truncated?: boolean;
 }
 
 /**
@@ -59,6 +63,8 @@ export async function runBoundedProcess(
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let timedOut = false;
+    let truncated = false;
+    let stdoutBytes = 0;
     let settled = false;
     let closed = false;
     let closeWaiter: (() => void) | undefined;
@@ -99,7 +105,21 @@ export async function runBoundedProcess(
       })();
     };
 
-    child.stdout!.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stdout!.on("data", (chunk: Buffer) => {
+      if (truncated) return;
+      const remaining = input.maxStdoutBytes === undefined ? chunk.length : input.maxStdoutBytes - stdoutBytes;
+      stdout.push(chunk.subarray(0, remaining));
+      stdoutBytes += Math.min(chunk.length, remaining);
+      if (chunk.length > remaining) {
+        truncated = true;
+        void (async () => {
+          if (child.pid !== undefined) {
+            if (process.platform === "win32") await terminateWindowsProcessTree(child.pid, child);
+            else await terminatePosixProcessGroup(child.pid, child);
+          }
+        })();
+      }
+    });
     child.stderr!.on("data", (chunk: Buffer) => stderr.push(chunk));
     if (input.stdin !== undefined) child.stdin!.end(input.stdin);
 
@@ -125,9 +145,10 @@ export async function runBoundedProcess(
       if (settled || timedOut) return;
       settled = true;
       cleanup();
-      const out = Buffer.concat(stdout).toString("utf8");
+      const bytes = Buffer.concat(stdout);
+      const out = truncated ? new StringDecoder("utf8").write(bytes) : bytes.toString("utf8");
       const err = Buffer.concat(stderr).toString("utf8");
-      if (code !== 0) {
+      if (!truncated && !(input.acceptedExitCodes ?? [0]).includes(code ?? -1)) {
         reject(new GitProcessError(
           "PROCESS_FAILED",
           `${input.command} exited with ${code ?? signal ?? "unknown"}: ${err.trim()}`,
@@ -137,7 +158,7 @@ export async function runBoundedProcess(
         ));
         return;
       }
-      resolve({ stdout: out, stderr: err, exitCode: code });
+      resolve({ stdout: out, stderr: err, exitCode: code ?? 0, ...(truncated ? { truncated: true } : {}) });
     });
   });
 }

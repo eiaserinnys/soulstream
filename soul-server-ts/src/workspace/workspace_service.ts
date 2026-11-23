@@ -2,6 +2,7 @@ import { realpath, stat } from "node:fs/promises";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { WorktreeService } from "../worktree/worktree_service.js";
 import { WorkspaceSnapshotCache } from "./workspace_snapshot.js";
+import { diffWorkspaceFile } from "./workspace_file_diff.js";
 import { readWorkspaceFile } from "./workspace_file_read.js";
 
 export type WorkspaceTarget = {session_id: string; agent_id: string; worktree_id: string | null};
@@ -20,6 +21,7 @@ export class WorkspaceService {
     this.roots.set(target.session_id,{root:resolved,until:Date.now()+300_000}); return resolved;
   }
   async snapshot(target: WorkspaceTarget, since: string) { return this.snapshots.get(await this.root(target),since); }
+  async diff(target: WorkspaceTarget, file: string, orig: string | null) { return diffWorkspaceFile(await this.root(target), file, orig); }
   async read(target: WorkspaceTarget, file: string, offset?: number, length?: number) { return readWorkspaceFile(await this.root(target),file,offset,length); }
 }
 const services = new WeakMap<object, WorkspaceService>();

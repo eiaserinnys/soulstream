@@ -22,3 +22,5 @@ export interface SessionWorkspaceResponse {
   files: { path: string; git_status: WorkspaceGitStatus | null; orig_path: string | null; added: number | null; deleted: number | null; size: number | null; wrote: boolean; read: boolean; committed: boolean; last_activity_at: string | null }[];
   read_only: { path: string; size: number | null; last_read_at: string | null }[];
 }
+
+export interface SessionWorkspaceDiffResponse { path: string; status: WorkspaceGitStatus | "unchanged"; text: string; truncated: boolean; binary: boolean }
