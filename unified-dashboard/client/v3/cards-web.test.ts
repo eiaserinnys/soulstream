@@ -59,6 +59,53 @@ describe("card web contracts", () => {
     expect(useCardStore.getState().byId.changed.latestActivity?.body).toBe("<p>신선한 보고</p>");
     expect(useCardStore.getState().details.changed.reports).toHaveLength(1);
   });
+  it("skips detail for a list-only card but still reads cached detail and unknown cards", async () => {
+    const known=card("known","running"),open=card("open","running"),fresh=card("fresh","review");
+    useCardStore.setState({byId:{known:known as never,open:open as never},details:{open:{card:open,reports:[],questions:[],sessions:[]} as never}});
+    const unregister=useCardStore.getState().registerGlobalList();
+    const fetch=vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({card:open,reports:[{id:"r"}],questions:[],sessions:[]})))
+      .mockResolvedValueOnce(new Response(JSON.stringify({card:fresh,reports:[],questions:[],sessions:[]})));
+    vi.stubGlobal("fetch",fetch);
+    await useCardStore.getState().handleCardUpdated({cardId:"known",folderId:"folder"});
+    expect(fetch).not.toHaveBeenCalled();
+    await useCardStore.getState().handleCardUpdated({cardId:"open",folderId:"folder"});
+    await useCardStore.getState().handleCardUpdated({cardId:"fresh",folderId:"folder"});
+    expect(fetch.mock.calls.map(call=>call[0])).toEqual(["/api/cards/open","/api/cards/fresh"]);
+    expect(useCardStore.getState().details.open.reports).toHaveLength(1);
+    expect(useCardStore.getState().byId.fresh.id).toBe("fresh");
+    useCardStore.getState().reconcileGlobalList([known as never]);unregister();
+  });
+  it("refreshes a cached list-only card when only scoped lists are present",async()=>{
+    const known=card("known","review"),updated=card("known","done",{version:3});
+    useCardStore.setState({byId:{known:known as never}});
+    const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify({card:updated,reports:[],questions:[],sessions:[]})));vi.stubGlobal("fetch",fetch);
+    await useCardStore.getState().handleCardUpdated({cardId:"known",folderId:"elsewhere"});
+    expect(fetch.mock.calls.map(call=>call[0])).toEqual(["/api/cards/known"]);
+    expect(useCardStore.getState().byId.known.status).toBe("done");
+  });
+  it("refreshes a deferred card omitted from the global list and marks it stale until then",async()=>{
+    const known=card("known","review"),updated=card("known","done",{version:3});
+    useCardStore.setState({byId:{known:known as never}});
+    let finish!:(response:Response)=>void;
+    const fetch=vi.fn(()=>new Promise<Response>(resolve=>{finish=resolve;}));vi.stubGlobal("fetch",fetch);
+    const unregister=useCardStore.getState().registerGlobalList();
+    await useCardStore.getState().handleCardUpdated({cardId:"known",folderId:"folder"});
+    expect(useCardStore.getState().isCardCurrent("known")).toBe(false);
+    useCardStore.getState().reconcileGlobalList([]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    finish(new Response(JSON.stringify({card:updated,reports:[],questions:[],sessions:[]})));
+    await vi.waitFor(()=>expect(useCardStore.getState().isCardCurrent("known")).toBe(true));
+    expect(useCardStore.getState().byId.known.status).toBe("done");
+    unregister();
+  });
+  it("accepts same-version activity and attachment changes while retaining newer rows",()=>{
+    const old=card("a","running",{attachments:[],latestActivity:null}), newer=card("b","running",{version:5});
+    useCardStore.getState().putCards([old as never,newer as never]);
+    const updated=card("a","running",{attachments:[{id:"attachment"}],latestActivity:{body:"new"}});
+    useCardStore.getState().putCards([updated as never,card("b","todo",{version:4}) as never]);
+    expect(useCardStore.getState().byId.a).toBe(updated);
+    expect(useCardStore.getState().byId.b).toBe(newer);
+  });
   it("confirms one item with the authoritative card response and no separate GET", async () => {
     const confirmedCard=card("c","running",{items:[{id:3,title:"확인",state:"done",result:"완료",evidence:[],caveat:null,rev:2,confirmed:{at:"2026-10-05T00:00:00Z",rev:2},fixOpen:0,reopened:null,from:null,createdAt:"2026-10-04T00:00:00Z",reportedAt:"2026-10-05T00:00:00Z",display:"confirmed"}]});
     const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify({card:confirmedCard})));

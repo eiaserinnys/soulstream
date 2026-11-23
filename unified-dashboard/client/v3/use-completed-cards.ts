@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { cardRequest } from "@seosoyoung/soul-ui/cards/card-api";
+import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { completedBounds,localDate,type CompletedCardParams,type CompletedPeriod } from "@seosoyoung/soul-ui/cards/completed-cards";
 import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
@@ -17,7 +18,9 @@ export function mergeCompletedRefresh(first:Page,previous:Accumulated):Accumulat
 }
 
 export function useCompletedCards(folderId:string|undefined,enabled:boolean,loader:CompletedPageLoader=loadPage) {
-  const revision=useV3InvalidationKey(["card","folder","catalog","replay"]);
+  const cardRevision=useV3InvalidationKey(["card"]);
+  const immediateRevision=useV3InvalidationKey(["folder","catalog","replay"]);
+  const localRevision=useCardStore(state=>state.localRevision);
   const [period,setPeriod]=useState<CompletedPeriod>("7");
   const [start,setStart]=useState(()=>localDate(new Date(Date.now()-7*24*60*60*1000))),[end,setEnd]=useState(()=>localDate(new Date()));
   const [search,setSearch]=useState(""),[q,setQ]=useState("");
@@ -28,14 +31,17 @@ export function useCompletedCards(folderId:string|undefined,enabled:boolean,load
   const [loading,setLoading]=useState(false),[error,setError]=useState<string|null>(null);
   const busy=useRef(false),queued=useRef<(()=>void)|null>(null);
   const refresh=useRef<()=>void>(()=>{}),more=useRef<()=>void>(()=>{}),retry=useRef<()=>void>(()=>{});
+  const schedule=useRef<()=>void>(()=>{});
   useEffect(()=>{
     let active=true,dirty=false,loaded=false;
+    let timer:ReturnType<typeof setTimeout>|undefined;
     let accumulated:Accumulated={cards:[],cursor:null};
     let params:CompletedCardParams|null=null;
     setPage({key:"",cards:[],cursor:null});setError(null);setLoading(false);
     const load=async(mode:"initial"|"refresh"|"more")=>{
       if(!active||!enabled||invalidRange)return;
       if(busy.current){if(mode==="refresh")dirty=true;else if(mode==="initial")queued.current=()=>void load("initial");return;}
+      if(mode==="refresh")dirty=false;
       busy.current=true;setLoading(true);setError(null);
       const after=mode==="more"?accumulated.cursor:null;
       const request=mode==="more"?params!:{folderId,...completedBounds(period,start,end,Date.now())!,q,limit:60};
@@ -50,18 +56,28 @@ export function useCompletedCards(folderId:string|undefined,enabled:boolean,load
       }catch(cause){if(active)setError(cause instanceof Error?cause.message:String(cause));}
       finally {
         busy.current=false;
-        if(active){setLoading(false);if(dirty){dirty=false;void load("refresh");}}
+        if(active){setLoading(false);if(dirty&&timer===undefined)void load("refresh");}
         else {const next=queued.current;queued.current=null;next?.();}
       }
     };
-    refresh.current=()=>void load("refresh");
+    refresh.current=()=>{if(timer!==undefined){clearTimeout(timer);timer=undefined;}void load("refresh");};
+    schedule.current=()=>{
+      if(!enabled||invalidRange)return;
+      dirty=true;
+      if(timer===undefined)timer=setTimeout(()=>{timer=undefined;void load("refresh");},500);
+    };
     more.current=()=>{if(accumulated.cursor)void load("more");};
     retry.current=()=>void load(loaded?"refresh":"initial");
     if(enabled&&!invalidRange)void load("initial");
-    return()=>{active=false;queued.current=null;};
+    return()=>{active=false;queued.current=null;if(timer!==undefined)clearTimeout(timer);};
   },[key,enabled,invalidRange,folderId,period,start,end,q,loader]);
-  const previousRevision=useRef(revision);
-  useEffect(()=>{if(previousRevision.current!==revision){previousRevision.current=revision;refresh.current();}},[revision]);
+  const previousRevision=useRef({cardRevision,immediateRevision,localRevision});
+  useEffect(()=>{
+    const previous=previousRevision.current;
+    previousRevision.current={cardRevision,immediateRevision,localRevision};
+    if(previous.immediateRevision!==immediateRevision||previous.localRevision!==localRevision)refresh.current();
+    else if(previous.cardRevision!==cardRevision)schedule.current();
+  },[cardRevision,immediateRevision,localRevision]);
   return {cards:enabled&&page.key===key?page.cards:[],loading,error,invalidRange,loaded:enabled&&!invalidRange&&page.key===key,resetKey:key,
     period,setPeriod,start,setStart,end,setEnd,search,setSearch,
     loadMore:()=>more.current(),retry:()=>retry.current(),hasMore:enabled&&page.key===key&&!!page.cursor};

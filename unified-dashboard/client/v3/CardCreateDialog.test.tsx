@@ -118,6 +118,27 @@ it('keeps completed execution settings on save failure and starts only after ato
  expect(start).toHaveBeenCalledWith(saved);expect(close).toHaveBeenCalledTimes(1);
 });
 
+it('refreshes the destination list immediately when execution settings move a card',async()=>{
+ const {CardExecutionSettingsDialog}=await import('./CardExecutionSettings');
+ const {useCardMembership}=await import('./use-card-membership');
+ const {dialoguesAssignment}=await import('./dialogues-api');
+ const {reviewCard}=await import('./components-review-fixtures');
+ const card={...reviewCard,assigneeSessionId:null,folderId:'old',nodeId:'sample-node',assigneeAgentId:'roselin',modelPreset:null};
+ const saved={...card,folderId:'destination',version:card.version+1};
+ let moved=false,listReads=0;
+ vi.stubGlobal('fetch',vi.fn(async(input:unknown)=>({ok:true,json:async()=>{
+  if(String(input).startsWith('/api/cards?')){listReads++;return {cards:moved?[saved]:[]};}
+  return {agents:[],model_presets:[]};
+ }})));
+ function Destination(){const membership=useCardMembership('destination');return <div data-destination>{membership.cards.map(item=>item.id).join(',')}</div>;}
+ await act(()=>root.render(<QueryClientProvider client={new QueryClient()}><Destination/><CardExecutionSettingsDialog card={card} folders={[{id:'old',name:'기존'},{id:'destination',name:'대상'}] as any} assignment={dialoguesAssignment} onSave={async()=>{moved=true;return saved;}} onClose={()=>{}}/></QueryClientProvider>));
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,30));});
+ expect(listReads).toBe(1);
+ await act(async()=>{document.querySelector<HTMLButtonElement>('[aria-label="카드 설정 저장"]')!.click();await Promise.resolve();});
+ expect(listReads).toBe(2);
+ expect(container.querySelector('[data-destination]')?.textContent).toContain(saved.id);
+});
+
 
 it.each([true,false])('saves title and folder without execution settings (available nodes: %s)', async available=>{
  const {CardCreateDialog}=await import('./CardCreateDialog');
