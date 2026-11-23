@@ -13,9 +13,10 @@ afterEach(async () => { await Promise.all(apps.splice(0).map(app => app.close())
 function setup({ user = "user@example.com", restricted = false } = {}) {
   const snapshot = { folder: row, cards: [item] };
   const getFolder = vi.fn(async () => snapshot);
+  const getFolderRow = vi.fn(async () => row);
   const listFolders = vi.fn(async () => [row]);
   const mutate = vi.fn(async () => ({ snapshot, operation: { folder_id: "f", target_kind: "folder", target_id: "f" }, idempotent: false }));
-  const cards = { getFolder, listFolders, listOperations: vi.fn(async () => []),
+  const cards = { getFolder, getFolderRow, listFolders, listOperations: vi.fn(async () => []),
   setFolderStatus: mutate,
   } as unknown as CardControlPlaneService;
   const identity = { create: vi.fn(async () => ({ folder: { id: "f", name: "새 폴더" }, operation: { id: "op" }, idempotent: false })),
@@ -40,7 +41,7 @@ function setup({ user = "user@example.com", restricted = false } = {}) {
     cardServiceProvider: async () => cards, controlPlaneServiceProvider: async () => ({} as FolderControlPlaneService),
     authBearerToken: "test-token", environment: "production",
   });
-  return { app, identity, getFolder, listFolders, mutate, listSessionAssignments, listProjectPageStates };
+  return { app, identity, getFolder, getFolderRow, listFolders, mutate, listSessionAssignments, listProjectPageStates };
 }
 
 describe("unified folder HTTP and host contracts", () => {

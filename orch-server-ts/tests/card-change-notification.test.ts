@@ -12,7 +12,7 @@ import {
 import type { InterveneNodeCommandPayload } from "../src/session/session_action_command_payloads.js";
 const change = (overrides: Record<string,unknown> = {}) => ({
   previousStatus:"queued",previousAssigneeSessionId:"owner",committedCard:{id:"card",title:"작업",status:"running",assignee_session_id:"owner"},
-  result:{operation:{id:"op",target_id:"card",operation_type:"set_card_status",actor_kind:"user",actor_session_id:null,payload_json:{status:"running"}},snapshot:{cards:[]}},...overrides,
+  result:{operation:{id:"op",target_id:"card",operation_type:"set_card_status",actor_kind:"user",actor_session_id:null,payload_json:{status:"running"}},snapshot:{folder:{id:"folder-1"},card:null}},...overrides,
 }) as unknown as CardMutationChange;
 describe("committed card reference notifications",()=>{
   it("uses actual actor, locked before/after state and exact owner",()=>{
@@ -25,7 +25,7 @@ describe("committed card reference notifications",()=>{
   });
   it("does not wake the owner twice when a system limit resume already sent its own message",()=>{
     const c=change({previousStatus:"blocked",committedCard:{id:"card",title:"작업",status:"running",assignee_session_id:"owner"},
-      result:{operation:{id:"op",target_id:"card",operation_type:"resume_card",actor_kind:"system",actor_session_id:null,payload_json:{session_id:"owner"}},snapshot:{cards:[]}}});
+      result:{operation:{id:"op",target_id:"card",operation_type:"resume_card",actor_kind:"system",actor_session_id:null,payload_json:{session_id:"owner"}},snapshot:{folder:{id:"folder-1"},card:null}}});
     expect(buildCardChangeNotification(c)).toBeNull();
   });
   it("still notifies the owner about a system block that is not a quota limit",()=>{
@@ -38,7 +38,7 @@ describe("committed card reference notifications",()=>{
     enter.result.operation.actor_kind="user";
     expect(buildCardChangeNotification(enter)).toMatchObject({text:"사용자가 카드 「작업」(card)를 실행 중→검증 대기으로 변경했습니다"});
     const wake=change({previousStatus:"awaiting_verification",committedCard:{id:"card",title:"작업",status:"running",assignee_session_id:"owner"},
-      result:{operation:{id:"op",target_id:"card",operation_type:"resume_card",actor_kind:"system",actor_session_id:null,payload_json:{session_id:"owner"}},snapshot:{cards:[]}}});
+      result:{operation:{id:"op",target_id:"card",operation_type:"resume_card",actor_kind:"system",actor_session_id:null,payload_json:{session_id:"owner"}},snapshot:{folder:{id:"folder-1"},card:null}}});
     expect(buildCardChangeNotification(wake)).toBeNull();
     const committed={id:"card",title:"작업",status:"awaiting_verification",blocked_kind:null,blocked_detail:null,
       assignee_session_id:"owner",node_id:"node",assignee_agent_id:null,model_preset:null,archived:false} as never;

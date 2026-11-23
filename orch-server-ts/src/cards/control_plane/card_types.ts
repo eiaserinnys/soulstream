@@ -106,6 +106,27 @@ export interface FolderSnapshot {
   cards: CardRow[];
 }
 
+export interface CardLatestActivity {
+  kind: "instruction" | "report";
+  format: "markdown" | "html";
+  body: string;
+  createdAt: string;
+}
+
+/** A card row together with the latest activity preview the projection adds. */
+export interface ProjectedCard extends CardRow {
+  latest_activity: CardLatestActivity | null;
+}
+
+/**
+ * Mutation answers describe the folder plus the one card the operation touched.
+ * The folder's whole card list is only for folder detail reads (`FolderSnapshot`).
+ */
+export interface CardMutationSnapshot {
+  folder: FolderRow;
+  card: ProjectedCard | null;
+}
+
 export type FolderListRow = FolderRow;
 
 export interface FolderActorParams {
@@ -115,7 +136,7 @@ export interface FolderActorParams {
 }
 
 export interface CardMutationResult {
-  snapshot: FolderSnapshot;
+  snapshot: CardMutationSnapshot;
   operation: FolderOperationRow;
   eventId: number;
   idempotent?: boolean;

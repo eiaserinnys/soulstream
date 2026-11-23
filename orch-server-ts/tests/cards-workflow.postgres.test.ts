@@ -41,7 +41,7 @@ describe("cards storage, HTTP and planner", () => {
 
   it("accepts assigned agent completion and reportless review, with independent reports", async () => {
     const made=await cards.createCard({ ...human,folderId:'cards-a',title:'검증',request:'고정 원문',assignee:{kind:'session',sessionId:agent.actorSessionId},idempotencyKey:key() });
-    let c=made.snapshot.cards.find(x=>x.id === made.operation.target_id)!;
+    let c=made.snapshot.card!;
     await cards.setCardStatus({ ...human,cardId:c.id,status:'running',expectedVersion:c.version,idempotencyKey:key() });
     await cards.setCardStatus({ ...agent,cardId:c.id,status:'done',idempotencyKey:key() });
     await cards.setCardStatus({ ...agent,cardId:c.id,status:'review',idempotencyKey:key() });
@@ -172,7 +172,8 @@ describe("cards storage, HTTP and planner", () => {
     await h.sql`UPDATE sessions SET card_id=${id} WHERE session_id='card-agent'`;
     const moveKey=key();
     const moved=await cards.moveCard({ ...human,cardId:id,folderId:'cards-b',expectedVersion:1,idempotencyKey:moveKey });
-    expect(moved.snapshot.cards.map(c=>c.id)).toEqual([second.operation.target_id,id]);
+    expect(moved.snapshot.folder.id).toBe('cards-b');
+    expect(moved.snapshot.card!.id).toBe(id);
     expect((await cards.moveCard({ ...human,cardId:id,folderId:'cards-b',expectedVersion:1,idempotencyKey:moveKey })).idempotent).toBe(true);
     await cards.reorderQueue({ ...human,cardId:second.operation.target_id,afterCardId:null,expectedVersion:1,idempotencyKey:key() });
     expect((await h.sql`SELECT id FROM cards WHERE status='queued' ORDER BY queue_position_key COLLATE "C"`).map(r=>r.id)).toEqual([second.operation.target_id,id]);

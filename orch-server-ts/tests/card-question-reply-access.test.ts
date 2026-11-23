@@ -8,7 +8,7 @@ const detail = (folderId: string) => ({
 });
 const cardOptions = (folderId: string, answer = vi.fn(async () => ({
   operation: { target_kind: "card", target_id: "card-1" },
-  snapshot: { folder: { id: folderId }, cards: [{ id: "card-1" }] },
+  snapshot: { folder: { id: folderId }, card: { id: "card-1" } },
   idempotent: false,
 }))) => {
   const service = { getCard: async () => detail(folderId), answerQuestion: answer };
