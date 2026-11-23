@@ -70,7 +70,64 @@ function main() {
       const mocks = [];
       const constants = [];
       const expects = [];
+      const unwrap = (input) => {
+        let node = input;
+        while (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)
+          || ts.isTypeAssertionExpression(node) || ts.isNonNullExpression(node)) node = node.expression;
+        return node;
+      };
+      const unstableSelectorResult = (input) => {
+        const node = unwrap(input);
+        if (ts.isArrayLiteralExpression(node) || ts.isObjectLiteralExpression(node)) return true;
+        if (ts.isConditionalExpression(node)) return unstableSelectorResult(node.whenTrue) || unstableSelectorResult(node.whenFalse);
+        if (ts.isBinaryExpression(node) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken].includes(node.operatorToken.kind)) {
+          return unstableSelectorResult(node.left) || unstableSelectorResult(node.right);
+        }
+        if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && ['Map', 'Set', 'Date'].includes(node.expression.text)) return true;
+        if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return false;
+        const { expression, name } = node.expression;
+        if (ts.isIdentifier(expression) && ((expression.text === 'Object' && ['keys', 'values', 'entries'].includes(name.text))
+          || (expression.text === 'Array' && name.text === 'from'))) return true;
+        return ['map', 'filter', 'slice', 'concat', 'flat', 'flatMap', 'toSorted', 'toReversed'].includes(name.text);
+      };
+      const selectorReturnsUnstable = (selector) => {
+        if (!ts.isBlock(selector.body)) return unstableSelectorResult(selector.body);
+        let unstable = false;
+        const visitReturn = (node) => {
+          if (ts.isFunctionLike(node)) return;
+          if (ts.isReturnStatement(node) && node.expression && unstableSelectorResult(node.expression)) unstable = true;
+          if (!unstable) ts.forEachChild(node, visitReturn);
+        };
+        ts.forEachChild(selector.body, visitReturn);
+        return unstable;
+      };
       const visit = (node) => {
+        if (ts.isExpressionStatement(node) && ts.isAwaitExpression(node.expression)) {
+          const query = node.expression.expression;
+          if (ts.isTaggedTemplateExpression(query)
+            && ((ts.isIdentifier(query.tag) && query.tag.text === 'sql')
+              || (ts.isPropertyAccessExpression(query.tag) && query.tag.name.text === 'sql'))) {
+            const template = query.template;
+            const head = ts.isNoSubstitutionTemplateLiteral(template) ? template.text : template.head.text;
+            const sql = ts.isNoSubstitutionTemplateLiteral(template) ? head : [head, ...template.templateSpans.map((span) => span.literal.text)].join(' ');
+            const start = head.replace(/^(?:\s|--[^\r\n]*(?:\r?\n|$)|\/\*[\s\S]*?\*\/)+/, '');
+            if (/^SELECT\b/i.test(start) && /\bFROM\b/i.test(sql)
+              && !/\bFOR\s+(?:UPDATE|SHARE|NO\s+KEY\s+UPDATE|KEY\s+SHARE)\b/i.test(sql)
+              && !/\bFROM\s+[a-zA-Z_][\w."]*\s*\(/i.test(sql)
+              && !/\b(?:pg_advisory_\w*|setval|set_config|pg_notify)\s*\(/i.test(sql)) {
+              record('discarded-select-query', node, 'SELECT 결과를 사용하거나 불필요한 조회를 지운다', node.getStart(sourceFile));
+            }
+          }
+        }
+        if (ts.isCallExpression(node)) {
+          const callee = node.expression;
+          const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : '';
+          const selector = node.arguments[0];
+          if (/^use[A-Z]\w*Store$/.test(name) && selector
+            && (ts.isArrowFunction(selector) || ts.isFunctionExpression(selector)) && selectorReturnsUnstable(selector)) {
+            record('unstable-zustand-selector', node, '새 참조를 반환하는 선택자를 useShallow로 감싸거나 안정된 값을 반환한다', node.getStart(sourceFile));
+          }
+        }
         const isOmit = (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && node.typeName.text === 'Omit')
           || (ts.isExpressionWithTypeArguments(node) && ts.isIdentifier(node.expression) && node.expression.text === 'Omit');
         if (isOmit && node.typeArguments?.length === 2) {
