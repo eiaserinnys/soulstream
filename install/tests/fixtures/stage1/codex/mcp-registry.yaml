@@ -1,0 +1,7 @@
+servers:
+  - id: soulstream
+    type: streamable_http
+    url: http://127.0.0.1:4205/mcp
+    headers:
+      Authorization:
+        env: PORTABLE_LOCAL_MCP_AUTHORIZATION

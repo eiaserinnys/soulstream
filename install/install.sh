@@ -6,6 +6,17 @@ ATOM_API_KEY_RE='^[A-Za-z0-9._~+/=-]+$'
 ATOM_SEED_WARNINGS=
 # Exported seed names that configuration reads from config/.atom-seed-map.json.
 ATOM_SEED_NAMES='skill_catalog domain_catalog common_rules common_rules_extra codex_rules claude_common_rules coding_common_rules coding_common_rules_extra seosoyoung_rules seosoyoung_general seosoyoung_skills seosoyoung_rules_pas seosoyoung_skills_pas seosoyoung_rules_extra_pas card_orchestrator_root'
+# Tests reassign these three after sourcing.
+SOULSTREAM_REPO_URL=https://github.com/eiaserinnys/soulstream.git
+ATOM_REPO_URL=https://github.com/eiaserinnys/atom.git
+SYSTEMD_DIR=/etc/systemd/system
+# Stopped in this order when maintenance starts and after a failure during it.
+SERVICE_UNITS='soulstream-worker.service soulstream-orch.service soulstream-atom.service'
+MAINTENANCE_ENTERED=false
+INSTALL_ROOT=
+MANAGED_CONFIG_WARNINGS=
+# Keyed by soulstream and atom; filled by check_repositories.
+declare -gA REPO_PATH=() REPO_PREVIOUS=() REPO_TARGET=() REPO_MODE=() REPO_BRANCH=()
 
 usage() {
   printf 'Usage: install.sh [--backends claude,codex,antigravity] [--ref git-ref] [--atom-ref git-ref] [--tailscale [--tailscale-auth-key-file path] [--tailscale-user login]] [--help]\n'
@@ -345,8 +356,12 @@ YAML
 
 # Uses the secrets chosen by setup_secrets and the database password from it.
 render_config() {
-  local home=$1 root=$2 fresh_orch fresh_worker atom_api_key
+  local home=$1 root=$2 fresh_orch fresh_worker atom_api_key previous_backends work claude
   local -A ATOM_NODES=()
+  # The backends of the installation being updated, read before the env files are rewritten.
+  previous_backends=$(read_env_value "$root/.env.soul-server-ts" SOULSTREAM_BACKENDS)
+  [[ -n "$previous_backends" ]] || previous_backends=$BACKENDS
+  MANAGED_CONFIG_WARNINGS=
   read_atom_seed_map "$root/config/.atom-seed-map.json" || return 1
   atom_api_key=$(read_atom_api_key "$root/.atom-api-key") || return 1
   mkdir -p "$root/config" "$home/workspace/.projects" "$root/.local"
@@ -388,6 +403,7 @@ SOULSTREAM_NODE_ID=local
 SOULSTREAM_UPSTREAM_URL=ws://127.0.0.1:5200/ws/node
 SOULSTREAM_BACKENDS=${BACKENDS}
 AUTH_BEARER_TOKEN=${BEARER}
+JWT_SECRET=${JWT}
 PORTABLE_LOCAL_MCP_AUTHORIZATION="Bearer ${BEARER}"
 HOST=127.0.0.1
 PORT=4205
@@ -414,10 +430,11 @@ ENV
   if has_backend claude; then printf 'CLAUDE_AUTH_TOKEN_PATH=%s/.claude/.credentials.json\n' "$home" >> "$fresh_worker"; fi
   if has_backend codex; then printf 'CODEX_ADAPTER_MODE=app-server\n' >> "$fresh_worker"; fi
   merge_env "$root/.env.orch" "$fresh_orch" 'ENVIRONMENT HOST PORT DEFAULT_EXECUTION_NODE_ID DEFAULT_PAS_AGENT_ID DATABASE_URL DASHBOARD_DIR SOULSTREAM_PUBLIC_URL CORS_ALLOWED_ORIGINS AUTH_BEARER_TOKEN JWT_SECRET DASHBOARD_ADMIN_PASSWORD TAILSCALE_AUTH_ENABLED TAILSCALE_ALLOWED_LOGIN ATOM_ENABLED ATOM_SERVER_URL ATOM_API_KEY SKILL_CATALOG_NODE_ID DOMAIN_CATALOG_NODE_ID AGY_CLI_PATH'
-  merge_env "$root/.env.soul-server-ts" "$fresh_worker" 'ENVIRONMENT SOULSTREAM_NODE_ID SOULSTREAM_UPSTREAM_URL SOULSTREAM_BACKENDS AUTH_BEARER_TOKEN PORTABLE_LOCAL_MCP_AUTHORIZATION HOST PORT MCP_INTERNAL_PORT MCP_ENABLED MCP_PATH MCP_REQUIRE_AUTH MCP_ALLOWED_HOSTS AGENTS_CONFIG_PATH EVENT_OUTBOX_DIR INCOMING_FILE_DIR SOUL_RUNNER_PROCESS_ENABLED SOUL_RUNNER_STATE_DIR SOUL_RUNNER_ARTIFACT_DIR SOUL_RUNNER_RELEASES_DIR WORKTREE_MCP_ENABLED WORKTREE_PROJECTS_ROOT SESSION_ISOLATION_MODE CLAUDE_ACCOUNT_POOL_ENABLED ATOM_ENABLED ATOM_SERVER_URL ATOM_API_KEY CLAUDE_AUTH_TOKEN_PATH CODEX_ADAPTER_MODE CLAUDE_CODE_EXECPATH CODEX_CLI_PATH AGY_CLI_PATH DISABLE_AUTOUPDATER'
+  merge_env "$root/.env.soul-server-ts" "$fresh_worker" 'ENVIRONMENT SOULSTREAM_NODE_ID SOULSTREAM_UPSTREAM_URL SOULSTREAM_BACKENDS AUTH_BEARER_TOKEN JWT_SECRET PORTABLE_LOCAL_MCP_AUTHORIZATION HOST PORT MCP_INTERNAL_PORT MCP_ENABLED MCP_PATH MCP_REQUIRE_AUTH MCP_ALLOWED_HOSTS AGENTS_CONFIG_PATH EVENT_OUTBOX_DIR INCOMING_FILE_DIR SOUL_RUNNER_PROCESS_ENABLED SOUL_RUNNER_STATE_DIR SOUL_RUNNER_ARTIFACT_DIR SOUL_RUNNER_RELEASES_DIR WORKTREE_MCP_ENABLED WORKTREE_PROJECTS_ROOT SESSION_ISOLATION_MODE CLAUDE_ACCOUNT_POOL_ENABLED ATOM_ENABLED ATOM_SERVER_URL ATOM_API_KEY CLAUDE_AUTH_TOKEN_PATH CODEX_ADAPTER_MODE CLAUDE_CODE_EXECPATH CODEX_CLI_PATH AGY_CLI_PATH DISABLE_AUTOUPDATER'
   rm -f "$fresh_orch" "$fresh_worker"
-  render_agents "$home" "$root" > "$root/config/agents.yaml"
-  cat > "$root/config/mcp-registry.yaml" <<'YAML'
+  work=$(mktemp -d)
+  render_agents "$home" "$root" > "$work/agents"
+  cat > "$work/mcp-registry" <<'YAML'
 servers:
   - id: soulstream
     type: streamable_http
@@ -432,7 +449,7 @@ servers:
       x-api-key:
         env: ATOM_API_KEY
 YAML
-  cat > "$root/config/mcp-profiles.yaml" <<'YAML'
+  cat > "$work/mcp-profiles" <<'YAML'
 profiles:
   - id: default
     name: Default
@@ -441,7 +458,7 @@ profiles:
     name: PAS
     mcp_servers: [soulstream, atom]
 YAML
-  cat > "$home/workspace/AGENTS.md" <<'MARKDOWN'
+  cat > "$work/agents-md" <<'MARKDOWN'
 # Soulstream workspace
 
 Use this shared workspace for your work. Create project worktrees under `.projects/<repository>--<branch>`.
@@ -449,7 +466,88 @@ The `soulstream` MCP server provides session and workspace tools.
 The `atom` MCP server holds your instructions and skills. Rules live under `에이전트 > 공통 > rules` and skills under `에이전트 > 공통 > skills`.
 Find skills with `search_skills` and read them with `load_skill`. Read any other atom node with `compile_subtree`.
 MARKDOWN
-  ln -sfn AGENTS.md "$home/workspace/CLAUDE.md"
+  write_managed_configs "$home" "$root" "$work" "$previous_backends" || return 1
+  rm -rf "$work"
+  claude=$home/workspace/CLAUDE.md
+  if [[ ! -e "$claude" && ! -L "$claude" ]] || { [[ -L "$claude" ]] && [[ "$(readlink "$claude")" == AGENTS.md || "$(readlink "$claude")" == "$home/workspace/AGENTS.md" ]]; }; then
+    ln -sfn AGENTS.md "$claude"
+  else
+    MANAGED_CONFIG_WARNINGS+="Kept your ${claude}."$'\n'
+  fi
+}
+
+# The four managed files as the first-stage installer (d785f798, before atom support) wrote them, byte for byte.
+stage1_managed_output() {
+  local kind=$1 home=$2 backends=$3 backend name= preset= IFS=,
+  case "$kind" in
+    agents)
+      printf 'agents:\n'
+      for backend in $backends; do
+        case "$backend" in
+          claude) name=Claude; preset=claude-opus ;;
+          codex) name=Codex; preset=codex-6.2-sol ;;
+          antigravity) name=Antigravity; preset=gemini-4-carbon ;;
+        esac
+        cat <<YAML
+  - id: ${backend}-default
+    name: ${name}
+    backend: ${backend}
+    default_preset: ${preset}
+    workspace_dir: ${home}/workspace
+    mcp_profile: default
+YAML
+      done ;;
+    mcp-registry)
+      cat <<'YAML'
+servers:
+  - id: soulstream
+    type: streamable_http
+    url: http://127.0.0.1:4205/mcp
+    headers:
+      Authorization:
+        env: PORTABLE_LOCAL_MCP_AUTHORIZATION
+YAML
+      ;;
+    mcp-profiles)
+      cat <<'YAML'
+profiles:
+  - id: default
+    name: Default
+    mcp_servers: [soulstream]
+YAML
+      ;;
+    agents-md)
+      cat <<'MARKDOWN'
+# Soulstream workspace
+
+Use this shared workspace for your work. Create project worktrees under `.projects/<repository>--<branch>`.
+The `soulstream` MCP server provides session and workspace tools.
+Atom is disabled on this installation; do not call `search_skills` or `load_skill`.
+MARKDOWN
+      ;;
+  esac
+}
+
+# Writes the new content from <work>/<kind> unless you edited the file, then records the hashes.
+# An edited file is kept and the new content goes to <file>.installer-new; its record line stays as it was.
+write_managed_configs() {
+  local home=$1 root=$2 work=$3 previous_backends=$4 record=$2/config/.installer-managed.sha256 lines= item kind file recorded current temp
+  for item in "agents=$root/config/agents.yaml" "mcp-registry=$root/config/mcp-registry.yaml" "mcp-profiles=$root/config/mcp-profiles.yaml" "agents-md=$home/workspace/AGENTS.md"; do
+    kind=${item%%=*}; file=${item#*=}; recorded=; current=
+    if [[ -f "$record" ]]; then recorded=$(awk -v path="$file" 'substr($0, 67) == path { print substr($0, 1, 64) }' "$record") || return 1; fi
+    if [[ -e "$file" ]]; then current=$(sha256sum < "$file") || return 1; current=${current%% *}; fi
+    if [[ ! -e "$file" ]] || cmp -s "$file" "$work/$kind" || [[ -n "$recorded" && "$current" == "$recorded" ]] ||
+       { [[ -z "$recorded" ]] && stage1_managed_output "$kind" "$home" "$previous_backends" | cmp -s - "$file"; }; then
+      if ! cmp -s "$file" "$work/$kind"; then cat "$work/$kind" > "$file" || return 1; fi
+      lines+="$(sha256sum "$file")"$'\n' || return 1
+    else
+      cat "$work/$kind" > "$file.installer-new" || return 1
+      MANAGED_CONFIG_WARNINGS+="Kept your ${file}; the installer's version is in ${file}.installer-new."$'\n'
+      if [[ -n "$recorded" ]]; then lines+="${recorded}  ${file}"$'\n'; fi
+    fi
+  done
+  temp=$(mktemp "$record.XXXXXX") || return 1
+  if ! { printf '%s' "$lines" > "$temp" && chmod 644 "$temp" && mv "$temp" "$record"; }; then rm -f "$temp"; return 1; fi
 }
 
 # Parse status from stdin; status user IDs are numeric while User map keys are strings.
@@ -550,27 +648,93 @@ install_clis() {
     as_soul agy --version
   fi
 }
-clone_repository() {
-  local root=$1 url=$2 ref=$3 ref_set=$4
-  if [[ ! -d "$root/.git" ]]; then
-    as_soul git clone "$url" "$root"
-    as_soul git -C "$root" checkout "${ref:-main}"
-  elif [[ "$ref_set" == true ]]; then
-    if [[ -n "$(as_soul git -C "$root" status --porcelain --untracked-files=no)" ]]; then printf '%s: Repository has uncommitted changes.\n' "$root" >&2; return 1; fi
-    as_soul git -C "$root" fetch origin
-    as_soul git -C "$root" checkout "$ref"
-  fi
-  as_soul git -C "$root" rev-parse HEAD
-}
-clone_repositories() {
-  local root=$1 atom_root=$2
-  clone_repository "$root" https://github.com/eiaserinnys/soulstream.git "$REF" "$REF_SET"
-  # A first-stage installation without atom support; stop before anything else changes.
-  if [[ ! -f "$root/install/seed/load_atom_seed.mjs" ]]; then
-    printf 'This Soulstream checkout predates atom support. Updating an existing installation is not supported yet.\n' >&2
+# Records the previous and target commits of one repository before any service stops.
+check_repository() {
+  local name=$1 dir=$2 url=$3 ref=$4 ref_set=$5 previous= target mode branch=
+  if [[ -e "$dir" && ! -d "$dir/.git" ]]; then printf '%s: Exists and is not a git checkout.\n' "$dir" >&2; return 1; fi
+  if [[ -d "$dir/.git" ]]; then
+    previous=$(as_soul git -C "$dir" rev-parse HEAD) || return 1
+    # Untracked files such as config/*.yaml and .env.orch are the installer's own.
+    if [[ -n "$(as_soul git -C "$dir" status --porcelain --untracked-files=no)" ]]; then printf '%s: Repository has uncommitted changes.\n' "$dir" >&2; return 1; fi
+    as_soul git -C "$dir" fetch --prune --tags origin || return 1
+  elif ! as_soul git clone "$url" "$dir"; then
+    # The path did not exist before this run.
+    rm -rf "$dir"
     return 1
   fi
-  clone_repository "$atom_root" https://github.com/eiaserinnys/atom.git "$ATOM_REF" "$ATOM_REF_SET"
+  if [[ "$ref_set" != true ]]; then
+    mode=main; branch=main
+    if ! target=$(as_soul git -C "$dir" rev-parse --verify --quiet 'origin/main^{commit}'); then printf '%s: Cannot resolve revision %s.\n' "$dir" origin/main >&2; return 1; fi
+  elif target=$(as_soul git -C "$dir" rev-parse --verify --quiet "refs/remotes/origin/${ref}^{commit}"); then
+    mode=branch; branch=$ref
+  elif target=$(as_soul git -C "$dir" rev-parse --verify --quiet "refs/tags/${ref}^{commit}") ||
+       target=$(as_soul git -C "$dir" rev-parse --verify --quiet "${ref}^{commit}"); then
+    mode=detach
+  else
+    printf '%s: Cannot resolve revision %s.\n' "$dir" "$ref" >&2; return 1
+  fi
+  # checkout -B would drop local commits on the branch it resets.
+  if [[ -n "$branch" ]] && as_soul git -C "$dir" rev-parse --verify --quiet "refs/heads/${branch}" >/dev/null &&
+     ! as_soul git -C "$dir" merge-base --is-ancestor "refs/heads/${branch}" "$target"; then
+    printf '%s: Local branch %s has commits that are not on origin.\n' "$dir" "$branch" >&2; return 1
+  fi
+  REPO_PATH[$name]=$dir; REPO_PREVIOUS[$name]=$previous; REPO_TARGET[$name]=$target; REPO_MODE[$name]=$mode; REPO_BRANCH[$name]=$branch
+}
+check_repositories() {
+  local root=$1 atom_root=$2
+  check_repository soulstream "$root" "$SOULSTREAM_REPO_URL" "$REF" "$REF_SET" || return 1
+  # A first-stage installation passes when the target revision has atom support.
+  if ! as_soul git -C "$root" cat-file -e "${REPO_TARGET[soulstream]}:install/seed/load_atom_seed.mjs" 2>/dev/null; then
+    printf 'The selected Soulstream revision predates atom support.\n' >&2
+    return 1
+  fi
+  check_repository atom "$atom_root" "$ATOM_REPO_URL" "$ATOM_REF" "$ATOM_REF_SET" || return 1
+}
+# Prints one repository's entry for install-state.json; missing commits are null.
+repo_state_json() {
+  local name=$1 path=${REPO_PATH[$1]-} current=
+  if [[ -n "$path" && -d "$path/.git" ]]; then current=$(as_soul git -C "$path" rev-parse HEAD 2>/dev/null) || current=; fi
+  jq -n --arg path "$path" --arg previous "${REPO_PREVIOUS[$name]-}" --arg target "${REPO_TARGET[$name]-}" --arg current "$current" \
+    'def sha: if . == "" then null else . end; {path: $path, previous_sha: ($previous | sha), target_sha: ($target | sha), current_sha: ($current | sha)}'
+}
+# write_install_state root status step [units-json]
+write_install_state() {
+  local root=$1 status=$2 step=$3 units=${4-} dir=$1/.local soulstream atom temp
+  if [[ ! -d "$dir" ]]; then
+    { mkdir -p "$dir" && chown soulstream:soulstream "$dir"; } || return 1
+  fi
+  soulstream=$(repo_state_json soulstream) || return 1
+  atom=$(repo_state_json atom) || return 1
+  temp=$(mktemp "$dir/install-state.json.XXXXXX") || return 1
+  if ! jq -n --arg status "$status" --arg step "$step" --arg updated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --argjson soulstream "$soulstream" --argjson atom "$atom" --arg units "$units" \
+      '{status: $status, step: $step, updated_at: $updated_at, repositories: {soulstream: $soulstream, atom: $atom}}
+        + (if $units == "" then {} else {units: ($units | fromjson)} end)' > "$temp" ||
+     ! chmod 600 "$temp" || ! mv "$temp" "$dir/install-state.json"; then
+    rm -f "$temp"; return 1
+  fi
+}
+stop_services() {
+  local root=$1 unit
+  MAINTENANCE_ENTERED=true
+  for unit in $SERVICE_UNITS; do
+    if [[ -e "$SYSTEMD_DIR/$unit" ]]; then systemctl stop "$unit" || return 1; fi
+  done
+  write_install_state "$root" updating "$STEP" || return 1
+}
+checkout_repository() {
+  local name=$1 dir=${REPO_PATH[$1]} target=${REPO_TARGET[$1]} branch=${REPO_BRANCH[$1]} head
+  case "${REPO_MODE[$name]}" in
+    main) as_soul git -C "$dir" checkout -B main origin/main || return 1 ;;
+    branch) as_soul git -C "$dir" checkout -B "$branch" "origin/$branch" || return 1 ;;
+    detach) as_soul git -C "$dir" checkout --detach "$target" || return 1 ;;
+  esac
+  head=$(as_soul git -C "$dir" rev-parse HEAD) || return 1
+  if [[ "$head" != "$target" ]]; then printf '%s: HEAD is %s, expected %s.\n' "$dir" "$head" "$target" >&2; return 1; fi
+}
+checkout_revisions() {
+  checkout_repository soulstream || return 1
+  checkout_repository atom || return 1
 }
 # Uses DB_PASSWORD from setup_secrets. The role SQL goes through stdin and psql output is discarded.
 setup_database() {
@@ -634,7 +798,7 @@ UNIT
 }
 start_atom() {
   local atom_root=$1 deadline
-  write_atom_unit /etc/systemd/system "$atom_root"
+  write_atom_unit "$SYSTEMD_DIR" "$atom_root"
   systemctl daemon-reload
   systemctl enable soulstream-atom.service
   systemctl restart soulstream-atom.service
@@ -721,7 +885,7 @@ SQL
 }
 install_units() {
   local root=$1
-  cat > /etc/systemd/system/soulstream-orch.service <<UNIT
+  cat > "$SYSTEMD_DIR/soulstream-orch.service" <<UNIT
 [Unit]
 Description=Soulstream orchestrator
 After=network.target postgresql.service
@@ -736,7 +900,7 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 UNIT
-  cat > /etc/systemd/system/soulstream-worker.service <<UNIT
+  cat > "$SYSTEMD_DIR/soulstream-worker.service" <<UNIT
 [Unit]
 Description=Soulstream worker
 After=network.target soulstream-orch.service
@@ -838,9 +1002,17 @@ refresh_model_presets() {
   rm -f "$header" || true
   return 0
 }
+revision_line() {
+  local label=$1 name=$2 previous=${REPO_PREVIOUS[$2]-} current=none
+  if [[ -z "$previous" ]]; then previous=none; fi
+  if [[ -n "${REPO_PATH[$name]-}" ]]; then current=$(as_soul git -C "${REPO_PATH[$name]}" rev-parse --short=12 HEAD); fi
+  printf '%s revision: %s -> %s\n' "$label" "${previous:0:12}" "$current"
+}
 finish_message() {
   local root=$1 line
   printf '\nInstalled %s; backends: %s\n' "$(as_soul git -C "$root" rev-parse --short=12 HEAD)" "$BACKENDS"
+  revision_line Soulstream soulstream
+  revision_line Atom atom
   if [[ "$TAILSCALE" == true ]]; then
     printf 'Open https://%s from a tailnet device signed in as %s.\n' "$TAILSCALE_DNS" "$TAILSCALE_USER"
     printf 'Local processes on this server can forge identity headers.\n'
@@ -859,6 +1031,12 @@ finish_message() {
       if [[ -n "$line" ]]; then printf '  %s\n' "$line"; fi
     done <<< "$ATOM_SEED_WARNINGS"
   fi
+  if [[ -n "${MANAGED_CONFIG_WARNINGS:-}" ]]; then
+    printf 'Configuration:\n'
+    while IFS= read -r line; do
+      if [[ -n "$line" ]]; then printf '  %s\n' "$line"; fi
+    done <<< "$MANAGED_CONFIG_WARNINGS"
+  fi
   if has_backend claude; then printf 'Claude: sudo -Hu soulstream env BROWSER=/bin/false /home/soulstream/.local/bin/claude auth login (open the URL on another device).\n'; fi
   if has_backend codex; then printf 'Codex: sudo -Hu soulstream /usr/local/bin/codex login --device-auth (enable device code login in ChatGPT security settings).\n'; fi
   if has_backend antigravity; then printf 'Antigravity: ssh soulstream@<server>, run ~/.local/bin/agy, sign in, then /exit.\n'; fi
@@ -866,24 +1044,46 @@ finish_message() {
   printf '%s\n' "awk -F= '/^AUTH_BEARER_TOKEN=/{print \"Authorization: Bearer \" substr(\$0,index(\$0,\"=\")+1)}' $root/.env.orch | curl -fsS -X POST -H @- http://127.0.0.1:5200/api/usage/refresh"
   if [[ "${PRESET_REFRESH_PENDING:-false}" == true ]]; then printf 'Model preset status is not confirmed yet; it updates within five minutes.\n'; fi
 }
-on_error() { trap - ERR; printf '\nInstallation failed at: %s\nLog: %s\n' "$STEP" "$LOG" >&3; tail -n 30 "$LOG" >&3; exit 1; }
-run_step() { STEP=$1; shift; printf '%s\n' "$STEP"; "$@" >> "$LOG" 2>&1; }
+on_error() {
+  trap - ERR
+  printf '\nInstallation failed at: %s\nLog: %s\n' "$STEP" "$LOG" >&3
+  tail -n 30 "$LOG" >&3
+  if [[ "$MAINTENANCE_ENTERED" == true ]]; then
+    local unit state units='{}' summary=
+    # Leave no service partly started.
+    for unit in $SERVICE_UNITS; do
+      if [[ -e "$SYSTEMD_DIR/$unit" ]]; then systemctl stop "$unit" >> "$LOG" 2>&1 || true; fi
+    done
+    for unit in $SERVICE_UNITS; do
+      state=absent
+      if [[ -e "$SYSTEMD_DIR/$unit" ]]; then state=$(systemctl is-active "$unit" 2>/dev/null) || true; fi
+      summary+=" ${unit%.service}=${state}"
+      units=$(jq -c --arg unit "$unit" --arg state "$state" '. + {($unit): $state}' <<< "$units" 2>/dev/null) || true
+    done
+    write_install_state "$INSTALL_ROOT" failed "$STEP" "$units" >> "$LOG" 2>&1 || true
+    printf 'Services stopped:%s\nState: %s/.local/install-state.json\nFix the cause, then run the same command again.\n' "$summary" "$INSTALL_ROOT" >&3
+  fi
+  exit 1
+}
+run_step() {
+  STEP=$1; shift
+  printf '%s\n' "$STEP"
+  if [[ "$MAINTENANCE_ENTERED" == true ]]; then write_install_state "$INSTALL_ROOT" updating "$STEP" >> "$LOG" 2>&1; fi
+  "$@" >> "$LOG" 2>&1
+}
 prepare_install_cwd() { cd /; }
-main() {
-  set -Eeuo pipefail
-  parse_args "$@"
-  prepare_install_cwd
-  preflight
-  local home=/home/soulstream root=/home/soulstream/soulstream atom_root=/home/soulstream/atom
-  exec 3>&2
-  LOG=/var/log/soulstream-install.log; STEP=setup
-  touch "$LOG"; chmod 600 "$LOG"; trap on_error ERR
+# Everything that changes the server; services stop only after both repositories are checked.
+run_install() {
+  local home=$1 root=$2 atom_root=$3
+  INSTALL_ROOT=$root
   run_step 'Installing packages' install_packages
   if [[ "$TAILSCALE" == true ]]; then STEP='Setting up Tailscale'; printf '%s\n' "$STEP"; setup_tailscale; fi
   run_step 'Setting up account' setup_account
   run_step 'Installing Node.js' install_node
   run_step 'Installing selected CLIs' install_clis
-  run_step 'Cloning repositories' clone_repositories "$root" "$atom_root"
+  run_step 'Checking repositories' check_repositories "$root" "$atom_root"
+  run_step 'Stopping services' stop_services "$root"
+  run_step 'Checking out revisions' checkout_revisions
   run_step 'Preparing secrets' setup_secrets "$root" "$atom_root"
   run_step 'Preparing databases' setup_database
   run_step 'Building atom' build_atom "$atom_root"
@@ -898,7 +1098,19 @@ main() {
   run_step 'Starting services' install_units "$root"
   if [[ "$TAILSCALE" == true ]]; then run_step 'Enabling Tailscale Serve' setup_tailscale_serve; fi
   run_step 'Checking services and workspace' wait_and_create_workspace "$root"
+  write_install_state "$root" completed "$STEP" >> "$LOG" 2>&1
+  MAINTENANCE_ENTERED=false
   run_step 'Checking model presets' refresh_model_presets "$root"
   finish_message "$root"
+}
+main() {
+  set -Eeuo pipefail
+  parse_args "$@"
+  prepare_install_cwd
+  preflight
+  exec 3>&2
+  LOG=/var/log/soulstream-install.log; STEP=setup
+  touch "$LOG"; chmod 600 "$LOG"; trap on_error ERR
+  run_install /home/soulstream /home/soulstream/soulstream /home/soulstream/atom
 }
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi

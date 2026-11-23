@@ -1,0 +1,608 @@
+// Rerunning the installer on an installed server: repository checks, maintenance stop, the state file,
+// and the configuration files the installer manages.
+//
+// Nothing here reaches the network or the host's services: git remotes are bare repositories in a
+// temporary directory, systemctl, chown and the other system commands are the fakes from
+// support/fake_commands.mjs, and every path (home, units, log) is temporary.
+//
+// fixtures/stage1/<backends>/ holds what the first-stage installer (d785f798, before atom support)
+// wrote to agents.yaml, mcp-registry.yaml, mcp-profiles.yaml and AGENTS.md. CI checkouts are shallow,
+// so the files are kept here instead of being read with git show. They were made by running that
+// installer's render_config in a temporary home and replacing the home prefix with /home/soulstream:
+//
+//   tmp=$(mktemp -d)
+//   git show d785f79826b137d9870e8e96c4dbd1d9e14c13b9:install/install.sh > "$tmp/stage1-install.sh"
+//   for backends in claude,codex codex claude,codex,antigravity; do
+//     home=$tmp/${backends//,/-}/home
+//     bash -c 'set -Eeuo pipefail; source "$1"; BACKENDS=$2; render_config "$3" "$3/soulstream"' bash "$tmp/stage1-install.sh" "$backends" "$home"
+//     out=install/tests/fixtures/stage1/${backends//,/-}
+//     mkdir -p "$out"
+//     for file in soulstream/config/agents.yaml soulstream/config/mcp-registry.yaml soulstream/config/mcp-profiles.yaml workspace/AGENTS.md; do
+//       sed "s#$home#/home/soulstream#g" "$home/$file" > "$out/${file##*/}"
+//     done
+//   done
+//   rm -rf "$tmp"
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { createFakeCommands, runBash } from './support/fake_commands.mjs';
+
+const script = resolve('install/install.sh');
+const fixtures = resolve('install/tests/fixtures/stage1');
+// Git ignores the host configuration, so no URL rewrite or credential helper applies.
+const GIT_ENV = {
+  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0',
+  GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.invalid', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.invalid',
+};
+const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...GIT_ENV } }).trim();
+const SEED = { 'install/seed/load_atom_seed.mjs': '// atom seed loader\n' };
+const UNITS = ['soulstream-worker.service', 'soulstream-orch.service', 'soulstream-atom.service'];
+
+// A bare origin and a working copy that pushes to it.
+function remote(dir, name) {
+  const origin = join(dir, `${name}.git`), work = join(dir, `${name}-work`);
+  git('init', '-q', '--bare', '--initial-branch=main', origin);
+  git('init', '-q', '--initial-branch=main', work);
+  git('-C', work, 'remote', 'add', 'origin', origin);
+  let count = 0;
+  const commit = (files = {}, branch = 'main') => {
+    if (branch !== 'main') git('-C', work, 'checkout', '-q', '-B', branch);
+    for (const [path, body] of Object.entries({ ...files, [`${name}.txt`]: `${name} ${++count}\n` })) {
+      mkdirSync(dirname(join(work, path)), { recursive: true });
+      writeFileSync(join(work, path), body);
+    }
+    git('-C', work, 'add', '-A');
+    git('-C', work, 'commit', '-q', '-m', `${name} ${count}`);
+    git('-C', work, 'push', '-q', 'origin', `HEAD:refs/heads/${branch}`);
+    const sha = git('-C', work, 'rev-parse', 'HEAD');
+    if (branch !== 'main') git('-C', work, 'checkout', '-q', 'main');
+    return sha;
+  };
+  const tag = (label, sha) => {
+    git('-C', work, 'tag', '-a', label, '-m', label, sha);
+    git('-C', work, 'push', '-q', 'origin', `refs/tags/${label}`);
+  };
+  return { origin, commit, tag };
+}
+
+const PRELUDE = `set -Eeuo pipefail
+source "$INSTALL_SH"
+as_soul() { "$@"; }
+SOULSTREAM_REPO_URL=$S_URL
+ATOM_REPO_URL=$A_URL
+SYSTEMD_DIR=$UNITS
+LOG=$FAKE_DIR/install.log
+: >> "$LOG"
+exec 3>>"$FAKE_DIR/fd3.log"
+`;
+const PRINT_REPOS = `for name in soulstream atom; do printf '%s %s previous=%s target=%s mode=%s\\n' "$name" "\${REPO_PATH[$name]-}" "\${REPO_PREVIOUS[$name]-}" "\${REPO_TARGET[$name]-}" "\${REPO_MODE[$name]-}"; done\n`;
+
+function setup({ units = true } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'install-update-'));
+  const home = join(dir, 'home'), root = join(home, 'soulstream'), atomRoot = join(home, 'atom'), unitDir = join(dir, 'units');
+  mkdirSync(home); mkdirSync(unitDir);
+  if (units) for (const unit of UNITS) writeFileSync(join(unitDir, unit), '[Unit]\n');
+  const soul = remote(dir, 'soulstream'), atom = remote(dir, 'atom');
+  const fake = createFakeCommands(dir);
+  const run = async (body, extra = {}) => {
+    const result = await runBash(PRELUDE + body, [], { env: fake.env({ ...GIT_ENV, INSTALL_SH: script, HOME_DIR: home, ROOT: root, ATOM_ROOT: atomRoot, UNITS: unitDir, S_URL: soul.origin, A_URL: atom.origin, ...extra }) });
+    fake.assertNoProtectedRequests();
+    return result;
+  };
+  const head = (path) => git('-C', path, 'rev-parse', 'HEAD');
+  const branch = (path) => git('-C', path, 'rev-parse', '--abbrev-ref', 'HEAD');
+  const fd3 = () => (existsSync(join(dir, 'fd3.log')) ? readFileSync(join(dir, 'fd3.log'), 'utf8') : '');
+  const statePath = join(root, '.local', 'install-state.json');
+  const state = () => JSON.parse(readFileSync(statePath, 'utf8'));
+  const systemctl = () => fake.argv().includes('== systemctl\n');
+  return { dir, home, root, atomRoot, unitDir, soul, atom, fake, run, head, branch, fd3, statePath, state, systemctl, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+const repos = (stdout) => Object.fromEntries(stdout.split('\n').filter((line) => /^(soulstream|atom) /.test(line)).map((line) => {
+  const [name, path, ...fields] = line.split(' ');
+  return [name, { path, ...Object.fromEntries(fields.map((field) => field.split('='))) }];
+}));
+const CHECK = `parse_args "$@"\ncheck_repositories "$ROOT" "$ATOM_ROOT"\n${PRINT_REPOS}`;
+const check = (t, ...args) => t.run(`set -- ${args.map((arg) => `'${arg}'`).join(' ')}\n${CHECK}`);
+const checkAndCheckout = (t, ...args) => t.run(`set -- ${args.map((arg) => `'${arg}'`).join(' ')}\n${CHECK}checkout_revisions\n`);
+
+test('a missing atom checkout is cloned while checking, with no previous commit and no service stopped', async () => {
+  const t = setup();
+  try {
+    const s1 = t.soul.commit(SEED), a1 = t.atom.commit();
+    git('clone', '-q', t.soul.origin, t.root);
+    const result = await check(t);
+    assert.equal(result.status, 0, result.stderr);
+    const r = repos(result.stdout);
+    assert.ok(existsSync(join(t.atomRoot, '.git')));
+    assert.deepEqual(r.atom, { path: t.atomRoot, previous: '', target: a1, mode: 'main' });
+    assert.deepEqual(r.soulstream, { path: t.root, previous: s1, target: s1, mode: 'main' });
+    assert.equal(t.systemctl(), false);
+  } finally { t.cleanup(); }
+});
+
+test('a repository path that is not a git checkout stops the check and is left alone', async () => {
+  const t = setup();
+  try {
+    t.soul.commit(SEED); t.atom.commit();
+    git('clone', '-q', t.soul.origin, t.root);
+    mkdirSync(t.atomRoot);
+    writeFileSync(join(t.atomRoot, 'notes.txt'), 'keep\n');
+    const result = await check(t);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, new RegExp(`${t.atomRoot}: Exists and is not a git checkout\\.`));
+    assert.deepEqual(readdirSync(t.atomRoot), ['notes.txt']);
+    assert.equal(readFileSync(join(t.atomRoot, 'notes.txt'), 'utf8'), 'keep\n');
+    assert.equal(t.systemctl(), false);
+  } finally { t.cleanup(); }
+});
+
+test('tracked changes stop the check and untracked installer files do not', async () => {
+  const t = setup();
+  try {
+    t.soul.commit(SEED); t.atom.commit();
+    git('clone', '-q', t.soul.origin, t.root);
+    git('clone', '-q', t.atom.origin, t.atomRoot);
+    writeFileSync(join(t.root, 'soulstream.txt'), 'edited\n');
+    const dirty = await check(t);
+    assert.notEqual(dirty.status, 0);
+    assert.match(dirty.stderr, new RegExp(`${t.root}: Repository has uncommitted changes\\.`));
+    assert.equal(t.systemctl(), false);
+    git('-C', t.root, 'checkout', '--', 'soulstream.txt');
+    mkdirSync(join(t.root, 'config'));
+    for (const file of ['config/agents.yaml', '.env.orch', '.admin-password']) writeFileSync(join(t.root, file), `${file}\n`);
+    writeFileSync(join(t.atomRoot, '.env'), 'API_PORT=4200\n');
+    const clean = await check(t);
+    assert.equal(clean.status, 0, clean.stderr);
+  } finally { t.cleanup(); }
+});
+
+test('a revision that cannot be resolved stops the check', async () => {
+  const t = setup();
+  try {
+    t.soul.commit(SEED); t.atom.commit();
+    git('clone', '-q', t.soul.origin, t.root);
+    git('clone', '-q', t.atom.origin, t.atomRoot);
+    const soulRef = await check(t, '--ref', 'no-such-ref');
+    assert.notEqual(soulRef.status, 0);
+    assert.match(soulRef.stderr, new RegExp(`${t.root}: Cannot resolve revision no-such-ref\\.`));
+    const atomRef = await check(t, '--atom-ref', 'no-such-atom-ref');
+    assert.notEqual(atomRef.status, 0);
+    assert.match(atomRef.stderr, new RegExp(`${t.atomRoot}: Cannot resolve revision no-such-atom-ref\\.`));
+    assert.equal(t.systemctl(), false);
+  } finally { t.cleanup(); }
+});
+
+test('without a ref both repositories move to the newest origin main', async () => {
+  const t = setup();
+  try {
+    const s1 = t.soul.commit(SEED), a1 = t.atom.commit();
+    git('clone', '-q', t.soul.origin, t.root);
+    git('clone', '-q', t.atom.origin, t.atomRoot);
+    const s2 = t.soul.commit(), a2 = t.atom.commit();
+    const result = await checkAndCheckout(t);
+    assert.equal(result.status, 0, result.stderr);
+    const r = repos(result.stdout);
+    assert.deepEqual([r.soulstream.previous, r.soulstream.target, r.atom.previous, r.atom.target], [s1, s2, a1, a2]);
+    assert.deepEqual([t.head(t.root), t.branch(t.root), t.head(t.atomRoot), t.branch(t.atomRoot)], [s2, 'main', a2, 'main']);
+  } finally { t.cleanup(); }
+});
+
+test('a branch ref checks out the branch; tag and commit refs detach at their commit', async () => {
+  const t = setup();
+  try {
+    const s1 = t.soul.commit(SEED), s2 = t.soul.commit(), s3 = t.soul.commit();
+    const a1 = t.atom.commit(), a2 = t.atom.commit();
+    const feature = t.soul.commit({}, 'feature');
+    t.soul.tag('v1', s1);
+    git('clone', '-q', t.soul.origin, t.root);
+    assert.equal(t.head(t.root), s3);
+
+    const onBranch = await checkAndCheckout(t, '--ref', 'feature');
+    assert.equal(onBranch.status, 0, onBranch.stderr);
+    assert.equal(repos(onBranch.stdout).soulstream.mode, 'branch');
+    assert.deepEqual([t.head(t.root), t.branch(t.root)], [feature, 'feature']);
+    assert.deepEqual([t.head(t.atomRoot), t.branch(t.atomRoot)], [a2, 'main']);
+
+    const onTag = await checkAndCheckout(t, '--ref', 'v1');
+    assert.equal(onTag.status, 0, onTag.stderr);
+    assert.deepEqual([repos(onTag.stdout).soulstream.target, repos(onTag.stdout).soulstream.mode], [s1, 'detach']);
+    assert.deepEqual([t.head(t.root), t.branch(t.root)], [s1, 'HEAD']);
+
+    const onCommit = await checkAndCheckout(t, '--ref', s2, '--atom-ref', a1);
+    assert.equal(onCommit.status, 0, onCommit.stderr);
+    assert.deepEqual([t.head(t.root), t.branch(t.root), t.head(t.atomRoot), t.branch(t.atomRoot)], [s2, 'HEAD', a1, 'HEAD']);
+    assert.equal(t.systemctl(), false);
+  } finally { t.cleanup(); }
+});
+
+test('a first-stage checkout updates when the target has atom support, and an older target stops', async () => {
+  const t = setup();
+  try {
+    const stageOne = t.soul.commit();
+    t.atom.commit();
+    git('clone', '-q', t.soul.origin, t.root);
+    const withAtom = t.soul.commit(SEED);
+
+    const old = await check(t, '--ref', stageOne);
+    assert.notEqual(old.status, 0);
+    assert.match(old.stderr, /The selected Soulstream revision predates atom support\./);
+    assert.ok(!existsSync(t.atomRoot));
+    assert.equal(t.head(t.root), stageOne);
+    assert.equal(t.systemctl(), false);
+
+    const promoted = await checkAndCheckout(t);
+    assert.equal(promoted.status, 0, promoted.stderr);
+    assert.ok(existsSync(join(t.atomRoot, '.git')));
+    assert.deepEqual([t.head(t.root), t.branch(t.root)], [withAtom, 'main']);
+  } finally { t.cleanup(); }
+});
+
+test('local commits that are not on origin stop the check', async () => {
+  const t = setup();
+  try {
+    t.soul.commit(SEED); t.atom.commit();
+    git('clone', '-q', t.soul.origin, t.root);
+    git('clone', '-q', t.atom.origin, t.atomRoot);
+    git('-C', t.root, 'commit', '-q', '--allow-empty', '-m', 'local only');
+    const local = t.head(t.root);
+    const result = await check(t);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, new RegExp(`${t.root}: Local branch main has commits that are not on origin\\.`));
+    assert.equal(t.head(t.root), local);
+    assert.equal(t.systemctl(), false);
+  } finally { t.cleanup(); }
+});
+
+test('a failed clone leaves no directory behind', async () => {
+  const t = setup();
+  try {
+    t.soul.commit(SEED);
+    git('clone', '-q', t.soul.origin, t.root);
+    const result = await t.run(CHECK, { A_URL: join(t.dir, 'missing.git') });
+    assert.notEqual(result.status, 0);
+    assert.ok(!existsSync(t.atomRoot));
+    assert.equal(t.systemctl(), false);
+  } finally { t.cleanup(); }
+});
+
+// run_install with every heavy step replaced by a fake that records its name; the repository
+// checks, the maintenance stop, the state file and on_error are the real functions.
+const FAKE_STEPS = ['install_packages', 'setup_account', 'install_node', 'install_clis', 'setup_secrets', 'setup_database',
+  'build_atom', 'init_atom', 'start_atom', 'issue_atom_api_key', 'load_atom_instructions', 'write_configuration',
+  'build_project', 'setup_schema', 'install_units', 'setup_tailscale_serve', 'wait_and_create_workspace', 'refresh_model_presets'];
+const FLOW = `fake_step() { printf '== step\\n%s\\n' "$1" >> "$FAKE_ARGV_LOG"; [[ "$1" != "\${FAIL_STEP:-}" ]]; }
+${FAKE_STEPS.map((name) => `${name}() { fake_step ${name}; }`).join('\n')}
+parse_args
+trap on_error ERR
+run_install "$HOME_DIR" "$ROOT" "$ATOM_ROOT"
+`;
+const stopAt = (argv, unit, from = 0) => argv.indexOf(`== systemctl\nstop\n${unit}\n`, from);
+const stepAt = (argv, name) => argv.indexOf(`== step\n${name}\n`);
+// Clones both repositories and moves both origins one commit ahead.
+function installed(t) {
+  const s1 = t.soul.commit(SEED), a1 = t.atom.commit();
+  git('clone', '-q', t.soul.origin, t.root);
+  git('clone', '-q', t.atom.origin, t.atomRoot);
+  return { s1, a1, s2: t.soul.commit(), a2: t.atom.commit() };
+}
+function assertStoppedAfterFailure(t, result, fakeName, step, shas) {
+  assert.equal(result.status, 1);
+  const argv = t.fake.argv(), failedAt = stepAt(argv, fakeName);
+  assert.ok(failedAt > stepAt(argv, 'start_atom'));
+  const again = UNITS.map((unit) => stopAt(argv, unit, failedAt));
+  assert.ok(again[0] > failedAt && again[0] < again[1] && again[1] < again[2], argv);
+  const state = t.state();
+  assert.equal(state.status, 'failed');
+  assert.equal(state.step, step);
+  assert.deepEqual(state.repositories.soulstream, { path: t.root, previous_sha: shas.s1, target_sha: shas.s2, current_sha: shas.s2 });
+  assert.deepEqual(state.repositories.atom, { path: t.atomRoot, previous_sha: shas.a1, target_sha: shas.a2, current_sha: shas.a2 });
+  assert.deepEqual(state.units, Object.fromEntries(UNITS.map((unit) => [unit, 'inactive'])));
+  assert.ok(t.fd3().includes(`Installation failed at: ${step}\n`));
+  assert.ok(t.fd3().endsWith(`Services stopped: soulstream-worker=inactive soulstream-orch=inactive soulstream-atom=inactive
+State: ${t.root}/.local/install-state.json
+Fix the cause, then run the same command again.
+`), t.fd3());
+}
+
+test('an update stops the services before changing anything and ends completed', async () => {
+  const t = setup();
+  try {
+    const shas = installed(t);
+    const result = await t.run(FLOW);
+    assert.equal(result.status, 0, t.fd3());
+    const argv = t.fake.argv();
+    const stops = UNITS.map((unit) => stopAt(argv, unit));
+    assert.ok(stops[0] >= 0 && stops[0] < stops[1] && stops[1] < stops[2] && stops[2] < stepAt(argv, 'setup_secrets'), argv);
+    assert.deepEqual([...argv.matchAll(/== step\n(.+)\n/g)].map((m) => m[1]), FAKE_STEPS.filter((name) => name !== 'setup_tailscale_serve'));
+    const state = t.state();
+    assert.equal(state.status, 'completed');
+    assert.equal(state.step, 'Checking services and workspace');
+    assert.match(state.updated_at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+    assert.deepEqual(state.repositories.soulstream, { path: t.root, previous_sha: shas.s1, target_sha: shas.s2, current_sha: shas.s2 });
+    assert.deepEqual(state.repositories.atom, { path: t.atomRoot, previous_sha: shas.a1, target_sha: shas.a2, current_sha: shas.a2 });
+    assert.equal(state.units, undefined);
+    assert.equal(statSync(t.statePath).mode & 0o777, 0o600);
+    assert.ok(result.stdout.includes(`\nSoulstream revision: ${shas.s1.slice(0, 12)} -> ${shas.s2.slice(0, 12)}\nAtom revision: ${shas.a1.slice(0, 12)} -> ${shas.a2.slice(0, 12)}\n`), result.stdout);
+  } finally { t.cleanup(); }
+});
+
+test('a build failure after atom started stops all three services and records the failure', async () => {
+  const t = setup();
+  try {
+    const shas = installed(t);
+    assertStoppedAfterFailure(t, await t.run(FLOW, { FAIL_STEP: 'build_project' }), 'build_project', 'Building Soulstream', shas);
+  } finally { t.cleanup(); }
+});
+
+test('a failed final health check stops all three services and records the failure', async () => {
+  const t = setup();
+  try {
+    const shas = installed(t);
+    const result = await t.run(FLOW, { FAIL_STEP: 'wait_and_create_workspace' });
+    assert.ok(stepAt(t.fake.argv(), 'install_units') >= 0);
+    assertStoppedAfterFailure(t, result, 'wait_and_create_workspace', 'Checking services and workspace', shas);
+  } finally { t.cleanup(); }
+});
+
+test('running the same command again after fixing the cause completes', async () => {
+  const t = setup();
+  try {
+    const shas = installed(t);
+    assert.equal((await t.run(FLOW, { FAIL_STEP: 'build_project' })).status, 1);
+    assert.equal(t.state().status, 'failed');
+    const rerun = await t.run(FLOW);
+    assert.equal(rerun.status, 0, t.fd3());
+    const state = t.state();
+    assert.equal(state.status, 'completed');
+    assert.equal(state.units, undefined);
+    assert.deepEqual(state.repositories.soulstream, { path: t.root, previous_sha: shas.s2, target_sha: shas.s2, current_sha: shas.s2 });
+  } finally { t.cleanup(); }
+});
+
+test('a failed repository check stops no service and writes no state file', async () => {
+  const t = setup();
+  try {
+    installed(t);
+    writeFileSync(join(t.root, 'soulstream.txt'), 'edited\n');
+    const result = await t.run(FLOW);
+    assert.equal(result.status, 1);
+    assert.ok(t.fd3().includes('Installation failed at: Checking repositories\n'));
+    assert.ok(!t.fd3().includes('Services stopped:'));
+    assert.equal(t.systemctl(), false);
+    assert.ok(!existsSync(t.statePath));
+    assert.equal(stepAt(t.fake.argv(), 'setup_secrets'), -1);
+  } finally { t.cleanup(); }
+});
+
+test('a first installation without unit files stops nothing and still writes the state file', async () => {
+  const t = setup({ units: false });
+  try {
+    const s1 = t.soul.commit(SEED), a1 = t.atom.commit();
+    const result = await t.run(FLOW);
+    assert.equal(result.status, 0, t.fd3());
+    assert.equal(t.systemctl(), false);
+    const state = t.state();
+    assert.equal(state.status, 'completed');
+    assert.deepEqual(state.repositories.soulstream, { path: t.root, previous_sha: null, target_sha: s1, current_sha: s1 });
+    assert.deepEqual(state.repositories.atom, { path: t.atomRoot, previous_sha: null, target_sha: a1, current_sha: a1 });
+    assert.ok(result.stdout.includes(`\nSoulstream revision: none -> ${s1.slice(0, 12)}\nAtom revision: none -> ${a1.slice(0, 12)}\n`), result.stdout);
+  } finally { t.cleanup(); }
+});
+
+// The four managed configuration files, rendered as in the PR-1 tests (prepare_secrets, seed map, fake key).
+const API_KEY = 'test-atom-key_0123456789abcdef';
+const MAP = { common_rules: '00000000-aaaa-4bbb-8ccc-000000000001', seosoyoung_rules: '00000000-aaaa-4bbb-8ccc-000000000002' };
+const EXPECTED_REGISTRY = `servers:
+  - id: soulstream
+    type: streamable_http
+    url: http://127.0.0.1:4205/mcp
+    headers:
+      Authorization:
+        env: PORTABLE_LOCAL_MCP_AUTHORIZATION
+  - id: atom
+    type: streamable_http
+    url: http://127.0.0.1:4200/mcp
+    headers:
+      x-api-key:
+        env: ATOM_API_KEY
+`;
+const EXPECTED_PROFILES = `profiles:
+  - id: default
+    name: Default
+    mcp_servers: [soulstream, atom]
+  - id: pas
+    name: PAS
+    mcp_servers: [soulstream, atom]
+`;
+const EXPECTED_AGENTS_MD = `# Soulstream workspace
+
+Use this shared workspace for your work. Create project worktrees under \`.projects/<repository>--<branch>\`.
+The \`soulstream\` MCP server provides session and workspace tools.
+The \`atom\` MCP server holds your instructions and skills. Rules live under \`에이전트 > 공통 > rules\` and skills under \`에이전트 > 공통 > skills\`.
+Find skills with \`search_skills\` and read them with \`load_skill\`. Read any other atom node with \`compile_subtree\`.
+`;
+const KINDS = { agents: 'agents.yaml', 'mcp-registry': 'mcp-registry.yaml', 'mcp-profiles': 'mcp-profiles.yaml', 'agents-md': 'AGENTS.md' };
+const sha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
+const ids = (text) => [...text.matchAll(/^ {2}- id: (.+)$/gm)].map((m) => m[1]);
+
+function configSetup() {
+  const dir = mkdtempSync(join(tmpdir(), 'install-managed-'));
+  const home = join(dir, 'home'), root = join(home, 'soulstream'), atomRoot = join(home, 'atom');
+  mkdirSync(join(root, 'config'), { recursive: true });
+  mkdirSync(atomRoot);
+  writeFileSync(join(root, 'config', '.atom-seed-map.json'), JSON.stringify(MAP));
+  writeFileSync(join(root, '.atom-api-key'), `${API_KEY}\n`);
+  const fake = createFakeCommands(dir);
+  const files = {
+    agents: join(root, 'config', 'agents.yaml'), 'mcp-registry': join(root, 'config', 'mcp-registry.yaml'),
+    'mcp-profiles': join(root, 'config', 'mcp-profiles.yaml'), 'agents-md': join(home, 'workspace', 'AGENTS.md'),
+  };
+  const record = join(root, 'config', '.installer-managed.sha256');
+  const render = async (backends, tail = '') => {
+    const result = await runBash(`set -Eeuo pipefail
+source "$INSTALL_SH"
+as_soul() { if [[ "$1" == git ]]; then printf abc; else "$@"; fi; }
+exec 3>&2
+parse_args --backends ${backends}
+setup_secrets "$ROOT" "$ATOM_ROOT"
+render_config "$HOME_DIR" "$ROOT"
+printf 'WARNINGS<%s>\\n' "$MANAGED_CONFIG_WARNINGS"
+${tail}`, [], { env: fake.env({ INSTALL_SH: script, HOME_DIR: home, ROOT: root, ATOM_ROOT: atomRoot }) });
+    fake.assertNoProtectedRequests();
+    assert.equal(result.status, 0, result.stderr);
+    const start = result.stdout.indexOf('WARNINGS<') + 9;
+    return { ...result, warnings: result.stdout.slice(start, result.stdout.indexOf('>\n', start)) };
+  };
+  // Record lines by path.
+  const recorded = () => Object.fromEntries(readFileSync(record, 'utf8').split('\n').filter(Boolean).map((line) => [line.slice(66), line.slice(0, 64)]));
+  const verifyRecord = () => execFileSync('sha256sum', ['-c', record], { encoding: 'utf8' });
+  const read = (kind) => readFileSync(files[kind], 'utf8');
+  // Places the first-stage output for a home of this test, as d785f798 left it.
+  const placeStage1 = (backends) => {
+    mkdirSync(join(home, 'workspace'), { recursive: true });
+    for (const [kind, name] of Object.entries(KINDS)) {
+      writeFileSync(files[kind], readFileSync(join(fixtures, backends.replaceAll(',', '-'), name), 'utf8').replaceAll('/home/soulstream', home));
+    }
+    symlinkSync('AGENTS.md', join(home, 'workspace', 'CLAUDE.md'));
+    writeFileSync(join(root, '.env.soul-server-ts'), `SOULSTREAM_BACKENDS=${backends}\n`);
+  };
+  const kept = (file) => `Kept your ${file}; the installer's version is in ${file}.installer-new.`;
+  return { dir, home, root, files, record, render, recorded, verifyRecord, read, placeStage1, kept, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+test('a first render writes the four files and a record that sha256sum accepts', async () => {
+  const t = configSetup();
+  try {
+    const result = await t.render('claude,codex');
+    assert.equal(result.warnings, '');
+    for (const file of Object.values(t.files)) assert.ok(statSync(file).isFile(), file);
+    assert.equal(statSync(t.record).mode & 0o777, 0o644);
+    assert.deepEqual(Object.keys(t.recorded()), Object.values(t.files));
+    assert.equal(t.verifyRecord().split('\n').filter((line) => line.endsWith(': OK')).length, 4);
+    assert.equal(readlinkSync(join(t.home, 'workspace', 'CLAUDE.md')), 'AGENTS.md');
+  } finally { t.cleanup(); }
+});
+
+test('files the installer wrote follow a backend change and their record lines change', async () => {
+  const t = configSetup();
+  try {
+    await t.render('claude,codex');
+    const before = t.recorded();
+    const result = await t.render('codex');
+    assert.equal(result.warnings, '');
+    assert.deepEqual(ids(t.read('agents')), ['seosoyoung', 'seosoyoung-pas', 'codex-default']);
+    const after = t.recorded();
+    assert.notEqual(after[t.files.agents], before[t.files.agents]);
+    assert.equal(after[t.files.agents], sha256(t.files.agents));
+    t.verifyRecord();
+    assert.ok(!existsSync(`${t.files.agents}.installer-new`));
+  } finally { t.cleanup(); }
+});
+
+test('an edited agents.yaml is kept, the new version goes beside it, and its record line stays', async () => {
+  const t = configSetup();
+  try {
+    await t.render('claude,codex');
+    appendFileSync(t.files.agents, '# my own profile notes\n');
+    const edited = readFileSync(t.files.agents);
+    // An earlier installer version wrote this mcp-profiles.yaml; its record line matches, so it is updated.
+    writeFileSync(t.files['mcp-profiles'], 'profiles:\n  - id: default\n    name: Default\n    mcp_servers: [soulstream]\n');
+    writeFileSync(t.record, readFileSync(t.record, 'utf8').replace(/^[0-9a-f]{64}(?=  .*mcp-profiles\.yaml$)/m, sha256(t.files['mcp-profiles'])));
+    const before = t.recorded();
+    const result = await t.render('codex', 'finish_message "$ROOT"\n');
+    assert.ok(readFileSync(t.files.agents).equals(edited));
+    assert.deepEqual(ids(readFileSync(`${t.files.agents}.installer-new`, 'utf8')), ['seosoyoung', 'seosoyoung-pas', 'codex-default']);
+    assert.equal(result.warnings, `${t.kept(t.files.agents)}\n`);
+    assert.ok(result.stdout.includes(`\nConfiguration:\n  ${t.kept(t.files.agents)}\n`), result.stdout);
+    const after = t.recorded();
+    assert.equal(after[t.files.agents], before[t.files.agents]);
+    assert.equal(t.read('mcp-profiles'), EXPECTED_PROFILES);
+    assert.equal(t.read('mcp-registry'), EXPECTED_REGISTRY);
+    assert.equal(t.read('agents-md'), EXPECTED_AGENTS_MD);
+    for (const kind of ['mcp-registry', 'mcp-profiles', 'agents-md']) assert.equal(after[t.files[kind]], sha256(t.files[kind]), kind);
+
+    const again = await t.render('codex');
+    assert.ok(readFileSync(t.files.agents).equals(edited));
+    assert.equal(again.warnings, `${t.kept(t.files.agents)}\n`);
+    assert.equal(t.recorded()[t.files.agents], before[t.files.agents]);
+  } finally { t.cleanup(); }
+});
+
+test('the unedited first-stage files are replaced using the backends of the existing installation', async () => {
+  const t = configSetup();
+  try {
+    t.placeStage1('claude,codex');
+    const result = await t.render('codex');
+    assert.equal(result.warnings, '');
+    assert.deepEqual(ids(t.read('agents')), ['seosoyoung', 'seosoyoung-pas', 'codex-default']);
+    assert.equal(t.read('mcp-registry'), EXPECTED_REGISTRY);
+    assert.equal(t.read('mcp-profiles'), EXPECTED_PROFILES);
+    assert.equal(t.read('agents-md'), EXPECTED_AGENTS_MD);
+    assert.ok(lstatSync(join(t.home, 'workspace', 'CLAUDE.md')).isSymbolicLink());
+    assert.equal(readlinkSync(join(t.home, 'workspace', 'CLAUDE.md')), 'AGENTS.md');
+    t.verifyRecord();
+  } finally { t.cleanup(); }
+});
+
+test('an edited first-stage AGENTS.md is kept while the other three are replaced', async () => {
+  const t = configSetup();
+  try {
+    t.placeStage1('claude,codex');
+    appendFileSync(t.files['agents-md'], 'Always answer in Korean.\n');
+    const edited = readFileSync(t.files['agents-md']);
+    const result = await t.render('claude,codex');
+    assert.ok(readFileSync(t.files['agents-md']).equals(edited));
+    assert.equal(readFileSync(`${t.files['agents-md']}.installer-new`, 'utf8'), EXPECTED_AGENTS_MD);
+    assert.equal(result.warnings, `${t.kept(t.files['agents-md'])}\n`);
+    assert.deepEqual(ids(t.read('agents')), ['seosoyoung', 'seosoyoung-pas', 'card-orchestrator', 'claude-default', 'codex-default']);
+    assert.equal(t.read('mcp-registry'), EXPECTED_REGISTRY);
+    assert.equal(t.read('mcp-profiles'), EXPECTED_PROFILES);
+    assert.deepEqual(Object.keys(t.recorded()), [t.files.agents, t.files['mcp-registry'], t.files['mcp-profiles']]);
+  } finally { t.cleanup(); }
+});
+
+test('files that already match the current output are left as they are and get a record', async () => {
+  const t = configSetup();
+  try {
+    await t.render('claude,codex');
+    unlinkSync(t.record);
+    const before = Object.values(t.files).map((file) => [readFileSync(file), statSync(file).mtimeMs]);
+    const result = await t.render('claude,codex');
+    assert.equal(result.warnings, '');
+    Object.values(t.files).forEach((file, i) => {
+      assert.ok(readFileSync(file).equals(before[i][0]), file);
+      assert.equal(statSync(file).mtimeMs, before[i][1], file);
+      assert.ok(!existsSync(`${file}.installer-new`), file);
+    });
+    assert.deepEqual(Object.keys(t.recorded()), Object.values(t.files));
+    t.verifyRecord();
+  } finally { t.cleanup(); }
+});
+
+test('a regular CLAUDE.md file is kept', async () => {
+  const t = configSetup();
+  try {
+    await t.render('claude,codex');
+    const claude = join(t.home, 'workspace', 'CLAUDE.md');
+    unlinkSync(claude);
+    writeFileSync(claude, 'my Claude notes\n');
+    const result = await t.render('claude,codex');
+    assert.ok(!lstatSync(claude).isSymbolicLink());
+    assert.equal(readFileSync(claude, 'utf8'), 'my Claude notes\n');
+    assert.equal(result.warnings, `Kept your ${claude}.\n`);
+  } finally { t.cleanup(); }
+});
+
+test('the first-stage output function matches the files the first-stage installer wrote', () => {
+  for (const backends of ['claude,codex', 'codex', 'claude,codex,antigravity']) {
+    for (const [kind, name] of Object.entries(KINDS)) {
+      const output = execFileSync('bash', ['-c', 'source "$1"; stage1_managed_output "$2" /home/soulstream "$3"', 'bash', script, kind, backends]);
+      assert.ok(output.equals(readFileSync(join(fixtures, backends.replaceAll(',', '-'), name))), `${backends} ${kind}`);
+    }
+  }
+});

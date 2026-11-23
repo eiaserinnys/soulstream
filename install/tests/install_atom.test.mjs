@@ -353,17 +353,25 @@ test('the seed loader runs with the installer paths and its warnings reach the f
   }
 });
 
-test('a checkout without atom support stops before atom is cloned', async () => {
+test('a Soulstream revision without atom support stops before atom is cloned', async () => {
   const t = setup();
   try {
-    const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    // A local bare origin; git ignores the host configuration.
+    const gitEnv = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' };
+    const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...gitEnv } });
+    const origin = join(t.dir, 'soulstream.git'), work = join(t.dir, 'soulstream-work');
     rmSync(t.atomRoot, { recursive: true });
-    git('init', '-q', '--initial-branch=main', t.root);
-    git('-C', t.root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'stage one');
-    const result = await t.run('as_soul() { "$@"; }\nparse_args\nclone_repositories "$ROOT" "$ATOM_ROOT"\n');
+    rmSync(t.root, { recursive: true });
+    git('init', '-q', '--bare', '--initial-branch=main', origin);
+    git('init', '-q', '--initial-branch=main', work);
+    git('-C', work, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'stage one');
+    git('-C', work, 'push', '-q', origin, 'HEAD:refs/heads/main');
+    git('clone', '-q', origin, t.root);
+    const result = await t.run('as_soul() { "$@"; }\nSOULSTREAM_REPO_URL=$ORIGIN; ATOM_REPO_URL=$ORIGIN.missing; SYSTEMD_DIR=$FAKE_DIR/units\nparse_args\ncheck_repositories "$ROOT" "$ATOM_ROOT"\n', { ...gitEnv, ORIGIN: origin });
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /This Soulstream checkout predates atom support\. Updating an existing installation is not supported yet\./);
+    assert.match(result.stderr, /The selected Soulstream revision predates atom support\./);
     assert.ok(!existsSync(t.atomRoot));
+    assert.ok(!t.fake.argv().includes('== systemctl\n'));
   } finally { t.cleanup(); }
 });
 
@@ -429,10 +437,12 @@ finish_message "$ROOT"
 
 test('main runs the installation steps in order', () => {
   const text = readFileSync(script, 'utf8');
-  const body = text.slice(text.indexOf('\nmain() {'), text.indexOf('\n}\n', text.indexOf('\nmain() {')));
-  assert.deepEqual([...body.matchAll(/run_step '([^']+)'/g)].map((m) => m[1]), [
+  const fn = (name) => text.slice(text.indexOf(`\n${name}() {`), text.indexOf('\n}\n', text.indexOf(`\n${name}() {`)));
+  assert.match(fn('main'), /\n {2}run_install \/home\/soulstream \/home\/soulstream\/soulstream \/home\/soulstream\/atom$/);
+  assert.deepEqual([...fn('run_install').matchAll(/run_step '([^']+)'/g)].map((m) => m[1]), [
     'Installing packages', 'Setting up account', 'Installing Node.js', 'Installing selected CLIs',
-    'Cloning repositories', 'Preparing secrets', 'Preparing databases', 'Building atom', 'Initializing atom',
+    'Checking repositories', 'Stopping services', 'Checking out revisions',
+    'Preparing secrets', 'Preparing databases', 'Building atom', 'Initializing atom',
     'Starting atom', 'Issuing atom API key', 'Loading atom instructions',
     'Writing configuration', 'Building Soulstream', 'Initializing schema', 'Starting services',
     'Enabling Tailscale Serve', 'Checking services and workspace', 'Checking model presets',

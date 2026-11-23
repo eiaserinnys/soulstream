@@ -36,7 +36,13 @@ exit 0`,
     createdb: `${RECORD}`,
     npm: `${RECORD}`,
     chown: `${RECORD}`,
-    systemctl: `${RECORD}`,
+    // is-active prints FAKE_UNIT_STATE (default inactive) and exits 0 only for active.
+    systemctl: `${RECORD}
+if [[ "$1" == is-active ]]; then
+  state=\${FAKE_UNIT_STATE:-inactive}
+  printf '%s\\n' "$state"
+  [[ "$state" == active ]]
+fi`,
     journalctl: `${RECORD}`,
     'apt-get': `${RECORD}`,
     useradd: `${RECORD}`,
