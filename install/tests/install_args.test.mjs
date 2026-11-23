@@ -61,12 +61,12 @@ test('an auth key file reaches tailscale up by path only', () => {
   const dir = mkdtempSync(join(tmpdir(), 'install-tailscale-key-file-'));
   try {
     const fake = createFakeCommands(dir), keyFile = join(dir, 'auth-key'), log = join(dir, 'install.log');
-    writeFileSync(keyFile, 'tskey-auth-content-7c1d', { mode: 0o600 });
+    writeFileSync(keyFile, 'SynthTsKeyContent7c1d', { mode: 0o600 });
     const result = spawnSync('bash', ['-ec', 'source "$1"; LOG="$2"; parse_args --tailscale --tailscale-auth-key-file "$3"; exec 3>&2; setup_tailscale; printf "%s" "$TAILSCALE_DNS"', 'bash', script, log, keyFile], { env: fake.env(), encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout, 'node.tailnet.ts.net');
     const argv = fake.argv();
     assert.ok(argv.includes(`== tailscale\nup\n--auth-key=file:${keyFile}\n`));
-    assert.ok(!(argv + result.stdout + result.stderr + readFileSync(log, 'utf8')).includes('tskey-auth-content-7c1d'));
+    assert.ok(!(argv + result.stdout + result.stderr + readFileSync(log, 'utf8')).includes('SynthTsKeyContent7c1d'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
