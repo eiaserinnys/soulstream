@@ -225,7 +225,7 @@ export function FolderWorkspace({
                 : "이 세션의 채팅은 그대로 확인할 수 있습니다."}</p>
             </div>
           </section></div>
-          {files.open && activeSession && <SessionFilesPane sessionId={activeSession.agentSessionId} onClose={files.close} scrollTop={files.readScroll(activeSession.agentSessionId)} onScroll={position=>files.saveScroll(activeSession.agentSessionId,position)} initiallyExpanded={files.readExpanded(activeSession.agentSessionId)} onExpandedChange={value=>files.saveExpanded(activeSession.agentSessionId,value)}/>}
+          {files.open && activeSession && <SessionFilesPane sessionId={activeSession.agentSessionId} onClose={files.close} scrollTop={files.readScroll(activeSession.agentSessionId)} onScroll={position=>files.saveScroll(activeSession.agentSessionId,position)} initiallyExpanded={files.readExpanded(activeSession.agentSessionId)} onExpandedChange={value=>files.saveExpanded(activeSession.agentSessionId,value)} initiallySessionOpen={files.readSection(activeSession.agentSessionId, "session")} initiallyOtherOpen={files.readSection(activeSession.agentSessionId, "other")} onSectionChange={(section,value)=>files.saveSection(activeSession.agentSessionId,section,value)}/>}
           {divider("폴더와 채팅 너비 조절")}
           <section
             ref={chatSurfaceRef}
@@ -289,7 +289,7 @@ export function FolderWorkspace({
           onFolderBlocksChanged={onFolderBlocksChanged}
           onArchiveFolder={onArchiveFolder}
         /></div>
-        {files.open && activeSession && chatOpen && <SessionFilesPane sessionId={activeSession.agentSessionId} onClose={files.close} scrollTop={files.readScroll(activeSession.agentSessionId)} onScroll={position=>files.saveScroll(activeSession.agentSessionId,position)} initiallyExpanded={files.readExpanded(activeSession.agentSessionId)} onExpandedChange={value=>files.saveExpanded(activeSession.agentSessionId,value)}/>}
+        {files.open && activeSession && chatOpen && <SessionFilesPane sessionId={activeSession.agentSessionId} onClose={files.close} scrollTop={files.readScroll(activeSession.agentSessionId)} onScroll={position=>files.saveScroll(activeSession.agentSessionId,position)} initiallyExpanded={files.readExpanded(activeSession.agentSessionId)} onExpandedChange={value=>files.saveExpanded(activeSession.agentSessionId,value)} initiallySessionOpen={files.readSection(activeSession.agentSessionId, "session")} initiallyOtherOpen={files.readSection(activeSession.agentSessionId, "other")} onSectionChange={(section,value)=>files.saveSection(activeSession.agentSessionId,section,value)}/>}
         {chatOpen ? (
           <>
             {divider("상세와 채팅 너비 조절")}

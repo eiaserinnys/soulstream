@@ -1,5 +1,6 @@
 import { SessionFilesFolderReviewSample } from "./SessionFilesFolderReviewSample";
 import { SessionFilesPanel } from "./SessionFilesPanel";
+import { SessionFilesDiffReviewSample } from "./SessionFilesDiffReviewSample";
 import {CardCreateSample} from "./CardCreateSample";
 import { SessionMenuProvider } from "./SessionMenuProvider";
 import { SessionMenuReviewSample } from "./SessionMenuReviewSample";
@@ -296,16 +297,16 @@ export function ComponentsReviewPage() {
           </section>
           <section id="components-heads" className="v3-detail-section">
             <div className="v3-components-samples">
-            <Sample name="SessionFilesPanel" state="준비 · 첫 조회 · 노드 끊김 · Git 아님 · 실패 · 긴 이름">
+            <Sample name="SessionFilesPanel" state="두 구역 · diff · 새 파일 · 지움 · 이름 바꿈 · 바이너리 · 잘림 · 로딩 · 실패 · 옛 노드">
               <div className="v3-components-panel-pair v3-session-files-review-grid">{(["ready", "loading", "offline", "not-git", "error", "long"] as const).map(scene => {
                 const data = scene === "loading" || scene === "error" ? null : {
                   ...reviewSessionFiles,
                   node: { ...reviewSessionFiles.node, status: scene === "offline" ? "offline" as const : "ok" as const },
                   snapshot: reviewSessionFiles.snapshot && { ...reviewSessionFiles.snapshot, state: scene === "not-git" ? "not_git" as const : "ready" as const, ...(scene === "not-git" ? { branch: null, upstream: null, ahead: 0, behind: 0 } : {}) },
-                  files: scene === "not-git" ? [] : scene === "long" ? [{ ...reviewSessionFiles.files[0], path: "아주-긴-폴더-이름/매우-긴-파일-이름을-좁은-화면에서도-확인하는-예제.ts" }] : reviewSessionFiles.files,
+                  files: scene === "not-git" ? [] : scene === "long" ? [{ ...reviewSessionFiles.files[2], path: "아주-긴-폴더-이름/매우-긴-파일-이름을-좁은-화면에서도-확인하는-예제.ts" }] : reviewSessionFiles.files,
                 };
                 return <section key={scene} className="v3-detail-pane v3-session-files-pane border border-glass-border glass-strong glass-chrome lg-rim" data-session-files-scene={scene}><SessionFilesPanel sessionId="components-session" data={data} loading={scene === "loading"} error={scene === "error"} onRefresh={() => {}} onClose={() => {}}/></section>;
-              })}</div>
+              })}<SessionFilesDiffReviewSample/></div>
             </Sample>
             <Sample name="FolderPanelHeader / SessionPanelHeader" state="운영 머리와 첫 본문 · 긴 제목 · 모델 · 상태 · 스토리">
               <div className="v3-components-panel-pair" data-testid="components-panel-headers">

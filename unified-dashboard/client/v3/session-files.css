@@ -23,7 +23,6 @@
 .v3-session-files-diff .is-add { color: var(--success); }
 .v3-session-files-diff .is-del { color: var(--destructive); }
 .v3-session-files-new { border-radius: var(--radius-pill); padding-inline: var(--v3-space-2); color: var(--v3-text-secondary); background: var(--muted); }
-.v3-session-files-chevron-open { transform: rotate(90deg); }
 .v3-session-files-notice { display: flex; align-items: center; gap: var(--v3-space-2); padding: var(--v3-space-2) var(--v3-space-3); border-radius: var(--radius-floor); color: var(--v3-text-secondary); background: var(--muted); font: var(--v3-type-meta) var(--v3-font-family); }
 .v3-session-files-notice > [data-slot="dialog-error-message"] { flex: 1; min-width: 0; }
 .v3-files-detail-hidden { display: none; }
@@ -31,3 +30,53 @@
 .v3-session-files-seat > .v3-session-files-pane { height: 100%; border: thin solid var(--glass-border); border-radius: var(--radius-root); }
 .v3-session-files-review-grid > .v3-session-files-pane { min-height: calc(var(--v3-space-8) * 12); }
 .v3-detail-pane.v3-session-files-pane { --glass-chrome-surface-strong: var(--lg-chat-panel); }
+/* 구역: PAS 작업 목록의 접는 묶음 머리(v3-detail-section-head > h3 > v3-persistent-task-group-toggle)를 그대로 쓴다.
+   글자 시작선을 행 아이콘과 폴더 이름의 시작선(행 안쪽 여백 space-2)에 맞춘다. */
+.v3-session-files-sections { display: flex; flex-direction: column; gap: var(--v3-space-5); }
+.v3-session-files-section > .v3-detail-section-head { margin: 0; padding-inline: 0; }
+.v3-session-files-section > .v3-detail-section-head > h3 { flex: 1; min-width: 0; }
+.v3-session-files-section .v3-persistent-task-group-toggle { width: 100%; margin-inline: 0; padding-inline: var(--v3-space-2); font: inherit; }
+.v3-session-files-section .v3-persistent-task-group-toggle:hover { background: var(--accent); }
+.v3-session-files-section .v3-persistent-task-group-toggle:active { background: var(--accent); }
+.v3-session-files-count { flex: none; color: var(--v3-text-tertiary); font: var(--v3-type-meta) var(--v3-font-family); font-variant-numeric: tabular-nums; }
+.v3-session-files-notice.v3-session-files-hint { margin-block-end: var(--v3-space-3); }
+.v3-session-files-notice > svg { flex: none; }
+
+/* 펼친 행: 행과 diff 상자를 한 묶음으로 붙이고 다음 행과는 벌린다. */
+.v3-session-files-entry { display: flex; flex-direction: column; min-width: 0; }
+.v3-session-files-entry.is-open { padding-block-end: var(--v3-space-2); }
+.v3-session-files-entry.is-open > .v3-session-files-row { color: var(--foreground); background: var(--accent); }
+
+/* diff 상자: 코드 상자와 같은 bg-input 바탕, 칸 안쪽이라 동심 곡률 floor(12). */
+.v3-session-file-diff { display: flex; flex-direction: column; min-width: 0; margin-block-start: var(--v3-space-1); overflow: hidden; border-radius: var(--radius-floor); background: var(--input); }
+.v3-session-file-diff-head { display: flex; align-items: center; gap: var(--v3-space-2); min-height: var(--v3-space-8); padding: var(--v3-space-1) 0 0 var(--v3-space-2); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
+.v3-session-file-diff-status { flex: none; }
+.v3-session-file-diff-from { display: inline-flex; flex: 1; min-width: 0; color: var(--v3-text-tertiary); }
+.v3-session-file-diff-from > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v3-session-file-diff-from > span:last-child { flex: none; }
+.v3-session-file-diff-head > .dashboard-icon-cap { margin-inline-start: auto; color: var(--v3-text-secondary); }
+
+/* 본문: 고정폭 메타 글자. 긴 줄은 줄바꿈하고 이어지는 줄은 코드 칸 아래로 들여 쓴다. 높이 상한 안에서 스크롤. */
+.v3-session-file-diff-body { max-height: calc(var(--v3-space-8) * 12); overflow-y: auto; padding-block: var(--v3-space-1) var(--v3-space-2); font: var(--v3-type-meta) var(--font-mono); font-variant-ligatures: none; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--glass-border) 86%, var(--foreground)) transparent; }
+/* 키보드로 본문을 스크롤할 때의 초점은 아이콘 단추(dashboard-icon-cap)와 같은 고리를 안쪽으로 그린다. */
+.v3-session-file-diff-body:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.v3-session-file-diff-line { display: grid; grid-template-columns: calc(var(--v3-diff-digits, 3) * 1ch) 1ch minmax(0, 1fr); column-gap: var(--v3-space-2); padding-inline: var(--v3-space-2); color: var(--v3-text-secondary); }
+.v3-session-file-diff-num { color: var(--v3-text-tertiary); text-align: end; font-variant-numeric: tabular-nums; }
+.v3-session-file-diff-code { min-width: 0; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; tab-size: 4; }
+.v3-session-file-diff-line[data-kind="add"] { color: var(--foreground); background: color-mix(in srgb, var(--success) 14%, transparent); }
+.v3-session-file-diff-line[data-kind="del"] { color: var(--foreground); background: color-mix(in srgb, var(--destructive) 14%, transparent); }
+.v3-session-file-diff-line[data-kind="add"] > .v3-session-file-diff-sign { color: var(--success-foreground); }
+.v3-session-file-diff-line[data-kind="del"] > .v3-session-file-diff-sign { color: var(--destructive-foreground); }
+.v3-session-file-diff-line[data-kind="hunk"] { margin-block: var(--v3-space-1); color: var(--v3-text-tertiary); background: var(--muted); }
+.v3-session-file-diff-line[data-kind="hunk"] > .v3-session-file-diff-code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 상태 줄: 불러오는 중, 실패, 옛 노드, 바이너리, 바뀐 내용 없음, 잘림. 메타 글자 한 줄. */
+.v3-session-file-diff-state { display: flex; align-items: center; gap: var(--v3-space-2); margin: 0; padding: var(--v3-space-1) var(--v3-space-2) var(--v3-space-3); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
+.v3-session-file-diff-state > [data-slot="dialog-error-message"] { flex: 1; min-width: 0; }
+.v3-session-file-diff-foot { margin: 0; padding: var(--v3-space-2); border-block-start: thin solid var(--lg-line); color: var(--v3-text-tertiary); font: var(--v3-type-meta) var(--v3-font-family); }
+.v3-session-file-diff-skeleton { display: flex; flex-direction: column; gap: var(--v3-space-2); padding: var(--v3-space-2) var(--v3-space-2) var(--v3-space-3); }
+.v3-session-file-diff-skeleton > span { height: var(--v3-space-3); border-radius: var(--radius-pill); background: color-mix(in srgb, var(--foreground) 8%, transparent); }
+.v3-session-file-diff-skeleton > span:nth-child(1) { width: 72%; }
+.v3-session-file-diff-skeleton > span:nth-child(2) { width: 88%; }
+.v3-session-file-diff-skeleton > span:nth-child(3) { width: 46%; }
+.v3-session-file-diff-skeleton > span:nth-child(4) { width: 64%; }

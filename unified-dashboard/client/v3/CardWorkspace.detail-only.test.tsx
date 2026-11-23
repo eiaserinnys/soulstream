@@ -34,11 +34,17 @@ it('replaces the card detail with files and restores it when closed', async () =
  await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="파일 닫기"]')!.click());
  expect(host.querySelector('.v3-session-files-pane')).toBeNull(); expect(host.querySelector('.v3-files-detail-visible [data-testid="card-detail"]')).not.toBeNull();
  await act(async()=>trigger!.click());expect(host.querySelector<HTMLElement>('.v3-session-files-body')!.scrollTop).toBe(123);
- await act(async()=>host.querySelector<HTMLButtonElement>('.v3-session-files-pane [aria-expanded="false"]')!.click());
+ await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('.v3-session-files-pane button')].find(b=>b.textContent?.includes('읽기만 한 파일'))!.click());
  const expandedScroll=host.querySelector<HTMLElement>('.v3-session-files-body')!;expandedScroll.scrollTop=234;await act(async()=>expandedScroll.dispatchEvent(new Event('scroll',{bubbles:true})));
  await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="파일 닫기"]')!.click());
  await act(async()=>trigger!.click());
- expect(host.querySelector('.v3-session-files-pane [aria-expanded="true"]')?.textContent).toContain('읽기만 한 파일');expect(host.querySelector<HTMLElement>('.v3-session-files-body')!.scrollTop).toBe(234);
+ expect([...host.querySelectorAll('.v3-session-files-pane [aria-expanded="true"]')].some(b=>b.textContent?.includes('읽기만 한 파일'))).toBe(true);expect(host.querySelector<HTMLElement>('.v3-session-files-body')!.scrollTop).toBe(234);
+ const section=(name:string)=>[...host.querySelectorAll<HTMLButtonElement>('.v3-session-files-pane button')].find(b=>b.textContent?.includes(name))!;
+ await act(async()=>{section('이번 세션').click();section('다른 변경').click();});
+ await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="파일 닫기"]')!.click());
+ await act(async()=>trigger!.click());
+ expect(section('이번 세션').getAttribute('aria-expanded')).toBe('false');
+ expect(section('다른 변경').getAttribute('aria-expanded')).toBe('true');
  vi.unstubAllGlobals();
 });
 

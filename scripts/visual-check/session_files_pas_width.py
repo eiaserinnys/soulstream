@@ -72,7 +72,7 @@ def capture_pas_width(browser, baseline, current, out, install_routes):
           const branch=el.querySelector('.v3-session-files-title strong');
           const row=[...el.querySelectorAll('.v3-session-files-row')].find(e=>e.textContent.includes('읽기만 한 파일'));
           const name=[...el.querySelectorAll('.v3-session-files-name')];
-          const readLabel=row.querySelector('.v3-session-files-name'), badge=row.querySelector('.v3-session-files-new');
+          const readLabel=row.querySelector('.v3-session-files-name'), badge=el.querySelector('.v3-session-files-section .v3-session-files-new');
           const count=[...row.querySelectorAll(':scope > span')].at(-1);
           const main=document.querySelector('.persistent-session-main').getBoundingClientRect();
           const hit=document.elementFromPoint((main.left+main.right)/2, Math.max(main.top+80, el.getBoundingClientRect().top+80));
