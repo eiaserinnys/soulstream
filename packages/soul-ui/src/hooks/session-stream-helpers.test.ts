@@ -171,6 +171,27 @@ describe("catalog sessionList helpers", () => {
     expect(removed.sessionList).toEqual([]);
   });
 
+  it("returns the original catalog when session updates change nothing", () => {
+    const catalog = makeCatalog([
+      makeSession("s1", { status: "running", displayName: "Alpha" }),
+    ]);
+
+    expect(updateSessionInCatalogSessionList(catalog, "s1", { status: "running" })).toBe(catalog);
+    expect(updateSessionInCatalogSessionList(catalog, "s1", { status: "running", displayName: "Alpha" })).toBe(catalog);
+    expect(updateSessionInCatalogSessionList(catalog, "missing", { status: "completed" })).toBe(catalog);
+  });
+
+  it("returns a new catalog with unchanged siblings preserved when a session update changes a value", () => {
+    const untouched = makeSession("s2", { status: "running" });
+    const catalog = makeCatalog([makeSession("s1", { status: "running" }), untouched]);
+
+    const updated = updateSessionInCatalogSessionList(catalog, "s1", { status: "completed" });
+
+    expect(updated).not.toBe(catalog);
+    expect(updated.sessionList?.[0].status).toBe("completed");
+    expect(updated.sessionList?.[1]).toBe(untouched);
+  });
+
   it("upserts sessionList even when session_created carries no folder assignment", () => {
     const result = upsertSessionInCatalogSessionList(
       makeCatalog(),

@@ -212,6 +212,14 @@ export function updateSessionInCatalogSessionList(
   updates: Partial<SessionSummary>,
 ): CatalogState {
   if (!catalog.sessionList) return catalog;
+  const target = catalog.sessionList.find(
+    (session) => session.agentSessionId === agentSessionId,
+  );
+  if (!target) return catalog;
+  const changed = (Object.keys(updates) as (keyof SessionSummary)[]).some(
+    (key) => !Object.is(target[key], updates[key]),
+  );
+  if (!changed) return catalog;
   return {
     ...catalog,
     sessionList: catalog.sessionList.map((session) =>
