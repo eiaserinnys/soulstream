@@ -93,3 +93,11 @@ it("confirms root checking only when an expected root was checked", async () => 
   for(const result of sent.slice(0,2)) expect(result).not.toHaveProperty("root_checked");
   for(const result of sent.slice(2)) expect(result).toHaveProperty("root_checked",true);
 });
+
+it("rejects a link whose target differs only in letter case", async () => {
+  if (process.platform === "win32") return;
+  const root=await mkdtemp(path.join(tmpdir(),"workspace-case-link-")); roots.push(root);
+  await writeFile(path.join(root,"Foo.txt"),"other file");
+  await symlink(path.join(root,"Foo.txt"),path.join(root,"foo.txt"));
+  await expect(readWorkspaceFile(root,"foo.txt")).rejects.toThrow("INVALID_REQUEST:");
+});

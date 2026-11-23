@@ -12,8 +12,7 @@ export async function readWorkspaceFile(root: string, file: string, offset = 0, 
   const base=await realpath(root);
   const requested=path.relative(base,path.resolve(base,file));
   const resolved=path.relative(base,target);
-  const same=process.platform === "win32" ? requested.toLowerCase() === resolved.toLowerCase() : requested === resolved;
-  if (!same) throw new Error("INVALID_REQUEST: path resolves to a different file");
+  if (requested !== resolved) throw new Error("INVALID_REQUEST: path resolves to a different file");
   if (length === undefined && info.size > MAX_BYTES) throw new Error("TOO_LARGE: file exceeds 25 MiB");
   const size = Math.max(0, Math.min(length ?? info.size, info.size - offset));
   const buffer = Buffer.alloc(size);

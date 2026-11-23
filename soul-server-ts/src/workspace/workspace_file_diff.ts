@@ -20,7 +20,7 @@ export async function diffWorkspaceFile(root: string, file: string, origPath: st
   const statusOutput = (await git(["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", ...paths])).stdout;
   const records=statusOutput.split("\0");
   let xy=""; let actualOrig:string|null=null;
-  const same=(a:string,b:string)=>process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  const same=(a:string,b:string)=>a === b;
   for(let i=0;i<records.length;i++) {
     const record=records[i]!; if(!record) continue;
     const code=record.slice(0,2), name=record.slice(3);
