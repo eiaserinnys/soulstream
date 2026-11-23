@@ -496,17 +496,38 @@ test('media 403 failures have no retry and 503 failures can be retried', async (
   expect(fs.deleted).toContain(uri);
 });
 
-test('세션 파일 PDF는 같은 데이터로 다시 그려도 재다운로드하지 않고 파일 목록이 바뀌면 갱신한다', async () => {
+
+test.each(['복제', '추가'])('세션 PDF 목록 %s 시 열린 파일을 유지한다', async (change) => {
   const { SessionFilesView } = require('../../screens/SessionFilesScreen');
   const { reviewWorkspace } = require('../../component-review/ReviewSessionFiles');
-  const { File } = require('expo-file-system') as { File: { downloadFileAsync: jest.Mock } };
-  const data = { ...reviewWorkspace, files: [{ ...reviewWorkspace.files[0], path: 'document.pdf' }], read_only: [] };
-  const props = { data, error: false, refreshing: false, onRefresh: jest.fn(), expanded: false, onToggle: jest.fn(), selected: 'document.pdf', onSelect: jest.fn(), sessionId: 'session' };
+  const fs = require('expo-file-system') as { deleted: string[]; File: { downloadFileAsync: jest.Mock } };
+  fs.deleted.length = 0;
+  const file = { ...reviewWorkspace.files[0], path: 'document.pdf', size: 100 };
+  const data = { ...reviewWorkspace, files: [file], read_only: [] };
+  const props = { data, error: false, refreshing: false, onRefresh: jest.fn(), expanded: false, onToggle: jest.fn(), selected: file.path, onSelect: jest.fn(), sessionId: 'session' };
   const screen = render(<SessionFilesView {...props} />);
-  await waitFor(() => expect(File.downloadFileAsync).toHaveBeenCalledTimes(1));
-  screen.rerender(<SessionFilesView {...props} refreshing />);
+  await waitFor(() => expect(fs.File.downloadFileAsync).toHaveBeenCalledTimes(1));
+  const files = change === '복제' ? [{ ...file }] : [{ ...file }, { ...file, path: 'other.pdf' }];
+  screen.rerender(<SessionFilesView {...props} data={{ ...data, files }} />);
   await act(async () => { await Promise.resolve(); });
-  expect(File.downloadFileAsync).toHaveBeenCalledTimes(1);
-  screen.rerender(<SessionFilesView {...props} data={{ ...data, files: [...data.files] }} />);
-  await waitFor(() => expect(File.downloadFileAsync).toHaveBeenCalledTimes(2));
+  expect(fs.File.downloadFileAsync).toHaveBeenCalledTimes(1);
+  expect(fs.deleted).toHaveLength(0);
+  screen.rerender(<SessionFilesView {...props} data={{ ...data, files: [{ ...file, size: 101 }] }} />);
+  await waitFor(() => expect(fs.File.downloadFileAsync).toHaveBeenCalledTimes(2));
+  expect(fs.deleted).toHaveLength(1);
+});
+
+test('두 번째 PDF를 본 뒤 앞에 파일이 추가되어도 현재 파일을 유지한다', async () => {
+  const fs = require('expo-file-system') as { File: { downloadFileAsync: jest.Mock } };
+  const first = pdfView({ key: 'first', name: 'first.pdf' });
+  const second = pdfView({ key: 'second', name: 'second.pdf' });
+  const added = pdfView({ key: 'added', name: 'added.pdf' });
+  const screen = render(<AttachmentPreviewModal item={first} items={[first, second]} onClose={jest.fn()} />);
+  await waitFor(() => expect(fs.File.downloadFileAsync).toHaveBeenCalledTimes(1));
+  fireEvent.press(screen.getByLabelText('다음 첨부'));
+  await waitFor(() => expect(screen.getByText('second.pdf')).toBeTruthy());
+  await waitFor(() => expect(fs.File.downloadFileAsync).toHaveBeenCalledTimes(2));
+  screen.rerender(<AttachmentPreviewModal item={first} items={[added, first, second]} onClose={jest.fn()} />);
+  expect(screen.getByText('second.pdf')).toBeTruthy();
+  expect(fs.File.downloadFileAsync).toHaveBeenCalledTimes(2);
 });

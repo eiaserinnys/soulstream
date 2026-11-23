@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -103,7 +103,11 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
   const mediaKind = attachmentMediaKind(item);
   const [state, setState] = useState<PreviewState>(() => initialPreviewState(item));
   const [retryKey, setRetryKey] = useState(0);
+  const latestItem = useRef(item);
+  latestItem.current = item;
+  const pdfIdentity = JSON.stringify([item.key, item.readContext, item.source.kind === 'ready' ? item.source.attachmentId : null, item.byteSize, item.pdfCache]);
   useEffect(() => {
+    const item = latestItem.current;
     if (textContent) {
       setState(html ? { kind: 'html', ...textContent }
         : markdown ? { kind: 'markdown', ...textContent } : { kind: 'text', ...textContent });
@@ -233,7 +237,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
         if (!controller.signal.aborted) setState(readFailureState(error));
       });
     return () => controller.abort();
-  }, [item, retryKey, textContent, html, mediaKind, pdf]);
+  }, [pdf ? pdfIdentity : item, retryKey, textContent, html, mediaKind, pdf]);
 
   const htmlDocument = useMemo(
     () => state.kind === 'html' ? renderDocumentHtml(state.text, CUSTOM_VIEW_BINDINGS) : null,
