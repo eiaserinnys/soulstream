@@ -83,8 +83,8 @@ describe("secret reference extraction", () => {
     );
 
     expect(extracted.definition.config.url).toBe(
-      "https://example.com/mcp?key=%7B%7Bsecret%3Asrv-srv-1-qry-0%7D%7D"
-        + "&mode=%7B%7Bsecret%3Asrv-srv-1-qry-1%7D%7D",
+      "https://example.com/mcp?key=%7B%7Bsecret%3Asrv-srv-1-qry-key%7D%7D"
+        + "&mode=%7B%7Bsecret%3Asrv-srv-1-qry-mode%7D%7D",
     );
     expect([...extracted.secrets.values()]).toEqual(["fake-key", "fast"]);
   });
@@ -123,7 +123,7 @@ describe("secret reference extraction", () => {
     expect(tool.authorization).toBe("{{secret:prof-profile-1-ht1-auth}}");
     expect(tool.headers).toEqual({ "X-Key": "{{secret:prof-profile-1-ht1-hdr-X-Key}}" });
     expect(tool.server_url).toBe(
-      "https://example.com/mcp?token=%7B%7Bsecret%3Aprof-profile-1-ht1-qry-0%7D%7D",
+      "https://example.com/mcp?token=%7B%7Bsecret%3Aprof-profile-1-ht1-qry-token%7D%7D",
     );
     expect([...extracted.secrets.values()]).toEqual([
       "Bearer fake-auth",
@@ -132,4 +132,18 @@ describe("secret reference extraction", () => {
     ]);
     expect(extracted.hosted_tools[0]).toEqual({ type: "web_search" });
   });
+  it("preserves existing query references and assigns stable distinct names", () => {
+    const old = "{{secret:srv-srv-1-qry-key}}";
+    const input = definition({ url: `https://example.com/mcp?key=fake-secret-new&key=${encodeURIComponent(old)}&key=fake-secret-second` });
+    const first = extractServerSecrets("srv-1", input, {});
+    const second = extractServerSecrets("srv-1", input, {});
+    expect([...first.secrets.keys()]).toEqual(["srv-srv-1-qry-key-2", "srv-srv-1-qry-key-3"]);
+    expect(first.definition.config.url).toContain(encodeURIComponent(old));
+    expect([...second.secrets.keys()]).toEqual([...first.secrets.keys()]);
+    const override = extractServerSecrets("srv-1", definition({ url: "https://example.com" }), { n: input });
+    expect([...override.secrets.keys()]).toEqual(["srv-srv-1-ovr-n-qry-key", "srv-srv-1-ovr-n-qry-key-2"]);
+    const hosted = extractHostedToolSecrets("p", [{ type: "hosted_mcp", server_url: "https://example.com?key=fake-secret-a&key=fake-secret-b" }]);
+    expect([...hosted.secrets.keys()]).toEqual(["prof-p-ht0-qry-key", "prof-p-ht0-qry-key-2"]);
+  });
+
 });

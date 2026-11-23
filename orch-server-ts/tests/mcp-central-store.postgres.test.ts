@@ -76,8 +76,8 @@ describePostgres("MCP central config store (PostgreSQL)", () => {
     expect(stringRecord(configOf(server!).headers).Authorization)
       .toBe("{{secret:srv-srv-1-hdr-Authorization}}");
     expect(configOf(server!).url).toBe(
-      "https://example.com/mcp?api_key=%7B%7Bsecret%3Asrv-srv-1-qry-0%7D%7D"
-        + "&mode=%7B%7Bsecret%3Asrv-srv-1-qry-1%7D%7D",
+      "https://example.com/mcp?api_key=%7B%7Bsecret%3Asrv-srv-1-qry-api_key%7D%7D"
+        + "&mode=%7B%7Bsecret%3Asrv-srv-1-qry-mode%7D%7D",
     );
     const profile = config.profiles.find((item) => item.id === "profile-1");
     const hostedTool = profile!.hosted_tools[0] as Record<string, unknown>;
@@ -85,8 +85,8 @@ describePostgres("MCP central config store (PostgreSQL)", () => {
     expect(config.secrets.map((secret) => secret.name).sort()).toEqual([
       "prof-profile-1-ht0-auth",
       "srv-srv-1-hdr-Authorization",
-      "srv-srv-1-qry-0",
-      "srv-srv-1-qry-1",
+      "srv-srv-1-qry-api_key",
+      "srv-srv-1-qry-mode",
     ]);
     expect(config.secrets.find((secret) => secret.name === "srv-srv-1-hdr-Authorization")?.servers)
       .toEqual(["srv-1"]);
@@ -388,4 +388,41 @@ describePostgres("MCP central config store (PostgreSQL)", () => {
       (binding) => binding.agent_id === "agent-1" && binding.node_id === "node-b",
     )?.mcp_profile_id).toBe("p1");
   });
+  it("removes an inactive node and its associations in one revision", async () => {
+    const added = await service.addManagedNode("node-a");
+    const state = await harness.sql<{ current_revision: string }[]>`SELECT current_revision FROM mcp_config_state WHERE id = 1`;
+    expect(added.current_revision).toBe(Number(state[0]!.current_revision));
+    await service.addManagedNode("node-b");
+    await service.putServer("s", { type: "stdio", config: { command: "run", env: { TOKEN: "fake-secret-token" } }, node_scope: ["node-a", "node-b"], node_overrides: { "node-a": { type: "stdio", config: { command: "other" } } } });
+    await service.putProfile("p", { name: "P", mcp_servers: ["s"], hosted_tools: [] });
+    await service.setAgentBindings("agent", { node_ids: ["node-a", "node-b"], mcp_profile_id: "p" });
+    const before = await service.getConfig();
+    const result = await service.removeManagedNode("node-a", { expectedRevision: before.current_revision });
+    const after = await service.getConfig();
+    expect(result.current_revision).toBe(before.current_revision + 1);
+    expect(result.current_revision).toBe(after.current_revision);
+    expect(after.managed_nodes.map(node => node.node_id)).toEqual(["node-b"]);
+    expect(after.bindings.map(binding => binding.node_id)).toEqual(["node-b"]);
+    expect(after.servers[0]).toMatchObject({ id: "s", node_scope: ["node-b"], node_overrides: {} });
+    expect(after.profiles[0]).toMatchObject({ id: "p", node_scope: ["node-b"] });
+    expect(after.secrets).toHaveLength(1);
+    const revisions = await service.listRevisions();
+    expect(revisions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ target: "server", target_id: "s", snapshot: expect.objectContaining({ node_scope: ["node-b"] }) }),
+      expect.objectContaining({ target: "profile", target_id: "p", snapshot: expect.objectContaining({ node_scope: ["node-b"] }) }),
+      expect.objectContaining({ target: "binding", snapshot: expect.objectContaining({ agent_id: "agent", node_id: "node-a", deleted: true }) }),
+    ]));
+  });
+
+  it("refuses removal of activated nodes without changing configuration", async () => {
+    await service.addManagedNode("node-a");
+    await harness.sql`UPDATE mcp_managed_nodes SET activated_at = NOW() WHERE node_id = ${"node-a"}`;
+    const before = await service.getConfig();
+    const history = await service.listRevisions();
+    await expect(service.removeManagedNode("node-a")).rejects.toMatchObject({ code: "MCP_NODE_ACTIVATED", statusCode: 409 });
+    expect(await service.getConfig()).toEqual(before);
+    expect(await service.listRevisions()).toEqual(history);
+    await expect(service.removeManagedNode("missing")).rejects.toMatchObject({ code: "MCP_NODE_NOT_FOUND", statusCode: 404 });
+  });
+
 });

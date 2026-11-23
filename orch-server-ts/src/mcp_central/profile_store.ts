@@ -171,6 +171,10 @@ export function createProfileStore() {
       return rows[0] !== undefined;
     },
 
+    async deleteManagedNode(sql: Sql, nodeId: string): Promise<void> {
+      await sql`DELETE FROM mcp_managed_nodes WHERE node_id = ${nodeId}`;
+    },
+
     async listSecrets(sql: Sql): Promise<{ name: string; updated_at: string | null }[]> {
       const rows = await sql<SecretRow[]>`
         SELECT name, updated_at FROM mcp_secrets ORDER BY name ASC

@@ -105,10 +105,11 @@ export function createMcpCentralRepository(options: {
     writeConfig<T>(
       writeOptions: { readonly expectedRevision?: number },
       run: (tx: Sql, revision: number) => Promise<T>,
-    ): Promise<T> {
+    ): Promise<{ current_revision: number; result: T }> {
       return transaction(async (tx) => {
         const revision = await bumpRevision(tx, writeOptions.expectedRevision);
-        return run(tx, revision);
+        const result = await run(tx, revision);
+        return { current_revision: revision, result };
       });
     },
 

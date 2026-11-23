@@ -21,7 +21,7 @@ export function createRollbackService(options: {
 }) {
   const { repository } = options;
 
-  async function rollback(revisionIdValue: unknown, writeOptions?: unknown): Promise<void> {
+  async function rollback(revisionIdValue: unknown, writeOptions?: unknown): Promise<{ current_revision: number; result: void }> {
     if (
       typeof revisionIdValue !== "number"
       || !Number.isInteger(revisionIdValue)
@@ -30,7 +30,7 @@ export function createRollbackService(options: {
       throw invalidInput("revision id must be a positive integer");
     }
     const write = parseWriteOptions(writeOptions);
-    await repository.writeConfig({ expectedRevision: write.expectedRevision }, async (tx) => {
+    return repository.writeConfig({ expectedRevision: write.expectedRevision }, async (tx) => {
       const revision = await repository.getRevision(tx, revisionIdValue);
       if (revision === null) {
         throw notFound("MCP_REVISION_NOT_FOUND", `revision not found: ${revisionIdValue}`);
