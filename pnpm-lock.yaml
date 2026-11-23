@@ -90,6 +90,9 @@ importers:
       postgres:
         specifier: 3.4.9
         version: 3.4.9(patch_hash=9b4a8be0772c8837b587719ea9d16b13d8b685236998e03d9ff55fd948e68a92)
+      simple-icons:
+        specifier: 16.38.1
+        version: 16.38.1
       standardwebhooks:
         specifier: 1.1.1
         version: 1.1.1
@@ -5221,6 +5224,10 @@ packages:
   signal-exit@4.1.0:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
+
+  simple-icons@16.38.1:
+    resolution: {integrity: sha512-q4JnGp1cgeASp4jzEsmSh/7BD/e2y7aYO8XST+QBEvOJ5wzZ/9WRmKsI+QUwkfPUSiXC+sfh2+QetD38zl3N0g==}
+    engines: {node: '>=0.12.18'}
 
   smob@1.6.1:
     resolution: {integrity: sha512-KAkBqZl3c2GvNgNhcoyJae1aKldDW0LO279wF9bk1PnluRTETKBq0WyzRXxEhoQLk56yHaOY4JCBEKDuJIET5g==}
@@ -11053,6 +11060,8 @@ snapshots:
   siginfo@2.0.0: {}
 
   signal-exit@4.1.0: {}
+
+  simple-icons@16.38.1: {}
 
   smob@1.6.1: {}
 

@@ -104,6 +104,7 @@ jobs:
             tests/page/page-repository.postgres.integration.test.ts \
             tests/handover-postgres-terminate.postgres.test.ts \
             tests/event-ingress-delivery-latency.postgres.test.ts \
+            tests/mcp-central-store.postgres.test.ts \
             --minWorkers=1 --maxWorkers=2 || result=$?
           corepack pnpm --dir orch-server-ts exec vitest run \
             tests/oauth/oauth-flow.postgres.test.ts \
