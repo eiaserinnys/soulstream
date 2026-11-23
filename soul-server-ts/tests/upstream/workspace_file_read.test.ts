@@ -55,5 +55,6 @@ it("passes expected roots through both workspace commands", async () => {
   const family=createWorkspaceCommandFamily({workspace,send:async()=>{throw new Error("unexpected send");}});
   const target={session_id:"s",agent_id:"a",worktree_id:null,path:"missing",expected_root:"/different"};
   await expect(family.workspace_file_read!({...target,type:"workspace_file_read"})).rejects.toThrow("CONFLICT: workspace root changed");
-  await expect(family.workspace_file_diff!({...target,type:"workspace_file_diff",orig_path:null})).rejects.toThrow("CONFLICT: workspace root changed");
+  const diffCommand={...target,type:"workspace_file_diff",orig_path:null};
+  await expect(family.workspace_file_diff!(diffCommand)).rejects.toThrow("CONFLICT: workspace root changed");
 });
