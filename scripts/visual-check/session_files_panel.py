@@ -488,13 +488,11 @@ def capture_diff(browser, base, out):
             body = pane.locator(".v3-session-files-body")
             scroll_before = body.evaluate("e => e.scrollTop")
             page.set_viewport_size({"width": 1024, "height": 900})
-            page.wait_for_function("""async wide => {
+            page.wait_for_function("""wide => {
                 const pane=document.querySelector('[data-testid="v3-card-workspace"] .v3-session-files-pane');
                 const body=pane?.querySelector('.v3-session-file-diff-body');
-                if (innerWidth !== 1024 || !body || body.clientWidth >= wide - 1) return false;
-                const width=body.clientWidth;
-                await new Promise(resolve => setTimeout(resolve, 200));
-                return innerWidth === 1024 && body.clientWidth === width;
+                return innerWidth === 1024 && body && body.clientWidth < wide - 1
+                    && Math.abs(pane.getBoundingClientRect().width - 324) <= 1;
             }""", arg=m["clientWidth"])
             expect(row).to_have_attribute("aria-expanded", "true")
             page.mouse.move(2, 2)
@@ -513,12 +511,9 @@ def capture_diff(browser, base, out):
             assert page.evaluate("() => document.querySelector(':focus-visible') === null"), "1024px 기본 그림에 키보드 초점 고리"
             page.screenshot(path=str(out / "diff-card-1024.png"), animations="disabled")
             page.set_viewport_size({"width": 1440, "height": 900})
-            page.wait_for_function("""async wide => {
+            page.wait_for_function("""wide => {
                 const body=document.querySelector('[data-testid="v3-card-workspace"] .v3-session-file-diff-body');
-                if (innerWidth !== 1440 || !body || Math.abs(body.clientWidth - wide) > 1) return false;
-                const width=body.clientWidth;
-                await new Promise(resolve => setTimeout(resolve, 200));
-                return innerWidth === 1440 && body.clientWidth === width;
+                return innerWidth === 1440 && body && Math.abs(body.clientWidth - wide) <= 1;
             }""", arg=m["clientWidth"])
             expect(row).to_have_attribute("aria-expanded", "true")
             assert abs(body.evaluate("e => e.scrollTop") - scroll_before) <= 2
