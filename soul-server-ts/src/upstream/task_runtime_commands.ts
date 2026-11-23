@@ -1,5 +1,4 @@
 import { hasLiveExecutionEvidence } from "../task/task_execution_evidence.js";
-import { isActiveTaskStatus } from "../task/task_models.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import type { Logger } from "pino";
 import type { ContextItem } from "@soulstream/wire-schema";
@@ -20,7 +19,7 @@ import type {
   TaskManager,
 } from "../task/task_manager.js";
 import type { TaskExecutor } from "../task/task_executor.js";
-import type { CallerInfo, SessionCreationWarning, Task } from "../task/task_models.js";
+import { isActiveTaskStatus, type CallerInfo, type SessionCreationWarning, type Task } from "../task/task_models.js";
 import type { DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
 import { resolveModelPresetSelection } from "../task/task_model_preset.js";
 import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
