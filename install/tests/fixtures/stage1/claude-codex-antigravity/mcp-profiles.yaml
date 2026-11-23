@@ -1,0 +1,4 @@
+profiles:
+  - id: default
+    name: Default
+    mcp_servers: [soulstream]

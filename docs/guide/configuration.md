@@ -90,6 +90,7 @@ The worker build hashes `.env.soul-server-ts`, so the installer finalizes these 
 - `ENVIRONMENT`: runtime environment (`development`, `test`, or `production`).
 - `LOG_LEVEL`: logger verbosity (for example, `info`).
 - `AUTH_BEARER_TOKEN`: shared service bearer token (required when `ENVIRONMENT=production`).
+- `JWT_SECRET`: the orchestrator's `JWT_SECRET`, used to verify dashboard login cookies. The Linux installer writes the same value as in `.env.orch`.
 
 ### Loopback MCP and git worktrees
 
@@ -144,7 +145,7 @@ agents:
 
 ### Profiles created by the Linux installer
 
-The installer rewrites `config/agents.yaml` on every run with these profiles, in this order. "First backend" is the first value of `--backends`; its preset is `claude-opus` for `claude`, `codex-6.2-sol` for `codex`, and `gemini-4-carbon` for `antigravity`.
+The installer writes `config/agents.yaml` with these profiles, in this order (a file you edited is kept; see [Files the Linux installer manages](#files-the-linux-installer-manages)). "First backend" is the first value of `--backends`; its preset is `claude-opus` for `claude`, `codex-6.2-sol` for `codex`, and `gemini-4-carbon` for `antigravity`.
 
 | Profile | Backend and preset | Other settings |
 |---|---|---|
@@ -167,6 +168,10 @@ Backend rules are the Claude rules for `claude` and the Codex rules for `codex`;
 ## MCP servers (`mcp-registry.yaml`, `mcp-profiles.yaml`)
 
 The Linux installer registers two MCP servers in `config/mcp-registry.yaml`: `soulstream` (`http://127.0.0.1:4205/mcp`, `Authorization` from `PORTABLE_LOCAL_MCP_AUTHORIZATION`) and `atom` (`http://127.0.0.1:4200/mcp`, `x-api-key` from `ATOM_API_KEY`). `config/mcp-profiles.yaml` defines `default` and `pas` (named `PAS`), and both use `mcp_servers: [soulstream, atom]`.
+
+## Files the Linux installer manages
+
+The installer manages `config/agents.yaml`, `config/mcp-registry.yaml`, `config/mcp-profiles.yaml`, and `/home/soulstream/workspace/AGENTS.md` (`CLAUDE.md` links to it). `config/.installer-managed.sha256` records, in `sha256sum` format, the SHA-256 of each file as the installer last wrote it. A rerun replaces a file only when it is missing, still has the recorded hash, or has no record line and is exactly what the first-stage installer (before atom support) wrote; a file already identical to the new version is left as it is. Any other file is treated as yours: it is kept unchanged, the installer's new version is written next to it as `<file>.installer-new`, the finish message lists it under `Configuration:`, and its record line is not updated, so later reruns keep it too. To take the new version, move `<file>.installer-new` over the file and run the same command again; the record then follows the file. A `CLAUDE.md` that is a regular file or links somewhere else is also kept.
 
 ## Atom (`/home/soulstream/atom/.env`)
 

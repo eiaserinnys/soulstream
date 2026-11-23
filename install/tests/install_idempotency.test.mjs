@@ -47,6 +47,20 @@ test('configuration rendering preserves secrets and unmanaged lines across backe
   files.forEach((p,i)=>assert.ok(readFileSync(p).equals(before[i]),p));
  } finally { rmSync(dir,{recursive:true,force:true}); }
 });
+test('the worker gets the orchestrator JWT secret and keeps it across renders', () => {
+ const dir=mkdtempSync(join(tmpdir(),'install-worker-jwt-')), home=join(dir,'home'), root=join(home,'soulstream');
+ try {
+  const fake=prepareRoot(dir,root);
+  let run=render(home,root,'claude,codex',fake); assert.equal(run.status,0,run.stderr);
+  const secret=env(join(root,'.env.orch')).JWT_SECRET;
+  assert.match(secret,/^[0-9a-f]{64}$/);
+  assert.equal(env(join(root,'.env.soul-server-ts')).JWT_SECRET,secret);
+  run=render(home,root,'codex',fake); assert.equal(run.status,0,run.stderr);
+  assert.equal(env(join(root,'.env.orch')).JWT_SECRET,secret);
+  assert.equal(env(join(root,'.env.soul-server-ts')).JWT_SECRET,secret);
+  assert.equal(readFileSync(join(root,'.env.soul-server-ts'),'utf8').split('\n').filter(x=>x.startsWith('JWT_SECRET=')).length,1);
+ } finally { rmSync(dir,{recursive:true,force:true}); }
+});
 test('database password prepared before rendering is retained', () => {
  const dir=mkdtempSync(join(tmpdir(),'install-db-password-')), home=join(dir,'home'), root=join(home,'soulstream');
  try {
@@ -55,10 +69,12 @@ test('database password prepared before rendering is retained', () => {
   assert.equal(run.status,0,run.stderr);
  } finally { rmSync(dir,{recursive:true,force:true}); }
 });
-test('clone reruns ignore untracked installer files and protect tracked changes', () => {
+test('repository reruns ignore untracked installer files, protect tracked changes and follow origin main', () => {
  const dir=mkdtempSync(join(tmpdir(),'install-clone-')), origin=join(dir,'origin.git'), source=join(dir,'source'), root=join(dir,'clone');
- const git=(...args)=>execFileSync('git',args,{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
- const run=(ref,refSet)=>spawnSync('bash',['-ec','source "$1"; as_soul() { "$@"; }; clone_repository "$2" https://example.invalid/unused.git "$3" "$4"','bash',script,root,ref,refSet],{encoding:'utf8'});
+ // The remote is a local bare repository and git ignores the host configuration.
+ const gitEnv={...process.env,GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1',GIT_TERMINAL_PROMPT:'0'};
+ const git=(...args)=>execFileSync('git',args,{encoding:'utf8',stdio:['ignore','pipe','pipe'],env:gitEnv}).trim();
+ const run=(ref,refSet)=>spawnSync('bash',['-ec','source "$1"; as_soul() { "$@"; }; check_repository soulstream "$2" https://example.invalid/unused.git "$3" "$4"; checkout_repository soulstream','bash',script,root,ref,refSet],{encoding:'utf8',env:gitEnv});
  try {
   git('init','--bare','--initial-branch=main',origin);
   git('init','--initial-branch=main',source);
@@ -89,9 +105,17 @@ test('clone reruns ignore untracked installer files and protect tracked changes'
   assert.notEqual(dirty.status,0);
   assert.match(dirty.stderr,/Repository has uncommitted changes\./);
   assert.equal(git('-C',root,'rev-parse','HEAD'),b);
-  const noRef=run(a,'false');
+  git('-C',root,'checkout','--','tracked.txt');
+  writeFileSync(join(source,'tracked.txt'),'C\n');
+  git('-C',source,'add','tracked.txt');
+  git('-C',source,'-c','user.name=Test','-c','user.email=test@example.invalid','commit','-m','C');
+  const c=git('-C',source,'rev-parse','HEAD');
+  git('-C',source,'push','origin','main');
+  const noRef=run('','false');
   assert.equal(noRef.status,0,noRef.stderr);
-  assert.equal(git('-C',root,'rev-parse','HEAD'),b);
+  assert.equal(git('-C',root,'rev-parse','HEAD'),c);
+  assert.equal(git('-C',root,'rev-parse','--abbrev-ref','HEAD'),'main');
+  for (const file of files) assert.equal(readFileSync(join(root,file),'utf8'),`preserve ${file}\n`);
  } finally { rmSync(dir,{recursive:true,force:true}); }
 });
 
