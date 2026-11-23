@@ -1,3 +1,5 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
+
 import type { LivePostgresSql } from "../runtime/live_db_sql.js";
 import {
   toRevision,
@@ -108,12 +110,6 @@ export function iso(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-export function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 export function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
@@ -123,9 +119,9 @@ export function mapServer(row: ServerRow): McpServerRecord {
     id: row.id,
     name: row.name,
     type: row.type as McpServerType,
-    config: asRecord(row.config),
+    config: asRecord(row.config) ?? {},
     node_scope: asStringArray(row.node_scope),
-    node_overrides: asRecord(row.node_overrides) as Record<string, McpServerDefinition>,
+    node_overrides: (asRecord(row.node_overrides) ?? {}) as Record<string, McpServerDefinition>,
     icon: (row.icon ?? null) as McpIcon | null,
     version: row.version,
   };
@@ -175,7 +171,7 @@ export function mapRevision(row: RevisionRow): McpRevisionRecord {
     id: toRevision(row.id),
     target: row.target as McpRevisionTarget,
     target_id: row.target_id,
-    snapshot: asRecord(row.snapshot),
+    snapshot: asRecord(row.snapshot) ?? {},
     created_at: iso(row.created_at) ?? "",
   };
 }
