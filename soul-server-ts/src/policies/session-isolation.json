@@ -540,7 +540,7 @@
       "/mnt",
       "/run/WSL",
       "/run/docker.sock",
-      "/run/user/1000",
+      "/run/user",
       "/var/run/docker.sock",
       "/home/eias/migration",
       "/home/eias/services",

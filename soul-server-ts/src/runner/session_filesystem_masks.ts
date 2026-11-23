@@ -605,8 +605,10 @@ export async function prepareIsolationMasks(
     await addMask(input.claudeAccountsDir, true);
   }
 
-  // 3. user bus·keyring.
-  await addMask(`/run/user/${input.uid}`, false);
+  // 3. user bus·keyring. `/run/user/<uid>`는 사용자 매니저가 뜰 때만 있어
+  // 마스크 계산과 bwrap 실행 사이에 없어질 수 있다. 그때 bwrap은 `--ro-bind / /`
+  // 위에 자리를 못 만들어 exit 1로 죽으므로, 늘 있는 부모를 가린다.
+  await addMask("/run/user", false);
 
   // 4. docker socket alias.
   await addMask("/run/docker.sock", false);

@@ -93,6 +93,43 @@ describe("launchIsolatedSession fail-closed paths", () => {
     expect(fake.killCalls).toEqual([{ pid: 4242, signal: "SIGTERM" }]);
   });
 
+  it("carries the helper stderr tail into the ready rejection", async () => {
+    const fake = createFakePorts();
+    const result = launchIsolatedSession(launchInput(), fake.ports, testDependencies());
+
+    fake.helper.stderr.write(
+      "bwrap: Can't create file /run/user/1000: Read-only file system\n",
+    );
+    fake.helper.status.write(
+      '{"status":"error","message":"bwrap exited with 1 before starting the sandbox command"}\n',
+    );
+    fake.helper.finish(1, null);
+
+    await expect(result.ready).rejects.toThrow(
+      /bwrap exited with 1 before starting the sandbox command; helper stderr: bwrap: Can't create file \/run\/user\/1000: Read-only file system/,
+    );
+  });
+
+  it("keeps only the last 4000 characters of the helper stderr", async () => {
+    const fake = createFakePorts();
+    const result = launchIsolatedSession(launchInput(), fake.ports, testDependencies());
+
+    fake.helper.stderr.write(`${"A".repeat(2_000)}${"B".repeat(4_000)}`);
+    fake.helper.status.write(
+      '{"status":"error","message":"bwrap exited with 1 before starting the sandbox command"}\n',
+    );
+    fake.helper.finish(1, null);
+
+    const failure = await result.ready.then(
+      () => {
+        throw new Error("ready unexpectedly resolved");
+      },
+      (error: unknown) => error,
+    );
+    expect((failure as Error).message).toContain("B".repeat(4_000));
+    expect((failure as Error).message).not.toContain("AAAA");
+  });
+
   it("rejects `ready` when the helper exits before reporting readiness", async () => {
     const fake = createFakePorts();
     const result = launchIsolatedSession(launchInput(), fake.ports, testDependencies());

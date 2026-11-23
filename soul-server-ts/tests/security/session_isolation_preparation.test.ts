@@ -166,7 +166,7 @@ async function makeFixture(overrides: FixtureOverrides = {}): Promise<Fixture> {
     "/etc/resolv.conf": { kind: "file" },
     "/run/docker.sock": { kind: "file" },
     "/var/run/docker.sock": { kind: "file", realPath: "/run/docker.sock" },
-    "/run/user/1000": { kind: "directory" },
+    "/run/user": { kind: "directory" },
     "/proc/locks": { kind: "file" },
     ...overrides.systemFacts,
   };
@@ -400,12 +400,15 @@ describe("prepareIsolationPlan", () => {
       join(fixture.home, ".gemini"),
       join(fixture.home, ".pm2"),
       join(fixture.home, ".local/share/soulstream/credentials"),
-      "/run/user/1000",
+      "/run/user",
       fixture.sensitive,
       dirname(fixture.sessionDir),
     ]) {
       expect(maskedPaths).toContain(path);
     }
+    // `/run/user/<uid>`는 마스크 계산과 실행 사이에 없어질 수 있어 늘 있는
+    // 부모를 가린다. 자식 경로는 따로 mask하지 않는다.
+    expect(maskedPaths).not.toContain(`/run/user/${fixture.input.uid}`);
     // 세션 디렉터리는 state 루트 mask에 포함되므로 따로 mask하지 않는다.
     expect(maskedPaths).not.toContain(fixture.sessionDir);
     expect(prepared.spec.masks).toContainEqual({
