@@ -14,6 +14,10 @@ export function supportsRunnerInventory(capabilities: unknown): boolean {
   return isRecord(capabilities) && capabilities.runner_inventory_v1 === true;
 }
 
+export function supportsCentralMcpConfig(capabilities: unknown): boolean {
+  return isRecord(capabilities) && capabilities.central_mcp_config_v1 === true;
+}
+
 export function supportsClaudeAccountPool(capabilities: unknown): boolean {
   return isRecord(capabilities) && capabilities.claude_account_pool_v1 === true;
 }

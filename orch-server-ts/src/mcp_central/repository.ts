@@ -124,6 +124,8 @@ export function createMcpCentralRepository(options: {
       const sql = await options.resolveSql();
       const rows = await sql<{ node_id: string }[]>`
         UPDATE mcp_managed_nodes SET
+          central_active = CASE WHEN ${ack.activate === true} THEN true ELSE central_active END,
+          activated_at = CASE WHEN ${ack.activate === true} THEN COALESCE(activated_at, NOW()) ELSE activated_at END,
           applied_mode = CASE WHEN ${ack.applied_mode !== undefined}
             THEN ${ack.applied_mode ?? null} ELSE applied_mode END,
           applied_revision = CASE WHEN ${ack.applied_revision !== undefined}

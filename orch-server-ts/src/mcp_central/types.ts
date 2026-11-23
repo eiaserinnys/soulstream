@@ -89,6 +89,7 @@ export type McpManagedNodeRecord = {
 };
 
 export type McpManagedNodeAck = {
+  readonly activate?: boolean;
   readonly applied_mode?: string | null;
   readonly applied_revision?: number;
   readonly last_sync_at?: string | null;

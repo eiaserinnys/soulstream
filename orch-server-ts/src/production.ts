@@ -1,3 +1,8 @@
+import { McpCentralSyncService } from "./mcp_central/sync_service.js";
+import { createMcpCentralRepository } from "./mcp_central/repository.js";
+import { buildNodeSnapshot } from "./mcp_central/node_snapshot.js";
+import { createMcpCentralAccessProvider } from "./mcp_central/agent_identity.js";
+import type { SessionOwnerResolver } from "./session/session_owner.js";
 import { createMcpCentralService, type McpCentralService } from "./mcp_central/service.js";
 import { ConversationMessageService } from "./conversation/conversation_messages.js";
 import { HandoverGate, guardMethods } from "./runtime/handover_gate.js";
@@ -484,6 +489,7 @@ export async function createLiveProductionApplication(
   });
   // 노드 등록 이벤트 싱크가 런타임 서비스 생성 전에 조립되므로 먼저 선언하고 뒤에서 채운다.
   let claudeCentralService: ClaudeCentralService | undefined;
+  let mcpCentralSync: McpCentralSyncService | undefined;
   let publishReconciledSessionUpdate:
     NonNullable<Parameters<typeof createSessionReconciliationSink>[0]["publishSessionUpdate"]>
       = () => undefined;
@@ -592,6 +598,7 @@ export async function createLiveProductionApplication(
       (events) => childSessionCheckService?.acceptNodeEvents(events),
       (events) => { if (backgroundActive) outboundWebhookService?.accept(events); },
       (events) => { if (backgroundActive) claudeCentralService?.acceptNodeEvents(events); },
+      (events) => { if (backgroundActive) mcpCentralSync?.acceptNodeEvents(events); },
     ],
     flatFolderContentRoutes: { host: flatFolderContentHost, authBearerToken: config.auth_bearer_token, environment: config.environment, nodeCredentials: nodeCredentialStore },
     pageYjsRoutes: {
@@ -670,6 +677,19 @@ export async function createLiveProductionApplication(
     runtimeServices.routeOptions.nodeWsRoute.eventSink?.(events);
   };
   const mcpCentralService = createMcpCentralService({ resolveSql: () => sqlResolver.resolveSql() });
+  const mcpRepository = createMcpCentralRepository({ resolveSql: () => sqlResolver.resolveSql() });
+  mcpCentralSync = new McpCentralSyncService({
+    registry, bridge: runtimeServices.sessionBridge,
+    readGate: nodeId => mcpRepository.read(async sql => ({
+      managed: (await mcpRepository.listManagedNodes(sql)).find(node => node.node_id === nodeId) ?? null,
+      hasBindings: (await mcpRepository.listBindings(sql)).some(binding => binding.node_id === nodeId),
+    })),
+    buildSnapshot: async nodeId => buildNodeSnapshot(await sqlResolver.resolveSql(), nodeId),
+    updateAck: (nodeId, ack) => mcpCentralService.updateManagedNodeAck(nodeId, ack),
+    listManagedNodes: () => mcpRepository.read(async sql => (await mcpRepository.listManagedNodes(sql)).map(node => node.node_id)),
+    currentRevision: () => mcpRepository.read(sql => mcpRepository.getState(sql)),
+    onWarning: message => context.warn(message),
+  });
   claudeCentralService = new ClaudeCentralService({
     repository: createSqlClaudeCentralAccountRepository({
       resolveSql: () => sqlResolver.resolveSql(),
@@ -1127,6 +1147,8 @@ export async function createLiveProductionApplication(
       claudeCentralService,
       config.default_pas_agent_id,
       mcpCentralService,
+      mcpCentralSync,
+      resolveSessionOwner,
     ),
     nodeReleaseRoutes: {
       authBearerToken: config.auth_bearer_token,
@@ -1333,6 +1355,7 @@ export async function createLiveProductionApplication(
       if (!backgroundActive) return;
       usageSummaryService.start(); maintenanceService.start(); turnSummaryPipeline?.start?.();
       claudeCentralService?.start();
+      mcpCentralSync?.start();
       lifecycle.markReady();
       documentIndexWarmupTimer = setTimeout(() => {
         documentIndexWarmupTimer = undefined;
@@ -1364,6 +1387,7 @@ export async function createLiveProductionApplication(
       await runStopStep("recurringJobScheduler", () => recurringJobScheduler?.stop());
       await runStopStep("usageSummary", () => usageSummaryService.stop());
       await runStopStep("claudeCentral", () => claudeCentralService?.stop());
+      await runStopStep("mcpCentral", () => mcpCentralSync?.stop());
       await runStopStep("dispatcher.pause", () => cardDispatchRuntime.dispatcher.pause());
       await runStopStep("turnSummary.drain", () => turnSummaryPipeline?.drain());
       await runStopStep("externalEvents.pauseWrites", () => externalEventsTarget?.pauseWrites());
@@ -1430,6 +1454,7 @@ export async function createLiveProductionApplication(
       await runShutdownStep("recurring_scheduler_stop", () => recurringJobScheduler?.stop());
       await runShutdownStep("usage_summary_stop", () => usageSummaryService.stop());
       await runShutdownStep("claude_central_stop", () => claudeCentralService?.stop());
+      await runShutdownStep("mcp_central_stop", () => mcpCentralSync?.stop());
       await runShutdownStep("card_dispatch_drain", () => cardDispatchRuntime.dispatcher.drain());
       await runShutdownStep("turn_summary_drain", () => turnSummaryPipeline?.drain());
     }
@@ -1650,6 +1675,8 @@ export function buildProductionRouteOptions(
   claudeCentral?: ClaudeCentralService,
   defaultPasAgentId?: string | null,
   mcpCentral?: McpCentralService,
+  mcpCentralSync?: McpCentralSyncService,
+  resolveMcpSessionOwner?: SessionOwnerResolver,
 ): CreateAppOptions {
   if (defaultExecutionNodeId === undefined) {
     throw new Error("default execution node is required to build production routes");
@@ -1982,7 +2009,18 @@ export function buildProductionRouteOptions(
     usageSummaryRoutes: providers.usageSummaryRoutes,
     sessionStatisticsRoutes: providers.sessionStatisticsRoutes,
     uiEventRoutes: providers.uiEventRoutes,
-    ...(mcpCentral === undefined ? {} : { mcpCentralRoutes: { service: mcpCentral, provider: providers.adminUsersRoutes.provider } }),
+    ...(mcpCentral === undefined ? {} : { mcpCentralRoutes: {
+      service: mcpCentral,
+      provider: resolveMcpSessionOwner === undefined ? providers.adminUsersRoutes.provider : createMcpCentralAccessProvider({
+        provider: providers.adminUsersRoutes.provider,
+        auth: { configuredToken: config.authBearerToken, environment: config.environment, nodeCredentials },
+        resolveSessionOwner: resolveMcpSessionOwner,
+      }),
+      ...(mcpCentralSync === undefined ? {} : {
+        onConfigWritten: () => mcpCentralSync.notifyConfigChanged(),
+        nodeStatus: (nodeId: string) => mcpCentralSync.nodeStatus(nodeId),
+      }),
+    } }),
     ...(claudeCentral === undefined
       ? {}
       : { claudeCentralRoutes: { service: claudeCentral } }),
