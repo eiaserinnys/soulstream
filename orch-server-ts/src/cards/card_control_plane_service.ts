@@ -913,7 +913,7 @@ function reportCommentText(value:string | undefined):string | null {
   if (value === undefined) return null;
   const report=value.trim(),length=codePointLength(report);
   if (length === 0) throw invalid("report를 비워 둘 수 없습니다");
-  if (length > 2000) throw invalid(`report는 2000자까지입니다. 지금 ${length}자입니다`);
+  if (length > 2000) throw invalid(`report는 2000자까지입니다. 지금 ${length}자로 ${length-2000}자 넘습니다. 결과 보고는 300~800자가 보통이니 파일, 커밋, 시험 수 같은 세부는 add_card_note로 옮기고 800자 안팎으로 다시 쓰세요`);
   return report;
 }
 function normalizeActorEmail(value:string): string { return value.trim().toLowerCase(); }
