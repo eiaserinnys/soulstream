@@ -324,7 +324,7 @@ def write_ops(ctx: dict, session_dir: str, sandbox_dir: str) -> list[dict]:
         ("read_vault_init", str(HOME / ".vault/init.txt"), "read"),
         ("read_workspace_env_local", str(WORKSPACE / ".env.local"), "read"),
         ("read_cron_jobs_env", str(HOME / "cron-jobs/.env"), "read"),
-        ("list_run_user", "/run/user/1000", "list"),
+        ("list_run_user", "/run/user", "list"),
         ("lstat_docker_sock", "/run/docker.sock", "lstat"),
     ]
     backups = sorted(MASKED["prod_repo"].glob(".env.soul-server-ts.before-*"))

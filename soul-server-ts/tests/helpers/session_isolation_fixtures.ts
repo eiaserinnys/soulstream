@@ -108,7 +108,11 @@ export class FakeChildProcess extends EventEmitter {
   constructor(pid: unknown) {
     super();
     this.pid = pid as number | undefined;
-    this.stdio = [null, null, null, new PassThrough(), new PassThrough()];
+    this.stdio = [null, null, new PassThrough(), new PassThrough(), new PassThrough()];
+  }
+
+  get stderr(): PassThrough {
+    return this.stdio[2] as PassThrough;
   }
 
   get status(): PassThrough {
@@ -122,6 +126,8 @@ export class FakeChildProcess extends EventEmitter {
   finish(code: number | null, signal: NodeJS.Signals | null = null): void {
     this.exitCode = code;
     this.signalCode = signal;
+    // 실제 프로세스가 끝나면 stdio 파이프에도 EOF가 온다.
+    this.stderr.end();
     this.status.end();
     this.emit("exit", code, signal);
   }

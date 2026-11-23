@@ -115,14 +115,22 @@ export function withTimeout<T>(
 }
 
 /**
- * 상자 준비 실패는 모두 SESSION_ISOLATION_UNAVAILABLE로 모은다. pasta의 stderr는
- * 원인 파악에만 쓰고 네트워크 대체 경로로 쓰지 않는다.
+ * 상자 준비 실패는 모두 SESSION_ISOLATION_UNAVAILABLE로 모은다. pasta와 helper의
+ * stderr는 원인 파악에만 쓰고 네트워크 대체 경로로 쓰지 않는다.
  */
-export function asIsolationUnavailable(error: unknown, pastaDiagnostics: string): Error {
-  const diagnostics = pastaDiagnostics.trim();
-  const suffix = diagnostics.length === 0 ? "" : `; pasta stderr: ${diagnostics}`;
+export function asIsolationUnavailable(
+  error: unknown,
+  pastaDiagnostics: string,
+  helperDiagnostics = "",
+): Error {
+  const pasta = pastaDiagnostics.trim();
+  const helper = helperDiagnostics.trim();
+  const suffix = [
+    pasta.length === 0 ? "" : `; pasta stderr: ${pasta}`,
+    helper.length === 0 ? "" : `; helper stderr: ${helper}`,
+  ].join("");
   if (error instanceof SessionIsolationUnavailableError) {
-    return diagnostics.length === 0 ? error : new SessionIsolationUnavailableError(
+    return suffix.length === 0 ? error : new SessionIsolationUnavailableError(
       `${error.detail}${suffix}`,
       { cause: error },
     );

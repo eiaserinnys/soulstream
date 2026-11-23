@@ -56,6 +56,12 @@ export const NETNS_HELPER_CONTROL_FD = 4;
 
 const HOST_RESOLV_CONF_PATH = "/etc/resolv.conf";
 
+/** helper stderr 진단은 끝 4000자만 남긴다(pasta 진단과 같은 길이). */
+const STDERR_DIAGNOSTICS_LIMIT = 4_000;
+
+/** helper 종료 뒤 stderr의 EOF를 기다리는 상한. 넘기면 모은 것으로 조립한다. */
+const HELPER_STDERR_DRAIN_TIMEOUT_MS = 1_000;
+
 /**
  * host 쪽 보조 프로세스(helper·pasta)에만 주는 최소 환경. 세션 환경은
  * sandbox 자식에게만 제어 채널로 전달한다.
@@ -196,6 +202,7 @@ export function launchIsolatedSession(
     },
   });
   helperProcess.on("error", () => undefined);
+  const helperDiagnostics = collectChildDiagnostics(helperProcess);
   const helperPid = assertOwnedProcessId(helperProcess.pid, "netns helper");
 
   const controlStream = readChildStream(helperProcess, NETNS_HELPER_CONTROL_FD);
@@ -293,7 +300,10 @@ export function launchIsolatedSession(
       );
     } catch (error) {
       await dispose();
-      throw asIsolationUnavailable(error, pastaDiagnostics);
+      // helper가 끝나면 stderr에 EOF가 온다. 상태 줄보다 늦게 도착하는 마지막
+      // 조각을 놓치지 않게 짧게 기다리되, 상한을 넘기면 모은 것으로 조립한다.
+      await waitForChildDiagnostics(helperDiagnostics.closed, HELPER_STDERR_DRAIN_TIMEOUT_MS);
+      throw asIsolationUnavailable(error, pastaDiagnostics, helperDiagnostics.text());
     }
   })();
   void ready.catch(() => undefined);
@@ -335,6 +345,51 @@ function launchWithoutIsolation(
     return disposePromise;
   };
   return { child, ready: Promise.resolve(), completion, dispose };
+}
+
+interface ChildDiagnostics {
+  /** stderr에서 모은 끝부분. */
+  text(): string;
+  /** stderr 스트림의 EOF. 읽을 수 없는 스트림이면 즉시 완료된다. */
+  closed: Promise<void>;
+}
+
+/**
+ * helper의 stderr 끝부분을 모은다. helper는 bwrap의 stderr를 그대로 물려받으므로
+ * 여기에 bwrap의 실패 문구가 남는다(러너 로그에는 남지 않는다, 카드 #1830).
+ * 같은 스트림을 Buffer로 읽는 어댑터가 있어 setEncoding은 부르지 않는다.
+ */
+function collectChildDiagnostics(child: ChildProcess): ChildDiagnostics {
+  let collected = "";
+  let markClosed: () => void = () => undefined;
+  const closed = new Promise<void>((resolve) => {
+    markClosed = () => resolve();
+  });
+  const stream = readChildStream(child, 2);
+  if (!isReadableStream(stream)) {
+    markClosed();
+    return { text: () => collected, closed };
+  }
+  stream.on("data", (chunk: string | Buffer) => {
+    const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    collected = `${collected}${text}`.slice(-STDERR_DIAGNOSTICS_LIMIT);
+  });
+  stream.on("end", () => markClosed());
+  stream.on("close", () => markClosed());
+  stream.on("error", () => undefined);
+  return { text: () => collected, closed };
+}
+
+/** stderr의 EOF를 상한 안에서만 기다린다. */
+async function waitForChildDiagnostics(closed: Promise<void>, timeoutMs: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    closed,
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+    }),
+  ]);
+  if (timer !== undefined) clearTimeout(timer);
 }
 
 function collectDiagnostics(child: ChildProcess, sink: (text: string) => void): void {
