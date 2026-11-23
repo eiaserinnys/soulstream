@@ -36,6 +36,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@hocuspocus/provider": "3.4.4",
     "@hookform/resolvers": "^5.2.2",
+    "@pierre/words": "0.3.0",
     "@tanstack/react-query": "^5.0.0",
     "@tanstack/react-virtual": "^3.13.21",
     "class-variance-authority": "^0.7.1",

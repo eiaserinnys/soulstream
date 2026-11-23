@@ -118,6 +118,11 @@ export default defineConfig(({ command, mode, isPreview }: ConfigEnv) => {
             if (id.includes("/heic2any/")) {
               return "vendor-heic2any";
             }
+            // 스트리밍 마크다운은 동적 import로만 받는다. 자기 묶음에 두어 초기 로딩에
+            // 실리지 않게 한다(카드 #1808).
+            if (id.includes("/@pierre/words/")) {
+              return "vendor-words";
+            }
             return "vendor";
           },
         },

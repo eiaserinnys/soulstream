@@ -1,15 +1,21 @@
 import { cn } from "../../lib/cn";
-import { memo, useRef, type ReactNode, type HTMLAttributes } from "react";
+import { memo, useEffect, useRef, type ReactNode, type HTMLAttributes } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import type { ChatAttachmentItem } from "../../lib/chat-attachment-model";
 import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments";
 import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { MarkdownContent } from "../MarkdownContent";
+import {
+  markdownBodyClass,
+  markdownManuscriptBodyClass,
+  markdownPlainBodyClass,
+} from "../markdown-classes";
 import { stripEventTruncationSuffix } from "../../lib/event-truncation-display";
 import { useGlassSurface } from "../LiquidGlassProvider";
 import type { LlmContext } from "./hooks";
 import { EventTruncationMetadata } from "./EventTruncationMetadata";
+import { StreamingMarkdown, preloadStreamingMarkdown } from "./StreamingMarkdown";
 
 /** text 노드: 일반 텍스트 표시 */
 export const AssistantMessage = memo(function AssistantMessage({
@@ -43,6 +49,12 @@ export const AssistantMessage = memo(function AssistantMessage({
 }) {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const manuscript = presentation === "manuscript";
+
+  // 채팅 본문이 화면에 올라오면 스트리밍용 words 모듈을 미리 받아 둔다.
+  // 스트리밍이 시작된 뒤에 받기 시작하면 첫 부분이 평문으로 보인다.
+  useEffect(() => {
+    void preloadStreamingMarkdown();
+  }, []);
   const webglActive = useGlassSurface(bubbleRef, { enabled: !manuscript });
   const activeSession = useChatStore((s) => s.activeSessionSummary);
 
@@ -103,12 +115,9 @@ export const AssistantMessage = memo(function AssistantMessage({
           )}
         </div>)}
         {msg.isStreaming ? (
-          <div data-slot="chat-body" className={cn("text-base text-foreground whitespace-pre-wrap", manuscript ? "[line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "leading-snug [word-break:keep-all] [overflow-wrap:anywhere]")}>
-            {displayContent}
-            <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 align-text-bottom animate-caret-blink" aria-hidden="true" />
-          </div>
+          <StreamingMarkdown content={displayContent} manuscript={manuscript} />
         ) : (
-          <div data-slot="chat-body" className={cn("text-base text-foreground", manuscript ? "[line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "break-words leading-snug")}>
+          <div data-slot="chat-body" className={cn(markdownBodyClass, manuscript ? markdownManuscriptBodyClass : markdownPlainBodyClass)}>
           {children ?? (
             <MarkdownContent
               content={displayContent}

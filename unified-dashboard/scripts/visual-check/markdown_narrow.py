@@ -23,7 +23,10 @@
      사이에서 끊는다. 해시처럼 붙은 라틴 낱말의 글자 단위 끊김은 세지 않는다.
   3. 스트리밍 줄 위치: 같은 글을 스트리밍 중에 그린 본문과 완료 뒤에 그린 본문에서 줄이
      시작하는 글자 자리가 같은가.
-  4. ui-design 0절 14~18번: 대화상자 초점, Tab과 Esc, 좁은 폭 넘침, 오류 상태,
+  4. 스트리밍 블록 자리(카드 #1808): 같은 원문을 스트리밍(@pierre/words)과 완료
+     (MarkdownContent)로 그렸을 때 맨 위 블록마다 위쪽 끝, 왼쪽 시작선, 높이의 차이가
+     2px 이하인가. 미완성 지점(굵게 중간, 링크 중간, 열린 코드 펜스, 표 중간) 장면도 찍는다.
+  5. ui-design 0절 14~18번: 대화상자 초점, Tab과 Esc, 좁은 폭 넘침, 오류 상태,
      창 크기 바꾸기(문서 읽기 창).
 
 준비
@@ -45,13 +48,15 @@
 산출물
 
     {출력}/markdown-narrow-{표면}-{폭}-{mode}.png      표면 캡처
+    {출력}/markdown-narrow-stream-{장면}-{폭}-{mode}.png   미완성 지점 장면 캡처
     {출력}/markdown-narrow-document-reader-error-{폭}-{mode}.png   오류 상태 캡처
     {출력}/markdown-narrow-document-reader-resize-360-{mode}.png   창 크기 바꾸기 캡처
     {출력}/measurements.json                            표면별 측정
     {출력}/report.json                                 0절 14~18번 판정과 종합 결과
 
-after 모드에서 한글 낱말이 끊기거나 가로 넘침이 있거나 대화상자 초점·Esc가 어긋나면
-종료 코드 1로 끝난다. before 모드에서는 360에서 낱말 끊김이 보이지 않으면 1로 끝난다.
+after 모드에서 한글 낱말이 끊기거나 가로 넘침이 있거나 스트리밍과 완료의 블록 자리가
+2px를 넘게 다르거나 대화상자 초점·Esc가 어긋나면 종료 코드 1로 끝난다. before 모드에서는
+360에서 낱말 끊김이 보이지 않으면 1로 끝난다.
 """
 
 from __future__ import annotations
@@ -61,7 +66,7 @@ import json
 import sys
 from pathlib import Path
 
-from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 WIDTHS = ((360, 800), (1440, 1000))
 SURFACES = (
@@ -75,8 +80,10 @@ SURFACES = (
     ("question", ".v3-card-question-background"),
 )
 STREAM_PAIRS = (("streaming", "completed"), ("streaming-m", "completed-m"))
+STREAM_INCOMPLETE_SCENES = ("incomplete-bold", "incomplete-link", "incomplete-fence", "incomplete-table")
 DIALOG_SURFACES = {"attachment", "document-reader"}
 EVIDENCE_TOLERANCE_PX = 1
+BLOCK_TOLERANCE_PX = 2
 
 MEASURE_SCRIPT = """
 (selector) => {
@@ -122,32 +129,60 @@ MEASURE_SCRIPT = """
 LINES_SCRIPT = """
 (selector) => {
   // 본문 글자마다 줄 위치를 재서 줄이 시작하는 글자 자리를 돌려준다.
+  // 강조 표시(코드 하이라이트)는 글자를 여러 텍스트 노드로 나누므로, 노드 경계를 넘어
+  // 같은 줄의 앞 여섯 글자를 이어 붙여 견준다. 공백과 줄바꿈은 세지 않는다.
   const body = document.querySelector(selector);
   if (!body) return null;
   const nodes = [];
   const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
   let node;
   while ((node = walker.nextNode())) nodes.push(node);
-  const starts = [];
-  let lastTop = null;
+  const chars = [];
   for (const textNode of nodes) {
     const text = textNode.nodeValue ?? '';
     for (let index = 0; index < text.length; index += 1) {
-      if (text[index] === ' ') continue;
+      const character = text[index];
+      if (character === ' ' || character === '\\n' || character === '\\t') continue;
       const range = document.createRange();
       range.setStart(textNode, index);
       range.setEnd(textNode, index + 1);
       const rect = [...range.getClientRects()].find((item) => item.width > 0);
-      if (rect) {
-        const top = Math.round(rect.top);
-        if (lastTop === null || Math.abs(top - lastTop) > 4) {
-          starts.push(text.slice(index, index + 6));
-          lastTop = top;
-        }
-      }
+      if (rect) chars.push({ character, top: Math.round(rect.top) });
     }
   }
+  const starts = [];
+  let lastTop = null;
+  for (let index = 0; index < chars.length; index += 1) {
+    const current = chars[index];
+    if (lastTop !== null && Math.abs(current.top - lastTop) <= 4) continue;
+    let prefix = '';
+    for (let next = index; next < chars.length && prefix.length < 6; next += 1) {
+      if (Math.abs(chars[next].top - current.top) > 4) break;
+      prefix += chars[next].character;
+    }
+    starts.push(prefix);
+    lastTop = current.top;
+  }
   return starts;
+}
+"""
+
+BLOCKS_SCRIPT = """
+(selector) => {
+  // 맨 위 블록(스트리밍이면 words 뿌리의 자식, 완료면 본문의 자식)의 자리를 본문 기준으로 잰다.
+  const body = document.querySelector(selector);
+  if (!body) return null;
+  const root = body.querySelector('[data-markdown="root"]') ?? body;
+  const bodyRect = body.getBoundingClientRect();
+  return [...root.children].map((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      tag: element.tagName.toLowerCase(),
+      top: Math.round((rect.top - bodyRect.top) * 100) / 100,
+      left: Math.round((rect.left - bodyRect.left) * 100) / 100,
+      height: Math.round(rect.height * 100) / 100,
+    };
+  });
 }
 """
 
@@ -187,6 +222,15 @@ def open_surface(
     )
     selector = wait_selector or dict(SURFACES)[surface]
     page.wait_for_selector(selector, state="visible", timeout=15_000)
+    if surface == "stream":
+        # 스트리밍 본문이 words 모듈을 받아 마크다운으로 바뀔 때까지 기다린다.
+        # 고치기 전 코드(평문 스트리밍)에서는 이 요소가 없으므로 기다리지 않고 잰다.
+        try:
+            page.wait_for_selector(
+                '[data-sel="streaming"] [data-markdown="root"]', state="visible", timeout=8_000,
+            )
+        except PlaywrightTimeoutError:
+            pass
     if surface in DIALOG_SURFACES:
         popup = page.locator('[data-slot="dialog-popup"]').first
         popup.wait_for(state="visible")
@@ -251,6 +295,24 @@ def run(args: argparse.Namespace) -> int:
                         for pair in STREAM_PAIRS
                         for variant in pair
                     }
+                    data["blocks"] = {
+                        variant: page.evaluate(
+                            BLOCKS_SCRIPT, f'[data-sel="{variant}"] [data-slot="chat-body"]',
+                        )
+                        for pair in STREAM_PAIRS
+                        for variant in pair
+                    }
+                    data["wordsRoot"] = page.evaluate(
+                        "() => Boolean(document.querySelector('[data-sel=\\\"streaming\\\"] [data-markdown=\\\"root\\\"]'))"
+                    )
+                    for scene in STREAM_INCOMPLETE_SCENES:
+                        row = page.locator(f'[data-sel="{scene}"]')
+                        if row.count() > 0:
+                            row.first.screenshot(
+                                path=str(output / f"markdown-narrow-stream-{scene}-{width}-{mode}.png"),
+                                animations="disabled",
+                                timeout=15_000,
+                            )
                 data.update({"surface": surface, "width": width, "height": height})
                 measurements[f"{surface}-{width}"] = data
                 capture(page, output, f"markdown-narrow-{surface}-{width}-{mode}")
@@ -268,6 +330,10 @@ def run(args: argparse.Namespace) -> int:
                         tokens = ", ".join(item["token"] for item in data["brokenKorean"][:5])
                         problems.append(f"{surface}/{width}: 한글 낱말이 끊겼습니다 ({tokens})")
                     if surface == "stream":
+                        if not data.get("wordsRoot"):
+                            problems.append(
+                                f"stream/{width}: 스트리밍 본문이 words 마크다운으로 바뀌지 않았습니다"
+                            )
                         for streaming, completed in STREAM_PAIRS:
                             streaming_lines = data["lines"].get(streaming)
                             completed_lines = data["lines"].get(completed)
@@ -276,6 +342,28 @@ def run(args: argparse.Namespace) -> int:
                                     f"stream/{width}: 스트리밍과 완료의 줄 시작이 다릅니다 "
                                     f"({streaming} vs {completed})"
                                 )
+                            streaming_blocks = data["blocks"].get(streaming) or []
+                            completed_blocks = data["blocks"].get(completed) or []
+                            if not streaming_blocks:
+                                problems.append(
+                                    f"stream/{width}: {streaming} 본문에서 맨 위 블록을 찾지 못했습니다"
+                                )
+                            elif len(streaming_blocks) != len(completed_blocks):
+                                problems.append(
+                                    f"stream/{width}: {streaming}와 {completed}의 맨 위 블록 수가 "
+                                    f"다릅니다 ({len(streaming_blocks)} vs {len(completed_blocks)})"
+                                )
+                            else:
+                                for index, (one, two) in enumerate(
+                                    zip(streaming_blocks, completed_blocks, strict=True), start=1,
+                                ):
+                                    for field, label in (("top", "위쪽 끝"), ("left", "왼쪽 시작선"), ("height", "높이")):
+                                        difference = abs(one[field] - two[field])
+                                        if difference > BLOCK_TOLERANCE_PX:
+                                            problems.append(
+                                                f"stream/{width}: {streaming} {index}번째 블록({one['tag']})의 "
+                                                f"{label} 차이 {difference:.2f}px (스트리밍 {one[field]}, 완료 {two[field]})"
+                                            )
                 if surface == "attachment" and data.get("table"):
                     if width == 360 and data["table"]["scrollWidth"] <= data["table"]["clientWidth"]:
                         problems.append("attachment/360: 표가 자기 상자 안에서 가로 스크롤하지 않습니다")
