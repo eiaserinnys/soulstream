@@ -376,7 +376,7 @@ test('a Soulstream revision without atom support stops before atom is cloned', a
 });
 
 test('secrets never reach argv, output or the installation log', async () => {
-  const secrets = { admin: 'SynthAdminPass4e1f9c', db: 'SynthDbPass77a2d0', oldKey: 'SynthOldKey93b1e8', newKey: 'SynthNewKey1d6f42', tailscale: 'tskey-auth-SynthTs5c0a71' };
+  const secrets = { admin: 'SynthAdminPass4e1f9c', db: 'SynthDbPass77a2d0', oldKey: 'SynthOldKey93b1e8', newKey: 'SynthNewKey1d6f42', tailscale: 'SynthTsKey5c0a71' };
   const t = setup({ apiKey: secrets.oldKey });
   const server = await startFakeAtom({ keys: { [secrets.oldKey]: 401 }, password: secrets.admin, secret: secrets.newKey });
   try {
