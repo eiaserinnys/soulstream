@@ -1,3 +1,4 @@
+import { isPortableMcpNode } from "../mcp_central/state.js";
 import { readFileSync } from "node:fs";
 
 import type { Logger } from "pino";
@@ -112,6 +113,7 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
     capabilities: {
       max_concurrent: agents.length,
       reflect_brief: true,
+      ...(!isPortableMcpNode(process.env) ? { central_mcp_config_v1: true } : {}),
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,

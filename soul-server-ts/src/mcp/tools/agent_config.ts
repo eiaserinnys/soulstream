@@ -63,13 +63,17 @@ export function registerAgentConfigTools(
                   default_preset: resolution.profile.default_preset,
                 }
               : {};
+            const { mcp_profile: _yamlMcpProfile, ...yamlWithoutMcp } = yamlProfile;
+            const effectiveMcp = mcpConfig.effectiveAgentMcpProfileId(yamlProfile);
             return {
-              ...yamlProfile,
+              ...yamlWithoutMcp,
+              ...(effectiveMcp ? { mcp_profile: effectiveMcp } : {}),
               ...identity,
               source: resolution?.source ?? "yaml",
               stale: resolution?.stale ?? false,
             };
           }),
+          ...(mcpConfig.configStatus().mode === "central" ? { mcp_config: mcpConfig.configStatus() } : {}),
           ...(include_raw ? { raw_yaml: raw, yaml_agents: parsed.agents } : {}),
         });
       } catch (err) {
@@ -248,6 +252,7 @@ export function registerAgentConfigTools(
       },
     },
     async ({ agent_id, mcp_profile, include_text_diff, includeTextDiff }) => {
+      if (mcpConfig.configStatus().mode === "central") return centralModeError();
       try {
         const includeTextDiffValue = include_text_diff ?? includeTextDiff ?? false;
         const plan = await agentConfig.planSetAgentMcpProfile(
@@ -295,6 +300,7 @@ export function registerAgentConfigTools(
       expected_config_checksum,
       expectedConfigChecksum,
     }) => {
+      if (mcpConfig.configStatus().mode === "central") return centralModeError();
       try {
         const includeTextDiffValue = include_text_diff ?? includeTextDiff ?? true;
         const updated = await agentConfig.setAgentMcpProfile(
@@ -405,4 +411,8 @@ export function registerAgentConfigTools(
       }
     },
   );
+}
+
+function centralModeError() {
+  return errorResult("중앙 설정을 쓰는 노드입니다. 대시보드 설정 > 에이전트 > MCP에서 바꿉니다.", { code: "MCP_CENTRAL_MODE" });
 }

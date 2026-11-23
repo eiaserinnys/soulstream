@@ -1,5 +1,5 @@
 import { registerOrchestratorTools } from "../orchestrator_tools.js";
-import { sessionMessageTools, sessionTools, errorResult, jsonResult } from "@soulstream/mcp-contract";
+import { sessionMessageTools, sessionTools, errorResult, errorResultFromError, jsonResult } from "@soulstream/mcp-contract";
 /**
  * session_mgmt 도구 — Python `mcp_session_mgmt.py` 정합 (키 호환).
  */
@@ -89,6 +89,10 @@ export function registerSessionMgmtTools(
       },
     },
     async ({ agent_id, model_preset, model_preset_fallbacks, reasoning_effort, prompt, caller_session_id, predecessor_session_id, notify_completion, folder_id, card_id, worktree_id }) => {
+      try {
+        await runtime.mcpConfigService?.waitForInitialCentralSync(5_000);
+        runtime.mcpConfigService?.assertCentralReady();
+      } catch (error) { return errorResultFromError(error); }
       let agentResolution: AgentProfileResolution | undefined;
       let agent: AgentProfile | undefined;
       let resolvedAgentId: string;

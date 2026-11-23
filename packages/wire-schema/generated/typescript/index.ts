@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 205개 $defs (top-level wire 101 + supporting/SSE 104). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 208개 $defs (top-level wire 102 + supporting/SSE 106). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -91,6 +91,7 @@ export type SoulstreamUpstreamProtocol =
   | ClaudeAuthLoginSubmitCode
   | ClaudeAuthLoginCancel
   | ClaudeCentralPoolSync
+  | McpCentralSync
   | ClaudeRuntimeListTasks
   | ClaudeRuntimeTaskOutput
   | ClaudeRuntimeStopTask
@@ -136,6 +137,7 @@ export interface NodeRegister {
   capabilities?: {
     runner_inventory_v1?: boolean;
     claude_account_pool_v1?: boolean;
+    central_mcp_config_v1?: boolean;
     control_channel_v1?: boolean;
     [k: string]: unknown;
   };
@@ -3473,6 +3475,31 @@ export interface ClaudeCentralPoolSyncResult {
    */
   revision: number;
 }
+export interface McpCentralSync {
+  type: "mcp_central_sync";
+  requestId: string;
+  revision: number;
+  runtime: McpCentralSnapshot;
+  display: McpCentralSnapshot;
+  success?: boolean;
+  data?: McpCentralSyncResult;
+  error?: ClaudeAuthError;
+  [k: string]: unknown;
+}
+export interface McpCentralSnapshot {
+  registry: {
+    servers: {}[];
+  };
+  profiles: {
+    profiles: {}[];
+  };
+  agent_bindings: {
+    [k: string]: string;
+  };
+}
+export interface McpCentralSyncResult {
+  applied_revision: number;
+}
 /**
  * orch→노드: Claude runtime task 목록 조회.
  */
@@ -3915,6 +3942,7 @@ export const CONTROL_COMMAND_TYPES = [
   "claude_auth_login_submit_code",
   "claude_auth_login_cancel",
   "claude_central_pool_sync",
+  "mcp_central_sync",
   "provider_usage_get",
   "reflect_brief",
   "plan_agent_profile_update",
