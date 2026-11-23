@@ -125,6 +125,78 @@ describe("sanitizeJsonText", () => {
     expect(sanitizeJsonText("a\u0000b\ud800c\udfff😀")).toBe("ab�c�😀");
   });
 
+  it("returns well-formed strings unchanged through the isWellFormed fast path", () => {
+    const isWellFormed = vi.spyOn(String.prototype, "isWellFormed");
+    try {
+      expect(sanitizeJsonText("plain ascii")).toBe("plain ascii");
+      expect(sanitizeJsonText("한글 텍스트")).toBe("한글 텍스트");
+      expect(sanitizeJsonText("emoji 😀 pair")).toBe("emoji 😀 pair");
+      expect(isWellFormed).toHaveBeenCalled();
+    } finally {
+      isWellFormed.mockRestore();
+    }
+  });
+
+  it("removes every NUL from otherwise well-formed text", () => {
+    expect(sanitizeJsonText("a\u0000b")).toBe("ab");
+    expect(sanitizeJsonText("한\u0000글 😀\u0000")).toBe("한글 😀");
+    expect(sanitizeJsonText("\u0000")).toBe("");
+  });
+
+  it("replaces a lone high or lone low surrogate with U+FFFD", () => {
+    expect(sanitizeJsonText("\ud800")).toBe("�");
+    expect(sanitizeJsonText("\udfff")).toBe("�");
+    expect(sanitizeJsonText("a\ud800b\udfffc")).toBe("a�b�c");
+    expect(sanitizeJsonText("\ud800\ud800😀\udfff")).toBe("��😀�");
+  });
+
+  it("preserves a well-formed surrogate pair", () => {
+    expect(sanitizeJsonText("😀")).toBe("😀");
+    expect(sanitizeJsonText("한😀글")).toBe("한😀글");
+  });
+
+  it("matches the legacy character scan across mixed inputs", () => {
+    const legacySanitizeJsonText = (value: string): string => {
+      let result = "";
+      for (let index = 0; index < value.length; index += 1) {
+        const code = value.charCodeAt(index);
+        if (code === 0) continue;
+        if (code >= 0xd800 && code <= 0xdbff) {
+          const next = value.charCodeAt(index + 1);
+          if (next >= 0xdc00 && next <= 0xdfff) {
+            result += value[index] ?? "";
+            result += value[index + 1] ?? "";
+            index += 1;
+          } else {
+            result += "�";
+          }
+          continue;
+        }
+        if (code >= 0xdc00 && code <= 0xdfff) {
+          result += "�";
+          continue;
+        }
+        result += value[index] ?? "";
+      }
+      return result;
+    };
+    const corpus = [
+      "",
+      "plain ascii with\nnewline and\ttab",
+      "한글 텍스트와 공백",
+      "😀😁😂",
+      "nul\u0000inside\u0000twice",
+      "lone-high\ud800end",
+      "lone-low\udfffstart",
+      "pair😀lone\ud800nul\u0000tail",
+      "한😀\u0000글𐏿",
+      "unit 한글 😀 ".repeat(1000),
+    ];
+    for (const value of corpus) {
+      expect(sanitizeJsonText(value)).toBe(legacySanitizeJsonText(value));
+    }
+  });
+
   it("removes undefined object fields and normalizes undefined array slots", () => {
     expect(sanitizeJsonValue({
       kept: "value",
@@ -431,6 +503,44 @@ describe("EventPersistence durable ingress", () => {
 
     expect(result.archive).toBeNull();
     expect(result.appendInput.payload).not.toHaveProperty("truncation");
+  });
+
+  it("keeps a short well-formed event unchanged through outbox append input", () => {
+    const content = "한글 답변 😀\n둘째 줄";
+    const { appendInput, archive } = buildEventOutboxAppendInput("sess-1", {
+      type: "assistant_message",
+      content,
+      timestamp: 1,
+    } as unknown as SSEEventPayload);
+
+    expect(archive).toBeNull();
+    expect((appendInput.payload as { content?: unknown }).content).toBe(content);
+    expect(appendInput.payload).not.toHaveProperty("truncation");
+  });
+
+  it("truncates a large Korean tool result by UTF-8 bytes and archives the exact original", () => {
+    const original = "한글 도구 결과 😀\n".repeat(20_000);
+    const event = {
+      type: "tool_result",
+      tool_name: "Bash",
+      tool_use_id: "tool-large-korean",
+      result: original,
+      is_error: false,
+      timestamp: 1,
+    } as unknown as SSEEventPayload;
+
+    const { appendInput, archive } = buildEventOutboxAppendInput("sess-1", event);
+    const truncated = (appendInput.payload as ToolResultEvent).result as string;
+
+    expect(Buffer.byteLength(truncated, "utf8")).toBeLessThanOrEqual(EVENT_STRING_MAX_BYTES);
+    expect(Buffer.byteLength(truncated, "utf8")).toBeGreaterThan(EVENT_STRING_MAX_BYTES - 4);
+    expect(truncated.endsWith("\n[잘림]")).toBe(true);
+    expect(truncated.startsWith(original.slice(0, 1024))).toBe(true);
+    expect(archive).toEqual({ body: original, mimeType: "text/plain", extension: "txt" });
+    expect((appendInput.payload as ToolResultEvent).truncation).toEqual({
+      original_bytes: Buffer.byteLength(original, "utf8"),
+      attachment: null,
+    });
   });
 
   it("uses only the truncated append input on the host-direct enqueue path", async () => {
