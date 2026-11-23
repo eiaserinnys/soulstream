@@ -24,8 +24,9 @@ export const cardOperationSchemas={
   update_card:mutation.extend({ title:id.optional(),brief:z.string().optional(),archived:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),color:z.enum(CARD_COLOR_KEYS).optional() }).refine(v=>Object.keys(v).some(k=>!["expectedVersion","idempotencyKey","reason"].includes(k)),"Patch requires a field"),
   start_card_work:mutation.extend({execution:z.object({registrationId:id,executionCommandId:id}).strict()}),
   set_card_status:mutation.extend({ status:z.enum(CARD_STATUSES),blockedKind:z.enum(["limit","question","no_report"]).nullable().optional(),blockedDetail:z.string().nullable().optional(),
-    wakeAt:cardVerificationWakeAtSchema.optional(),waitingFor:cardVerificationWaitingForSchema.optional() })
+    wakeAt:cardVerificationWakeAtSchema.optional(),waitingFor:cardVerificationWaitingForSchema.optional(),report:z.string().optional() })
     .superRefine((value,ctx)=>{
+      if (value.report !== undefined && value.status !== "done") ctx.addIssue({ code:"custom",path:["report"],message:"결과 보고는 완료(done)로 옮길 때만 받습니다" });
       if (value.status === "awaiting_verification") {
         if (value.wakeAt === undefined) ctx.addIssue({ code:"custom",path:["wakeAt"],message:"검증 대기에는 wakeAt이 필요합니다" });
         if (value.waitingFor === undefined) ctx.addIssue({ code:"custom",path:["waitingFor"],message:"검증 대기에는 waitingFor가 필요합니다" });
@@ -56,7 +57,7 @@ export const cardOperationSchemas={
   confirm_card_item:append.extend({ itemId,confirmed:z.boolean() }),
   update_card_now:append.extend({ now:z.string(),turn:z.enum(["agent","user","outside"]),ask:z.string().optional() }),
   add_card_note:append.extend({ text:z.string() }),
-  request_card_review:append.extend({ ask:z.string().optional() }),
+  request_card_review:append.extend({ ask:z.string().optional(),report:z.string().optional() }),
 } as const;
 export type CardOperation=keyof typeof cardOperationSchemas;
 /** 답 operation은 mode가 있으면 그 꼴의 엄격 schema로, 없으면 옛 꼴 그대로 읽는다. */
