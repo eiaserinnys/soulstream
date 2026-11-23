@@ -131,7 +131,6 @@ export interface RunnerProcessRuntimeFactoryOptions {
     event: ClaudeClientEvent,
     idempotencyKey: string,
   ): Promise<() => Promise<void>>;
-  reconcileClaudeTranscriptAppend?(task: Task): Promise<void>;
   spawner?: Pick<RunnerProcessSpawner, "adopt" | "spawn">
     & Partial<Pick<
       RunnerProcessSpawner,
@@ -511,20 +510,6 @@ export async function applyRunnerHostCall(
       default:
         throw new Error(`unsupported Claude account host operation: ${call.operation}`);
     }
-  }
-  // PR-B(카드 #1075)에서 지운다: 옛 릴리스 러너 자식 호환.
-  if (call.service === "session_store") {
-    if (call.operation === "append") {
-      if (options.reconcileClaudeTranscriptAppend) {
-        registerPostResponse(async () => {
-          await options.reconcileClaudeTranscriptAppend!(task);
-        });
-      }
-      return null;
-    }
-    if (call.operation === "load" || call.operation === "delete") return null;
-    if (call.operation === "listSessions" || call.operation === "listSubkeys") return [];
-    throw new Error(`unsupported SessionStore operation: ${call.operation}`);
   }
   if (call.service === "event_archive") {
     if (call.operation !== "register") {

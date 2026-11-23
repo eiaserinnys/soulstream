@@ -28,14 +28,6 @@ beforeAll(async () => {
     new URL("../../packages/db-schema/sql/schema.sql", import.meta.url),
     "utf8",
   );
-  await harness.sql.unsafe(`
-    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS claude_session_id TEXT;
-    CREATE TABLE claude_transcript_entries (
-      session_id TEXT NOT NULL,
-      entry_id TEXT NOT NULL,
-      PRIMARY KEY (session_id, entry_id)
-    );
-  `);
   await harness.sql.unsafe(extractBlock(
     schemaSql,
     "CREATE TABLE IF NOT EXISTS session_deliveries (",

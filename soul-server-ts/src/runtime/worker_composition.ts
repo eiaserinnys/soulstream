@@ -269,7 +269,6 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     claudeAccounts,
     producedAttachments: attachmentRuntime.mcpRuntime.producedAttachments,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,
-    reconcileClaudeTranscriptAppend: (task) => taskRuntime.claudeRuntimeTaskFollowup.reconcileTranscriptAppend(task),
     observeClaudeRuntime: backgroundLifecycleObserver(claudeRuntime.backgroundLifecycle),
     releaseManifest: params.releaseActivationState.manifest,
     modelCatalogPath: params.modelCatalogPath,

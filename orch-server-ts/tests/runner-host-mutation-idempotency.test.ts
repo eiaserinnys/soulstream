@@ -3,48 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 import { ClaudeBackgroundTaskRepository } from
   "../src/control_plane/repositories/claude_background_task_repository.js";
-import { ClaudeTranscriptRepository } from
-  "../src/control_plane/repositories/claude_transcript_repository.js";
 
 type SqlCall = { text: string; values: unknown[] };
 
 describe("runner host mutation owners", () => {
-  it("commits transcript append and its correlation receipt once", async () => {
-    const receipts = new Map<string, Record<string, unknown>>();
-    let applications = 0;
-    const { sql } = fakeSql((text, values) => {
-      if (text.includes("FROM session_mutation_receipts")) {
-        return receipts.has("runner:append:1") ? [receipts.get("runner:append:1")!] : [];
-      }
-      if (text.includes("INSERT INTO session_mutation_receipts")) {
-        receipts.set(String(values[0]), {
-          operation: values[1],
-          session_id: values[2],
-          request_hash: values[3],
-          result_json: values[4],
-        });
-        return [];
-      }
-      if (text.includes("claude_transcript_append")) {
-        applications += 1;
-        return [{ claude_transcript_append: 2 }];
-      }
-      return [];
-    });
-    const repository = new ClaudeTranscriptRepository(sql);
-    const input = {
-      idempotencyKey: "runner:append:1",
-      sessionId: "session-a",
-      key: { projectKey: "project-a", sessionId: "session-a" },
-      entries: [{ type: "user", message: { role: "user", content: "hello" } }],
-    } as never;
-
-    await expect(repository.appendClaudeTranscriptEntriesIdempotent(input)).resolves.toBe(2);
-    await expect(repository.appendClaudeTranscriptEntriesIdempotent(input)).resolves.toBe(2);
-
-    expect(applications).toBe(1);
-  });
-
   it("commits background observation and its correlation receipt once", async () => {
     const receipts = new Map<string, Record<string, unknown>>();
     let applications = 0;
@@ -84,38 +46,6 @@ describe("runner host mutation owners", () => {
 
     await expect(repository.observe(input)).resolves.toMatchObject(row);
     await expect(repository.observe(input)).resolves.toMatchObject(row);
-
-    expect(applications).toBe(1);
-  });
-
-  it("commits transcript deletion and its correlation receipt once", async () => {
-    const receipts = new Map<string, Record<string, unknown>>();
-    let applications = 0;
-    const { sql } = fakeSql((text, values) => {
-      if (text.includes("FROM session_mutation_receipts")) {
-        return receipts.has("runner:delete:1") ? [receipts.get("runner:delete:1")!] : [];
-      }
-      if (text.includes("INSERT INTO session_mutation_receipts")) {
-        receipts.set(String(values[0]), {
-          operation: values[1],
-          session_id: values[2],
-          request_hash: values[3],
-          result_json: values[4],
-        });
-        return [];
-      }
-      if (text.includes("claude_transcript_delete")) applications += 1;
-      return [];
-    });
-    const repository = new ClaudeTranscriptRepository(sql);
-    const input = {
-      idempotencyKey: "runner:delete:1",
-      sessionId: "session-a",
-      key: { projectKey: "project-a", sessionId: "sdk-session-a" },
-    };
-
-    await repository.deleteClaudeTranscriptIdempotent(input);
-    await repository.deleteClaudeTranscriptIdempotent(input);
 
     expect(applications).toBe(1);
   });

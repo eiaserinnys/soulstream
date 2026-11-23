@@ -2,7 +2,6 @@ import { FolderContentSqlResolver } from "../board/folder_content_sql.js";
 import type { LiveDbSqlResolver, LiveSearchDbConnectionFactory } from "../runtime/live_db_sql.js";
 import type { SqlClient } from "./control_plane_types.js";
 import { ClaudeBackgroundTaskRepository } from "./repositories/claude_background_task_repository.js";
-import { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
 import { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
 import { SessionPageBindingRepository } from "./repositories/session_page_binding_repository.js";
 import { SessionMutationRepository } from "./repositories/session_mutation_repository.js";
@@ -22,7 +21,6 @@ export interface PersistenceHostRepositories {
   persistentReports?: PersistentReportService;
   deliveries: SessionDeliveryRepository;
   claudeBackgroundTasks: ClaudeBackgroundTaskRepository;
-  claudeTranscripts: ClaudeTranscriptRepository;
   sessionPageBindings: SessionPageBindingRepository;
   sessionMutations: SessionMutationRepository;
   sessionReads: SessionReadRepository;
@@ -60,7 +58,6 @@ export function createPersistenceHostRepositoryProvider(
       persistentReports: new PersistentReportService(await resolver.resolveSql(), publishReports, onReportPosted, appendTimeline),
       deliveries: new SessionDeliveryRepository(sql),
       claudeBackgroundTasks: new ClaudeBackgroundTaskRepository(sql),
-      claudeTranscripts: new ClaudeTranscriptRepository(sql),
       sessionPageBindings: new SessionPageBindingRepository(sql),
       sessionMutations: new SessionMutationRepository(sql, sessionDeletion),
       worktrees: new WorktreeRepository(sql),
