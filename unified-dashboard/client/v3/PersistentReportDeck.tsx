@@ -49,9 +49,10 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
     if (pendingLookup.current) return pendingLookup.current;
     const lookup = (async () => {
       try {
-        const { cards } = await cardRequest<{ cards: CardRow[] }>('/api/cards?includeCompleted=true');
         const store = useCardStore.getState();
-        store.putCards(cards.filter(card => !store.byId[card.id] || store.byId[card.id].version <= card.version));
+        const startedAt = store.nextRequestSequence();
+        const { cards } = await cardRequest<{ cards: CardRow[] }>('/api/cards?includeCompleted=true');
+        store.putCards(cards, startedAt);
         const known = new Set(Object.values(useCardStore.getState().byId).map(card => card.number));
         lookupScope.current.missing = new Set(lookupScope.current.numbers.filter(number => !known.has(number)));
       } catch { /* A failed lookup stays retryable, without a new error surface. */ }

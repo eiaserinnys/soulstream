@@ -35,8 +35,9 @@ export function useCardMembership(folderId?:string,createdIds:readonly string[]=
         dirty=false;
         const startedImmediate=currentImmediateRevision();
         const startedCard=getV3InvalidationSnapshot().sources.card;
-        const startedRow=useCardStore.getState().getRowSequence();
-        const startedLocal=useCardStore.getState().localRevision;
+        const { nextRequestSequence, getListUpdateSequence, localRevision: startedLocal } = useCardStore.getState();
+        const startedRow = nextRequestSequence();
+        const startedUpdateSeq = getListUpdateSequence();
         try {
           const path=`/api/cards?${new URLSearchParams({includeCompleted:"false",...(folderId?{folderId}:{})})}`;
           const {cards}=await cardRequest<{cards:CardRow[]}>(path);
@@ -48,7 +49,13 @@ export function useCardMembership(folderId?:string,createdIds:readonly string[]=
           }
           const store=useCardStore.getState();
           store.putCards(cards,startedRow);
-          if(!folderId&&startedCard===getV3InvalidationSnapshot().sources.card&&startedLocal===store.localRevision)store.reconcileGlobalList(cards,startedImmediate);
+          if (!folderId) {
+            const isSynced = startedCard === getV3InvalidationSnapshot().sources.card && startedLocal === store.localRevision;
+            store.reconcileGlobalList(cards, {
+              startedUpdateSeq,
+              scopeRevision: isSynced ? startedImmediate : undefined,
+            });
+          }
           setMembership({scope:folderId,ids:[...new Set(cards.map(card=>card.id))]});setError(null);
           if(startedCard!==getV3InvalidationSnapshot().sources.card&&!dirty)scheduleLoad();
           if(timer!==undefined)break;
@@ -58,7 +65,7 @@ export function useCardMembership(folderId?:string,createdIds:readonly string[]=
             if(timer!==undefined){clearTimeout(timer);timer=undefined;}
             dirty=true;continue;
           }
-          if(!folderId&&!dirty&&startedCard===getV3InvalidationSnapshot().sources.card)useCardStore.getState().reconcileGlobalList([]);
+          if(!folderId&&!dirty&&startedCard===getV3InvalidationSnapshot().sources.card)useCardStore.getState().reconcileGlobalList([], { startedUpdateSeq });
           setError(errorText(failure));
           if(startedCard!==getV3InvalidationSnapshot().sources.card&&!dirty)scheduleLoad();
           if(timer!==undefined)break;

@@ -54,7 +54,7 @@ it("uses a cached current assignee and falls back when the cached card belongs t
   const cached={...reviewCard,id:"cached",assigneeSessionId:"owner"};
   useCardStore.getState().putCards([cached]);
   const unregister=useCardStore.getState().registerGlobalList();
-  useCardStore.getState().reconcileGlobalList([cached],0);
+  useCardStore.getState().reconcileGlobalList([cached], { scopeRevision: 0 });
   await click(owner);
   expect(cardRequest).not.toHaveBeenCalled();
   expect(openCard).toHaveBeenCalledWith("cached","overlay",null,"owner");

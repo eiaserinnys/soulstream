@@ -4,10 +4,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CardInboxBoard } from "./CardInboxBoard";
 import { FolderCardSection } from "./FolderCardSection";
+import { V3SessionPanel } from "./V3SessionPanel";
+import { dispatchSessionStreamEvent } from "../../../packages/soul-ui/src/hooks/session-stream-dispatch";
 import { acceptV3SessionStreamEvent, resetV3InvalidationForTest } from "./v3-live-invalidation-plane";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { reviewCard, reviewDetail } from "./components-review-fixtures";
+import { useCardMembership } from "./use-card-membership";
 (globalThis as typeof globalThis & {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 let element:HTMLDivElement,root:Root;
 beforeEach(()=>{vi.useFakeTimers();vi.stubGlobal('ResizeObserver',class {observe(){}disconnect(){}});vi.stubGlobal("matchMedia",(query:string)=>({matches:false,media:query,onchange:null,addListener:vi.fn(),removeListener:vi.fn(),addEventListener:vi.fn(),removeEventListener:vi.fn(),dispatchEvent:vi.fn()}));resetV3InvalidationForTest();useCardStore.getState().reset();element=document.createElement("div");document.body.append(element);root=createRoot(element);});
@@ -152,4 +155,84 @@ it("keeps a same-version newer detail when an older in-flight list arrives",asyn
  expect(useCardStore.getState().byId.known.latestActivity?.body).toBe("최신 활동");
  expect(useCardStore.getState().byId.known.attachments).toEqual([{path:"new"}]);
  expect(element.querySelector('[data-card-id="known"]')).not.toBeNull();
+});
+
+it("removes a completed review card while later card events await the next global list", async () => {
+ const first: CardRow = { ...reviewCard, id: "first", status: "review" };
+ const second: CardRow = { ...reviewCard, id: "second", status: "review" };
+ const remaining = row("remaining");
+ const completed = (card: CardRow) => ({ ...card, status: "done", version: card.version + 1 });
+ const lists: ((value: Response) => void)[] = [];
+ const fetch = vi.fn((input: RequestInfo | URL) => {
+  const path = String(input);
+  if (path.startsWith("/api/cards?")) return new Promise<Response>(resolve => lists.push(resolve));
+  const card = path.endsWith("/first") ? first : second;
+  return Promise.resolve(new Response(JSON.stringify({ ...reviewDetail, card: completed(card) })));
+ });
+ vi.stubGlobal("fetch", fetch);
+ const emit = (cardId: string) => act(() => dispatchSessionStreamEvent({
+  type: "card_updated", cardId, folderId: reviewCard.folderId,
+ }, {
+  onCardUpdated: update => { void useCardStore.getState().handleCardUpdated(update); },
+  onEvent: acceptV3SessionStreamEvent,
+ }));
+ const reviewRow = (id: string) => element.querySelector(`[data-testid="v3-session-group-review"] [data-card-id="${id}"]`);
+
+ await act(() => root.render(<>
+  <CardInboxBoard/>
+  <V3SessionPanel sessions={[]} folders={[]} nodeConnectivity={{ ready: true, connectedNodeIds: new Set() }}
+   activeSessionId={null} onOpenSession={vi.fn()} onAcknowledged={vi.fn()}/>
+ </>));
+ await act(async () => lists[0](response([first, second, remaining])));
+ expect(reviewRow("first")).not.toBeNull();
+ expect(useCardStore.getState().details.first).toBeUndefined();
+ await emit("first");
+ await flushWindow();
+ await emit("second");
+ await act(async () => lists[1](response([remaining])));
+
+ expect(useCardStore.getState().byId.first.status).toBe("done");
+ expect(reviewRow("first")).toBeNull();
+ expect(reviewRow("second")).not.toBeNull();
+ expect(useCardStore.getState().isCardCurrent("second")).toBe(false);
+ expect(useCardStore.getState().isCardInSyncedGlobalList("remaining", 0)).toBe(false);
+
+ await flushWindow();
+ await act(async () => lists[2](response([remaining])));
+ expect(reviewRow("second")).toBeNull();
+ expect(useCardStore.getState().isCardInSyncedGlobalList("remaining", 0)).toBe(true);
+});
+
+it("preserves newer same-version activity and attachments when an older global list arrives last", async () => {
+ const attachment = { nodeId: "node", name: "report.txt", mimeType: "text/plain" };
+ const activity = { kind: "instruction", format: "markdown", createdAt: "2026-01-01" } as const;
+ const old: CardRow = {
+  ...row("known"), attachments: [{ ...attachment, path: "old/report.txt" }],
+  latestActivity: { ...activity, body: "이전 활동" },
+ };
+ const fresh: CardRow = {
+  ...old, attachments: [{ ...attachment, path: "new/report.txt" }],
+  latestActivity: { ...activity, body: "최신 활동" },
+ };
+ const other = row("higher-version");
+ const higherVersion = { ...other, version: other.version + 1 };
+ const lists: ((value: Response) => void)[] = [];
+ vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => String(input).startsWith("/api/cards?")
+  ? new Promise<Response>(resolve => lists.push(resolve))
+  : Promise.resolve(new Response(JSON.stringify({ ...reviewDetail, card: old })))));
+ await useCardStore.getState().loadCard("known");
+
+ function Lists({ scoped }: { scoped: boolean }) {
+  useCardMembership();
+  return scoped ? <FolderCardSection folderId={reviewCard.folderId}/> : null;
+ }
+ await act(() => root.render(<Lists scoped={false}/>));
+ await act(() => root.render(<Lists scoped/>));
+ await act(async () => lists[1](response([fresh, other])));
+ await act(async () => lists[0](response([old, higherVersion])));
+
+ const { byId, details } = useCardStore.getState();
+ expect(byId.known).toEqual(fresh);
+ expect(details.known.card).toEqual(fresh);
+ expect(byId["higher-version"]).toEqual(higherVersion);
 });

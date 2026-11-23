@@ -141,10 +141,12 @@ export async function loadDailyPlanner(
   dependencies: PlannerDataDependencies,
 ): Promise<DailyPlannerData> {
   const query = new URLSearchParams({ date });
+  const store = useCardStore.getState();
+  const startedAt = store.nextRequestSequence();
   const payload = await dependencies.fetchPlanner(
     `/api/planner/today?${query.toString()}`,
   ) as PlannerTodayPayload;
-  useCardStore.getState().putCards([...payload.attention, ...payload.running, ...payload.queued]);
+  store.putCards([...payload.attention, ...payload.running, ...payload.queued], startedAt);
   return {
     attention: payload.attention, running: payload.running, queued: payload.queued,
     daily: payload.daily,

@@ -17,7 +17,8 @@ interface CardState {
   folderIds: Record<string, string[]>;
   localRevision: number;
   putCards(cards: readonly CardRow[], startedAt?: number): void;
-  getRowSequence(): number;
+  nextRequestSequence(): number;
+  getListUpdateSequence(): number;
   markLocalChange(cardId?: string): void;
   loadFolder(folderId: string): Promise<void>;
   loadCard(id: string): Promise<CardDetail>;
@@ -28,7 +29,7 @@ interface CardState {
   create(body: object): Promise<CardRow>;
   handleCardUpdated(event: {cardId: string; folderId: string}): Promise<CardDetail | undefined>;
   registerGlobalList(): () => void;
-  reconcileGlobalList(cards: readonly CardRow[], scopeRevision?: number): void;
+  reconcileGlobalList(cards: readonly CardRow[], options?: { startedUpdateSeq?: number; scopeRevision?: number }): void;
   isCardCurrent(id: string): boolean;
   isCardInSyncedGlobalList(id: string, scopeRevision: number): boolean;
   observeReplay(revision: number): void;
@@ -37,12 +38,14 @@ interface CardState {
 export const useCardStore = create<CardState>((set,get) => ({
   byId: {}, details: {}, errors: {}, pendingItemConfirmations:{}, folderIds: {}, localRevision: 0,
   // 늦게 도착한 오래된 목록이 이미 최신인 행을 과거 상태로 되돌리지 않게 버전을 본다.
-  putCards(cards,startedAt) { set(s=>{
+  putCards(cards, startedAt = ++rowClock) { set(s=>{
     let byId=s.byId,details=s.details;
     for(const card of cards){
       const current=byId[card.id];
       if(current!==undefined&&current.version>card.version)continue;
-      if(current&&startedAt!==undefined&&(rowSequences.get(card.id)??0)>startedAt&&current.version>=card.version)continue;
+      const rowSequence = rowSequences.get(card.id) ?? 0;
+      if (current?.version === card.version && rowSequence > startedAt) continue;
+      rowSequences.set(card.id, Math.max(rowSequence, startedAt));
       if(current!==card){if(byId===s.byId)byId={...byId};byId[card.id]=card;}
       const detail=details[card.id];
       if(detail!==undefined&&detail.card.version<=card.version&&detail.card!==card)
@@ -50,10 +53,12 @@ export const useCardStore = create<CardState>((set,get) => ({
     }
     return byId===s.byId&&details===s.details?s:{byId,details};
   }); },
-  getRowSequence(){return rowClock;},
+  nextRequestSequence() { return ++rowClock; },
+  getListUpdateSequence() { return updateSequence; },
   markLocalChange(cardId){if(cardId)markRow(cardId);globalMembership=null;set(s=>({localRevision:s.localRevision+1}));},
   async loadFolder(folderId) {
-    const cards=await fetchCards(folderId); get().putCards(cards);
+    const startedAt = get().nextRequestSequence();
+    const cards=await fetchCards(folderId); get().putCards(cards, startedAt);
     set(s=>({folderIds:{...s.folderIds,[folderId]:cards.map(c=>c.id)}}));
   },
   async loadCard(id) {
@@ -164,13 +169,17 @@ export const useCardStore = create<CardState>((set,get) => ({
     globalLists++;
     return ()=>{if(--globalLists===0){globalMembership=null;get().reconcileGlobalList([]);}};
   },
-  reconcileGlobalList(cards,scopeRevision){
+  reconcileGlobalList(cards, { startedUpdateSeq = updateSequence, scopeRevision } = {}) {
     const ids=new Set(cards.map(card=>card.id));
     if(scopeRevision!==undefined)globalMembership={ids,scopeRevision};
-    for(const id of ids)staleCards.delete(id);
+    for (const id of ids) {
+      const revision = staleCards.get(id);
+      if (revision !== undefined && revision <= startedUpdateSeq) staleCards.delete(id);
+    }
     for(const [id,revision] of pendingListUpdates){
+      if (revision > startedUpdateSeq) continue;
       pendingListUpdates.delete(id);
-      if(ids.has(id)){if(staleCards.get(id)===revision)staleCards.delete(id);continue;}
+      if (ids.has(id)) continue;
       void get().loadCard(id).then(()=>{
         if(staleCards.get(id)===revision)staleCards.delete(id);
       }).catch(()=>undefined);
