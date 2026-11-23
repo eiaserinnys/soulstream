@@ -13,6 +13,8 @@ export type AttachmentView = {
   loadText?: (signal: AbortSignal) => Promise<{ text: string; truncated: boolean }>;
   loadMedia?: (signal: AbortSignal) => Promise<AttachmentMediaContent>;
   pdfCache?: 'persistent' | 'none';
+  /** A changed value means the content may have changed. */
+  revision?: string;
   key: string;
   name: string;
   mimeType: string | null;

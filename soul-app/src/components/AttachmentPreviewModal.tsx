@@ -105,7 +105,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
   const [retryKey, setRetryKey] = useState(0);
   const latestItem = useRef(item);
   latestItem.current = item;
-  const pdfIdentity = JSON.stringify([item.key, item.readContext, item.source.kind === 'ready' ? item.source.attachmentId : null, item.byteSize, item.pdfCache]);
+  const pdfIdentity = JSON.stringify([item.key, item.readContext, item.source.kind === 'ready' ? [item.source.attachmentId, item.source.originalUrl, item.source.previewUrl] : item.source.availability, item.byteSize, item.pdfCache, item.revision]);
   useEffect(() => {
     const item = latestItem.current;
     if (textContent) {
