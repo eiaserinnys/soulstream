@@ -6,7 +6,8 @@ import { useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 import { useV3SessionPanelController } from "./use-v3-session-panel-controller";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { reviewCard } from "./components-review-fixtures";
-import { acceptV3SessionStreamEvent, resetV3InvalidationForTest } from "./v3-live-invalidation-plane";
+import { acceptV3SessionStreamEvent, invalidateV3, resetV3InvalidationForTest } from "./v3-live-invalidation-plane";
+import { useCardMembership } from "./use-card-membership";
 
 const cardRequest = vi.hoisted(() => vi.fn());
 vi.mock("@seosoyoung/soul-ui/cards/card-api", () => ({ cardRequest }));
@@ -50,7 +51,10 @@ it("resolves an assignee card from the authenticated completed-inclusive list",a
 });
 
 it("uses a cached current assignee and falls back when the cached card belongs to someone else",async()=>{
-  useCardStore.getState().putCards([{...reviewCard,id:"cached",assigneeSessionId:"owner"}]);
+  const cached={...reviewCard,id:"cached",assigneeSessionId:"owner"};
+  useCardStore.getState().putCards([cached]);
+  const unregister=useCardStore.getState().registerGlobalList();
+  useCardStore.getState().reconcileGlobalList([cached],0);
   await click(owner);
   expect(cardRequest).not.toHaveBeenCalled();
   expect(openCard).toHaveBeenCalledWith("cached","overlay",null,"owner");
@@ -59,6 +63,7 @@ it("uses a cached current assignee and falls back when the cached card belongs t
   await click(owner);
   expect(cardRequest).toHaveBeenCalledWith("/api/cards?includeCompleted=true");
   expect(openCard).toHaveBeenLastCalledWith("current","overlay",null,"owner");
+  unregister();
 });
 
 it("falls back after a replay gap until cached membership is refreshed",async()=>{
@@ -68,6 +73,34 @@ it("falls back after a replay gap until cached membership is refreshed",async()=
   await click(owner);
   expect(cardRequest).toHaveBeenCalledWith("/api/cards?includeCompleted=true");
   expect(openCard).toHaveBeenCalledWith("current","overlay",null,"owner");
+});
+
+it("does not trust an assignee cache before the global list has synchronized",async()=>{
+  useCardStore.getState().putCards([{...reviewCard,id:"cached",assigneeSessionId:"owner"}]);
+  cardRequest.mockResolvedValue({cards:[{id:"current",assigneeSessionId:"owner"}]});
+  await click(owner);
+  expect(cardRequest).toHaveBeenCalledWith("/api/cards?includeCompleted=true");
+  expect(openCard).toHaveBeenCalledWith("current","overlay",null,"owner");
+});
+
+it.each(["folder","catalog"] as const)("falls back during and after %s changes remove a card from the global list",async source=>{
+  const cached={...reviewCard,id:"cached",assigneeSessionId:"owner"};
+  let finish!:(value:{cards:never[]})=>void;
+  cardRequest.mockImplementation((path:string)=>path.includes("includeCompleted=false")
+    ? new Promise(resolve=>{finish=resolve;})
+    : Promise.resolve({cards:[{id:"current",assigneeSessionId:"owner"}]}));
+  function GlobalList(){useCardMembership();return null;}
+  await act(()=>root.render(<><GlobalList/><Harness session={owner}/></>));
+  await act(async()=>finish({cards:[cached] as never[]}));
+  await act(async()=>host.querySelector("button")!.click());
+  expect(openCard).toHaveBeenLastCalledWith("cached","overlay",null,"owner");
+  await act(()=>invalidateV3(source));
+  await act(async()=>host.querySelector("button")!.click());
+  expect(openCard).toHaveBeenLastCalledWith("current","overlay",null,"owner");
+  await act(async()=>finish({cards:[]}));
+  await act(async()=>host.querySelector("button")!.click());
+  expect(openCard).toHaveBeenLastCalledWith("current","overlay",null,"owner");
+  expect(cardRequest.mock.calls.filter(call=>call[0]==="/api/cards?includeCompleted=true")).toHaveLength(2);
 });
 
 it("clears an old card before the existing folder path handles a session without a card",async()=>{

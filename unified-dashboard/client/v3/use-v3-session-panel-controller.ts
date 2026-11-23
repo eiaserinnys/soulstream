@@ -8,7 +8,7 @@ import {
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import { cardRequest } from "@seosoyoung/soul-ui/cards/card-api";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
-import { getV3InvalidationSnapshot } from "./v3-live-invalidation-plane";
+import { getV3InvalidationSnapshot, selectV3InvalidationKey } from "./v3-live-invalidation-plane";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 
 import { loadPlannerFolderById, type PlannerFolder } from "./planner-data";
@@ -120,9 +120,11 @@ export function useV3SessionPanelController({
     const requestSequence = ++openRequestSequence.current;
     try {
       const store = useCardStore.getState();
-      store.observeReplay(getV3InvalidationSnapshot().sources.replay);
+      const snapshot = getV3InvalidationSnapshot();
+      store.observeReplay(snapshot.sources.replay);
+      const scopeRevision=selectV3InvalidationKey(snapshot,["folder","catalog","replay"]);
       const cached = Object.values(store.byId).find(card =>
-        card.assigneeSessionId === session.agentSessionId && !card.archived && store.isCardCurrent(card.id));
+        card.assigneeSessionId === session.agentSessionId && !card.archived && store.isCardInSyncedGlobalList(card.id,scopeRevision));
       const cardId = session.cardId || cached?.id || (await cardRequest<{ cards: CardRow[] }>(
         `/api/cards?${new URLSearchParams({ includeCompleted: "true" })}`,
       )).cards.find((card) => card.assigneeSessionId === session.agentSessionId)?.id;

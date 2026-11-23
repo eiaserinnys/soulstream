@@ -58,10 +58,10 @@ it("refetches authorized global membership on SSE, coalesces duplicates and remo
  expect(element.querySelector('[data-card-id="archived"]')).toBeNull();expect(element.querySelector('[data-card-id="cancelled"]')).toBeNull();
  expect(element.querySelector('.v3-folder-card-head')?.textContent).toContain("1개");expect(fetch).toHaveBeenCalledTimes(2);
 });
-it("does not publish a pre-event initial list or an old folder response into the new scope",async()=>{
+it("does not publish a pre-replay initial list or an old folder response into the new scope",async()=>{
  const resolve:((value:Response)=>void)[]=[];const fetch=vi.fn(()=>new Promise<Response>(done=>resolve.push(done)));vi.stubGlobal("fetch",fetch);
  await act(()=>root.render(<FolderCardSection folderId="first"/>));
- await act(()=>event());
+ await act(()=>acceptV3SessionStreamEvent({type:"replay_gap",latest_id:5,instance_id:"orch"}));
  await act(async()=>resolve[0](response([{...row("stale"),folderId:"first"}])));
  await flushWindow();
  expect(element.querySelector('[data-card-id="stale"]')).toBeNull();expect(fetch).toHaveBeenCalledTimes(2);
@@ -118,4 +118,38 @@ it("refreshes immediately after a direct card mutation",async()=>{
  await act(async()=>root.render(<CardInboxBoard/>));
  await act(async()=>{await useCardStore.getState().mutate("known","/status",{status:"done"});});
  expect(fetch.mock.calls.filter(call=>String(call[0]).startsWith("/api/cards?"))).toHaveLength(2);
+});
+
+it("publishes each valid in-flight list despite continuous card events",async()=>{
+ const finish:((value:Response)=>void)[]=[];
+ const fetch=vi.fn(()=>new Promise<Response>(resolve=>finish.push(resolve)));vi.stubGlobal("fetch",fetch);
+ await act(()=>root.render(<FolderCardSection folderId={reviewCard.folderId}/>));
+ await act(async()=>vi.advanceTimersByTimeAsync(75));await act(()=>event());
+ await act(async()=>vi.advanceTimersByTimeAsync(75));
+ await act(async()=>finish[0](response([row("initial")])));
+ expect(element.querySelector('[data-card-id="initial"]')).not.toBeNull();
+ await act(async()=>vi.advanceTimersByTimeAsync(425));
+ expect(fetch).toHaveBeenCalledTimes(2);
+ await act(()=>event());await act(async()=>vi.advanceTimersByTimeAsync(150));
+ await act(async()=>finish[1](response([row("initial"),row("incoming")])));
+ expect(element.querySelector('[data-card-id="incoming"]')).not.toBeNull();
+ await act(async()=>vi.advanceTimersByTimeAsync(350));
+ expect(fetch).toHaveBeenCalledTimes(3);
+ await act(async()=>finish[2](response([row("incoming")]))) ;
+ expect(element.querySelector('[data-card-id="incoming"]')).not.toBeNull();
+});
+
+it("keeps a same-version newer detail when an older in-flight list arrives",async()=>{
+ let finish!:(value:Response)=>void;
+ const old={...row("known"),latestActivity:{kind:"instruction" as const,format:"markdown" as const,body:"오래된 활동",createdAt:"2026-01-01"}};
+ const fresh={...old,latestActivity:{...old.latestActivity,body:"최신 활동"},attachments:[{path:"new"}]};
+ vi.stubGlobal("fetch",vi.fn((input:RequestInfo|URL)=>String(input).startsWith("/api/cards?")
+   ?new Promise<Response>(resolve=>{finish=resolve;})
+   :Promise.resolve(new Response(JSON.stringify({card:fresh,reports:[],questions:[],sessions:[]})))));
+ await act(()=>root.render(<FolderCardSection folderId={reviewCard.folderId}/>));
+ await act(async()=>{await useCardStore.getState().loadCard("known");event();});
+ await act(async()=>finish(response([old])));
+ expect(useCardStore.getState().byId.known.latestActivity?.body).toBe("최신 활동");
+ expect(useCardStore.getState().byId.known.attachments).toEqual([{path:"new"}]);
+ expect(element.querySelector('[data-card-id="known"]')).not.toBeNull();
 });

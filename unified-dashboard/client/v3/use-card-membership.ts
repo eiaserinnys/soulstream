@@ -5,13 +5,13 @@ import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { getV3InvalidationSnapshot, selectV3InvalidationKey, useV3InvalidationKey } from "./v3-live-invalidation-plane";
 import { errorText } from "./v3-dashboard-utils";
-const sources=["card","folder","catalog","replay"] as const;
-const currentRevision=()=>selectV3InvalidationKey(getV3InvalidationSnapshot(),sources);
+const immediateSources=["folder","catalog","replay"] as const;
+const currentImmediateRevision=()=>selectV3InvalidationKey(getV3InvalidationSnapshot(),immediateSources);
 
 /** Authorized list membership is local to the web scope, independent of cached details. */
 export function useCardMembership(folderId?:string,createdIds:readonly string[]=[]) {
   const cardRevision=useV3InvalidationKey(["card"]);
-  const immediateRevision=useV3InvalidationKey(["folder","catalog","replay"]);
+  const immediateRevision=useV3InvalidationKey(immediateSources);
   const localRevision=useCardStore(state=>state.localRevision);
   const [membership,setMembership]=useState<{scope?:string;ids:string[]} | null>(null);
   const [error,setError]=useState<string|null>(null);
@@ -32,28 +32,36 @@ export function useCardMembership(folderId?:string,createdIds:readonly string[]=
       if(running)return;
       running=true;
       while(active&&dirty){
-        dirty=false;const started=currentRevision();
+        dirty=false;
+        const startedImmediate=currentImmediateRevision();
+        const startedCard=getV3InvalidationSnapshot().sources.card;
+        const startedRow=useCardStore.getState().getRowSequence();
+        const startedLocal=useCardStore.getState().localRevision;
         try {
           const path=`/api/cards?${new URLSearchParams({includeCompleted:"false",...(folderId?{folderId}:{})})}`;
           const {cards}=await cardRequest<{cards:CardRow[]}>(path);
           if(!active)break;
-          // SSE during the request invalidates the response before it can overwrite new data.
-          if(dirty||started!==currentRevision()){
-            if(!dirty)scheduleLoad();
-            dirty=true;if(timer!==undefined)break;continue;
+          // Card events schedule a follow-up; structural changes invalidate this scope.
+          if(startedImmediate!==currentImmediateRevision()){
+            if(timer!==undefined){clearTimeout(timer);timer=undefined;}
+            dirty=true;continue;
           }
           const store=useCardStore.getState();
-          store.putCards(cards.filter(card=>!store.byId[card.id]||store.byId[card.id].version<=card.version));
-          if(!folderId)store.reconcileGlobalList(cards);
+          store.putCards(cards,startedRow);
+          if(!folderId&&startedCard===getV3InvalidationSnapshot().sources.card&&startedLocal===store.localRevision)store.reconcileGlobalList(cards,startedImmediate);
           setMembership({scope:folderId,ids:[...new Set(cards.map(card=>card.id))]});setError(null);
+          if(startedCard!==getV3InvalidationSnapshot().sources.card&&!dirty)scheduleLoad();
+          if(timer!==undefined)break;
         }catch(failure){
           if(!active)break;
-          if(dirty||started!==currentRevision()){
-            if(!dirty)scheduleLoad();
-            dirty=true;if(timer!==undefined)break;continue;
+          if(startedImmediate!==currentImmediateRevision()){
+            if(timer!==undefined){clearTimeout(timer);timer=undefined;}
+            dirty=true;continue;
           }
-          if(!folderId)useCardStore.getState().reconcileGlobalList([]);
+          if(!folderId&&!dirty&&startedCard===getV3InvalidationSnapshot().sources.card)useCardStore.getState().reconcileGlobalList([]);
           setError(errorText(failure));
+          if(startedCard!==getV3InvalidationSnapshot().sources.card&&!dirty)scheduleLoad();
+          if(timer!==undefined)break;
         }
       }
       running=false;

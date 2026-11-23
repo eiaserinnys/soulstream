@@ -9,6 +9,7 @@ export function CardExecutionSettingsDialog({card,folders,onClose,startAfterSave
  return <CardCreateDialog starredFolderIds={assignment?folders.map(f=>f.id):undefined} assignment={assignment} folders={folders} onClose={onClose} executionSettings={{card,startAfterSave,onSave:async(value,key)=>{
    const saved=onSave?await onSave(value,key):(await saveCardExecutionSettings(card.id,card.version,value,key)).card;
    useCardStore.getState().putCards([saved]);
+   useCardStore.getState().markLocalChange(saved.id);
    if(startAfterSave)await (onStart?onStart(saved):useCardStore.getState().execute(card.id,saved.version));
  }}}/>;
 }
