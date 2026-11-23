@@ -109,10 +109,11 @@ export default defineConfig(({ command, mode, isPreview }: ConfigEnv) => {
             if (id.includes("/lucide-react/") || id.includes("/lucide/")) {
               return "vendor-icons";
             }
-            if (id.includes("/react-dom/")) {
+            if (id.includes("/node_modules/react-dom/")) {
               return "vendor-react-dom";
             }
-            if (id.includes("/react/") || id.includes("/scheduler/")) {
+            // Match package roots so Zustand's react/shallow stays in vendor.
+            if (id.includes("/node_modules/react/") || id.includes("/node_modules/scheduler/")) {
               return "vendor-react";
             }
             if (id.includes("/heic2any/")) {
