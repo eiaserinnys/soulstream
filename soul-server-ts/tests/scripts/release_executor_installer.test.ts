@@ -20,9 +20,8 @@ import {
 import {
   databaseReleaseJournalPath,
   runDatabaseRelease,
+  type DatabaseReleaseOptions,
 } from "../../../packages/db-schema/scripts/release-executor.mjs";
-import type { DatabaseReleaseOptions } from
-  "../../../packages/db-schema/scripts/release-executor.mjs";
 
 function repositoryFile(path: string) {
   return fileURLToPath(new URL(`../../../${path}`, import.meta.url));
