@@ -1,3 +1,4 @@
+import type { McpConfigService } from "../mcp_config_service.js";
 import type { Logger } from "pino";
 import type { ContextItem } from "@soulstream/wire-schema";
 
@@ -30,11 +31,13 @@ export type AuthorizeOrchestrationWorker = (request: OrchestrationWorkerAdmissio
 
 interface TaskRuntimeCommandsDeps {
   agentRegistry: Pick<AgentRegistry, "get">;
-  taskManager: Pick<TaskManager, "createTask" | "addIntervention"> & Partial<Pick<TaskManager, "ensureRunning">>;
+  taskManager: Pick<TaskManager, "createTask" | "addIntervention"> & Partial<Pick<TaskManager, "ensureRunning" | "getTask">>;
   taskExecutor: Pick<TaskExecutor, "startNewExecution">;
   logger: Logger;
   modelCatalog?: Pick<ModelCatalog, "resolve">;
   agentProfileSource?: NewSessionAgentProfileSource;
+  mcpConfigService?: Pick<McpConfigService, "waitForInitialCentralSync" | "assertCentralReady">;
+  centralSyncTimeoutMs?: number;
   decisionRunner?: Pick<PurposeDecisionRunner, "create" | "cancel" | "prepare">;
   authorizeOrchestrationWorker?: AuthorizeOrchestrationWorker;
 }
@@ -200,6 +203,7 @@ export class TaskRuntimeCommands {
   }
 
   async createSession(params: CreateSessionRuntimeParams): Promise<Task> {
+    await this.waitForMcpSync();
     const resolvedAgent = await this.resolveNewSessionAgent(params.profileId);
     const agent = resolvedAgent.profile;
     const preset = resolveModelPresetSelection(
@@ -295,6 +299,8 @@ export class TaskRuntimeCommands {
   async ensureSessionRunning(params: InterveneRuntimeParams) {
     if (!params.deliveryId) throw new Error("ensure_session_running requires deliveryId");
     if (!this.deps.taskManager.ensureRunning) throw new Error("ensure running is unavailable");
+    const task = this.deps.taskManager.getTask?.(params.agentSessionId);
+    if (!task || (!task.agentProfileSnapshot && ["completed", "error", "interrupted"].includes(task.status))) await this.waitForMcpSync();
     return this.deps.taskManager.ensureRunning({
       agentSessionId: params.agentSessionId, text: params.text,
       user: params.user ?? "upstream", callerInfo:params.callerInfo,
@@ -303,6 +309,11 @@ export class TaskRuntimeCommands {
       deliveryIntent:"durable_next_turn",source:"card_execution",
       completionId:params.deliveryId,relationKey:params.deliveryId,
     }, (task,activation)=>this.startResumedTask(task,activation));
+  }
+
+  private async waitForMcpSync(): Promise<void> {
+    await this.deps.mcpConfigService?.waitForInitialCentralSync(this.deps.centralSyncTimeoutMs ?? 5_000);
+    this.deps.mcpConfigService?.assertCentralReady();
   }
 
   private async authorizeWorker(sessionId: string, marker?: OrchestrationWorkerAdmission, cardId?: string | null): Promise<void> {

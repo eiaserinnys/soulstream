@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CONTROL_COMMAND_TYPES } from "@soulstream/wire-schema";
 
+import { createMcpConfigCommandFamily } from "../../src/upstream/mcp_config_command_family.js";
 import { createWorkspaceCommandFamily } from "../../src/upstream/workspace_command_family.js";
 import { createAgentConfigCommandFamily } from "../../src/upstream/agent_config_command_family.js";
 import { createAttachmentCommandFamily } from "../../src/upstream/attachment_command_family.js";
@@ -28,12 +29,13 @@ describe("control command inventory", () => {
       ...createAttachmentCommandFamily({} as never),
       ...createWorkspaceCommandFamily({} as never),
       ...createAuthCommandFamily({} as never),
+      ...createMcpConfigCommandFamily({} as never),
       ...createReflectionCommandFamily({} as never),
       ...createAgentConfigCommandFamily({} as never),
     }).sort();
     const inventoryTypes = CONTROL_COMMAND_INVENTORY.map(({ type }) => type).sort();
 
-    expect(inventoryTypes).toHaveLength(57);
+    expect(inventoryTypes).toHaveLength(59);
     expect(new Set(inventoryTypes).size).toBe(inventoryTypes.length);
     expect(inventoryTypes).toEqual(handlerTypes);
     expect(inventoryTypes).toEqual([...CONTROL_COMMAND_TYPES].sort());
@@ -52,6 +54,7 @@ describe("control command inventory", () => {
         "auth/provider-usage",
         "reflection",
         "agent-config",
+        "mcp-config",
       ]),
     );
     expect(
@@ -114,6 +117,8 @@ describe("control command inventory", () => {
       { type: "claude_auth_login_submit_code", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "claude_auth_login_cancel", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "claude_central_pool_sync", family: "auth/provider-usage", policy: "bounded_result" },
+      { type: "mcp_central_sync", family: "mcp-config", policy: "bounded_result" },
+      { type: "mcp_local_export", family: "mcp-config", policy: "bounded_result" },
       { type: "provider_usage_get", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "reflect_brief", family: "reflection", policy: "bounded_result" },
       { type: "plan_agent_profile_update", family: "agent-config", policy: "bounded_result" },

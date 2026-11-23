@@ -1,3 +1,4 @@
+import { resolveMcpCentralModePath } from "./mcp_central/state.js";
 import dotenv from "dotenv";
 import { ZodError } from "zod";
 import { dirname, join } from "node:path";
@@ -114,6 +115,7 @@ async function main(): Promise<void> {
   const mcpConfigService = new McpConfigService({
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     processEnv: process.env,
+    modePath: resolveMcpCentralModePath(env),
   });
   let agentRegistry;
   try {

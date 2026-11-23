@@ -74,6 +74,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     expect(msg.capabilities).toEqual({
       max_concurrent: 1,
       reflect_brief: true,
+      central_mcp_config_v1: true,
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,
@@ -104,6 +105,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     expect(msg.capabilities).toEqual({
       max_concurrent: 1,
       reflect_brief: true,
+      central_mcp_config_v1: true,
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,
@@ -161,6 +163,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     expect(msg.capabilities).toEqual({
       max_concurrent: 0,
       reflect_brief: true,
+      central_mcp_config_v1: true,
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,
@@ -258,6 +261,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     expect(msg.capabilities).toEqual({
       max_concurrent: 2,
       reflect_brief: true,
+      central_mcp_config_v1: true,
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,
@@ -347,6 +351,7 @@ describe("Claude account pool registration capability", () => {
     expect(enabled.capabilities).toEqual({
       max_concurrent: 1,
       reflect_brief: true,
+      central_mcp_config_v1: true,
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,

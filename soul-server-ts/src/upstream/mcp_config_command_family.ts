@@ -1,0 +1,9 @@
+import type { CommandHandlerMap, SendFn } from "./command_family.js";
+import type { McpConfigCommands } from "./mcp_config_commands.js";
+
+export function createMcpConfigCommandFamily(deps: { send: SendFn; commands: McpConfigCommands }): CommandHandlerMap {
+  return {
+    mcp_central_sync: async (cmd) => { await deps.send(await deps.commands.sync(cmd)); },
+    mcp_local_export: async (cmd) => { await deps.send(deps.commands.export(cmd)); },
+  };
+}

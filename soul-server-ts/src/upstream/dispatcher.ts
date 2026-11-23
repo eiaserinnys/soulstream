@@ -1,3 +1,6 @@
+import { McpConfigCommands } from "./mcp_config_commands.js";
+import { createMcpConfigCommandFamily } from "./mcp_config_command_family.js";
+import { CentralMcpNotSyncedError } from "../mcp_central/state.js";
 import { type AuthorizeOrchestrationWorker, TaskRuntimeCommands } from "./task_runtime_commands.js";
 import type { Logger } from "pino";
 
@@ -147,6 +150,7 @@ export class CommandDispatcher {
       logger,
       modelCatalog,
       agentProfileSource,
+      mcpConfigService: reflectionRuntime?.mcpConfigService,
       decisionRunner,
       authorizeOrchestrationWorker,
     });
@@ -210,6 +214,10 @@ export class CommandDispatcher {
         claudeAuthCommands,
         providerUsageCommands,
       }),
+      ...createMcpConfigCommandFamily({ send, commands: new McpConfigCommands(
+        reflectionRuntime?.mcpConfigService, reflectionRuntime?.agentsConfigPath,
+        agentProfileSource?.rebuild?.bind(agentProfileSource),
+      ) }),
       ...createReflectionCommandFamily({ send, reflectionCommands }),
       ...createAgentConfigCommandFamily({ send, agentConfigCommands }),
     };
@@ -226,6 +234,10 @@ export class CommandDispatcher {
       try {
         await handler(cmd);
       } catch (err) {
+        if (err instanceof CentralMcpNotSyncedError) {
+          await this.sendError(cmd, err.message, err.code);
+          return;
+        }
         if (err instanceof CommandDispatchError) {
           await this.sendError(cmd, err.message, err.code, err.details);
           return;

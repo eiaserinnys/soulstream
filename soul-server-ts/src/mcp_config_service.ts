@@ -11,6 +11,10 @@ import {
   type AgentsSdkMcpServer,
   type AgentProfile,
 } from "@soulstream/agent-profile-contract";
+import { CentralMcpState, type CentralSync } from "./mcp_central/state.js";
+import { sanitizeServer, sanitizeHostedTool } from "./mcp_central/display.js";
+import { resolveCentralTemplate, resolveHostedTool } from "./mcp_central/templates.js";
+
 import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export const DEFAULT_MCP_REGISTRY_BASENAME = "mcp-registry.yaml";
@@ -105,6 +109,7 @@ export interface McpConfigServiceOptions {
   registryPath?: string;
   profilesPath?: string;
   processEnv?: Record<string, string | undefined>;
+  modePath?: string;
 }
 
 export function defaultMcpRegistryPath(agentsConfigPath: string): string {
@@ -120,14 +125,44 @@ export class McpConfigService {
   readonly profilesPath: string;
 
   private readonly processEnv: Record<string, string | undefined>;
+  private readonly central: CentralMcpState<McpRegistryConfig, McpProfilesConfig>;
 
   constructor(options: McpConfigServiceOptions) {
     this.registryPath = options.registryPath ?? defaultMcpRegistryPath(options.agentsConfigPath);
     this.profilesPath = options.profilesPath ?? defaultMcpProfilesPath(options.agentsConfigPath);
     this.processEnv = options.processEnv ?? process.env;
+    this.central = new CentralMcpState(options.modePath, (input) => {
+      const raw = z.object({ registry: McpRegistryConfigSchema, profiles: McpProfilesConfigSchema,
+        agent_bindings: z.record(z.string(), z.string().min(1)) }).parse(input);
+      this.assertProfileServerReferences(raw.profiles, raw.registry);
+      const ids = new Set(raw.profiles.profiles.map((profile) => profile.id));
+      for (const id of Object.values(raw.agent_bindings)) {
+        if (!ids.has(id)) throw new Error(`MCP binding references missing profile: ${id}`);
+      }
+      return raw;
+    });
+  }
+
+  configStatus() { return this.central.status(); }
+
+  async applyCentralSync(input: CentralSync): Promise<void> { await this.central.apply(input); }
+
+  waitForInitialCentralSync(timeoutMs: number): Promise<void> { return this.central.wait(timeoutMs); }
+
+  assertCentralReady(): void { this.central.assertReady(); }
+
+  effectiveAgentMcpProfileId(profile: AgentProfile): string | undefined {
+    const central = this.central.current("runtime");
+    return central ? central.agent_bindings[profile.id] : profile.mcp_profile;
+  }
+
+  exportLocal(): { registry: unknown; profiles: unknown } {
+    return { registry: readRawYaml(this.registryPath, { servers: [] }), profiles: readRawYaml(this.profilesPath, { profiles: [] }) };
   }
 
   readRegistry(): McpRegistryConfig {
+    const central = this.central.current("runtime");
+    if (central) return central.registry;
     return readOptionalYaml(
       this.registryPath,
       McpRegistryConfigSchema,
@@ -143,14 +178,14 @@ export class McpConfigService {
   listRegistry(): { registry_path: string; servers: Array<Record<string, unknown>> } {
     return {
       registry_path: this.registryPath,
-      servers: this.readRegistry().servers.map((server) => sanitizeServer(server, this.processEnv)),
+      servers: (this.central.current("display")?.registry ?? this.readRegistry()).servers.map((server) => sanitizeServer(server, this.processEnv)),
     };
   }
 
   listProfiles(): { profiles_path: string; profiles: Array<Record<string, unknown>> } {
     return {
       profiles_path: this.profilesPath,
-      profiles: this.readProfiles().profiles.map((profile) => ({
+      profiles: (this.central.current("display")?.profiles ?? this.readProfiles()).profiles.map((profile) => ({
         id: profile.id,
         ...(profile.name ? { name: profile.name } : {}),
         ...(profile.description ? { description: profile.description } : {}),
@@ -187,24 +222,27 @@ export class McpConfigService {
   }
 
   resolveMcpProfile(profile: AgentProfile): ResolvedMcpProfile | undefined {
-    if (!profile.mcp_profile) return undefined;
+    const profileId = this.effectiveAgentMcpProfileId(profile);
+    if (!profileId) return undefined;
 
     const registry = this.readRegistry();
     const profiles = this.readProfilesForRegistry(registry);
-    const mcpProfile = profiles.profiles.find((entry) => entry.id === profile.mcp_profile);
+    const mcpProfile = profiles.profiles.find((entry) => entry.id === profileId);
     if (!mcpProfile) {
-      throw new Error(`MCP profile not found: ${profile.mcp_profile}`);
+      throw new Error(`MCP profile not found: ${profileId}`);
     }
     return {
       mcp_servers: mcpProfile.mcp_servers.map((serverId) =>
         this.resolveRegistryServer(serverId, registry)
       ),
-      hosted_tools: mcpProfile.hosted_tools,
+      hosted_tools: this.central.status().mode === "central"
+        ? mcpProfile.hosted_tools.map((tool) => resolveHostedTool(tool, this.processEnv))
+        : mcpProfile.hosted_tools,
     };
   }
 
   resolveAgentProfile(profile: AgentProfile): AgentProfile {
-    if (!profile.mcp_profile) return profile;
+    if (!this.effectiveAgentMcpProfileId(profile)) return profile;
 
     const resolvedMcpProfile = this.resolveMcpProfile(profile);
     if (!resolvedMcpProfile) return profile;
@@ -232,7 +270,7 @@ export class McpConfigService {
   }
 
   private readProfilesForRegistry(registry: McpRegistryConfig): McpProfilesConfig {
-    const profiles = readOptionalYaml(
+    const profiles = this.central.current("runtime")?.profiles ?? readOptionalYaml(
       this.profilesPath,
       McpProfilesConfigSchema,
       { profiles: [] },
@@ -255,6 +293,7 @@ export class McpConfigService {
       },
       id,
       this.processEnv,
+      this.central.status().mode === "central",
     ) as AgentsSdkMcpServer;
   }
 
@@ -273,6 +312,11 @@ export class McpConfigService {
       }
     }
   }
+}
+
+function readRawYaml(filePath: string, emptyValue: unknown): unknown {
+  try { return parseYaml(fs.readFileSync(filePath, "utf8")) ?? emptyValue; }
+  catch (err) { if (isNodeError(err) && err.code === "ENOENT") return emptyValue; throw err; }
 }
 
 function readOptionalYaml<T>(
@@ -295,11 +339,13 @@ function normalizeRegistryServerSecrets(
   server: Record<string, unknown>,
   serverId: string,
   processEnv: Record<string, string | undefined>,
+  central: boolean,
 ): Record<string, unknown> {
   return {
     ...server,
+    ...(central && typeof server.url === "string" ? { url: resolveCentralTemplate(server.url, processEnv, `MCP registry server ${serverId} url`) } : {}),
     ...(isRecord(server.env)
-      ? { env: resolveSecretRecord(server.env, `MCP registry server ${serverId} env`, processEnv) }
+      ? { env: resolveSecretRecord(server.env, `MCP registry server ${serverId} env`, processEnv, central) }
       : {}),
     ...(isRecord(server.headers)
       ? {
@@ -307,6 +353,7 @@ function normalizeRegistryServerSecrets(
             server.headers,
             `MCP registry server ${serverId} header`,
             processEnv,
+            central,
           ),
         }
       : {}),
@@ -317,6 +364,7 @@ function resolveSecretRecord(
   record: Record<string, unknown>,
   label: string,
   processEnv: Record<string, string | undefined>,
+  central: boolean,
 ): Record<string, string> {
   return Object.fromEntries(
     Object.entries(record).map(([key, value]) => {
@@ -327,79 +375,9 @@ function resolveSecretRecord(
         }
         return [key, resolved];
       }
-      return [key, String(value)];
+      return [key, central ? resolveCentralTemplate(String(value), processEnv, `${label} ${key}`) : String(value)];
     }),
   );
-}
-
-function sanitizeServer(
-  server: McpRegistryServer,
-  processEnv: Record<string, string | undefined>,
-): Record<string, unknown> {
-  const { id, ...rest } = server;
-  return {
-    id,
-    ...rest,
-    ...("url" in server ? { url: sanitizeUrlQuerySecrets(server.url) } : {}),
-    ...("env" in server && server.env
-      ? { env: sanitizeSecretRecord(server.env, processEnv) }
-      : {}),
-    ...(server.headers ? { headers: sanitizeSecretRecord(server.headers, processEnv) } : {}),
-  };
-}
-
-function sanitizeUrlQuerySecrets(url: string): string {
-  const queryStart = url.indexOf("?");
-  if (queryStart === -1) return url;
-
-  const fragmentStart = url.indexOf("#", queryStart + 1);
-  const queryEnd = fragmentStart === -1 ? url.length : fragmentStart;
-  const query = url.slice(queryStart + 1, queryEnd);
-  if (!query) return url;
-
-  let changed = false;
-  const sanitizedQuery = query
-    .split("&")
-    .map((entry) => {
-      const separatorIndex = entry.indexOf("=");
-      const rawName = separatorIndex === -1 ? entry : entry.slice(0, separatorIndex);
-      if (!isSensitiveUrlQueryParam(rawName)) return entry;
-
-      changed = true;
-      return `${rawName}=<redacted>`;
-    })
-    .join("&");
-
-  if (!changed) return url;
-  return `${url.slice(0, queryStart + 1)}${sanitizedQuery}${url.slice(queryEnd)}`;
-}
-
-function sanitizeSecretRecord(
-  record: Record<string, unknown>,
-  processEnv: Record<string, string | undefined>,
-): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(record).map(([key, value]) => {
-      if (isSecretRef(value)) {
-        return [key, { env: value.env, resolved: Boolean(processEnv[value.env]) }];
-      }
-      if (isSensitiveKey(key)) return [key, { redacted: true }];
-      return [key, value];
-    }),
-  );
-}
-
-function sanitizeHostedTool(
-  tool: AgentsSdkHostedTool,
-  processEnv: Record<string, string | undefined>,
-): Record<string, unknown> {
-  if (tool.type !== "hosted_mcp") return tool;
-  return {
-    ...tool,
-    ...(tool.server_url ? { server_url: sanitizeUrlQuerySecrets(tool.server_url) } : {}),
-    ...(tool.authorization ? { authorization: { redacted: true } } : {}),
-    ...(tool.headers ? { headers: sanitizeSecretRecord(tool.headers, processEnv) } : {}),
-  };
 }
 
 function mergeByKey<T>(defaults: T[], overrides: T[], keyOf: (value: T) => string): T[] {
@@ -459,53 +437,6 @@ function checkDuplicateIds(
 
 function isSecretRef(value: unknown): value is { env: string } {
   return isRecord(value) && typeof value.env === "string";
-}
-
-function isSensitiveKey(key: string): boolean {
-  return /authorization|api[_-]?key|token|secret|password|cookie/i.test(key);
-}
-
-function isSensitiveUrlQueryParam(rawName: string): boolean {
-  const decodedName = decodeUrlQueryParamName(rawName);
-  const segments = decodedName
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter(Boolean);
-
-  if (
-    segments.some((segment) =>
-      [
-        "auth",
-        "authorization",
-        "cookie",
-        "credential",
-        "credentials",
-        "key",
-        "password",
-        "passwd",
-        "secret",
-        "sig",
-        "signature",
-        "token",
-      ].includes(segment)
-    )
-  ) {
-    return true;
-  }
-
-  const collapsed = segments.join("");
-  return /apikey|accesskey|clientkey|privatekey|secretkey|signingkey|accesstoken|authtoken|refreshtoken|clientsecret/.test(
-    collapsed,
-  );
-}
-
-function decodeUrlQueryParamName(rawName: string): string {
-  try {
-    return decodeURIComponent(rawName.replace(/\+/g, " "));
-  } catch {
-    return rawName;
-  }
 }
 
 function isNodeError(err: unknown): err is NodeJS.ErrnoException {

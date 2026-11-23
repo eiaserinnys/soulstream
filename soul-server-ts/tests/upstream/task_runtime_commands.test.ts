@@ -971,3 +971,24 @@ describe("TaskRuntimeCommands ACK builders", () => {
     });
   });
 });
+
+describe("central MCP initial sync gate", () => {
+  it("rejects session creation before a central snapshot is received", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const { makeTempDirSync } = await import("../helpers/temp_dir.js");
+    const { McpConfigService } = await import("../../src/mcp_config_service.js");
+    const dir = makeTempDirSync("central-session-");
+    try {
+      const marker = path.join(dir, "marker.json");
+      fs.writeFileSync(marker, JSON.stringify({ central_mode: true, revision: 1 }));
+      const service = new McpConfigService({ agentsConfigPath: path.join(dir, "agents.yaml"), modePath: marker });
+      const createTask = vi.fn();
+      const commands = new TaskRuntimeCommands({ agentRegistry: new AgentRegistry([codexAgent]),
+        taskManager: { createTask, addIntervention: vi.fn() } as never,
+        taskExecutor: { startNewExecution: vi.fn() }, logger, mcpConfigService: service, centralSyncTimeoutMs: 5 });
+      await expect(commands.createSession({ agentSessionId: "session", prompt: "hi", profileId: codexAgent.id })).rejects.toMatchObject({ code: "CENTRAL_MCP_CONFIG_NOT_SYNCED" });
+      expect(createTask).not.toHaveBeenCalled();
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+});

@@ -158,3 +158,31 @@ describe("local agent profile patch tools", () => {
     }
   });
 });
+
+describe("central MCP agent bindings", () => {
+  it("shows effective binding and rejects local binding edits", async () => {
+    const { McpConfigService } = await import("../../src/mcp_config_service.js");
+    const dir = makeTempDirSync("agent-central-");
+    const agentsConfigPath = path.join(dir, "agents.yaml");
+    fs.writeFileSync(agentsConfigPath, "agents:\n  - id: agent\n    name: Agent\n    backend: codex\n    workspace_dir: /tmp/agent\n    mcp_profile: local\n");
+    const registry = new AgentRegistry([]);
+    const mcpConfigService = new McpConfigService({ agentsConfigPath, modePath: path.join(dir, "marker.json") });
+    const snapshot = { registry: { servers: [] }, profiles: { profiles: [{ id: "central" }] }, agent_bindings: { agent: "central" } };
+    await mcpConfigService.applyCentralSync({ mode: "central", revision: 5, runtime: snapshot, display: snapshot });
+    const runtime = { agentsConfigPath, agentRegistry: registry, mcpConfigService } as unknown as McpRuntime;
+    const server = new McpServer({ name: "central-test", version: "1" });
+    const client = new Client({ name: "central-client", version: "1" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    registerAgentConfigTools(server, runtime);
+    try {
+      await server.connect(serverTransport); await client.connect(clientTransport);
+      const get = await client.callTool({ name: "get_agents_config", arguments: {} });
+      expect(get.structuredContent).toMatchObject({ agents: [{ id: "agent", mcp_profile: "central" }], mcp_config: { mode: "central", revision: 5 } });
+      for (const name of ["set_agent_mcp_profile", "plan_agent_mcp_profile_update"]) {
+        const result = await client.callTool({ name, arguments: { agent_id: "agent", mcp_profile: "local" } });
+        expect(result.isError).toBe(true);
+        expect(result.structuredContent).toMatchObject({ code: "MCP_CENTRAL_MODE", error: "중앙 설정을 쓰는 노드입니다. 대시보드 설정 > 에이전트 > MCP에서 바꿉니다." });
+      }
+    } finally { await client.close(); await server.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+});
