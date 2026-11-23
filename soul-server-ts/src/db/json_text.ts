@@ -19,6 +19,7 @@ export function sanitizeJsonValue(value: unknown): unknown {
 }
 
 export function sanitizeJsonText(value: string): string {
+  if (value.isWellFormed() && !value.includes("\0")) return value;
   let result = "";
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
