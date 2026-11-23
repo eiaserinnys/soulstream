@@ -2,7 +2,17 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, rm, writeFile, rename, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { runBoundedProcess } from "../../src/worktree/worktree_process.js";
+
+vi.mock("node:os", async importOriginal => {
+  const original = await importOriginal<typeof import("node:os")>();
+  return {...original, devNull: "\\\\.\\nul"};
+});
+vi.mock("../../src/worktree/worktree_process.js", async importOriginal => {
+  const original = await importOriginal<typeof import("../../src/worktree/worktree_process.js")>();
+  return {...original, runBoundedProcess: vi.fn(original.runBoundedProcess)};
+});
 import { diffWorkspaceFile } from "../../src/workspace/workspace_file_diff.js";
 
 const roots:string[]=[];
@@ -36,4 +46,27 @@ describe("workspace file diff",()=>{
     await writeFile(path.join(root,"file"),"hello");
     await expect(diffWorkspaceFile(root,"file",null)).rejects.toThrow("NOT_GIT:");
   });
+});
+
+it("uses relative paths in an untracked diff header", async () => {
+  const {root}=await repo();
+  await writeFile(path.join(root,"new.txt"),"new file\n");
+  const diff=await diffWorkspaceFile(root,"new.txt",null);
+  expect(diff.text).toContain("diff --git a/new.txt b/new.txt");
+  expect(diff.text).toContain("+++ b/new.txt");
+  expect(diff.text).not.toContain(root);
+});
+
+it("uses Git's null path on Windows and disables text conversion for both diff modes", async () => {
+  const {root}=await repo();
+  await writeFile(path.join(root,"new.txt"),"new file\n");
+  await writeFile(path.join(root,"modified.txt"),"changed\n");
+  vi.mocked(runBoundedProcess).mockClear();
+  await diffWorkspaceFile(root,"new.txt",null);
+  await diffWorkspaceFile(root,"modified.txt",null);
+  const calls=vi.mocked(runBoundedProcess).mock.calls.map(([input])=>input.args).filter(args=>args.includes("diff"));
+  expect(calls).toHaveLength(2);
+  expect(calls[0]).toContain("--no-textconv");
+  expect(calls[0]?.slice(-3)).toEqual(["--", "/dev/null", "new.txt"]);
+  expect(calls[1]).toContain("--no-textconv");
 });

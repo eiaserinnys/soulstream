@@ -27,6 +27,7 @@ describe("session file activity", () => {
       if(query.includes("FROM sessions")) return [{session_id:"s",node_id:"n",agent_id:"a",worktree_id:null,created_at:new Date("2026-01-01T00:00:00Z"),model_preset:null}];
       expect(query).toContain("payload->>'result'");
       expect(query).toContain("MAX(created_at)");
+      expect(query).toMatch(/ORDER BY MAX\(created_at\) DESC/i);
       expect(query).not.toMatch(/LIMIT\s+5000/i);
       expect(query).not.toContain("jsonb_path_query_array");
       return [
@@ -64,4 +65,13 @@ it("keeps the oldest activity past 5000 events and records the distinct-path lim
   expect(activity.truncated).toBe(false);
   const many=collectSessionFileActivity("/repo",Array.from({length:5001},(_,i)=>({event_type:"tool_start",tool_name:"Read",file_path:`/repo/${i}.txt`,created_at:at})));
   expect(many.size).toBe(5000); expect(many.truncated).toBe(true);
+});
+
+it("keeps the newest 5000 distinct paths from timestamp-ordered activity", () => {
+  const rows=Array.from({length:5001},(_,i)=>({event_type:"tool_start",tool_name:"Read",file_path:`/repo/file-${i}.txt`,created_at:new Date(Date.UTC(2026,0,1,0,0,5000-i))}));
+  const activity=collectSessionFileActivity("/repo",rows);
+  expect(activity.size).toBe(5000);
+  expect(activity.has("file-0.txt")).toBe(true);
+  expect(activity.has("file-5000.txt")).toBe(false);
+  expect(activity.truncated).toBe(true);
 });

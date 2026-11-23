@@ -48,7 +48,8 @@ export function createLiveSessionWorkspaceProvider(options: Options): SessionWor
         CASE WHEN event_type = 'tool_result' AND payload->>'tool_name' = 'file_change'
           THEN payload->>'result' ELSE NULL END AS result
         FROM events WHERE session_id = ${sessionId} AND (event_type = 'tool_start' OR (event_type = 'tool_result' AND payload->>'tool_name' = 'file_change'))
-        GROUP BY event_type, payload->>'tool_name', payload->'tool_input'->>'file_path', payload->'tool_input'->>'notebook_path', payload->'tool_input'->>'filePath', payload->'tool_input'->>'AbsolutePath', payload->'tool_input'->>'Path', payload->'tool_input'->>'TargetFile', CASE WHEN event_type = 'tool_result' AND payload->>'tool_name' = 'file_change' THEN payload->>'result' ELSE NULL END`;
+        GROUP BY event_type, payload->>'tool_name', payload->'tool_input'->>'file_path', payload->'tool_input'->>'notebook_path', payload->'tool_input'->>'filePath', payload->'tool_input'->>'AbsolutePath', payload->'tool_input'->>'Path', payload->'tool_input'->>'TargetFile', CASE WHEN event_type = 'tool_result' AND payload->>'tool_name' = 'file_change' THEN payload->>'result' ELSE NULL END
+        ORDER BY MAX(created_at) DESC`;
       const activity=collectSessionFileActivity(snapshot?.root ?? null, rows as FileActivityRow[]);
       const git=snapshot?.git; const changed=new Map((git?.files ?? []).map(file=>[file.path,file]));
       const committed=new Set((git?.commits ?? []).filter(commit=>Date.parse(commit.committed_at) >= Date.parse(since)).flatMap(commit=>commit.files));

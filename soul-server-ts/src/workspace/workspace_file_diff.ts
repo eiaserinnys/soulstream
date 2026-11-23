@@ -1,4 +1,3 @@
-import { devNull } from "node:os";
 import type { SessionWorkspaceDiffResponse, WorkspaceGitStatus } from "@soulstream/wire-schema/session-workspace";
 import { GitProcessError, runBoundedProcess } from "../worktree/worktree_process.js";
 import { validateWorkspacePath } from "./workspace_file_path.js";
@@ -35,8 +34,8 @@ export async function diffWorkspaceFile(root: string, file: string, origPath: st
   }
   if (status === "untracked" && !current.info) throw new Error("NOT_FOUND: file not found");
   const args = status === "untracked"
-    ? ["diff", "--no-index", "--no-color", "--no-ext-diff", "--", devNull, current.target]
-    : ["diff", "--no-color", "--no-ext-diff", "HEAD", "-M", "--", ...paths];
+    ? ["diff", "--no-index", "--no-color", "--no-ext-diff", "--no-textconv", "--", "/dev/null", file]
+    : ["diff", "--no-color", "--no-ext-diff", "--no-textconv", "HEAD", "-M", "--", ...paths];
   const result = await git(args, MAX_DIFF_BYTES, status === "untracked" ? [0,1] : [0]);
   const binary = /^Binary files .* differ$/m.test(result.stdout);
   return {status, text:binary ? "" : result.stdout, truncated:!!result.truncated, binary};
