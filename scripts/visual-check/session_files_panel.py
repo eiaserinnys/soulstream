@@ -67,6 +67,19 @@ def install_routes(page, scene="ready", requests=None):
             messages = [{"id": n, "parent_event_id": None, "event_type": "assistant_message", "payload": {"timestamp": n, "content": f"대화 기록 {n}: 파일을 확인합니다.", "tool_use_id": str(n), "_final_for_live_stream": True}, "created_at": f"2026-10-01T00:{n // 60:02}:{n % 60:02}Z"} for n in range(80, 0, -1)]
             return route.fulfill(json={"messages": messages, "next_cursor": None})
         if path.endswith('/story'): return route.fulfill(json={"highlight": None, "narrative": "", "unfolded_turn_summaries": [], "narrative_through_event_id": 0, "fold_count": 0, "updated_at": None})
+        if path.endswith("/workspace/diff"):
+            requested = parse_qs(urlsplit(route.request.url).query).get("path", [""])[0]
+            if scene == "diff-loading":
+                requests["pending_diff"] = route
+                return
+            if scene == "diff-error": return route.fulfill(status=503, json={"error": "unavailable"})
+            if scene == "diff-old": return route.fulfill(status=501, json={"error": "unsupported"})
+            status = {"diff-new": "added", "diff-deleted": "deleted", "diff-renamed": "renamed"}.get(scene, "modified")
+            text = "@@ -1,3 +1,3 @@\n context\n-before\n+after\n@@ -47,2 +47,2 @@ function example()\n context\n+long line with enough content to wrap in narrow panels and continue under the code column\n"
+            if scene == "diff-new": text = "@@ -0,0 +1,2 @@\n+new line\n+another line\n"
+            if scene == "diff-deleted": text = "@@ -1,2 +0,0 @@\n-deleted line\n-another line\n"
+            if scene == "diff-renamed": text = ""
+            return route.fulfill(json={"path": requested, "status": status, "text": text, "truncated": scene == "diff-truncated", "binary": scene == "diff-binary"})
         if path.endswith("/workspace/file"):
             requested = parse_qs(urlsplit(route.request.url).query).get('path', [''])[0]
             requests.setdefault('file_ranges', []).append({'path': requested, 'range': route.request.headers.get('range')})
@@ -90,8 +103,11 @@ def install_routes(page, scene="ready", requests=None):
                 data["snapshot"].update(state="not_git", branch=None, ahead=0, behind=0)
                 data["files"] = []
             if scene == "expanded": data["read_only"].append({"path": "soul-server-ts/src/config/defaults.ts", "size": None, "last_read_at": None})
+            if scene.startswith("diff-"):
+                data["files"][2]["git_status"] = {"diff-new": "added", "diff-deleted": "deleted", "diff-renamed": "renamed"}.get(scene, "modified")
+                data["files"][2]["orig_path"] = "soul-server-ts/src/upstream/previous.ts" if scene == "diff-renamed" else None
             if scene == "interaction":
-                data["files"][0]["size"] = 0
+                data["files"][0].update(size=0, git_status=None, wrote=True)
                 data["files"] += [{**FILE, "path": f"fixtures/folder-{i // 10}/example-{i:02}.ts", "git_status": "modified", "wrote": True} for i in range(40)]
                 data["read_only"] += [{"path": f"fixtures/read-only/read-{i:02}.ts", "size": None, "last_read_at": None} for i in range(50)]
             return route.fulfill(json=data)
@@ -225,7 +241,8 @@ def capture_layout_checks(browser, base, out):
         context = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme="dark", reduced_motion="reduce", locale="ko-KR", timezone_id="Asia/Seoul", service_workers="block")
         page = context.new_page()
         page.add_init_script("localStorage.setItem('soul-dashboard-theme','dark'); localStorage.setItem('ls.webglGlass','0');")
-        install_routes(page, scene)
+        requests = {"workspace": 0}
+        install_routes(page, scene, requests)
         if surface == 'pas':
             page.goto(base + '/persistent/components-session', wait_until='domcontentloaded')
             trigger = page.get_by_role('button', name='세션 파일')
@@ -341,7 +358,7 @@ def assert_pas_width(result):
             for name in ('event_outbox_types.ts', 'outbox_retry.ts'):
                 item = m['names'].get(name)
                 check(item and item['scroll'] <= item['client'] and item['rect']['left'] >= m['pane']['left'] and item['rect']['right'] <= m['pane']['right'], f'pas-{width}-{name}', item)
-            for label, expected in (('label', '읽기만 한 파일'), ('badge', '일부'), ('count', '1')):
+            for label, expected in (('label', '읽기만 한 파일'), ('badge', '일부'), ('count', '1개')):
                 item = m['read'][label]
                 check(item['text'] == expected and item['scroll'] <= item['client'] and item['rect']['width'] > 0 and item['rect']['left'] >= m['pane']['left'] and item['rect']['right'] <= m['pane']['right'], f'pas-{width}-read-{label}', item)
         else:
@@ -351,8 +368,101 @@ def assert_pas_width(result):
     check(branch['scroll'] <= branch['client'], 'pas-1440-branch-visible', branch)
     assert not failures, json.dumps(failures, ensure_ascii=False)
 
+
+def capture_diff(browser, base, out):
+    results = {}
+    scenarios = [
+        ("diff-card-1440", "card", "dark", "diff-ready"),
+        ("diff-pas-384", "pas", "dark", "diff-ready"),
+        ("diff-light-1440", "card", "light", "diff-ready"),
+        ("diff-new", "pas", "dark", "diff-new"),
+        ("diff-deleted", "pas", "dark", "diff-deleted"),
+        ("diff-renamed", "pas", "dark", "diff-renamed"),
+        ("diff-binary", "pas", "dark", "diff-binary"),
+        ("diff-truncated", "pas", "dark", "diff-truncated"),
+        ("diff-loading", "pas", "dark", "diff-loading"),
+        ("diff-error", "pas", "dark", "diff-error"),
+        ("diff-old-node", "pas", "dark", "diff-old"),
+        ("diff-not-git", "card", "dark", "not_git"),
+    ]
+    for name, surface, theme, scene in scenarios:
+        context = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme=theme, reduced_motion="reduce", locale="ko-KR", service_workers="block")
+        page = context.new_page()
+        page.add_init_script(f"localStorage.setItem('soul-dashboard-theme','{theme}'); localStorage.setItem('ls.webglGlass','0');")
+        requests = {"workspace": 0}
+        install_routes(page, scene, requests)
+        if surface == "pas":
+            page.goto(base + "/persistent/components-session", wait_until="domcontentloaded")
+            trigger = page.get_by_role("button", name="세션 파일", exact=True)
+            expect(trigger).to_be_visible(timeout=15000); trigger.click()
+            pane = page.get_by_role("region", name="세션 파일")
+        else:
+            page.goto(base + "/components", wait_until="domcontentloaded")
+            page.get_by_test_id("card-board-sample").locator('[data-card-id="board-size-comparison"] .v3-postit-open').first.click()
+            workspace = page.get_by_test_id("v3-card-workspace")
+            trigger = workspace.get_by_role("button", name="파일", exact=True)
+            expect(trigger).to_be_visible(timeout=15000); trigger.click()
+            pane = workspace.get_by_role("region", name="세션 파일")
+        expect(pane).to_be_visible()
+        if scene == "not_git":
+            expect(pane.get_by_text("Git 작업 폴더가 아닙니다")).to_be_visible()
+        else:
+            row = pane.get_by_role("button", name="event_outbox.ts", exact=False)
+            expect(row).to_be_visible(timeout=15000)
+            row.focus(); page.keyboard.press("Enter")
+            expect(row).to_be_focused(); expect(row).to_have_attribute("aria-expanded", "true")
+            box = pane.get_by_role("region", name="event_outbox.ts 변경분")
+            expect(box).to_be_visible()
+            states = {"diff-new": "새 파일", "diff-deleted": "지움", "diff-renamed": "바뀐 내용 없음",
+                      "diff-binary": "바이너리 파일", "diff-truncated": "앞 512KiB만 보입니다",
+                      "diff-error": "변경분을 불러오지 못했습니다", "diff-old": "이 노드는 아직 변경분을 보이지 않습니다"}
+            if scene in states: expect(box.get_by_text(states[scene], exact=True)).to_be_visible()
+            elif scene == "diff-loading": expect(box.get_by_label("변경분을 읽는 중")).to_be_visible()
+            else: expect(box.locator('[data-kind="add"]').first).to_be_visible()
+            if scene == "diff-deleted": expect(box.get_by_role("button", name="전체 보기")).to_have_count(0)
+            if scene == "diff-binary":
+                pane.get_by_role("button", name="다른 변경", exact=False).click()
+                expect(pane.get_by_text("셸로 고친 파일은 여기 나옵니다")).to_be_visible()
+            if scene == "diff-ready":
+                expect(box.locator(".v3-session-file-diff-body")).to_have_css("padding-left", "0px")
+                page.keyboard.press("Tab")
+                full = box.get_by_role("button", name="전체 보기")
+                expect(full).to_be_focused()
+                page.keyboard.press("Tab")
+                expect(box.locator(".v3-session-file-diff-body")).to_be_focused()
+                m = pane.evaluate("""el => {
+                    const rect = e => {const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}};
+                    const row=el.querySelector('.v3-session-files-entry.is-open .v3-session-files-row'), h=el.querySelector('.v3-session-files-section h3 button'), box=el.querySelector('.v3-session-file-diff'), head=box.querySelector('.v3-session-file-diff-head'), line=box.querySelector('.v3-session-file-diff-line'), icon=row.querySelector('.v3-session-files-mark'), num=line.querySelector('.v3-session-file-diff-num'), action=head.querySelector('button svg'), arrow=h.querySelector('svg'), diff=box.querySelector('.v3-session-file-diff-body');
+                    return {row:rect(row),icon:rect(icon),heading:rect(h.querySelector('.v3-persistent-task-group-name')),arrow:rect(arrow),status:rect(head.querySelector('.v3-session-file-diff-status')),number:rect(num),action:rect(action),diff:rect(diff),line:rect(line),linePadding:getComputedStyle(line).padding,bodyPadding:getComputedStyle(diff).padding,scrollLeft:diff.scrollLeft,scrollWidth:diff.scrollWidth,clientWidth:diff.clientWidth};
+                }""")
+                assert m["scrollWidth"] <= m["clientWidth"], m
+                assert max(abs(m["heading"]["left"] - m[key]["left"]) for key in ("icon", "status", "number")) <= 1, m
+                assert abs(m["arrow"]["right"] - m["action"]["right"]) <= 1, m
+                results[name] = {"alignment": m, "tab": ["행", "전체 보기", "diff 본문"]}
+        page.evaluate("document.fonts.ready")
+        page.screenshot(path=str(out / (name + ".png")), animations="disabled")
+        if "pending_diff" in requests: requests["pending_diff"].abort()
+        if scene == "diff-ready" and surface == "card" and theme == "dark":
+            full.click()
+            dialog = page.get_by_role("dialog")
+            expect(dialog).to_be_visible()
+            page.keyboard.press("Escape"); expect(dialog).to_have_count(0); expect(full).to_be_focused()
+            row.focus(); page.keyboard.press("Space"); expect(row).to_have_attribute("aria-expanded", "false"); expect(row).to_be_focused()
+            page.keyboard.press("Space"); expect(row).to_have_attribute("aria-expanded", "true")
+            body = pane.locator(".v3-session-files-body")
+            scroll_before = body.evaluate("e => e.scrollTop")
+            page.set_viewport_size({"width": 1024, "height": 900}); expect(row).to_have_attribute("aria-expanded", "true")
+            narrow = box.locator(".v3-session-file-diff-body").evaluate("el => ({width:el.clientWidth, scroll:el.scrollWidth})")
+            assert narrow["width"] == narrow["scroll"], narrow
+            page.set_viewport_size({"width": 1440, "height": 900}); expect(row).to_have_attribute("aria-expanded", "true")
+            assert abs(body.evaluate("e => e.scrollTop") - scroll_before) <= 2
+            page.keyboard.press("Escape"); expect(pane).to_have_count(0)
+            results[name]["operations"] = {"focus": "행과 전체 보기 복귀", "escape": "보기와 칸 순서대로 닫힘", "resize": "1024 ↔ 1440 펼침과 스크롤 유지", "narrow": narrow}
+        context.close()
+    return results
+
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument("--output", required=True); parser.add_argument("--baseline-dist", required=True); parser.add_argument("--story-only", action="store_true"); parser.add_argument("--retention-only", action="store_true"); parser.add_argument("--layout-only", action="store_true"); parser.add_argument("--pas-width-only", action="store_true"); args = parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument("--output", required=True); parser.add_argument("--baseline-dist", required=True); parser.add_argument("--story-only", action="store_true"); parser.add_argument("--retention-only", action="store_true"); parser.add_argument("--layout-only", action="store_true"); parser.add_argument("--pas-width-only", action="store_true"); parser.add_argument("--diff-only", action="store_true"); parser.add_argument("--skip-diff", action="store_true"); args = parser.parse_args()
     out = Path(args.output).resolve(); out.mkdir(parents=True, exist_ok=True)
     server, base = serve(DIST)
     baseline_server, baseline_base = serve(Path(args.baseline_dist))
@@ -371,6 +481,8 @@ def main():
             if args.retention_only:
                 measurements['retention'] = capture_retention(browser, base)
                 return
+            if not args.skip_diff: measurements["diff"] = capture_diff(browser, base, out)
+            if args.diff_only: return
             measurements["story"] = story_comparison(browser, baseline_base, base, out)
             assert measurements["story"]["before"] == measurements["story"]["after"], measurements["story"]
             if args.story_only: return
@@ -430,8 +542,10 @@ def main():
                     for _ in range(6):
                         page.keyboard.press("Tab")
                         info["tab"].append(page.evaluate("document.activeElement?.getAttribute('aria-label') || document.activeElement?.textContent?.trim()"))
-                    assert info["tab"] == ["다시 읽기", "파일 닫기", "config.ts+3−1", "event_outbox_types.ts", "event_outbox.ts+42−18", "outbox_retry.ts새+33", "읽기만 한 파일일부1"], info["tab"]
-                    pane.get_by_text("event_outbox_types.ts", exact=True).click()
+                    assert info["tab"] == ["다시 읽기", "파일 닫기", "이번 세션3개일부", "event_outbox_types.ts", "event_outbox.ts+42−18", "outbox_retry.ts새+33", "읽기만 한 파일1개"], info["tab"]
+                    pane.get_by_role("button", name="다른 변경", exact=False).click()
+                    pane.get_by_text("event_outbox.ts", exact=True).click()
+                    pane.get_by_role("region", name="event_outbox.ts 변경분").get_by_role("button", name="전체 보기").click()
                     expect(page.get_by_role("dialog")).to_be_visible()
                     dialog = page.get_by_role("dialog")
                     expect(dialog.locator('pre')).to_contain_text('// session file preview')
@@ -447,13 +561,13 @@ def main():
                     previous = dialog.get_by_role('button', name='이전 첨부')
                     following = dialog.get_by_role('button', name='다음 첨부')
                     previous.click(); info["preview_navigation"].append(name.inner_text())
-                    expect(previous).to_have_attribute('aria-disabled', 'true'); page.keyboard.press('ArrowLeft'); assert name.inner_text() == 'config.ts'
+                    expect(previous).to_have_attribute('aria-disabled', 'true'); page.keyboard.press('ArrowLeft'); assert name.inner_text() == 'event_outbox_types.ts'
                     following.click(); info["preview_navigation"].append(name.inner_text())
                     page.keyboard.press('ArrowRight'); info["preview_navigation"].append(name.inner_text())
                     page.keyboard.press('ArrowRight'); info["preview_navigation"].append(name.inner_text())
-                    expect(following).to_have_attribute('aria-disabled', 'true'); page.keyboard.press('ArrowRight'); assert name.inner_text() == 'outbox_retry.ts'
-                    assert info["preview_navigation"] == ['config.ts', 'event_outbox_types.ts', 'event_outbox.ts', 'outbox_retry.ts']
-                    page.keyboard.press('ArrowLeft'); info['preview_arrow_left'] = name.inner_text(); assert info['preview_arrow_left'] == 'event_outbox.ts'
+                    expect(following).to_have_attribute('aria-disabled', 'true'); page.keyboard.press('ArrowRight'); assert name.inner_text() == 'config.ts'
+                    assert info["preview_navigation"] == ['event_outbox_types.ts', 'event_outbox.ts', 'outbox_retry.ts', 'config.ts']
+                    page.keyboard.press('ArrowLeft'); info['preview_arrow_left'] = name.inner_text(); assert info['preview_arrow_left'] == 'outbox_retry.ts'
                     info["preview_bounds"] = []
                     for resized in [390, 1440]:
                         page.set_viewport_size({"width": resized, "height": 900}); page.wait_for_timeout(200)
