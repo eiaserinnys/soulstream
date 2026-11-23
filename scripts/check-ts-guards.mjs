@@ -83,6 +83,7 @@ function main() {
         if (ts.isBinaryExpression(node) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken].includes(node.operatorToken.kind)) {
           return unstableSelectorResult(node.left) || unstableSelectorResult(node.right);
         }
+        if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) return unstableSelectorResult(node.right);
         if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && ['Map', 'Set', 'Date'].includes(node.expression.text)) return true;
         if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return false;
         const { expression, name } = node.expression;

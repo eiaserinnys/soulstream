@@ -188,6 +188,7 @@ test('불안정한 Zustand 선택자 반환을 잡고 안정적인 값과 useSha
     's.items.toSorted()', 's.items.toReversed()', 'Object.keys(s.byId)', 'Object.values(s.byId)',
     'Object.entries(s.byId)', 'Array.from(s.items)', 'new Map()', 'new Set()', 'new Date()',
     's.items ?? []', 's.row || {}', 's.ok ? s.items : []', '(s.items.slice() as string[])!',
+    's.ready && s.items.map(x => x.id)',
   ];
   const failure = fixture({ 'src/index.ts': [
     ...expressions.map(expression => `useSessionStore(s => ${expression});`),
@@ -204,6 +205,8 @@ test('불안정한 Zustand 선택자 반환을 잡고 안정적인 값과 useSha
     'useSessionStore(s => s.items.some(Boolean));',
     'useSessionStore(s => s.items.find(Boolean));',
     'useSessionStore(s => Boolean(s.items));',
+    'useSessionStore(s => s.ready && s.count > 0);',
+    'useSessionStore(s => s.ready && s.name);',
     'useSessionStore(s => { const helper = () => []; return s.items; });',
     'useSessionStore();',
     'useSessionStore(selector);',
