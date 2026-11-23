@@ -8,33 +8,51 @@
 bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl/certs/ca-certificates.crt) || (apt-get update && apt-get install -y curl ca-certificates); tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex'
 ```
 
-`--backends`는 `claude`, `codex`, `antigravity` 중 원하는 백엔드를 쉼표로 구분합니다. 기본값은 `claude,codex`이며 첫 백엔드가 기본 에이전트입니다. 선택 사항인 `--ref <브랜치·태그·커밋>`으로 설치할 리비전을 지정합니다.
+`--backends`는 `claude`, `codex`, `antigravity` 중 원하는 백엔드를 쉼표로 구분합니다. 기본값은 `claude,codex`이며 첫 백엔드가 기본 에이전트 서소영과 서소영 (PAS)의 백엔드가 됩니다. 선택 사항인 `--ref <브랜치, 태그 또는 커밋>`으로 설치할 소울스트림 리비전을, `--atom-ref <브랜치, 태그 또는 커밋>`으로 설치할 atom 리비전을 지정합니다.
 
-설치기는 필수 패키지, 전용 사용자, Node.js, 선택한 CLI와 PostgreSQL을 준비하고 소스를 클론해 설정·빌드·스키마 초기화를 마친 뒤 systemd 서비스를 시작합니다. 로컬 작업실을 만들고 서비스 연결과 인증을 확인합니다. 로그는 `/var/log/soulstream-install.log`에 남습니다.
+한 서버에 다음이 함께 설치됩니다.
+
+- 소울스트림(오케스트레이터와 워커)
+- atom(지침과 스킬을 담는 지식 트리, `/home/soulstream/atom`, 루프백 포트 4200)
+- 기본 지침: 설치기에 들어 있는 시작 지침과 스킬을 atom에 싣습니다.
+- 기본 에이전트 서소영(`seosoyoung`)과 서소영 (PAS)(`seosoyoung-pas`)
+- 고른 백엔드마다 기본 에이전트(`claude-default`, `codex-default`, `antigravity-default`). `claude`를 고르면 카드 오케스트레이터 프로필도 만듭니다.
+
+설치기는 필수 패키지, 전용 사용자, Node.js, 선택한 CLI와 PostgreSQL을 준비하고 소울스트림과 atom 소스를 클론합니다. atom을 빌드해 시작하고 API 키를 발급한 뒤 기본 지침을 싣고, 이어서 소울스트림의 설정, 빌드, 스키마 초기화를 마친 뒤 systemd 서비스를 시작합니다. 로컬 작업실을 만들고 서비스 연결과 인증을 확인합니다. 로그는 `/var/log/soulstream-install.log`에 남습니다.
+
+기본 지침은 설치 때 한 번만 싣습니다. 설치 뒤 atom에서 고친 지침은 다시 설치해도 덮어쓰지 않습니다. 설치 끝 안내에 `Atom instructions:` 경고가 나오면 다음 뜻입니다.
+
+- atom에 이미 트리가 있어 기본 지침을 싣지 않고 기존 트리를 그대로 두었습니다.
+- 설치 뒤 바뀐 시드 카드가 있어 그 카드는 고치지 않고 보존했습니다.
+- 설치기가 설정에 쓰는 노드(예: 스킬 카탈로그)가 atom에서 지워져 그 연결을 비웠습니다.
 
 설치가 끝나기 전에 모델 프리셋 상태를 갱신합니다. 최대 여섯 번 시도하며 각 요청은 최대 60초, 재시도 간격은 10초입니다. 갱신에 실패해도 설치는 계속됩니다.
 
 설치가 끝나면 안내된 명령으로 선택한 CLI에 로그인합니다. Codex는 ChatGPT 보안 설정에서 기기 코드 로그인을 켜야 합니다. Antigravity는 `ssh soulstream@<서버>`로 직접 접속해 `~/.local/bin/agy`에서 로그인하고 `/exit`로 나옵니다. 로그인 후 프리셋은 5분 안에 갱신되며, 즉시 갱신 명령도 설치 결과에 표시됩니다.
 
-대시보드는 SSH 터널을 연 뒤 로컬 브라우저에서 접속합니다.
+대시보드와 atom은 SSH 터널을 연 뒤 로컬 브라우저에서 접속합니다.
 
 ```bash
-ssh -L 127.0.0.1:5200:127.0.0.1:5200 <사용자>@<서버>
+ssh -L 127.0.0.1:5200:127.0.0.1:5200 -L 127.0.0.1:4200:127.0.0.1:4200 <사용자>@<서버>
 ```
 
-<http://127.0.0.1:5200>에서 설치 끝에 표시된 관리자 비밀번호로 로그인합니다. 비밀번호는 서버의 `/home/soulstream/soulstream/.admin-password`에도 보관됩니다.
+소울스트림은 <http://127.0.0.1:5200>, atom은 <http://127.0.0.1:4200>에서 같은 관리자 비밀번호로 로그인합니다. 설치기는 비밀번호를 화면에 찍지 않습니다. 서버에서 `sudo cat /home/soulstream/soulstream/.admin-password`로 확인합니다.
 
-같은 명령을 다시 실행하면 비밀 값, 기존 작업실과 설치기가 관리하지 않는 환경 설정 줄을 보존합니다. 기존 클론의 HEAD는 `--ref`를 주지 않으면 그대로 유지합니다. `--ref`를 주면 작업 트리가 깨끗할 때 해당 리비전을 체크아웃합니다. 버전 업데이트 도구와 제거 도구는 포함하지 않습니다.
+PAS 세션은 대시보드에서 영구 세션을 만들어 시작합니다. 영구 세션의 기본 에이전트는 서소영 (PAS)입니다.
+
+같은 명령을 다시 실행하면 비밀 값, 기존 작업실과 설치기가 관리하지 않는 환경 설정 줄을 보존합니다. 기존 클론의 HEAD는 `--ref`를 주지 않으면 그대로 유지합니다. `--ref`를 주면 작업 트리가 깨끗할 때 해당 리비전을 체크아웃합니다. 버전 업데이트 도구와 제거 도구는 포함하지 않습니다. 기존 소울스트림 클론이 atom 지원 전의 리비전이면(1단계 설치본) 이 설치기는 서비스와 파일을 바꾸기 전에 멈춥니다.
 
 ### Tailscale Serve
 
-설치 명령의 마지막 인자에 `--tailscale`을 더하면 허용된 Tailscale 계정으로 비밀번호 없이 접속합니다. 로그인 URL이 표시되면 10분 안에 승인합니다. 이미 연결된 기기는 승인을 건너뜁니다. tailnet에서 MagicDNS와 HTTPS를 켜야 합니다.
+설치 명령의 마지막 인자에 `--tailscale`을 더하면 허용된 Tailscale 계정으로 소울스트림에 비밀번호 없이 접속합니다. 로그인 URL이 표시되면 10분 안에 승인합니다. 이미 연결된 기기는 승인을 건너뜁니다. tailnet에서 MagicDNS와 HTTPS를 켜야 합니다.
 
 ```bash
 bash install/install.sh --tailscale --tailscale-user owner@example.com
 ```
 
-개인 기기는 `--tailscale-user`를 생략하면 기기의 계정을 사용합니다. 태그 기기는 허용할 사람의 로그인 이름을 명시해야 합니다. 선택적으로 `--tailscale-auth-key <키>`를 사용할 수 있습니다. 설치가 끝나면 표시된 HTTPS 주소를 해당 계정의 tailnet 기기에서 엽니다. 서버의 로컬 프로세스는 신원 머리를 위조할 수 있으므로 신뢰하는 프로세스만 실행해야 합니다.
+개인 기기는 `--tailscale-user`를 생략하면 기기의 계정을 사용합니다. 태그 기기는 허용할 사람의 로그인 이름을 명시해야 합니다. 인증 키를 쓰려면 키를 파일에 담아 `--tailscale-auth-key-file <경로>`로 넘깁니다. 설치기는 파일 경로만 Tailscale에 전달하므로 키가 프로세스 인자에 남지 않습니다. 설치가 끝나면 표시된 HTTPS 주소를 해당 계정의 tailnet 기기에서 엽니다. 서버의 로컬 프로세스는 신원 머리를 위조할 수 있으므로 신뢰하는 프로세스만 실행해야 합니다.
+
+atom은 같은 주소의 `:8443`(`https://<서버의 MagicDNS 이름>:8443`)으로 열립니다. atom은 Tailscale 신원 대신 관리자 비밀번호로 로그인하며, 비밀번호는 Tailscale 모드에서도 `/home/soulstream/soulstream/.admin-password`에 보관됩니다(`sudo cat`으로 확인).
 
 `--tailscale` 없이 다시 설치하면 기존 관리자 비밀번호로 돌아갑니다. Serve 접근과 기기 연결을 제거하려면 `tailscale serve reset && tailscale logout`을 실행합니다.
 
