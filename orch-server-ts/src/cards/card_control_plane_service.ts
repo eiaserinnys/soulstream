@@ -144,6 +144,7 @@ export class CardControlPlaneService {
     }));
   }
   getFolder(folderId: string, includeCompleted = true) { return this.repo.getSnapshot(folderId, includeCompleted); }
+  getFolderRow(folderId: string) { return this.repo.getFolder(folderId); }
   listFolders(params: Parameters<CardRepository["listFolders"]>[0]) { return this.repo.listFolders(params); }
   listOperations(folderId: string,limit?: number,offset?: number) { return this.repo.listOperations(folderId,limit,offset); }
   listCards(params: Parameters<CardRepository["listCards"]>[0]={}) { return this.repo.listCards(params); }

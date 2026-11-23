@@ -3,6 +3,7 @@ import { CardRepositoryRead } from '../src/cards/control_plane/card_repository_r
 import { CardMutationCore } from '../src/cards/control_plane/card_mutation_core.js';
 import { CardControlPlaneService } from '../src/cards/card_control_plane_service.js';
 import { serializeCardMutation } from '../src/folders/folder_contracts.js';
+import { executeFolderOperation } from '../src/folders/folder_operations.js';
 import type {
   CardRow,
   FolderOperationRow,
@@ -190,18 +191,19 @@ it('idempotent move replay rebuilds the stored source-folder snapshot without re
   expect(h.emitFolderUpdated).not.toHaveBeenCalled();
 });
 
-it('idempotent create replay projects only the created card', async () => {
+it('idempotent create replay projects the stored card even when the request names another id', async () => {
   const h = coreHarness();
   h.repo.getOperationByIdempotencyKey.mockResolvedValueOnce(operationRow({
-    folder_id: 'folder-a', target_kind: 'card', target_id: 'new-card', operation_type: 'create_card',
+    folder_id: 'folder-a', target_kind: 'card', target_id: 'stored-card', operation_type: 'create_card',
     payload_json: { title: '새 카드' },
   }));
-  await h.core.mutate({
-    folderId: 'folder-a', targetKind: 'card', targetId: 'new-card', operationType: 'create_card',
+  const result = await h.core.mutate({
+    folderId: 'folder-a', targetKind: 'card', targetId: 'request-card', operationType: 'create_card',
     actor: { actorSessionId: 'actor' }, payload: { title: '새 카드' }, idempotencyKey: 'key',
     apply: async () => { throw new Error('idempotent replay must not apply'); },
   });
-  expect(h.getMutationSnapshot.mock.calls).toEqual([['folder-a', 'card', 'new-card']]);
+  expect(h.getMutationSnapshot.mock.calls).toEqual([['folder-a', 'card', 'stored-card']]);
+  expect(result.snapshot.card).toMatchObject({ id: 'stored-card' });
   expect(h.emitCardUpdated).not.toHaveBeenCalled();
 });
 
@@ -223,6 +225,56 @@ function serviceHarness() {
   });
   return { service, repo, core, emitCardUpdated, emitFolderUpdated };
 }
+
+function folderOperationHarness(missingFolder = false) {
+  const getFolder = vi.fn(async (folderId: string) => missingFolder ? null : folderRow(folderId));
+  const getSnapshot = vi.fn(async () => { throw new Error('full folder snapshot must not be read'); });
+  const listCards = vi.fn(async () => { throw new Error('folder cards must not be listed'); });
+  const projectCards = vi.fn(async () => { throw new Error('cards must not be projected'); });
+  const setFolderStatus = vi.fn(async (params: { folderId: string }) => ({
+    snapshot: { folder: folderRow(params.folderId), card: null },
+    operation: operationRow({ folder_id: params.folderId, target_kind: 'folder', target_id: params.folderId, operation_type: 'set_folder_status' }),
+    eventId: 1, idempotent: false,
+  }));
+  const mutateFromFolder = vi.fn(async (params: { folderId: string }) => ({
+    folder: folderRow(params.folderId),
+    operation: operationRow({ folder_id: params.folderId, operation_type: 'rename_folder' }),
+    idempotent: false,
+  }));
+  const service = Object.create(CardControlPlaneService.prototype) as CardControlPlaneService;
+  Object.assign(service, { repo: { getFolder, getSnapshot, listCards, projectCards }, repoSql: fakeSql(() => []).sql, setFolderStatus });
+  return { service, identity: { create: vi.fn(), mutateFromFolder }, getFolder, getSnapshot, listCards, projectCards };
+}
+
+const folderBodies = {
+  set_folder_status: { expectedVersion: 1, idempotencyKey: 'key', status: 'completed' },
+  rename_folder: { expectedVersion: 1, idempotencyKey: 'key', name: '새 이름' },
+} as const;
+
+it.each(['set_folder_status', 'rename_folder'] as const)(
+  '%s checks folder existence through the row read without listing or projecting cards',
+  async operation => {
+    const h = folderOperationHarness();
+    await executeFolderOperation({ cards: h.service, identity: h.identity as never }, operation, folderBodies[operation],
+      { folderId: 'folder-a' }, { actorKind: 'agent', actorSessionId: 'actor' });
+    expect(h.getFolder.mock.calls).toEqual([['folder-a']]);
+    expect(h.getSnapshot).not.toHaveBeenCalled();
+    expect(h.listCards).not.toHaveBeenCalled();
+    expect(h.projectCards).not.toHaveBeenCalled();
+  },
+);
+
+it.each(['set_folder_status', 'rename_folder'] as const)(
+  '%s still answers 404 for a missing folder without reading cards',
+  async operation => {
+    const h = folderOperationHarness(true);
+    await expect(executeFolderOperation({ cards: h.service, identity: h.identity as never }, operation, folderBodies[operation],
+      { folderId: 'folder-a' }, { actorKind: 'agent', actorSessionId: 'actor' }))
+      .rejects.toMatchObject({ statusCode: 404 });
+    expect(h.getSnapshot).not.toHaveBeenCalled();
+    expect(h.projectCards).not.toHaveBeenCalled();
+  },
+);
 
 const moveParams = (folderId: string) =>
   ({ actorKind: 'agent' as const, actorSessionId: 'actor', cardId: 'card-1', folderId });

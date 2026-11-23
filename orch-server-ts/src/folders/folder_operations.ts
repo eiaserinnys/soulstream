@@ -53,8 +53,8 @@ export async function executeFolderOperation(
   }
   const folderId = id.parse(scope.folderId);
   if (folderId === "claude" || folderId === "llm") throw Object.assign(new Error("System folders cannot be changed"), { statusCode: 403 });
-  const snapshot = await services.cards.getFolder(folderId);
-  if (!snapshot) throw Object.assign(new Error("Folder not found"), { statusCode: 404 });
+  const folder = await services.cards.getFolderRow(folderId);
+  if (!folder) throw Object.assign(new Error("Folder not found"), { statusCode: 404 });
   if (operation === "rename_folder" || operation === "archive_folder" || operation === "unarchive_folder") {
     const value = folderOperationSchemas.rename_folder.parse(parsed);
     const { expectedVersion, idempotencyKey, reason, ...update } = value;
