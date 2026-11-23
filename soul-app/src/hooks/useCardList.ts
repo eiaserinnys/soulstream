@@ -25,14 +25,20 @@ export function useCardList(api: ApiClient | null, folderId?: string, enabled = 
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
   const generationRef = useRef(0);
+  const inFlightRef = useRef<number | null>(null);
+  const queuedRef = useRef(false);
   const refreshWindowRef = useRef(createCardRefreshWindow());
   const loadRef = useRef<() => void>(() => {});
+  const previousCardInvalidation = useRef(cardInvalidation);
 
   const load = useCallback(() => {
     if (!api) return;
     if (!enabledRef.current) return;
+    previousCardInvalidation.current = usePlannerStore.getState().invalidation.card;
     cancelCardRefresh(refreshWindowRef.current);
+    queuedRef.current = false;
     const generation = ++generationRef.current;
+    inFlightRef.current = generation;
     setState((previous) => ({ owner, cards: previous.owner === owner ? previous.cards : [], snapshotSeq: previous.owner === owner ? previous.snapshotSeq : 0, hasSnapshot: previous.owner === owner ? previous.hasSnapshot : false, loading: true, error: null }));
     void (async () => {
       try {
@@ -47,6 +53,11 @@ export function useCardList(api: ApiClient | null, folderId?: string, enabled = 
       } catch (cause) {
         if (generationRef.current !== generation || captureAuthScope().generation !== scope) return;
         setState((previous) => ({ ...previous, loading: false, error: cause instanceof Error ? cause.message : String(cause) }));
+      } finally {
+        if (inFlightRef.current === generation) {
+          inFlightRef.current = null;
+          if (queuedRef.current && enabledRef.current) loadRef.current();
+        }
       }
     })();
   }, [api, folderId, owner, scope]);
@@ -58,16 +69,17 @@ export function useCardList(api: ApiClient | null, folderId?: string, enabled = 
   }, [load, retry, structuralInvalidation]);
 
   // 카드 갱신이 몰려 오면 마지막 사건 뒤 한 창으로 묶어 한 번만 읽는다.
-  const previousCardInvalidation = useRef(cardInvalidation);
   useEffect(() => {
     if (previousCardInvalidation.current === cardInvalidation) return;
     previousCardInvalidation.current = cardInvalidation;
-    generationRef.current += 1;
     if (!enabledRef.current) {
       cancelCardRefresh(refreshWindowRef.current);
       return;
     }
-    scheduleCardRefresh(refreshWindowRef.current, () => { loadRef.current(); });
+    scheduleCardRefresh(refreshWindowRef.current, () => {
+      if (inFlightRef.current !== null) queuedRef.current = true;
+      else loadRef.current();
+    });
   }, [cardInvalidation]);
 
   // 숨김에서 돌아오면 최신 목록을 한 번 읽는다.
@@ -76,6 +88,8 @@ export function useCardList(api: ApiClient | null, folderId?: string, enabled = 
     if (!enabled) {
       wasEnabledRef.current = false;
       generationRef.current += 1;
+      inFlightRef.current = null;
+      queuedRef.current = false;
       cancelCardRefresh(refreshWindowRef.current);
       return;
     }
@@ -93,7 +107,7 @@ export function useCardList(api: ApiClient | null, folderId?: string, enabled = 
         if (enabledRef.current) void load();
       }
     });
-    return () => { generationRef.current += 1; subscription.remove(); cancelCardRefresh(refreshWindowRef.current); };
+    return () => { generationRef.current += 1; inFlightRef.current = null; queuedRef.current = false; subscription.remove(); cancelCardRefresh(refreshWindowRef.current); };
   }, [load]);
   const cards = useMemo(() => {
     if (state.owner !== owner || !state.hasSnapshot) return [];

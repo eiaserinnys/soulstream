@@ -367,7 +367,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const taskListContentInset = duoTopBand
     ? { top: usageInColumn ? 0 : rightControlsHeight, bottom: railColumnBottom }
     : undefined;
-  const taskList = <PersistentSessionTaskList api={api} visible={!selectedCardId}
+  const taskList = <PersistentSessionTaskList api={api} visible={active && !selectedCardId}
     onOpenCard={openCard}
     contentInset={taskListContentInset} />;
   const renderRailAction = (item: PhoneRailAction) => {

@@ -15,6 +15,7 @@ jest.mock('../../hooks/useOpenContentLink', () => ({ useOpenContentLink: () => m
 jest.mock('../../api/client', () => ({ createApiClient: () => mockApi }));
 let mockDevice = 'phone';
 let mockKeyboardLayout = false;
+let mockObserveTaskList = false;
 jest.mock('../../theme/useDeviceType', () => ({ useDeviceType: () => mockDevice, deviceTypeToBaseKey: (device: string) => device === 'phone' ? 'phone' : 'tablet' }));
 jest.mock('../../components/chat/ChatBody', () => {
   const React = require('react'); const { View, TextInput } = require('react-native');
@@ -47,8 +48,14 @@ jest.mock('../../components/chat/ChatBody', () => {
 });
 jest.mock('../../components/persistent/PersistentSessionTaskList', () => {
   const { Pressable, View } = require('react-native');
-  return { PersistentSessionTaskList: ({ onOpenCard, visible = true, contentInset }: any) => <View testID="persistent-task-list-mock"
-    contentInset={contentInset} style={{ display: visible ? 'flex' : 'none' }}><Pressable testID="choose-card" onPress={() => onOpenCard('card-1')} /></View> };
+  const ObservedList = ({ api, visible, onOpenCard }: any) => {
+    require('../../hooks/useCardList').useCardList(api, undefined, visible);
+    return <Pressable testID="choose-card" onPress={() => onOpenCard('card-1')} />;
+  };
+  return { PersistentSessionTaskList: ({ api, onOpenCard, visible = true, contentInset }: any) => <View testID="persistent-task-list-mock"
+    contentInset={contentInset} style={{ display: visible ? 'flex' : 'none' }}>{mockObserveTaskList
+      ? <ObservedList api={api} visible={visible} onOpenCard={onOpenCard} />
+      : <Pressable testID="choose-card" onPress={() => onOpenCard('card-1')} />}</View> };
 });
 jest.mock('../../components/persistent/SwayCharacter', () => ({ SwayCharacter: () => null }));
 jest.mock('../../components/persistent/PersistentSessionCardOverlay', () => {
@@ -91,6 +98,7 @@ import { DuoSideBandContext, DuoTopBandContext, PhoneRailModeContext } from '../
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { usePhoneRailActions } from '../../navigation/phoneRailActions';
+import { usePlannerStore } from '../../store/plannerStore';
 
 let store: StoreApi<PersistentSessionScene>;
 function Capture() { store = usePersistentSessionHost().store; return null; }
@@ -99,6 +107,7 @@ function ScreenHarness({ active = true, show = true }: { active?: boolean; show?
 }
 beforeEach(() => {
   mockKeyboardLayout = false;
+  mockObserveTaskList = false;
   mockOpenContentLink.mockReset();
   useSettingsStore.setState({ serverUrl: '' });
   const card = cardFixture({ id: 'card-531', number: 531, status: 'review', assigneeSessionId: 'pas-card-phone',
@@ -1038,6 +1047,29 @@ test('phone 카드 목록은 제목과 같은 가장자리·종이 바탕을 유
   expect(StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style)).toEqual(panel);
   expect(onOpenPhoneCard).toHaveBeenCalledWith('card-1');
   expect(store.getState().selectedCardId).toBeNull();
+  view.unmount();
+});
+
+test('휴대폰 카드 상세로 이동해 화면이 비활성이면 목록 조회를 멈추고 복귀할 때 한 번 읽는다', async () => {
+  mockDevice = 'phone';
+  mockObserveTaskList = true;
+  useSettingsStore.setState({ serverUrl: 'https://screen.test' });
+  usePlannerStore.getState().resetForTest();
+  mockApi.listCards.mockReset().mockResolvedValue({ cards: [] });
+  const onOpenPhoneCard = jest.fn();
+  const screen = (active: boolean) => <PersistentSessionProvider><Capture /><PersistentSessionScreen active={active} onHome={jest.fn()} onOpenPhoneCard={onOpenPhoneCard} /></PersistentSessionProvider>;
+  const view = render(screen(true));
+  act(() => { store.getState().open({ session_id: 'pas-1' } as any); store.getState().toggleScene(); });
+  await waitFor(() => expect(mockApi.listCards).toHaveBeenCalledTimes(1));
+  fireEvent.press(view.getByTestId('choose-card'));
+  expect(onOpenPhoneCard).toHaveBeenCalledWith('card-1');
+  expect(store.getState().selectedCardId).toBeNull();
+  view.rerender(screen(false));
+  act(() => usePlannerStore.getState().invalidate('card'));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 550)); });
+  expect(mockApi.listCards).toHaveBeenCalledTimes(1);
+  view.rerender(screen(true));
+  await waitFor(() => expect(mockApi.listCards).toHaveBeenCalledTimes(2));
   view.unmount();
 });
 

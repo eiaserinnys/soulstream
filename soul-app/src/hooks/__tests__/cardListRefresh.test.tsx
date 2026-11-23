@@ -8,6 +8,7 @@ import { cardFixture } from '../../test-support/cards';
 import { useCardList } from '../useCardList';
 import { useCardActions } from '../useCardActions';
 import { useCardComments } from '../useCardComments';
+import { usePlannerFolder } from '../usePlannerFolder';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -159,7 +160,7 @@ test('카드 사건 뒤 조회 전에 숨겼다가 돌아와도 최신 목록을
   expect(hook.result.current.cards.map(card => card.id)).toEqual(['card-a', 'card-new']);
 });
 
-test('카드 사건 후 지연 창에서 이전 목록 응답이 와도 전역 행에 반영하지 않는다', async () => {
+test('카드 사건 후 진행 중 목록 응답을 반영하고 후속 조회도 한다', async () => {
   jest.useFakeTimers();
   const old = deferred<{ cards: CardDto[] }>();
   const listCards = jest.fn().mockReturnValueOnce(old.promise)
@@ -168,10 +169,96 @@ test('카드 사건 후 지연 창에서 이전 목록 응답이 와도 전역 �
   const hook = renderHook(() => useCardList(api));
   act(() => usePlannerStore.getState().invalidate('card'));
   await act(async () => { old.resolve({ cards: [cardFixture({ id: 'card-old' })] }); });
-  expect(useCardStore.getState().rows['card-old']).toBeUndefined();
+  expect(hook.result.current.cards.map(card => card.id)).toEqual(['card-old']);
   await act(async () => { jest.advanceTimersByTime(CARD_REFRESH_WINDOW_MS); });
   await flushPromises();
   expect(hook.result.current.cards.map(card => card.id)).toEqual(['card-new']);
+});
+
+test.each(['replay', 'folder'] as const)('%s와 카드 사건이 동시에 오면 즉시 조회 응답을 반영한다', async (reason) => {
+  jest.useFakeTimers();
+  const listCards = jest.fn().mockResolvedValueOnce({ cards: [cardFixture({ id: 'old', folderId: 'folder-1' })] })
+    .mockResolvedValue({ cards: [cardFixture({ id: 'fresh', folderId: reason === 'folder' ? 'folder-2' : 'folder-1' })] });
+  const getFolderSnapshot = jest.fn()
+    .mockResolvedValueOnce({ folder: { id: 'folder-1' }, cards: [cardFixture({ id: 'old', folderId: 'folder-1' })] })
+    .mockImplementation(async (folderId: string) => ({ folder: { id: folderId }, cards: [cardFixture({ id: 'fresh', folderId })] }));
+  const api = { listCards, getFolderSnapshot } as unknown as ApiClient;
+  const hook = renderHook(({ folder }: { folder: string }) => ({
+    list: useCardList(api, folder), folder: usePlannerFolder(api, folder, true, false),
+  }), { initialProps: { folder: 'folder-1' } });
+  await flushPromises();
+  act(() => {
+    usePlannerStore.getState().invalidate('card');
+    if (reason === 'replay') usePlannerStore.getState().invalidate('replay');
+    else hook.rerender({ folder: 'folder-2' });
+  });
+  await flushPromises();
+  expect(listCards).toHaveBeenCalledTimes(2);
+  expect(getFolderSnapshot).toHaveBeenCalledTimes(2);
+  expect(hook.result.current.list.cards.map(card => card.id)).toEqual(['fresh']);
+  expect(hook.result.current.folder.data?.cards.map(card => card.id)).toEqual(['fresh']);
+  await act(async () => { jest.advanceTimersByTime(1000); });
+  expect(listCards).toHaveBeenCalledTimes(2);
+  expect(getFolderSnapshot).toHaveBeenCalledTimes(2);
+});
+
+test('350ms 간격 카드 사건이 이어져도 진행 중 150ms 조회 결과를 두 목록에 표시한다', async () => {
+  jest.useFakeTimers();
+  let rows: CardDto[] = [];
+  const response = () => {
+    const snapshot = [...rows];
+    return new Promise<{ cards: CardDto[] }>(resolve => setTimeout(() => resolve({ cards: snapshot }), 150));
+  };
+  const listCards = jest.fn(response);
+  const getFolderSnapshot = jest.fn(async () => ({ folder: { id: 'folder-1' }, ...(await response()) }));
+  const api = { listCards, getFolderSnapshot } as unknown as ApiClient;
+  const hook = renderHook(() => ({ list: useCardList(api, 'folder-1'), folder: usePlannerFolder(api, 'folder-1', true, false) }));
+  await act(async () => { jest.advanceTimersByTime(150); });
+  rows = [cardFixture({ id: 'new', folderId: 'folder-1' })];
+  act(() => usePlannerStore.getState().invalidate('card'));
+  for (let i = 0; i < 3; i += 1) {
+    await act(async () => { jest.advanceTimersByTime(350); });
+    act(() => usePlannerStore.getState().invalidate('card'));
+  }
+  await act(async () => { jest.advanceTimersByTime(100); await Promise.resolve(); await Promise.resolve(); });
+  expect(hook.result.current.list.cards.map(card => card.id)).toEqual(['new']);
+  expect(hook.result.current.folder.data?.cards.map(card => card.id)).toEqual(['new']);
+  await act(async () => { jest.advanceTimersByTime(500); });
+  await act(async () => { jest.advanceTimersByTime(150); await Promise.resolve(); await Promise.resolve(); });
+  expect(listCards).toHaveBeenCalledTimes(3);
+  expect(getFolderSnapshot).toHaveBeenCalledTimes(3);
+});
+
+test('진행 중 조회보다 병합 창이 먼저 끝나면 응답을 반영한 후 후속 조회를 한 번 시작한다', async () => {
+  jest.useFakeTimers();
+  const initialList = deferred<{ cards: CardDto[] }>();
+  const initialFolder = deferred<{ folder: { id: string }; cards: CardDto[] }>();
+  const nextList = deferred<{ cards: CardDto[] }>();
+  const nextFolder = deferred<{ folder: { id: string }; cards: CardDto[] }>();
+  const listCards = jest.fn().mockReturnValueOnce(initialList.promise).mockReturnValue(nextList.promise);
+  const getFolderSnapshot = jest.fn().mockReturnValueOnce(initialFolder.promise).mockReturnValue(nextFolder.promise);
+  const api = { listCards, getFolderSnapshot } as unknown as ApiClient;
+  const hook = renderHook(() => ({ list: useCardList(api, 'folder-1'), folder: usePlannerFolder(api, 'folder-1', true, false) }));
+  act(() => usePlannerStore.getState().invalidate('card'));
+  await act(async () => { jest.advanceTimersByTime(CARD_REFRESH_WINDOW_MS); });
+  expect(listCards).toHaveBeenCalledTimes(1);
+  expect(getFolderSnapshot).toHaveBeenCalledTimes(1);
+  const first = cardFixture({ id: 'first', folderId: 'folder-1' });
+  await act(async () => {
+    initialList.resolve({ cards: [first] });
+    initialFolder.resolve({ folder: { id: 'folder-1' }, cards: [first] });
+  });
+  expect(hook.result.current.list.cards.map(card => card.id)).toEqual(['first']);
+  expect(hook.result.current.folder.data?.cards.map(card => card.id)).toEqual(['first']);
+  expect(listCards).toHaveBeenCalledTimes(2);
+  expect(getFolderSnapshot).toHaveBeenCalledTimes(2);
+  const latest = cardFixture({ id: 'latest', folderId: 'folder-1' });
+  await act(async () => {
+    nextList.resolve({ cards: [latest] });
+    nextFolder.resolve({ folder: { id: 'folder-1' }, cards: [latest] });
+  });
+  expect(hook.result.current.list.cards.map(card => card.id)).toEqual(['latest']);
+  expect(hook.result.current.folder.data?.cards.map(card => card.id)).toEqual(['latest']);
 });
 
 test('숨김으로 바뀐 뒤 늦은 목록 응답은 전역 행에 반영하지 않는다', async () => {
