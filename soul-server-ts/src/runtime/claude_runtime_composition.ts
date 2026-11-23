@@ -54,6 +54,7 @@ export function composeClaudeAccountServices(
 
 interface ComposeClaudeRuntimeParams {
   enabled: boolean;
+  runnerStateDirectory?: string;
   db: SessionDB;
   agentRegistry: AgentRegistry;
   modelCatalog: Pick<ModelCatalog, "resolve">;
@@ -76,6 +77,7 @@ interface ComposeClaudeRuntimeParams {
 }
 
 export interface ComposeQueuedDeliveryRecoveryParams {
+  runnerStateDirectory?: string;
   db: SessionDB;
   agentRegistry: AgentRegistry;
   modelCatalog: Pick<ModelCatalog, "resolve">;
@@ -101,6 +103,7 @@ export function composeQueuedDeliveryRecovery(
   const deliveryRepository = params.db.sessionDeliveries();
   const transcriptReceipt = new ClaudeDeliveryTranscriptReceiptReader({
     sourceNode: params.sourceNode,
+    runnerStateDirectory: params.runnerStateDirectory,
     getSession: (sessionId) => params.db.getSession(sessionId),
     getAgent: (agentId) => params.agentRegistry.get(agentId),
     ...(params.resolveWorktreeWorkspace

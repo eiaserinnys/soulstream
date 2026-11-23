@@ -28,7 +28,9 @@ export class TaskEngineFailureRecovery {
     activeInterventions: readonly InterventionMessage[] = [],
   ): Promise<ExecuteFailureDisposition> {
     const message = this.errorMessage(err);
-    const successorOwner = distinctAcceptedSuccessorOwner(task, activeInterventions);
+    const successorOwner = task.runnerIsOfflineReplay
+      ? undefined
+      : distinctAcceptedSuccessorOwner(task, activeInterventions);
     if (task.status === "running" && successorOwner !== undefined) {
       this.deps.logger.info(
         {
