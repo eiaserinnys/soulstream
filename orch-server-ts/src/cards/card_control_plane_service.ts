@@ -319,15 +319,18 @@ export class CardControlPlaneService {
       await this.serverDecision(sql,card,{...params,type:'CONFIRM_EXECUTION'},params,eventId);
     });
   }
-  async setCardStatus(params: CardMutationParams & { status: CardStatus; blockedKind?: CardRow["blocked_kind"]; blockedDetail?: string | null; wakeAt?: string; waitingFor?: string }) {
+  async setCardStatus(params: CardMutationParams & { status: CardStatus; blockedKind?: CardRow["blocked_kind"]; blockedDetail?: string | null; wakeAt?: string; waitingFor?: string; report?: string }) {
     // 재시도 비교가 시간대 표기 차이로 깨지지 않도록 페이로드에 넣기 전에 정규화한다.
     // 지금보다 뒤인지와 7일 이내인지는 상태를 확정하는 트랜잭션 안에서 따진다.
     const wakeAt = params.wakeAt === undefined ? null : parseVerificationWakeAt(params.wakeAt);
     if (params.wakeAt !== undefined && !wakeAt) throw invalid("wake_at은 오프셋이 있는 ISO 8601 시각이어야 합니다");
     const waitingFor = params.waitingFor === undefined ? null : params.waitingFor.trim();
+    const report=reportCommentText(params.report);
+    const reportCommentId=report===null?null:await this.reportCommentId(params);
     return this.mutateCard(params,"set_card_status",{
       status:params.status,blocked_kind:params.blockedKind ?? null,blocked_detail:params.blockedDetail ?? null,
       wake_at:wakeAt?.toISOString() ?? null,waiting_for:waitingFor,
+      ...(reportCommentId===null?{}:{report_comment_id:reportCommentId}),
     },async (sql,card,eventId,payload) => {
       const candidates=params.actorKind==='agent'&&params.actorSessionId?await claimableCardSessions(sql,card.id,params.actorSessionId):[];
       // 감독 판정은 카드가 검수 대기이고 목표가 완료이며 agent 세션이 부를 때만 읽는다.
@@ -337,6 +340,7 @@ export class CardControlPlaneService {
         {...humanCardEvidence(candidates,params.actorSessionId,false),supervises},{lazy:{'formatted.verification':()=>verificationWaitNow(waitingFor!,wakeAt!,new Date(),params.actorSessionId)}});
       if(writes.some(write=>write.fields.assignee_session_id===params.actorSessionId))payload.claimed_assignee=true;
       await this.patchDecisionWrites(sql,card,writes,params,eventId);
+      if(report!==null) await this.insertReportCommentTx(sql,card,params,writes,reportCommentId!,report);
     });
   }
   async resumeBlockedCardOnHumanInput(params:{cardId:string;expectedVersion:number}) {
@@ -348,14 +352,18 @@ export class CardControlPlaneService {
       return this.closeOpenQuestionsTx(sql,card.id,String(writes.find(write=>write.kind==='closeQuestions')!.fields.withdrawal_reason));
     },false);
   }
-  async requestCardReview(params: CardMutationParams & { ask?: string }) {
-    return this.mutateCard(params,"set_card_status",{status:"review",blocked_kind:null,blocked_detail:null,ask:params.ask},async(sql,card,eventId,payload)=>{
+  async requestCardReview(params: CardMutationParams & { ask?: string; report?: string }) {
+    const report=reportCommentText(params.report);
+    const reportCommentId=report===null?null:await this.reportCommentId(params);
+    return this.mutateCard(params,"set_card_status",{status:"review",blocked_kind:null,blocked_detail:null,ask:params.ask,
+      ...(reportCommentId===null?{}:{report_comment_id:reportCommentId})},async(sql,card,eventId,payload)=>{
       const checkedAsk=checkCardReviewAsk(params.ask);
       const candidates=params.actorKind==='agent'&&params.actorSessionId?await claimableCardSessions(sql,card.id,params.actorSessionId):[];
       const {writes}=await this.humanDecision(sql,card,{...params,type:'REQUEST_REVIEW'},params,eventId,[],humanCardEvidence(candidates,params.actorSessionId,false),
         {lazy:{'formatted.review':()=>reviewCardNowFromCheckedAsk(card.now??null,checkedAsk,new Date().toISOString(),params.actorSessionId)}});
       if(writes.some(write=>write.fields.assignee_session_id===params.actorSessionId))payload.claimed_assignee=true;
       await this.patchDecisionWrites(sql,card,writes,params,eventId);
+      if(report!==null) await this.insertReportCommentTx(sql,card,params,writes,reportCommentId!,report);
     });
   }
   async setCardItems(params: CardMutationParams & { items: string[] }) {
@@ -667,17 +675,41 @@ export class CardControlPlaneService {
       {lazy:{'formatted.items':()=>openCardItemFix(card.items??[],params.itemId!)}});
     const claim=writes.filter(write=>write.stage==='claim');
     if(claim.length){Object.assign(card,...claim.map(write=>write.fields));payload.claimed_assignee=true;}
-    const existingRefs=attachmentRefsOf(card.attachment_refs);
-    await validateCardSourceRefsTx(sql,{cardId:card.id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:params.body,existingRefs});
-    const legacyRefs=await resolveCardLegacySourceRefsTx(sql,{cardId:card.id,assigneeSessionId:card.assignee_session_id,actor:params,body:params.body,format:"markdown"});
-    const refs=mergeCardSourceAttachmentRefs(collectCardAttachmentRefs({request:params.body,attachments:[],items:card.items ?? [],previousRefs:existingRefs,previousItems:card.items ?? []}),legacyRefs);
     await this.patchDecisionWrites(sql,card,claim,params,eventId);
-    await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,item_id,question_id,attachment_refs)
-      VALUES(${commentId},${card.id},${reply ? "agent" : "user"},${external || reply ? null : params.actorUserId ?? null},${external ? null : params.actorSessionId},${kind},${params.body},${params.itemId ?? null},${params.questionId ?? null},${sql.json(refs)})`;
+    await this.insertCommentTx(sql,card,params,{id:commentId,authorKind:reply ? "agent" : "user",
+      authorId:external || reply ? null : params.actorUserId ?? null,sessionId:external ? null : params.actorSessionId,
+      kind,body:params.body,itemId:params.itemId ?? null,questionId:params.questionId ?? null});
     await this.patchDecisionWrites(sql,card,writes.filter(write=>write.stage!=='claim'),params,eventId);
     const close=writes.find(write=>write.kind==='closeQuestions');
     if(close)return this.closeOpenQuestionsTx(sql,card.id,String(close.fields.withdrawal_reason));
     return false;
+  }
+  /** 커멘트 본문의 참조를 걷어 attachment_refs를 만들고 한 줄을 넣는다. 적용 순서는 호출자가 정한다. */
+  private async insertCommentTx(sql:RepositorySql,card:CardRow,params:FolderActorParams,
+    comment:{id:string;authorKind:"agent" | "user";authorId:string | null;sessionId:string | null;
+      kind:"comment" | "spoken" | "note";body:string;itemId:number | null;questionId:string | null}) {
+    const existingRefs=attachmentRefsOf(card.attachment_refs);
+    await validateCardSourceRefsTx(sql,{cardId:card.id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:comment.body,existingRefs});
+    const legacyRefs=await resolveCardLegacySourceRefsTx(sql,{cardId:card.id,assigneeSessionId:card.assignee_session_id,actor:params,body:comment.body,format:"markdown"});
+    const refs=mergeCardSourceAttachmentRefs(collectCardAttachmentRefs({request:comment.body,attachments:[],items:card.items ?? [],previousRefs:existingRefs,previousItems:card.items ?? []}),legacyRefs);
+    await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,item_id,question_id,attachment_refs)
+      VALUES(${comment.id},${card.id},${comment.authorKind},${comment.authorId},${comment.sessionId},${comment.kind},${comment.body},${comment.itemId},${comment.questionId},${sql.json(refs)})`;
+  }
+  /** 같은 idempotency_key 재시도에서 결과 보고 커멘트를 다시 만들지 않도록 기존 작업의 id를 다시 쓴다. */
+  private async reportCommentId(params:CardMutationParams):Promise<string> {
+    const existing=params.idempotencyKey ? await this.repo.getOperationByIdempotencyKey(params.idempotencyKey) : null;
+    const stored=existing?.operation_type === "set_card_status" && existing.target_kind === "card" && existing.target_id === params.cardId
+      && typeof existing.payload_json.report_comment_id === "string" ? existing.payload_json.report_comment_id : null;
+    return stored ?? randomUUID();
+  }
+  /** 판정 결과 쓰기 뒤에 담당 세션인지 확인하고 결과 보고를 카드 커멘트로 남긴다. */
+  private async insertReportCommentTx(sql:RepositorySql,card:CardRow,params:FolderActorParams,writes:DecodedCardWrite[],
+    commentId:string,report:string) {
+    const assigned=card.assignee_session_id === params.actorSessionId
+      || writes.some(write=>write.fields.assignee_session_id === params.actorSessionId);
+    if (params.actorKind !== "agent" || !params.actorSessionId || !assigned) throw invalid("결과 보고는 카드 담당 세션만 남깁니다");
+    await this.insertCommentTx(sql,card,params,{id:commentId,authorKind:"agent",authorId:null,sessionId:params.actorSessionId,
+      kind:"comment",body:report,itemId:null,questionId:null});
   }
   noteMissingAssignee(params:{cardId:string;expectedVersion:number}) {
     const actor={actorKind:"system" as const,actorSessionId:null,...params};
@@ -876,4 +908,12 @@ async function assertKeptEvidenceUsableTx(sql:RepositorySql,id:string,type:"imag
     throw Object.assign(new Error("이미지 첨부가 아닙니다."),{statusCode:422,code:"ATTACHMENT_IMAGE_REQUIRED"});
 }
 function invalid(message:string) { return Object.assign(new Error(message),{ statusCode:422,code:"INVALID_CARD_REQUEST" }); }
+/** 결과 보고는 앞뒤 공백을 걷어 본문으로 쓰고, 비었거나 2000자를 넘으면 트랜잭션 전에 거절한다. */
+function reportCommentText(value:string | undefined):string | null {
+  if (value === undefined) return null;
+  const report=value.trim(),length=codePointLength(report);
+  if (length === 0) throw invalid("report를 비워 둘 수 없습니다");
+  if (length > 2000) throw invalid(`report는 2000자까지입니다. 지금 ${length}자입니다`);
+  return report;
+}
 function normalizeActorEmail(value:string): string { return value.trim().toLowerCase(); }
