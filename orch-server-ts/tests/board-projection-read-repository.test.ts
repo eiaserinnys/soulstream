@@ -172,11 +172,11 @@ describe("FolderContentRepository.listFolderItems", () => {
 });
 
 describe("FolderContentRepository.getBoardItemsByFolder", () => {
-  it("returns only rows belonging to the requested folder", async () => {
+  it("returns only rows belonging to the requested folder from the dedicated board query", async () => {
     const { sql, calls } = createMockSql((call) => [{
-      bi_id: `markdown:${call.values[0]}`, bi_folder_id: call.values[0], bi_membership_kind: "primary",
-      bi_item_type: "markdown", bi_item_id: call.values[0], bi_x: 0, bi_y: 0, bi_metadata: {},
-      bi_created_at: null, bi_updated_at: null, total_count: 1, markdown_count: 1,
+      id: `markdown:${call.values[0]}`, folder_id: call.values[0], membership_kind: "primary",
+      item_type: "markdown", item_id: call.values[0], x: 0, y: 0, metadata: {},
+      created_at: null, updated_at: null,
     }]);
     const repository = new FolderContentRepository({ resolveSql: vi.fn(async () => sql), close: vi.fn() });
     for (const folderId of ["folder-1", "folder-2"]) {
@@ -185,6 +185,17 @@ describe("FolderContentRepository.getBoardItemsByFolder", () => {
       ]);
     }
     expect(calls).toHaveLength(2);
-    expect(calls.every((call) => call.query.includes("WHERE md.folder_id = ?"))).toBe(true);
+    for (const call of calls) {
+      expect(call.query).toContain("WITH flat_items");
+      expect(call.query).toContain("WHERE md.folder_id = ?");
+      expect(call.query).toContain("WHERE bi.folder_id = ?");
+      expect(call.query).toContain("ORDER BY COALESCE(");
+      expect(call.query).toContain("DESC NULLS LAST, bi.id ASC");
+      expect(call.query).not.toContain("FROM events");
+      expect(call.query).not.toContain("LEFT JOIN LATERAL");
+      expect(call.query).not.toContain("event_counts");
+      expect(call.query).not.toContain("markdown_body");
+      expect(call.values).toContain(10000);
+    }
   });
 });

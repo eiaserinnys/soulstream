@@ -15,6 +15,8 @@ import type {
   MarkdownDocumentRow,
 } from "@soulstream/wire-schema/catalog";
 
+const BOARD_ITEMS_BY_FOLDER_LIMIT = 10000;
+
 export class FolderContentRepository {
   private readonly sqlResolver: FolderContentSqlResolver;
 
@@ -49,9 +51,57 @@ export class FolderContentRepository {
   async getBoardItemsByFolder(
     folderId: string,
   ): Promise<CatalogBoardItemRow[]> {
-    const result = await this.listFolderItems({ folderId, query: null, includeArchived: true,
-      itemTypes: null, limit: 10000, cursor: 0 });
-    return result.items.map(item => item.boardItem);
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql<readonly BoardItemDbRow[]>`
+      WITH flat_items AS (
+        SELECT 'session:' || s.session_id AS id, s.folder_id, 'primary'::text AS membership_kind,
+          'session'::text AS item_type, s.session_id AS item_id, 0::float8 AS x, 0::float8 AS y,
+          '{}'::jsonb AS metadata, s.created_at, s.updated_at
+        FROM sessions s WHERE s.folder_id = ${folderId}
+        UNION ALL
+        SELECT COALESCE(b.id, 'markdown:' || md.id), md.folder_id, 'primary'::text, 'markdown'::text,
+          md.id, COALESCE(b.x, 0), COALESCE(b.y, 0),
+          COALESCE(b.metadata, '{}'::jsonb) || jsonb_build_object('title', md.title,
+            'preview', LEFT(TRIM(REGEXP_REPLACE(md.body, '\\s+', ' ', 'g')), 180), 'version', md.version),
+          COALESCE(b.created_at, md.created_at), md.updated_at
+        FROM markdown_documents md
+        LEFT JOIN board_items b ON b.item_type = 'markdown' AND b.item_id = md.id
+          AND b.membership_kind = 'primary' AND b.folder_id = md.folder_id
+        WHERE md.folder_id = ${folderId}
+        UNION ALL
+        SELECT 'subfolder:' || f.id, f.parent_folder_id, 'primary'::text, 'subfolder'::text,
+          f.id, 0::float8, 0::float8, '{}'::jsonb, f.created_at, f.updated_at
+        FROM folders f WHERE f.parent_folder_id = ${folderId}
+        UNION ALL
+        SELECT b.id, b.folder_id, b.membership_kind, b.item_type, b.item_id, b.x, b.y,
+          b.metadata, b.created_at, b.updated_at
+        FROM board_items b WHERE b.folder_id = ${folderId} AND b.item_type IN ('asset', 'custom_view')
+      )
+      SELECT bi.id, bi.folder_id, bi.membership_kind, bi.item_type, bi.item_id, bi.x, bi.y,
+        bi.metadata, bi.created_at, bi.updated_at
+      FROM flat_items bi
+      LEFT JOIN sessions s
+        ON bi.item_type = 'session' AND s.session_id = bi.item_id
+      LEFT JOIN markdown_documents md
+        ON bi.item_type = 'markdown' AND md.id = bi.item_id
+      LEFT JOIN board_custom_views cv
+        ON bi.item_type = 'custom_view' AND cv.id = bi.item_id
+      LEFT JOIN file_assets fa
+        ON bi.item_type = 'asset' AND fa.id = bi.item_id
+      LEFT JOIN folders sf
+        ON bi.item_type = 'subfolder' AND sf.id = bi.item_id
+      WHERE bi.folder_id = ${folderId}
+      ORDER BY COALESCE(
+        s.updated_at,
+        md.updated_at,
+        sf.updated_at,
+        cv.updated_at,
+        fa.updated_at,
+        bi.updated_at
+      ) DESC NULLS LAST, bi.id ASC
+      LIMIT ${BOARD_ITEMS_BY_FOLDER_LIMIT}
+    `;
+    return rows.map(toCatalogBoardItemRow);
   }
 
   async getBoardItemById(boardItemId: string): Promise<CatalogBoardItemRow | null> {

@@ -26,11 +26,10 @@ describe("live DB board item route provider", () => {
     const harness = createSqlHarness(text => {
       if (text.includes("folder_get_all")) return [folderRow()];
       if (text.includes("WITH flat_items")) return [{
-        bi_id: "item-markdown", bi_folder_id: "folder-a", bi_membership_kind: "primary",
-        bi_item_type: "markdown", bi_item_id: "doc-1", bi_x: 20, bi_y: 40,
-        bi_metadata: { title: "Doc" }, bi_created_at: new Date("2026-07-09T01:00:00.000Z"),
-        bi_updated_at: new Date("2026-07-09T00:00:00.000Z"),
-        markdown_id: "doc-1", markdown_title: "Doc", markdown_body: "Body", total_count: 1,
+        id: "item-markdown", folder_id: "folder-a", membership_kind: "primary",
+        item_type: "markdown", item_id: "doc-1", x: 20, y: 40,
+        metadata: { title: "Doc" }, created_at: new Date("2026-07-09T01:00:00.000Z"),
+        updated_at: new Date("2026-07-09T00:00:00.000Z"),
       }];
       return [];
     });
@@ -50,12 +49,12 @@ describe("live DB board item route provider", () => {
     expect(harness.calls[1]?.values).toContain("folder-a");
   });
 
-  it("lists concrete folder items with SQL row aliases", async () => {
+  it("lists concrete folder items from the dedicated board query", async () => {
     const harness = createSqlHarness(text => text.includes("WITH flat_items") ? [{
-      bi_id: "session:sess-1", bi_folder_id: "task-1", bi_membership_kind: "primary",
-      bi_item_type: "session", bi_item_id: "sess-1", bi_x: 0, bi_y: 0, bi_metadata: {},
-      bi_created_at: new Date("2026-07-09T02:00:00.000Z"),
-      bi_updated_at: new Date("2026-07-09T02:01:00.000Z"), total_count: 1,
+      id: "session:sess-1", folder_id: "task-1", membership_kind: "primary",
+      item_type: "session", item_id: "sess-1", x: 0, y: 0, metadata: {},
+      created_at: new Date("2026-07-09T02:00:00.000Z"),
+      updated_at: new Date("2026-07-09T02:01:00.000Z"),
     }] : []);
     const repository = createLiveDbCatalogRepository({ sql: harness.sql });
     await expect(repository.boardItemRouteProvider.listBoardItems({ folderId: "task-1" }))
