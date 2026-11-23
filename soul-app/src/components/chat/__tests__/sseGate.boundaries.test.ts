@@ -86,22 +86,24 @@ describe('flushQueuedSseEvents (F-B)', () => {
     const refs = makeRefs(false, true);
     const actions = makeActions();
     handleSessionSseEvent('system', { message: 'must replay' }, '10', refs, actions);
+    handleSessionSseEvent('system', { message: 'also replay' }, '11', refs, actions);
     refs.historyLoadingRef.current = false;
     actions.ingestEventsBatch.mockImplementationOnce(() => {
       throw new Error('batch failed');
     });
 
     expect(() => flushQueuedSseEvents(refs, actions)).toThrow('batch failed');
-    expect(refs.pendingLiveQueueRef.current.map((item) => item.eid)).toEqual(['10']);
+    expect(refs.pendingLiveQueueRef.current.map((item) => item.eid)).toEqual(['10', '11']);
     expect(actions.setLastEventId).not.toHaveBeenCalled();
 
-    handleSessionSseEvent('system', { message: 'next' }, '11', refs, actions);
+    handleSessionSseEvent('system', { message: 'next' }, '12', refs, actions);
     expect(actions.ingestEventsBatch).toHaveBeenLastCalledWith([
       expect.objectContaining({ id: '10' }),
       expect.objectContaining({ id: '11' }),
+      expect.objectContaining({ id: '12' }),
     ]);
     expect(refs.pendingLiveQueueRef.current).toHaveLength(0);
-    expect(actions.setLastEventId).toHaveBeenLastCalledWith('11');
+    expect(actions.setLastEventId).toHaveBeenLastCalledWith('12');
   });
 
   test('catchup chunk commit throw면 chunk와 cursor를 제거하지 않는다', () => {

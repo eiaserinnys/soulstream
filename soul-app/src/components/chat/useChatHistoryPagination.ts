@@ -32,7 +32,7 @@ export interface UseChatHistoryPaginationDeps {
   /** 고정 API 클라이언트와 같은 opaque auth scope. */
   authScope: AuthScopeSnapshot;
   /** chatStore.mergeEvents — 본 훅은 store 모르고 어댑터로만 호출. */
-  mergeEvents: (sessionId: string, events: SessionEvent[]) => void;
+  mergeEvents: (sessionId: string, events: SessionEvent[], lastEventId?: string) => void;
   /** chatStore.setLastEventId — 같은 이유로 어댑터. */
   setLastEventId: (sessionId: string, id: string) => void;
   /** FlatList ref — 첫 페이지 응답 시 scrollToOffset(0) + onScroll clamp 시 사용. */
@@ -325,6 +325,7 @@ export function useChatHistoryPagination(
               { pendingLiveQueueRef, isCatchingUpRef },
               {
                 triggerAnimation,
+                ingestEvent: (event, cursor) => mergeEvents(sid, [event], cursor),
                 ingestEventsBatch: (events) => mergeEvents(sid, events),
                 setLastEventId: (id) => setLastEventId(sid, id),
               },

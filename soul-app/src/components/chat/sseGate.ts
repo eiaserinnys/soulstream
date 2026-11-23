@@ -285,8 +285,9 @@ export function handleSessionSseEvent(
  * prepend 응답 머지(set 1) → catchup된 라이브 batch 머지(set 2) 순서로 직렬화.
  *
  * - 큐가 비어 있으면 no-op.
- * - 비어있지 않으면 한 번의 ingestEventsBatch(events) + 마지막 eid setLastEventId
- *   + 라이브 단계라면 (isCatchingUpRef=false) triggerAnimation 1회.
+ * - 내구 커서가 있는 단건은 사건과 커서를 함께 반영한다.
+ * - 그 외에는 한 번의 ingestEventsBatch(events) + 마지막 eid setLastEventId.
+ * - 큐 flush는 애니메이션을 발화하지 않는다.
  *
  * fetch 실패(catch 블록 진입) 시에도 finally는 실행되므로 큐 누수 없음 —
  * loadHistoryPage try/catch/finally가 단일 함수 안에 닫혀있어 보장.
@@ -295,17 +296,23 @@ export function flushQueuedSseEvents(
   refs: Pick<SseGateRefs, 'pendingLiveQueueRef' | 'isCatchingUpRef'>,
   actions: Pick<
     SseGateActions,
-    'ingestEventsBatch' | 'setLastEventId' | 'triggerAnimation'
+    'ingestEvent' | 'ingestEventsBatch' | 'setLastEventId' | 'triggerAnimation'
   >,
 ): void {
   const queue = refs.pendingLiveQueueRef.current;
   if (queue.length === 0) return;
   // historyLoading 중 쌓인 queued flush는 layout animation을 발화하지 않는다.
   // live append 한 건 단위 애니메이션은 handleSessionSseEvent의 일반 live 경로가 담당한다.
-  actions.ingestEventsBatch(queue.map((q) => q.event));
+  const single = queue.length === 1 ? queue[0] : undefined;
+  if (single?.eid && !isLiveOnlyPayload(single.event.data)) {
+    actions.ingestEvent(single.event, single.eid);
+  } else {
+    actions.ingestEventsBatch(queue.map((q) => q.event));
+  }
   refs.pendingLiveQueueRef.current = refs.pendingLiveQueueRef.current.slice(
     queue.length,
   );
+  if (single?.eid && !isLiveOnlyPayload(single.event.data)) return;
   const lastEid = [...queue].reverse().find((q) => q.eid)?.eid;
   if (lastEid) actions.setLastEventId(lastEid);
 }

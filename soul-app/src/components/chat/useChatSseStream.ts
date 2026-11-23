@@ -248,6 +248,7 @@ export function useChatSseStream({
         { pendingLiveQueueRef, isCatchingUpRef },
         {
           triggerAnimation: () => undefined,
+          ingestEvent: (event, cursor) => mergeEvents(sessionId, [event], cursor),
           ingestEventsBatch: (events) => mergeEvents(sessionId, events),
           setLastEventId: (id) => setLastEventId(sessionId, id),
         },

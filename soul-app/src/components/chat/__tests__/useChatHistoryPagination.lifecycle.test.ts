@@ -348,6 +348,7 @@ describe('useChatHistoryPagination lifecycle', () => {
     expect(mergeEvents).not.toHaveBeenCalledWith(
       SID_B,
       [{ id: '500', type: 'assistant_message', data: { content: 'b-live' } }],
+      '500',
     );
     expect(refs.pendingLiveQueueRef.current).toHaveLength(1);
     expect(triggerAnimation).not.toHaveBeenCalled();
@@ -370,8 +371,9 @@ describe('useChatHistoryPagination lifecycle', () => {
     expect(mergeEvents).toHaveBeenCalledWith(
       SID_B,
       [{ id: '500', type: 'assistant_message', data: { content: 'b-live' } }],
+      '500',
     );
-    expect(setLastEventId).toHaveBeenCalledWith(SID_B, '500');
+    expect(setLastEventId).not.toHaveBeenCalledWith(SID_B, '500');
   });
 
   test('A→B→A 전환은 마지막 A owner 응답만 A store와 cursor에 반영한다', async () => {

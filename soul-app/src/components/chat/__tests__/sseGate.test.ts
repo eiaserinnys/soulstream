@@ -38,6 +38,80 @@ function makeActions() {
 }
 
 describe('handleSessionSseEvent', () => {
+  test('queued single durable event commits event and cursor in one notification', () => {
+    const refs = makeRefs(false, true);
+    const store = useChatStore.getState();
+    store.clearSession(SID);
+    store.mergeEvents(SID, [{ id: '1', type: 'tool_start', data: {} }]);
+    store.setLastEventId(SID, '1');
+    const actions = {
+      ...makeActions(),
+      ingestEvent: (event: SessionEvent, cursor?: string) => store.mergeEvents(SID, [event], cursor),
+      ingestEventsBatch: (events: SessionEvent[]) => store.mergeEvents(SID, events),
+      setLastEventId: (cursor: string) => store.setLastEventId(SID, cursor),
+    };
+    handleSessionSseEvent('tool_start', {}, '2', refs, actions);
+    let notifications = 0;
+    const unsubscribe = useChatStore.subscribe(() => { notifications += 1; });
+    refs.historyLoadingRef.current = false;
+    flushQueuedSseEvents(refs, actions);
+    unsubscribe();
+    expect(notifications).toBe(1);
+    expect(useChatStore.getState().eventsBySession[SID].map((event) => event.id)).toEqual(['1', '2']);
+    expect(useChatStore.getState().lastEventIdBySession[SID]).toBe('2');
+    expect(refs.pendingLiveQueueRef.current).toHaveLength(0);
+  });
+
+  test('queued duplicate durable event does not advance its cursor', () => {
+    const refs = makeRefs(false, true);
+    const store = useChatStore.getState();
+    store.clearSession(SID);
+    store.mergeEvents(SID, [{ id: '5', type: 'tool_start', data: {} }]);
+    store.setLastEventId(SID, '5');
+    const actions = {
+      ...makeActions(),
+      ingestEvent: (event: SessionEvent, cursor?: string) => store.mergeEvents(SID, [event], cursor),
+      ingestEventsBatch: (events: SessionEvent[]) => store.mergeEvents(SID, events),
+      setLastEventId: (cursor: string) => store.setLastEventId(SID, cursor),
+    };
+    handleSessionSseEvent('tool_start', { _event_id: 5 }, '6', refs, actions);
+    refs.historyLoadingRef.current = false;
+    flushQueuedSseEvents(refs, actions);
+    expect(useChatStore.getState().lastEventIdBySession[SID]).toBe('5');
+    expect(refs.pendingLiveQueueRef.current).toHaveLength(0);
+  });
+
+  test('queued single commit failure preserves the queue and cursor', () => {
+    const refs = makeRefs(false, true);
+    const actions = makeActions();
+    handleSessionSseEvent('system', { message: 'retry' }, '10', refs, actions);
+    refs.historyLoadingRef.current = false;
+    actions.ingestEvent.mockImplementationOnce(() => { throw new Error('commit failed'); });
+    expect(() => flushQueuedSseEvents(refs, actions)).toThrow('commit failed');
+    expect(refs.pendingLiveQueueRef.current.map((entry) => entry.eid)).toEqual(['10']);
+    expect(actions.setLastEventId).not.toHaveBeenCalled();
+  });
+
+  test('multiple queued events and a single event without a durable cursor use the batch path', () => {
+    const refs = makeRefs(false, true);
+    const actions = makeActions();
+    handleSessionSseEvent('system', {}, '10', refs, actions);
+    handleSessionSseEvent('system', {}, '11', refs, actions);
+    refs.historyLoadingRef.current = false;
+    flushQueuedSseEvents(refs, actions);
+    expect(actions.ingestEventsBatch).toHaveBeenCalledTimes(1);
+    expect(actions.setLastEventId).toHaveBeenCalledWith('11');
+    expect(actions.ingestEvent).not.toHaveBeenCalled();
+
+    refs.historyLoadingRef.current = true;
+    handleSessionSseEvent('system', { _live_only: true }, '11', refs, actions);
+    refs.historyLoadingRef.current = false;
+    flushQueuedSseEvents(refs, actions);
+    expect(actions.ingestEventsBatch).toHaveBeenCalledTimes(2);
+    expect(actions.ingestEvent).not.toHaveBeenCalled();
+    expect(actions.setLastEventId).toHaveBeenCalledTimes(1);
+  });
+
   test('live durable event commits event and cursor in one notification', () => {
     const refs = makeRefs(false, false);
     const store = useChatStore.getState();
@@ -189,10 +263,9 @@ describe('handleSessionSseEvent', () => {
 
     refs.historyLoadingRef.current = false;
     flushQueuedSseEvents(refs, actions);
-    expect(actions.ingestEventsBatch).toHaveBeenCalledWith([
-      expect.objectContaining({ id: '251' }),
-    ]);
-    expect(actions.setLastEventId).toHaveBeenLastCalledWith('251');
+    expect(actions.ingestEvent).toHaveBeenCalledWith(expect.objectContaining({ id: '251' }), '251');
+    expect(actions.ingestEventsBatch).not.toHaveBeenCalled();
+    expect(actions.setLastEventId).not.toHaveBeenCalled();
   });
 
   test.each([
