@@ -177,7 +177,8 @@ test('요약 중 목록을 display none으로 숨겼다가 되돌아와도 요�
   expect(screen.getByTestId('card-row-visible-task-summary', { includeHiddenElements: true })).toBeTruthy();
   fireEvent.press(screen.getByTestId('toggle-summary'));
   expect(screen.getByTestId('persistent-task-list')).toBe(listBefore);
-  expect(listCards).toHaveBeenCalledTimes(1);
+  expect(listCards).toHaveBeenCalledTimes(2);
+  await act(async () => { await Promise.resolve(); });
 });
 
 test('숨김 동안 들어온 카드 갱신은 목록을 조회하지 않고, 보일 때 최신 목록을 한 번 받는다', async () => {

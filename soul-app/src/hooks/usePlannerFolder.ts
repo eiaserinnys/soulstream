@@ -4,6 +4,7 @@ import type { FolderSnapshot } from '../api/cardTypes';
 import { mergeCardRows, useCardStore } from '../store/cardStore';
 import { usePlannerStore } from '../store/plannerStore';
 import { captureAuthScope, useAuthScopeGeneration } from '../lib/auth-scope';
+import { cancelCardRefresh, createCardRefreshWindow, scheduleCardRefresh } from '../lib/card-refresh-window';
 
 export function usePlannerFolder(
   api: ApiClient | null,
@@ -16,11 +17,14 @@ export function usePlannerFolder(
   const [local, setLocal] = useState(() => emptyState(ownerKey));
   const current = local.ownerKey === ownerKey ? local : emptyState(ownerKey);
   const refreshKey = usePlannerStore((state) => (
-    state.invalidation.folder + state.invalidation.replay + state.invalidation.card
+    state.invalidation.folder + state.invalidation.replay
   ));
+  const cardRevision = usePlannerStore((state) => state.invalidation.card);
   const generationRef = useRef(0);
+  const cardWindow = useRef(createCardRefreshWindow());
 
   const refresh = useCallback(async () => {
+    cancelCardRefresh(cardWindow.current);
     const generation = ++generationRef.current;
     if (!api || !folderId || !enabled) {
       setLocal(emptyState(ownerKey));
@@ -62,8 +66,15 @@ export function usePlannerFolder(
   }, [ownerKey]);
   useEffect(() => {
     void refresh();
-    return () => { generationRef.current += 1; };
+    return () => { generationRef.current += 1; cancelCardRefresh(cardWindow.current); };
   }, [refresh, refreshKey]);
+  const previousCardRevision = useRef(cardRevision);
+  useEffect(() => {
+    if (previousCardRevision.current === cardRevision) return;
+    previousCardRevision.current = cardRevision;
+    generationRef.current += 1;
+    if (enabled && api && folderId) scheduleCardRefresh(cardWindow.current, () => { void refresh(); });
+  }, [cardRevision, enabled, api, folderId, refresh]);
 
   const rows = useCardStore((state) => state.rows);
   const rowSeq = useCardStore((state) => state.rowSeq);

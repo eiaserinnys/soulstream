@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import type { ApiClient } from '../api/client';
 import type { CardDto } from '../api/cardTypes';
-import { useAuthScopeGeneration } from '../lib/auth-scope';
+import { captureAuthScope, useAuthScopeGeneration } from '../lib/auth-scope';
 import {
   cancelCardRefresh,
   createCardRefreshWindow,
@@ -25,17 +25,14 @@ export function useCardList(api: ApiClient | null, folderId?: string, enabled = 
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
   const generationRef = useRef(0);
-  const dirtyRef = useRef(false);
-  const snapshotOwnerRef = useRef<string | null>(null);
   const refreshWindowRef = useRef(createCardRefreshWindow());
   const loadRef = useRef<() => void>(() => {});
 
   const load = useCallback(() => {
     if (!api) return;
-    // 숨김 화면은 읽지 않는다. 사건이 있었으면 보일 때 한 번만 읽도록 표시만 남긴다.
-    if (!enabledRef.current) { dirtyRef.current = true; return; }
+    if (!enabledRef.current) return;
+    cancelCardRefresh(refreshWindowRef.current);
     const generation = ++generationRef.current;
-    dirtyRef.current = false;
     setState((previous) => ({ owner, cards: previous.owner === owner ? previous.cards : [], snapshotSeq: previous.owner === owner ? previous.snapshotSeq : 0, hasSnapshot: previous.owner === owner ? previous.hasSnapshot : false, loading: true, error: null }));
     void (async () => {
       try {
@@ -43,17 +40,16 @@ export function useCardList(api: ApiClient | null, folderId?: string, enabled = 
         // 응답을 기다리는 동안 들어온 행은 경계 뒤로 남겨 목록에 없어도 보이게 한다.
         const snapshotSeq = useCardStore.getState().seq;
         const result = await api.listCards(folderId,{includeCompleted:false});
-        if (generationRef.current !== generation) return;
+        if (generationRef.current !== generation || captureAuthScope().generation !== scope) return;
         // 목록 응답도 전역 행을 최신 버전으로 맞춘 뒤 그 행을 기준으로 첫 스냅숏을 연다.
         useCardStore.getState().putCards(result.cards);
-        snapshotOwnerRef.current = owner;
         setState({ owner, cards: result.cards, snapshotSeq, hasSnapshot: true, loading: false, error: null });
       } catch (cause) {
-        if (generationRef.current !== generation) return;
+        if (generationRef.current !== generation || captureAuthScope().generation !== scope) return;
         setState((previous) => ({ ...previous, loading: false, error: cause instanceof Error ? cause.message : String(cause) }));
       }
     })();
-  }, [api, folderId, owner]);
+  }, [api, folderId, owner, scope]);
   loadRef.current = load;
 
   // 최초 조회, 폴더 전환, 폴더·재생 무효화, 다시 시도는 그대로 즉시 읽는다.
@@ -66,25 +62,26 @@ export function useCardList(api: ApiClient | null, folderId?: string, enabled = 
   useEffect(() => {
     if (previousCardInvalidation.current === cardInvalidation) return;
     previousCardInvalidation.current = cardInvalidation;
+    generationRef.current += 1;
     if (!enabledRef.current) {
       cancelCardRefresh(refreshWindowRef.current);
-      dirtyRef.current = true;
       return;
     }
     scheduleCardRefresh(refreshWindowRef.current, () => { loadRef.current(); });
   }, [cardInvalidation]);
 
-  // 숨김에서 돌아오면 사건이 있었거나 아직 스냅숏이 없을 때만 한 번 읽는다.
+  // 숨김에서 돌아오면 최신 목록을 한 번 읽는다.
   const wasEnabledRef = useRef(enabled);
   useEffect(() => {
     if (!enabled) {
       wasEnabledRef.current = false;
+      generationRef.current += 1;
       cancelCardRefresh(refreshWindowRef.current);
       return;
     }
     if (wasEnabledRef.current) return;
     wasEnabledRef.current = true;
-    if (dirtyRef.current || snapshotOwnerRef.current !== owner) void load();
+    void load();
   }, [enabled, owner, load]);
 
   useEffect(() => {
@@ -94,10 +91,9 @@ export function useCardList(api: ApiClient | null, folderId?: string, enabled = 
       if (next === 'active' && wasBackgrounded) {
         wasBackgrounded = false;
         if (enabledRef.current) void load();
-        else dirtyRef.current = true;
       }
     });
-    return () => { subscription.remove(); cancelCardRefresh(refreshWindowRef.current); };
+    return () => { generationRef.current += 1; subscription.remove(); cancelCardRefresh(refreshWindowRef.current); };
   }, [load]);
   const cards = useMemo(() => {
     if (state.owner !== owner || !state.hasSnapshot) return [];

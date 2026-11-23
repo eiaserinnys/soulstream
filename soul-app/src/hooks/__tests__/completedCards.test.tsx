@@ -63,6 +63,39 @@ test('카드 갱신은 한 창으로 묶고 폴더 무효화는 즉시 다시 �
   }
 });
 
+test('완료 목록을 숨기면 예약을 취소하고 복귀 시 한 번만 읽는다',async()=>{
+  jest.useFakeTimers();
+  try {
+    const listCompletedCards=jest.fn().mockResolvedValue({cards:[],nextCursor:null});
+    const api={listCompletedCards} as unknown as ApiClient;
+    const hook=renderHook<CompletedBrowser,{shown:boolean}>(({shown})=>useCompletedCards(api,'folder-1',shown),{initialProps:{shown:true}});
+    await act(async()=>{await Promise.resolve();await Promise.resolve();});
+    act(()=>usePlannerStore.getState().invalidate('card'));
+    hook.rerender({shown:false});
+    hook.rerender({shown:true});
+    await act(async()=>{jest.advanceTimersByTime(CARD_REFRESH_WINDOW_MS);await Promise.resolve();await Promise.resolve();});
+    expect(listCompletedCards).toHaveBeenCalledTimes(2);
+  } finally { jest.useRealTimers(); }
+});
+
+test('폴더 카드 목록은 카드 사건을 묶고 폴더 사건은 즉시 반영한다',async()=>{
+  jest.useFakeTimers();
+  try {
+    const getFolderSnapshot=jest.fn().mockResolvedValue({folder:{id:'folder-1'},cards:[]});
+    const api={getFolderSnapshot} as unknown as ApiClient;
+    renderHook(()=>usePlannerFolder(api,'folder-1',true,false));
+    await act(async()=>{await Promise.resolve();await Promise.resolve();});
+    act(()=>usePlannerStore.getState().invalidate('card'));
+    await act(async()=>{jest.advanceTimersByTime(100);});
+    act(()=>usePlannerStore.getState().invalidate('card'));
+    expect(getFolderSnapshot).toHaveBeenCalledTimes(1);
+    await act(async()=>{jest.advanceTimersByTime(CARD_REFRESH_WINDOW_MS);await Promise.resolve();await Promise.resolve();});
+    expect(getFolderSnapshot).toHaveBeenCalledTimes(2);
+    await act(async()=>{usePlannerStore.getState().invalidate('folder');await Promise.resolve();await Promise.resolve();});
+    expect(getFolderSnapshot).toHaveBeenCalledTimes(3);
+  } finally { jest.useRealTimers(); }
+});
+
 test('refresh merges the older tail, or replaces it when the first page is complete',()=>{
   const a={id:'a',completedAt:'2026-01-03'}, b={id:'b',completedAt:'2026-01-02'}, c={id:'c',completedAt:'2026-01-01'};
   const previous={cards:[a,b,c],cursor:'old'};
