@@ -175,6 +175,7 @@ function createAllOptInRouteApp() {
     scheduleHostRoutes: { repositoryProvider: async () => inert as never, authBearerToken: "test-token", nodeCredentials: null },
     adminUsersRoutes: inert,
     r2SettingsRoutes: inert,
+    mcpCentralRoutes: { service: inert as never, provider: inert as never },
     atomRoutes: inert,
     authRoutes: inert,
     attachmentRoutes: { assetRead: inert, multipart: inert },

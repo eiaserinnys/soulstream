@@ -11,6 +11,8 @@ import { createRollbackService } from "./rollback_service.js";
 import { assertSecretName, extractServerSecrets } from "./secret_refs.js";
 import {
   applyIconChange,
+  bindingTargetId,
+  profileSnapshot,
   assertServerId,
   assertTransportNames,
   buildSecretMetas,
@@ -61,7 +63,7 @@ export function createMcpCentralService(options: McpCentralServiceOptions) {
     idValue: unknown,
     input: unknown,
     writeOptions?: unknown,
-  ): Promise<McpServerView> {
+  ): Promise<{ current_revision: number; result: McpServerView }> {
     const id = assertServerId(idValue);
     const parsed = parseServerInput(input);
     const requestedIcon = isRecord(input) ? validateIcon(input.icon) : null;
@@ -142,10 +144,10 @@ export function createMcpCentralService(options: McpCentralServiceOptions) {
     });
   }
 
-  async function deleteServer(idValue: unknown, writeOptions?: unknown): Promise<void> {
+  async function deleteServer(idValue: unknown, writeOptions?: unknown): Promise<{ current_revision: number; result: void }> {
     const id = assertServerId(idValue);
     const write = parseWriteOptions(writeOptions);
-    await repository.writeConfig({ expectedRevision: write.expectedRevision }, async (tx) => {
+    return repository.writeConfig({ expectedRevision: write.expectedRevision }, async (tx) => {
       const existing = await repository.getServer(tx, id);
       if (existing === null) throw notFound("MCP_SERVER_NOT_FOUND", `server not found: ${id}`);
       if (write.expectedVersion !== undefined && existing.version !== write.expectedVersion) {
@@ -169,7 +171,7 @@ export function createMcpCentralService(options: McpCentralServiceOptions) {
     nameValue: unknown,
     value: unknown,
     writeOptions?: unknown,
-  ): Promise<McpSecretMeta> {
+  ): Promise<{ current_revision: number; result: McpSecretMeta }> {
     if (typeof nameValue !== "string") throw invalidInput("secret name must be a string");
     const name = nameValue;
     assertSecretName(name);
@@ -184,12 +186,12 @@ export function createMcpCentralService(options: McpCentralServiceOptions) {
     });
   }
 
-  async function deleteSecret(nameValue: unknown, writeOptions?: unknown): Promise<void> {
+  async function deleteSecret(nameValue: unknown, writeOptions?: unknown): Promise<{ current_revision: number; result: void }> {
     if (typeof nameValue !== "string") throw invalidInput("secret name must be a string");
     const name = nameValue;
     assertSecretName(name);
     const write = parseWriteOptions(writeOptions);
-    await repository.writeConfig({ expectedRevision: write.expectedRevision }, async (tx) => {
+    return repository.writeConfig({ expectedRevision: write.expectedRevision }, async (tx) => {
       const [servers, profiles, secretRows] = await Promise.all([
         repository.listServers(tx),
         repository.listProfiles(tx),
@@ -210,13 +212,46 @@ export function createMcpCentralService(options: McpCentralServiceOptions) {
     });
   }
 
-  async function addManagedNode(nodeIdValue: unknown, writeOptions?: unknown): Promise<void> {
+  async function addManagedNode(nodeIdValue: unknown, writeOptions?: unknown): Promise<{ current_revision: number; result: void }> {
     if (typeof nodeIdValue !== "string" || nodeIdValue.length === 0) {
       throw invalidInput("node id must be a non-empty string");
     }
     const write = parseWriteOptions(writeOptions);
-    await repository.writeConfig({ expectedRevision: write.expectedRevision }, async (tx) => {
+    return repository.writeConfig({ expectedRevision: write.expectedRevision }, async (tx) => {
       await repository.insertManagedNode(tx, nodeIdValue);
+    });
+  }
+
+  async function removeManagedNode(nodeIdValue: unknown, writeOptions?: unknown): Promise<{ current_revision: number; result: void }> {
+    if (typeof nodeIdValue !== "string" || nodeIdValue.length === 0) {
+      throw invalidInput("node id must be a non-empty string");
+    }
+    const nodeId = nodeIdValue;
+    const write = parseWriteOptions(writeOptions);
+    return repository.writeConfig({ expectedRevision: write.expectedRevision }, async (tx) => {
+      const node = (await repository.listManagedNodes(tx)).find((item) => item.node_id === nodeId);
+      if (node === undefined) throw notFound("MCP_NODE_NOT_FOUND", `managed node not found: ${nodeId}`);
+      if (node.central_active || node.activated_at !== null) {
+        throw conflict("MCP_NODE_ACTIVATED", "activated node cannot be removed");
+      }
+      for (const binding of await repository.listBindings(tx)) {
+        if (binding.node_id !== nodeId) continue;
+        const removed = await repository.deleteBinding(tx, binding.agent_id, nodeId);
+        if (removed !== null) await repository.insertRevision(tx, "binding", bindingTargetId(binding.agent_id, nodeId), { ...removed, deleted: true });
+      }
+      for (const server of await repository.listServers(tx)) {
+        if (!server.node_scope.includes(nodeId) && !(nodeId in server.node_overrides)) continue;
+        const overrides = { ...server.node_overrides };
+        delete overrides[nodeId];
+        const saved = await repository.upsertServer(tx, { ...server, node_scope: server.node_scope.filter(id => id !== nodeId), node_overrides: overrides });
+        await repository.insertRevision(tx, "server", server.id, { ...saved });
+      }
+      for (const profile of await repository.listProfiles(tx)) {
+        if (!profile.node_scope.includes(nodeId)) continue;
+        const saved = await repository.setProfileNodeScope(tx, profile.id, profile.node_scope.filter(id => id !== nodeId));
+        if (saved !== null) await repository.insertRevision(tx, "profile", profile.id, profileSnapshot(saved));
+      }
+      await repository.deleteManagedNode(tx, nodeId);
     });
   }
 
@@ -292,6 +327,7 @@ export function createMcpCentralService(options: McpCentralServiceOptions) {
     putSecret,
     deleteSecret,
     addManagedNode,
+    removeManagedNode,
     updateManagedNodeAck,
     listRevisions,
     rollback: rollbackService.rollback,

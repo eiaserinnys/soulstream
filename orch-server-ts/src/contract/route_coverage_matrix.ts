@@ -1,3 +1,4 @@
+import { mcpCentralRouteAuthRequirements } from "../mcp_central/routes.js";
 import { conversationRouteAuthRequirements } from "../conversation/conversation_routes.js";
 import { ownedAgentRouteAuthRequirements } from "../owned-agents/routes.js";
 import { accessLinkRouteAuthRequirements } from "../external_access/access_link_routes.js";
@@ -71,6 +72,7 @@ export const routeCoverageOwners = [
   { owner: "webhooks.inbound.manage", authRequirements: inboundWebhookRouteAuthRequirements },
   { owner: "access.links.public", authRequirements: externalAccessPublicRouteAuthRequirements },
   { owner: "mcp.host", authRequirements: mcpHostRouteAuthRequirements },
+  { owner: "mcp.central", authRequirements: mcpCentralRouteAuthRequirements },
   { owner: "schedule.host", authRequirements: scheduleHostRouteAuthRequirements },
   {owner:"cards.settings",authRequirements:cardDispatchSettingsRouteAuthRequirements},
   {owner:"cards.orchestration",authRequirements:{...cardOrchestrationRouteAuthRequirements,...cardOrchestrationDecisionRouteAuthRequirements}},
@@ -151,6 +153,7 @@ export const tsOnlyRouteKeys = [
   "GET /x/{key}", "POST /x/{key}/messages", "GET /x/{key}/messages/{requestId}",
   "GET /x/{key}/history", "POST /x/{key}/stop", "POST /x/{key}/hook",
   "POST /api/mcp/host/{tool}",
+  ...Object.keys(mcpCentralRouteAuthRequirements),
   "POST /api/persistent-context/host/evaluate",
   "POST /api/attachments/sessions/multipart/init",
   "POST /api/attachments/sessions/multipart/complete",

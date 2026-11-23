@@ -29,7 +29,7 @@ export function createProfileService(options: {
     idValue: unknown,
     input: unknown,
     writeOptions?: unknown,
-  ): Promise<McpProfileView> {
+  ): Promise<{ current_revision: number; result: McpProfileView }> {
     const id = assertProfileId(idValue);
     const parsed = parseProfileInput(input);
     const write = parseWriteOptions(writeOptions);
@@ -69,10 +69,10 @@ export function createProfileService(options: {
     });
   }
 
-  async function deleteProfile(idValue: unknown, writeOptions?: unknown): Promise<void> {
+  async function deleteProfile(idValue: unknown, writeOptions?: unknown): Promise<{ current_revision: number; result: void }> {
     const id = assertProfileId(idValue);
     const write = parseWriteOptions(writeOptions);
-    await repository.writeConfig({ expectedRevision: write.expectedRevision }, async (tx) => {
+    return repository.writeConfig({ expectedRevision: write.expectedRevision }, async (tx) => {
       const existing = await repository.getProfile(tx, id);
       if (existing === null) throw notFound("MCP_PROFILE_NOT_FOUND", `profile not found: ${id}`);
       if (write.expectedVersion !== undefined && existing.version !== write.expectedVersion) {
@@ -91,7 +91,7 @@ export function createProfileService(options: {
     agentIdValue: unknown,
     input: unknown,
     writeOptions?: unknown,
-  ): Promise<McpBindingRecord[]> {
+  ): Promise<{ current_revision: number; result: McpBindingRecord[] }> {
     if (typeof agentIdValue !== "string" || agentIdValue.length === 0) {
       throw invalidInput("agent id must be a non-empty string");
     }

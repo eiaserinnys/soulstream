@@ -1,3 +1,4 @@
+import { registerMcpCentralRoutes, type McpCentralRouteOptions } from "./mcp_central/routes.js";
 import { registerConversationRoutes, type ConversationRouteOptions } from "./conversation/conversation_routes.js";
 import { registerOwnedAgentRoutes, type OwnedAgentRouteOptions } from "./owned-agents/routes.js";
 import { registerAccessLinkRoutes, type AccessLinkRouteOptions } from "./external_access/access_link_routes.js";
@@ -234,6 +235,7 @@ export type CreateAppOptions = {
   cardOrchestrationDecisionRoutes?:CardOrchestrationDecisionRouteOptions;
   nodeClaudeAuthRoutes?: NodeClaudeAuthRouteOptions;
   claudeCentralRoutes?: ClaudeCentralRouteOptions;
+  mcpCentralRoutes?: McpCentralRouteOptions;
   nodeAgentProfileRoutes?: NodeAgentProfileRouteOptions;
   agentProfileRoutes?: AgentProfileRouteOptions;
   contextBundleRoutes?: ContextBundleRouteOptions;
@@ -313,6 +315,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.claudeCentralRoutes !== undefined) {
     registerClaudeCentralRoutes(app, options.claudeCentralRoutes);
+  }
+  if (options.mcpCentralRoutes !== undefined) {
+    registerMcpCentralRoutes(app, options.mcpCentralRoutes);
   }
   if (options.nodeAgentProfileRoutes !== undefined) {
     registerNodeAgentProfileRoutes(app, options.nodeAgentProfileRoutes);

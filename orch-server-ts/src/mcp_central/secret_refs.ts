@@ -18,7 +18,7 @@ type SecretSink = Map<string, string>;
 
 type UnitNaming = {
   readonly header: (key: string) => string;
-  readonly query: (index: number) => string;
+  readonly query: (key: string, suffix: string) => string;
   readonly env: (key: string) => string;
 };
 
@@ -66,7 +66,7 @@ function definitionNaming(serverId: string, nodeId?: string): UnitNaming {
   const base = nodeId === undefined ? `srv-${serverId}` : `srv-${serverId}-ovr-${nodeId}`;
   return {
     header: (key) => deterministicSecretName(`${base}-hdr-${key}`),
-    query: (index) => deterministicSecretName(`${base}-qry-${index}`),
+    query: (key, suffix) => deterministicSecretName(`${base}-qry-${key}${suffix}`),
     env: (key) => deterministicSecretName(`${base}-env-${key}`),
   };
 }
@@ -95,7 +95,7 @@ function safeDecode(value: string): string {
  * URL의 쿼리 값 하나하나를 처리한다. 참조로 바뀐 값은 URL에 넣을 때
  * encodeURIComponent 규칙을 따른다. 쿼리 앞부분은 옮기지 않고 혼용만 막는다.
  */
-function processUrl(url: string, naming: UnitNaming, secrets: SecretSink): string {
+function processUrl(url: string, naming: UnitNaming, secrets: SecretSink, reserved: Set<string>): string {
   const queryStart = url.indexOf("?");
   if (queryStart < 0) {
     assertNotMixed(url);
@@ -104,13 +104,28 @@ function processUrl(url: string, naming: UnitNaming, secrets: SecretSink): strin
   const base = url.slice(0, queryStart);
   assertNotMixed(base);
   const query = url.slice(queryStart + 1);
-  const rewritten = query.split("&").map((part, index) => {
+  const parts = query.split("&");
+  for (const part of parts) {
+    const equals = part.indexOf("=");
+    if (equals >= 0) collectSecretReferences(safeDecode(part.slice(equals + 1)), reserved);
+  }
+  const rewritten = parts.map((part) => {
     const equals = part.indexOf("=");
     if (equals < 0) return part;
     const key = part.slice(0, equals);
     const rawValue = part.slice(equals + 1);
     const decoded = safeDecode(rawValue);
-    const replaced = processUnit(decoded, naming.query(index), secrets);
+    const refs = scanSecretRefs(decoded);
+    if (refs.secret || refs.env) {
+      assertNotMixed(decoded);
+      return part;
+    }
+    const keyName = safeDecode(key.replace(/\+/g, " "));
+    let number = 1;
+    let name = naming.query(keyName, "");
+    while (reserved.has(name)) name = naming.query(keyName, `-${++number}`);
+    reserved.add(name);
+    const replaced = processUnit(decoded, name, secrets);
     return replaced === decoded ? part : `${key}=${encodeURIComponent(replaced)}`;
   });
   return `${base}?${rewritten.join("&")}`;
@@ -141,7 +156,7 @@ function processConfig(
     next.env = processStringRecord(next.env, naming.env, secrets);
   }
   if (typeof next.url === "string") {
-    next.url = processUrl(next.url, naming, secrets);
+    next.url = processUrl(next.url, naming, secrets, collectSecretReferences(config));
   }
   return next;
 }
@@ -222,10 +237,11 @@ export function extractHostedToolSecrets(
         next.server_url,
         {
           header: (key) => deterministicSecretName(`${base}-hdr-${key}`),
-          query: (index) => deterministicSecretName(`${base}-qry-${index}`),
+          query: (key, suffix) => deterministicSecretName(`${base}-qry-${key}${suffix}`),
           env: (key) => deterministicSecretName(`${base}-env-${key}`),
         },
         secrets,
+        collectSecretReferences(tool),
       );
     }
     return next;

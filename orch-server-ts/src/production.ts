@@ -1,3 +1,4 @@
+import { createMcpCentralService, type McpCentralService } from "./mcp_central/service.js";
 import { ConversationMessageService } from "./conversation/conversation_messages.js";
 import { HandoverGate, guardMethods } from "./runtime/handover_gate.js";
 import { closeNodeSocketsForHandover } from "./websocket_plugin.js";
@@ -668,6 +669,7 @@ export async function createLiveProductionApplication(
     }];
     runtimeServices.routeOptions.nodeWsRoute.eventSink?.(events);
   };
+  const mcpCentralService = createMcpCentralService({ resolveSql: () => sqlResolver.resolveSql() });
   claudeCentralService = new ClaudeCentralService({
     repository: createSqlClaudeCentralAccountRepository({
       resolveSql: () => sqlResolver.resolveSql(),
@@ -1124,6 +1126,7 @@ export async function createLiveProductionApplication(
       },
       claudeCentralService,
       config.default_pas_agent_id,
+      mcpCentralService,
     ),
     nodeReleaseRoutes: {
       authBearerToken: config.auth_bearer_token,
@@ -1646,6 +1649,7 @@ export function buildProductionRouteOptions(
   webhooks?: McpHostOptions["webhooks"],
   claudeCentral?: ClaudeCentralService,
   defaultPasAgentId?: string | null,
+  mcpCentral?: McpCentralService,
 ): CreateAppOptions {
   if (defaultExecutionNodeId === undefined) {
     throw new Error("default execution node is required to build production routes");
@@ -1978,6 +1982,7 @@ export function buildProductionRouteOptions(
     usageSummaryRoutes: providers.usageSummaryRoutes,
     sessionStatisticsRoutes: providers.sessionStatisticsRoutes,
     uiEventRoutes: providers.uiEventRoutes,
+    ...(mcpCentral === undefined ? {} : { mcpCentralRoutes: { service: mcpCentral, provider: providers.adminUsersRoutes.provider } }),
     ...(claudeCentral === undefined
       ? {}
       : { claudeCentralRoutes: { service: claudeCentral } }),
