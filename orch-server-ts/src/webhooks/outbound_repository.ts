@@ -145,6 +145,13 @@ export class OutboundWebhookRepository {
         return summaryOf(rows[0]!);
       }
 
+      // Re-enabling an already active subscription is a no-op. Closing the
+      // queued deliveries and moving the cursor here would drop events that
+      // were published but not yet sent.
+      if (subscription.active) {
+        return summaryOf(subscription);
+      }
+
       await transaction`
         UPDATE webhook_deliveries
         SET state = 'dead', last_error = 'disabled_while_pending'

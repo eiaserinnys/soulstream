@@ -3,6 +3,7 @@ import type { AuthUserAuthorizer } from "../auth/auth_routes.js";
 import { SERVICE_CALLER, type ServiceCaller } from "../auth/service_caller.js";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import { WebhookError, type WebhookPost } from "../external_events/webhook_transport.js";
+import { SessionResourceAccessError } from "../session/session_resource_access.js";
 import { standardWebhookHeaders } from "./standard_webhook_signature.js";
 import type { WebhookDeliveryRow, WebhookSubscriptionRow } from "./outbound_types.js";
 
@@ -92,22 +93,43 @@ export async function sendDelivery(
       return await markDead(transaction, subscription, delivery, now, null, "target_missing");
     }
 
-    let allowed = false;
+    let accessDenied = false;
+    let accessCheckFailure: string | null = null;
     try {
       const denied = await deps.authorizeUser({ email: subscription.owner_email });
-      if (!denied) {
+      if (denied) {
+        accessDenied = true;
+      } else {
         await deps.requireSessionAccess({
           request: SERVICE_CALLER,
           sessionId: subscription.target_session_id,
           accessEmail: subscription.owner_email,
         });
-        allowed = true;
       }
-    } catch {
-      allowed = false;
+    } catch (error) {
+      if (
+        error instanceof SessionResourceAccessError &&
+        error.statusCode >= 400 &&
+        error.statusCode < 500
+      ) {
+        accessDenied = true;
+      } else {
+        accessCheckFailure = error instanceof Error ? error.message : String(error);
+      }
     }
-    if (!allowed) {
+    if (accessDenied) {
       return await markDead(transaction, subscription, delivery, now, null, "access_revoked");
+    }
+    if (accessCheckFailure !== null) {
+      return await markTransient(
+        transaction,
+        subscription,
+        delivery,
+        now,
+        null,
+        `access_check_failed: ${accessCheckFailure}`,
+        backoffSeconds(delivery.attempt_count + 1),
+      );
     }
 
     const body = JSON.stringify(delivery.payload);
