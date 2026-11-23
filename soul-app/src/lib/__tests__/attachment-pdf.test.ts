@@ -178,3 +178,12 @@ test('웹은 응답을 blob URL로 바꾸고 실패 상태를 옮긴다', async 
     platform.restore();
   }
 });
+
+test('임시 PDF는 같은 키여도 매번 별도 파일로 내려받는다', async () => {
+  mockFs.state.fileExists = true;
+  const args = { uri: 'https://soul.test/doc.pdf', cacheKey: 'doc', cache: 'none' as const, signal: signal() };
+  const first = await attachmentPdfViewerUri(args);
+  const second = await attachmentPdfViewerUri(args);
+  expect(mockFs.state.downloads).toHaveLength(2);
+  expect(first).not.toBe(second);
+});

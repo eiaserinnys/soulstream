@@ -56,7 +56,16 @@ function ChatRefinedImageViewerContent({
   const window = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const attachment = createSessionVisualRoles(t).chat.attachment;
-  const [currentIndex, setCurrentIndex] = useState(clampIndex(initialIndex, sources.length));
+  const [selection, setSelection] = useState(() => {
+    const index = clampIndex(initialIndex, sources.length);
+    return { index, key: items?.[index]?.key };
+  });
+  const matchingIndex = selection.key === undefined ? -1 : items?.findIndex(item => item.key === selection.key) ?? -1;
+  const currentIndex = matchingIndex >= 0 ? matchingIndex : clampIndex(selection.index, sources.length);
+  const setCurrentIndex = (next: number | ((index: number) => number)) => {
+    const index = clampIndex(typeof next === 'function' ? next(currentIndex) : next, sources.length);
+    setSelection({ index, key: items?.[index]?.key });
+  };
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof globalThis.window === 'undefined') return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -66,7 +75,7 @@ function ChatRefinedImageViewerContent({
     };
     globalThis.window.addEventListener('keydown', onKeyDown);
     return () => globalThis.window.removeEventListener('keydown', onKeyDown);
-  }, [sources.length]);
+  }, [sources.length, currentIndex, items]);
   const documentLayout = layout === 'document';
   // 듀오 펼침에서는 가용 폭을 이미 다 쓰므로 A4 비율 폭 제한을 두지 않는다.
   const duoBand = useDuoSideBand() || useDuoTopBand();

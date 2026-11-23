@@ -38,6 +38,7 @@ test('행을 누르면 원문 주소를 가진 순서 목록을 미리보기에 
   fireEvent.press(screen.getByLabelText('outbox_retry.ts'));
   expect(screen.props.onSelect).toHaveBeenCalledWith('soul-server-ts/src/upstream/outbox_retry.ts');
   const modal = screen.UNSAFE_getByType(AttachmentPreviewModal);
+  expect(modal.props.item.pdfCache).toBe('none');
   expect(modal.props.item.byteSize).toBeNull();
   expect(modal.props.item.source.originalUrl).toBe('/api/sessions/s%2F1/workspace/file?path=soul-server-ts%2Fsrc%2Fupstream%2Fdispatcher.ts&download=true');
   modal.props.item.loadText(new AbortController().signal);
