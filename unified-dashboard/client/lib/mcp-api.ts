@@ -56,6 +56,39 @@ export type McpRevision = {
   target_id: string;
   created_at: string;
 };
+export type McpBindingInput = {
+  node_ids: string[];
+  mcp_profile_id: string | null;
+  expected_version?: number;
+  expected_revision?: number;
+  fork?: boolean;
+};
+export type McpTestInput = { node_id: string } & (
+  | { server_id: string }
+  | { draft_server: Definition & { id: string; node_scope: string[]; node_overrides?: Record<string, Definition> }; inline_secrets?: Record<string, string> }
+);
+export type McpTestResult =
+  | { ok: true; latency_ms: number; server_info?: { name: string; version: string }; tool_count: number; tools: string[] }
+  | { ok: false; latency_ms: number; error_stage: "config" | "connect" | "initialize" | "list_tools" | "timeout"; error_message: string };
+export type McpPreviewRow = {
+  server_id: string;
+  name: string;
+  type: string;
+  included: boolean;
+  excluded_reason?: string;
+  icon?: McpIcon | null;
+  node_override?: boolean;
+};
+export type McpPreviewResult = {
+  applied_mode: "central" | "local";
+  applied_revision: number;
+  current_revision: number;
+  effective_backend: string;
+  default_preset: string | null;
+  isolation_enabled: boolean;
+  normal: { runnable: boolean; blocked_reason?: string; servers: McpPreviewRow[] };
+  restricted: { runnable: boolean; blocked_reason?: string; servers: McpPreviewRow[] };
+};
 export class McpApiError extends Error {
   constructor(
     public status: number,
@@ -103,6 +136,11 @@ export function createMcpApi(request: typeof fetch = fetch) {
     );
   return {
     config: () => call<McpConfig>("/api/mcp/config"),
+    setAgentMcpBinding: (id: string, body: McpBindingInput) =>
+      call<{ current_revision: number; bindings: McpConfig["bindings"] }>(path("agents", id), "PUT", body),
+    testMcpServer: (body: McpTestInput) => call<McpTestResult>("/api/mcp/servers/test", "POST", body),
+    previewAgentMcp: (id: string, nodeId: string, profileId?: string) =>
+      call<McpPreviewResult>(`${path("agents", id)}/preview?node_id=${encodeURIComponent(nodeId)}${profileId === undefined ? "" : `&mcp_profile_id=${encodeURIComponent(profileId)}`}`),
     putServer: (
       id: string,
       body: Definition & {

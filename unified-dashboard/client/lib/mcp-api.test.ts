@@ -44,4 +44,21 @@ describe("MCP 관리 API", () => {
       message: "profile-a",
     } satisfies Partial<McpApiError>);
   });
+  it("에이전트 연결과 시험, 미리보기를 지정한 노드로 요청한다", async () => {
+    const request = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const api = createMcpApi(request);
+    await api.setAgentMcpBinding("agent / a", { node_ids: ["node one"], mcp_profile_id: "profile", expected_version: 2, expected_revision: 7, fork: true });
+    expect(request).toHaveBeenNthCalledWith(1, "/api/mcp/agents/agent%20%2F%20a", expect.objectContaining({
+      method: "PUT", credentials: "same-origin", body: JSON.stringify({ node_ids: ["node one"], mcp_profile_id: "profile", expected_version: 2, expected_revision: 7, fork: true }),
+    }));
+    await api.testMcpServer({ node_id: "node one", server_id: "server" });
+    expect(request).toHaveBeenNthCalledWith(2, "/api/mcp/servers/test", expect.objectContaining({ method: "POST", body: JSON.stringify({ node_id: "node one", server_id: "server" }) }));
+    const draft = { node_id: "node one", draft_server: { id: "draft", type: "stdio" as const, config: { command: "run" }, node_scope: ["node one"] }, inline_secrets: { fake: "placeholder" } };
+    await api.testMcpServer(draft);
+    expect(request).toHaveBeenNthCalledWith(3, "/api/mcp/servers/test", expect.objectContaining({ body: JSON.stringify(draft) }));
+    await api.previewAgentMcp("agent / a", "node one", "profile & b");
+    expect(request).toHaveBeenNthCalledWith(4, "/api/mcp/agents/agent%20%2F%20a/preview?node_id=node%20one&mcp_profile_id=profile%20%26%20b", expect.objectContaining({ method: "GET" }));
+    await api.previewAgentMcp("agent", "node");
+    expect(request).toHaveBeenNthCalledWith(5, "/api/mcp/agents/agent/preview?node_id=node", expect.objectContaining({ method: "GET" }));
+  });
 });
