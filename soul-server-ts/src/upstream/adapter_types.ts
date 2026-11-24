@@ -20,6 +20,7 @@ import type { EventOutboxPumpTransport } from "./event_outbox_pump.js";
 import type { ReleaseActivationState } from "../release/release_activation_state.js";
 import type { PurposeDecisionRunner } from "../card-orchestration/purpose_runner.js";
 import type { NodeResourceCollector } from "./node_resource_collector.js";
+import type { PreviewContext } from "./mcp_config_commands.js";
 
 export interface UpstreamConfig {
   url: string;
@@ -41,6 +42,7 @@ export interface UpstreamConfig {
 }
 
 export interface UpstreamDependencies {
+  mcpPreviewContext?: PreviewContext;
   agentRegistry: AgentRegistry;
   taskManager: TaskManager;
   taskExecutor: TaskExecutor;

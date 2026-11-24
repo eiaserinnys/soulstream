@@ -29,6 +29,8 @@ import {
 } from "./runner_process_composition.js";
 import type { WorkerCompositionParams } from "./worker_composition_types.js";
 import type { PurposeDecisionRunner } from "../card-orchestration/purpose_runner.js";
+import type { SessionIsolationComposition } from "./session_isolation_composition.js";
+import { loadBundledIsolationPolicy } from "../security/session_isolation_policy.js";
 
 /**
  * Broadcast gate shared by the session broadcaster and outbox pipeline: sends
@@ -53,6 +55,7 @@ export function createBroadcasterSend(
 }
 
 interface WorkerUpstreamCompositionParams {
+  sessionIsolation?: SessionIsolationComposition;
   worker: WorkerCompositionParams;
   taskManager: TaskManager;
   taskExecutor: TaskExecutor;
@@ -76,6 +79,7 @@ interface WorkerUpstreamCompositionParams {
 }
 
 export function composeWorkerUpstreamAdapter({
+  sessionIsolation,
   worker,
   taskManager,
   taskExecutor,
@@ -133,6 +137,9 @@ export function composeWorkerUpstreamAdapter({
       realtimeBroker,
       agentConfigService,
       reflectionRuntime,
+      mcpPreviewContext: { nodeId: env.SOULSTREAM_NODE_ID, codexMode: env.CODEX_ADAPTER_MODE,
+        isolationEnabled: sessionIsolation !== undefined,
+        localMcpPolicy: () => (sessionIsolation?.runtime.policySource.get() ?? loadBundledIsolationPolicy()).policy.localMcp },
       scheduleCommands,
       modelCatalog,
       eventOutboxPump,

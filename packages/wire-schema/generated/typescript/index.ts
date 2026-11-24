@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 208개 $defs (top-level wire 102 + supporting/SSE 106). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 213개 $defs (top-level wire 104 + supporting/SSE 109). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -92,6 +92,8 @@ export type SoulstreamUpstreamProtocol =
   | ClaudeAuthLoginCancel
   | ClaudeCentralPoolSync
   | McpCentralSync
+  | McpTestServer
+  | McpPreviewAgent
   | ClaudeRuntimeListTasks
   | ClaudeRuntimeTaskOutput
   | ClaudeRuntimeStopTask
@@ -3500,6 +3502,69 @@ export interface McpCentralSnapshot {
 export interface McpCentralSyncResult {
   applied_revision: number;
 }
+export interface McpTestServer {
+  type: "test_mcp_server";
+  requestId: string;
+  server: {
+    id: string;
+    name: string;
+    type: "stdio" | "sse" | "streamable_http";
+    config: {};
+  };
+  timeout_ms?: number;
+  success?: boolean;
+  data?: McpTestResult;
+  error?: ClaudeAuthError;
+}
+export interface McpTestResult {
+  ok: boolean;
+  latency_ms: number;
+  server_info?: {
+    name: string;
+    version: string;
+  };
+  tool_count?: number;
+  /**
+   * @maxItems 100
+   */
+  tools?: string[];
+  error_stage?: "config" | "connect" | "initialize" | "list_tools" | "timeout";
+  error_message?: string;
+}
+export interface McpPreviewAgent {
+  type: "preview_agent_mcp";
+  requestId: string;
+  agent_id: string;
+  mcp_profile_id?: string;
+  servers?: {
+    server_id: string;
+    name: string;
+    type: "stdio" | "sse" | "streamable_http";
+  }[];
+  success?: boolean;
+  data?: McpPreviewResult;
+  error?: ClaudeAuthError;
+}
+export interface McpPreviewResult {
+  applied_mode: "central" | "local";
+  applied_revision: number;
+  effective_backend: string;
+  default_preset: string | null;
+  isolation_enabled: boolean;
+  normal: McpPreviewVariant;
+  restricted: McpPreviewVariant;
+}
+export interface McpPreviewVariant {
+  runnable: boolean;
+  blocked_reason?: string;
+  servers: {
+    server_id: string;
+    name: string;
+    type: string;
+    included: boolean;
+    excluded_reason?: string;
+  }[];
+}
 /**
  * orch→노드: Claude runtime task 목록 조회.
  */
@@ -3943,6 +4008,8 @@ export const CONTROL_COMMAND_TYPES = [
   "claude_auth_login_cancel",
   "claude_central_pool_sync",
   "mcp_central_sync",
+  "test_mcp_server",
+  "preview_agent_mcp",
   "provider_usage_get",
   "reflect_brief",
   "plan_agent_profile_update",

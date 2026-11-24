@@ -108,9 +108,9 @@ function requiredServerName(server: ResolvedMcpServer): string {
   return name;
 }
 
-function loadMcpServers(
+export function loadMcpServers(
   workspaceDir: string,
-  logger: Logger,
+  logger: Pick<Logger, "debug">,
 ): Record<string, McpServerConfig> | undefined {
   const configPath = MCP_CONFIG_FILES
     .map((fileName) => join(workspaceDir, fileName))

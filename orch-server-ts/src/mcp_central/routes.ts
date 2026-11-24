@@ -7,12 +7,15 @@ import type { McpCentralService } from "./service.js";
 export type McpCentralRouteOptions = {
   service: McpCentralService;
   provider: AdminAccessProvider;
+  actions?: { test: (body: unknown) => Promise<unknown>; preview: (agentId: string, nodeId: string, profileId?: string) => Promise<unknown> };
   onConfigWritten?: () => void;
   nodeStatus?: (nodeId: string) => { connected: boolean; central_sync_supported: boolean; ack: { revision: number } | null };
 };
 
 export const mcpCentralRouteAuthRequirements = {
   "GET /api/mcp/config": true,
+  "POST /api/mcp/servers/test": true,
+  "GET /api/mcp/agents/{agent_id}/preview": true,
   "PUT /api/mcp/managed-nodes/{node_id}": true,
   "DELETE /api/mcp/managed-nodes/{node_id}": true,
   "PUT /api/mcp/servers/{server_id}": true,
@@ -46,6 +49,17 @@ export function registerMcpCentralRoutes(app: FastifyInstance, options: McpCentr
     }
   };
   const params = (request: FastifyRequest): Params => request.params as Params;
+
+  app.post("/api/mcp/servers/test", guarded(async (request) => {
+    if (!options.actions) throw new McpCentralError("MCP_NODE_UNAVAILABLE", 503, "MCP test unavailable");
+    return options.actions.test(request.body);
+  }));
+  app.get("/api/mcp/agents/:agent_id/preview", guarded(async (request) => {
+    if (!options.actions) throw new McpCentralError("MCP_NODE_UNAVAILABLE", 503, "MCP preview unavailable");
+    const query = isRecord(request.query) ? request.query : {};
+    if (typeof query.node_id !== "string" || !query.node_id || (query.mcp_profile_id !== undefined && (typeof query.mcp_profile_id !== "string" || !query.mcp_profile_id))) throw invalidInput("node_id and mcp_profile_id must be non-empty strings");
+    return options.actions.preview(params(request).agent_id!, query.node_id, query.mcp_profile_id as string | undefined);
+  }));
 
   app.get("/api/mcp/config", guarded(async () => {
     const config = await service.getConfig();

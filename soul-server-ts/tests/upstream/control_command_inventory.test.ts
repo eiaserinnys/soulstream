@@ -35,7 +35,7 @@ describe("control command inventory", () => {
     }).sort();
     const inventoryTypes = CONTROL_COMMAND_INVENTORY.map(({ type }) => type).sort();
 
-    expect(inventoryTypes).toHaveLength(58);
+    expect(inventoryTypes).toHaveLength(60);
     expect(new Set(inventoryTypes).size).toBe(inventoryTypes.length);
     expect(inventoryTypes).toEqual(handlerTypes);
     expect(inventoryTypes).toEqual([...CONTROL_COMMAND_TYPES].sort());
@@ -118,6 +118,8 @@ describe("control command inventory", () => {
       { type: "claude_auth_login_cancel", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "claude_central_pool_sync", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "mcp_central_sync", family: "mcp-config", policy: "bounded_result" },
+      { type: "test_mcp_server", family: "mcp-config", policy: "bounded_result" },
+      { type: "preview_agent_mcp", family: "mcp-config", policy: "bounded_result" },
       { type: "provider_usage_get", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "reflect_brief", family: "reflection", policy: "bounded_result" },
       { type: "plan_agent_profile_update", family: "agent-config", policy: "bounded_result" },
@@ -142,6 +144,8 @@ describe("control command inventory", () => {
     }
     expect(boundedResultTimeoutMs("provider_usage_get", 900)).toBe(45_500);
     expect(boundedResultTimeoutMs("prepare_card_orchestration_decision", 900)).toBe(14_500);
+    expect(boundedResultTimeoutMs("test_mcp_server", 900)).toBe(14_500);
+    expect(boundedResultTimeoutMs("preview_agent_mcp", 900)).toBe(5_000);
     expect(boundedResultTimeoutMs("list_sessions", 900)).toBe(900);
   });
 

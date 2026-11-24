@@ -47,6 +47,10 @@ describe("MCP configuration commands", () => {
     await dispatcher.dispatch({ type: "mcp_central_sync", requestId: "portable", revision: 1, runtime: snap, display: snap });
     expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ code: "MCP_PORTABLE_NODE" }));
     expect(rebuild).not.toHaveBeenCalled();
+    await dispatcher.dispatch({ type: "test_mcp_server", requestId: "test", server: { id: "s", name: "s", type: "stdio", config: { command: "node" } } });
+    expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ code: "MCP_PORTABLE_NODE" }));
+    await dispatcher.dispatch({ type: "preview_agent_mcp", requestId: "preview", agent_id: "agent" });
+    expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ code: "MCP_PORTABLE_NODE" }));
   });
 
   it("does not advertise central MCP support on a portable node", () => {

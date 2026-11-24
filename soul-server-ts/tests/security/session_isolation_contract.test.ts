@@ -278,6 +278,7 @@ describe("session isolation contract", () => {
       "mcp/tool_access.ts",
       "mcp/tools/node_services_observation.ts",
       "mcp/transport.ts",
+      "mcp_central/agent_preview.ts",
       "runner/frame_protocol.ts",
       "runner/runner_isolation_config.ts",
       "runner/runner_process_isolation.ts",
@@ -302,6 +303,7 @@ describe("session isolation contract", () => {
       "task/task_executor.ts",
       "task/task_manager.ts",
       "task/task_models.ts",
+      "upstream/mcp_config_commands.ts",
     ]);
   });
 });

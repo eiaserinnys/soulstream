@@ -338,7 +338,7 @@ export class TaskRuntimeCommands {
     return agent;
   }
 
-  private async resolveNewSessionAgent(profileId: string): Promise<{
+  async resolveNewSessionAgent(profileId: string): Promise<{
     profile: AgentProfile;
     hasDbPortrait: boolean;
     fromSource: boolean;

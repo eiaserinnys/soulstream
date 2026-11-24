@@ -145,6 +145,8 @@ type TypeScriptAdditiveRoute = Omit<RouteDefinition, "order"> & {
 };
 
 const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
+  { methods: ["POST"], path: "/api/mcp/servers/test", name: "mcp_server_test", authRequired: true, family: "control_plane" },
+  { methods: ["GET"], path: "/api/mcp/agents/{agent_id}/preview", name: "mcp_agent_preview", authRequired: true, family: "control_plane" },
   { methods: ["GET"], path: "/api/conversations/v1/models", name: "conversation_0", authRequired: true, family: "session" },
   { methods: ["GET"], path: "/api/conversations/v1/profiles", name: "conversation_profiles", authRequired: true, family: "session" },
   { methods: ["GET"], path: "/api/conversations/v1/threads", name: "conversation_1", authRequired: true, family: "session" },

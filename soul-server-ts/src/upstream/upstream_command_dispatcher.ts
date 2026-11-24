@@ -31,6 +31,7 @@ export function createUpstreamCommandDispatcher(input: {
     scheduleCommands: deps.scheduleCommands,
     modelCatalog: deps.modelCatalog,
     agentProfileSource: deps.agentProfileSource,
+    mcpPreviewContext: deps.mcpPreviewContext,
     listRunningSessionIds: input.listRunningSessionIds,
     decisionRunner: deps.decisionRunner,
     authorizeOrchestrationWorker: deps.authorizeOrchestrationWorker,

@@ -1,5 +1,6 @@
 import { PersistentDefaultsSettings } from "./settings/persistent_defaults_settings.js";
 import { McpCentralSyncService } from "./mcp_central/sync_service.js";
+import { createMcpTestPreviewService } from "./mcp_central/test_preview_service.js";
 import { createMcpCentralRepository } from "./mcp_central/repository.js";
 import { buildNodeSnapshot } from "./mcp_central/node_snapshot.js";
 import { createMcpCentralAccessProvider } from "./mcp_central/agent_identity.js";
@@ -694,6 +695,7 @@ export async function createLiveProductionApplication(
     currentRevision: () => mcpRepository.read(sql => mcpRepository.getState(sql)),
     onWarning: message => context.warn(message),
   });
+  const mcpCentralActions = createMcpTestPreviewService({ service: mcpCentralService, sync: mcpCentralSync, resolveSql: () => sqlResolver.resolveSql() });
   claudeCentralService = new ClaudeCentralService({
     repository: createSqlClaudeCentralAccountRepository({
       resolveSql: () => sqlResolver.resolveSql(),
@@ -1154,6 +1156,7 @@ export async function createLiveProductionApplication(
       mcpCentralSync,
       resolveSessionOwner,
       config.persistent_session_bootstrap,
+      mcpCentralActions,
     ),
     nodeReleaseRoutes: {
       authBearerToken: config.auth_bearer_token,
@@ -1690,6 +1693,7 @@ export function buildProductionRouteOptions(
   mcpCentralSync?: McpCentralSyncService,
   resolveMcpSessionOwner?: SessionOwnerResolver,
   persistentSessionBootstrap?: boolean,
+  mcpCentralActions?: ReturnType<typeof createMcpTestPreviewService>,
 ): CreateAppOptions {
   if (defaultExecutionNodeId === undefined) {
     throw new Error("default execution node is required to build production routes");
@@ -2029,6 +2033,7 @@ export function buildProductionRouteOptions(
     uiEventRoutes: providers.uiEventRoutes,
     ...(mcpCentral === undefined ? {} : { mcpCentralRoutes: {
       service: mcpCentral,
+      ...(mcpCentralActions ? { actions: mcpCentralActions } : {}),
       provider: resolveMcpSessionOwner === undefined ? providers.adminUsersRoutes.provider : createMcpCentralAccessProvider({
         provider: providers.adminUsersRoutes.provider,
         auth: { configuredToken: config.authBearerToken, environment: config.environment, nodeCredentials },

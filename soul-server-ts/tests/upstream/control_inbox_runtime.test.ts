@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createRequire } from "node:module";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -30,6 +31,25 @@ async function makeStore(): Promise<ControlInboxStore> {
 }
 
 describe("ControlInboxRuntime", () => {
+  it.each(["test_mcp_server", "preview_agent_mcp"] as const)("does not persist %s requests or results", async type => {
+    const root = await mkdtemp(join(tmpdir(), "mcp-control-runtime-")); roots.push(root);
+    const databasePath = join(root, "control-inbox.sqlite");
+    const store = new ControlInboxStore({ databasePath, nodeId: "node-a", hostGeneration: "host-a" });
+    const work: ControlInboxDispatchWork[] = [];
+    const runtime = new ControlInboxRuntime({ store, nodeId: "node-a", mainHeartbeatAgeMs: () => 0, postWork: item => work.push(item) });
+    try {
+      runtime.initialize();
+      await runtime.connect(async () => {});
+      await runtime.handleCommand({ type, requestId: "mcp-req", payload: "fake-secret-control" });
+      expect(work).toHaveLength(1);
+      expect(work[0]).toMatchObject({ durable: false, commandFamily: "mcp-config" });
+      await runtime.handleDomainResult(work[0]!.workId, { type, success: true, data: { value: "fake-secret-control" } });
+      const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+      const db = new DatabaseSync(databasePath, { readOnly: true });
+      try { expect(db.prepare("SELECT COUNT(*) AS count FROM control_inbox").get()).toMatchObject({ count: 0 }); }
+      finally { db.close(); }
+    } finally { runtime.close(); }
+  });
   it.each([
     ["prepare_card_orchestration_decision", false],
     ["create_card_orchestration_decision", true],
