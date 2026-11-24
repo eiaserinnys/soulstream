@@ -177,8 +177,8 @@ export class TaskEngineTurnRunner {
         })
       : undefined;
     // Pool targeting follows the resolved provider and endpoint, not the model
-    // spelling: official presets use aliases such as "opus" or "haiku", which the
-    // usage provider classifier reports as "unknown". Third-party Anthropic-compatible
+    // spelling: official presets can use aliases that the usage provider classifier
+    // reports as "unknown". Third-party Anthropic-compatible
     // endpoints (Kimi and any ANTHROPIC_BASE_URL override) stay on their env path.
     const claudeAccountPoolTarget = this.deps.claudeAccountPoolEnabled === true
       && backend === "claude"

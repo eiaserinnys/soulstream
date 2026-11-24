@@ -13,6 +13,7 @@ describe("persistent sessions review fixture", () => {
 
   it("returns the canonical usage mode and its legacy projection in the list and create defaults", async () => {
     const { json } = await call(make(), "/api/persistent-sessions", "GET");
+    expect(json.sessions[0].settings.default_model.model_preset).toBe("sample-a");
     expect(Object.keys(json.sessions[0].settings).sort()).toEqual([
       "animate_character",
       "default_model",
@@ -45,8 +46,8 @@ describe("persistent sessions review fixture", () => {
     const same = await save(handler, "sample-pas-2", "sample-sol", null);
     expect(same.json.session.settings.default_model).toEqual({ model_preset: "sample-sol", reasoning_effort: "high" });
     expect(same.json.model_change).toBe("none");
-    const other = await save(handler, "sample-pas-2", "sample-opus", null);
-    expect(other.json.session.settings.default_model).toEqual({ model_preset: "sample-opus", reasoning_effort: null });
+    const other = await save(handler, "sample-pas-2", "sample-a", null);
+    expect(other.json.session.settings.default_model).toEqual({ model_preset: "sample-a", reasoning_effort: null });
   });
 
   it("decides the model change from the (preset, effort) pair against the running model and the pending target", async () => {
@@ -60,9 +61,9 @@ describe("persistent sessions review fixture", () => {
     // 같은 대상의 대기가 이미 있으면 다시 요청하지 않는다.
     expect((await save(handler, "sample-pas-2", "sample-sol", "medium")).json.model_change).toBe("none");
     // 다른 쌍이면 대기가 새 대상으로 바뀐다.
-    const other = await save(handler, "sample-pas-2", "sample-opus", null);
+    const other = await save(handler, "sample-pas-2", "sample-a", null);
     expect(other.json.model_change).toBe("next_execution_start");
-    expect(other.json.session.runtime.pending).toEqual({ target_model_preset: "sample-opus", target_reasoning_effort: null });
+    expect(other.json.session.runtime.pending).toEqual({ target_model_preset: "sample-a", target_reasoning_effort: null });
   });
 
   it("stores the effort given when creating a session and starts it on that model", async () => {

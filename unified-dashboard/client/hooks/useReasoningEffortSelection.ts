@@ -30,7 +30,7 @@ export interface ReasoningEffortSelection {
  *
  *  - requirement: changing model or node must adopt the new preset's default,
  *    even when the previous manual pick happens to be legal on the new preset
- *    (Opus `low` -> Astra must show Astra's `medium`, not keep `low`), and even
+ *    (a `low` selection must not replace a new preset's `medium` default), and even
  *    when two nodes advertise the same preset id with different defaults;
  *  - the key is known synchronously while the advertisement is still loading, so
  *    an in-flight catalog fetch can never wipe a seeded value, and a refresh for
