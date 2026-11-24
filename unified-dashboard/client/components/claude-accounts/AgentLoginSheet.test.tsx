@@ -189,6 +189,34 @@ describe("AgentLoginSheet", () => {
     expect(JSON.stringify(logged)).not.toContain(PASTED_CODE);
   });
 
+  it("ends an Antigravity login that rejected the pasted code as failed and starts a new flow with a new address on retry", async () => {
+    const NEW_URL = "https://auth.example.test/device?session=second";
+    const server = fakeServer({
+      post: [flow("url_ready", "antigravity", { auth_url: AUTH_URL }), flow("url_ready", "antigravity", { login_id: "login-2", auth_url: NEW_URL })],
+      code: [flow("failed", "antigravity", { error: { code: "invalid_code", message: "raw" } })],
+      get: [flow("url_ready", "antigravity", { auth_url: AUTH_URL })],
+    });
+    await open("antigravity", server.request);
+    await typeInto(host.querySelector<HTMLInputElement>("input")!, PASTED_CODE);
+    await press("제출");
+
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("인증 코드가 맞지 않습니다. 다시 시도하면 새 주소가 열립니다.");
+    expect(host.querySelector("input")).toBeNull();
+    expect(host.innerHTML).not.toContain(PASTED_CODE);
+    // 같은 흐름에는 코드를 다시 넣을 수 없고, 읽기도 멈춘다.
+    const readsAtFailure = server.count("GET");
+    await tick(3000);
+    expect(server.count("GET")).toBe(readsAtFailure);
+
+    await press("다시 시도");
+    expect(server.calls.filter((call) => call.method === "POST" && /agent-logins\/antigravity$/.test(call.path))).toHaveLength(2);
+    expect(host.querySelector("a[href]")?.getAttribute("href")).toBe(NEW_URL);
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.querySelector<HTMLInputElement>("input")?.value).toBe("");
+    // 끝난 첫 흐름은 다시 취소하지 않는다.
+    expect(server.count("DELETE")).toBe(0);
+  });
+
   it("keeps one-time values out of the console, including on request failures", async () => {
     const server = fakeServer({ post: [flow("url_ready", "antigravity", { auth_url: AUTH_URL })], get: [flow("url_ready", "antigravity", { auth_url: AUTH_URL })], code: [errorResponse(409, "login_not_ready")] });
     await open("antigravity", server.request);
@@ -235,6 +263,7 @@ describe("AgentLoginSheet", () => {
 
   it.each([
     ["device_code_disabled", "ChatGPT 설정의 보안 항목에서 Codex 기기 코드 인증을 켠 뒤 다시 시도해 주세요."],
+    ["invalid_code", "인증 코드가 맞지 않습니다. 다시 시도하면 새 주소가 열립니다."],
     ["timeout", "제한 시간 안에 인증이 끝나지 않았습니다. 다시 시도해 주세요."],
     ["cli_exited", "Codex CLI가 로그인 도중 종료되었습니다. 다시 시도해 주세요."],
     ["verify_failed", "로그인은 끝났지만 Codex 사용량 확인을 통과하지 못했습니다. 계정과 구독 상태를 확인한 뒤 다시 시도해 주세요."],

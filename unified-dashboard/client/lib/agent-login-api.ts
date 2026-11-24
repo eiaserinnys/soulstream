@@ -78,6 +78,8 @@ export function agentLoginFailureMessage(provider: AgentLoginProvider, code: str
   switch (code) {
     case "device_code_disabled":
       return "ChatGPT 설정의 보안 항목에서 Codex 기기 코드 인증을 켠 뒤 다시 시도해 주세요.";
+    case "invalid_code":
+      return "인증 코드가 맞지 않습니다. 다시 시도하면 새 주소가 열립니다.";
     case "timeout":
       return "제한 시간 안에 인증이 끝나지 않았습니다. 다시 시도해 주세요.";
     case "cli_exited":

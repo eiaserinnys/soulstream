@@ -1,12 +1,11 @@
-import { DashboardIconCap, useAtomPublicUrl } from "@seosoyoung/soul-ui";
+import { DashboardIconCap } from "@seosoyoung/soul-ui";
 import { Atom } from "lucide-react";
 
 /**
- * atom이 연결되어 있으면 툴바에 보이는 atom 대시보드 단추. 주소는 서버가 브라우저에서 열 수 있다고
- * 알려 준 값(/api/status의 atom_public_url)이며, 없으면 단추를 그리지 않는다.
+ * atom 대시보드를 새 탭으로 여는 툴바 단추. 주소가 없으면(atom이 연결되지 않았으면) 아무것도 그리지 않는다.
+ * 주소는 툴바가 서버의 atom_public_url(useAtomPublicUrl)에서 가져와 넘긴다.
  */
-export function AtomDashboardButton({ appearance = "default" }: { appearance?: "default" | "bare" }) {
-  const url = useAtomPublicUrl();
+export function AtomDashboardButton({ url, appearance = "default" }: { url: string | null; appearance?: "default" | "bare" }) {
   if (!url) return null;
   return (
     <DashboardIconCap
