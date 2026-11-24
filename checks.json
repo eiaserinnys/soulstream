@@ -684,7 +684,7 @@
   {
     "check": "설정창을 닫으면 PAS 창에 그대로 있음",
     "ok": true,
-    "detail": "http://127.0.0.1:40419/persistent/components-session"
+    "detail": "http://127.0.0.1:38957/persistent/components-session"
   },
   {
     "check": "Codex 시트: 주소 열기가 새 탭, noopener",
@@ -798,7 +798,15 @@
       ],
       [
         "GET",
+        "/api/persistent-sessions"
+      ],
+      [
+        "GET",
         "/api/nodes/stream"
+      ],
+      [
+        "POST",
+        "/api/persistent-sessions/bootstrap"
       ],
       [
         "GET",
@@ -807,14 +815,6 @@
       [
         "GET",
         "/api/auth/status"
-      ],
-      [
-        "GET",
-        "/api/persistent-sessions"
-      ],
-      [
-        "POST",
-        "/api/persistent-sessions/bootstrap"
       ]
     ]
   },
@@ -860,7 +860,7 @@
   {
     "check": "기본 세션을 만들면 그 세션으로 옮김",
     "ok": true,
-    "detail": "http://127.0.0.1:40419/persistent/components-session"
+    "detail": "http://127.0.0.1:38957/persistent/components-session"
   },
   {
     "check": "PAS 창 툴바 360px(PAS 0개): 홈 단추가 있음",
@@ -989,7 +989,7 @@
   {
     "check": "PAS 창 툴바 360px(PAS 0개): 홈을 한 번 누르면 /로 감",
     "ok": true,
-    "detail": "http://127.0.0.1:40419/"
+    "detail": "http://127.0.0.1:38957/"
   },
   {
     "check": "PAS 창 툴바 360px(PAS 1개): 홈 단추가 있음",
@@ -1181,7 +1181,7 @@
   {
     "check": "PAS 창 툴바 360px(PAS 1개): 홈을 한 번 누르면 /로 감",
     "ok": true,
-    "detail": "http://127.0.0.1:40419/"
+    "detail": "http://127.0.0.1:38957/"
   },
   {
     "check": "PAS 창 툴바 360px(PAS 2개): 홈 단추가 있음",
@@ -1398,7 +1398,7 @@
   {
     "check": "PAS 창 툴바 360px(PAS 2개): 홈을 한 번 누르면 /로 감",
     "ok": true,
-    "detail": "http://127.0.0.1:40419/"
+    "detail": "http://127.0.0.1:38957/"
   },
   {
     "check": "PAS 창 툴바 360px(가장 긴 에이전트 이름): 가로 넘침 없음, 이름은 말줄임, 단추와 겹치지 않음",
@@ -1803,7 +1803,402 @@
     "check": "표시 항목 스위치: 스페이스로 바꾸면 바로 저장 요청이 감",
     "ok": true,
     "detail": [
-      "http://127.0.0.1:40419/api/persistent-sessions/components-session"
+      "http://127.0.0.1:38957/api/persistent-sessions/components-session"
     ]
+  },
+  {
+    "check": "행 단추 1280px: 열기 전에는 평소 모양",
+    "ok": true,
+    "detail": [
+      {
+        "disabled": false,
+        "ariaDisabled": null,
+        "expanded": "false",
+        "opacity": "1",
+        "pointerEvents": "auto"
+      },
+      {
+        "disabled": false,
+        "ariaDisabled": null,
+        "expanded": "false",
+        "opacity": "1",
+        "pointerEvents": "auto"
+      }
+    ]
+  },
+  {
+    "check": "Codex 시트가 열린 동안 「연결」 1280px: 비활성 모양(투명도 0.64, 눌러도 반응 없음), aria-disabled, disabled 속성은 없음",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": "true",
+      "expanded": "true",
+      "opacity": "0.64",
+      "pointerEvents": "none"
+    }
+  },
+  {
+    "check": "시트가 열린 동안 「연결」을 키로 눌러도 1280px: 새 로그인을 시작하지 않고 시트가 그대로이며 초점이 사라지지 않음",
+    "ok": true,
+    "detail": {
+      "posts": 0,
+      "focus": "연결"
+    }
+  },
+  {
+    "check": "시트를 닫으면 「연결」 1280px: 원래 모양으로 돌아오고 초점이 그 단추에 있음",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": null,
+      "expanded": "false",
+      "opacity": "1",
+      "pointerEvents": "auto",
+      "focus": "연결"
+    }
+  },
+  {
+    "check": "확인줄이 열린 동안 「다시 연결」 1280px: 비활성 모양, aria-disabled, disabled 속성은 없음",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": "true",
+      "expanded": "true",
+      "opacity": "0.64",
+      "pointerEvents": "none"
+    }
+  },
+  {
+    "check": "확인줄 1280px: 첫 초점은 그대로 「취소」",
+    "ok": true,
+    "detail": "취소"
+  },
+  {
+    "check": "확인줄에서 시트로 넘어가도 「다시 연결」 1280px: 비활성 모양이 이어짐",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": "true",
+      "expanded": "true",
+      "opacity": "0.64",
+      "pointerEvents": "none"
+    }
+  },
+  {
+    "check": "시트를 닫으면 「다시 연결」 1280px: 원래 모양으로 돌아오고 초점이 그 단추에 있음",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": null,
+      "expanded": "false",
+      "opacity": "1",
+      "pointerEvents": "auto",
+      "focus": "다시 연결"
+    }
+  },
+  {
+    "check": "다시 시도 1280px: 실패 직후에는 평소 모양",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": null,
+      "expanded": null,
+      "opacity": "1",
+      "pointerEvents": "auto"
+    }
+  },
+  {
+    "check": "다시 만드는 중 1280px: 처음 만들 때와 같은 회전 표시가 그 자리에 있음",
+    "ok": true,
+    "detail": 1
+  },
+  {
+    "check": "다시 만드는 중 1280px: 「다시 시도」는 비활성 모양과 aria-disabled",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": "true",
+      "expanded": null,
+      "opacity": "0.64",
+      "pointerEvents": "none"
+    }
+  },
+  {
+    "check": "다시 만드는 중 1280px: 초점이 body로 빠지지 않고 그 단추에 남음",
+    "ok": true,
+    "detail": "다시 시도"
+  },
+  {
+    "check": "다시 만드는 중 1280px: 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "doc": 1280,
+      "inner": 1280
+    }
+  },
+  {
+    "check": "다시 만드는 중 1280px: 다시 눌러도 새 요청이 없음",
+    "ok": true,
+    "detail": {
+      "before": 2,
+      "after": 2
+    }
+  },
+  {
+    "check": "다시 실패하면 1280px: 원래 단추와 실패 안내로 돌아오고 초점이 그 단추에 남음",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": null,
+      "expanded": null,
+      "opacity": "1",
+      "pointerEvents": "auto",
+      "focus": "다시 시도"
+    }
+  },
+  {
+    "check": "코딩 에이전트 탭 1280px 노드 여럿: 열자마자 연결된 첫 노드의 상세가 차 있음",
+    "ok": true,
+    "detail": "eiaserinnys"
+  },
+  {
+    "check": "코딩 에이전트 탭 1280px 노드 여럿: 목록에서도 그 노드가 골라진 모양",
+    "ok": true,
+    "detail": [
+      true,
+      false,
+      false
+    ]
+  },
+  {
+    "check": "코딩 에이전트 탭 1280px 노드 여럿: 「고르세요」와 방향을 가리키는 글이 없음",
+    "ok": true,
+    "detail": "노드\n\n코딩 에이전트를 연결할 노드\n\neiaserinnys\n연결됨\neias-linegames\n연결됨\nsilent-manari-ts\n연결 끊김\neiaserinnys\nClaude\nqa@example.test\nMax\n7일\n34%\n3/18\nCodex\n미설정\n연결\nAntigravity\n다시 연결\n7일\n44%\n3/18"
+  },
+  {
+    "check": "코딩 에이전트 탭 1280px: 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "doc": 1280,
+      "inner": 1280
+    }
+  },
+  {
+    "check": "코딩 에이전트 탭 1280px 노드 없음: 목록은 「연결된 노드가 없습니다.」이고 상세는 비어 있음",
+    "ok": true,
+    "detail": "노드\n\n코딩 에이전트를 연결할 노드\n\n연결된 노드가 없습니다."
+  },
+  {
+    "check": "코딩 에이전트 탭 1280px 노드 없음: 「고르세요」와 방향을 가리키는 글이 없음",
+    "ok": true,
+    "detail": "노드\n\n코딩 에이전트를 연결할 노드\n\n연결된 노드가 없습니다."
+  },
+  {
+    "check": "코딩 에이전트 탭 1280px: 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "doc": 1280,
+      "inner": 1280
+    }
+  },
+  {
+    "check": "행 단추 360px: 열기 전에는 평소 모양",
+    "ok": true,
+    "detail": [
+      {
+        "disabled": false,
+        "ariaDisabled": null,
+        "expanded": "false",
+        "opacity": "1",
+        "pointerEvents": "auto"
+      },
+      {
+        "disabled": false,
+        "ariaDisabled": null,
+        "expanded": "false",
+        "opacity": "1",
+        "pointerEvents": "auto"
+      }
+    ]
+  },
+  {
+    "check": "Codex 시트가 열린 동안 「연결」 360px: 비활성 모양(투명도 0.64, 눌러도 반응 없음), aria-disabled, disabled 속성은 없음",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": "true",
+      "expanded": "true",
+      "opacity": "0.64",
+      "pointerEvents": "none"
+    }
+  },
+  {
+    "check": "시트가 열린 동안 「연결」을 키로 눌러도 360px: 새 로그인을 시작하지 않고 시트가 그대로이며 초점이 사라지지 않음",
+    "ok": true,
+    "detail": {
+      "posts": 0,
+      "focus": "연결"
+    }
+  },
+  {
+    "check": "시트를 닫으면 「연결」 360px: 원래 모양으로 돌아오고 초점이 그 단추에 있음",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": null,
+      "expanded": "false",
+      "opacity": "1",
+      "pointerEvents": "auto",
+      "focus": "연결"
+    }
+  },
+  {
+    "check": "확인줄이 열린 동안 「다시 연결」 360px: 비활성 모양, aria-disabled, disabled 속성은 없음",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": "true",
+      "expanded": "true",
+      "opacity": "0.64",
+      "pointerEvents": "none"
+    }
+  },
+  {
+    "check": "확인줄 360px: 첫 초점은 그대로 「취소」",
+    "ok": true,
+    "detail": "취소"
+  },
+  {
+    "check": "확인줄에서 시트로 넘어가도 「다시 연결」 360px: 비활성 모양이 이어짐",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": "true",
+      "expanded": "true",
+      "opacity": "0.64",
+      "pointerEvents": "none"
+    }
+  },
+  {
+    "check": "시트를 닫으면 「다시 연결」 360px: 원래 모양으로 돌아오고 초점이 그 단추에 있음",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": null,
+      "expanded": "false",
+      "opacity": "1",
+      "pointerEvents": "auto",
+      "focus": "다시 연결"
+    }
+  },
+  {
+    "check": "다시 시도 360px: 실패 직후에는 평소 모양",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": null,
+      "expanded": null,
+      "opacity": "1",
+      "pointerEvents": "auto"
+    }
+  },
+  {
+    "check": "다시 만드는 중 360px: 처음 만들 때와 같은 회전 표시가 그 자리에 있음",
+    "ok": true,
+    "detail": 1
+  },
+  {
+    "check": "다시 만드는 중 360px: 「다시 시도」는 비활성 모양과 aria-disabled",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": "true",
+      "expanded": null,
+      "opacity": "0.64",
+      "pointerEvents": "none"
+    }
+  },
+  {
+    "check": "다시 만드는 중 360px: 초점이 body로 빠지지 않고 그 단추에 남음",
+    "ok": true,
+    "detail": "다시 시도"
+  },
+  {
+    "check": "다시 만드는 중 360px: 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "doc": 360,
+      "inner": 360
+    }
+  },
+  {
+    "check": "다시 만드는 중 360px: 다시 눌러도 새 요청이 없음",
+    "ok": true,
+    "detail": {
+      "before": 2,
+      "after": 2
+    }
+  },
+  {
+    "check": "다시 실패하면 360px: 원래 단추와 실패 안내로 돌아오고 초점이 그 단추에 남음",
+    "ok": true,
+    "detail": {
+      "disabled": false,
+      "ariaDisabled": null,
+      "expanded": null,
+      "opacity": "1",
+      "pointerEvents": "auto",
+      "focus": "다시 시도"
+    }
+  },
+  {
+    "check": "코딩 에이전트 탭 360px 노드 여럿: 열자마자 연결된 첫 노드의 상세가 차 있음",
+    "ok": true,
+    "detail": "eiaserinnys"
+  },
+  {
+    "check": "코딩 에이전트 탭 360px 노드 여럿: 목록에서도 그 노드가 골라진 모양",
+    "ok": true,
+    "detail": [
+      true,
+      false,
+      false
+    ]
+  },
+  {
+    "check": "코딩 에이전트 탭 360px 노드 여럿: 「고르세요」와 방향을 가리키는 글이 없음",
+    "ok": true,
+    "detail": "노드\n\n코딩 에이전트를 연결할 노드\n\neiaserinnys\n연결됨\neias-linegames\n연결됨\nsilent-manari-ts\n연결 끊김\neiaserinnys\nClaude\nqa@example.test\nMax\n7일\n34%\n3/18\nCodex\n미설정\n연결\nAntigravity\n다시 연결\n7일\n44%\n3/18"
+  },
+  {
+    "check": "코딩 에이전트 탭 360px: 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "doc": 360,
+      "inner": 360
+    }
+  },
+  {
+    "check": "코딩 에이전트 탭 360px 노드 없음: 목록은 「연결된 노드가 없습니다.」이고 상세는 비어 있음",
+    "ok": true,
+    "detail": "노드\n\n코딩 에이전트를 연결할 노드\n\n연결된 노드가 없습니다."
+  },
+  {
+    "check": "코딩 에이전트 탭 360px 노드 없음: 「고르세요」와 방향을 가리키는 글이 없음",
+    "ok": true,
+    "detail": "노드\n\n코딩 에이전트를 연결할 노드\n\n연결된 노드가 없습니다."
+  },
+  {
+    "check": "코딩 에이전트 탭 360px: 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "doc": 360,
+      "inner": 360
+    }
+  },
+  {
+    "check": "영구 세션 탭 360px: 설명이 줄인 문구이고 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": "영구 세션의 지시와 표시, 기록을 관리합니다."
   }
 ]
