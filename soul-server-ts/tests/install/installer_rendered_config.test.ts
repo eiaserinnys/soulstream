@@ -43,7 +43,7 @@ describe("installer configuration", () => {
       const raw = parse(readFileSync(join(root, ".env.soul-server-ts")));
       const parsed = parseEnv(raw);
       expect(parsed.SOULSTREAM_BACKENDS).toEqual(backends.split(","));
-      expect(parsed.CLAUDE_ACCOUNT_POOL_ENABLED).toBe(false);
+      expect(parsed.CLAUDE_ACCOUNT_POOL_ENABLED).toBe(true);
       expect(Boolean(parsed.CLAUDE_AUTH_TOKEN_PATH)).toBe(backends.split(",").includes("claude"));
       expect(parsed.ATOM_ENABLED).toBe(true);
       expect(parsed.ATOM_SERVER_URL).toBe("http://127.0.0.1:4200");
