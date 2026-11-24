@@ -71,7 +71,7 @@ export function openCodeMcpToolName(serverName: string, toolName: string): strin
   return `${sanitizeOpenCodeMcpName(serverName)}_${sanitizeOpenCodeMcpName(toolName)}`;
 }
 
-function openCodeMcpServers(options: PrepareOpenCodeSessionOptions): Record<string, OpenCodeMcpServer> | undefined {
+export function openCodeMcpServers(options: PrepareOpenCodeSessionOptions): Record<string, OpenCodeMcpServer> | undefined {
   if (options.useMcp === false) return undefined;
   const servers: Record<string, OpenCodeMcpServer> = {};
   for (const server of options.resolvedMcpServers ?? []) {

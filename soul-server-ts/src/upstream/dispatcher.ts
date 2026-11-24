@@ -1,4 +1,5 @@
 import { McpConfigCommands } from "./mcp_config_commands.js";
+import type { PreviewContext } from "./mcp_config_commands.js";
 import { createMcpConfigCommandFamily } from "./mcp_config_command_family.js";
 import { CentralMcpNotSyncedError } from "../mcp_central/state.js";
 import { type AuthorizeOrchestrationWorker, TaskRuntimeCommands } from "./task_runtime_commands.js";
@@ -72,6 +73,7 @@ import type { PurposeDecisionRunner } from "../card-orchestration/purpose_runner
 export type { SendFn } from "./command_family.js";
 
 export interface CommandDispatcherOptions {
+  mcpPreviewContext?: PreviewContext;
   send: SendFn;
   logger: Logger;
   nodeId: string;
@@ -137,6 +139,7 @@ export class CommandDispatcher {
       scheduleCommands,
       modelCatalog,
       agentProfileSource,
+      mcpPreviewContext,
       listRunningSessionIds,
       decisionRunner,
       authorizeOrchestrationWorker,
@@ -217,6 +220,7 @@ export class CommandDispatcher {
       ...createMcpConfigCommandFamily({ send, commands: new McpConfigCommands(
         reflectionRuntime?.mcpConfigService,
         agentProfileSource?.rebuild?.bind(agentProfileSource),
+        mcpPreviewContext ? { tasks: taskRuntimeCommands, catalog: modelCatalog, context: mcpPreviewContext } : undefined,
       ) }),
       ...createReflectionCommandFamily({ send, reflectionCommands }),
       ...createAgentConfigCommandFamily({ send, agentConfigCommands }),

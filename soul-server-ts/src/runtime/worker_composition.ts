@@ -428,6 +428,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     if (upstreamAdapter) throw new Error("UpstreamAdapter already composed");
     upstreamAdapter = composeWorkerUpstreamAdapter({
       worker: params,
+      sessionIsolation,
       taskManager,
       taskExecutor: taskRuntime.taskExecutor,
       providerUsage,
