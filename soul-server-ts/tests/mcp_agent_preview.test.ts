@@ -59,6 +59,7 @@ describe("agent MCP preview", () => {
     const current = await commands.preview({ requestId: "1", agent_id: "a" });
     expect(current.data.normal.servers).toMatchObject([{ server_id: "atom", name: "catalog", included: true }]);
     expect(JSON.stringify(current)).not.toContain("fake-runtime-value");
+    expect(JSON.stringify(current)).not.toContain('"icon"');
     const virtual = await commands.preview({ requestId: "2", agent_id: "a", mcp_profile_id: "virtual", servers: [{ server_id: "atom", name: "alternate", type: "streamable_http" }] });
     expect(virtual.data.normal.servers).toMatchObject([{ server_id: "atom", name: "alternate" }]);
     await expect(commands.preview({ requestId: "3", agent_id: "missing" })).rejects.toMatchObject({ code: "MCP_AGENT_NOT_FOUND" });
