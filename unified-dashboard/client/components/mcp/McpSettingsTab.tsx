@@ -42,6 +42,8 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
   const [justCreated, setJustCreated] = useState(false);
   const [deleting, setDeleting] = useState<DeleteTarget | null>(null);
   const [history, setHistory] = useState<History | null>(null);
+  const profileDetail = useRef<HTMLDivElement>(null);
+  const focusedInitialProfile = useRef(false);
   const refresh = useCallback(async () => {
     try {
       const next = await api.config();
@@ -57,6 +59,18 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
   useEffect(() => {
     void refresh().catch(() => undefined);
   }, [refresh]);
+  useEffect(() => {
+    if (!config || !initialProfileId || focusedInitialProfile.current) return;
+    const id = requestAnimationFrame(() => {
+      const header = profileDetail.current?.querySelector("header");
+      if (!header) return;
+      focusedInitialProfile.current = true;
+      header.tabIndex = -1;
+      header.scrollIntoView?.({ block: "start" });
+      header.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [config, initialProfileId]);
   useEffect(() => {
     if (!config) return;
     const timer = setTimeout(() => {
@@ -407,7 +421,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
             />
           ) : null}
           {tab === "profile" && (currentProfile || creating) ? (
-            <McpProfileEditor
+            <div ref={profileDetail}><McpProfileEditor
               profile={currentProfile}
               config={config}
               busy={busy}
@@ -429,7 +443,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
                   setCreating(false);
                 }, null, "저장했습니다.")
               }
-            />
+            /></div>
           ) : null}
           {tab === "secret" && currentSecret ? (
             <McpSecretEditor

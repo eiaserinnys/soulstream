@@ -551,6 +551,57 @@ describe("AgentProfileEditorTab", () => {
     expect(document.body.textContent).not.toContain("미리보기를 불러오는 중");
   });
 
+  it.each(["slow", "unavailable", "missing"])("keeps the requested agent for %s node lookup", async mode => {
+    let release: (response: Response) => void = () => {};
+    const previews: string[] = [];
+    const request = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === "/api/agent-profiles") return jsonResponse({ profiles: [profile] });
+      if (url === "/api/context-bundles") return jsonResponse({ bundles: [] });
+      if (url.endsWith("/agents")) {
+        if (mode === "slow") return new Promise<Response>(resolve => { release = resolve; });
+        return mode === "unavailable" ? jsonResponse({}, 503) : jsonResponse({ agents: [] });
+      }
+      if (url === "/api/mcp/config") return jsonResponse({ current_revision: 1, servers: [], profiles: [], secrets: [], bindings: [], managed_nodes: [{ node_id: "node-a", connected: true, central_sync_supported: true, applied_revision: 1, ack: null }] });
+      if (url.includes("/preview?")) { previews.push(url); return jsonResponse({ applied_mode: "local", applied_revision: 0, current_revision: 1, effective_backend: "sample", default_preset: null, isolation_enabled: false, normal: { runnable: true, servers: [] }, restricted: { runnable: true, servers: [] } }); }
+      return jsonResponse({});
+    });
+    container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container);
+    flushSync(() => root?.render(createElement(AgentProfileEditorTab, { request: request as typeof fetch, initialMcpTarget: { agentId: "yaml-worker", nodeId: "node-a" } })));
+    await settle();
+    expect(previews.every(url => url.includes("/yaml-worker/"))).toBe(true);
+    if (mode === "slow") expect(container.textContent).not.toContain("에이전트 MCP 연결 (node-a)");
+    if (mode === "slow") { release(jsonResponse({ agents: [{ id: "yaml-worker", name: "YAML 작업자", source: "yaml" }] })); await settle(); }
+    await vi.waitFor(() => expect(previews.some(url => url.includes("/yaml-worker/"))).toBe(true));
+    expect(previews.every(url => url.includes("/yaml-worker/"))).toBe(true);
+  });
+
+  it("applies the navigation target once when a manually selected agent changes nodes", async () => {
+    const nodes = new Map(useOrchestratorStore.getState().nodes);
+    nodes.set("node-b", { ...nodes.get("node-a")!, nodeId: "node-b" });
+    useOrchestratorStore.setState({ nodes });
+    const previews: string[] = [];
+    const request = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === "/api/agent-profiles") return jsonResponse({ profiles: [profile] });
+      if (url === "/api/context-bundles") return jsonResponse({ bundles: [] });
+      if (url.endsWith("/agents")) return jsonResponse({ agents: [{ id: "yaml-worker", name: "YAML 작업자", source: "yaml" }] });
+      if (url === "/api/mcp/config") return jsonResponse({ current_revision: 1, servers: [], profiles: [], secrets: [], bindings: [], managed_nodes: ["node-a", "node-b"].map(node_id => ({ node_id, connected: true, central_sync_supported: true, applied_revision: 1, ack: null })) });
+      if (url.includes("/preview?")) { previews.push(url); return jsonResponse({ applied_mode: "local", applied_revision: 0, current_revision: 1, effective_backend: "sample", default_preset: null, isolation_enabled: false, normal: { runnable: true, servers: [] }, restricted: { runnable: true, servers: [] } }); }
+      return jsonResponse({});
+    });
+    container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container);
+    flushSync(() => root?.render(createElement(AgentProfileEditorTab, { request: request as typeof fetch, initialMcpTarget: { agentId: "yaml-worker", nodeId: "node-a" } })));
+    await vi.waitFor(() => expect(previews.some(url => url.includes("/yaml-worker/"))).toBe(true));
+    flushSync(() => profileButton("서소영").click());
+    await vi.waitFor(() => expect(previews.some(url => url.includes("/seosoyoung/preview?node_id=node-a"))).toBe(true));
+    setSelect("실행 노드", "node-b");
+    await vi.waitFor(() => expect(previews.some(url => url.includes("/seosoyoung/preview?node_id=node-b"))).toBe(true));
+    setSelect("실행 노드", "node-a");
+    await vi.waitFor(() => expect(previews.filter(url => url.includes("/seosoyoung/preview?node_id=node-a")).length).toBe(2));
+    expect(previews.filter(url => url.includes("/yaml-worker/")).length).toBe(1);
+  });
+
   async function renderEditor(edit = true) {
     container = document.createElement("div");
     document.body.appendChild(container);

@@ -4,6 +4,29 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { AgentMcpConnectionPane } from "./AgentMcpConnectionPane";
 
+it("미리보기 실패 뒤 다시 시도하고 관리 밖 노드는 요청하지 않는다", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const config = { current_revision: 1, servers: [], profiles: [], secrets: [], bindings: [], managed_nodes: [{ node_id: "n", connected: true, central_sync_supported: true, applied_revision: 1, ack: null }] };
+  let calls = 0;
+  const request = vi.fn(async (url: RequestInfo | URL) => {
+    if (String(url).endsWith("/config")) return Response.json(config);
+    calls++;
+    if (calls === 1) return Response.json({ code: "MCP_NODE_UNAVAILABLE", message: "MCP preview unavailable" }, { status: 503 });
+    return Response.json({ applied_mode: "local", applied_revision: 0, current_revision: 1, effective_backend: "sample", default_preset: null, isolation_enabled: false, normal: { runnable: true, servers: [] }, restricted: { runnable: true, servers: [] } });
+  });
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  try {
+    await act(async () => { root.render(<AgentMcpConnectionPane agentId="a" nodeId="n" request={request as typeof fetch} onEditProfile={() => {}} />); await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(host.textContent).toContain("노드에 연결할 수 없거나 노드가 이 기능을 받지 않습니다.");
+    const button = [...host.querySelectorAll("button")].find(item => item.textContent === "다시 시도")!;
+    await act(async () => { button.click(); await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(calls).toBe(2); expect(host.textContent).toContain("로컬 설정 사용 중");
+    await act(async () => { root.render(<AgentMcpConnectionPane agentId="a" nodeId="outside" request={request as typeof fetch} onEditProfile={() => {}} />); await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(calls).toBe(2); expect(host.textContent).toContain("이 노드는 중앙 MCP 관리 목록에 없습니다.");
+    expect(host.textContent).not.toContain("선택 노드 실행 미리보기");
+  } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
+});
+
 it("연결 해제 선택은 저장된 미리보기를 숨기고 같은 이름에 ID를 붙인다", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const config = { current_revision: 2, servers: [], secrets: [], managed_nodes: [{ node_id: "n", connected: true, central_sync_supported: true, applied_revision: 2, ack: null }],
