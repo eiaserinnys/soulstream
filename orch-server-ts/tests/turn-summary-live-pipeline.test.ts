@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 import { parsePersistentInstructionsApplyPayload } from
   "@soulstream/wire-schema/persistent-session-instructions";
 
@@ -135,6 +136,7 @@ describe("live turn summary pipeline sweeps", () => {
         typesafe_api_key: undefined,
       } as never,
       configPath: "unused-turn-summary.yaml",
+      modelCatalog: repositoryModelCatalog(),
       sqlResolver: {} as never,
       registry: {} as never,
       eventHub: { publish: vi.fn() } as never,
@@ -176,6 +178,7 @@ describe("live persistent instruction extractor wiring", () => {
         typesafe_api_key: "test-typesafe-key",
       } as never,
       configPath: "unused-turn-summary.yaml",
+      modelCatalog: repositoryModelCatalog(),
       sqlResolver: {} as never,
       registry: {} as never,
       eventHub: { publish: vi.fn() } as never,

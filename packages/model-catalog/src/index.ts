@@ -82,6 +82,18 @@ export const ModelPresetSchema = z.object({
   usage_provider: z.literal("opencode_go").optional(),
   supported_efforts: z.array(ReasoningEffortSchema).nonempty().optional(),
   default_effort: ReasoningEffortSchema.optional(),
+  persistent_decision: z.object({
+    // JSON represents an infinite bound as null; restore it on catalog reload.
+    first_call_cache_bins: z.array(z.tuple([
+      z.union([z.number(), z.literal(Infinity), z.null().transform(() => Infinity)]),
+      z.number(), z.number(), z.number(),
+    ])).optional(),
+    generation_cost_seed: z.object({
+      baselineTokens: z.number(), growthTokensPerCall: z.number(),
+      input: z.number(), cached: z.number(), output: z.number(), reasoning: z.number(),
+      source: z.string().trim().min(1), sampleCount: z.number(),
+    }).optional(),
+  }).optional(),
 }).superRefine((preset, ctx) => {
   if (preset.default_effort === undefined) return;
   if (preset.supported_efforts === undefined) {
@@ -173,6 +185,16 @@ export const ModelCatalogSchema = z.object({
   price_snapshot: PriceSnapshotMetadataSchema,
   persistent_defaults: PersistentCatalogDefaultsSchema,
   install_defaults: InstallDefaultsSchema.optional(),
+
+  task_defaults: z.object({
+    turn_summary: z.object({ model_preset: z.string().trim().min(1) }),
+    turn_story: z.object({ model_preset: z.string().trim().min(1) }),
+    instruction_extraction: z.object({ model_preset: z.string().trim().min(1) }),
+  }),
+  provider_model_prefixes: z.array(z.object({
+    prefix: z.string().trim().min(1),
+    provider: z.enum(MODEL_PRESET_PROVIDERS),
+  })),
 }).superRefine((catalog, ctx) => {
   const seenPresetIds = new Set<string>();
   for (const [index, preset] of catalog.presets.entries()) {
@@ -227,6 +249,14 @@ export const ModelCatalogSchema = z.object({
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["install_defaults", ...path], message: `Install default ${id} must name a ${backend} preset` });
       }
     }
+  }
+  for (const [task, value] of Object.entries(catalog.task_defaults)) {
+    if (presetIds.has(value.model_preset)) continue;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["task_defaults", task, "model_preset"],
+      message: `task_defaults.${task}.model_preset "${value.model_preset}" is not a known model preset`,
+    });
   }
   if (!presetIds.has(catalog.persistent_defaults.model_preset)) {
     ctx.addIssue({

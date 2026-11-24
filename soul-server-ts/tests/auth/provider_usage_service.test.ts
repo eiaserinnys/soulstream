@@ -728,7 +728,7 @@ describe("ProviderUsageService", () => {
       { id: "claude:seven_day_opus", label: "7일 (Opus)" },
       { id: "claude:seven_day_fable", label: "7일 (Fable)" },
       { id: "claude:seven_day_nova", label: "7일 (Nova)" },
-      { id: "claude:seven_day_unknown", label: "seven_day_unknown" },
+      { id: "claude:seven_day_unknown", label: "7일 (Unknown)" },
     ]);
   });
 

@@ -39,6 +39,12 @@ function catalogWith(models: ModelCatalogConfig["models"]): ModelCatalogConfig {
       assumptions: [],
     },
     persistent_defaults: { model_preset: "claude-opus", fallback_models: [] },
+    task_defaults: {
+      turn_summary: { model_preset: "claude-opus" },
+      turn_story: { model_preset: "claude-opus" },
+      instruction_extraction: { model_preset: "claude-opus" },
+    },
+    provider_model_prefixes: [],
   };
 }
 

@@ -180,6 +180,12 @@ function makeFixture(
         model_preset: "opus",
         fallback_models: [],
       },
+      task_defaults: {
+        turn_summary: { model_preset: "opus" },
+        turn_story: { model_preset: "opus" },
+        instruction_extraction: { model_preset: "opus" },
+      },
+      provider_model_prefixes: [],
     })),
   };
   const agentRegistry = { get: vi.fn(() => AGENT) } as unknown as AgentRegistry;

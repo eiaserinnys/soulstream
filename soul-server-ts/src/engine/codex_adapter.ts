@@ -17,32 +17,8 @@ import type {
   EngineInterventionResult,
   EnginePort,
   EngineUserInput,
-  ReasoningEffort,
   SSEEventPayload,
 } from "./protocol.js";
-
-const NON_REASONING_MODEL_PATTERNS = [
-  /^gpt-4o(?:$|[-_.])/i,
-  /^gpt-4\.1(?:$|[-_.])/i,
-  /^gpt-4(?:$|[-_.])/i,
-  /^gpt-3\.5(?:$|[-_.])/i,
-];
-
-export function resolveCodexModelReasoningEffort(
-  model: string | null | undefined,
-  requested: ReasoningEffort | undefined,
-): ReasoningEffort | undefined {
-  // No fallback here on purpose. The effort a session runs with is decided once
-  // at creation and stored; a pre-089 session's legacy value is restored at the
-  // turn boundary. Injecting a default here would be a second authority and
-  // would make the UI's "auto (backend default)" a lie.
-  if (requested === undefined) return undefined;
-  if (!model) return requested;
-  if (NON_REASONING_MODEL_PATTERNS.some((pattern) => pattern.test(model))) {
-    return undefined;
-  }
-  return requested;
-}
 
 export interface CodexAdapterConfig {
   workspaceDir: string;
@@ -183,10 +159,7 @@ export class CodexEngineAdapter implements EnginePort {
     const model = typeof params.model === "string" && params.model.trim()
       ? params.model.trim()
       : undefined;
-    const resolvedEffort = resolveCodexModelReasoningEffort(
-      model,
-      params.reasoningEffort,
-    );
+    const resolvedEffort = params.reasoningEffort;
     const modelReasoningEffort = toCodexSdkEffort(resolvedEffort);
     if (resolvedEffort && !modelReasoningEffort) {
       this.logger.warn(
@@ -203,13 +176,6 @@ export class CodexEngineAdapter implements EnginePort {
       ...(model ? { model } : {}),
       ...(modelReasoningEffort ? { modelReasoningEffort } : {}),
     };
-    if (model && !modelReasoningEffort) {
-      this.logger.warn(
-        { model, reasoningEffort: params.reasoningEffort },
-        "CodexEngineAdapter: dropping reasoning effort for non-reasoning model",
-      );
-    }
-
     let thread: Thread;
     if (params.resumeSessionId) {
       try {

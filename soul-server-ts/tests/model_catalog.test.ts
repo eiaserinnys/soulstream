@@ -103,6 +103,11 @@ price_snapshot:
   refreshed_model_rows: {}
   sources: {}
   assumptions: []
+task_defaults:
+  turn_summary: {model_preset: p1}
+  turn_story: {model_preset: p1}
+  instruction_extraction: {model_preset: p1}
+provider_model_prefixes: []
 persistent_defaults:
   model_preset: p1
   fallback_models: []
@@ -319,7 +324,7 @@ describe("ModelCatalog", () => {
         + "  - id: kimi-2\n    label: Kimi - 2\n    backend: claude\n    model: kimi-for-coding\n"
         + "    env:\n      ANTHROPIC_BASE_URL: https://api.kimi.com/coding/\n"
         + "      ANTHROPIC_API_KEY: \${KIMI_API_KEY}\n",
-      ).replace("model_preset: p1", "model_preset: claude-fable")
+      ).replaceAll("model_preset: p1", "model_preset: claude-fable")
         .replace("  - id: p2\n    label: P2\n    backend: claude\n    model: m2\n    group: china\n", "")}`,
       (catalogPath) => {
         const catalog = openTempCatalog(catalogPath);
@@ -373,6 +378,12 @@ describe("ModelCatalog", () => {
           assumptions: [],
         },
         persistent_defaults: { model_preset: "claude-opus", fallback_models: [] },
+        task_defaults: {
+          turn_summary: { model_preset: "claude-opus" },
+          turn_story: { model_preset: "claude-opus" },
+          instruction_extraction: { model_preset: "claude-opus" },
+        },
+        provider_model_prefixes: [],
       }),
     ).toThrow(ZodError);
   });
@@ -450,7 +461,7 @@ describe("model preset trusted execution", () => {
       + "    trusted_execution: true\n"
       + "  - id: isolated\n    label: Isolated\n    backend: claude\n    model: sonnet\n"
       + "    trusted_execution: false\n",
-    ).replace("model_preset: p1", "model_preset: trusted"));
+    ).replaceAll("model_preset: p1", "model_preset: trusted"));
     expect(catalog.presets).toMatchObject([
       { id: "trusted", trusted_execution: true },
       { id: "isolated", trusted_execution: false },

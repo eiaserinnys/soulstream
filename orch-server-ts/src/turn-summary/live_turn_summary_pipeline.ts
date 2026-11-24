@@ -1,4 +1,5 @@
 import type { OrchServerEnvironmentConfig } from "../config.js";
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 import {
   findRegisteredAgentProfile,
   type AgentProfileIdentityOverlay,
@@ -72,6 +73,7 @@ export function createPersistentInstructionCommandSender(
 export function createLiveTurnSummaryPipeline(options: {
   readonly config: OrchServerEnvironmentConfig;
   readonly configPath: string;
+  readonly modelCatalog: ModelCatalogSource;
   readonly sqlResolver: LiveDbSqlResolver;
   readonly registry: InMemoryNodeRegistry;
   readonly agentProfiles?: () => readonly AgentProfileIdentityOverlay[];
@@ -93,6 +95,7 @@ export function createLiveTurnSummaryPipeline(options: {
   const configService = new TurnSummaryConfigService(
     options.configPath,
     options.logger,
+    options.modelCatalog,
   );
   const codexPath =
     options.overrides?.turnSummaryCodexPath ??

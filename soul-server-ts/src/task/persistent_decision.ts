@@ -1,4 +1,4 @@
-import { DEFAULT_CONFIG, firstCallCacheEstimate } from "./persistent_decision_config.js";
+import { DEFAULT_CONFIG, firstCallCacheEstimate, type FirstCallCacheBin } from "./persistent_decision_config.js";
 import { generationCostThresholds, type GenerationCostProfile } from "./persistent_generation_cost.js";
 
 export const MIN_CONVERSATION_HEADROOM_TOKENS = 80_000;
@@ -34,6 +34,7 @@ export interface DecisionInput {
   checkpoint_tokens_by_preset: Record<string, number | undefined>;
   generation_cost_by_preset?: Record<string, GenerationCostProfile | undefined>;
   first_call_cache_fraction_by_preset?: Record<string, number | null>;
+  first_call_cache_bins_by_preset?: Record<string, FirstCallCacheBin[] | undefined>;
   context_max_tokens?: number;
   accounts: Partial<Record<Provider, AccountObservation>>;
   limit_reset_at?: string;
@@ -122,7 +123,7 @@ export function decidePersistentGeneration(
     }
 
     if (context.presetConfig.cache_policy.kind === "implicit") {
-      const cache = firstCallCacheEstimate(input.current_preset, context.idleSeconds);
+      const cache = firstCallCacheEstimate(input.first_call_cache_bins_by_preset?.[input.current_preset], context.idleSeconds);
       const fractions = input.first_call_cache_fraction_by_preset;
       const fraction = fractions && input.current_preset in fractions
         ? fractions[input.current_preset]! : cache.fraction;

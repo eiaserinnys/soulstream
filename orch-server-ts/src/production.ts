@@ -1214,6 +1214,7 @@ export async function createLiveProductionApplication(
   });
   turnSummaryPipeline = createLiveTurnSummaryPipeline({
     config,
+    modelCatalog: overrides.modelCatalog,
     configPath: overrides.turnSummaryConfigPath ??
       fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)),
     sqlResolver,

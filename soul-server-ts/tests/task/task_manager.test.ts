@@ -220,6 +220,8 @@ describe("TaskManager model preset defaults", () => {
           assumptions: [],
         },
         persistent_defaults: { model_preset: "claude-opus", fallback_models: [] },
+        task_defaults: { turn_summary: { model_preset: "claude-opus" }, turn_story: { model_preset: "claude-opus" }, instruction_extraction: { model_preset: "claude-opus" } },
+        provider_model_prefixes: [],
       }),
     };
     const tm = new TaskManager(
@@ -295,6 +297,8 @@ describe("TaskManager model preset defaults", () => {
           assumptions: [],
         },
         persistent_defaults: { model_preset: "claude-opus", fallback_models: [] },
+        task_defaults: { turn_summary: { model_preset: "claude-opus" }, turn_story: { model_preset: "claude-opus" }, instruction_extraction: { model_preset: "claude-opus" } },
+        provider_model_prefixes: [],
       }),
     };
     const tm = new TaskManager(
@@ -386,6 +390,8 @@ describe("TaskManager model preset defaults", () => {
           assumptions: [],
         },
         persistent_defaults: { model_preset: "claude-opus", fallback_models: [] },
+        task_defaults: { turn_summary: { model_preset: "claude-opus" }, turn_story: { model_preset: "claude-opus" }, instruction_extraction: { model_preset: "claude-opus" } },
+        provider_model_prefixes: [],
       }),
     };
     const tm = new TaskManager(

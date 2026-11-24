@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 import {
   classifyPersistentInstruction,
@@ -190,7 +191,7 @@ describe("persistent instruction extraction", () => {
       const overlayPath = join(dir, "turn-summary.local.yaml");
       writeFileSync(basePath, baseYaml, "utf8");
       writeFileSync(overlayPath, "enabled: true\n", "utf8");
-      const service = new TurnSummaryConfigService(basePath, { warn: vi.fn() });
+      const service = new TurnSummaryConfigService(basePath, { warn: vi.fn() }, repositoryModelCatalog());
       const generate = vi.fn().mockResolvedValue({
         content: JSON.stringify({ standing_instructions: [] }),
         model: "gpt-6.2-sol",

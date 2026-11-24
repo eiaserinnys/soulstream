@@ -38,6 +38,10 @@ function catalogWithPresets(presets: unknown[]): unknown {
       model_preset: (presets[0] as { id?: string } | undefined)?.id ?? "missing",
       fallback_models: [],
     },
+    task_defaults: Object.fromEntries(["turn_summary", "turn_story", "instruction_extraction"].map((task) => [
+      task, { model_preset: (presets[0] as { id?: string } | undefined)?.id ?? "missing" },
+    ])),
+    provider_model_prefixes: [],
   };
 }
 
@@ -133,6 +137,11 @@ price_snapshot:
   refreshed_model_rows: {}
   sources: {}
   assumptions: []
+task_defaults:
+  turn_summary: {model_preset: p1}
+  turn_story: {model_preset: p1}
+  instruction_extraction: {model_preset: p1}
+provider_model_prefixes: []
 persistent_defaults:
   model_preset: p1
   fallback_models: []

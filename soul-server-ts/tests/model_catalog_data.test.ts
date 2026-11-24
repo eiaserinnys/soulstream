@@ -401,6 +401,11 @@ price_snapshot:
   refreshed_model_rows: {}
   sources: {}
   assumptions: []
+task_defaults:
+  turn_summary: {model_preset: p1}
+  turn_story: {model_preset: p1}
+  instruction_extraction: {model_preset: p1}
+provider_model_prefixes: []
 persistent_defaults:
   model_preset: p1
   fallback_models:
@@ -706,6 +711,54 @@ describe("model catalogue schema validation", () => {
     expect(() => parseModelCatalogYaml(changed({ ...defaults, profiles: {} }))).toThrow();
   });
 
+
+  it("preserves every observed cache bin and generation cost seed", () => {
+    expect(catalog.presets.find((preset) => preset.id === "gemini-4-hydrogen")?.persistent_decision).toEqual({
+      first_call_cache_bins: [
+        [60, 590944, 607686, 5], [180, 575717, 588572, 4], [240, 341836, 441173, 4],
+        [300, 0, 0, 0], [600, 0, 0, 0], [900, 0, 0, 0], [1800, 101127, 523094, 3],
+        [3300, 0, 91181, 1], [3600, 0, 0, 0], [Infinity, 0, 0, 0],
+      ],
+      generation_cost_seed: {
+        baselineTokens: 130418, growthTokensPerCall: 9446 / 3,
+        input: 695025, cached: 565185, output: 8441, reasoning: 6693,
+        source: "hydrogen-pas-generation-296", sampleCount: 1,
+      },
+    });
+    expect(catalog.presets.find((preset) => preset.id === "gemini-4-argon")?.persistent_decision).toEqual({
+      first_call_cache_bins: [
+        [60, 3836757, 4772657, 29], [180, 3156926, 4616740, 26], [240, 1291316, 1520147, 9],
+        [300, 68117, 1984754, 11], [600, 1018136, 5053005, 29], [900, 702269, 3722782, 23],
+        [1800, 445443, 3167534, 17], [3300, 0, 961983, 5], [3600, 0, 244153, 1],
+        [Infinity, 228340, 1276231, 8],
+      ],
+      generation_cost_seed: {
+        baselineTokens: 120305.5, growthTokensPerCall: 24309 / 8,
+        input: (1630116 + 1402165) / 2, cached: (1461045 + 1225596) / 2,
+        output: (6224 + 11675) / 2, reasoning: (4054 + 6082) / 2,
+        source: "argon-cross-workload-median", sampleCount: 102,
+      },
+    });
+  });
+
+  it("stores decision data and rejects task defaults pointing at missing presets", () => {
+    const hydrogen = catalog.presets.find((preset) => preset.id === "gemini-4-hydrogen")!;
+    expect(hydrogen.persistent_decision?.first_call_cache_bins?.[0]).toEqual([60, 590944, 607686, 5]);
+    expect(hydrogen.persistent_decision?.generation_cost_seed?.source).toBe("hydrogen-pas-generation-296");
+    expect(catalog.provider_model_prefixes[0]).toEqual({ prefix: "kimi-", provider: "kimi" });
+    expect(catalog.task_defaults.turn_summary.model_preset).toBe("codex-5.6-terra");
+    for (const [task, preset] of [["turn_summary", "codex-5.6-terra"], ["turn_story", "codex-5.6-terra"], ["instruction_extraction", "codex-6.2-sol"]]) {
+      const missing = REPOSITORY_CATALOG_YAML.replace(`${task}: {model_preset: ${preset}}`, `${task}: {model_preset: missing}`);
+      expect(() => parseModelCatalogYaml(missing)).toThrow(new RegExp(`${task}.*missing`));
+    }
+  });
+
+  it("preserves the unbounded last cache bin across a JSON round trip", () => {
+    const roundTrip = parseModelCatalogYaml(JSON.stringify(catalog));
+    const bins = roundTrip.presets.find((preset) => preset.id === "gemini-4-argon")
+      ?.persistent_decision?.first_call_cache_bins;
+    expect(bins?.at(-1)).toEqual([Infinity, 228340, 1276231, 8]);
+  });
   it("rejects duplicate preset ids", () => {
     expect(() => parseModelCatalogYaml(BASE_CATALOG_YAML.replace("  - id: p2", "  - id: p1")))
       .toThrow(/Duplicate model preset id/);

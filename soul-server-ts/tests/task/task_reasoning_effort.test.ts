@@ -154,6 +154,11 @@ price_snapshot:
   refreshed_model_rows: {}
   sources: {}
   assumptions: []
+task_defaults:
+  turn_summary: {model_preset: ${firstId}}
+  turn_story: {model_preset: ${firstId}}
+  instruction_extraction: {model_preset: ${firstId}}
+provider_model_prefixes: []
 persistent_defaults:
   model_preset: ${firstId}
   fallback_models: []

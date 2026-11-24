@@ -37,10 +37,7 @@ catch_up_interval_ms: 900000
 catch_up_window_hours: 72
 catch_up_max_jobs_per_round: 100
 provider: codex
-model: gpt-5.6-terra
-story_model: gpt-5.6-terra
 reasoning_effort: high
-instruction_extraction_model: gpt-6.2-sol
 instruction_extraction_reasoning_effort: high
 timeout_ms: 30000
 max_attempts: 2

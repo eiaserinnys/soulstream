@@ -199,7 +199,7 @@ describe("CodexEngineAdapter — reasoning effort", () => {
     });
   });
 
-  it("명백한 비추론 모델이면 reasoning effort를 drop하고 warn 로그를 남긴다", async () => {
+  it("예전 모델 이름에도 요청한 reasoning effort를 전달한다", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
     mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
@@ -220,11 +220,11 @@ describe("CodexEngineAdapter — reasoning effort", () => {
 
     const options = mockStartThread.mock.calls[0]![0] as Record<string, unknown>;
     expect(options.model).toBe("gpt-4o");
-    expect(options.modelReasoningEffort).toBeUndefined();
-    expect(warnSpy.join("\n")).toContain("dropping reasoning effort");
+    expect(options.modelReasoningEffort).toBe("high");
+    expect(warnSpy.join("\n")).not.toContain("dropping reasoning effort");
   });
 
-  it("gpt-4-turbo도 비추론 모델로 보고 reasoning effort를 drop한다", async () => {
+  it("gpt-4-turbo에도 요청한 reasoning effort를 전달한다", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
     mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
@@ -243,7 +243,7 @@ describe("CodexEngineAdapter — reasoning effort", () => {
 
     const options = mockStartThread.mock.calls[0]![0] as Record<string, unknown>;
     expect(options.model).toBe("gpt-4-turbo");
-    expect(options.modelReasoningEffort).toBeUndefined();
+    expect(options.modelReasoningEffort).toBe("high");
   });
 });
 

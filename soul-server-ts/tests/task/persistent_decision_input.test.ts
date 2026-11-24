@@ -232,7 +232,7 @@ describe("buildPersistentDecisionInput", () => {
                 ? "opencode"
                 : id.startsWith("claude") ? "claude" : "codex",
           }),
-          snapshot: () => ({ models: [], persistent_defaults: { fallback_models: [] } }),
+          snapshot: () => ({ presets: [], models: [], persistent_defaults: { fallback_models: [] } }),
         } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
         logger: { warn },
@@ -296,7 +296,7 @@ describe("buildPersistentDecisionInput", () => {
               ? "antigravity"
               : id.startsWith("claude") ? "claude" : "codex",
           }),
-          snapshot: () => ({ models: [], persistent_defaults: { fallback_models: [] } }),
+          snapshot: () => ({ presets: [], models: [], persistent_defaults: { fallback_models: [] } }),
         } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage: vi.fn() } as unknown as ProviderUsageCommandHandler,
         logger: { warn: vi.fn() },
@@ -909,6 +909,34 @@ describe("buildPersistentDecisionInput", () => {
       growthTokensPerCall: 3000, source: "session-bootstrap",
     });
     expect(result.generation_cost_by_preset?.["gemini-4-hydrogen"]?.initEquivalentInputTokens).toBeCloseTo(272582.2);
+  });
+
+  it("uses the current catalog snapshot for cache samples and generation cost seeds", async () => {
+    const task = makeTask();
+    task.modelPreset = "gemini-4-hydrogen";
+    task.metadata = [{ type: "persistent_session", value: { enabled: true } }];
+    const catalog = new ModelCatalog(openModelCatalogFile({
+      path: fileURLToPath(new URL("../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url)),
+    }));
+    const snapshot = catalog.snapshot();
+    const presets = snapshot.presets.map((entry) => entry.id === task.modelPreset ? {
+      ...entry,
+      persistent_decision: {
+        first_call_cache_bins: [[Infinity, 40, 100, 2] as [number, number, number, number]],
+        generation_cost_seed: { baselineTokens: 200, growthTokensPerCall: 5, input: 100, cached: 40, output: 10, reasoning: 5, source: "custom", sampleCount: 2 },
+      },
+    } : entry);
+    const input = await buildPersistentDecisionInput({ task, trigger: "arrival", now }, {
+      db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
+      modelCatalog: { resolve: catalog.resolve.bind(catalog), snapshot: () => ({ ...snapshot, presets }) },
+      providerUsage: { fetchUsage: vi.fn(async () => ({ success: false })) } as unknown as ProviderUsageCommandHandler,
+      logger: { warn: vi.fn() },
+    });
+    expect(input.generation_cost_by_preset?.[task.modelPreset]).toMatchObject({ baselineTokens: 200, growthTokensPerCall: 5, source: "custom" });
+    expect(decidePersistentGeneration(input).inputs_snapshot).toMatchObject({
+      cache_sample: { fraction: 0.4, sampleCount: 2, cached: 40, input: 100 },
+      cache_fraction: 0.4,
+    });
   });
 
   it("reuses generation metadata across decisions and reads only the delta past the cached window", async () => {

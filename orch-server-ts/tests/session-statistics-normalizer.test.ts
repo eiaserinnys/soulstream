@@ -18,6 +18,21 @@ import {
   unverifiedClaudeModelBreakdownEvent,
 } from "./fixtures/session_statistics_normalizer.fixtures.js";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+import { inferProvider } from "../src/usage/session_statistics_normalization_helpers.js";
+
+describe("provider prefix fallback", () => {
+  it("uses catalog order and lets model rows take precedence", () => {
+    const catalog = repositoryModelCatalog().snapshot();
+    const changed = { ...catalog, provider_model_prefixes: [
+      { prefix: "custom-", provider: "kimi" as const },
+      { prefix: "custom-special-", provider: "codex" as const },
+    ] };
+    expect(inferProvider(changed, "custom-special-test", null)).toBe("kimi");
+    expect(inferProvider(changed, "custom-missing", null)).toBe("kimi");
+    expect(inferProvider(changed, "unmapped", { model_usage: {} })).toBe("claude");
+    expect(inferProvider(changed, "gpt-6.2-sol", null)).toBe("codex");
+  });
+});
 
 const catalog = repositoryModelCatalog();
 const CATALOG = catalog.snapshot();
