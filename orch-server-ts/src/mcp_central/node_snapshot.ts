@@ -14,7 +14,7 @@ function decode(value: string): string {
 }
 
 /** Query values are stored encoded, unlike headers and environment values. */
-function mapValues(value: unknown, replace: (value: string) => string, key = ""): unknown {
+export function mapValues(value: unknown, replace: (value: string) => string, key = ""): unknown {
   if (typeof value === "string") {
     if ((key === "url" || key === "server_url") && value.includes("?")) {
       const index = value.indexOf("?");

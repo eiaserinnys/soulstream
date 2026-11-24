@@ -7,6 +7,7 @@ import type { NodeRegistryEvent } from "../node/registry_types.js";
 import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
 import { MissingMcpSecretError } from "./node_snapshot.js";
 import { checkMcpSendGate } from "./send_gate.js";
+import { McpCentralError } from "./errors.js";
 import type { McpManagedNodeAck } from "./types.js";
 
 type Snapshot = { revision: number; runtime: McpCentralSnapshot; display: McpCentralSnapshot };
@@ -34,6 +35,27 @@ export class McpCentralSyncService {
     const ack = this.acks.get(nodeId);
     return { connected: node !== undefined, central_sync_supported: node !== undefined && supportsCentralMcpConfig(node.capabilities),
       ack: node && ack?.connectionId === node.connectionId ? { revision: ack.revision } : null };
+  }
+
+  async sendAux(nodeId: string, build: () => Promise<RequestResponseNodeCommandPayload>, inScope?: () => Promise<boolean>) {
+    const gate = await checkMcpSendGate({ nodeId, registry: this.options.registry, readGate: this.options.readGate, inScope });
+    if (!gate.ok) throw new McpCentralError(gate.reason === "unmanaged" ? "MCP_NODE_NOT_MANAGED" : gate.reason === "out_of_scope" ? "MCP_SERVER_OUT_OF_SCOPE" : "MCP_NODE_UNAVAILABLE",
+      gate.reason === "unmanaged" || gate.reason === "out_of_scope" ? 403 : 503, "MCP node is unavailable for this request");
+    try {
+      const payload = await build();
+      const command = this.options.registry.createCommand(nodeId, payload, { timeoutMs: 15_000 });
+      const response = await this.options.bridge.sendPendingCommand({ node: gate.node, command });
+      if (response.success !== true || !isRecord(response.data)) throw new McpCentralError("MCP_NODE_UNAVAILABLE", 503, "MCP command failed");
+      return response.data;
+    } catch (error) {
+      if (error instanceof McpCentralError) throw error;
+      if (error instanceof PendingNodeCommandRejectedError) {
+        const code = codeOf(error.response);
+        if (code === "MCP_PORTABLE_NODE") throw new McpCentralError(code, 403, "Portable node cannot receive this command");
+        if (code === "MCP_AGENT_NOT_FOUND") throw new McpCentralError(code, 404, "Agent not found");
+      }
+      throw new McpCentralError("MCP_NODE_UNAVAILABLE", 503, "MCP node command failed");
+    }
   }
 
   start(): void {
