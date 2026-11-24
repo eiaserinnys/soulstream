@@ -23,7 +23,7 @@ const dashboardDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = resolve(dashboardDir, "dist-mockups/pas-report-1707-thread");
 const captureDir = process.env.PAS_RT1707_CAPTURE_DIR ?? resolve(dashboardDir, ".local/artifacts/pas-report-1707-thread");
 const scope = process.env.PAS_RT1707_SCOPE ?? "all";
-const allowedScopes = new Set(["all", "flows", "1440x900", "820x1180", "390x844", "360x780"]);
+const allowedScopes = new Set(["all", "flows", "remaining", "1440x900", "820x1180", "390x844", "360x780"]);
 if (!allowedScopes.has(scope)) throw new Error(`알 수 없는 QA 범위: ${scope}`);
 const textExtensions = new Set([".ts", ".tsx", ".css", ".html", ".mjs", ".md", ".json"]);
 
@@ -397,11 +397,12 @@ try {
       }
     }
 
-    if (scope === "all" || scope === "flows") {
+    if (scope === "all" || scope === "flows" || scope === "remaining") {
     const viewport = { width: 1440, height: 900 };
     const page = await newPage(browser, viewport, "dark");
     await gotoPas(page, "dark");
 
+    if (scope !== "remaining") {
     await check("직접 #report 진입", async () => {
       await gotoReport(page, "dark");
       assert(await page.locator('[data-testid="pas-report-thread-dialog"]').isVisible(), "보고 창이 보이지 않는다");
@@ -641,6 +642,11 @@ try {
       await openFromBubble(page);
       return { tab: "1512 to 1387", escape: true };
     });
+    } else {
+      await gotoReport(page, "dark");
+      await clickText(page, ".pas-rt1707-decide .pas-rt1707-choice", "최근 7일 유지");
+      await selectRail(page, 1512);
+    }
 
     await check("부탁 장 했어와 저녁 재확인", async () => {
       await clickText(page, ".pas-rt1707-stamps button", "했어");
