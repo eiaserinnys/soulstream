@@ -12,6 +12,7 @@ import functools
 import http.server
 import json
 import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -86,8 +87,13 @@ def usage_summary(login_supported: bool):
     }
 
 
+def soon():
+    """Codex 기기 코드의 만료 시각. 열 때마다 14분 뒤로 둔다."""
+    return (datetime.now(timezone.utc) + timedelta(minutes=14)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def flow(provider_id, state, **patch):
-    return {"login_id": "fake-login", "provider": provider_id, "state": state, "auth_url": None, "user_code": None,
+    return {"login_id": f"fake-login-{provider_id}", "provider": provider_id, "state": state, "auth_url": None, "user_code": None,
             "expects_code": provider_id == "antigravity", "expires_at": None, "error": None, **patch}
 
 
@@ -265,7 +271,7 @@ def capture_settings_and_logins(browser, base, out: Path):
     width = 1280
     fake = Fake(atom=True)
     fake.flows = {
-        "codex": flow("codex", "url_ready", auth_url="https://auth.example.invalid/codex/device", user_code=FAKE_USER_CODE, expires_at="2099-01-01T00:00:00Z"),
+        "codex": flow("codex", "url_ready", auth_url="https://auth.example.invalid/codex/device", user_code=FAKE_USER_CODE, expires_at=soon()),
         "antigravity": flow("antigravity", "url_ready", auth_url="https://auth.example.invalid/antigravity/oauth"),
     }
     fake.after_code = {"antigravity": flow("antigravity", "verifying")}
@@ -319,10 +325,12 @@ def capture_settings_and_logins(browser, base, out: Path):
     expect(sheet).to_have_count(0)
 
     # Antigravity: 다시 연결은 확인을 한 번 받는다
+    posts_at_confirm = fake.login_posts
     page.get_by_test_id("agent-login-button-antigravity").click()
     confirm = page.get_by_test_id("agent-login-confirm-antigravity")
     expect(confirm).to_be_visible()
-    check("다시 연결: 확인 전에는 로그인을 시작하지 않음", fake.login_posts == 1, fake.login_posts)
+    page.wait_for_timeout(300)
+    check("다시 연결: 확인 전에는 로그인을 시작하지 않음", fake.login_posts == posts_at_confirm, fake.login_posts)
     shot(page, out, "login-antigravity-confirm-1280.png", width, "다시 연결 확인줄", confirm)
     confirm.get_by_role("button", name="다시 연결").click()
     expect(sheet.get_by_label("Antigravity 인증 코드")).to_be_visible(timeout=10000)
@@ -347,7 +355,7 @@ def capture_settings_and_logins(browser, base, out: Path):
     expect(sheet.locator('[role="alert"]')).to_contain_text("인증 코드가 맞지 않습니다. 다시 시도하면 새 주소가 열립니다.", timeout=10000)
     shot(page, out, "login-failed-invalid-code-1280.png", width, "로그인 시트 실패 invalid_code", sheet)
     posts_before = fake.login_posts
-    fake.flows["antigravity"] = flow("antigravity", "url_ready", login_id="fake-login-2", auth_url="https://auth.example.invalid/antigravity/oauth-2")
+    fake.flows["antigravity"] = flow("antigravity", "url_ready", login_id="fake-login-antigravity-2", auth_url="https://auth.example.invalid/antigravity/oauth-2")
     sheet.get_by_role("button", name="다시 시도").click()
     expect(sheet.get_by_label("Antigravity 인증 코드")).to_be_visible(timeout=10000)
     check("invalid_code 뒤 다시 시도는 새 흐름을 시작함", fake.login_posts == posts_before + 1, fake.login_posts)
@@ -356,11 +364,12 @@ def capture_settings_and_logins(browser, base, out: Path):
 
     # 좁은 폭에서도 로그인 시트가 넘치지 않는다.
     fake = Fake(atom=True)
-    fake.flows = {"codex": flow("codex", "url_ready", auth_url="https://auth.example.invalid/codex/device", user_code=FAKE_USER_CODE, expires_at="2099-01-01T00:00:00Z"), "antigravity": flow("antigravity", "url_ready")}
+    fake.flows = {"codex": flow("codex", "url_ready", auth_url="https://auth.example.invalid/codex/device", user_code=FAKE_USER_CODE, expires_at=soon()), "antigravity": flow("antigravity", "url_ready")}
     context, page = new_page(browser, base, fake, 360)
     page.goto(base + f"/persistent/{SESSION_ID}", wait_until="domcontentloaded")
     expect(page.get_by_test_id("v3-global-toolbar")).to_be_visible(timeout=20000)
     open_settings(page)
+    page.get_by_role("button", name="모든 설정").click()  # 좁은 폭은 한 칸씩 보인다.
     page.locator('[data-testid="config-category-nav"]').get_by_role("button", name="코딩 에이전트").click()
     page.get_by_test_id("agent-login-button-codex").click()
     sheet = page.get_by_test_id("agent-login-sheet")
