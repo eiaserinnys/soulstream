@@ -81,6 +81,7 @@ describe("public/status/folder-count route harness", () => {
       is_draining: false,
       healthy: true,
       atom_enabled: true,
+      atom_public_url: "https://atom.example.test",
     });
     expect(options.configProvider.getConfig).toHaveBeenCalledTimes(2);
 
@@ -162,6 +163,7 @@ function createHarness(
         nodeName: "orch-test",
         authEnabled: true,
         atomEnabled: true,
+        atomPublicUrl: "https://atom.example.test",
       })),
     },
     folderCountsProvider: {

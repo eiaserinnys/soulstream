@@ -2,8 +2,9 @@
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { AgentContextAssemblyView } from "./AgentContextAssemblyView";
+import { resetAtomPublicUrlForTests } from "../../../packages/soul-ui/src/hooks/useAtomPublicUrl";
 import { assemblyBundles, assemblyContexts, assemblyPreview } from "../v3/agent-profile-assembly-fixture";
 
 it("keeps the newer assembly when an aborted response finishes reading later", async () => {
@@ -175,4 +176,52 @@ it("omits token estimates in non-included source details", async () => {
     flushSync(() => container.querySelector<HTMLButtonElement>('button[aria-label="소스 목록으로"]')!.click());
   }
   flushSync(() => root.unmount()); container.remove();
+});
+
+afterEach(() => { vi.unstubAllGlobals(); resetAtomPublicUrlForTests(); });
+
+async function renderAtomLinkCase(options: { publicUrl: string | null; baseUrl: string | null }) {
+  resetAtomPublicUrlForTests();
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ atom_public_url: options.publicUrl })));
+  const open = vi.fn();
+  vi.stubGlobal("open", open);
+  const context = assemblyContexts[0]!;
+  const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
+    Response.json({ ...assemblyPreview(JSON.parse(String(init?.body))), atom_base_url: options.baseUrl }));
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  flushSync(() => root.render(createElement(AgentContextAssemblyView, {
+    target: { kind: "central", agentId: "agent", specs: [{ context, source: "프로필" }] },
+    nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request,
+  })));
+  await vi.waitFor(() => expect(host.textContent).toContain("프로필 지침"));
+  await vi.waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/status"));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const atomButtons = () => Array.from(host.querySelectorAll<HTMLButtonElement>("button")).filter(button => button.getAttribute("aria-label")?.endsWith("atom에서 열기"));
+  return { host, root, open, atomButtons };
+}
+
+it("opens atom at the public address when the dashboard knows one", async () => {
+  const { host, root, open, atomButtons } = await renderAtomLinkCase({ publicUrl: "https://atom.public.example/", baseUrl: "http://127.0.0.1:4200" });
+  try {
+    await vi.waitFor(() => expect(atomButtons()).toHaveLength(1));
+    flushSync(() => atomButtons()[0]!.click());
+    expect(open).toHaveBeenCalledWith(`https://atom.public.example/#${assemblyContexts[0]!.node_id}`, "_blank", "noopener");
+  } finally { flushSync(() => root.unmount()); host.remove(); }
+});
+
+it("falls back to the worker atom_base_url when there is no public address", async () => {
+  const { host, root, open, atomButtons } = await renderAtomLinkCase({ publicUrl: null, baseUrl: "https://atom.worker.example" });
+  try {
+    await vi.waitFor(() => expect(atomButtons()).toHaveLength(1));
+    flushSync(() => atomButtons()[0]!.click());
+    expect(open).toHaveBeenCalledWith(`https://atom.worker.example/#${assemblyContexts[0]!.node_id}`, "_blank", "noopener");
+  } finally { flushSync(() => root.unmount()); host.remove(); }
+});
+
+it("draws no atom button when neither address exists", async () => {
+  const { host, root, atomButtons } = await renderAtomLinkCase({ publicUrl: null, baseUrl: null });
+  try {
+    expect(atomButtons()).toHaveLength(0);
+  } finally { flushSync(() => root.unmount()); host.remove(); }
 });

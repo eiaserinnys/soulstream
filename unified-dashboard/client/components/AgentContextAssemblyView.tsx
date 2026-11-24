@@ -1,7 +1,7 @@
 // 고른 조건으로 노드 미리보기를 불러, 주입 순서대로 소스 목록을 보이고 고른 소스의 본문을 같은 자리에서 연다.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Check, ChevronRight, Copy, ExternalLink, RotateCw } from "lucide-react";
-import { Badge, Button, ContextContentRenderer, DashboardIconCap, FrameLoading, FrameNotice } from "@seosoyoung/soul-ui";
+import { Badge, Button, ContextContentRenderer, DashboardIconCap, FrameLoading, FrameNotice, useAtomPublicUrl } from "@seosoyoung/soul-ui";
 
 import { conditionSummary, inputClassName, type AgentAtomContext } from "./AgentAtomContextFields";
 import "../v3/v3-run-history.css";
@@ -107,6 +107,9 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
 
   const data = state.status === "ready" ? state.data : null;
   const displayedData = data ?? lastData.current;
+  // 브라우저가 열 수 있는 주소(오케스트레이터)를 먼저 쓰고, 없으면 워커가 준 주소를 쓴다.
+  const publicAtomUrl = useAtomPublicUrl();
+  const atomBaseUrl = publicAtomUrl ?? displayedData?.atom_base_url ?? null;
   const rows = useMemo(() => buildRows(specs, displayedData), [specs, displayedData]);
 
   useEffect(() => {
@@ -156,9 +159,9 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
       {conditions}
       {view.kind !== "list" && displayedData ? (
         view.kind === "skill" && selectedRow ? (
-          <SkillOriginal nodeId={nodeId} request={request} atomBaseUrl={displayedData.atom_base_url} skillNodeId={view.nodeId} name={view.name} parentTitle={rowTitle(selectedRow)} parentRow={selectedRow} parentState={state} onRetryParent={() => setAttempt(value => value + 1)} onBack={() => { returnFocus.current = "skill"; setView({ kind: "source", key: selectedRow.key }); }} />
+          <SkillOriginal nodeId={nodeId} request={request} atomBaseUrl={atomBaseUrl} skillNodeId={view.nodeId} name={view.name} parentTitle={rowTitle(selectedRow)} parentRow={selectedRow} parentState={state} onRetryParent={() => setAttempt(value => value + 1)} onBack={() => { returnFocus.current = "skill"; setView({ kind: "source", key: selectedRow.key }); }} />
         ) : (
-          <SourceDetail row={selectedRow} data={displayedData} requestState={state} focusSkill={returnFocus.current === "skill"}
+          <SourceDetail row={selectedRow} data={displayedData} atomBaseUrl={atomBaseUrl} requestState={state} focusSkill={returnFocus.current === "skill"}
             onBack={() => back(view.kind === "all" ? "all" : selectedRow?.key ?? null)}
             onOpenSkill={skill => selectedRow && open({ kind: "skill", key: selectedRow.key, nodeId: skill.nodeId, name: skill.name })}
             onRetry={() => setAttempt(value => value + 1)} />
@@ -210,7 +213,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
                 inactive={state.status === "error"}
                 onClick={() => open({ kind: "source", key: row.key })}
               />
-              {data?.atom_base_url && <DashboardIconCap size="small" label={`${rowTitle(row)} atom에서 열기`} onClick={() => window.open(`${data.atom_base_url}/#${row.nodeId}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap>}
+              {atomBaseUrl && data && <DashboardIconCap size="small" label={`${rowTitle(row)} atom에서 열기`} onClick={() => window.open(`${atomBaseUrl}/#${row.nodeId}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap>}
               </div>
             ))}
           </div>
@@ -295,15 +298,15 @@ function DetailHeader({ title, meta, copyText, copyLabel = "본문 복사", atom
   );
 }
 
-function SourceDetail({ row, data, requestState, focusSkill, onBack, onOpenSkill, onRetry }: {
-  row: Row | null; data: PreviewResponse; requestState: { status: "loading" } | { status: "ready" } | { status: "error"; message: string }; focusSkill?: boolean; onBack(): void; onOpenSkill(skill: { nodeId: string; name: string }): void; onRetry(): void;
+function SourceDetail({ row, data, atomBaseUrl, requestState, focusSkill, onBack, onOpenSkill, onRetry }: {
+  row: Row | null; data: PreviewResponse; atomBaseUrl: string | null; requestState: { status: "loading" } | { status: "ready" } | { status: "error"; message: string }; focusSkill?: boolean; onBack(): void; onOpenSkill(skill: { nodeId: string; name: string }): void; onRetry(): void;
 }) {
   const all = row === null;
   const skillSelectRef = useRef<HTMLSelectElement>(null);
   useEffect(() => { if (focusSkill) skillSelectRef.current?.focus(); }, [focusSkill]);
   const text = all ? data.assembled : row.markdown;
   const skills = all ? [] : extractSkills(row.markdown);
-  const atomUrl = !all && data.atom_base_url ? `${data.atom_base_url}/#${row.nodeId}` : null;
+  const atomUrl = !all && atomBaseUrl ? `${atomBaseUrl}/#${row.nodeId}` : null;
   const origin = all ? null : [row.origin, contextShape(row.context)].filter(Boolean).join(" · ");
   const chars = all ? data.manifest.total_chars ?? 0 : row.chars;
   const tokens = all ? data.manifest.total_token_estimate ?? 0 : row.status === "ok" ? row.tokens : null;

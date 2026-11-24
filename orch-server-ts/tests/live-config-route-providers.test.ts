@@ -100,6 +100,7 @@ describe("live config route provider adapters", () => {
       nodeName: null,
       authEnabled: true,
       atomEnabled: false,
+      atomPublicUrl: null,
     });
 
     const bothProviders = createLiveConfigRouteProviders(
@@ -175,6 +176,7 @@ describe("live config route provider adapters", () => {
       nodeName: "orch-live",
       authEnabled: true,
       atomEnabled: true,
+      atomPublicUrl: null,
     });
     expect(configProvider.requireConfig).toHaveBeenCalledWith("google_client_id");
     expect(configProvider.requireConfig).toHaveBeenCalledWith("atom_enabled");
@@ -193,6 +195,7 @@ describe("live config route provider adapters", () => {
       nodeName: null,
       authEnabled: false,
       atomEnabled: false,
+      atomPublicUrl: null,
     });
   });
 

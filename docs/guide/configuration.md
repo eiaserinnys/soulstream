@@ -40,6 +40,7 @@ endpoint remains unavailable until login and consent are integrated.
 
 - `ATOM_ENABLED`: enables optional Atom knowledge tree integration. The Linux installer sets `true`.
 - `ATOM_SERVER_URL`: base URL of the Atom server. The Linux installer sets `http://127.0.0.1:4200`.
+- `ATOM_PUBLIC_URL`: optional address a browser can open to reach Atom. `GET /api/status` returns it as `atom_public_url` (`string | null`), and the dashboard uses it for "open in atom" links. It is chosen in this order: `null` when `ATOM_ENABLED` is not `true`; otherwise `ATOM_PUBLIC_URL` when it is not empty; otherwise `ATOM_SERVER_URL` when its host is not a loopback host (`localhost`, `127.0.0.0/8`, `::1`, `0.0.0.0`); otherwise `null`. Only `http` or `https` absolute URLs are accepted (a trailing `/` is removed); any other `ATOM_PUBLIC_URL` is ignored with one warning in the log. `ATOM_SERVER_URL` keeps its meaning as the server-to-server address. The Linux installer writes `http://127.0.0.1:4200` in password mode (the SSH tunnel forwards that port) and `https://<MagicDNS name>:8443` in Tailscale mode.
 - `ATOM_API_KEY`: API key for Atom requests. The Linux installer issues a write-scoped agent key and keeps it in `/home/soulstream/soulstream/.atom-api-key` (`0600`).
 - `ATOM_ROOT_NODE_ID`: root node ID for Atom tree lookups. The Linux installer does not set it.
 - `SKILL_CATALOG_NODE_ID`: Atom node ID for the shared skill catalog.
