@@ -36,13 +36,17 @@ export function useAgentLoginRowAction({ nodeId, provider, usage, request, onUsa
     buttonRef.current?.focus();
     setPhase("idle");
   };
-  // 열려 있는 동안에도 단추를 비활성으로 두지 않는다. 비활성이 되면 눌렀던 단추의 초점이 사라진다.
+  // 열려 있는 동안 단추는 비활성 모양(투명도 0.64, 눌러도 반응 없음)이지만 disabled 속성은 쓰지 않는다.
+  // disabled가 되면 눌렀던 단추의 초점이 사라진다.
+  const open = phase !== "idle";
   const action = <Button
     ref={buttonRef}
     size="sm"
     variant={connected ? "outline" : "default"}
+    className="aria-disabled:pointer-events-none aria-disabled:opacity-64 aria-disabled:shadow-none"
     data-testid={`agent-login-button-${provider}`}
-    aria-expanded={phase !== "idle"}
+    aria-expanded={open}
+    aria-disabled={open ? "true" : undefined}
     onClick={() => { if (phase === "idle") setPhase(connected ? "confirming" : "sheet"); }}
   >{connected ? "다시 연결" : "연결"}</Button>;
 

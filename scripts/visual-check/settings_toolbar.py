@@ -15,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from playwright.sync_api import expect, sync_playwright  # noqa: E402
 
-from settings_toolbar_r2 import capture_r2  # noqa: E402
+from settings_toolbar_r2 import capture_r2, write_operations  # noqa: E402
+from settings_toolbar_r3 import capture_r3  # noqa: E402
 from settings_toolbar_fakes import CHECKS, INDEX, Fake, SESSION_ID, FAKE_PASTED_CODE, FAKE_USER_CODE, assert_no_secret_output, check, DIST, flow, listen, new_page, open_settings, serve, shot, soon, toolbar_metrics, wait_for_call  # noqa: E402
 
 def capture_toolbars(browser, base, out: Path, prefix: str, atom_expected: bool):
@@ -246,16 +247,22 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
     parser.add_argument("--baseline-dist", required=True)
-    parser.add_argument("--only-r2", action="store_true", help="2차 보강 그림과 조작 결과만 찍는다(반복 확인용)")
+    parser.add_argument("--only-r2", action="store_true", help="2차와 3차 보강 그림과 조작 결과만 찍는다(반복 확인용)")
+    parser.add_argument("--only-r3", action="store_true", help="3차 보강 그림만 찍는다(조작 결과 파일은 쓰지 않는다)")
+    parser.add_argument("--dist", default=None, help="찍을 빌드 폴더. 고치기 전 코드의 빌드를 줘서 3차 단언이 실패하는지 볼 때 쓴다")
     args = parser.parse_args()
     out = Path(args.output).resolve()
     out.mkdir(parents=True, exist_ok=True)
     keep_first_round(out)
-    server, base = serve(DIST)
+    server, base = serve(Path(args.dist) if args.dist else DIST)
     baseline_server, baseline_base = serve(Path(args.baseline_dist))
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
+            if args.only_r3:
+                capture_r3(browser, base, out)
+                browser.close()
+                return
             if not args.only_r2:
                 capture_toolbars(browser, baseline_base, out, "baseline-", atom_expected=False)
                 capture_empty_states(browser, baseline_base, out, "baseline-")
@@ -263,6 +270,8 @@ def main():
                 capture_settings_and_logins(browser, base, out)
                 capture_empty_states(browser, base, out, "")
             capture_r2(browser, base, out)
+            capture_r3(browser, base, out)
+            write_operations(out)
             browser.close()
     finally:
         server.shutdown()
@@ -279,7 +288,7 @@ def keep_first_round(out: Path):
 
 
 def write_index(out: Path):
-    lines = ["# 카드 #1787 U17 화면 캡처(2차)", "", "r2- 접두어가 2차 그림이다. 1차 그림은 접두어 없이 같은 폴더에 남아 있고 목록은 index-r1.md, 1차 단언은 checks-r1.json에 있다.",
+    lines = ["# 카드 #1787 U17 화면 캡처(3차)", "", "r3- 접두어가 3차, r2- 접두어가 2차 그림이다. 1차 그림은 접두어 없이 같은 폴더에 남아 있고 목록은 index-r1.md, 1차 단언은 checks-r1.json에 있다.",
              "조작 결과(ui-design 14~18번, 대화상자 표)는 operations.md에 있다.", "", "| 파일 | 폭(px) | 상태 |", "| --- | ---: | --- |"]
     lines += [f"| {name} | {width} | {state} |" for name, width, state in INDEX]
     lines += ["", "## 실측 단언", ""]

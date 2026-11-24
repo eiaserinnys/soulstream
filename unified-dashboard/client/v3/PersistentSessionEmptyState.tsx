@@ -47,8 +47,14 @@ export function PersistentSessionEmptyState({ api, defaults, isAdmin, onOpenCodi
   if (canBootstrap) {
     if (state.phase === 'failed') return <FrameNotice data-testid="persistent-empty-bootstrap-failed">
       <div className="persistent-empty-state">
-        <p role="alert" data-v3-selectable-content="true">{state.retrying ? '기본 영구 세션을 다시 만드는 중입니다' : `기본 영구 세션을 만들지 못했습니다. ${state.message}`}</p>
-        <Button aria-busy={state.retrying} onClick={() => { if (!state.retrying) void run(); }}>다시 시도</Button>
+        {state.retrying
+          ? <FrameLoading inline label="기본 영구 세션을 다시 만드는 중입니다" data-testid="persistent-empty-retrying" />
+          : <p role="alert" data-v3-selectable-content="true">{`기본 영구 세션을 만들지 못했습니다. ${state.message}`}</p>}
+        <Button
+          className="aria-disabled:pointer-events-none aria-disabled:opacity-64 aria-disabled:shadow-none"
+          aria-disabled={state.retrying ? 'true' : undefined}
+          onClick={() => { if (!state.retrying) void run(); }}
+        >다시 시도</Button>
       </div>
     </FrameNotice>;
     return <FrameLoading label="기본 영구 세션을 만드는 중입니다" data-testid="persistent-empty-creating" />;

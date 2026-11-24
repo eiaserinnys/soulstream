@@ -420,18 +420,22 @@ describe("NodeProvidersPanel", () => {
       const confirm = host.querySelector<HTMLElement>('[data-testid="agent-login-confirm-antigravity"]')!;
       expect(document.activeElement).toBe([...confirm.querySelectorAll("button")].find((item) => item.textContent === "취소"));
       expect(button.disabled).toBe(false);
+      expect(button.getAttribute("aria-disabled")).toBe("true");
       expect(confirm.textContent).not.toMatch(/Antigravity[은는이가을를]/);
       await act(async () => { document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
       expect(host.querySelector('[data-testid="agent-login-confirm-antigravity"]')).toBeNull();
       expect(document.activeElement).toBe(loginButton("antigravity"));
+      expect(loginButton("antigravity")!.hasAttribute("aria-disabled")).toBe(false);
     });
 
     it("returns focus to the row button when the login sheet closes", async () => {
       await mount(summaryNode({ codex: provider([], { status: "not_configured", login_supported: true }) }), legacyRequest());
       await act(async () => loginButton("codex")!.click());
       expect(loginButton("codex")!.disabled).toBe(false);
+      expect(loginButton("codex")!.getAttribute("aria-disabled")).toBe("true");
       await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "닫기")!.click());
       expect(document.activeElement).toBe(loginButton("codex"));
+      expect(loginButton("codex")!.hasAttribute("aria-disabled")).toBe(false);
     });
 
     it("re-reads the usage summary when the sheet reports done", async () => {

@@ -432,7 +432,7 @@ def operations(browser, base, out: Path):
     after_cancel = active(page)
     check("확인줄 취소(Enter): 초점이 「다시 연결」 단추로 돌아옴", after_cancel == "다시 연결", after_cancel)
     DIALOGS.append(("다시 연결 확인줄(인라인)", "「다시 연결」 단추(Enter)", f"{on_confirm}(첫 동작)", f"{on_confirm}에서 줄 닫기, Tab 다음은 {second}", "줄만 닫음, 설정창 유지", after_confirm_esc + " 단추"))
-    ops("14", "통과", f"확인줄이 열리면 {on_confirm}에 초점, 취소나 Esc로 닫으면 {after_cancel} 단추로 돌아옴. 단추는 열려 있는 동안에도 비활성이 아님")
+    ops("14", "통과", f"확인줄이 열리면 {on_confirm}에 초점, 취소나 Esc로 닫으면 {after_cancel} 단추로 돌아옴. 단추는 열려 있는 동안 aria-disabled 비활성 모양이고 disabled 속성은 아님(r3 단언)")
     anti.press("Enter")
     page.keyboard.press("Tab")
     page.keyboard.press("Enter")  # 다시 연결
@@ -487,14 +487,14 @@ def operations(browser, base, out: Path):
 
 
 def write_operations(out: Path):
-    lines = ["# 조작 결과(ui-design 0절 14~18번)", "", "카드 #1787 U17 2차. 리포 스크립트 scripts/visual-check/settings_toolbar.sh가 이 값을 실제 키 입력과 실측으로 잰다(settings_toolbar_r2.py).", "", "## 14번부터 18번", "", "| 번호 | 결과 | 근거 |", "| --- | --- | --- |"]
+    lines = ["# 조작 결과(ui-design 0절 14~18번)", "", "카드 #1787 U17 3차. 리포 스크립트 scripts/visual-check/settings_toolbar.sh가 이 값을 실제 키 입력과 실측으로 잰다(settings_toolbar_r2.py, settings_toolbar_r3.py).", "", "## 14번부터 18번", "", "| 번호 | 결과 | 근거 |", "| --- | --- | --- |"]
     titles = {"13": "13 로딩 상태", "14": "14 누른 뒤 초점", "15": "15 Tab과 Esc", "16": "16 최소 폭 넘침과 잘림", "17": "17 오류 상태", "18": "18 창 크기 바꾸기"}
     for number in ("13", "14", "15", "16", "17", "18"):
         for result, evidence in OPS.get(number, []):
             lines.append(f"| {titles[number]} | {result} | {evidence} |")
     lines += ["", "## 대화상자와 줄 안 편집", "", "| 대상 | 여는 법 | 첫 초점 | Enter | Esc | 닫은 뒤 초점 |", "| --- | --- | --- | --- | --- | --- |"]
     lines += [f"| {' | '.join(row)} |" for row in DIALOGS]
-    lines += ["", "## 빈 상태와 시트의 단추", "", "- 빈 상태의 「영구 세션 만들기」와 「코딩 에이전트 연결」은 설정창을 여는 단추이고 창은 위 설정창 행과 같다. 기본 세션 만들기 실패의 「다시 시도」는 14번 행에 있다.", "", "## 실행", "", "```", "bash scripts/visual-check/settings_toolbar.sh <출력 폴더>", "```", "", "산출물은 같은 폴더의 r2- 그림, index.md, checks.json, operations.md다."]
+    lines += ["", "## 빈 상태와 시트의 단추", "", "- 빈 상태의 「영구 세션 만들기」와 「코딩 에이전트 연결」은 설정창을 여는 단추이고 창은 위 설정창 행과 같다. 기본 세션 만들기 실패의 「다시 시도」는 14번 행에 있다.", "", "## 실행", "", "```", "bash scripts/visual-check/settings_toolbar.sh <출력 폴더>", "```", "", "산출물은 같은 폴더의 r2-, r3- 그림, index.md, checks.json, operations.md다."]
     (out / "operations.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -536,4 +536,3 @@ def capture_r2(browser, base, out: Path):
     bootstrap_failed(browser, base, out)
     keep_all_self_test(browser, base)
     operations(browser, base, out)
-    write_operations(out)

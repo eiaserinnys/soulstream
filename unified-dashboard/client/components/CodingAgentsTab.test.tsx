@@ -69,15 +69,22 @@ describe("CodingAgentsTab", () => {
     expect(host.querySelector('[data-testid="coding-agents-pick-node"]')).toBeNull();
   });
 
-  it("asks to pick a node when there are several, then follows the selection", async () => {
+  it("opens with the first connected node selected when there are several, then follows the selection", async () => {
     mocks.summary = snapshot("a", "b");
-    await render(nodes(node("a"), node("b")));
-    expect(host.querySelector('[data-testid="coding-agents-pick-node"]')?.textContent).toContain("노드를 고르세요");
-    expect(host.querySelector('[data-testid="providers-stub"]')).toBeNull();
-    expect(mocks.usage.mock.calls.at(-1)?.[0]).toMatchObject({ enabled: false, nodeId: null });
-    await act(async () => rows()[1]!.click());
+    await render(nodes(node("a", "disconnected"), node("b"), node("c")));
+    expect(host.querySelector('[data-testid="coding-agents-pick-node"]')).toBeNull();
     expect(host.querySelector('[data-testid="providers-stub"]')?.getAttribute("data-node")).toBe("b");
     expect(mocks.usage.mock.calls.at(-1)?.[0]).toMatchObject({ enabled: true, nodeId: "b", selectedNodeId: "b" });
+    await act(async () => rows()[2]!.click());
+    expect(host.querySelector('[data-testid="providers-stub"]')?.getAttribute("data-node")).toBe("c");
+    expect(mocks.usage.mock.calls.at(-1)?.[0]).toMatchObject({ enabled: true, nodeId: "c", selectedNodeId: "c" });
+  });
+
+  it("shows no pick prompt and an empty detail when there is no node", async () => {
+    await render(nodes());
+    expect(host.textContent).toContain("연결된 노드가 없습니다.");
+    expect(host.textContent).not.toContain("고르세요");
+    expect(host.querySelector('[data-testid="providers-stub"]')).toBeNull();
   });
 
   it("does not fall back to another node's usage when the selected node has none", async () => {

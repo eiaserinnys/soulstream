@@ -195,7 +195,7 @@ it('keeps the retry button mounted and focused while a failed bootstrap is retri
  mocks.list.mockResolvedValue(emptyListing({bootstrap_enabled:true}));mocks.bootstrap.mockRejectedValueOnce(new Error('서버가 거절했습니다'));await mount();
  const retry=()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='다시 시도')!;const button=retry();button.focus();
  mocks.bootstrap.mockReturnValueOnce(new Promise(()=>undefined));await act(async()=>button.click());
- expect(retry()).toBe(button);expect(document.activeElement).toBe(button);expect(button.getAttribute('aria-busy')).toBe('true');expect(text()).toContain('다시 만드는 중입니다');
+ expect(retry()).toBe(button);expect(document.activeElement).toBe(button);expect(button.getAttribute('aria-disabled')).toBe('true');expect(button.disabled).toBe(false);expect(host.querySelector('[data-testid="persistent-empty-retrying"] svg.animate-spin')).not.toBeNull();expect(text()).toContain('다시 만드는 중입니다');
  await act(async()=>button.click());expect(mocks.bootstrap).toHaveBeenCalledTimes(2);
 });
 it('asks admins to connect a coding agent when bootstrap is on but unavailable, and re-reads after the settings close',async()=>{
