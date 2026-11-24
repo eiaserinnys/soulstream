@@ -1,76 +1,77 @@
 # Installation
 
-## 리눅스 한 줄 설치
+This guide covers the Linux one-line installer (including updates and Tailscale Serve), the Windows worker installer, and running the full Soulstream stack from source.
 
-빈 Debian 13 x86_64 서버에서 root로 실행합니다. 2 vCPU, RAM 4 GB, 디스크 40 GB 이상을 권장합니다. 설치기는 RAM 3.5 GiB와 루트 파일시스템의 여유 공간 20 GB 이상을 확인합니다.
+## Linux one-line installer
+
+Run the installer as `root` on a fresh Debian 13 (`x86_64`) server. Recommended specs are at least 2 vCPU, 4 GB RAM, and 40 GB disk. The installer checks for at least 3.5 GiB RAM and 20 GB free space on `/`.
 
 ```bash
 bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl/certs/ca-certificates.crt) || (apt-get update && apt-get install -y curl ca-certificates); tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex'
 ```
 
-`--backends`는 `claude`, `codex`, `antigravity` 중 원하는 백엔드를 쉼표로 구분합니다. 기본값은 `claude,codex`이며 첫 백엔드가 기본 에이전트 서소영과 서소영 (PAS)의 백엔드가 됩니다. 선택 사항인 `--ref <브랜치, 태그 또는 커밋>`으로 설치할 소울스트림 리비전을, `--atom-ref <브랜치, 태그 또는 커밋>`으로 설치할 atom 리비전을 지정합니다.
+`--backends` takes a comma-separated list of `claude`, `codex`, and `antigravity` (default: `claude,codex`). The first backend becomes the backend for the default `seosoyoung` and `seosoyoung-pas` profiles. Pin a revision with `--ref <ref>` for Soulstream or `--atom-ref <ref>` for atom (branch, tag, or commit).
 
-한 서버에 다음이 함께 설치됩니다.
+On one server, the installer sets up:
 
-- 소울스트림(오케스트레이터와 워커)
-- atom(지침과 스킬을 담는 지식 트리, `/home/soulstream/atom`, 루프백 포트 4200)
-- 기본 지침: 설치기에 들어 있는 시작 지침과 스킬을 atom에 싣습니다.
-- 기본 에이전트 서소영(`seosoyoung`)과 서소영 (PAS)(`seosoyoung-pas`)
-- 고른 백엔드마다 기본 에이전트(`claude-default`, `codex-default`, `antigravity-default`). `claude`를 고르면 카드 오케스트레이터 프로필도 만듭니다.
+- Soulstream (dashboard, orchestrator, and worker).
+- atom, a knowledge tree for instructions and skills (`/home/soulstream/atom`, loopback port `4200`).
+- Starter instructions and skills in atom.
+- Default agent profiles `seosoyoung` and `seosoyoung-pas`.
+- One default profile per selected backend (`claude-default`, `codex-default`, `antigravity-default`), plus `card-orchestrator` when you select `claude`.
 
-설치기는 필수 패키지, 전용 사용자, Node.js, 선택한 CLI와 PostgreSQL을 준비하고 소울스트림과 atom 소스를 클론합니다. atom을 빌드해 시작하고 API 키를 발급한 뒤 기본 지침을 싣고, 이어서 소울스트림의 설정, 빌드, 스키마 초기화를 마친 뒤 systemd 서비스를 시작합니다. 로컬 작업실을 만들고 서비스 연결과 인증을 확인합니다. 로그는 `/var/log/soulstream-install.log`에 남습니다.
+The installer installs required packages, creates the `soulstream` user, sets up Node.js, the selected CLIs, and PostgreSQL, and clones Soulstream and atom. It builds and starts atom, issues an API key, loads starter instructions, then configures Soulstream, builds it, initializes the schema, and starts it under systemd. It creates the local workspace folder and checks service connectivity and authentication. The log is `/var/log/soulstream-install.log`.
 
-기본 지침은 설치 때 한 번만 싣습니다. 설치 뒤 atom에서 고친 지침은 다시 설치해도 덮어쓰지 않습니다. 설치 끝 안내에 `Atom instructions:` 경고가 나오면 다음 뜻입니다.
+Starter instructions load once, on a fresh install; reruns and updates never change existing atom instructions. Warnings under `Atom instructions:` mean:
 
-- atom에 이미 트리가 있어 기본 지침을 싣지 않고 기존 트리를 그대로 두었습니다.
-- 설치 뒤 바뀐 시드 카드가 있어 그 카드는 고치지 않고 보존했습니다.
-- 설치기가 설정에 쓰는 노드(예: 스킬 카탈로그)가 atom에서 지워져 그 연결을 비웠습니다.
+- The atom tree already existed, so starter instructions were not loaded.
+- A seed card changed after creation, so it was kept unchanged.
+- A config-linked node (such as the skill catalog) was deleted in atom, so its link was left empty.
+- An entry in `config/.atom-seed-map.json` was not a valid UUID (`atom seed map: ignored invalid value`), so it was ignored.
 
-설치가 끝나기 전에 모델 프리셋 상태를 갱신합니다. 최대 여섯 번 시도하며 각 요청은 최대 60초, 재시도 간격은 10초입니다. 갱신에 실패해도 설치는 계속됩니다.
+Before finishing, the installer refreshes model preset status (up to 6 attempts, 60 s per request, 10 s between retries). Installation continues even if refresh fails.
 
-설치가 끝나면 대시보드의 설정 → 코딩 에이전트에서 Claude, Codex, Antigravity를 연결합니다. 서버에서 따로 명령을 실행할 필요가 없습니다. 연결이 끝나면 그 노드의 모델 프리셋이 곧바로 다시 읽힙니다.
+After installation, open **Settings > Coding agents** (`설정 > 코딩 에이전트`) in the dashboard to connect Claude, Codex, and Antigravity without server commands. The node's model presets refresh right away.
 
-- Claude는 계정 풀 로그인을 씁니다. 설치기가 계정 풀을 켠 채로 시작하므로 계정이 0개여도 됩니다. 이미 `~/.claude/.credentials.json`에 SSH 로그인 자격이 있으면 워커가 처음 시작할 때 그 자격을 풀로 옮깁니다.
-- Codex는 기기 코드 방식입니다. 대시보드가 보여 주는 주소를 브라우저에서 열고 함께 보이는 일회용 코드를 입력하면 연결됩니다. ChatGPT 보안 설정에서 기기 코드 로그인을 켜야 합니다.
-- Antigravity는 대시보드가 보여 주는 Google 인증 주소를 브라우저에서 열고, 인증 뒤에 나오는 코드를 대시보드에 붙여 넣으면 연결됩니다.
+- **Claude** uses the account pool that the installer turns on, so zero accounts is valid. Expand the Claude row and choose Add account (`계정 추가`). While no pool store exists, the worker tries to import an existing `~/.claude/.credentials.json` at each startup and skips it if identity verification fails.
+- **Codex** uses device-code login. Open the URL the dashboard shows and enter the one-time code. If the dashboard reports that device code authentication is off, turn it on in the security section of your ChatGPT settings and try again.
+- **Antigravity** uses Google authentication. Open the URL the dashboard shows and paste the returned code into the dashboard.
 
-대시보드를 쓸 수 없을 때는 SSH로 접속해 Codex와 Antigravity에 직접 로그인할 수도 있습니다. Codex는 `sudo -Hu soulstream /usr/local/bin/codex login --device-auth`, Antigravity는 `soulstream` 사용자로 `~/.local/bin/agy`를 실행해 로그인하고 `/exit`로 나옵니다. 이 방식으로 로그인한 뒤 프리셋은 5분 안에 갱신되며, 즉시 갱신 명령도 설치 결과에 표시됩니다. Claude의 SSH 로그인 안내는 없습니다.
+If you cannot use the dashboard, sign in over SSH: run `sudo -Hu soulstream /usr/local/bin/codex login --device-auth` for Codex, or run `~/.local/bin/agy` as `soulstream` for Antigravity and exit with `/exit`. Presets update within five minutes after SSH login, and the finish output prints a manual refresh command. Claude has no SSH login flow.
 
-대시보드와 atom은 SSH 터널을 연 뒤 로컬 브라우저에서 접속합니다.
+Forward both ports over SSH to open the dashboard and atom locally:
 
 ```bash
-ssh -L 127.0.0.1:5200:127.0.0.1:5200 -L 127.0.0.1:4200:127.0.0.1:4200 <사용자>@<서버>
+ssh -L 127.0.0.1:5200:127.0.0.1:5200 -L 127.0.0.1:4200:127.0.0.1:4200 <user>@<server>
 ```
 
-소울스트림은 <http://127.0.0.1:5200>, atom은 <http://127.0.0.1:4200>에서 같은 관리자 비밀번호로 로그인합니다. 설치기는 비밀번호를 화면에 찍지 않습니다. 서버에서 `sudo cat /home/soulstream/soulstream/.admin-password`로 확인합니다.
+Open Soulstream at `http://127.0.0.1:5200` and atom at `http://127.0.0.1:4200` with the same administrator password. The installer never prints it; read it on the server with `sudo cat /home/soulstream/soulstream/.admin-password`. The atom button (`atom 열기`) in the dashboard toolbar also opens atom (`ATOM_PUBLIC_URL`) in a new tab.
 
-PAS 세션은 대시보드에서 영구 세션을 만들어 시작합니다. 영구 세션의 기본 에이전트는 서소영 (PAS)입니다.
+In a new browser, the dashboard opens the persistent assistant session view (`/persistent`) by default; turn this off in **Settings > Appearance** (`설정 > 화면과 읽기`). The installer sets `PERSISTENT_SESSION_BOOTSTRAP=true`, so the dashboard creates one default persistent session (`seosoyoung-pas`) when you connect the first coding agent.
 
-### 업데이트
+### Updating
 
-같은 한 줄 명령을 다시 실행하면 업데이트입니다. `--ref`(atom은 `--atom-ref`)를 주지 않으면 소울스트림과 atom 두 저장소를 원격 `main`의 최신 커밋으로 옮깁니다. 다시 실행할 때는 처음과 같은 `--backends`를 줍니다. 빼면 `claude,codex`가 됩니다. atom 없이 설치한 1단계 설치본도 같은 명령으로 atom까지 올라갑니다.
+Re-run the same one-line command to update. Without `--ref` or `--atom-ref`, both repositories move to the latest `origin/main`. Pass the same `--backends` value you installed with (omitting it defaults to `claude,codex`). An installation without atom also gains atom with the same command.
 
-설치기는 실행 중인 서비스를 멈추기 전에 두 저장소를 확인합니다. 커밋하지 않은 변경, git 체크아웃이 아닌 경로, 찾을 수 없는 리비전, 원격에 없는 지역 커밋, atom 지원 전의 소울스트림 리비전이 있으면 실행 중인 서비스를 건드리지 않고 멈춥니다. 설치기가 만든 추적하지 않는 파일(설정 파일과 `.env` 파일)은 막지 않습니다.
+Before it stops any service, the installer checks both repositories. If it finds uncommitted changes, a non-git directory, an unresolvable revision, local commits not on `origin`, or a Soulstream revision predating atom support, it aborts without touching running services. Untracked installer files (config and `.env`) do not block updates.
 
-업데이트는 비밀 값, `soulstream`과 `atom` 두 데이터베이스, 기존 작업실, 설치기가 관리하지 않는 환경 설정 줄, 고친 설정 파일을 보존합니다. 고친 설정 파일은 그대로 두고 새 기본본을 같은 자리의 `.installer-new` 파일로 남기며, 설치 끝 안내의 `Configuration:` 아래에 알립니다([관리 설정 파일](configuration.md#files-the-linux-installer-manages)). 업데이트는 기존 atom 지침을 바꾸지 않으며, 새 기본 지침은 새 설치에만 들어갑니다.
+Updates preserve secrets, both databases (`soulstream` and `atom`), the existing workspace, unmanaged `.env` lines, and edited config files. Edited managed files stay untouched; new defaults go beside them as `<file>.installer-new` and appear under `Configuration:` ([managed config files](configuration.md#files-the-linux-installer-manages)).
 
-확인을 마치면 세 서비스(`soulstream-worker`, `soulstream-orch`, `soulstream-atom`)를 멈춘 뒤 체크아웃, 빌드, 마이그레이션, 기동을 차례로 합니다. 설치 끝 안내에 두 저장소의 이전 리비전과 새 리비전이 나옵니다. 멈춘 뒤에 실패하면 세 서비스를 멈춘 채로 끝나고, 실패한 단계와 두 저장소의 리비전이 `/home/soulstream/soulstream/.local/install-state.json`에 남습니다. 원인을 고친 뒤 같은 명령을 다시 실행하면 복구합니다. 데이터베이스는 자동으로 되돌리지 않습니다. 그 대신 비추가형 스키마 변경을 적용하기 전에 `soulstream` 데이터베이스를, 업데이트할 때마다 마이그레이션 전에 비어 있지 않은 `atom` 데이터베이스를 `/home/soulstream/soulstream/.local/backups/`에 덤프합니다. 덤프 파일의 권한은 0600이고, 데이터베이스마다 최근 3개를 남깁니다. 실패 안내에 백업 경로와 복원 명령이 나오며 `install-state.json`의 `backups`에도 남습니다. 복원은 새 리비전을 버릴 때만 합니다. 서비스를 멈춘 채 호환 리비전을 체크아웃하고, 빈 대상 데이터베이스에 root 셸로 복원합니다. 제거 도구는 포함하지 않습니다.
+After the checks pass, the installer stops `soulstream-worker`, `soulstream-orch`, and `soulstream-atom`, then checks out, builds, migrates, and restarts them. The finish output shows previous and new revisions for both repositories. If a step fails after stopping services, all three stay stopped and `/home/soulstream/soulstream/.local/install-state.json` records the failed step and revisions; fix the cause and re-run to recover. Databases do not roll back automatically. Instead, the installer dumps `soulstream` before non-additive schema changes and any non-empty `atom` database before every migration to `/home/soulstream/soulstream/.local/backups/` (mode `0600`, latest 3 per database). Failure output and `install-state.json` (`backups`) list backup paths and restore commands. Restore only when discarding the new revision: keep services stopped, check out a compatible revision, and restore into an empty database from a `root` shell. No uninstaller is included.
 
 ### Tailscale Serve
 
-설치 명령의 마지막 인자에 `--tailscale`을 더하면 허용된 Tailscale 계정으로 소울스트림에 비밀번호 없이 접속합니다. 로그인 URL이 표시되면 10분 안에 승인합니다. 이미 연결된 기기는 승인을 건너뜁니다. tailnet에서 MagicDNS와 HTTPS를 켜야 합니다.
+Add `--tailscale` to the install command for passwordless Soulstream access with an allowed Tailscale account. Enable MagicDNS and HTTPS in your tailnet. Approve any login URL within 10 minutes (already-connected devices skip approval).
 
 ```bash
 bash install/install.sh --tailscale --tailscale-user owner@example.com
 ```
 
-개인 기기는 `--tailscale-user`를 생략하면 기기의 계정을 사용합니다. 태그 기기는 허용할 사람의 로그인 이름을 명시해야 합니다. 인증 키를 쓰려면 키를 파일에 담아 `--tailscale-auth-key-file <경로>`로 넘깁니다. 설치기는 파일 경로만 Tailscale에 전달하므로 키가 프로세스 인자에 남지 않습니다. 설치가 끝나면 표시된 HTTPS 주소를 해당 계정의 tailnet 기기에서 엽니다. 서버의 로컬 프로세스는 신원 머리를 위조할 수 있으므로 신뢰하는 프로세스만 실행해야 합니다.
+Personal devices default to their own account when you omit `--tailscale-user`; tagged devices require it. To use an auth key, store it in a file and pass `--tailscale-auth-key-file <path>` so it never enters process arguments. After installation, open the printed HTTPS URL from a tailnet device signed in as that account. Local processes on the server can forge identity headers, so run only trusted processes on the host.
 
-atom은 같은 주소의 `:8443`(`https://<서버의 MagicDNS 이름>:8443`)으로 열립니다. atom은 Tailscale 신원 대신 관리자 비밀번호로 로그인하며, 비밀번호는 Tailscale 모드에서도 `/home/soulstream/soulstream/.admin-password`에 보관됩니다(`sudo cat`으로 확인).
+atom is served on `:8443` of the same host (`https://<MagicDNS-name>:8443`) and still uses the administrator password in `/home/soulstream/soulstream/.admin-password` (read with `sudo cat`).
 
-`--tailscale` 없이 다시 설치하면 기존 관리자 비밀번호로 돌아갑니다. Serve 접근과 기기 연결을 제거하려면 `tailscale serve reset && tailscale logout`을 실행합니다.
-
-This guide covers installing a remote Windows worker with the PowerShell installer and running the full Soulstream stack from source.
+Re-run without `--tailscale` to return to password mode. To remove Serve access and disconnect the device, run `tailscale serve reset && tailscale logout`.
 
 ## Requirements
 
