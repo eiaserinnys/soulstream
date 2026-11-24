@@ -13,6 +13,11 @@ import {
   sendClaudeAccountPoolAccountsAlias,
   type ClaudeAccountPoolRouteOptions,
 } from "./claude_account_pool_routes.js";
+import {
+  agentLoginRouteAuthRequirements,
+  registerAgentLoginRoutes,
+  type AgentLoginRouteOptions,
+} from "./agent_login_routes.js";
 import { mapNodeCommandError, sendApiError } from "../http/api_errors.js";
 import {
   BROWSER_SCOPE,
@@ -95,7 +100,7 @@ export type NodeClaudeAuthHttpClient = (
   request: NodeClaudeAuthHttpRequest,
 ) => Promise<NodeClaudeAuthHttpResponse>;
 
-export type NodeClaudeAuthRouteOptions = ClaudeAccountPoolRouteOptions & {
+export type NodeClaudeAuthRouteOptions = ClaudeAccountPoolRouteOptions & Pick<AgentLoginRouteOptions, "adminAccess"> & {
   provider: NodeClaudeAuthRouteProvider;
   pkce: ClaudeAuthPkceProvider;
   sessionStore: ClaudeAuthSessionStore;
@@ -116,6 +121,7 @@ const PROVIDERS = new Set(["claude", "codex", "antigravity", "opencode_go"]);
 
 export const nodeClaudeAuthRouteAuthRequirements = {
   ...claudeAccountPoolRouteAuthRequirements,
+  ...agentLoginRouteAuthRequirements,
   "GET /api/nodes/:node_id/claude-auth/start": true,
   "GET /api/nodes/claude-auth/callback": true,
   "GET /api/nodes/:node_id/claude-auth/status": true,
@@ -363,6 +369,7 @@ export function registerNodeClaudeAuthRoutes(
   );
 
   registerClaudeAccountPoolRoutes(app, options);
+  registerAgentLoginRoutes(app, options);
 }
 
 type CommandResult =

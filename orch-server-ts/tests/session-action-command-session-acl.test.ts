@@ -135,6 +135,7 @@ function createProductionProviders(
     modelPresetAvailability: {},
     modelCatalog: {},
     nodeAgentProfileRoutes: { provider: {} },
+    adminUsersRoutes: { provider: { currentEmail: () => null, isAdminEmail: () => false } },
     folderRoutes: { accessProvider: {}, provider: {} },
     configProviders: { publicStatusRoutes: { configProvider: {} } },
   } as unknown as LiveOrchestratorProviderBundle;

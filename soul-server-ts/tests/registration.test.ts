@@ -78,6 +78,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,
+      agent_login_v1: true,
     });
     expect(msg.supported_backends).toEqual(["codex"]);
     // portrait_path 미설정 — portrait_url=""·portrait_b64 미박힘 (Python 정본 graceful 정합)
@@ -109,6 +110,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,
+      agent_login_v1: true,
       runner_process_v1: true,
     });
   });
@@ -265,6 +267,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,
+      agent_login_v1: true,
     });
     expect((msg.supported_backends ?? []).slice().sort()).toEqual(["claude", "codex"]);
     expect(msg.agents?.map((a) => [a.id, a.name, a.backend])).toEqual([

@@ -35,7 +35,7 @@ describe("control command inventory", () => {
     }).sort();
     const inventoryTypes = CONTROL_COMMAND_INVENTORY.map(({ type }) => type).sort();
 
-    expect(inventoryTypes).toHaveLength(60);
+    expect(inventoryTypes).toHaveLength(64);
     expect(new Set(inventoryTypes).size).toBe(inventoryTypes.length);
     expect(inventoryTypes).toEqual(handlerTypes);
     expect(inventoryTypes).toEqual([...CONTROL_COMMAND_TYPES].sort());
@@ -116,6 +116,10 @@ describe("control command inventory", () => {
       { type: "claude_auth_login_status", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "claude_auth_login_submit_code", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "claude_auth_login_cancel", family: "auth/provider-usage", policy: "bounded_result" },
+      { type: "agent_login_start", family: "auth/provider-usage", policy: "bounded_result" },
+      { type: "agent_login_status", family: "auth/provider-usage", policy: "bounded_result" },
+      { type: "agent_login_submit_code", family: "auth/provider-usage", policy: "bounded_result" },
+      { type: "agent_login_cancel", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "claude_central_pool_sync", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "mcp_central_sync", family: "mcp-config", policy: "bounded_result" },
       { type: "test_mcp_server", family: "mcp-config", policy: "bounded_result" },

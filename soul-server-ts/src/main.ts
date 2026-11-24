@@ -314,6 +314,11 @@ async function main(): Promise<void> {
       logger.warn("Claude CLI login shutdown cleanup failed");
     }
     try {
+      await runtime.agentLoginService?.shutdown();
+    } catch {
+      logger.warn("Agent CLI login shutdown cleanup failed");
+    }
+    try {
       runtime.scheduleDispatcher.stop();
       await runtime.taskManager.shutdown();
       if (runtime.claudeSessionClientRegistry) {

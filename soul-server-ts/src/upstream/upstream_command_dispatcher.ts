@@ -23,6 +23,7 @@ export function createUpstreamCommandDispatcher(input: {
     claudeAuth: deps.claudeAuth,
     claudeAccounts: deps.claudeAccounts,
     claudeLoginService: deps.claudeLoginService,
+    agentLoginService: deps.agentLoginService,
     claudeAccountPoolEnabled: deps.claudeAccountPoolEnabled,
     sessionDb: deps.sessionDb,
     realtimeBroker: deps.realtimeBroker,

@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 213개 $defs (top-level wire 104 + supporting/SSE 109). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 219개 $defs (top-level wire 108 + supporting/SSE 111). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -90,6 +90,10 @@ export type SoulstreamUpstreamProtocol =
   | ClaudeAuthLoginStatus
   | ClaudeAuthLoginSubmitCode
   | ClaudeAuthLoginCancel
+  | AgentLoginStart
+  | AgentLoginStatus
+  | AgentLoginSubmitCode
+  | AgentLoginCancel
   | ClaudeCentralPoolSync
   | McpCentralSync
   | McpTestServer
@@ -139,6 +143,10 @@ export interface NodeRegister {
   capabilities?: {
     runner_inventory_v1?: boolean;
     claude_account_pool_v1?: boolean;
+    /**
+     * Codex와 Antigravity 로그인 명령(agent_login_*)을 처리할 수 있다.
+     */
+    agent_login_v1?: boolean;
     central_mcp_config_v1?: boolean;
     control_channel_v1?: boolean;
     [k: string]: unknown;
@@ -3436,6 +3444,87 @@ export interface ClaudeAuthLoginCancel {
   [k: string]: unknown;
 }
 /**
+ * orch→노드: Codex 또는 Antigravity 로그인 시작.
+ */
+export interface AgentLoginStart {
+  type: "agent_login_start";
+  requestId?: string;
+  provider: "codex" | "antigravity";
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: AgentLoginFlow;
+  error?: AgentLoginError;
+  [k: string]: unknown;
+}
+/**
+ * Codex 또는 Antigravity CLI 로그인 흐름의 스냅샷. 일회용 코드와 인증 주소는 이 값으로만 오간다.
+ */
+export interface AgentLoginFlow {
+  login_id: string;
+  provider: "codex" | "antigravity";
+  state: "requested" | "url_ready" | "code_submitted" | "verifying" | "done" | "failed" | "cancelled";
+  auth_url: string | null;
+  user_code: string | null;
+  expects_code: boolean;
+  /**
+   * UTC ISO 8601.
+   */
+  expires_at: string | null;
+  error: AgentLoginError | null;
+}
+export interface AgentLoginError {
+  code: string;
+  message: string;
+}
+/**
+ * orch→노드: Codex 또는 Antigravity 로그인 상태 조회.
+ */
+export interface AgentLoginStatus {
+  type: "agent_login_status";
+  requestId?: string;
+  login_id: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: AgentLoginFlow;
+  error?: AgentLoginError;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: Antigravity 로그인 인증 코드 제출.
+ */
+export interface AgentLoginSubmitCode {
+  type: "agent_login_submit_code";
+  requestId?: string;
+  login_id: string;
+  code: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: AgentLoginFlow;
+  error?: AgentLoginError;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: Codex 또는 Antigravity 로그인 취소.
+ */
+export interface AgentLoginCancel {
+  type: "agent_login_cancel";
+  requestId?: string;
+  login_id: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: AgentLoginFlow;
+  error?: AgentLoginError;
+  [k: string]: unknown;
+}
+/**
  * orch→노드: 중앙 Claude 계정 풀 스냅샷 동기화. revision이 노드가 가진 것보다 작으면 버린다.
  */
 export interface ClaudeCentralPoolSync {
@@ -4006,6 +4095,10 @@ export const CONTROL_COMMAND_TYPES = [
   "claude_auth_login_status",
   "claude_auth_login_submit_code",
   "claude_auth_login_cancel",
+  "agent_login_start",
+  "agent_login_status",
+  "agent_login_submit_code",
+  "agent_login_cancel",
   "claude_central_pool_sync",
   "mcp_central_sync",
   "test_mcp_server",

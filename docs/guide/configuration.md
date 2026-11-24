@@ -109,8 +109,10 @@ The worker build hashes `.env.soul-server-ts`, so the installer finalizes these 
 - `AGENTS_CONFIG_PATH`: path to the node's `agents.yaml` file.
 - `AGENT_PROFILE_CACHE_PATH`: local cache file path for agent profiles.
 - `MODEL_CATALOG_GROUPS`: comma-separated opt-in groups for node-local model presets (empty by default; set `china` only on nodes that should offer China-group models).
-- `CLAUDE_AUTH_TOKEN_PATH`: optional path to the node's Claude OAuth credentials JSON file (managed via the dashboard or mobile app Claude OAuth flow).
+- `CLAUDE_ACCOUNT_POOL_ENABLED`: turns on the Claude account pool (`false` when unset). The Linux installer writes `true`, and a rerun switches an existing install over. With the pool on, Claude accounts are connected from the dashboard (Settings → Coding agents) and the node advertises `claude_account_pool_v1`. A pool with no accounts is valid.
+- `CLAUDE_AUTH_TOKEN_PATH`: optional path to the node's Claude OAuth credentials JSON file (managed via the dashboard or mobile app Claude OAuth flow). With the pool on, an existing credential at this path is moved into the pool the first time the worker starts, only while no pool store exists yet. The installer leaves the path in place for that reason.
 - `AGY_CLI_PATH`: optional path to the Antigravity (`agy`) CLI executable.
+- Dashboard login for Codex and Antigravity needs no variable. A node that supports either backend advertises the capability `agent_login_v1` when it registers, and the orchestrator then accepts `POST /api/nodes/:node_id/agent-logins/:provider` for it. The usage summary (`GET /api/usage/summary`) reports `login_supported` on that node's `codex` and `antigravity` providers so the dashboard knows where to offer Connect. Antigravity's login screen needs a terminal, so the worker runs `agy` under `script` (util-linux); the node must have `/usr/bin/script` on the worker's `PATH`. Without it, Antigravity login is rejected with `cli_not_installed` while Codex login still works.
 - `OPENCODE_CLI_PATH`: optional path to the OpenCode (`opencode`) CLI executable.
 - `INCOMING_FILE_DIR`: local directory for staging incoming session attachments.
 - `CLAUDE_SESSION_RUNTIME_V2_ENABLED`: enables the persistent Claude session runtime (`true` by default; `false` acts as an emergency kill switch).

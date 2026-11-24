@@ -1,10 +1,11 @@
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { collectAntigravityUsage } from "../../src/auth/antigravity_usage.js";
 import { ProviderUsageCommands } from "../../src/upstream/provider_usage_commands.js";
 import { ProviderUsageService } from "../../src/auth/provider_usage.js";
+import { resetProviderUsageObservationMemo } from "../../src/auth/provider_usage_observation.js";
 
 const fixture = await readFile(new URL("./fixtures/antigravity_usage.jsonl", import.meta.url), "utf8");
 const directories: string[] = [];
@@ -80,4 +81,44 @@ it('retires standalone Gemini commands and excludes it from full snapshots', asy
   const snapshot = await service.fetchSnapshot();
   expect(Object.keys(snapshot.providers)).toEqual(['claude', 'codex', 'antigravity', 'opencode_go']);
   await expect(new ProviderUsageCommands({ providerUsage: service }).handle({ type: 'provider_usage_get', provider: 'gemini' })).rejects.toThrow('provider must be one of: claude, codex, antigravity, opencode_go');
+});
+
+describe("Antigravity usage on a node that is not logged in", () => {
+  // 마지막 결과는 모듈 안에 기억되므로 앞 시험의 성공이 새어 들어오지 않게 비운다.
+  beforeEach(() => resetProviderUsageObservationMemo());
+  const authBanner = (text: string) => `process.stderr.write(${JSON.stringify(text)}); setInterval(() => {}, 1000);`;
+
+  it.each([
+    ["Error: Authentication required. Run 'agy' to log in, then retry.\n"],
+    ["Waiting for authentication (timeout 60s)...\nOr, paste the authorization code here and press Enter:\n"],
+  ])("ends right away on the sign-in prompt instead of waiting for the 45s abort (%s)", async (banner) => {
+    const config = await fakeCli(authBanner(banner));
+    const started = Date.now();
+    const limits = await collectAntigravityUsage(config, new AbortController().signal);
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(limits).toMatchObject({ status: "error", error: "Antigravity authentication required", quotas: [] });
+    // 한 번도 성공하지 않았으면 지금처럼 not_configured로 바뀐다.
+    const service = new ProviderUsageService({ antigravity: config });
+    expect(await service.fetchProvider("antigravity")).toMatchObject({ status: "not_configured" });
+  });
+
+  it("does not start agy while a login flow is live and returns the last result instead", async () => {
+    const config = await fakeCli(`require('node:fs').writeFileSync('started.flag', '1'); process.stdout.write(${JSON.stringify(fixture)});`);
+    let live = false;
+    const withLogin = { ...config, loginActivity: { isLive: () => live } };
+    const service = new ProviderUsageService({ antigravity: withLogin });
+    expect(await service.fetchProvider("antigravity")).toMatchObject({ status: "auto" });
+    await rm(join(config.stateDirectory, "started.flag"));
+
+    live = true;
+    expect(await service.fetchProvider("antigravity")).toMatchObject({ status: "auto" });
+    await expect(readFile(join(config.stateDirectory, "started.flag"), "utf8")).rejects.toThrow();
+  });
+
+  it("returns the same failure as before when no result exists yet", async () => {
+    const config = await fakeCli("require('node:fs').writeFileSync('started.flag', '1');");
+    const service = new ProviderUsageService({ antigravity: { ...config, loginActivity: { isLive: () => true } } });
+    expect(await service.fetchProvider("antigravity")).toMatchObject({ status: "not_configured" });
+    await expect(readFile(join(config.stateDirectory, "started.flag"), "utf8")).rejects.toThrow();
+  });
 });

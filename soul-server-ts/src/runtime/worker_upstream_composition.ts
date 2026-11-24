@@ -1,6 +1,7 @@
 import { WorkspaceService, registerWorkspaceService } from "../workspace/workspace_service.js";
 import type { Logger } from "pino";
 
+import type { AgentLoginCommandHandler } from "../upstream/agent_login_commands.js";
 import type { AuthorizeOrchestrationWorker } from "../upstream/task_runtime_commands.js";
 import type { AgentConfigService } from "../agent_config_service.js";
 import type { FileAttachmentStore } from "../attachments/file_manager.js";
@@ -63,6 +64,7 @@ interface WorkerUpstreamCompositionParams {
   claudeAuth: ClaudeAuthService;
   claudeAccounts?: ClaudeAccountsCommandHandler;
   claudeLoginService?: ClaudeLoginCommandHandler;
+  agentLoginService?: AgentLoginCommandHandler;
   providerUsage: ProviderUsageCommandHandler;
   sessionDb: SessionDB;
   realtimeBroker: RealtimeBroker;
@@ -87,6 +89,7 @@ export function composeWorkerUpstreamAdapter({
   claudeAuth,
   claudeAccounts,
   claudeLoginService,
+  agentLoginService,
   providerUsage,
   sessionDb,
   realtimeBroker,
@@ -131,6 +134,7 @@ export function composeWorkerUpstreamAdapter({
       claudeAuth,
       ...(claudeAccounts ? { claudeAccounts } : {}),
       ...(claudeLoginService ? { claudeLoginService } : {}),
+      ...(agentLoginService ? { agentLoginService } : {}),
       claudeAccountPoolEnabled: env.CLAUDE_ACCOUNT_POOL_ENABLED,
       providerUsage,
       sessionDb,

@@ -5,6 +5,7 @@ import type { Logger } from "pino";
 import type { NodeRegister } from "@soulstream/wire-schema";
 import type { NodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
 
+import { supportsAgentLogin } from "../agent_login/capability.js";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { ModelCatalog } from "../model_catalog.js";
 import type { ReleaseActivationState } from "../release/release_activation_state.js";
@@ -118,6 +119,7 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
       attachment_import_v1: true,
       runner_inventory_v1: true,
       ...(params.claudeAccountPoolEnabled ? { claude_account_pool_v1: true } : {}),
+      ...(supportsAgentLogin(supportedBackends) ? { agent_login_v1: true } : {}),
       ...(params.controlChannelEnabled ? { control_channel_v1: true } : {}),
       ...(params.runnerProcessEnabled === undefined
         ? {}

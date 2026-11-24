@@ -1910,6 +1910,7 @@ export function buildProductionRouteOptions(
       registry: runtime.registry,
       bridge: runtime.sessionBridge,
       usageSummary,
+      adminAccess: providers.adminUsersRoutes.provider,
     },
     nodeSnapshotRoutes: providers.runtime.nodeSnapshotRoutes,
     ...(nodePairing ? { nodePairRoutes: { service: nodePairing } } : {}),
