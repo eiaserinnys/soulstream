@@ -50,7 +50,7 @@ describe("persistent session catalogue defaults", () => {
 
   it("reads the new-session default preset and legacy fallback list from the catalogue", async () => {
     catalog = createTempModelCatalog((text) => text
-      .replace("model_preset: claude-opus\n", "model_preset: claude-sonnet\n")
+      .replace("  model_preset: gemini-4-neon\n", "  model_preset: claude-sonnet\n")
       .replace(
         "    - model_preset: codex-6.2-sol\n      reasoning_effort: high\n",
         "    - model_preset: codex-6-sol\n      reasoning_effort: xhigh\n",
@@ -66,11 +66,13 @@ describe("persistent session catalogue defaults", () => {
       reasoning_effort: "high",
     });
     expect(defaults.settings.fallback_models).toEqual([
+      { model_preset: "claude-opus", reasoning_effort: null },
       { model_preset: "codex-6-sol", reasoning_effort: "xhigh" },
     ]);
 
     const listed = await service.list(SERVICE_CALLER);
     expect(listed.sessions[0]?.settings.fallback_models).toEqual([
+      { model_preset: "claude-opus", reasoning_effort: null },
       { model_preset: "codex-6-sol", reasoning_effort: "xhigh" },
     ]);
   });

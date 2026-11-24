@@ -877,7 +877,7 @@ describe("buildPersistentDecisionInput", () => {
       },
     );
 
-    expect(input.fallback_models).toEqual(["codex-6.2-sol"]);
+    expect(input.fallback_models).toEqual(["claude-opus", "codex-6.2-sol"]);
     expect(input.preset_providers).toMatchObject({ "codex-6.2-sol": "codex" });
   });
 

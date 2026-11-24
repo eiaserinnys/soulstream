@@ -679,8 +679,11 @@ describe("repository model catalogue data", () => {
   it("keeps the PAS defaults in the data file", () => {
     expect(catalog.persistent_defaults).toEqual({
       agent_id: "seosoyoung-pas",
-      model_preset: "claude-opus",
-      fallback_models: [{ model_preset: "codex-6.2-sol", reasoning_effort: "high" }],
+      model_preset: "gemini-4-neon",
+      fallback_models: [
+        { model_preset: "claude-opus", reasoning_effort: null },
+        { model_preset: "codex-6.2-sol", reasoning_effort: "high" },
+      ],
     });
   });
 });
