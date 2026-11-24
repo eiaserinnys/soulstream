@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import { Button, Checkbox } from "@seosoyoung/soul-ui";
 import { FileText, Maximize2 } from "lucide-react";
 import { CardQuestionAnswered, CardQuestionBody, type CardQuestionView } from "../CardQuestionBlock";
@@ -13,9 +12,9 @@ import {
   type ThreadEvent,
 } from "./pas-report-thread-1707-data";
 
-function phaseOf(event: ThreadEvent): number {
+function phaseOf(event: ThreadEvent, hasMidComment: boolean): number {
   if (event.kind === "request") return 1;
-  if (event.kind === "result") return 4;
+  if (event.kind === "result") return hasMidComment ? 4 : 3;
   if (event.kind === "comment") return 3;
   return 2;
 }
@@ -56,22 +55,17 @@ export function PasThreadTimeline({ agenda, checks, questionAnswer, onToggleChec
 }) {
   let sawComment = false;
   let maxPhase = 0;
-  const hasComment = agenda.events.some((event) => event.kind === "comment");
+  // 결과보다 앞선 중간 문답이 있을 때만 3단계를 두고, 없으면 결과가 3단계다.
+  const resultIndex = agenda.events.findIndex((event) => event.kind === "result");
+  const hasMidComment = agenda.events.slice(0, resultIndex < 0 ? undefined : resultIndex).some((event) => event.kind === "comment");
   return <div className="pas-rt1707-timeline" role="list" aria-label={`${agenda.number}번 안건의 시간순 기록`}>
     {agenda.events.map((event) => {
       const afterComment = sawComment;
       if (event.kind === "comment") sawComment = true;
-      const rawPhase = event.kind === "session" && afterComment ? 3 : phaseOf(event);
+      const rawPhase = event.kind === "session" && afterComment ? 3 : phaseOf(event, hasMidComment);
       const phase = Math.max(maxPhase, rawPhase);
       maxPhase = phase;
-      return <Fragment key={event.id}>
-        {event.kind === "result" && !hasComment ? <section className="pas-rt1707-event" data-kind="silence" role="listitem">
-          <span className="pas-rt1707-event-number" aria-hidden="true">3</span>
-          <div className="pas-rt1707-event-body">
-            <header className="pas-rt1707-event-head"><h3>3. 중간 커멘트 없음</h3></header>
-          </div>
-        </section> : null}
-        <section className="pas-rt1707-event" data-kind={event.kind} role="listitem">
+      return <section key={event.id} className="pas-rt1707-event" data-kind={event.kind} role="listitem">
         <span className="pas-rt1707-event-number" aria-hidden="true">{phase}</span>
         <div className="pas-rt1707-event-body">
           <header className="pas-rt1707-event-head">
@@ -84,8 +78,7 @@ export function PasThreadTimeline({ agenda, checks, questionAnswer, onToggleChec
           {event.kind === "result" ? <ResultEvent agenda={agenda} event={event} checks={checks} questionAnswer={questionAnswer}
             onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument} onOpenCard={onOpenCard} /> : null}
         </div>
-        </section>
-      </Fragment>;
+      </section>;
     })}
   </div>;
 }

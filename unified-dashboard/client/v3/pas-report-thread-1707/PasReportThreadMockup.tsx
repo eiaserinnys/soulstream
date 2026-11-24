@@ -225,7 +225,6 @@ export function PasReportThreadMockup() {
     const index = result?.kind === "result" ? result.checks.findIndex((item) => item.id === check.id) : -1;
     setActiveId(agenda.id);
     setTarget({ checkId: check.id, label: `${index >= 0 ? index + 1 : 1}번 항목` });
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".pas-rt1707-decide-input textarea")?.focus());
   };
 
   const openDocument = (id: string) => setDocumentId(id);

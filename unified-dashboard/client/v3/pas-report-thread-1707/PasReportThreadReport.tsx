@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Badge, Button, DashboardIconCap, Dialog, DialogPopup, DialogTitle, useIsMobile } from "@seosoyoung/soul-ui";
 import { ChevronLeft, ChevronRight, ExternalLink, PanelLeft, X } from "lucide-react";
 import { DocumentReaderDialog } from "../DocumentReaderDialog";
@@ -60,7 +60,6 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
   const pending = agendas.filter((item) => item.status === "review" && !item.snoozedLabel);
   const pendingIndex = pending.findIndex((item) => item.id === agenda.id);
   const threadRef = useRef<HTMLDivElement>(null);
-  const timelineWrapRef = useRef<HTMLDivElement>(null);
   const panelTrigger = useRef<HTMLElement | null>(null);
   const railTrigger = useRef<HTMLButtonElement>(null);
   const undoButtonRef = useRef<HTMLButtonElement>(null);
@@ -78,6 +77,10 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
     railTrigger.current?.focus({ preventScroll: true });
     setRailOpen(false);
   };
+  const keepLatest = () => {
+    const scroll = threadRef.current;
+    if (scroll && autoRef.current) scroll.scrollTop = scroll.scrollHeight;
+  };
   const jump = () => {
     const scroll = threadRef.current;
     if (scroll) scroll.scrollTop = scroll.scrollHeight;
@@ -94,16 +97,21 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
     });
     return () => cancelAnimationFrame(frame);
   }, [open, agenda.id]);
-  useEffect(() => {
-    const timeline = timelineWrapRef.current;
-    if (!open || !timeline) return;
+  // 대화상자 내용은 열린 뒤에 붙으므로 스레드가 붙는 순간 관찰을 건다. 경과가 늘거나
+  // 결재 상자 아래에 입력창이 펼쳐져 스레드 높이가 줄어도 최신 경과 바닥을 지킨다.
+  const attachThread = useCallback((node: HTMLDivElement | null) => {
+    threadRef.current = node;
+    if (!node) return;
     const observer = new ResizeObserver(() => {
-      const scroll = threadRef.current;
-      if (scroll && autoRef.current) scroll.scrollTop = scroll.scrollHeight;
+      if (autoRef.current) node.scrollTop = node.scrollHeight;
     });
-    observer.observe(timeline);
-    return () => observer.disconnect();
-  }, [open, agenda.id]);
+    observer.observe(node);
+    if (node.firstElementChild) observer.observe(node.firstElementChild);
+    return () => {
+      observer.disconnect();
+      threadRef.current = null;
+    };
+  }, []);
   useLayoutEffect(() => {
     if (!open) return;
     if (lastEvents.current.id === agenda.id && agenda.events.length > lastEvents.current.count) {
@@ -221,12 +229,12 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
           }} />
           <div className="pas-rt1707-thread" inert={mobile && railOpen ? true : undefined}>
             <div className="pas-rt1707-thread-content">
-            <div ref={threadRef} tabIndex={-1} className="pas-rt1707-thread-scroll" data-auto-scroll={autoScroll} onScroll={(event) => {
+            <div ref={attachThread} tabIndex={-1} className="pas-rt1707-thread-scroll" data-auto-scroll={autoScroll} onScroll={(event) => {
               const node = event.currentTarget;
               const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight <= 24;
               autoRef.current = atBottom; setAutoScroll(atBottom); if (atBottom) setHasNew(false);
             }}>
-              <div ref={timelineWrapRef}>
+              <div>
                 <PasThreadTimeline agenda={agenda} checks={checks} questionAnswer={questionAnswers[agenda.id] ?? null}
                   onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument} onOpenCard={openPanel} />
               </div>
@@ -236,7 +244,8 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
             <PasThreadDecideBox key={agenda.id} agenda={agenda} target={target} onClearTarget={onClearTarget} text={instruction}
               onChangeText={onChangeInstruction} onSend={(mode) => runWithUndoFocus(() => onSendInstruction(mode))} onDispose={(disposition) => runWithUndoFocus(() => onDispose(disposition))}
               questionAnswer={questionAnswers[agenda.id] ?? null} onChooseQuestion={(label) => runWithUndoFocus(() => onChooseAnswer(agenda, label))}
-              undoLabel={undoLabel} onUndo={onUndo} onSnooze={snooze} onUnsnooze={onUnsnooze} onSimulate={onSimulate} undoButtonRef={undoButtonRef} />
+              undoLabel={undoLabel} onUndo={onUndo} onSnooze={snooze} onUnsnooze={onUnsnooze} onSimulate={onSimulate} undoButtonRef={undoButtonRef}
+              onComposerToggle={keepLatest} />
           </div>
         </div>
         {panelOpen ? <CardWorkspace cardId={agenda.id} sampleDetail={detail} folders={dialoguesFolders}
