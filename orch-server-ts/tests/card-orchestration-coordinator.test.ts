@@ -428,7 +428,24 @@ it("keeps the admission declaration and adds check-item guidance to an automatic
    admission:{workerInput:{prompt:string}}
  }]>)[0]![0];
  expect(persisted.admission.workerInput.prompt).toContain("커멘트 ID: user-comment");
- expect(persisted.admission.workerInput.prompt).toMatch(/\n\n## 지금 실행 중인 다른 카드 세션\n[^]*\n\n자동 배정 실행이다\. 일을 시작할 때 get_card로 version을 읽어 start_card_work를 부른다\.$/);
+ expect(persisted.admission.workerInput.prompt).not.toMatch(/## (같은 폴더에서 실행 중인 다른 카드|지금 실행 중인 다른 카드 세션)/);
+ expect(persisted.admission.workerInput.prompt).toMatch(/\n\n자동 배정 실행이다\. 일을 시작할 때 get_card로 version을 읽어 start_card_work를 부른다\.$/);
  expect(persisted.admission.workerInput.prompt).not.toContain("## 카드 규칙");
  expect(persisted.admission.workerInput.prompt).not.toContain("## 대기열");
+});
+
+it("filters running cards in an automatic worker prompt and keeps its final guidance", async () => {
+ const h=harness(undefined,{decision:run=>({decisions:run.snapshot.map(card=>({cardId:card.cardId,cardVersion:card.cardVersion,action:"run" as const,reason:"실행"}))})});
+ h.recordDispatch.mockImplementation(async()=>undefined as never);
+ await h.coordinator.kick();
+ h.state.runningCards=[
+   runningCard("queued-1", { number: 1 }),
+   runningCard("same-folder", { number: 2, title: "같은 폴더 작업" }),
+   runningCard("other-folder", { folder_id: "another-folder", number: 3, title: "다른 폴더 작업" }),
+ ];
+ await h.coordinator.decisionEnded([...h.state.runs.values()].at(-1)!.session_id);
+ const persisted=(h.recordDispatch.mock.calls as unknown as Array<[{admission:{workerInput:{prompt:string}}}]>)[0]![0];
+ expect(persisted.admission.workerInput.prompt).toMatch(/## 같은 폴더에서 실행 중인 다른 카드\n#2 같은 폴더 작업\n\n자동 배정 실행이다\. 일을 시작할 때 get_card로 version을 읽어 start_card_work를 부른다\.$/);
+ expect(persisted.admission.workerInput.prompt).not.toContain("다른 폴더 작업");
+ expect(persisted.admission.workerInput.prompt).not.toContain("#1 queued-1");
 });

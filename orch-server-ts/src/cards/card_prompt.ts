@@ -1,10 +1,13 @@
 export type CardPromptEntry = {
+    id: string;
+    folder_id: string;
+    number: number | null;
     title: string;
-    folderName: string;
 };
 export type CardPromptComment = { id?: string; createdAt: Date | string; body: string };
 export type CardPromptInput = {
     cardId: string;
+    folderId: string;
     title: string;
     folderName: string;
     request: string;
@@ -14,7 +17,10 @@ export type CardPromptInput = {
     running: readonly CardPromptEntry[];
 };
 export function buildCardPrompt(input: CardPromptInput): string {
-    const running = input.running.map(c => `${c.title} (${c.folderName})`).join("\n") || "없음";
+    const runningCards = input.running
+        .filter(c => c.folder_id === input.folderId && c.id !== input.cardId)
+        .slice(0, 10);
+    const running = runningCards.map(c => c.number === null ? c.title : `#${c.number} ${c.title}`).join("\n");
     const comments = input.comments?.map(comment => `- ${comment.createdAt instanceof Date ? comment.createdAt.toISOString() : comment.createdAt}${comment.id ? `\n  커멘트 ID: ${comment.id}` : ""}\n  ${comment.body}`).join("\n") ?? "";
     return `[카드 실행] 이 세션은 카드 ${input.cardId} 「${input.title}」(폴더 ${input.folderName})을 맡았다.
 
@@ -22,14 +28,14 @@ export function buildCardPrompt(input: CardPromptInput): string {
 ${input.request}
 
 ## 인계 요약 (지금까지)
-${input.brief || "(아직 없음)"}
-${comments ? `
+${input.brief || "(아직 없음)"}${comments ? `
+
 ## 커멘트
-${comments}
-` : ""}${input.reason ? `
+${comments}` : ""}${input.reason ? `
+
 ## 상태 변경 사유 (있을 때만)
-${input.reason}
-` : ""}
-## 지금 실행 중인 다른 카드 세션
-${running}`;
+${input.reason}` : ""}${runningCards.length ? `
+
+## 같은 폴더에서 실행 중인 다른 카드
+${running}` : ""}`;
 }

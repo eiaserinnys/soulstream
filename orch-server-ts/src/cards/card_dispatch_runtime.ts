@@ -525,9 +525,9 @@ export async function createCardDispatchRuntime(options: {
       const folder=(await legacyOptions.repository.queued()).find(c=>c.id===input.cardId)?.folder_name
         ?? (await (await serviceProvider()).getFolder(detail.card.folder_id))!.folder.name;
       const answers=detail.questions.filter(q=>q.answer!==null).map(q=>`${String(q.text)} → ${String(q.answer)}`).join("\n");
-      let prompt=buildCardPrompt({cardId:input.cardId,title:detail.card.title,folderName:folder,request:detail.card.request,
+      let prompt=buildCardPrompt({cardId:input.cardId,folderId:detail.card.folder_id,title:detail.card.title,folderName:folder,request:detail.card.request,
         brief:[detail.card.brief,answers].filter(Boolean).join("\n"),comments:detail.comments.filter(c=>c.author_kind==='user').map(c=>({id:String(c.id),createdAt:c.created_at as Date,body:String(c.body)})),
-        running:(await legacyOptions.repository.running()).filter(c=>c.id!==input.cardId).map(c=>({title:c.title,folderName:c.folder_name}))});
+        running:await legacyOptions.repository.running()});
       const sql=await resolveSql();
       const replacement=(await sql<Array<{payload_json:Record<string,any>}>>`SELECT op.payload_json FROM card_execution_requests r
         JOIN folder_operations op ON r.idempotency_key='dispatch-work-replace:'||op.id
