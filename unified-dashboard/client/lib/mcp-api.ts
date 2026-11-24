@@ -1,3 +1,5 @@
+import type { McpPreviewResult as WireMcpPreviewResult, McpPreviewVariant as WireMcpPreviewVariant } from "../../../packages/wire-schema/generated/typescript/index";
+
 export type McpIcon =
   | { kind: "brand"; slug: string; hex: string }
   | { kind: "symbol"; name: string; color: string }
@@ -70,24 +72,14 @@ export type McpTestInput = { node_id: string } & (
 export type McpTestResult =
   | { ok: true; latency_ms: number; server_info?: { name: string; version: string }; tool_count: number; tools: string[] }
   | { ok: false; latency_ms: number; error_stage: "config" | "connect" | "initialize" | "list_tools" | "timeout"; error_message: string };
-export type McpPreviewRow = {
-  server_id: string;
-  name: string;
-  type: string;
-  included: boolean;
-  excluded_reason?: string;
+export type McpPreviewRow = WireMcpPreviewVariant["servers"][number] & {
   icon?: McpIcon | null;
   node_override?: boolean;
 };
-export type McpPreviewResult = {
-  applied_mode: "central" | "local";
-  applied_revision: number;
+export type McpPreviewResult = Omit<WireMcpPreviewResult, "normal" | "restricted"> & {
   current_revision: number;
-  effective_backend: string;
-  default_preset: string | null;
-  isolation_enabled: boolean;
-  normal: { runnable: boolean; blocked_reason?: string; servers: McpPreviewRow[] };
-  restricted: { runnable: boolean; blocked_reason?: string; servers: McpPreviewRow[] };
+  normal: Omit<WireMcpPreviewVariant, "servers"> & { servers: McpPreviewRow[] };
+  restricted: Omit<WireMcpPreviewVariant, "servers"> & { servers: McpPreviewRow[] };
 };
 export class McpApiError extends Error {
   constructor(
@@ -97,6 +89,19 @@ export class McpApiError extends Error {
   ) {
     super(message);
   }
+}
+export function mcpRequestErrorText(error: unknown): string {
+  if (!(error instanceof McpApiError)) return "요청에 실패했습니다. 다시 시도해 주세요.";
+  const codes: Record<string, string> = {
+    MCP_NODE_NOT_MANAGED: "이 노드는 중앙 MCP 관리 목록에 없습니다.",
+    MCP_SERVER_OUT_OF_SCOPE: "이 서버는 이 노드 범위에 없습니다.",
+    MCP_PORTABLE_NODE: "무설치 노드는 중앙 MCP 설정을 받지 않습니다.",
+  };
+  if (codes[error.code]) return codes[error.code];
+  if (error.status === 403) return "관리자만 볼 수 있습니다.";
+  if (error.status === 404) return "에이전트, 프로필이나 서버를 찾지 못했습니다. 다시 읽어 주세요.";
+  if (error.status === 503) return /[가-힣]/.test(error.message) ? error.message : "노드에 연결할 수 없거나 노드가 이 기능을 받지 않습니다.";
+  return "요청에 실패했습니다. 다시 시도해 주세요.";
 }
 export function createMcpApi(request: typeof fetch = fetch) {
   async function call<T>(
@@ -118,11 +123,12 @@ export function createMcpApi(request: typeof fetch = fetch) {
       const error = (await response.json().catch(() => ({}))) as {
         code?: string;
         message?: string;
+        detail?: string;
       };
       throw new McpApiError(
         response.status,
         error.code ?? "",
-        error.message ?? "요청에 실패했습니다.",
+        error.message ?? error.detail ?? "요청에 실패했습니다.",
       );
     }
     return response.json() as Promise<T>;

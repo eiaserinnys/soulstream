@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { mcpRequestErrorText } from "../../lib/mcp-api";
 import { Button, Checkbox, Input } from "@seosoyoung/soul-ui";
 import type {
   Definition,
@@ -165,7 +166,7 @@ export function McpServerEditor({
       });
       setTestResult(result.ok ? { ...result, tools: result.tools.map(clean), ...(result.server_info ? { server_info: { name: clean(result.server_info.name), version: clean(result.server_info.version) } } : {}) }
         : { ...result, error_message: clean(result.error_message) });
-    } catch (caught) { setTestError(clean(caught instanceof Error ? caught.message : "연결 시험에 실패했습니다.")); }
+    } catch (caught) { setTestError(clean(mcpRequestErrorText(caught))); }
     finally { setTesting(false); }
   };
   return (

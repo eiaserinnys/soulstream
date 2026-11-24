@@ -1,7 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMcpApi, McpApiError } from "./mcp-api";
+import { createMcpApi, McpApiError, mcpRequestErrorText } from "./mcp-api";
 
 describe("MCP 관리 API", () => {
+  it.each([
+    [403, "MCP_NODE_NOT_MANAGED", "English", "이 노드는 중앙 MCP 관리 목록에 없습니다."],
+    [403, "MCP_SERVER_OUT_OF_SCOPE", "English", "이 서버는 이 노드 범위에 없습니다."],
+    [403, "MCP_PORTABLE_NODE", "English", "무설치 노드는 중앙 MCP 설정을 받지 않습니다."],
+    [403, "", "Admin access required", "관리자만 볼 수 있습니다."],
+    [404, "MCP_PROFILE_NOT_FOUND", "Profile not found", "에이전트, 프로필이나 서버를 찾지 못했습니다. 다시 읽어 주세요."],
+    [503, "MCP_NODE_UNAVAILABLE", "MCP preview unavailable", "노드에 연결할 수 없거나 노드가 이 기능을 받지 않습니다."],
+    [503, "MCP_NODE_UNAVAILABLE", "이 노드는 중앙 MCP 설정을 받지 않습니다.", "이 노드는 중앙 MCP 설정을 받지 않습니다."],
+  ])("HTTP %s %s 오류를 한국어로 안내한다", (status, code, message, expected) => {
+    expect(mcpRequestErrorText(new McpApiError(status, code, message))).toBe(expected);
+  });
+  it("관리자 거부의 detail을 읽는다", async () => {
+    const request = vi.fn().mockImplementation(async () => Response.json({ detail: "Admin access required" }, { status: 403 }));
+    await expect(createMcpApi(request).previewAgentMcp("agent", "node")).rejects.toMatchObject({ status: 403, message: "Admin access required" });
+    await expect(createMcpApi(request).testMcpServer({ node_id: "node", server_id: "server" })).rejects.toMatchObject({ status: 403, message: "Admin access required" });
+  });
   it("같은 출처 인증과 기대 판으로 서버를 저장한다", async () => {
     const request = vi
       .fn()

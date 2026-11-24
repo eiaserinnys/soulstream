@@ -4,6 +4,26 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { AgentMcpConnectionPane } from "./AgentMcpConnectionPane";
 
+it("연결 해제 선택은 저장된 미리보기를 숨기고 같은 이름에 ID를 붙인다", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const config = { current_revision: 2, servers: [], secrets: [], managed_nodes: [{ node_id: "n", connected: true, central_sync_supported: true, applied_revision: 2, ack: null }],
+    profiles: ["p1", "p2"].map(id => ({ id, name: "같은 이름", description: null, mcp_servers: [], hosted_tools: [], node_scope: ["n"], version: 1 })),
+    bindings: [{ agent_id: "a", node_id: "n", mcp_profile_id: "p1", version: 1 }] };
+  const request = vi.fn(async (url: RequestInfo | URL) => String(url).endsWith("/config") ? Response.json(config) : Response.json({ applied_mode: "central", applied_revision: 2, current_revision: 2, effective_backend: "sample", default_preset: null, isolation_enabled: false, normal: { runnable: true, servers: [{ server_id: "s", name: "이전 서버", type: "stdio", included: true }] }, restricted: { runnable: true, servers: [] } }));
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  try {
+    await act(async () => { root.render(<AgentMcpConnectionPane agentId="a" nodeId="n" request={request as typeof fetch} onEditProfile={() => {}} />); await new Promise(resolve => setTimeout(resolve, 0)); });
+    const select = host.querySelector("select")!;
+    expect([...select.options].map(item => item.textContent)).toEqual(["연결 안 함", "같은 이름 (p1)", "같은 이름 (p2)"]);
+    expect(host.textContent).toContain("이전 서버");
+    const before = request.mock.calls.filter(([url]) => String(url).includes("/preview?")).length;
+    await act(async () => { select.value = ""; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(host.textContent).toContain("연결을 뗀 뒤의 미리보기는 저장한 뒤에 볼 수 있습니다.");
+    expect(host.textContent).not.toContain("이전 서버");
+    expect(request.mock.calls.filter(([url]) => String(url).includes("/preview?")).length).toBe(before);
+  } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
+});
+
 it("선택 노드의 연결과 미리보기를 보여 주고 선택한 노드에 판을 확인해 저장한다", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const config = { current_revision: 4, secrets: [], managed_nodes: ["n1", "n2"].map(node_id => ({ node_id, connected: true, central_sync_supported: true, applied_revision: 4, ack: null })),

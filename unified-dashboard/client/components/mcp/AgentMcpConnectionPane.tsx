@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Checkbox, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPopup, DialogTitle, FrameLoading } from "@seosoyoung/soul-ui";
-import { createMcpApi, McpApiError, type McpConfig, type McpPreviewResult } from "../../lib/mcp-api";
+import { createMcpApi, McpApiError, mcpRequestErrorText, type McpConfig, type McpPreviewResult } from "../../lib/mcp-api";
 import { DetailTabs } from "../../v3/DetailTabs";
 import { inputClassName } from "../AgentAtomContextFields";
 import { SettingsAlert, SettingsField, SettingsGroupBox } from "../config/SettingsListDetail";
@@ -9,7 +9,7 @@ import { McpIconTile, McpServerIcons } from "./McpIcons";
 function message(error: unknown, preview = false): string {
   if (error instanceof McpApiError) {
     if (error.code.endsWith("_VERSION_CONFLICT") || error.code === "MCP_REVISION_CONFLICT") return "다른 곳에서 변경됐습니다. 다시 읽은 뒤 저장해 주세요.";
-    if (preview && [403, 404, 503].includes(error.status)) return error.status === 503 ? `노드 연결 또는 기능을 확인해 주세요. ${error.message}` : error.message;
+    if (preview && [403, 404, 503].includes(error.status)) return mcpRequestErrorText(error);
     if (error.status === 400) return "입력한 연결을 확인해 주세요.";
     if (error.status === 409) return "연결을 저장할 수 없습니다. 다시 읽은 뒤 확인해 주세요.";
   }
@@ -44,7 +44,8 @@ export function AgentMcpConnectionPane({ agentId, nodeId, request = fetch, onEdi
   const binding = config?.bindings.find(item => item.agent_id === agentId && item.node_id === nodeId);
   const managed = config?.managed_nodes.some(item => item.node_id === nodeId) ?? false;
   useEffect(() => {
-    if (!config || !nodeId) { setPreview(null); return; }
+    if (!config || !nodeId) { setPreview(null); setLoadingPreview(false); return; }
+    if (!profileId && binding) { setPreview(null); setPreviewError(""); setLoadingPreview(false); return; }
     let active = true;
     setLoadingPreview(true); setPreviewError(""); setPreview(null);
     const override = profileId && profileId !== (binding?.mcp_profile_id ?? "") ? profileId : undefined;
@@ -73,7 +74,7 @@ export function AgentMcpConnectionPane({ agentId, nodeId, request = fetch, onEdi
       <div className="space-y-3">
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-0 flex-1"><SettingsField label="MCP 프로필"><select className={inputClassName} value={profileId} onChange={event => setProfileId(event.target.value)}>
-            <option value="">연결 안 함</option>{config.profiles.map(item => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}
+            <option value="">연결 안 함</option>{config.profiles.map(item => <option key={item.id} value={item.id}>{item.name && config.profiles.filter(other => other.name === item.name).length > 1 ? `${item.name} (${item.id})` : item.name || item.id}</option>)}
           </select></SettingsField></div>
           <Button type="button" disabled={busy} onClick={() => void save()}>연결 저장</Button>
           {profile ? <Button type="button" variant="outline" onClick={() => onEditProfile(profile.id)}>이 프로필 편집</Button> : null}
@@ -86,7 +87,7 @@ export function AgentMcpConnectionPane({ agentId, nodeId, request = fetch, onEdi
     </SettingsGroupBox> : <p data-v3-selectable-content="true">이 노드는 중앙 MCP 관리 목록에 없습니다.</p>}
     <SettingsGroupBox title={`선택 노드 실행 미리보기 (${nodeId})`}>
       <div className="space-y-3">
-        {loadingPreview ? <FrameLoading inline label="미리보기를 불러오는 중…" /> : previewError ? <SettingsAlert>{previewError}</SettingsAlert> : preview && current ? <>
+        {!profileId && binding ? <p className="text-sm">저장하면 이 노드에서 이 에이전트의 MCP 연결을 뗍니다. 연결을 뗀 뒤의 미리보기는 저장한 뒤에 볼 수 있습니다.</p> : loadingPreview ? <FrameLoading inline label="미리보기를 불러오는 중…" /> : previewError ? <SettingsAlert>{previewError}</SettingsAlert> : preview && current ? <>
           {preview.isolation_enabled ? <DetailTabs<"normal" | "restricted"> id="agent-mcp-variant" label="세션 종류" panelId="agent-mcp-preview" tabs={[["normal", "일반 세션"], ["restricted", "격리 세션"]] as const} value={variant} onChange={setVariant} /> : null}
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{preview.default_preset ? `기본 프리셋: ${preview.default_preset}` : "기본 프리셋 없음"} · {preview.effective_backend}</span><Badge variant={preview.applied_mode === "central" && preview.applied_revision === preview.current_revision ? "success" : "warning"} size="sm">{preview.applied_mode !== "central" ? "로컬 설정 사용 중" : preview.applied_revision !== preview.current_revision ? `이 노드는 판 ${preview.applied_revision} 사용 중 (최신 판 ${preview.current_revision})` : `중앙 판 ${preview.applied_revision} 일치`}</Badge></div>
           <div id="agent-mcp-preview" role="tabpanel" aria-label="실행 미리보기">

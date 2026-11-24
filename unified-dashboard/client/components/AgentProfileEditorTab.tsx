@@ -365,7 +365,7 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
             onChange={setPane}
           /></div>
           <div id="agent-profile-pane-panel" role="tabpanel" className="mt-3 flex min-h-0 flex-1 flex-col">
-            {pane === "mcp" ? <AgentMcpConnectionPane key={`${selectedNodeProfile.id}:${selectedNodeId}`} agentId={selectedNodeProfile.id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} /> : <AgentContextAssemblyView
+            {pane === "mcp" ? !selectedNodeId ? <FrameNotice>연결된 노드가 없습니다.</FrameNotice> : <AgentMcpConnectionPane key={`${selectedNodeProfile.id}:${selectedNodeId}`} agentId={selectedNodeProfile.id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} /> : <AgentContextAssemblyView
               key={`node:${selectedNodeProfile.id}`}
               target={{ kind: "node", agentId: selectedNodeProfile.id }}
               nodeId={selectedNodeId}
@@ -388,7 +388,7 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
             onChange={setPane}
           /></div>
           <div id="agent-profile-pane-panel" role="tabpanel" className="mt-3 flex min-h-0 flex-1 flex-col">
-          {pane === "mcp" ? <AgentMcpConnectionPane key={`${draft.agent_id}:${selectedNodeId}`} agentId={draft.agent_id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} /> : pane === "assembly" ? !selectedNodeId ? (
+          {pane === "mcp" ? !selectedNodeId ? <FrameNotice>연결된 노드가 없습니다.</FrameNotice> : <AgentMcpConnectionPane key={`${draft.agent_id}:${selectedNodeId}`} agentId={draft.agent_id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} /> : pane === "assembly" ? !selectedNodeId ? (
             <FrameNotice>연결된 노드가 없습니다.</FrameNotice>
           ) : loadedNodeId !== selectedNodeId ? (
             <FrameLoading label="노드 에이전트를 불러오는 중..." />

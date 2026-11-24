@@ -542,6 +542,15 @@ describe("AgentProfileEditorTab", () => {
     expect(request).toHaveBeenCalledWith("/api/mcp/agents/yaml-agent/preview?node_id=node-a", expect.any(Object));
   });
 
+  it("shows an explicit notice on the MCP tab when no node is connected", async () => {
+    useOrchestratorStore.setState({ nodes: new Map() });
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => String(input) === "/api/context-bundles" ? jsonResponse({ bundles: [] }) : jsonResponse({ profiles: [profile] })));
+    await renderEditor(false);
+    clickButton("MCP"); await settle();
+    expect(document.body.textContent).toContain("연결된 노드가 없습니다.");
+    expect(document.body.textContent).not.toContain("미리보기를 불러오는 중");
+  });
+
   async function renderEditor(edit = true) {
     container = document.createElement("div");
     document.body.appendChild(container);
