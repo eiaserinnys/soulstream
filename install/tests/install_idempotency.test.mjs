@@ -142,12 +142,14 @@ test('Tailscale rendering preserves secrets and password across mode changes', (
   assert.equal(statSync(orchPath).mode & 0o777,0o600);
   assert.equal(statSync(passwordPath).mode & 0o777,0o600);
   let orch=env(orchPath); assert.equal(orch.TAILSCALE_AUTH_ENABLED,'true'); assert.equal(orch.TAILSCALE_ALLOWED_LOGIN,'owner@example.com');
+  assert.equal(orch.PERSISTENT_SESSION_BOOTSTRAP,'true');
   assert.equal(orch.SOULSTREAM_PUBLIC_URL,'https://node.tailnet.ts.net'); assert.equal(orch.CORS_ALLOWED_ORIGINS,'https://node.tailnet.ts.net,http://127.0.0.1:5200');
   assert.equal(orch.ATOM_PUBLIC_URL,'https://node.tailnet.ts.net:8443'); assert.equal(orch.ATOM_SERVER_URL,'http://127.0.0.1:4200');
   assert.equal(orch.DASHBOARD_ADMIN_PASSWORD,undefined); assert.ok(!(run.stdout+run.stderr+readFileSync(orchPath,'utf8')).includes('secret-key'));
   const initial=orch;
   run=renderMode('false'); assert.equal(run.status,0,run.stderr); orch=env(orchPath);
   const password=orch.DASHBOARD_ADMIN_PASSWORD; assert.ok(password); assert.equal(orch.TAILSCALE_AUTH_ENABLED,undefined); assert.equal(orch.ATOM_PUBLIC_URL,'http://127.0.0.1:4200');
+  assert.equal(orch.PERSISTENT_SESSION_BOOTSTRAP,'true');
   run=renderMode('true'); assert.equal(run.status,0,run.stderr); assert.equal(readFileSync(passwordPath,'utf8').trim(),password);
   orch=env(orchPath); assert.equal(orch.DASHBOARD_ADMIN_PASSWORD,undefined); assert.equal(orch.ATOM_PUBLIC_URL,'https://node.tailnet.ts.net:8443');
   run=renderMode('false'); assert.equal(run.status,0,run.stderr); orch=env(orchPath);

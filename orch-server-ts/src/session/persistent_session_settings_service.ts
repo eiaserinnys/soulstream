@@ -37,6 +37,13 @@ import {
 } from "./persistent_session_resource.js";
 import { PersistentSessionApiError } from "./persistent_session_api_error.js";
 import {
+  SingleFlightByKey,
+  bootstrapDisplayName,
+  bootstrapRefusal,
+  bootstrapUserKey,
+  parseBootstrapBody,
+} from "./persistent_session_bootstrap.js";
+import {
   PersistentSessionInstructionsService,
   requireObjectBody,
 } from "./persistent_session_instructions_service.js";
@@ -50,6 +57,8 @@ export type PersistentCreateDefaults = {
   settings: PersistentSettingsView;
   initial_instruction: string;
   unavailable_reason: string | null;
+  /** True when the dashboard may ask for the default session instead of showing an empty list. */
+  bootstrap_enabled: boolean;
 };
 
 export type PersistentSessionSettingsServiceDeps = {
@@ -72,6 +81,10 @@ export type PersistentSessionSettingsServiceDeps = {
   defaultExecutionNodeId: string;
   /** Installer-chosen agent; null falls back to the catalog persistent default. */
   defaultPasAgentId?: string | null;
+  /** PERSISTENT_SESSION_BOOTSTRAP; absent means off. */
+  bootstrapEnabled?: boolean;
+  /** Stable id of the signed-in caller (its address), or null when the request carries none. */
+  resolveCallerId?: (request: FastifyRequest) => Promise<string | null> | string | null;
 };
 
 type CallerRequest = FastifyRequest | ServiceCaller;
@@ -95,6 +108,7 @@ export type PersistentSessionMcpFilter = {
 
 export class PersistentSessionSettingsService {
   private readonly instructions: PersistentSessionInstructionsService;
+  private readonly bootstraps = new SingleFlightByKey<{ status: number; body: Record<string, unknown> }>();
 
   constructor(private readonly deps: PersistentSessionSettingsServiceDeps) {
     this.instructions = new PersistentSessionInstructionsService({
@@ -327,6 +341,48 @@ export class PersistentSessionSettingsService {
         warnings: Array.isArray(created.body.warnings) ? created.body.warnings : [],
       },
     };
+  }
+
+  /**
+   * Creates the first persistent session for a caller that has none. Goes through create(),
+   * so validation, registration, naming and enabling are the ordinary create path's. Callers
+   * that overlap share one run, so a double click or two tabs cannot make two sessions.
+   */
+  async bootstrap(
+    request: FastifyRequest,
+    input: unknown,
+    logger: Pick<FastifyRequest["log"], "warn">,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    parseBootstrapBody(input);
+    if (this.deps.bootstrapEnabled !== true) {
+      throw new PersistentSessionApiError(409, "bootstrap_disabled", "기본 영구 세션 만들기가 꺼져 있습니다.");
+    }
+    const callerId = await this.deps.resolveCallerId?.(request);
+    return this.bootstraps.run(bootstrapUserKey(callerId ?? null), () => this.bootstrapOnce(request, logger));
+  }
+
+  private async bootstrapOnce(
+    request: FastifyRequest,
+    logger: Pick<FastifyRequest["log"], "warn">,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    const { sessions, create_defaults: defaults } = await this.list(request);
+    const existing = sessions[0];
+    if (existing !== undefined) return { status: 200, body: { created: false, session_id: existing.session_id } };
+    const refusal = bootstrapRefusal(defaults);
+    if (refusal !== null) throw refusal;
+    const profiles = await this.deps.profiles.listAgentProfiles(defaults.node_id);
+    const created = await this.create(request, {
+      display_name: bootstrapDisplayName(profiles?.[defaults.preferred_agent_id!]?.name),
+      agent_id: defaults.preferred_agent_id,
+      initial_instruction: defaults.initial_instruction,
+      settings: {
+        default_model: defaults.settings.default_model,
+        fallback_models: defaults.settings.fallback_models,
+      },
+    }, logger);
+    const session = created.body.session as { session_id?: unknown } | undefined;
+    if (created.status !== 201 || typeof session?.session_id !== "string") return created;
+    return { status: 201, body: { created: true, session_id: session.session_id } };
   }
 
   private async requireRow(sessionId: string): Promise<HostSessionRow> {
@@ -588,6 +644,7 @@ export class PersistentSessionSettingsService {
       },
       initial_instruction: PERSISTENT_INITIAL_INSTRUCTION,
       unavailable_reason: reasons.length === 0 ? null : reasons.join(" "),
+      bootstrap_enabled: this.deps.bootstrapEnabled === true,
     };
   }
 }

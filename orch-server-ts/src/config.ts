@@ -30,6 +30,7 @@ export type OrchServerEnvironmentConfig = Partial<ExternalIngressEnvironmentConf
   readonly node_name: string | null;
   readonly default_execution_node_id: string;
   readonly default_pas_agent_id: string | null;
+  readonly persistent_session_bootstrap: boolean;
   readonly host: string;
   readonly port: number;
   readonly trusted_proxy: typeof DEFAULT_TRUSTED_PROXY;
@@ -76,6 +77,7 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "NODE_NAME",
   "DEFAULT_EXECUTION_NODE_ID",
   "DEFAULT_PAS_AGENT_ID",
+  "PERSISTENT_SESSION_BOOTSTRAP",
   "HOST",
   "PORT",
   "DATABASE_URL",
@@ -186,6 +188,8 @@ export function loadOrchServerEnvironment(
     default_execution_node_id:
       (env.DEFAULT_EXECUTION_NODE_ID?.trim() ?? "") || DEFAULT_EXECUTION_NODE_ID,
     default_pas_agent_id: optionalNonEmptyString(env.DEFAULT_PAS_AGENT_ID),
+    persistent_session_bootstrap: parseBoolean(
+      env.PERSISTENT_SESSION_BOOTSTRAP, "PERSISTENT_SESSION_BOOTSTRAP", false),
     host,
     port: parsePort(env.PORT),
     trusted_proxy: DEFAULT_TRUSTED_PROXY,

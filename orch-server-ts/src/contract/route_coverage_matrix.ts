@@ -239,6 +239,7 @@ export const tsOnlyRouteKeys = [
   "DELETE /api/persistent-sessions/{session_id}/reports/{key}",
   "PUT /api/persistent-sessions/{session_id}",
   "POST /api/persistent-sessions",
+  "POST /api/persistent-sessions/bootstrap",
   "GET /api/persistent-sessions/{session_id}/instructions",
   "POST /api/persistent-sessions/{session_id}/instructions",
   "PUT /api/persistent-sessions/{session_id}/instructions/{instruction_id}",
