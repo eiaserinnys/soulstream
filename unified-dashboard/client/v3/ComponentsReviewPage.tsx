@@ -42,6 +42,7 @@ import { PersistentAgentMessageGroupReviewSample } from "./PersistentAgentMessag
 import { ManuscriptActivityReviewSample } from "./ManuscriptActivityReviewSample";
 import { PersistentSessionSettingsReviewSample } from "./PersistentSessionSettingsReviewSample";
 import { McpReviewSample } from "./McpReviewSample";
+import { GuideBadgesReviewSample, GuideMatrixReviewSample, SettingsListDetailVariantsReviewSample } from "./GuidesReviewSample";
 import { PersistentSessionInstructionsReviewSample } from "./PersistentSessionInstructionsReviewSample";
 import { PersistentSessionScreenReviewSample } from './PersistentSessionScreenReviewSample';
 import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
@@ -486,6 +487,9 @@ export function ComponentsReviewPage() {
             <ComponentsReviewControls/>
             <Sample name="PersistentSessionDetails / PersistentSessionMonitoring" state="표시 필드 · 판단 있음/없음 · 값 있음 · 기록 없음 · 불러오는 중 · 조회 실패"><PersistentSessionSettingsReviewSample/></Sample>
             <Sample name="MCP 아이콘과 값 단위" state="타일 · 고르기 · 서버 아이콘 줄 · 참조"><McpReviewSample /></Sample>
+            <Sample name="GuideParts 배지와 연결 칩" state="오류 · 경고 · 정보 · 보고에 없음 · 연결 칩 말줄임과 +N · 초상 없는 프로필 · 실린 방식"><GuideBadgesReviewSample/></Sample>
+            <Sample name="ProfileOverviewMatrix (한눈에)" state="프로필 18칸 · 조건부 줄 · 오류 열 · 눕힌 열 머리 · 가로 스크롤과 붙은 줄 이름"><GuideMatrixReviewSample/></Sample>
+            <Sample name="SettingsListDetail fill · titleBadge · inlineActions" state="두 칸 따로 스크롤 · 제목 줄 배지 · 긴 제목과 설명 · 제목 줄 오른쪽 동작"><SettingsListDetailVariantsReviewSample/></Sample>
             <Sample name="PersistentSessionWeeklyUsage" state="1101px 이상 · 노드 3/2/0개 게이지 · 노드 이동 · 대기 · 조회 실패 · 갱신 지연"><PersistentSessionWeeklyUsageReviewSample/></Sample>
             <Sample name="NodeProvidersPanel / ClaudeAuthLoginSheet" state="공급자 중립 행 · 계정 풀 접힘/펼침 · 미설정 · 조회 오류 · 수집 지연 · 새로 고침"><ClaudeAccountPoolReviewSample/></Sample>
             <Sample name="V3GlobalToolbar" state="PAS 창 툴바와 기존 대시보드 툴바 · atom 단추 있음/없음"><SettingsToolbarReviewSamples/></Sample>

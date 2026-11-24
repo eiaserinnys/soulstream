@@ -5,6 +5,7 @@ import { createWebhooksFixture } from "./webhooks-fixture";
 import { createOwnedAgentsFixture } from "./owned-agents-fixture";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { assemblyAgents, assemblyBundles, assemblyContexts, assemblyPreview } from "./agent-profile-assembly-fixture";
+import { assemblyPreviewDocuments, guidesSampleRoute } from "./guides-api";
 import { createPersistentSessionsFixture } from "./persistent-sessions-fixture";
 import type { ClaudeAccount, ClaudeAccountList } from "../../../packages/wire-schema/generated/typescript/index";
 import type { SessionStory, UsageSummaryProvider, UsageSummaryQuota, UsageSummarySnapshot } from "@seosoyoung/soul-ui";
@@ -406,6 +407,7 @@ export function createDialoguesApi() {
   const persistentStoryState = new URLSearchParams(window.location.search).get("persistentStoryState") ?? "full";
   const cogitoState = new URLSearchParams(window.location.search).get("cogitoState") ?? "normal";
   const assemblyState = new URLSearchParams(window.location.search).get("assemblyState") ?? "normal";
+  const guidesState = () => new URLSearchParams(window.location.search).get("guidesState") ?? "normal";
   let persistentStoryRequestCount = 0;
   const request: typeof fetch = async (input, init) => {
     const url = new URL(String(input), "https://sample.invalid");
@@ -414,6 +416,8 @@ export function createDialoguesApi() {
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
     requests.push({ path, method });
     if (method !== "GET") record(`${method} ${path}`);
+    const guides = await guidesSampleRoute(path, method, init, guidesState());
+    if (guides) return guides;
     if (path.startsWith('/api/webhooks')) {
       if (new URLSearchParams(window.location.search).has('webhooksVisual')) return fetch(input, init);
       return webhooks(input, init);
@@ -588,7 +592,8 @@ export function createDialoguesApi() {
       if (currentAssemblyState === "failure" || currentAssemblyState === "retry") {
         return Response.json({ detail: "노드에 연결하지 못했습니다." }, { status: 503 });
       }
-      value = assemblyPreview(body);
+      // 서버가 실린 문서 목록과 부모 제목까지 주는 새 꼴이 기본이고, legacy는 그 칸이 없는 옛 꼴이다.
+      value = currentAssemblyState === "legacy" ? assemblyPreview(body) : assemblyPreviewDocuments(body);
     }
     else if (path.endsWith("/agents")) value = { agents: path.includes("sample-usage-node") ? [assemblyAgents[1]] : assemblyAgents };
     else if (path === "/api/usage/summary" || path === "/api/usage/refresh")

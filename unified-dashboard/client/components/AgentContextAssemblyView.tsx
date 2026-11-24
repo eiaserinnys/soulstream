@@ -1,9 +1,12 @@
-// 고른 조건으로 노드 미리보기를 불러, 주입 순서대로 소스 목록을 보이고 고른 소스의 본문을 같은 자리에서 연다.
+// 고른 조건으로 노드 미리보기를 불러, 주입 순서대로 소스 목록을 보인다. 소스를 펼치면 실린 문서가 나오고,
+// 상시 목록의 스킬은 아래에 따로 모아 연결과 진단을 함께 보인다. 본문은 같은 자리에서 연다.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Check, ChevronRight, Copy, ExternalLink, RotateCw } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Copy, ExternalLink, FileText, RotateCw } from "lucide-react";
 import { Badge, Button, ContextContentRenderer, DashboardIconCap, FrameLoading, FrameNotice, useAtomPublicUrl } from "@seosoyoung/soul-ui";
 
 import { conditionSummary, inputClassName, type AgentAtomContext } from "./AgentAtomContextFields";
+import { formatChars, loadedHow, reportTime as formatReport, skillsByEntryCard as indexSkills, useSkillGuides, type LoadedHow, type SkillGuide } from "../lib/skill-guides";
+import { LinkChips, SkillLintBadge, howLabel } from "./guides/GuideParts";
 import "../v3/v3-run-history.css";
 
 export type AssemblyTarget =
@@ -20,7 +23,10 @@ interface ManifestSource {
   token_estimate: number;
 }
 
-interface PreviewSection { spec_index: number; title: string | null; markdown: string | null }
+/** 소스에 실린 문서 하나. depth는 소스 뿌리에서의 깊이다. */
+export interface PreviewDocument { node_id: string; card_id: string; title: string; depth: number; chars: number }
+
+interface PreviewSection { spec_index: number; title: string | null; parent_title?: string | null; markdown: string | null; documents?: PreviewDocument[] }
 
 interface PreviewResponse {
   manifest: { sources: ManifestSource[]; total_chars?: number; total_token_estimate?: number };
@@ -37,6 +43,9 @@ interface Row {
   context: AgentAtomContext;
   origin: string | null;
   title: string | null;
+  parentTitle: string | null;
+  /** 서버가 실린 문서를 주지 않은 옛 응답이면 null. 줄을 펼치지 않고 본문으로 바로 들어간다. */
+  documents: PreviewDocument[] | null;
   status: RowStatus | null;
   tokens: number | null;
   chars: number | null;
@@ -69,6 +78,8 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
   const [state, setState] = useState<{ status: "loading" } | { status: "ready"; data: PreviewResponse } | { status: "error"; message: string }>({ status: "loading" });
   const [view, setView] = useState<View>({ kind: "list" });
   const [attempt, setAttempt] = useState(0);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const guides = useSkillGuides(request);
   const lastData = useRef<PreviewResponse | null>(null);
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
   const returnFocus = useRef<string | null>(null);
@@ -111,6 +122,33 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
   const publicAtomUrl = useAtomPublicUrl();
   const atomBaseUrl = publicAtomUrl ?? displayedData?.atom_base_url ?? null;
   const rows = useMemo(() => buildRows(specs, displayedData), [specs, displayedData]);
+  const skillsByEntryCard = useMemo(
+    () => indexSkills(guides.state.status === "ready" ? guides.state.data.skills : []),
+    [guides.state],
+  );
+  // 상시 목록의 스킬: 실린 문서 가운데 스킬 엔트리 카드인 것. 주입 순서대로, 이름마다 한 번만.
+  const listedSkills = useMemo(() => {
+    const seen = new Map<string, { skill: SkillGuide; rowKey: string; how: LoadedHow }>();
+    for (const row of rows) {
+      const documents = row.documents ?? [];
+      const nodeIds = new Set(documents.map(document => document.node_id));
+      for (const document of documents) {
+        const skill = skillsByEntryCard.get(document.card_id);
+        const how = skill ? loadedHow(row.context, document, skillsByEntryCard, nodeIds) : null;
+        if (skill && how && !seen.has(skill.name)) seen.set(skill.name, { skill, rowKey: row.key, how });
+      }
+    }
+    return Array.from(seen.values());
+  }, [rows, skillsByEntryCard]);
+  // 스킬이 모두 같은 방식으로 실리면 구역 머리에 한 번만 적고, 다른 것만 줄에 적는다.
+  const commonHow = listedSkills.length > 0 && listedSkills.every(item => item.how === listedSkills[0]!.how) ? listedSkills[0]!.how : null;
+  const reportTime = guides.state.status === "ready" ? formatReport(guides.state.data.report) : null;
+  const reportExists = guides.state.status === "ready" && guides.state.data.report !== null;
+  const toggle = (key: string) => setExpanded(current => {
+    const next = new Set(current);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
 
   useEffect(() => {
     if (view.kind !== "list" || !returnFocus.current) return;
@@ -161,7 +199,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
         view.kind === "skill" && selectedRow ? (
           <SkillOriginal nodeId={nodeId} request={request} atomBaseUrl={atomBaseUrl} skillNodeId={view.nodeId} name={view.name} parentTitle={rowTitle(selectedRow)} parentRow={selectedRow} parentState={state} onRetryParent={() => setAttempt(value => value + 1)} onBack={() => { returnFocus.current = "skill"; setView({ kind: "source", key: selectedRow.key }); }} />
         ) : (
-          <SourceDetail row={selectedRow} data={displayedData} atomBaseUrl={atomBaseUrl} requestState={state} focusSkill={returnFocus.current === "skill"}
+          <SourceDetail row={selectedRow} data={displayedData} skillsByEntryCard={skillsByEntryCard} atomBaseUrl={atomBaseUrl} requestState={state} focusSkill={returnFocus.current === "skill"}
             onBack={() => back(view.kind === "all" ? "all" : selectedRow?.key ?? null)}
             onOpenSkill={skill => selectedRow && open({ kind: "skill", key: selectedRow.key, nodeId: skill.nodeId, name: skill.name })}
             onRetry={() => setAttempt(value => value + 1)} />
@@ -195,46 +233,85 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
                 title="전체"
                 strong
                 meta={null}
-                tokens={data ? `${formatTokens(data.manifest.total_token_estimate ?? 0)} 토큰` : null}
+                size={data ? `${formatTokens(data.manifest.total_token_estimate ?? 0)} 토큰` : null}
                 loading={state.status === "loading"}
                 onClick={() => open({ kind: "all" })}
               />
             )}
-            {rows.map((row) => (
-              <div key={row.key} className="flex min-w-0 items-center gap-2">
-              <AssemblyRow
-                rowKey={row.key}
-                refs={rowRefs}
-                title={data ? rowTitle(row) : state.status === "error" ? rowTitle(row) : null}
-                meta={rowMeta(row)}
-                status={row.status}
-                tokens={row.status === "ok" && row.tokens !== null ? formatTokens(row.tokens) : null}
-                loading={state.status === "loading"}
-                inactive={state.status === "error"}
-                onClick={() => open({ kind: "source", key: row.key })}
-              />
-              {atomBaseUrl && data && <DashboardIconCap size="small" label={`${rowTitle(row)} atom에서 열기`} onClick={() => window.open(`${atomBaseUrl}/#${row.nodeId}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap>}
-              </div>
-            ))}
+            {rows.map((row) => {
+              const expandable = row.documents !== null;
+              return (
+                <div key={row.key} className="space-y-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <AssemblyRow
+                      rowKey={row.key}
+                      refs={rowRefs}
+                      title={data ? rowTitle(row) : state.status === "error" ? rowTitle(row) : null}
+                      titlePrefix={data ? row.parentTitle : null}
+                      meta={rowMeta(row)}
+                      status={row.status}
+                      size={row.status === "ok" && row.chars !== null ? formatChars(row.chars) : null}
+                      loading={state.status === "loading"}
+                      inactive={state.status === "error"}
+                      expanded={expandable ? expanded.has(row.key) : undefined}
+                      onClick={() => expandable ? toggle(row.key) : open({ kind: "source", key: row.key })}
+                    />
+                    {data && expandable && <DashboardIconCap size="small" label={`${rowTitle(row)} 본문 보기`} onClick={() => open({ kind: "source", key: row.key })}><FileText className="size-4" aria-hidden="true" /></DashboardIconCap>}
+                    {atomBaseUrl && data && <DashboardIconCap size="small" label={`${rowTitle(row)} atom에서 열기`} onClick={() => window.open(`${atomBaseUrl}/#${row.nodeId}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap>}
+                  </div>
+                  {data && expandable && expanded.has(row.key) && <DocumentTree row={row} skillsByEntryCard={skillsByEntryCard} />}
+                </div>
+              );
+            })}
+            {data && listedSkills.length > 0 && (
+              <section className="space-y-2 pt-3" aria-label="스킬" data-testid="agent-context-skills">
+                <div className="flex items-baseline gap-2">
+                  <h4 className="text-sm font-semibold">스킬</h4>
+                  {commonHow && <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{howLabel(commonHow)}</p>}
+                  {reportTime && <p className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground">{reportTime} 검증</p>}
+                </div>
+                {listedSkills.map(({ skill, rowKey, how }) => (
+                  <button
+                    key={skill.name}
+                    type="button"
+                    className="block w-full min-w-0 rounded-floor border border-border bg-muted/10 px-3 py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background hover:bg-muted"
+                    onClick={() => open({ kind: "skill", key: rowKey, nodeId: skill.body_node_id, name: skill.name })}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="min-w-0 truncate font-medium">{skill.name}</span>
+                      <SkillLintBadge skill={skill} reportExists={reportExists} />
+                      {!commonHow && <span className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground">{howLabel(how)}</span>}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">{skill.description}</span>
+                    {skill.lint && skill.lint.links.length > 0 && <span className="mt-1 block"><LinkChips links={skill.lint.links} /></span>}
+                  </button>
+                ))}
+              </section>
+            )}
           </div>
         )}
       </div>
-      <p className="pt-1 text-xs text-muted-foreground">프로필이 정하는 몫입니다. 실제 들어간 글은 세션 기록에서 봅니다.</p>
+      <p className="pt-1 text-xs text-muted-foreground">프로필 몫만 보입니다. 폴더, 페이지, 세션이 붙이는 글은 빠집니다.</p>
       </>)}
     </div>
   );
 }
 
-function AssemblyRow({ rowKey, refs, title, meta, status = null, tokens, loading, inactive = false, strong = false, onClick }: {
+function AssemblyRow({ rowKey, refs, title, titlePrefix = null, meta, status = null, size, loading, inactive = false, strong = false, expanded, onClick }: {
   rowKey: string;
   refs: React.MutableRefObject<Map<string, HTMLButtonElement>>;
   title: string | null;
+  /** 같은 이름의 소스를 가르는 부모 문서 제목. */
+  titlePrefix?: string | null;
   meta: string | null;
   status?: RowStatus | null;
-  tokens: string | null;
+  /** 줄 오른쪽에 적는 수. 글자 수 하나로 적는다. */
+  size: string | null;
   loading: boolean;
   inactive?: boolean;
   strong?: boolean;
+  /** 주면 누를 때 실린 문서를 펼치는 줄이다. 안 주면 본문으로 들어가는 줄이다. */
+  expanded?: boolean;
   onClick(): void;
 }) {
   const left = status === "filtered" || status === "duplicate";
@@ -244,19 +321,50 @@ function AssemblyRow({ rowKey, refs, title, meta, status = null, tokens, loading
       ref={(element) => { if (element) refs.current.set(rowKey, element); else refs.current.delete(rowKey); }}
       className="flex min-w-0 w-full items-center gap-3 rounded-floor border border-border bg-muted/10 px-3 py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background enabled:hover:bg-muted disabled:cursor-default"
       data-status={status ?? undefined}
+      aria-expanded={expanded}
       disabled={loading || inactive}
       onClick={onClick}
     >
+      {expanded !== undefined && !inactive && <ChevronRight className={`size-4 shrink-0 text-muted-foreground ${expanded ? "rotate-90" : ""}`} aria-hidden="true" />}
       <span className={`min-w-0 flex-1 ${left ? "opacity-60" : ""}`}>
         <span className="flex min-w-0 items-center gap-2">
-          {loading && !title ? <span className="flex h-5 flex-1 items-center"><span className="v3-run-skeleton v3-run-skeleton--title" /></span> : <span className={`min-w-0 truncate ${strong ? "font-semibold" : "font-medium"}`}>{title}</span>}
+          {loading && !title ? <span className="flex h-5 flex-1 items-center"><span className="v3-run-skeleton v3-run-skeleton--title" /></span> : <span className={`min-w-0 truncate ${strong ? "font-semibold" : "font-medium"}`}>{titlePrefix && <span className="font-normal text-muted-foreground">{titlePrefix} / </span>}{title}</span>}
           {!loading && status && <StatusBadge status={status} />}
         </span>
-        {meta && <span className="block truncate text-xs text-muted-foreground">{meta}</span>}
+        {/* 좁은 폭에서는 오른쪽 칸이 제목 자리를 먹으니 글자 수를 메타 줄 앞으로 옮긴다. */}
+        {(meta || size) && <span className="block truncate text-xs text-muted-foreground">{size && <span className="tabular-nums sm:hidden">{size}{meta ? " · " : ""}</span>}{meta}</span>}
       </span>
-      {loading ? <span className="v3-run-skeleton v3-run-skeleton--badge" /> : tokens && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{tokens}</span>}
-      {!inactive && <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+      {loading ? <span className="v3-run-skeleton v3-run-skeleton--badge" /> : size && <span className="shrink-0 text-xs tabular-nums text-muted-foreground max-sm:hidden">{size}</span>}
+      {!inactive && expanded === undefined && <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
     </button>
+  );
+}
+
+function DocumentTree({ row, skillsByEntryCard }: { row: Row; skillsByEntryCard: ReadonlyMap<string, SkillGuide> }) {
+  const documents = row.documents ?? [];
+  if (documents.length === 0) {
+    return (
+      <p className="rounded-floor border border-border px-3 py-2 text-xs text-muted-foreground">
+        {row.status === "filtered" ? `이 조건에서는 빠집니다. ${conditionSummary(row.context.applies_when)}`
+          : row.status === "duplicate" ? "앞에서 같은 소스가 이미 들어갑니다."
+            : row.status === "error" ? "atom에서 읽지 못했습니다." : "실린 문서가 없습니다."}
+      </p>
+    );
+  }
+  const nodeIds = new Set(documents.map(document => document.node_id));
+  return (
+    <ul className="rounded-floor border border-border px-3 py-2" aria-label={`${rowTitle(row)}에 실린 문서`} data-testid="agent-context-documents">
+      {documents.map((document) => {
+        const how = loadedHow(row.context, document, skillsByEntryCard, nodeIds);
+        return (
+          <li key={document.node_id} className="flex min-w-0 items-center gap-3 py-0.5 text-sm" style={{ paddingInlineStart: `calc(var(--v3-space-4) * ${document.depth})` }}>
+            <span className={`min-w-0 flex-1 truncate ${how ? "" : "text-muted-foreground"}`} data-v3-selectable-content="true">{document.title}</span>
+            {how && <span className={`shrink-0 whitespace-nowrap text-xs ${how === "body" ? "text-muted-foreground" : ""}`}>{howLabel(how)}</span>}
+            <span className="min-w-14 shrink-0 whitespace-nowrap text-right text-xs tabular-nums text-muted-foreground">{how && how !== "title" ? formatChars(document.chars) : ""}</span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -298,14 +406,14 @@ function DetailHeader({ title, meta, copyText, copyLabel = "본문 복사", atom
   );
 }
 
-function SourceDetail({ row, data, atomBaseUrl, requestState, focusSkill, onBack, onOpenSkill, onRetry }: {
-  row: Row | null; data: PreviewResponse; atomBaseUrl: string | null; requestState: { status: "loading" } | { status: "ready" } | { status: "error"; message: string }; focusSkill?: boolean; onBack(): void; onOpenSkill(skill: { nodeId: string; name: string }): void; onRetry(): void;
+function SourceDetail({ row, data, skillsByEntryCard, atomBaseUrl, requestState, focusSkill, onBack, onOpenSkill, onRetry }: {
+  row: Row | null; data: PreviewResponse; skillsByEntryCard: ReadonlyMap<string, SkillGuide>; atomBaseUrl: string | null; requestState: { status: "loading" } | { status: "ready" } | { status: "error"; message: string }; focusSkill?: boolean; onBack(): void; onOpenSkill(skill: { nodeId: string; name: string }): void; onRetry(): void;
 }) {
   const all = row === null;
   const skillSelectRef = useRef<HTMLSelectElement>(null);
   useEffect(() => { if (focusSkill) skillSelectRef.current?.focus(); }, [focusSkill]);
   const text = all ? data.assembled : row.markdown;
-  const skills = all ? [] : extractSkills(row.markdown);
+  const skills = all ? [] : (row.documents ?? []).flatMap((document) => { const skill = skillsByEntryCard.get(document.card_id); return skill ? [{ name: skill.name, nodeId: skill.body_node_id }] : []; });
   const atomUrl = !all && atomBaseUrl ? `${atomBaseUrl}/#${row.nodeId}` : null;
   const origin = all ? null : [row.origin, contextShape(row.context)].filter(Boolean).join(" · ");
   const chars = all ? data.manifest.total_chars ?? 0 : row.chars;
@@ -411,6 +519,8 @@ function buildRows(specs: Array<{ context: AgentAtomContext; source: string }> |
         context,
         origin: source,
         title: at >= 0 ? sections[at]!.title : null,
+        parentTitle: at >= 0 ? sections[at]!.parent_title ?? null : null,
+        documents: at >= 0 ? sections[at]!.documents ?? null : null,
         status: data ? (manifest?.status ?? "duplicate") : null,
         tokens: manifest?.token_estimate ?? null,
         chars: manifest?.chars ?? null,
@@ -426,6 +536,8 @@ function buildRows(specs: Array<{ context: AgentAtomContext; source: string }> |
       context: { node_id: manifest.node_id, depth: manifest.depth, mode: manifest.mode as AgentAtomContext["mode"], applies_when: manifest.applies_when },
       origin: "노드 설정",
       title: section.title,
+      parentTitle: section.parent_title ?? null,
+      documents: section.documents ?? null,
       status: manifest.status,
       tokens: manifest.token_estimate,
       chars: manifest.chars,
@@ -451,19 +563,3 @@ function formatTokens(tokens: number): string {
   return tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens);
 }
 
-function formatChars(chars: number): string {
-  return `${chars.toLocaleString()}자`;
-}
-
-export function extractSkills(markdown: string | null): Array<{ name: string; nodeId: string }> {
-  if (!markdown) return [];
-  const skills: Array<{ name: string; nodeId: string }> = [];
-  let name: string | null = null;
-  for (const line of markdown.split("\n")) {
-    const heading = /^#{1,6}\s+(?:~\s+)?(.+?)\s*$/.exec(line);
-    if (heading) name = heading[1]!;
-    const body = /^body_node_id:\s*([0-9a-f-]{36})/.exec(line.trim());
-    if (body && name) skills.push({ name, nodeId: body[1]! });
-  }
-  return skills;
-}

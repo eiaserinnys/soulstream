@@ -1,0 +1,49 @@
+/* 「스킬과 카탈로그」 탭과 프로필 한눈에 표. 값은 v3 토큰에서만 가져온다. */
+.guides-kind-tabs .v3-folder-picker-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.guides-detail-tabs .v3-folder-picker-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.guides-detail-tabs [role="tab"] { gap: var(--v3-space-1); min-width: 0; }
+
+/*
+ * 한눈에 표: 줄은 소스, 칸은 프로필. 프로필 칸 폭은 간격 토큰 하나로 고정하고 줄 이름 칸이 남는 폭을 쓴다.
+ * 칸이 많아 틀보다 넓어지면 표만 자기 틀 안에서 가로로 스크롤하고 줄 이름 칸은 왼쪽에 붙어 있다.
+ * 열 머리 이름은 한 줄로 눕혀(아래에서 위로 읽는다) 쓰고, 머리 높이에 상한을 두어 넘는 이름은 말줄임한다.
+ */
+.guides-matrix-frame { min-height: 0; flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: var(--radius-floor); }
+.guides-matrix {
+  --guides-head-height: calc(var(--v3-space-8) * 4);
+  --guides-name-min: calc(var(--v3-space-8) * 6);
+  inline-size: 100%; min-inline-size: calc(var(--guides-name-min) + var(--guides-columns) * var(--v3-space-7));
+  table-layout: fixed; border-collapse: separate; border-spacing: 0; font: var(--v3-type-body) var(--v3-font-family);
+}
+.guides-matrix :is(th, td) { border-bottom: 1px solid var(--border); padding: 0; }
+.guides-matrix tbody tr:last-child :is(th, td) { border-bottom: 0; }
+.guides-matrix thead th { block-size: var(--guides-head-height); font: var(--v3-type-meta) var(--v3-font-family); color: var(--muted-foreground); }
+.guides-matrix .guides-matrix-corner { text-align: start; vertical-align: bottom; padding: var(--v3-space-3); }
+.guides-matrix .guides-matrix-profile { position: relative; inline-size: var(--v3-space-7); color: var(--foreground); }
+.guides-matrix .guides-matrix-profile > span {
+  position: absolute; inset-inline-start: 50%; inset-block-end: var(--v3-space-2);
+  inline-size: calc(var(--guides-head-height) - var(--v3-space-8)); text-align: start;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transform-origin: 0 100%; transform: rotate(-90deg) translateY(50%);
+}
+.guides-matrix .guides-matrix-error { position: absolute; inset-block-start: var(--v3-space-2); inset-inline-start: 50%; translate: -50% 0; color: var(--destructive-foreground); }
+.guides-matrix .guides-matrix-profile[data-error="true"],
+.guides-matrix td[data-error="true"] { background: color-mix(in srgb, var(--destructive-foreground) 6%, transparent); }
+.guides-matrix .guides-matrix-profile[data-first-node="true"],
+.guides-matrix td[data-first-node="true"] { border-inline-start: 1px solid var(--border); }
+.guides-matrix tbody th { padding: var(--v3-space-1) var(--v3-space-3); text-align: start; font-weight: 450; }
+.guides-matrix tbody th > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guides-matrix tbody th > .guides-matrix-condition { font: var(--v3-type-meta) var(--v3-font-family); color: var(--muted-foreground); }
+.guides-matrix tbody td { text-align: center; vertical-align: middle; color: var(--foreground); }
+.guides-matrix tbody td > svg { display: inline-block; }
+.guides-matrix tbody tr[data-group-start="true"] :is(th, td) { border-top: 1px solid var(--border); }
+/* 줄 이름 칸은 가로로 스크롤해도 왼쪽에 붙어 있다. 유리 위라 통짜 불투명 대신 컨트롤 표면에 흐림을 주어 뒤로 지나가는 칸이 글자를 가리지 않게 한다. */
+.guides-matrix :is(.guides-matrix-corner, tbody th) { position: sticky; inset-inline-start: 0; z-index: 1; background: var(--control-surface); backdrop-filter: blur(var(--v3-space-3)); }
+.guides-matrix-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--v3-space-1) var(--v3-space-3); }
+.guides-matrix-legend > span { display: inline-flex; align-items: center; gap: var(--v3-space-1); white-space: nowrap; }
+
+/* 「스킬과 카탈로그」 탭: 에이전트 탭처럼 남는 높이를 채우고, 낮은 창에서는 최소 높이를 지킨 채 바깥이 스크롤한다. */
+.config-dialog .config-detail:has(> [data-testid="skill-catalog-settings"]) { display: flex; flex-direction: column; padding-bottom: var(--v3-space-3); }
+.config-dialog .config-detail:has(> [data-testid="skill-catalog-settings"]) > .config-detail-heading { flex: none; }
+.config-dialog .config-detail > [data-testid="skill-catalog-settings"] { display: flex; flex: 1 1 auto; flex-direction: column; min-height: min-content; }
+.config-dialog .config-detail > [data-testid="skill-catalog-settings"] > .skill-catalog-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: calc(var(--container-sm) - var(--v3-space-6)); contain: size; }

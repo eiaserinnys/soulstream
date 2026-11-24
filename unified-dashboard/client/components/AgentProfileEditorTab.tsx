@@ -14,6 +14,8 @@ import {
 } from "./AgentAtomContextFields";
 import { AgentContextAssemblyView } from "./AgentContextAssemblyView";
 import { ContextBundleEditor, type ContextBundle } from "./ContextBundleEditor";
+import { ProfileOverviewMatrix } from "./guides/ProfileOverviewMatrix";
+import { useExecNode } from "../lib/skill-guides";
 
 type AgentAlias = string | { id: string; default_preset?: string };
 
@@ -58,6 +60,8 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
   const [bundles, setBundles] = useState<ContextBundle[]>([]);
   const [draft, setDraft] = useState<ProfileDraft | null>(null);
   const [managingBundles, setManagingBundles] = useState(false);
+  // 한눈에: 프로필 편집 자리 전체를 프로필과 소스의 표로 바꾼다.
+  const [overview, setOverview] = useState(false);
   const [selectedBundleToAdd, setSelectedBundleToAdd] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -66,7 +70,8 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
   const [portraitFile, setPortraitFile] = useState<File | null>(null);
   const [portraitPreviewUrl, setPortraitPreviewUrl] = useState<string | null>(null);
   const [removePortrait, setRemovePortrait] = useState(false);
-  const [selectedNodeId, setSelectedNodeId] = useState("");
+  // 스킬 탭이 같은 노드로 쓰이는 곳을 보이도록 고른 노드는 설정 창이 열린 동안 공유한다.
+  const [selectedNodeId, setSelectedNodeId] = useExecNode();
   const [nodeAgents, setNodeAgents] = useState<NodeAgent[]>([]);
   const [loadedNodeId, setLoadedNodeId] = useState("");
   // 노드 설정에만 있는 프로필을 고르면 draft 대신 이 ID가 선택이다(읽기 전용).
@@ -264,7 +269,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
             </select>
           </label>
         )}
-        {!managingBundles && (
+        {!managingBundles && !overview && (
           <label className="min-w-0 text-xs font-medium sm:hidden">
             프로필
             <select
@@ -288,14 +293,19 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
             </select>
           </label>
         )}
-        <div className="col-span-2 flex justify-end gap-2 sm:col-span-1">
-          {!managingBundles && <Button type="button" size="sm" variant="outline" className="sm:hidden" onClick={startProfile}>새 프로필</Button>}
-          <Button type="button" size="sm" variant="outline" onClick={() => setManagingBundles(!managingBundles)}>
+        <div className="col-span-2 flex flex-wrap justify-end gap-2 sm:col-span-1">
+          {!managingBundles && !overview && <Button type="button" size="sm" variant="outline" className="sm:hidden" onClick={startProfile}>새 프로필</Button>}
+          {!managingBundles && <Button type="button" size="sm" variant="outline" onClick={() => setOverview(!overview)}>
+            {overview ? "← 프로필 편집으로" : "한눈에"}
+          </Button>}
+          {!overview && <Button type="button" size="sm" variant="outline" onClick={() => setManagingBundles(!managingBundles)}>
             {managingBundles ? "← 프로필 편집으로" : "컨텍스트 번들 편집"}
-          </Button>
+          </Button>}
         </div>
       </div>
-      {managingBundles ? (
+      {overview ? (
+        !selectedNodeId ? <FrameNotice>연결된 노드가 없습니다.</FrameNotice> : <ProfileOverviewMatrix nodeId={selectedNodeId} request={request} />
+      ) : managingBundles ? (
         <ContextBundleEditor request={request} bundles={bundles} onBundlesChanged={refreshBundles} />
       ) : (
     <div className="grid h-[520px] min-h-0 grid-cols-1 overflow-hidden rounded-floor border border-border sm:h-auto sm:flex-1 sm:grid-cols-[13rem_minmax(0,1fr)]">
@@ -354,7 +364,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
             id="agent-profile-pane"
             label="프로필 보기"
             panelId="agent-profile-pane-panel"
-            tabs={[["assembly", "조립"], ["edit", "편집", true]]}
+            tabs={[["assembly", "구성"], ["edit", "편집", true]]}
             value="assembly"
             onChange={() => undefined}
           />
@@ -377,7 +387,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
             id="agent-profile-pane"
             label="프로필 보기"
             panelId="agent-profile-pane-panel"
-            tabs={[["assembly", "조립"], ["edit", "편집"]]}
+            tabs={[["assembly", "구성"], ["edit", "편집"]]}
             value={pane}
             onChange={setPane}
           />
