@@ -111,6 +111,14 @@ describe("ConfigModal layout", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
 
+  it("places the administrator MCP tab immediately before agents", async () => {
+    ({ container, root } = renderModal());
+    await settleConfigModal();
+    const names = [...document.querySelectorAll('[data-testid="config-category-nav"] button')].map(button => button.textContent);
+    expect(names.indexOf('MCP')).toBeGreaterThanOrEqual(0);
+    expect(names.indexOf('에이전트')).toBe(names.indexOf('MCP') + 1);
+  });
+
   it("keeps the outer panel from scrolling the settings columns together", async () => {
     ({ container, root } = renderModal());
     await settleConfigModal();

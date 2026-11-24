@@ -11,10 +11,26 @@ export function SettingsListDetailFrame({ testId, list, children }: {
   list: ReactNode;
   children: ReactNode;
 }) {
+  const detail = useRef<HTMLDivElement>(null);
   return (
-    <section data-testid={testId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(13rem,0.8fr)_minmax(0,1.6fr)]">
+    <section data-testid={testId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(13rem,0.8fr)_minmax(0,1.6fr)]" onClick={(event) => {
+      if (!(event.target instanceof Element) || !event.target.closest("aside [data-settings-list-row], aside [data-settings-open-detail]")) return;
+      requestAnimationFrame(() => {
+        const pane = detail.current;
+        const header = pane?.querySelector("header");
+        if (!pane || !header) return;
+        const view = pane.closest(".config-detail")?.getBoundingClientRect();
+        const paneBounds = pane.getBoundingClientRect();
+        const bounds = header.getBoundingClientRect();
+        const top = Math.max(view?.top ?? 0, paneBounds.top);
+        const bottom = Math.min(view?.bottom ?? window.innerHeight, paneBounds.bottom);
+        if (bounds.top < top - 1 || bounds.bottom > bottom + 1) {
+          header.scrollIntoView?.({ block: "nearest", behavior: "instant" });
+        }
+      });
+    }}>
       <aside className="min-h-0 rounded-floor border border-border bg-muted/20 p-3">{list}</aside>
-      <div className="min-h-0 space-y-4 lg:-mr-1 lg:overflow-y-auto lg:pr-1">{children}</div>
+      <div ref={detail} className="min-h-0 space-y-4 lg:-mr-1 lg:overflow-y-auto lg:pr-1">{children}</div>
     </section>
   );
 }
@@ -51,36 +67,42 @@ export function SettingsListSection({ title, isEmpty, emptyText = "없음", chil
   );
 }
 
-export function SettingsListRow({ title, meta, selected, onSelect, portrait }: {
+export function SettingsListRow({ title, meta, selected, onSelect, portrait, badge, footer }: {
   title: string;
   meta: string;
   selected: boolean;
   onSelect(): void;
   portrait?: ReactNode;
+  badge?: ReactNode;
+  footer?: ReactNode;
 }) {
+  const metadata = <span className={badge ? "flex flex-wrap items-center gap-1 text-xs text-muted-foreground" : "block truncate text-xs text-muted-foreground"}>{meta}{badge}</span>;
   return (
     <button
       type="button"
+      data-settings-list-row
       className={`block w-full rounded-floor px-2 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${selected ? "bg-accent-blue/15 text-foreground" : "hover:bg-muted"}`}
       onClick={onSelect}
     >
-      {portrait ? <span className="flex items-center gap-2">{portrait}<span className="min-w-0"><span className="block truncate font-medium">{title}</span><span className="block truncate text-xs text-muted-foreground">{meta}</span></span></span> : <><span className="block truncate font-medium">{title}</span><span className="block truncate text-xs text-muted-foreground">{meta}</span></>}
+      {portrait ? <span className="flex items-center gap-2">{portrait}<span className="min-w-0"><span className="block truncate font-medium">{title}</span>{metadata}</span></span> : <><span className="block truncate font-medium">{title}</span>{metadata}</>}
+      {footer ? <span className="mt-1 block">{footer}</span> : null}
     </button>
   );
 }
 
-export function SettingsDetailHeader({ title, subtitle, actions, selectableTitle = false }: {
+export function SettingsDetailHeader({ title, subtitle, actions, selectableTitle = false, leadingIcon }: {
   title: string;
+  leadingIcon?: ReactNode;
   selectableTitle?: boolean;
   subtitle?: string | null;
   actions?: ReactNode;
 }) {
   return (
     <header className="flex flex-wrap items-start justify-between gap-2">
-      <div>
+      {leadingIcon ? <div className="flex min-w-0 items-center gap-2">{leadingIcon}<div className="min-w-0"><h3 data-v3-selectable-content={selectableTitle ? "true" : undefined} className="text-base font-semibold">{title}</h3>{subtitle ? <p data-v3-selectable-content="true" className="text-xs text-muted-foreground">{subtitle}</p> : null}</div></div> : <div>
         <h3 data-v3-selectable-content={selectableTitle ? "true" : undefined} className="text-base font-semibold">{title}</h3>
         {subtitle ? <p data-v3-selectable-content="true" className="text-xs text-muted-foreground">{subtitle}</p> : null}
-      </div>
+      </div>}
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </header>
   );
@@ -99,10 +121,10 @@ export function SettingsGroupBox({ title, children }: { title?: string; children
 export function SettingsAlert({ children, scrollIntoView = false }: { children: ReactNode; scrollIntoView?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (scrollIntoView) ref.current?.scrollIntoView?.({ block: "nearest" });
+    if (scrollIntoView) ref.current?.scrollIntoView?.({ block: "nearest", behavior: "instant" });
   }, [scrollIntoView]);
   return (
-    <div ref={ref} role="alert" className="rounded-floor border border-accent-red/30 bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" style={{ scrollMarginBottom: 'var(--v3-space-6)', wordBreak: 'keep-all', overflowWrap: 'anywhere' }}>
+    <div ref={ref} role="alert" data-v3-selectable-content="true" className="rounded-floor border border-accent-red/30 bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" style={{ scrollMarginBottom: 'var(--v3-space-6)', wordBreak: 'keep-all', overflowWrap: 'anywhere' }}>
       {children}
     </div>
   );

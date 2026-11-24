@@ -599,6 +599,9 @@ importers:
       react-dom:
         specifier: ^19.2.4
         version: 19.2.4(react@19.2.4)
+      simple-icons:
+        specifier: 16.38.1
+        version: 16.38.1
       zustand:
         specifier: ^5.0.11
         version: 5.0.12(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))

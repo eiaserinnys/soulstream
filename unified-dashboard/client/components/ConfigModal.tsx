@@ -39,6 +39,7 @@ import { UserManagementTab } from "./UserManagementTab";
 import { OwnedAgentsTab } from "./OwnedAgentsTab";
 import { AccessLinksTab } from "./AccessLinksTab";
 import { WebhooksTab } from "./WebhooksTab";
+import { McpSettingsTab } from "./mcp/McpSettingsTab";
 import { AgentProfileEditorTab } from "./AgentProfileEditorTab";
 import { SettingFieldWidget } from "./config/SettingFieldWidget";
 import { ConfigCategoryNav } from "./config/ConfigCategoryNav";
@@ -133,6 +134,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
         { name: "file_storage", label: "파일 저장소" },
         { name: "card_dispatch", label: "카드 실행" },
         { name: "persistent_defaults", label: "영구 세션 기본 모델" },
+        { name: "mcp", label: "MCP" },
         { name: AGENTS_TAB_NAME, label: "에이전트" },
         { name: USERS_TAB_NAME, label: "사용자" },
       ] : []),
@@ -163,6 +165,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
     selectedTab === "file_storage" ||
     selectedTab === "card_dispatch" ||
     selectedTab === "persistent_defaults" ||
+    selectedTab === "mcp" ||
     selectedTab === SESSION_REVIEW_TAB_NAME ||
     selectedTab === USAGE_LOG_TAB_NAME ||
     selectedTab === AGENTS_TAB_NAME ||
@@ -186,6 +189,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
     users: "서버를 사용할 사람과 접근 범위를 관리합니다.", session_review: "실행 전 검수가 필요한 요청을 정합니다.",
     file_storage: "첨부 파일을 보관할 저장소를 연결합니다.", usage_log: "사용 기록을 확인하고 필요한 범위로 좁힙니다.",
     usage_stats: "기간별 토큰과 정가 환산을 봅니다.",
+    mcp: "중앙 MCP 서버와 프로필, 인증 키를 관리합니다.",
   };
   const close = () => { if (saving || saveInFlight.current) return; if (hasChanges) setDiscardPrompt(true); else onOpenChange(false); };
   return (
@@ -254,6 +258,8 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
                 <CardDispatchTab api={api?.cards} orchestration={api?.orchestration} />
               ) : selectedTab === "persistent_defaults" && (api || user?.isAdmin) ? (
                 <PersistentDefaultsSettingsForm />
+              ) : selectedTab === "mcp" && (api || user?.isAdmin) ? (
+                open && !mobileIndex ? <McpSettingsTab request={api?.request} /> : null
               ) : selectedTab === AGENTS_TAB_NAME ? (
                 <AgentProfileEditorTab request={api?.request} />
               ) : selectedTab === OWNED_AGENTS_TAB_NAME ? (
