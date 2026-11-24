@@ -90,8 +90,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       cliPath: antigravityCliPath?.path,
       environment: antigravityEnvironment(process.env),
       // In-process workers still need a writable directory for the CLI log.
-      stateDirectory: env.SOUL_RUNNER_STATE_DIR ?? env.EVENT_OUTBOX_DIR,
-      loginActivity: agentLoginService.activity,
+      stateDirectory: env.SOUL_RUNNER_STATE_DIR ?? env.EVENT_OUTBOX_DIR, loginActivity: agentLoginService.activity,
     },
   });
   const eventOutbox = await EventOutbox.open(env.EVENT_OUTBOX_DIR);
