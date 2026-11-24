@@ -472,7 +472,9 @@ price_snapshot:
 
 persistent_defaults:
   agent_id: seosoyoung-pas
-  model_preset: claude-opus
+  model_preset: gemini-4-neon
   fallback_models:
+    - model_preset: claude-opus
+      reasoning_effort: null
     - model_preset: codex-6.2-sol
       reasoning_effort: high
