@@ -23,7 +23,7 @@ const dashboardDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = resolve(dashboardDir, "dist-mockups/pas-report-1707-thread");
 const captureDir = process.env.PAS_RT1707_CAPTURE_DIR ?? resolve(dashboardDir, ".local/artifacts/pas-report-1707-thread");
 const scope = process.env.PAS_RT1707_SCOPE ?? "all";
-const allowedScopes = new Set(["all", "flows", "remaining", "1440x900", "820x1180", "390x844", "360x780"]);
+const allowedScopes = new Set(["all", "flows", "remaining", "operations", "1440x900", "820x1180", "390x844", "360x780"]);
 if (!allowedScopes.has(scope)) throw new Error(`알 수 없는 QA 범위: ${scope}`);
 const textExtensions = new Set([".ts", ".tsx", ".css", ".html", ".mjs", ".md", ".json"]);
 
@@ -397,6 +397,67 @@ try {
       }
     }
 
+    if (scope === "all" || scope === "operations") {
+      await check("대화상자 Enter와 첫 초점", async () => {
+        const page = await newPage(browser, {width:1440, height:900}, "dark");
+        await gotoPas(page, "dark");
+        const trigger = page.locator('[data-testid="pas-report-bubble"] .pas-rt1707-open-report');
+        await trigger.focus();
+        await page.keyboard.press("Enter");
+        await page.getByTestId("pas-report-thread-dialog").waitFor();
+        await page.waitForFunction(() => document.activeElement?.matches('.pas-rt1707-rail-item[data-active="true"]'));
+        const input = page.locator(".pas-rt1707-decide-input textarea");
+        await input.fill("첫 줄");
+        await page.keyboard.press("End");
+        await page.keyboard.press("Enter");
+        await page.keyboard.type("둘째 줄");
+        assert((await input.inputValue()).includes("\n"), "입력창의 Enter가 줄바꿈하지 않았다");
+        await input.fill("");
+        const evidence = page.locator(".pas-rt1707-evidence-button").first();
+        await evidence.focus();
+        await page.keyboard.press("Enter");
+        const evidenceDialog = page.getByTestId("pas-report-evidence-dialog");
+        await evidenceDialog.waitFor();
+        const evidenceFocus = await page.evaluate(() => ({
+          inside: Boolean(document.activeElement?.closest('[data-testid="pas-report-evidence-dialog"]')),
+          label: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent?.trim(),
+        }));
+        assert(evidenceFocus.inside, "증거 창의 첫 초점이 창 안에 없다");
+        await page.keyboard.press("Escape");
+        await evidenceDialog.waitFor({state:"hidden"});
+        await wait(250);
+        assert(await evidence.evaluate((el) => el === document.activeElement), "증거 창을 닫고 초점이 돌아오지 않았다");
+        await selectRail(page, 1387);
+        const documentButton = page.locator(".pas-rt1707-document-row button");
+        await documentButton.focus();
+        await page.keyboard.press("Enter");
+        const documentDialog = page.getByTestId("internal-document-dialog");
+        await documentDialog.waitFor();
+        await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "문서 본문");
+        await page.keyboard.press("Escape");
+        await documentDialog.waitFor({state:"hidden"});
+        await wait(250);
+        assert(await documentButton.evaluate((el) => el === document.activeElement), "문서 창을 닫고 초점이 돌아오지 않았다");
+        const panelTrigger = page.getByTestId("pas-rt1707-open-card-panel");
+        await panelTrigger.focus();
+        await page.keyboard.press("Enter");
+        const panel = page.getByTestId("v3-card-workspace");
+        await panel.waitFor();
+        await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "카드 닫기");
+        await page.keyboard.press("Enter");
+        await panel.waitFor({state:"hidden"});
+        await wait(250);
+        assert(await panelTrigger.evaluate((el) => el === document.activeElement), "Enter로 카드 패널을 닫고 초점이 돌아오지 않았다");
+        const close = page.getByLabel("보고 창 닫기");
+        await close.focus();
+        await page.keyboard.press("Enter");
+        await page.getByTestId("pas-report-thread-dialog").waitFor({state:"hidden"});
+        await wait(250);
+        assert(await trigger.evaluate((el) => el === document.activeElement), "Enter로 보고 창을 닫고 초점이 돌아오지 않았다");
+        await page.close();
+        return {report:"안건에 첫 초점, Enter 줄바꿈", evidenceFocus, document:"본문에 첫 초점", panel:"닫기 단추에 첫 초점"};
+      });
+    }
     if (scope === "all" || scope === "flows" || scope === "remaining") {
     const viewport = { width: 1440, height: 900 };
     const page = await newPage(browser, viewport, "dark");
