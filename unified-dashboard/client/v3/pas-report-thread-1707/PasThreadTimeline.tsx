@@ -48,7 +48,7 @@ export function PasThreadTimeline({ agenda, checks, questionAnswer, onToggleChec
   checks: Readonly<Record<string, boolean>>;
   questionAnswer: string | null;
   onToggleCheck(agendaId: string, checkId: string): void;
-  onInstruct(agenda: Agenda, check: CheckItem): void;
+  onInstruct(agenda: Agenda, check: CheckItem, trigger: HTMLElement): void;
   onOpenEvidence(evidence: Evidence, trigger: HTMLElement | null): void;
   onOpenDocument(documentId: string): void;
   onOpenCard(trigger: HTMLElement | null): void;
@@ -119,7 +119,7 @@ function ResultEvent({ agenda, event, checks, questionAnswer, onToggleCheck, onI
   checks: Readonly<Record<string, boolean>>;
   questionAnswer: string | null;
   onToggleCheck(agendaId: string, checkId: string): void;
-  onInstruct(agenda: Agenda, check: CheckItem): void;
+  onInstruct(agenda: Agenda, check: CheckItem, trigger: HTMLElement): void;
   onOpenEvidence(evidence: Evidence, trigger: HTMLElement | null): void;
   onOpenDocument(documentId: string): void;
   onOpenCard(trigger: HTMLElement | null): void;
@@ -132,7 +132,7 @@ function ResultEvent({ agenda, event, checks, questionAnswer, onToggleCheck, onI
         <Checkbox checked={checks[`${agenda.id}:${check.id}`] ?? check.done} onCheckedChange={() => onToggleCheck(agenda.id, check.id)}
           aria-label={check.label} />
         <span className="pas-rt1707-check-label" data-v3-selectable-content="true">{check.label}</span>
-        <Button variant="ghost" size="xs" className="pas-rt1707-check-instruct" onClick={() => onInstruct(agenda, check)}
+        <Button variant="ghost" size="xs" className="pas-rt1707-check-instruct" onClick={(click) => onInstruct(agenda, check, click.currentTarget)}
           aria-label={`${agenda.number}번 ${check.label} 항목에 지시하기`}>항목 지시</Button>
       </li>)}
     </ul>

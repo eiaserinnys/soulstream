@@ -34,7 +34,7 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
   checks: Readonly<Record<string, boolean>>;
   questionAnswers: Readonly<Record<string, string | null>>;
   onToggleCheck(agendaId: string, checkId: string): void;
-  onInstruct(agenda: Agenda, check: CheckItem): void;
+  onInstruct(agenda: Agenda, check: CheckItem, trigger: HTMLElement): void;
   onChooseAnswer(agenda: Agenda, label: string): void;
   target: DecisionTarget;
   onClearTarget(): void;

@@ -14,6 +14,8 @@ mockApi(Object.fromEntries(Object.entries(DOCUMENT_BODIES).map(([id, document]) 
   }
   return document;
 }])));
+// 정본 셸이 서버 상태(재시작 중 여부, atom 공개 주소)를 읽는다. 시안은 평상시 상태를 준다.
+mockApi({ "GET /api/status": { is_draining: false, atom_public_url: null } });
 mockAgentPortraits();
 
 mountMockup(<PasReportThreadMockup />, { surface: "bare" });

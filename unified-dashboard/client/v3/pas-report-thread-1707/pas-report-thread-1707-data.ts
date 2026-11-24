@@ -1,4 +1,5 @@
-import type { CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
+import type { CardStatus } from "../../../../packages/wire-schema/generated/typescript/index";
+import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 
 /** 시안 C의 다섯 안건이 쓰는 고정 시나리오. 화면 상태는 이 값을 복제해 쓴다. */
 

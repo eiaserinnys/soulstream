@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Badge, Button, DashboardIconCap, PersistentSessionPortraitIcon, PersistentSessionPortraitOffIcon, SwayCharacter, useDashboardStore, useIsMobile } from "@seosoyoung/soul-ui";
+import { Badge, DashboardIconCap, PersistentSessionPortraitIcon, PersistentSessionPortraitOffIcon, SwayCharacter, useDashboardStore, useIsMobile } from "@seosoyoung/soul-ui";
 import { ChatInputComposer } from "@seosoyoung/soul-ui/components/chat/ChatInputComposer";
 import { ChatInputEditor } from "@seosoyoung/soul-ui/components/chat/ChatInputEditor";
 import { ChatMessageItem } from "@seosoyoung/soul-ui/components/chat/ChatMessageItem";
@@ -137,11 +137,6 @@ export function PasReportThreadMockup() {
     try { window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`); } catch { /* 주소를 되돌리지 못해도 닫는다. */ }
   };
   const selectAgenda = (id: string) => { setActiveId(id); setTarget(null); setInstruction(""); };
-  const goAgenda = (delta: number) => {
-    const index = agendas.findIndex((agenda) => agenda.id === activeId);
-    const next = agendas[Math.min(agendas.length - 1, Math.max(0, index + delta))];
-    if (next) selectAgenda(next.id);
-  };
   const addChat = (line: ChatLine) => setChat((previous) => [...previous, line]);
 
   const dispose = (disposition: DispositionId) => {
@@ -220,11 +215,11 @@ export function PasReportThreadMockup() {
     setAgendas((previous) => previous.map((item) => item.id === activeAgenda.id ? { ...item, events: [...item.events, event] } : item));
   };
 
-  const instruct = (agenda: Agenda, check: CheckItem) => {
+  const instruct = (agenda: Agenda, check: CheckItem, trigger: HTMLElement) => {
     const result = agenda.events.find((event) => event.kind === "result");
     const index = result?.kind === "result" ? result.checks.findIndex((item) => item.id === check.id) : -1;
     setActiveId(agenda.id);
-    setTarget({ checkId: check.id, label: `${index >= 0 ? index + 1 : 1}번 항목` });
+    setTarget({ checkId: check.id, label: `${index >= 0 ? index + 1 : 1}번 항목`, trigger });
   };
 
   const openDocument = (id: string) => setDocumentId(id);

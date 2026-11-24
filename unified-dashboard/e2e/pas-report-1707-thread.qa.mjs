@@ -194,6 +194,61 @@ async function railInset(page) {
     return { active: a, other: b, bar, lineDifference: Math.abs((a.left + a.title) - (b.left + b.title)) };
   });
 }
+async function railSections(page) {
+  return page.evaluate(() => {
+    const textLeft = (element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return range.getBoundingClientRect().left;
+    };
+    const sections = [...document.querySelectorAll(".pas-rt1707-rail-sections > section")].filter((section) => section.getClientRects().length > 0);
+    const rowTextGaps = [];
+    const pairs = [];
+    const headToFirst = [];
+    sections.forEach((section, index) => {
+      const head = section.querySelector(".pas-rt1707-rail-head");
+      const items = [...section.querySelectorAll(".pas-rt1707-rail-item")];
+      if (items.length) headToFirst.push(items[0].querySelector(".pas-rt1707-rail-number").getBoundingClientRect().top - head.querySelector("h2").getBoundingClientRect().bottom);
+      items.slice(1).forEach((item, i) => rowTextGaps.push(item.querySelector(".pas-rt1707-rail-number").getBoundingClientRect().top
+        - items[i].querySelector(".pas-rt1707-rail-title").getBoundingClientRect().bottom));
+      const next = sections[index + 1];
+      if (!next || !items.length) return;
+      const nextHead = next.querySelector(".pas-rt1707-rail-head");
+      const last = items.at(-1);
+      pairs.push({ from: section.getAttribute("aria-label"), to: next.getAttribute("aria-label"),
+        boxGap: nextHead.getBoundingClientRect().top - last.getBoundingClientRect().bottom,
+        textGap: nextHead.querySelector("h2").getBoundingClientRect().top - last.querySelector(".pas-rt1707-rail-title").getBoundingClientRect().bottom });
+    });
+    const active = document.querySelector('.pas-rt1707-rail-item[data-active="true"]');
+    const other = [...document.querySelectorAll(".pas-rt1707-rail-item")].find((item) => item !== active && item.getClientRects().length > 0);
+    const starts = { head: textLeft(sections[0].querySelector(".pas-rt1707-rail-head h2")), active: textLeft(active.querySelector(".pas-rt1707-rail-number")),
+      other: textLeft(other.querySelector(".pas-rt1707-rail-number")), hold: textLeft(document.querySelector(".pas-rt1707-rail-foot .pas-rt1707-hold-note")) };
+    return { pairs, rowTextGap: Math.max(...rowTextGaps), headToFirst: Math.max(...headToFirst), starts,
+      startSpread: Math.max(...Object.values(starts)) - Math.min(...Object.values(starts)) };
+  });
+}
+function assertRailSections(rail, label) {
+  assert(rail.pairs.length > 0 && rail.pairs.every((pair) => pair.boxGap >= 16 && pair.textGap > rail.rowTextGap && rail.headToFirst < pair.textGap),
+    `${label} 레일 구역 사이가 같은 구역 안 행보다 붙어 있다: ${JSON.stringify(rail)}`);
+  assert(rail.startSpread <= 1, `${label} 레일 머리, 행, 보류함 글자 시작선이 어긋난다: ${JSON.stringify(rail.starts)}`);
+}
+async function decidePills(page) {
+  return page.evaluate(() => {
+    const buttons = [...document.querySelectorAll(".pas-rt1707-decide-actions button")].filter((button) => button.getClientRects().length > 0)
+      .map((button) => {
+        const box = button.getBoundingClientRect();
+        return { text: button.textContent.trim(), height: box.height, center: (box.top + box.bottom) / 2,
+          radius: parseFloat(getComputedStyle(button).borderTopLeftRadius), fontSize: getComputedStyle(button).fontSize };
+      });
+    const rows = [];
+    for (const button of buttons) {
+      const row = rows.find((item) => Math.abs(item.center - button.center) <= 2);
+      if (row) row.buttons.push(button); else rows.push({ center: button.center, buttons: [button] });
+    }
+    return { buttons, fontSizes: [...new Set(buttons.map((button) => button.fontSize))], notPill: buttons.filter((button) => !(button.radius >= button.height / 2 - 0.5)),
+      rowSpread: rows.map((row) => Math.max(...row.buttons.map((b) => b.height)) - Math.min(...row.buttons.map((b) => b.height))) };
+  });
+}
 async function composerGeometry(page) {
   return page.evaluate(() => {
     const drawer = document.querySelector(".pas-rt1707-composer-drawer");
@@ -232,8 +287,10 @@ async function decisionButtons(page) {
       };
     }));
   assert(buttons.length > 0, "결재 단추가 없다");
+  // 결재 단추는 정본 Button 기본 크기(알약, 누르는 자리 44px 내장)다. 모든 단추가 한 높이다.
+  const heights = buttons.map((button) => button.height);
+  assert(Math.max(...heights) - Math.min(...heights) <= 1, `결재 단추 높이가 서로 다르다: ${JSON.stringify(buttons)}`);
   for (const button of buttons) {
-    assert(Math.abs(button.height - 44) <= 1, `결재 단추 높이가 44px가 아니다: ${JSON.stringify(button)}`);
     for (const other of buttons) {
       if (Math.abs(button.top - other.top) <= 1) {
         assert(Math.abs(button.height - other.height) <= 1, `같은 줄 단추의 높이가 다르다: ${JSON.stringify([button, other])}`);
@@ -667,7 +724,7 @@ try {
           await selectRail(page, 1512);
           await page.getByTestId("pas-rt1707-open-composer").click();
           await input.fill("확인 부탁");
-          await page.locator('.pas-rt1707-composer-drawer [aria-label="지시 보내기"]').click();
+          await page.locator('.pas-rt1707-composer-drawer [aria-label="커멘트 전송"]').click();
           await wait(300);
           await undoFocused("#1512 지시 보내기");
           await undo.click();
@@ -689,13 +746,16 @@ try {
           const results = {};
           const scrollState = () => page.locator(".pas-rt1707-thread-scroll").evaluate((el) => ({ distance: el.scrollHeight - el.scrollTop - el.clientHeight,
             scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, auto: el.dataset.autoScroll }));
-          const openAndMeasure = async (name, slug, trigger, placeholder, close) => {
+          const openAndMeasure = async (name, slug, trigger, placeholder, close, notice, sendLabel) => {
             const beforeOpen = await scrollState();
             await trigger.click();
             await composer.waitFor();
             await wait(200);
             assert(await input.evaluate((el) => el === document.activeElement), `${name} 뒤 입력창에 초점이 없다`);
             assert(await input.getAttribute("placeholder") === placeholder, `${name} 입력 안내가 다르다: ${await input.getAttribute("placeholder")}`);
+            const noticeText = (await textOf(page, ".pas-rt1707-composer-drawer .v3-card-target-notice > span"))?.trim();
+            assert(noticeText === notice, `${name} 입력창 알림 문구가 다르다: ${noticeText}`);
+            assert(await page.locator(`.pas-rt1707-composer-drawer [aria-label="${sendLabel}"]`).count() === 1, `${name} 전송 단추 이름이 ${sendLabel}이 아니다`);
             const geometry = await composerGeometry(page);
             assert(geometry && geometry.composerTop >= geometry.stampsBottom + 8, `${name} 입력창이 단추 줄 아래에 있지 않다: ${JSON.stringify(geometry)}`);
             assert(Math.abs(geometry.textTop - geometry.textBottom) <= 2 && geometry.sendCenterDifference <= 2,
@@ -712,12 +772,77 @@ try {
             assert(await trigger.evaluate((el) => el === document.activeElement), `${name} 입력창을 닫은 뒤 누른 단추로 초점이 돌아오지 않았다`);
             results[name] = { ...geometry, band: band.band, close };
           };
-          await openAndMeasure("되묻기", "ask", page.getByRole("button", {name:"되묻기", exact:true}), "물어볼 내용을 적으세요", "clear");
-          await openAndMeasure("다르게 답하기", "answer", page.getByRole("button", {name:"다르게 답하기", exact:true}), "선택지 대신 보낼 답을 적으세요", "escape");
+          await openAndMeasure("되묻기", "ask", page.getByRole("button", {name:"되묻기", exact:true}), "물어볼 것", "clear", "되묻기", "되묻기 전송");
+          await openAndMeasure("다르게 답하기", "answer", page.getByRole("button", {name:"다르게 답하기", exact:true}), "다르게 답하기", "escape", "다르게 답하기", "답 전송");
           await selectRail(page, 1512);
-          await openAndMeasure("지시 적기", "comment", page.getByTestId("pas-rt1707-open-composer"), "이 안건에 보탤 지시를 적으세요", "escape");
+          await openAndMeasure("지시 적기", "comment", page.getByTestId("pas-rt1707-open-composer"), "커멘트", "escape", "커멘트", "커멘트 전송");
           await page.close();
           return results;
+        });
+      }
+    }
+    if (scope === "all" || scope === "review") {
+      for (const viewport of [{width:1440, height:900}, {width:390, height:844}]) {
+        await check(`${viewport.width} 지시 적기를 닫은 뒤 항목 지시 초점 복귀`, async () => {
+          const page = await newPage(browser, viewport, "dark");
+          await gotoReport(page, "dark");
+          await selectRail(page, 1512);
+          const composer = page.locator('[data-testid="card-composer"]');
+          const input = page.locator(".pas-rt1707-composer-drawer textarea");
+          await page.getByTestId("pas-rt1707-open-composer").click();
+          await composer.waitFor();
+          await input.press("Escape");
+          await wait(200);
+          const focusState = () => page.evaluate(() => ({ tag: document.activeElement?.tagName,
+            className: String(document.activeElement?.className ?? "").slice(0, 40), label: document.activeElement?.getAttribute("aria-label") }));
+          const results = {};
+          for (const [index, close] of [[0, "escape"], [1, "clear"]]) {
+            const trigger = page.locator(".pas-rt1707-check-instruct").nth(index);
+            await trigger.click();
+            await composer.waitFor();
+            await wait(200);
+            assert(await input.evaluate((el) => el === document.activeElement), `${index + 1}번 항목 지시 뒤 입력창에 초점이 없다`);
+            if (close === "escape") await input.press("Escape"); else await page.locator(".pas-rt1707-composer-drawer .v3-card-target-notice button").click();
+            await wait(200);
+            assert(await composer.count() === 0, `${index + 1}번 항목 입력창이 닫히지 않았다`);
+            const state = await focusState();
+            assert(await trigger.evaluate((el) => el === document.activeElement), `${index + 1}번 항목 입력창을 ${close}로 닫은 뒤 그 항목 지시 단추로 초점이 돌아오지 않았다: ${JSON.stringify(state)}`);
+            results[`${index + 1}번`] = { close, focus: state.label };
+          }
+          await page.close();
+          return results;
+        });
+      }
+      for (const viewport of [{id:"1440x900", width:1440, height:900}, {id:"820x1180", width:820, height:1180}, {id:"390x844", width:390, height:844}, {id:"360x780", width:360, height:780}]) {
+        await check(`${viewport.id} 레일 구역 간격과 결재 단추 알약`, async () => {
+          const page = await newPage(browser, viewport, "dark");
+          await gotoReport(page, "dark");
+          const mobile = viewport.width <= 767;
+          if (mobile) {
+            await page.getByTestId("pas-rt1707-rail-toggle").click();
+            await page.waitForFunction(() => document.activeElement?.matches('.pas-rt1707-rail-item[data-active="true"]'));
+          }
+          // 레일과 결재 단추 결함을 서로 가리지 않게 모아서 한 번에 판정한다.
+          const errors = [];
+          const collect = (fn) => { try { fn(); } catch (error) { errors.push(error.message); } };
+          const rail = await railSections(page);
+          collect(() => assertRailSections(rail, viewport.id));
+          if (mobile) { await page.keyboard.press("Escape"); await wait(200); }
+          const pills = {};
+          for (const number of [1680, 1512]) {
+            if (number !== 1680) await selectRail(page, number);
+            const result = await decidePills(page);
+            collect(() => assert(result.buttons.length >= 2 && result.notPill.length === 0, `#${number} 결재 단추가 알약이 아니다: ${JSON.stringify(result.notPill)}`));
+            collect(() => assert(result.rowSpread.every((spread) => spread <= 1), `#${number} 같은 줄 결재 단추 높이가 다르다: ${JSON.stringify(result)}`));
+            collect(() => assert(result.fontSizes.length === 1, `#${number} 결재 단추 글자 크기가 정본 되묻기 단추와 다르다: ${JSON.stringify(result.buttons.map((b) => [b.text, b.fontSize]))}`));
+            const band = await decideBand(page);
+            collect(() => assertBand(band, viewport.width, `#${number}`));
+            if (viewport.width === 1440) collect(() => assert(band.rightGap !== null && Math.abs(band.rightGap) <= 1, `#${number} 오른쪽 끝선이 어긋난다: ${JSON.stringify(band)}`));
+            pills[number] = { heights: [...new Set(result.buttons.map((b) => b.height))], fontSizes: result.fontSizes, band: band.band, rightGap: band.rightGap };
+          }
+          await page.close();
+          assert(errors.length === 0, errors.join(" / "));
+          return { rail: { pairs: rail.pairs, rowTextGap: rail.rowTextGap, headToFirst: rail.headToFirst, startSpread: rail.startSpread }, pills };
         });
       }
     }
@@ -900,7 +1025,7 @@ try {
       await askBack.click();
       const notice = page.locator(".v3-card-target-notice");
       assert(await notice.isVisible() && (await notice.textContent()).includes("되묻기"), "되묻기 알림이 없다");
-      assert(await input.getAttribute("placeholder") === "물어볼 내용을 적으세요", "되묻기 입력 안내가 다르다");
+      assert(await input.getAttribute("placeholder") === "물어볼 것", "되묻기 입력 안내가 다르다");
       assert(await page.locator(".pas-rt1707-choice").first().isVisible() && await page.getByTestId("pas-rt1707-snooze-trigger").isVisible(), "되묻기 중 선택 동작이 가려졌다");
       for (const selector of [".pas-rt1707-choice", '[data-testid="pas-rt1707-snooze-trigger"]']) {
         const hit = await page.locator(selector).first().evaluate((el, target) => {
@@ -929,7 +1054,7 @@ try {
       await wait(450);
       await page.getByRole("button", {name:"다르게 답하기", exact:true}).click();
       await input.fill("최근 일주일로 정합니다");
-      await page.locator('.pas-rt1707-composer-drawer [aria-label="답변 전송"]').click();
+      await page.locator('.pas-rt1707-composer-drawer [aria-label="답 전송"]').click();
       await wait(450);
       assert((await reportStatus(page)) === "완료", "글 답이 확정되지 않았다");
       await page.locator(".pas-rt1707-undo").click();
@@ -1037,7 +1162,8 @@ try {
         undo: await rect(page, ".pas-rt1707-undo"),
       };
       assert(Math.abs(before.title.top - after.title.top) <= 0.5, `제목이 ${after.title.top - before.title.top}px 움직였다`);
-      assert(after.undo.height === 44, `되돌리기 단추 높이가 44px가 아니다: ${after.undo.height}`);
+      const reference = await rect(page, '[data-testid="pas-rt1707-open-composer"]');
+      assert(Math.abs(after.undo.height - reference.height) <= 1, `되돌리기 단추 높이가 옆 단추와 다르다: ${after.undo.height}, ${reference.height}`);
       const afterBand = await decideBand(page);
       assert(afterBand.rightGap !== null && Math.abs(afterBand.rightGap) <= 2 && afterBand.lastSecondary === "되돌리기", `처분 뒤 되돌리기가 오른쪽 끝에 있지 않다: ${JSON.stringify(afterBand)}`);
       assert((await textOf(page, ".pas-rt1707-undo")) === "되돌리기", "되돌리기 단추가 없다");
@@ -1168,7 +1294,7 @@ try {
       await instructButton.click();
       await wait(250);
       const chip = await textOf(page, ".pas-rt1707-composer-drawer .v3-card-target-notice");
-      assert(chip?.includes("대상: 2번 항목"), `대상 알림이 2번 항목이 아니다: ${chip}`);
+      assert(chip?.trim().startsWith("2번 항목") && !chip.includes("대상:"), `대상 알림이 2번 항목이 아니다: ${chip}`);
       const input = page.locator(".pas-rt1707-composer-drawer textarea");
       assert(await input.evaluate((el) => el === document.activeElement), "항목 지시 뒤 입력창에 초점이 없다");
       await input.press("Escape");
@@ -1178,13 +1304,14 @@ try {
       await instructButton.click();
       await wait(250);
       await input.fill("장 사이 여백을 다시 확인해 주세요");
-      await page.locator('.pas-rt1707-composer-drawer [aria-label="지시 보내기"]').click();
+      await page.locator('.pas-rt1707-composer-drawer [aria-label="커멘트 전송"]').click();
       await wait(400);
       const thread = await textOf(page, ".pas-rt1707-thread-scroll");
       assert(thread?.includes("장 사이 여백을 다시 확인해 주세요"), "보낸 지시가 스레드에 붙지 않았다");
       assert((await reportStatus(page)) === "실행 중", `지시 뒤 상태가 실행 중이 아니다: ${await reportStatus(page)}`);
       const afterUndo = await rect(page, ".pas-rt1707-undo");
-      assert(afterUndo.height === 44, `지시 뒤 되돌리기 단추 높이가 44px가 아니다: ${afterUndo.height}`);
+      const commentButton = await rect(page, '[data-testid="pas-rt1707-open-composer"]');
+      assert(Math.abs(afterUndo.height - commentButton.height) <= 1, `지시 뒤 되돌리기 단추 높이가 옆 단추와 다르다: ${afterUndo.height}, ${commentButton.height}`);
       instructionSlot = afterUndo.height;
       await page.getByTestId("pas-rt1707-open-composer").click();
       await input.focus();
