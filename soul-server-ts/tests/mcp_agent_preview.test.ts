@@ -52,7 +52,7 @@ describe("agent MCP preview", () => {
     const snapshot = { registry: { servers: [server] }, profiles: { profiles: [{ id: "p", mcp_servers: ["atom"] }] }, agent_bindings: { a: "p" } };
     const runtime = { ...snapshot, registry: { servers: [{ ...server, name: "fake-runtime-value" }] } };
     await service.applyCentralSync({ revision: 4, runtime, display: snapshot });
-    const commands = new McpConfigCommands(service, () => {}, { tasks: { resolveNewSessionAgent: async id => {
+    const commands = new McpConfigCommands(service, () => {}, undefined, { tasks: { resolveNewSessionAgent: async id => {
       if (id !== "a") throw new UnknownAgentProfileError(id);
       return { profile: agent, hasDbPortrait: false, fromSource: false };
     } }, context: { nodeId: "test", codexMode: "app-server", isolationEnabled: true, localMcpPolicy: () => policy } });
@@ -63,7 +63,7 @@ describe("agent MCP preview", () => {
     const virtual = await commands.preview({ requestId: "2", agent_id: "a", mcp_profile_id: "virtual", servers: [{ server_id: "atom", name: "alternate", type: "streamable_http" }] });
     expect(virtual.data.normal.servers).toMatchObject([{ server_id: "atom", name: "alternate" }]);
     await expect(commands.preview({ requestId: "3", agent_id: "missing" })).rejects.toMatchObject({ code: "MCP_AGENT_NOT_FOUND" });
-    const portable = new McpConfigService({ agentsConfigPath: "/tmp/preview-agents.yaml", processEnv: { PORTABLE_LOCAL_MCP_AUTHORIZATION: "fake-portable-value" } });
+    const portable = new McpConfigService({ agentsConfigPath: "/tmp/preview-agents.yaml", isPortableNode: true });
     await expect(new McpConfigCommands(portable, undefined).preview({})).rejects.toMatchObject({ code: "MCP_PORTABLE_NODE" });
   });
 
@@ -73,7 +73,7 @@ describe("agent MCP preview", () => {
       writeFileSync(join(dir, ".mcp.json"), JSON.stringify({ mcpServers: { external: { type: "sse", url: "https://example.test/mcp" } } }));
       const service = new McpConfigService({ agentsConfigPath: join(dir, "agents.yaml"), processEnv: {} });
       const claude = { ...agent, backend: "claude" as const, workspace_dir: dir, mcp_profile: undefined };
-      const commands = new McpConfigCommands(service, () => {}, { tasks: { resolveNewSessionAgent: async () => ({ profile: claude, hasDbPortrait: false, fromSource: false }) },
+      const commands = new McpConfigCommands(service, () => {}, undefined, { tasks: { resolveNewSessionAgent: async () => ({ profile: claude, hasDbPortrait: false, fromSource: false }) },
         context: { nodeId: "test", codexMode: "app-server", isolationEnabled: true, localMcpPolicy: () => policy } });
       const result = await commands.preview({ requestId: "1", agent_id: "a" });
       expect(result.data.normal.servers).toMatchObject([{ server_id: "external", name: "external", type: "sse", included: true }]);
@@ -85,7 +85,7 @@ describe("agent MCP preview", () => {
     const snapshot = (url: string) => ({ registry: { servers: [{ id: "web", type: "streamable_http", url }] },
       profiles: { profiles: [{ id: "p", mcp_servers: ["web"] }] }, agent_bindings: { a: "p" } });
     await service.applyCentralSync({ revision: 1, runtime: snapshot("https://public.example/mcp"), display: snapshot("https://{{env:PREVIEW_HOST}}/mcp") });
-    const commands = new McpConfigCommands(service, () => {}, { tasks: { resolveNewSessionAgent: async () => ({ profile: { ...agent, backend: "claude" }, hasDbPortrait: false, fromSource: false }) },
+    const commands = new McpConfigCommands(service, () => {}, undefined, { tasks: { resolveNewSessionAgent: async () => ({ profile: { ...agent, backend: "claude" }, hasDbPortrait: false, fromSource: false }) },
       context: { nodeId: "test", codexMode: "app-server", isolationEnabled: true, localMcpPolicy: () => policy } });
     const result = await commands.preview({ requestId: "1", agent_id: "a" });
     expect(result.data.restricted.servers).toContainEqual(expect.objectContaining({ server_id: "web", included: true }));
@@ -95,7 +95,7 @@ describe("agent MCP preview", () => {
     const service = new McpConfigService({ agentsConfigPath: "/tmp/preview-agents.yaml", processEnv: {} });
     const snapshot = { registry: { servers: [server] }, profiles: { profiles: [{ id: "p", mcp_servers: ["atom"] }] }, agent_bindings: { a: "p" } };
     await service.applyCentralSync({ revision: 1, runtime: snapshot, display: snapshot });
-    const commands = new McpConfigCommands(service, () => {}, { tasks: { resolveNewSessionAgent: async () => ({ profile: { ...agent, default_preset: "fixture-preset" }, hasDbPortrait: false, fromSource: false }) },
+    const commands = new McpConfigCommands(service, () => {}, undefined, { tasks: { resolveNewSessionAgent: async () => ({ profile: { ...agent, default_preset: "fixture-preset" }, hasDbPortrait: false, fromSource: false }) },
       catalog: { resolve: () => ({ backend: "claude" }) as never },
       context: { nodeId: "test", codexMode: "sdk", isolationEnabled: true, localMcpPolicy: () => policy } });
     const result = await commands.preview({ requestId: "1", agent_id: "a" });
@@ -118,7 +118,7 @@ describe("agent MCP preview", () => {
 
   it("does not forward values from profile resolution failures", async () => {
     const service = new McpConfigService({ agentsConfigPath: "/tmp/preview-agents.yaml", processEnv: {} });
-    const commands = new McpConfigCommands(service, () => {}, { tasks: { resolveNewSessionAgent: async () => { throw new Error("fake-secret-value"); } },
+    const commands = new McpConfigCommands(service, () => {}, undefined, { tasks: { resolveNewSessionAgent: async () => { throw new Error("fake-secret-value"); } },
       context: { nodeId: "test", codexMode: "app-server", isolationEnabled: false, localMcpPolicy: () => policy } });
     await expect(commands.preview({ requestId: "1", agent_id: "a" })).rejects.toMatchObject({ code: "MCP_PREVIEW_FAILED", message: "MCP preview failed" });
   });

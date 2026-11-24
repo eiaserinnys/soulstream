@@ -10,13 +10,13 @@ import { makeTempDirSync } from "../helpers/temp_dir.js";
 
 const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
-function setup(processEnv?: Record<string, string | undefined>) {
+function setup(isPortableNode = false) {
   const dir = makeTempDirSync("mcp-command-"); dirs.push(dir);
   const agentsConfigPath = path.join(dir, "agents.yaml");
   fs.writeFileSync(agentsConfigPath, "agents:\n  - id: agent\n    name: Agent\n    backend: codex\n    workspace_dir: /tmp/agent\n    mcp_profile: local\n");
   fs.writeFileSync(path.join(dir, "mcp-registry.yaml"), "servers:\n  - id: srv\n    type: stdio\n    command: node\n    env:\n      KEY: { env: FAKE_KEY }\n");
   fs.writeFileSync(path.join(dir, "mcp-profiles.yaml"), "profiles:\n  - id: local\n    mcp_servers: [srv]\n");
-  const service = new McpConfigService({ agentsConfigPath, modePath: path.join(dir, "marker.json"), processEnv });
+  const service = new McpConfigService({ agentsConfigPath, modePath: path.join(dir, "marker.json"), isPortableNode });
   const send = vi.fn(async (_data: unknown) => {});
   const rebuild = vi.fn();
   const logs: string[] = [];
@@ -43,7 +43,7 @@ describe("MCP configuration commands", () => {
   });
 
   it("rejects central sync on a portable node", async () => {
-    const { dispatcher, send, rebuild } = setup({ PORTABLE_LOCAL_MCP_AUTHORIZATION: "fake-secret-portable" });
+    const { dispatcher, send, rebuild } = setup(true);
     await dispatcher.dispatch({ type: "mcp_central_sync", requestId: "portable", revision: 1, runtime: snap, display: snap });
     expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ code: "MCP_PORTABLE_NODE" }));
     expect(rebuild).not.toHaveBeenCalled();
@@ -54,11 +54,8 @@ describe("MCP configuration commands", () => {
   });
 
   it("does not advertise central MCP support on a portable node", () => {
-    vi.stubEnv("PORTABLE_LOCAL_MCP_AUTHORIZATION", "fake-secret-portable");
-    try {
-      const { registry } = setup();
-      expect(buildRegistrationMsg({ nodeId: "portable", host: "localhost", port: 1, userName: "", agentRegistry: registry }).capabilities).not.toHaveProperty("central_mcp_config_v1");
-    } finally { vi.unstubAllEnvs(); }
+    const { registry } = setup();
+    expect(buildRegistrationMsg({ nodeId: "portable", host: "localhost", port: 1, userName: "", agentRegistry: registry, isPortableNode: true }).capabilities).not.toHaveProperty("central_mcp_config_v1");
   });
 
   it("advertises central MCP support", () => {

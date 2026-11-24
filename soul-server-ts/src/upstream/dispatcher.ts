@@ -219,6 +219,7 @@ export class CommandDispatcher {
       ...createMcpConfigCommandFamily({ send, commands: new McpConfigCommands(
         reflectionRuntime?.mcpConfigService,
         agentProfileSource?.rebuild?.bind(agentProfileSource),
+        reflectionRuntime?.mcpConfigService?.isPortableNode(),
         mcpPreviewContext ? { tasks: taskRuntimeCommands, catalog: modelCatalog, context: mcpPreviewContext } : undefined,
       ) }),
       ...createReflectionCommandFamily({ send, reflectionCommands }),

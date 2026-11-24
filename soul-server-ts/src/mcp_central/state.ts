@@ -14,8 +14,10 @@ export type CentralSync = {
   display: unknown;
 };
 
-export function isPortableMcpNode(env: Record<string, string | undefined>): boolean {
-  return env.PORTABLE_LOCAL_MCP_AUTHORIZATION !== undefined;
+export function isPortableMcpNode(env: Record<string, string | undefined>, manifest: { model_catalog_path?: string }): boolean {
+  // Older portable launchers have no marker but bind a catalog path into the manifest.
+  return env.SOULSTREAM_PORTABLE_NODE === "1"
+    || (env.PORTABLE_LOCAL_MCP_AUTHORIZATION !== undefined && manifest.model_catalog_path !== undefined);
 }
 
 export function resolveMcpCentralModePath(env: { AGENT_PROFILE_CACHE_PATH: string }): string {

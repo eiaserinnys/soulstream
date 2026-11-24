@@ -16,6 +16,7 @@ Defined in [`orch-server-ts/.env.example`](../../orch-server-ts/.env.example):
 - `DASHBOARD_DIR`: optional path to the built `unified-dashboard/dist` directory when serving the web UI from the orchestrator.
 - `NODE_NAME`: optional human-readable node label (required when external MCP ingress is enabled).
 - `DEFAULT_EXECUTION_NODE_ID`: node that runs cards, conversations, and persistent sessions that name no node (empty uses the built-in central default, `eiaserinnys`). It is separate from `NODE_NAME`, which only labels the external MCP ingress caller.
+- `PERSISTENT_SESSION_BOOTSTRAP`: `true` or `false`, default `false`. When `true`, `GET /api/persistent-sessions` reports `create_defaults.bootstrap_enabled: true`, and once the first coding agent is connected the dashboard calls `POST /api/persistent-sessions/bootstrap` to create one default persistent session. The call creates nothing when the signed-in user already sees a persistent session (it answers `200 {"created": false, "session_id": ...}`), answers `409` with code `bootstrap_disabled` when the switch is off and `bootstrap_unavailable` while no usable model or agent exists, and creates through the ordinary create path (`201 {"created": true, "session_id": ...}`). Overlapping calls from one user create one session. The session is not created during installation because its first turn runs immediately and needs a logged-in coding agent. The Linux installer sets `true`.
 
 Board and attachment Cloudflare R2 storage settings are managed in the central PostgreSQL database admin settings rather than environment variables.
 
@@ -40,6 +41,7 @@ endpoint remains unavailable until login and consent are integrated.
 
 - `ATOM_ENABLED`: enables optional Atom knowledge tree integration. The Linux installer sets `true`.
 - `ATOM_SERVER_URL`: base URL of the Atom server. The Linux installer sets `http://127.0.0.1:4200`.
+- `ATOM_PUBLIC_URL`: optional address a browser can open to reach Atom. `GET /api/status` returns it as `atom_public_url` (`string | null`), and the dashboard uses it for "open in atom" links. It is chosen in this order: `null` when `ATOM_ENABLED` is not `true`; otherwise `ATOM_PUBLIC_URL` when it is not empty; otherwise `ATOM_SERVER_URL` when its host is not a loopback host (`localhost`, `127.0.0.0/8`, `::1`, `0.0.0.0`); otherwise `null`. Only `http` or `https` absolute URLs are accepted (a trailing `/` is removed); any other `ATOM_PUBLIC_URL` is ignored with one warning in the log. `ATOM_SERVER_URL` keeps its meaning as the server-to-server address. The Linux installer writes `http://127.0.0.1:4200` in password mode (the SSH tunnel forwards that port) and `https://<MagicDNS name>:8443` in Tailscale mode.
 - `ATOM_API_KEY`: API key for Atom requests. The Linux installer issues a write-scoped agent key and keeps it in `/home/soulstream/soulstream/.atom-api-key` (`0600`).
 - `ATOM_ROOT_NODE_ID`: root node ID for Atom tree lookups. The Linux installer does not set it.
 - `SKILL_CATALOG_NODE_ID`: Atom node ID for the shared skill catalog.
@@ -168,6 +170,8 @@ Backend rules are the Claude rules for `claude` and the Codex rules for `codex`;
 ## MCP servers (`mcp-registry.yaml`, `mcp-profiles.yaml`)
 
 The Linux installer registers two MCP servers in `config/mcp-registry.yaml`: `soulstream` (`http://127.0.0.1:4205/mcp`, `Authorization` from `PORTABLE_LOCAL_MCP_AUTHORIZATION`) and `atom` (`http://127.0.0.1:4200/mcp`, `x-api-key` from `ATOM_API_KEY`). `config/mcp-profiles.yaml` defines `default` and `pas` (named `PAS`), and both use `mcp_servers: [soulstream, atom]`.
+
+Portable nodes use `SOULSTREAM_PORTABLE_NODE=1`. For older launchers, a node is also portable when the local MCP authorization variable is present and the release manifest contains `model_catalog_path`.
 
 ## Files the Linux installer manages
 

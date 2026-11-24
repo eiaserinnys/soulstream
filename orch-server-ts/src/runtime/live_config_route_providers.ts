@@ -5,6 +5,7 @@ import {
   type AuthRouteConfigProvider,
 } from "../auth/auth_routes.js";
 import { resolveDashboardLoginMode } from "../auth/login_mode.js";
+import { createAtomPublicUrlResolver } from "../atom/atom_public_url.js";
 import type { AtomRouteConfigProvider } from "../atom/atom_routes.js";
 import type { PublicStatusRouteConfigProvider } from "../public/public_status_routes.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
@@ -61,6 +62,7 @@ export class LiveConfigProviderError extends Error {
 export function createLiveConfigRouteProviders(
   configProvider: LiveConfigProviderBoundary,
 ): LiveConfigRouteProviderBundle {
+  const resolveAtomPublicUrl = createAtomPublicUrlResolver();
   return {
     authRoutes: {
       configProvider: {
@@ -74,7 +76,7 @@ export function createLiveConfigRouteProviders(
     },
     publicStatusRoutes: {
       configProvider: {
-        getConfig: () => publicStatusRouteConfig(configProvider),
+        getConfig: () => publicStatusRouteConfig(configProvider, resolveAtomPublicUrl),
       },
     },
   };
@@ -129,6 +131,7 @@ async function authRouteConfig(configProvider: LiveConfigProviderBoundary) {
 
 async function publicStatusRouteConfig(
   configProvider: LiveConfigProviderBoundary,
+  resolveAtomPublicUrl: ReturnType<typeof createAtomPublicUrlResolver>,
 ) {
   const route = {
     owner: "public.status",
@@ -153,6 +156,11 @@ async function publicStatusRouteConfig(
       tailscale_auth_enabled: snapshot.tailscale_auth_enabled === true,
     }) !== "none",
     atomEnabled,
+    atomPublicUrl: resolveAtomPublicUrl({
+      atomEnabled,
+      atomServerUrl: optionalString(snapshot, route, "atom_server_url"),
+      atomPublicUrl: optionalString(snapshot, route, "atom_public_url"),
+    }),
   };
 }
 

@@ -21,6 +21,7 @@ export const persistentSessionSettingsRouteAuthRequirements = {
   "DELETE /api/persistent-sessions/:session_id/reports/:key": true,
   "PUT /api/persistent-sessions/:session_id": true,
   "POST /api/persistent-sessions": true,
+  "POST /api/persistent-sessions/bootstrap": true,
   "GET /api/persistent-sessions/:session_id/instructions": true,
   "POST /api/persistent-sessions/:session_id/instructions": true,
   "PUT /api/persistent-sessions/:session_id/instructions/:instruction_id": true,
@@ -77,6 +78,15 @@ export function registerPersistentSessionSettingsRoutes(
   app.post("/api/persistent-sessions", async (request, reply) => {
     try {
       const result = await service.create(request, request.body, request.log);
+      return reply.code(result.status).send(result.body);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post("/api/persistent-sessions/bootstrap", async (request, reply) => {
+    try {
+      const result = await service.bootstrap(request, request.body, request.log);
       return reply.code(result.status).send(result.body);
     } catch (error) {
       return sendError(reply, error);

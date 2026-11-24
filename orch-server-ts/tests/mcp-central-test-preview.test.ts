@@ -115,6 +115,16 @@ describe("MCP test and preview operations", () => {
     expect(config.current_revision).toBe(4);
   });
 
+  it("resolves encoded query references alongside malformed query fragments", async () => {
+    const sent: unknown[] = [];
+    const sync = { sendAux: async (_node: string, build: () => Promise<unknown>) => { sent.push(await build()); return { ok: true }; } };
+    const sql = vi.fn(async () => [{ name: "key", value: "fake-query-value" }]);
+    const actions = createMcpTestPreviewService({ service: { getConfig: async () => config } as never, sync: sync as never, resolveSql: async () => sql as never });
+    await actions.test({ node_id: "n", draft_server: { id: "s", type: "streamable_http", node_scope: ["n"],
+      config: { url: "https://example.test/mcp?broken=%ZZ&key=%7B%7Bsecret%3Akey%7D%7D" } } });
+    expect(sent[0]).toMatchObject({ server: { config: { url: "https://example.test/mcp?broken=%ZZ&key=fake-query-value" } } });
+  });
+
   it("sends the bounded request through the node transport without icon data", async () => {
     const registry = new InMemoryNodeRegistry();
     const registration = loadContractFixtures().fakeNodeReconnect.registration as NodeRegistrationPayload;

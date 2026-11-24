@@ -1155,6 +1155,7 @@ export async function createLiveProductionApplication(
       mcpCentralService,
       mcpCentralSync,
       resolveSessionOwner,
+      config.persistent_session_bootstrap,
       mcpCentralActions,
     ),
     nodeReleaseRoutes: {
@@ -1691,6 +1692,7 @@ export function buildProductionRouteOptions(
   mcpCentral?: McpCentralService,
   mcpCentralSync?: McpCentralSyncService,
   resolveMcpSessionOwner?: SessionOwnerResolver,
+  persistentSessionBootstrap?: boolean,
   mcpCentralActions?: ReturnType<typeof createMcpTestPreviewService>,
 ): CreateAppOptions {
   if (defaultExecutionNodeId === undefined) {
@@ -1734,6 +1736,10 @@ export function buildProductionRouteOptions(
     modelCatalog: providers.modelCatalog,
     defaultExecutionNodeId,
     ...(defaultPasAgentId === undefined ? {} : { defaultPasAgentId }),
+    ...(persistentSessionBootstrap === undefined ? {} : { bootstrapEnabled: persistentSessionBootstrap }),
+    ...(providers.folderRoutes.resolveDashboardUserId === undefined
+      ? {}
+      : { resolveCallerId: providers.folderRoutes.resolveDashboardUserId }),
   });
   const conversationService = conversationSql ? new ConversationService({
     sql: conversationSql, access: sessionAccessProvider, persistent: persistentSessionSettingsService,

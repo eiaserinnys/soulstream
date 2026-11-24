@@ -1,9 +1,15 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { SessionStoryCompletionSweep } from
   "../src/turn-summary/session_story_completion_sweep.js";
-import type { TurnSummaryConfig } from
+import { TurnSummaryConfigService, type TurnSummaryConfig } from
   "../src/turn-summary/turn_summary_config.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const CONFIG = {
   enabled: true,
@@ -13,6 +19,28 @@ const CONFIG = {
 } as TurnSummaryConfig;
 
 describe("SessionStoryCompletionSweep", () => {
+  it("starts with a legacy openai-api model overlay", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "story-sweep-api-legacy-"));
+    try {
+      const path = join(dir, "turn-summary.yaml");
+      const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8");
+      writeFileSync(path, source, "utf8");
+      writeFileSync(join(dir, "turn-summary.local.yaml"), "provider: openai-api\nmodel: summary-model\n", "utf8");
+      const sweep = new SessionStoryCompletionSweep({
+        repository: { listCompletedFoldCandidates: vi.fn() },
+        folder: { foldCompletedIfNeeded: vi.fn() },
+        configService: new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog()),
+        logger: { warn: vi.fn() },
+      });
+
+      expect(() => sweep.start()).not.toThrow();
+      sweep.stop();
+      await sweep.drain();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("uses the exact 30 minute cutoff and finalizes every returned candidate", async () => {
     const candidate = {
       sessionId: "session-a",
