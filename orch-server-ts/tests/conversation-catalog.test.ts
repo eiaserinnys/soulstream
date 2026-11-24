@@ -19,6 +19,9 @@ describe("conversation catalog", () => {
       listAgentProfiles: async () => ({ "profile-a": {} }),
     });
     expect((await catalog.models("profile-a")).models[0]).toEqual({ id: "default", label: "기본 모델 (B)", available: true });
+    expect(await catalog.expand(["default", "n1:unregistered:preset-c", "default"], "profile-a")).toEqual({
+      order: ["preset-a", "preset-b", "n1:unregistered:preset-c"], selectedDefault: "preset-b",
+    });
     expect((await catalog.models("missing-profile")).models[0]).toEqual({
       id: "default", label: "기본 모델", available: false, reason: "이 노드에 프로필 없음", reason_code: "profile_unavailable",
     });
@@ -26,6 +29,7 @@ describe("conversation catalog", () => {
     expect((await catalog.models()).models[0]).toEqual({
       id: "default", label: "기본 모델", available: false, reason: "한도", reason_code: "limit_rejected", resets_at: "2026-10-30T22:06:34Z",
     });
+    expect(await catalog.expand(["default"])).toEqual({ order: ["preset-a"], selectedDefault: "preset-a" });
     defaults = { model_preset: "missing", fallback_models: [] };
     expect((await catalog.models()).models.map(model => model.id)).toEqual(["preset-a", "preset-b"]);
   });

@@ -242,13 +242,13 @@ const ensure = (app: ReturnType<typeof Fastify>, key: string, payload: Record<st
 describe("conversation thread collection", () => {
   it("expands default in creation, execution and patch before saving models", async () => {
     const { app, state, createBodies } = setup({ defaultModels: ["preset-a", "preset-b"], firstUnavailable: true });
-    const payload = { ...basePayload, selected_model: "default", model_order: ["default", "preset-b", "missing"] };
+    const payload = { ...basePayload, selected_model: "default", model_order: ["default", "preset-b", "n1:unregistered:preset-c"] };
     const made = await ensure(app, "model-default", payload);
     expect(made.statusCode, made.body).toBe(200);
     const thread = made.json().thread;
     expect(createBodies.at(-1)?.model_preset).toBe("preset-b");
-    expect(made.json().notices[0]).toContain("Preset A");
-    expect(state.bindings[0]?.creation_request).toMatchObject({ selected_model: "preset-a", model_order: ["preset-a", "preset-b"] });
+    expect(made.json().notices).toEqual([]);
+    expect(state.bindings[0]?.creation_request).toMatchObject({ selected_model: "preset-b", model_order: ["preset-a", "preset-b", "n1:unregistered:preset-c"] });
     expect(state.settings.get(thread.id)?.settings).toMatchObject({
       default_model: { model_preset: "preset-b" }, fallback_models: [{ model_preset: "preset-a" }],
     });
@@ -256,13 +256,29 @@ describe("conversation thread collection", () => {
     const switched = await app.inject({ method: "PUT", url: `/api/conversations/v1/threads/${thread.id}/execution`,
       payload: { ...payload, expected_execution_id: thread.execution_id } });
     expect(switched.statusCode, switched.body).toBe(200);
-    expect(state.executions.at(-1)?.request).toMatchObject({ selected_model: "preset-a", model_order: ["preset-a", "preset-b"] });
+    expect(state.executions.at(-1)?.request).toMatchObject({ selected_model: "preset-b", model_order: ["preset-a", "preset-b", "n1:unregistered:preset-c"] });
+    expect(state.executions.at(-1)?.notices).toEqual([]);
     const active = switched.json().thread.execution_id;
     const patched = await app.inject({ method: "PATCH", url: `/api/conversations/v1/threads/${thread.id}`,
-      payload: { model_order: ["default", "preset-b", "missing"] } });
+      payload: { model: "default", model_order: ["default", "preset-b"] } });
     expect(patched.statusCode, patched.body).toBe(200);
     expect(state.bindings[0]?.creation_request.model_order).toEqual(["preset-a", "preset-b"]);
+    expect(state.bindings[0]?.selected_model).toBe("preset-b");
     expect(state.settings.get(active)?.settings.fallback_models).toEqual([{ model_preset: "preset-a", reasoning_effort: null }]);
+  });
+
+  it("preserves unknown model ids in creation and execution orders without default", async () => {
+    const { app, state } = setup();
+    const order = ["preset-a", "n1:unregistered:preset-c", "preset-b"];
+    const payload = { ...basePayload, model_order: order };
+    const made = await ensure(app, "unknown-model", payload);
+    expect(made.statusCode, made.body).toBe(200);
+    expect(state.bindings[0]?.creation_request.model_order).toEqual(order);
+    const thread = made.json().thread;
+    const switched = await app.inject({ method: "PUT", url: `/api/conversations/v1/threads/${thread.id}/execution`,
+      payload: { ...payload, expected_execution_id: thread.execution_id } });
+    expect(switched.statusCode, switched.body).toBe(200);
+    expect(state.executions.at(-1)?.request.model_order).toEqual(order);
   });
 
   it("expands default after an explicit selection and when patching the selected model", async () => {

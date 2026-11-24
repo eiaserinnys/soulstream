@@ -98,10 +98,12 @@ export class ConversationCatalog {
       });
   }
 
-  async expand(ids: string[], profile?: string): Promise<string[]> {
-    const { models, defaults } = await this.modelsWithDefaults(profile);
-    const known = new Set(models.filter(model => model.id !== "default").map(model => model.id));
-    return [...new Set(ids.flatMap(id => id === "default" ? defaults.map(model => model.id) : known.has(id) ? [id] : []))];
+  async expand(ids: string[], profile?: string): Promise<{ order: string[]; selectedDefault?: string }> {
+    const { defaults } = await this.modelsWithDefaults(profile);
+    return {
+      order: [...new Set(ids.flatMap(id => id === "default" ? defaults.map(model => model.id) : [id]))],
+      selectedDefault: (defaults.find(model => model.available) ?? defaults[0])?.id,
+    };
   }
 
   async profiles(): Promise<ConversationProfilesReply> {

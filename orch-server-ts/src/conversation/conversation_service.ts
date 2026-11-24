@@ -46,10 +46,10 @@ export class ConversationService {
   profiles() { return this.deps.catalog.profiles(); }
   private model(id: string) { return this.deps.catalog.model(id); }
   private async expandRequest(body: EnsureRequest): Promise<EnsureRequest> {
-    const order = await this.deps.catalog.expand(
+    const { order, selectedDefault } = await this.deps.catalog.expand(
       [...(body.selected_model === "default" ? ["default"] : []), ...body.model_order], body.profile,
     );
-    return { ...body, selected_model: body.selected_model === "default" ? order[0] ?? body.selected_model : body.selected_model,
+    return { ...body, selected_model: body.selected_model === "default" ? selectedDefault ?? order[0] ?? body.selected_model : body.selected_model,
       model_order: order };
   }
   private async candidates(body: EnsureRequest) {
@@ -319,8 +319,8 @@ export class ConversationService {
       const currentNodeId = typeof row.node_id === "string" ? row.node_id : this.deps.catalog.defaultNodeId;
       const profile = typeof row.agent_id === "string" ? row.agent_id : undefined;
       const expandedSelection = patch.model === "default" ? await this.deps.catalog.expand(["default"], profile) : undefined;
-      if (expandedSelection && !expandedSelection.length) throw new ConversationError(422, "model_unavailable", "No requested model is available");
-      const selectedId = expandedSelection ? expandedSelection[0] ?? patch.model! : patch.model ?? binding.selected_model;
+      if (expandedSelection && !expandedSelection.order.length) throw new ConversationError(422, "model_unavailable", "No requested model is available");
+      const selectedId = expandedSelection ? expandedSelection.selectedDefault! : patch.model ?? binding.selected_model;
       const selected = this.deps.catalog.resolve(selectedId);
       if (!selected) throw new ConversationError(422, "model_unavailable", "Model selection is invalid");
       if (selected.nodeId !== currentNodeId) {
@@ -333,7 +333,7 @@ export class ConversationService {
         ...current.settings.fallback_models.flatMap(x => x.model_preset ? [this.deps.catalog.idFor(currentNodeId, x.model_preset)] : []),
       ];
       const order = patch.model_order === undefined && !expandedSelection ? requestedOrder
-        : await this.deps.catalog.expand([...(expandedSelection ?? []), ...requestedOrder], profile);
+        : (await this.deps.catalog.expand([...(expandedSelection?.order ?? []), ...requestedOrder], profile)).order;
       const fallbacks = [...new Set(order)].flatMap(modelId => {
         const reference = this.deps.catalog.resolve(modelId);
         return reference && reference.nodeId === currentNodeId && reference.presetId !== selected.presetId
