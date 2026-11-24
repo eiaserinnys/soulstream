@@ -21,6 +21,9 @@ node_modules/
 # Local data
 .env.soul-server-ts
 .vite-cache/
+/config/agents.yaml
+/config/mcp-registry.yaml*
+/config/mcp-profiles.yaml*
 
 # Test
 .pytest_cache/
