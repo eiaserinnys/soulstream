@@ -158,3 +158,10 @@ it("collects encoded query references alongside raw references", async () => {
   const refs = secretReferences([server as never], [profile as never]);
   expect([...refs.keys()].sort()).toEqual(["hosted-query", "override-query", "raw", "server-query"]);
 });
+
+it("collects query references when another query value has a malformed percent", async () => {
+  const { collectSecretReferences } = await import("../../src/mcp_central/secret_refs.js");
+  const url = (name: string) => `https://example.com/?q=50%&key=${encodeURIComponent(`{{secret:${name}}}`)}`;
+  const value = { config: { url: url("server") }, hosted_tools: [{ server_url: url("hosted") }] };
+  expect([...collectSecretReferences(value)].sort()).toEqual(["hosted", "server"]);
+});

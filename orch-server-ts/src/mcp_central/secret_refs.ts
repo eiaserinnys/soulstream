@@ -252,7 +252,12 @@ export function extractHostedToolSecrets(
 /** 값 안의 모든 비밀 참조 이름을 모은다. 참조 확인(삭제 거절, 롤백 검사)용. */
 export function collectSecretReferences(value: unknown, into: Set<string> = new Set()): Set<string> {
   if (typeof value === "string") {
-    for (const text of [value, safeDecode(value)]) {
+    const queryIndex = value.indexOf("?");
+    const queryValues = queryIndex < 0 ? [] : value.slice(queryIndex + 1).split("&").flatMap((part) => {
+      const equals = part.indexOf("=");
+      return equals < 0 ? [] : [safeDecode(part.slice(equals + 1))];
+    });
+    for (const text of [value, safeDecode(value), ...queryValues]) {
       for (const match of text.matchAll(SECRET_REF_PATTERN)) {
         if (match[1] === "secret" && match[2] !== undefined) into.add(match[2]);
       }
