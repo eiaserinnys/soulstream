@@ -223,4 +223,32 @@ describe("노드 Codex와 Antigravity 로그인 경로", () => {
     expect(allowed.statusCode).toBe(202);
     await harness.app.close();
   });
+
+  it("관리자 판정은 Claude 풀 경로에 걸리지 않는다", async () => {
+    const claudePoolRequests = [
+      { method: "GET", url: "/api/nodes/fake-node/claude-auth/accounts" },
+      { method: "POST", url: "/api/nodes/fake-node/claude-auth/logins", payload: {} },
+      { method: "GET", url: "/api/nodes/fake-node/claude-auth/logins/login-a" },
+      { method: "DELETE", url: "/api/nodes/fake-node/claude-auth/logins/login-a" },
+    ] as const;
+
+    const plain = createHarness();
+    const without = [];
+    for (const request of claudePoolRequests) without.push((await plain.app.inject(request)).statusCode);
+    await plain.app.close();
+
+    const guarded = createHarness();
+    (guarded.routeOptions as NodeClaudeAuthRouteOptions & { adminAccess?: unknown }).adminAccess = {
+      currentEmail: () => "user@example.test",
+      isAdminEmail: () => false,
+    };
+    const withGuard = [];
+    for (const request of claudePoolRequests) withGuard.push((await guarded.app.inject(request)).statusCode);
+    const agentLogin = await guarded.app.inject({ method: "POST", url: `${base}/codex` });
+    await guarded.app.close();
+
+    expect(withGuard).toEqual(without);
+    expect(withGuard).not.toContain(403);
+    expect(agentLogin.statusCode).toBe(403);
+  });
 });

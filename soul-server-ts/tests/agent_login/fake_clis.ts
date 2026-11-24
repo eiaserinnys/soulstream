@@ -4,9 +4,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pino from "pino";
+import { resolveCodexCliPath } from "@soulstream/executable-path";
 
 import { AgentLoginActivity } from "../../src/agent_login/activity.js";
 import { composeAgentLoginService } from "../../src/agent_login/compose.js";
+import { resolveAntigravityCliPath } from "../../src/engine/antigravity_cli_path.js";
 import type { AgentLoginTimings } from "../../src/agent_login/types.js";
 
 /** 시험이 쓰는 일회용 값. 로그에 나타나면 안 된다. */
@@ -200,11 +202,13 @@ export async function createHarness(options: {
     AGY_CLI_PATH: options.withAgy === false ? "" : agyPath,
   };
   const setEnv = (values: Record<string, string>) => { Object.assign(env, values); };
+  const codexCliPath = options.withCodex === false ? "/nonexistent/codex" : codexPath;
+  assertOnlyFakeClis(root, env, codexCliPath);
   const service = composeAgentLoginService({
     logger,
     activity,
     env,
-    codexCliPath: options.withCodex === false ? "/nonexistent/codex" : codexPath,
+    codexCliPath,
     timings: { ...FAST_TIMINGS, ...options.timings },
     fetchUsage: async (provider) => {
       usage.calls.push(provider);
@@ -223,6 +227,23 @@ export async function createHarness(options: {
         ? readFileSync(harness.agyEventsPath, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line))
         : [],
   };
+}
+
+/**
+ * 서비스가 시작할 때 쓰는 것과 같은 탐색(PATH, HOME 후보, macOS의 /usr/local/bin과 /opt/homebrew/bin)을
+ * 서비스를 만들기 전에 한 번 돌려, 이 호스트의 실제 codex나 agy가 잡히면 시험을 멈춘다.
+ * 없다고 가정한 CLI(withCodex/withAgy false)는 아무것도 잡히지 않아야 하고, 있는 CLI는 임시 폴더 안이어야 한다.
+ */
+export function assertOnlyFakeClis(root: string, env: NodeJS.ProcessEnv, codexCliPath: string): void {
+  const found = [
+    ["codex", resolveCodexCliPath(codexCliPath, env)?.path],
+    ["agy", resolveAntigravityCliPath(env)?.path],
+  ] as const;
+  for (const [name, path] of found) {
+    if (path !== undefined && !path.startsWith(`${root}/`)) {
+      throw new Error(`agent login harness would reach a real ${name} CLI outside the temp dir; refusing to start`);
+    }
+  }
 }
 
 export async function waitFor<T>(

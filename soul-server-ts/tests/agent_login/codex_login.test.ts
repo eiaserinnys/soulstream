@@ -1,4 +1,6 @@
-import { writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { readFileSync } from "node:fs";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,6 +9,7 @@ import { AgentLoginServiceError } from "../../src/agent_login/types.js";
 import {
   CODEX_URL,
   CODEX_USER_CODE,
+  assertOnlyFakeClis,
   createHarness,
   type Harness,
   waitFor,
@@ -114,6 +117,19 @@ describe("Codex 로그인 흐름", () => {
       name: "AgentLoginServiceError",
       code: "cli_not_installed",
     });
+  });
+
+  it("하네스는 임시 폴더 밖의 실제 codex나 agy가 잡히면 서비스를 만들기 전에 멈춘다", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-login-guard-"));
+    const elsewhere = await mkdtemp(join(tmpdir(), "agent-login-elsewhere-"));
+    // 실행하지 않는다. 탐색이 파일 상태만 본다는 점만 쓴다.
+    for (const name of ["codex", "agy"]) {
+      await writeFile(join(elsewhere, name), "#!/bin/sh\nexit 0\n");
+      await chmod(join(elsewhere, name), 0o755);
+    }
+    const env = { HOME: join(root, "home"), PATH: elsewhere };
+    expect(() => assertOnlyFakeClis(root, env, "/nonexistent/codex")).toThrow(/real codex CLI/);
+    expect(() => assertOnlyFakeClis(root, { ...env, PATH: root }, "/nonexistent/codex")).not.toThrow();
   });
 
   it("모르는 공급자와 빈 공급자는 거절한다", async () => {
