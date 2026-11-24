@@ -174,7 +174,9 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
       : focusKey.startsWith("url_ready") ? root.querySelector<HTMLElement>("a[href]")
         : focusKey === "error" || focusKey.startsWith("failed") || focusKey.startsWith("cancelled") ? root.querySelector<HTMLElement>("[data-retry]")
           : null;
-    (target ?? root).focus();
+    // 단계가 바뀌면 시트의 키가 달라진다(주소와 코드가 오면 커진다). 초점만으로는 첫 동작만 보이므로 시트 전체를 스크롤 영역 안으로 가져온다.
+    (target ?? root).focus({ preventScroll: true });
+    root.scrollIntoView?.({ block: "nearest" });
   }, [focusKey]);
 
   const authUrl = safeAuthUrl(flow?.auth_url ?? null);

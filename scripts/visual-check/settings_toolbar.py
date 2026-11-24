@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -14,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from playwright.sync_api import expect, sync_playwright  # noqa: E402
 
+from settings_toolbar_r2 import capture_r2  # noqa: E402
 from settings_toolbar_fakes import CHECKS, INDEX, Fake, SESSION_ID, FAKE_PASTED_CODE, FAKE_USER_CODE, assert_no_secret_output, check, DIST, flow, listen, new_page, open_settings, serve, shot, soon, toolbar_metrics  # noqa: E402
 
 def capture_toolbars(browser, base, out: Path, prefix: str, atom_expected: bool):
@@ -243,19 +245,23 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
     parser.add_argument("--baseline-dist", required=True)
+    parser.add_argument("--only-r2", action="store_true", help="2차 보강 그림과 조작 결과만 찍는다(반복 확인용)")
     args = parser.parse_args()
     out = Path(args.output).resolve()
     out.mkdir(parents=True, exist_ok=True)
+    keep_first_round(out)
     server, base = serve(DIST)
     baseline_server, baseline_base = serve(Path(args.baseline_dist))
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            capture_toolbars(browser, baseline_base, out, "baseline-", atom_expected=False)
-            capture_empty_states(browser, baseline_base, out, "baseline-")
-            capture_toolbars(browser, base, out, "", atom_expected=True)
-            capture_settings_and_logins(browser, base, out)
-            capture_empty_states(browser, base, out, "")
+            if not args.only_r2:
+                capture_toolbars(browser, baseline_base, out, "baseline-", atom_expected=False)
+                capture_empty_states(browser, baseline_base, out, "baseline-")
+                capture_toolbars(browser, base, out, "", atom_expected=True)
+                capture_settings_and_logins(browser, base, out)
+                capture_empty_states(browser, base, out, "")
+            capture_r2(browser, base, out)
             browser.close()
     finally:
         server.shutdown()
@@ -263,8 +269,17 @@ def main():
     write_index(out)
 
 
+def keep_first_round(out: Path):
+    """1차 index.md와 checks.json은 이름을 바꿔 남기고, 1차 그림 파일은 그대로 둔다."""
+    for name, kept in (("index.md", "index-r1.md"), ("checks.json", "checks-r1.json")):
+        path = out / name
+        if path.exists() and not (out / kept).exists():
+            path.rename(out / kept)
+
+
 def write_index(out: Path):
-    lines = ["# 카드 #1787 U17 화면 캡처", "", "| 파일 | 폭(px) | 상태 |", "| --- | ---: | --- |"]
+    lines = ["# 카드 #1787 U17 화면 캡처(2차)", "", "r2- 접두어가 2차 그림이다. 1차 그림은 접두어 없이 같은 폴더에 남아 있고 목록은 index-r1.md, 1차 단언은 checks-r1.json에 있다.",
+             "조작 결과(ui-design 14~18번, 대화상자 표)는 operations.md에 있다.", "", "| 파일 | 폭(px) | 상태 |", "| --- | ---: | --- |"]
     lines += [f"| {name} | {width} | {state} |" for name, width, state in INDEX]
     lines += ["", "## 실측 단언", ""]
     lines += [f"- {'통과' if item['ok'] else '실패'}: {item['check']}" for item in CHECKS]

@@ -22,22 +22,18 @@ export function useAgentLoginRowAction({ nodeId, provider, usage, request, onUsa
   const [phase, setPhase] = useState<Phase>("idle");
   const buttonRef = useRef<HTMLButtonElement>(null);
   const confirmCancelRef = useRef<HTMLButtonElement>(null);
-  const returnFocus = useRef(false);
 
-  // 확인줄이 열리면 첫 동작(취소)에 초점을 둔다. 닫으면 눌렀던 단추로 돌아온다.
+  // 확인줄이 열리면 첫 동작(취소)에 초점을 둔다.
   useEffect(() => {
     if (phase === "confirming") confirmCancelRef.current?.focus();
-    if (phase === "idle" && returnFocus.current) {
-      returnFocus.current = false;
-      buttonRef.current?.focus();
-    }
   }, [phase]);
 
   if (provider === null || usage.login_supported !== true) return { action: null, panel: null };
 
   const connected = usage.status === "auto";
+  // 닫기 전에 초점을 눌렀던 단추로 먼저 옮긴다. 초점이 있는 요소가 사라진 뒤에는 설정창이 초점을 창 머리로 되돌린다.
   const close = () => {
-    returnFocus.current = true;
+    buttonRef.current?.focus();
     setPhase("idle");
   };
   // 열려 있는 동안에도 단추를 비활성으로 두지 않는다. 비활성이 되면 눌렀던 단추의 초점이 사라진다.

@@ -1,3 +1,11 @@
+/* 가운데 검색 칸이 380px을 지키는 기본 격자는 단추 넷(영구 세션, atom, 설정, 테마)이 들어가려면 864px 이상이어야 한다.
+   그보다 좁은 태블릿 폭에서는 검색 칸이 남는 자리만 쓰게 해 마지막 단추가 화면 밖으로 나가지 않게 한다. */
+@media (min-width: 761px) and (max-width: 863px) {
+  .v3-global-toolbar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+}
+
 @media (max-width: 760px) {
   .v3-planner-scroll {
     padding: 0 14px 76px;

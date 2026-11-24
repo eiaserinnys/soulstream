@@ -26,7 +26,9 @@
 .config-dialog .config-detail { padding:var(--v3-space-6); scroll-padding-block:var(--v3-space-6); min-width:0; }
 .config-dialog .config-detail-heading { margin-bottom:var(--v3-space-6); }
 .config-dialog .config-detail-heading h2 { margin:0 0 var(--v3-space-2); font:var(--v3-type-page) var(--v3-font-family); }
-.config-dialog .config-detail-heading p { color:var(--muted-foreground); font:var(--v3-type-body) var(--v3-font-family); margin:0; }
+.config-dialog .config-detail-heading p { color:var(--muted-foreground); font:var(--v3-type-body) var(--v3-font-family); margin:0; word-break:keep-all; overflow-wrap:anywhere; }
+/* 영구 세션 상세의 한국어 글(지시, 설명)도 좁은 폭에서 어절 가운데서 줄이 바뀌지 않게 한다. */
+.config-dialog .config-detail [data-testid="persistent-session-settings-sections"] { word-break:keep-all; overflow-wrap:anywhere; }
 .config-dialog .config-back { display:none; }
 /* 탭 본문 자체가 로딩일 때: 제목 아래 남는 높이를 채우고 그 안에서 가운데에 선다. */
 .config-dialog .config-detail:has(> :is([data-slot="frame-loading"], [data-slot="frame-notice"])) { display:flex; flex-direction:column; }
@@ -68,7 +70,8 @@
 .config-dialog .config-detail .persistent-session-quota-rows [data-testid="config-field-row"]:last-child { border-bottom:0; }
 /* 영구 세션 상세는 절 위의 선이 구분을 맡는다. 절의 마지막 행 아래 선은 그 선과 붙어 두 줄이 되므로 뺀다. */
 .config-dialog .config-detail [data-section] > [data-testid="config-field-row"]:last-child,
-.config-dialog .config-detail [data-section] > div > [data-testid="config-field-row"]:last-child { border-bottom:0; }
+.config-dialog .config-detail [data-section] > div > [data-testid="config-field-row"]:last-child,
+.config-dialog .config-detail [data-section] > :last-child > :last-child > [data-testid="config-field-row"]:last-child { border-bottom:0; }
 .approved-dialog :is(.config-category-item,.config-back,.config-advanced > summary):focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); border-radius: var(--radius-floor); }
 
 .config-dialog .session-story-settings-content { display:flex; flex-direction:column; gap:var(--v3-space-6); }

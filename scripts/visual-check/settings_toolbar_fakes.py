@@ -97,10 +97,19 @@ def flow(provider_id, state, **patch):
 class Fake:
     """한 페이지가 부르는 API의 가짜 응답. 장면별 값은 속성으로 바꾼다."""
 
-    def __init__(self, atom=True, sessions="one", login_supported=True):
+    def __init__(self, atom=True, sessions="one", login_supported=True, admin=True, nodes="one", hold_usage=False, bootstrap="hold", hold_login_post=False, login_post_error=None, agent_name="로젤린"):
         self.atom = atom
         self.sessions = sessions  # one | two | manual | unavailable | bootstrap
         self.login_supported = login_supported
+        self.admin = admin
+        self.nodes = nodes  # one | none | down | many
+        self.hold_usage = hold_usage
+        self.held_usage: list = []
+        self.bootstrap = bootstrap  # hold | fail
+        self.hold_login_post = hold_login_post
+        self.held_login_post = None
+        self.login_post_error = login_post_error  # (status, code)
+        self.agent_name = agent_name
         self.flows: dict[str, dict] = {}
         self.calls: list[tuple[str, str]] = []
         self.held_bootstrap = None
@@ -116,16 +125,19 @@ class Fake:
         if path == "/api/status":
             return route.fulfill(json={"status": "ok", "atom_public_url": ATOM_URL if self.atom else None})
         if path == "/api/auth/status":
-            return route.fulfill(json={"authenticated": True, "user": {"email": "qa@example.test", "name": "QA", "isAdmin": True}})
+            return route.fulfill(json={"authenticated": True, "user": {"email": "qa@example.test", "name": "QA", "isAdmin": self.admin}})
         if path == "/api/auth/config":
             return route.fulfill(json={"authEnabled": True, "devModeEnabled": False})
         if path == "/api/persistent-sessions" and method == "GET":
             defaults = {**CREATE_DEFAULTS, "unavailable_reason": UNAVAILABLE if self.sessions == "unavailable" else None}
             if self.sessions in ("unavailable", "bootstrap"):
                 defaults["bootstrap_enabled"] = True
-            sessions = {"one": [PAS], "two": [PAS, {**PAS, "session_id": "components-session-2", "display_name": "둘째 PAS"}]}.get(self.sessions, [])
+            first = {**PAS, "agent_name": self.agent_name}
+            sessions = {"one": [first], "two": [first, {**first, "session_id": "components-session-2", "display_name": "둘째 PAS"}]}.get(self.sessions, [])
             return route.fulfill(json={"sessions": sessions, "total": len(sessions), "create_defaults": defaults})
         if path == "/api/persistent-sessions/bootstrap" and method == "POST":
+            if self.bootstrap == "fail":
+                return route.fulfill(status=502, json={"code": "bad_gateway", "message": "서버가 요청을 처리하지 못했습니다."})
             self.held_bootstrap = route  # 만드는 중 화면을 찍는 동안 응답하지 않는다.
             return
         if path == f"/api/persistent-sessions/{SESSION_ID}":
@@ -135,9 +147,11 @@ class Fake:
         if path == "/api/sessions":
             return route.fulfill(json={"sessions": [SUMMARY], "total": 1})
         if path == "/api/nodes":
-            return route.fulfill(json={"nodes": [NODE]})
+            return route.fulfill(json={"nodes": self.node_list()})
         if path == "/api/nodes/stream":
-            return route.fulfill(content_type="text/event-stream", body=f"event: snapshot\ndata: {json.dumps([NODE])}\n\n")
+            return route.fulfill(content_type="text/event-stream", body=f"event: snapshot\ndata: {json.dumps(self.node_list())}\n\n")
+        if path.endswith("/agents") and path.startswith("/api/nodes/"):
+            return route.fulfill(json={"agents": [{"id": "roselin", "name": "로젤린", "backend": "codex", "default_preset": "sample-sol"}]})
         if path == "/api/sessions/stream":
             return route.fulfill(content_type="text/event-stream", body=f"event: session_list\ndata: {json.dumps({'type': 'session_list', 'sessions': [SUMMARY], 'total': 1})}\n\n")
         if path.endswith("/events"):
@@ -145,10 +159,13 @@ class Fake:
         if path.endswith("/timeline"):
             return route.fulfill(json={"messages": [], "next_cursor": None})
         if path.endswith("/story"):
-            return route.fulfill(json={"highlight": None, "narrative": "세션 줄거리 예시입니다.", "unfolded_turn_summaries": [], "narrative_through_event_id": 0, "fold_count": 0, "updated_at": None})
+            return route.fulfill(json={"highlight": None, "narrative": "세션 줄거리 예시입니다.", "unfolded_turn_summaries": [], "narrative_through_event_id": None, "fold_count": 0, "updated_at": None})
         if path.endswith("/model-presets"):
             return route.fulfill(json={"model_presets": MODEL_PRESETS})
         if path == "/api/usage/summary":
+            if self.hold_usage:
+                self.held_usage.append(route)  # 불러오는 중 화면을 찍는 동안 응답하지 않는다.
+                return
             return route.fulfill(json=usage_summary(self.login_supported))
         if path == "/api/config/settings":
             return route.fulfill(json={"categories": []})
@@ -171,6 +188,12 @@ class Fake:
         tail = parts[parts.index("agent-logins") + 1:]
         if method == "POST" and len(tail) == 1:  # /agent-logins/<provider>
             self.login_posts += 1
+            if self.login_post_error:
+                status, code = self.login_post_error
+                return route.fulfill(status=status, json={"code": code, "message": "x"})
+            if self.hold_login_post:
+                self.held_login_post = route  # 「로그인을 준비하고 있습니다」를 찍는 동안 응답하지 않는다.
+                return
             current = self.flows[tail[0]]
             return route.fulfill(status=202, json=current)
         provider_id = next(key for key, value in self.flows.items() if value["login_id"] == tail[0])
@@ -182,6 +205,15 @@ class Fake:
         return route.fulfill(json=self.flows[provider_id])
 
     after_code: dict[str, dict] = {}
+
+    def node_list(self):
+        if self.nodes == "none":
+            return []
+        if self.nodes == "down":
+            return [{**NODE, "status": "disconnected"}]
+        if self.nodes == "many":
+            return [NODE, {**NODE, "nodeId": "eias-linegames", "port": 3106}, {**NODE, "nodeId": "silent-manari-ts", "port": 3107, "status": "disconnected"}]
+        return [NODE]
 
 
 def new_page(browser, base, fake, width, height=900, theme="dark", preferences=None):
@@ -196,7 +228,12 @@ def new_page(browser, base, fake, width, height=900, theme="dark", preferences=N
     return context, page
 
 
+# 1차 그림(접두어 없음)을 지우지 않도록 2차 그림은 이 접두어로 구별한다.
+PREFIX = "r2-"
+
+
 def shot(page, out: Path, name: str, width: int, state: str, locator=None):
+    name = PREFIX + name
     target = locator if locator is not None else page
     target.screenshot(path=str(out / name), animations="disabled")
     INDEX.append((name, width, state))

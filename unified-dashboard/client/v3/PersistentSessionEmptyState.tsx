@@ -3,7 +3,7 @@ import { Button, FrameLoading, FrameNotice } from '@seosoyoung/soul-ui';
 import { navigateDashboard } from '../dashboard-navigation';
 import type { PersistentCreateDefaults, PersistentSessionsApi } from '../lib/persistent-sessions';
 
-type Bootstrap = { phase: 'idle' } | { phase: 'creating' } | { phase: 'failed'; message: string };
+type Bootstrap = { phase: 'idle' } | { phase: 'creating' } | { phase: 'failed'; message: string; retrying: boolean };
 
 /**
  * PAS 창에 영구 세션이 하나도 없을 때의 본문. 세 경우를 가른다.
@@ -27,12 +27,13 @@ export function PersistentSessionEmptyState({ api, defaults, isAdmin, onOpenCodi
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   const run = useCallback(async () => {
-    setState({ phase: 'creating' });
+    // 실패 안내에서 다시 시도해도 안내와 단추를 그대로 두어 누른 단추의 초점이 사라지지 않게 한다.
+    setState((current) => current.phase === 'failed' ? { ...current, retrying: true } : { phase: 'creating' });
     try {
       const { session_id } = await api.bootstrap();
       if (alive.current) navigateDashboard(`/persistent/${encodeURIComponent(session_id)}`, true);
     } catch (caught) {
-      if (alive.current) setState({ phase: 'failed', message: caught instanceof Error ? caught.message : String(caught) });
+      if (alive.current) setState({ phase: 'failed', message: caught instanceof Error ? caught.message : String(caught), retrying: false });
     }
   }, [api]);
 
@@ -46,8 +47,8 @@ export function PersistentSessionEmptyState({ api, defaults, isAdmin, onOpenCodi
   if (canBootstrap) {
     if (state.phase === 'failed') return <FrameNotice data-testid="persistent-empty-bootstrap-failed">
       <div className="persistent-empty-state">
-        <p role="alert" data-v3-selectable-content="true">기본 영구 세션을 만들지 못했습니다. {state.message}</p>
-        <Button onClick={() => { void run(); }}>다시 시도</Button>
+        <p role="alert" data-v3-selectable-content="true">{state.retrying ? '기본 영구 세션을 다시 만드는 중입니다' : `기본 영구 세션을 만들지 못했습니다. ${state.message}`}</p>
+        <Button aria-busy={state.retrying} onClick={() => { if (!state.retrying) void run(); }}>다시 시도</Button>
       </div>
     </FrameNotice>;
     return <FrameLoading label="기본 영구 세션을 만드는 중입니다" data-testid="persistent-empty-creating" />;

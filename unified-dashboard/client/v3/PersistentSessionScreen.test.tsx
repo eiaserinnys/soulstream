@@ -191,6 +191,13 @@ it('keeps a failed bootstrap on the screen and retries it with the retry button'
  mocks.bootstrap.mockResolvedValueOnce({created:true,session_id:'retried'});await press('다시 시도');
  expect(mocks.bootstrap).toHaveBeenCalledTimes(2);expect(mocks.navigate).toHaveBeenCalledWith('/persistent/retried',true);
 });
+it('keeps the retry button mounted and focused while a failed bootstrap is retried',async()=>{
+ mocks.list.mockResolvedValue(emptyListing({bootstrap_enabled:true}));mocks.bootstrap.mockRejectedValueOnce(new Error('서버가 거절했습니다'));await mount();
+ const retry=()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='다시 시도')!;const button=retry();button.focus();
+ mocks.bootstrap.mockReturnValueOnce(new Promise(()=>undefined));await act(async()=>button.click());
+ expect(retry()).toBe(button);expect(document.activeElement).toBe(button);expect(button.getAttribute('aria-busy')).toBe('true');expect(text()).toContain('다시 만드는 중입니다');
+ await act(async()=>button.click());expect(mocks.bootstrap).toHaveBeenCalledTimes(2);
+});
 it('asks admins to connect a coding agent when bootstrap is on but unavailable, and re-reads after the settings close',async()=>{
  mocks.admin=true;mocks.list.mockResolvedValue(emptyListing({bootstrap_enabled:true,unavailable_reason:'쓸 수 있는 모델이 없습니다.'}));await mount();
  expect(text()).toContain('코딩 에이전트를 연결하면 기본 영구 세션을 만듭니다');expect(text()).toContain('쓸 수 있는 모델이 없습니다.');expect(mocks.bootstrap).not.toHaveBeenCalled();
