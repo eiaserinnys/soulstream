@@ -12,6 +12,13 @@ vi.mock("@seosoyoung/soul-ui", () => ({
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("unified diff", () => {
+  it("parses unnumbered session edit hunks without a separator", () => {
+    expect(parseUnifiedDiff("@@ @@\n same\n-old\n+new")).toEqual([
+      { kind: "ctx", text: "same", number: null },
+      { kind: "del", text: "old", number: null },
+      { kind: "add", text: "new", number: null },
+    ]);
+  });
   // 실제 Git: 일반 파일을 링크로 바꾸고 git diff HEAD -M -- file.txt.
   const typechange = `diff --git a/file.txt b/file.txt
 deleted file mode 100644

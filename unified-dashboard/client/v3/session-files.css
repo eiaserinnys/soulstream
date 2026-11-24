@@ -12,6 +12,7 @@
 .v3-session-files-row + .v3-session-files-group { margin-block-start: var(--v3-space-2); }
 .v3-nav-list p.v3-session-files-dir { margin: 0 var(--v3-space-2) var(--v3-space-1); overflow-wrap: anywhere; }
 .v3-session-files-row { width: 100%; }
+.v3-session-files-entry > div.v3-session-files-row { display: flex; align-items: center; gap: var(--v3-space-2); padding: var(--v3-space-2); color: var(--v3-text-secondary); font: var(--v3-type-body) var(--v3-font-family); }
 .v3-session-files-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v3-session-files-mark { display: grid; flex: none; width: var(--v3-tree-icon-column); place-items: center; }
 .v3-session-files-mark[data-activity="read"] { color: var(--v3-file-read); }
@@ -80,3 +81,4 @@
 .v3-session-file-diff-skeleton > span:nth-child(2) { width: 88%; }
 .v3-session-file-diff-skeleton > span:nth-child(3) { width: 46%; }
 .v3-session-file-diff-skeleton > span:nth-child(4) { width: 64%; }
+.v3-session-file-diff-edit-head { padding: var(--v3-space-2); color: var(--v3-text-tertiary); font: var(--v3-type-meta) var(--v3-font-family); }

@@ -70,6 +70,17 @@ def install_routes(page, scene="ready", requests=None):
             messages = [{"id": n, "parent_event_id": None, "event_type": "assistant_message", "payload": {"timestamp": n, "content": f"대화 기록 {n}: 파일을 확인합니다.", "tool_use_id": str(n), "_final_for_live_stream": True}, "created_at": f"2026-10-01T00:{n // 60:02}:{n % 60:02}Z"} for n in range(80, 0, -1)]
             return route.fulfill(json={"messages": messages, "next_cursor": None})
         if path.endswith('/story'): return route.fulfill(json={"highlight": None, "narrative": "", "unfolded_turn_summaries": [], "narrative_through_event_id": 0, "fold_count": 0, "updated_at": None})
+        if path.endswith("/workspace/session-diff"):
+            requested = parse_qs(urlsplit(route.request.url).query).get("path", [""])[0]
+            requests["session_diff"] = requests.get("session_diff", 0) + 1
+            if scene == "session-error" and requests["session_diff"] == 1: return route.fulfill(status=503, json={"error": "unavailable"})
+            edits = [
+                {"at":"2026-11-22T15:12:00Z", "tool":"Edit", "kind":"edit", "text":"@@ @@\n 같은 줄\n-이전 내용\n+바뀐 내용", "line_numbers":False, "replace_all":False},
+                {"at":"2026-11-22T15:13:00Z", "tool":"Write", "kind":"write", "text":"@@ -0,0 +1,2 @@\n+첫 줄\n+둘째 줄", "line_numbers":True, "replace_all":False},
+                {"at":"2026-11-22T15:14:00Z", "tool":"file_change", "kind":"edit", "text":"@@ -10,1 +10,1 @@\n-old\n+new", "line_numbers":True, "replace_all":False},
+            ]
+            if scene == "session-unrecorded": edits = []
+            return route.fulfill(json={"path":requested,"edits":edits,"unrecorded":2 if scene in ("session-unrecorded", "session-mixed") else 0,"truncated":scene == "session-truncated"})
         if path.endswith("/workspace/diff"):
             requested = parse_qs(urlsplit(route.request.url).query).get("path", [""])[0]
             if scene == "diff-loading":
@@ -101,6 +112,9 @@ def install_routes(page, scene="ready", requests=None):
             if scene == "matrix": data["snapshot"].update(branch=LONG_BRANCH, ahead=12)
             if scene in ("unsupported", "no_workspace"):
                 data.update(node={"id": "eiaserinnys", "status": scene}, snapshot=None, files=[], read_only=[])
+            if scene == "session-no-workspace":
+                data.update(root=None, node={"id":"eiaserinnys", "status":"no_workspace"}, snapshot=None)
+                data["files"] = [data["files"][1]]
             if scene == "empty":
                 data.update(files=[], read_only=[], attribution="full")
                 data["snapshot"].update(branch=None, ahead=0, behind=0)
@@ -200,6 +214,7 @@ def capture_retention(browser, base):
     pane = workspace.get_by_role("region", name="세션 파일")
     expect(pane.get_by_text('example-39.ts')).to_be_attached()
     pane.get_by_text('config.ts', exact=True).click()
+    pane.get_by_role('region', name='config.ts 변경분').get_by_role('button', name='전체 보기').click()
     dialog = page.get_by_role('dialog')
     expect(dialog.locator('pre')).to_contain_text('// session file preview')
     expect(dialog.locator('.chat-image-viewer-metadata')).to_have_text(f'{len(SHORT_TEXT)} B')
@@ -522,8 +537,12 @@ def capture_diff(browser, base, out):
             full = box.get_by_role("button", name="전체 보기")
             expect(full).to_be_focused()
             page.keyboard.press("Tab")
+            expect(box.get_by_role("tab", name="커밋 전 변경")).to_be_focused()
+            page.keyboard.press("Tab")
+            expect(box.get_by_role("tab", name="세션 기록")).to_be_focused()
+            page.keyboard.press("Tab")
             expect(box.locator(".v3-session-file-diff-body")).to_be_focused()
-            results[name]["tab"] = ["행", "전체 보기", "diff 본문"]
+            results[name]["tab"] = ["행", "전체 보기", "커밋 전 변경", "세션 기록", "diff 본문"]
         if scene == "diff-ready" and surface == "card" and theme == "dark":
             full.click()
             dialog = page.get_by_role("dialog")
@@ -537,8 +556,83 @@ def capture_diff(browser, base, out):
         context.close()
     return results
 
+def capture_session_history(browser, baseline, base, out):
+    results = {}
+    scenarios = [
+        ("session-card-1440", "card", "dark", "session-ready", False),
+        ("session-pas-384", "pas", "dark", "session-ready", False),
+        ("session-tabs-1440", "card", "dark", "session-ready", True),
+        ("session-no-workspace-1440", "card", "dark", "session-no-workspace", False),
+        ("session-unrecorded-384", "pas", "dark", "session-unrecorded", False),
+        ("session-light-1440", "card", "light", "session-ready", False),
+        ("session-mixed-1440", "card", "dark", "session-mixed", False),
+        ("session-truncated-1440", "card", "dark", "session-truncated", False),
+        ("session-error-1440", "card", "dark", "session-error", False),
+    ]
+    for name, surface, theme, scene, tabs in [("session-before-1440", "card", "dark", "session-ready", False), ("session-before-384", "pas", "dark", "session-ready", False)] + scenarios:
+        old = name.startswith("session-before")
+        width = 384 if surface == "pas" else 1440
+        context = browser.new_context(viewport={"width": width, "height": 900}, color_scheme=theme, reduced_motion="reduce", locale="ko-KR", service_workers="block")
+        page=context.new_page()
+        page.add_init_script(f"localStorage.setItem('soul-dashboard-theme','{theme}'); localStorage.setItem('ls.webglGlass','0');")
+        install_routes(page, scene)
+        if surface == "pas":
+            page.goto((baseline if old else base) + "/persistent/components-session", wait_until="domcontentloaded")
+            trigger=page.get_by_role("button", name="세션 파일", exact=True)
+        else:
+            page.goto((baseline if old else base) + "/components", wait_until="domcontentloaded")
+            page.get_by_test_id("card-board-sample").locator('[data-card-id="board-size-comparison"] .v3-postit-open').first.click()
+            trigger=page.get_by_test_id("v3-card-workspace").get_by_role("button", name="파일", exact=True)
+        expect(trigger).to_be_visible(timeout=15000); trigger.click()
+        pane=page.get_by_role("region", name="세션 파일")
+        filename="event_outbox.ts" if tabs else "event_outbox_types.ts"
+        row=pane.get_by_role("button", name=filename, exact=False)
+        expect(row).to_be_visible(timeout=15000)
+        old_row = row.element_handle() if old else None
+        row.click()
+        if old:
+            try:
+                assert old_row.get_attribute("aria-expanded") == "true"
+            except AssertionError:
+                pass
+            else:
+                raise AssertionError("수정 전 코드가 새 단언을 이미 만족함")
+            page.screenshot(path=str(out / (name + ".png")), animations="disabled")
+            results["before_red"] = "커밋된 행에 펼침 속성이 없어 새 단언 실패"
+            context.close(); continue
+        expect(row).to_have_attribute("aria-expanded", "true")
+        box=pane.get_by_role("region",name=f"{filename} 변경분")
+        if scene == "session-error":
+            expect(box.get_by_text("변경분을 불러오지 못했습니다")).to_be_visible()
+            page.screenshot(path=str(out / "session-error-before-retry.png"),animations="disabled")
+            box.get_by_role("button",name="다시 시도").click()
+        if tabs:
+            tab=box.get_by_role("tab",name="세션 기록"); tab.click(); expect(box.get_by_role("tab",name="세션 기록")).to_be_focused()
+        if scene == "session-unrecorded": expect(box.get_by_text("이 엔진은 고친 내용을 기록에 남기지 않습니다")).to_be_visible()
+        else:
+            expect(box.get_by_text("1/3",exact=False)).to_be_visible()
+            expect(box.get_by_text("전체 씀",exact=False)).to_be_visible()
+        if scene == "session-no-workspace":
+            expect(pane.get_by_text("작업 폴더가 지워져",exact=False)).to_be_visible()
+            expect(box.get_by_role("button",name="전체 보기")).to_have_count(0)
+        if scene == "session-mixed": expect(box.get_by_text("내용이 기록되지 않은 편집 2번")).to_be_visible()
+        if scene == "session-truncated": expect(box.get_by_text("기록이 길어 오래된 편집은 빠졌습니다")).to_be_visible()
+        page.mouse.move(2,2); page.screenshot(path=str(out / (name + ".png")),animations="disabled")
+        metrics=pane.evaluate("""el => {const r=el.getBoundingClientRect(), b=el.querySelector('.v3-session-file-diff-body');return {pane:{left:r.left,right:r.right,width:r.width},scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,bodyWidth:b?.clientWidth,bodyScroll:b?.scrollWidth}}""")
+        assert metrics["scrollWidth"] <= metrics["clientWidth"] and metrics["bodyScroll"] <= metrics["bodyWidth"], metrics
+        if tabs:
+            row.focus(); page.keyboard.press("Tab"); expect(box.get_by_role("button",name="전체 보기")).to_be_focused()
+            page.keyboard.press("Tab"); expect(box.get_by_role("tab",name="커밋 전 변경")).to_be_focused()
+            page.keyboard.press("Tab"); expect(box.get_by_role("tab",name="세션 기록")).to_be_focused()
+            page.set_viewport_size({"width":1024,"height":900}); expect(row).to_have_attribute("aria-expanded","true")
+            page.set_viewport_size({"width":1440,"height":900}); expect(row).to_have_attribute("aria-expanded","true")
+            page.keyboard.press("Escape"); expect(pane).to_have_count(0)
+        results[name]=metrics
+        context.close()
+    return results
+
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument("--output", required=True); parser.add_argument("--baseline-dist", required=True); parser.add_argument("--story-only", action="store_true"); parser.add_argument("--retention-only", action="store_true"); parser.add_argument("--layout-only", action="store_true"); parser.add_argument("--pas-width-only", action="store_true"); parser.add_argument("--diff-only", action="store_true"); parser.add_argument("--skip-diff", action="store_true"); args = parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument("--output", required=True); parser.add_argument("--baseline-dist", required=True); parser.add_argument("--session-only", action="store_true"); parser.add_argument("--story-only", action="store_true"); parser.add_argument("--retention-only", action="store_true"); parser.add_argument("--layout-only", action="store_true"); parser.add_argument("--pas-width-only", action="store_true"); parser.add_argument("--diff-only", action="store_true"); parser.add_argument("--skip-diff", action="store_true"); args = parser.parse_args()
     out = Path(args.output).resolve(); out.mkdir(parents=True, exist_ok=True)
     server, base = serve(DIST)
     baseline_server, baseline_base = serve(Path(args.baseline_dist))
@@ -546,6 +640,8 @@ def main():
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
+            measurements["session_history"] = capture_session_history(browser, baseline_base, base, out)
+            if args.session_only: return
             if args.pas_width_only:
                 measurements['pas_width'] = _pas_module.capture_pas_width(browser, baseline_base, base, out, install_routes)
                 assert_pas_width(measurements['pas_width'])

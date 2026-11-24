@@ -24,3 +24,9 @@ export interface SessionWorkspaceResponse {
 }
 
 export interface SessionWorkspaceDiffResponse { path: string; status: WorkspaceGitStatus | "unchanged"; text: string; truncated: boolean; binary: boolean }
+export interface SessionWorkspaceSessionDiffResponse {
+  path: string;
+  edits: { at: string; tool: string; kind: "edit" | "write" | "add" | "delete"; text: string; line_numbers: boolean; replace_all: boolean }[];
+  unrecorded: number;
+  truncated: boolean;
+}

@@ -70,8 +70,8 @@ function asAttachment(sessionId: string, file: Entry): ChatAttachmentItem {
   return { key: file.path, name, mimeType: null, byteSize: image ? file.size : null, previewKind: image ? "image" : "text", availability: "ready", previewUrl: url, originalUrl: `${url}&download=true`, legacySources: [], source: { kind: "unavailable", path: file.path, context: { type: "session", id: sessionId } } };
 }
 /** git 변경이 있는 행만 그 자리에서 diff를 편다. 그림 파일과 Git이 아닌 폴더는 바로 전체 보기다. */
-function diffable(file: Entry, notGit: boolean): file is ChangedFile {
-  return !notGit && "git_status" in file && file.git_status !== null && !IMAGE.test(file.path);
+function diffable(file: Entry, notGit: boolean, noWorkspace: boolean): file is ChangedFile {
+  return "git_status" in file && !IMAGE.test(file.path) && (file.wrote || (!noWorkspace && !notGit && file.git_status !== null));
 }
 
 /** PAS 작업 목록의 접는 묶음 머리(v3-persistent-task-group-toggle)를 그대로 쓴다. */
@@ -106,11 +106,12 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
   useEffect(() => { setShowSession(initiallySessionOpen); setShowRead(initiallyExpanded); setShowOther(initiallyOtherOpen); setOpenDiff(null); setViewing(null); }, [sessionId]);
 
   const notGit = data?.snapshot?.state === "not_git";
+  const noWorkspace = data?.node.status === "no_workspace";
   const files = data?.files ?? [];
   const wrote = useMemo(() => files.filter(file => file.wrote), [data]);
   const reads = useMemo<Entry[]>(() => [...files.filter(file => !file.wrote && file.read), ...(data?.read_only ?? [])], [data]);
   const others = useMemo(() => files.filter(file => !file.wrote && !file.read && file.git_status !== null), [data]);
-  const visible = useMemo(() => [...(showSession ? [...ordered(wrote), ...(showRead ? ordered(reads) : [])] : []), ...(showOther ? ordered(others) : [])], [wrote, reads, others, showSession, showRead, showOther]);
+  const visible = useMemo(() => noWorkspace ? [] : [...(showSession ? [...ordered(wrote), ...(showRead ? ordered(reads) : [])] : []), ...(showOther ? ordered(others) : [])], [wrote, reads, others, showSession, showRead, showOther, noWorkspace]);
   const items = visible.map(file => asAttachment(sessionId, file));
   const index = viewing === null ? null : visible.findIndex(file => file.path === viewing);
   const initial = !data || (data.node.status === "ok" && data.snapshot?.state === "pending");
@@ -122,18 +123,22 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
     const kind = activity(file); const Icon = kind === "write" ? PencilLine : kind === "commit" ? GitCommitHorizontal : kind === "read" ? Eye : File;
     const git = "git_status" in file ? file : null;
     const label = { read: "읽음", write: "이 세션이 고침", commit: "이 세션이 커밋함", none: "세션 기록 밖에서 바뀜" }[kind];
-    const canDiff = diffable(file, notGit);
+    const canDiff = diffable(file, notGit, noWorkspace);
+    const live = !!git && !noWorkspace && !notGit && git.git_status !== null && !IMAGE.test(file.path);
+    const history = !!git?.wrote && !IMAGE.test(file.path);
     const open = canDiff && openDiff === file.path;
     const rowDiffId = `${diffId}-${encodeURIComponent(file.path)}`;
     return <div className={`v3-session-files-entry${open ? " is-open" : ""}`} key={file.path}>
-      <button type="button" className="v3-session-files-row" title={`${file.path} · ${label}`} aria-expanded={canDiff ? open : undefined} aria-controls={canDiff ? rowDiffId : undefined}
+      {noWorkspace && !canDiff ? <div className="v3-session-files-row" title={`${file.path} · ${label}`}>
+        <span className="v3-session-files-mark" data-activity={kind}><Icon className="h-4 w-4" aria-label={label}/></span><span className="v3-session-files-name">{file.path.split("/").at(-1)}</span>
+      </div> : <button type="button" className="v3-session-files-row" title={`${file.path} · ${label}`} aria-expanded={canDiff ? open : undefined} aria-controls={canDiff ? rowDiffId : undefined}
         onClick={event => canDiff ? setOpenDiff(open ? null : file.path) : view(file, event.currentTarget)}>
         <span className="v3-session-files-mark" data-activity={kind}><Icon className="h-4 w-4" aria-label={label}/></span>
         <span className="v3-session-files-name">{file.path.split("/").at(-1)}</span>
         {git && (git.git_status === "added" || git.git_status === "untracked") && <span className="v3-session-files-new">새</span>}
         {git && (git.added !== null || git.deleted !== null) && <span className="v3-session-files-diff">{git.added !== null && git.added > 0 && <span className="is-add">+{git.added}</span>}{git.deleted !== null && git.deleted > 0 && <span className="is-del">−{git.deleted}</span>}</span>}
-      </button>
-      {open && <SessionFileDiff id={rowDiffId} sessionId={sessionId} file={file} observedAt={data?.snapshot?.observed_at ?? null} onOpenFull={button => view(file, button)}/>}
+      </button>}
+      {open && <SessionFileDiff key={file.path} id={rowDiffId} sessionId={sessionId} file={file} observedAt={data?.snapshot?.observed_at ?? null} live={live} history={history} noWorkspace={noWorkspace} onOpenFull={button => view(file, button)}/>}
     </div>;
   };
   const tree = (list: Entry[]) => grouped(list).map(([dir, group]) => <div className="v3-session-files-group" key={dir}>
@@ -153,9 +158,10 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
       {data?.node.status === "offline" && <div className="v3-session-files-notice" role="status"><WifiOff className="h-4 w-4" aria-hidden="true"/>노드 끊김{data.snapshot?.observed_at && ` · ${formatWorkspaceTime(data.snapshot.observed_at)} 기준`}</div>}
       {error || data?.node.status === "error" ? <div className="v3-session-files-notice" role="alert"><span data-slot="dialog-error-message">파일을 불러오지 못했습니다.</span> <Button size="sm" variant="outline" onClick={onRefresh}>다시 시도</Button></div>
         : data?.node.status === "unsupported" ? <div className="v3-nav-list v3-session-files-list"><p>이 노드는 파일 보기를 지원하지 않습니다.</p></div>
-        : data?.node.status === "no_workspace" ? <div className="v3-nav-list v3-session-files-list"><p>작업 폴더가 없습니다.</p></div>
+        : noWorkspace && !files.length && !(data?.read_only.length) ? <div className="v3-nav-list v3-session-files-list"><p>작업 폴더가 없습니다.</p></div>
         : initial && data?.node.status !== "offline" ? <FrameLoading label="파일 상태를 읽는 중"/>
         : <>
+          {noWorkspace && <div className="v3-session-files-notice">작업 폴더가 지워져 이 세션이 고친 내용만 볼 수 있습니다</div>}
           {notGit && <div className="v3-session-files-notice">Git 작업 폴더가 아닙니다</div>}
           <nav className="v3-session-files-sections" aria-label="세션 파일">
             {wrote.length === 0 && reads.length === 0 && others.length === 0 && !notGit && <div className="v3-nav-list v3-session-files-list"><p>바뀐 파일 없음</p></div>}

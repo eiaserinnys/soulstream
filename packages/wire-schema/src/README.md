@@ -43,3 +43,5 @@ CI가 `scripts/verify.sh`로 schema ↔ generated 정합을 검증한다.
 `workspace_file_read`와 `workspace_file_diff`의 선택 필드 `expected_root`는 목록을 만든 작업 폴더와 노드의 현재 작업 폴더가 같은지 확인한다.
 
 `workspace_file_read_result`와 `workspace_file_diff_result`의 선택 필드 `root_checked: true`는 요청의 `expected_root`를 비교해 통과했을 때만 제공한다.
+
+세션 파일 기록 응답 `SessionWorkspaceSessionDiffResponse`는 `session_workspace.ts`에서 편집별 내용과 기록되지 않은 편집 수를 정의한다.

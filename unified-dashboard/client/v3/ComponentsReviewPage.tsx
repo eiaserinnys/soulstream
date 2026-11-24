@@ -298,7 +298,7 @@ export function ComponentsReviewPage() {
           </section>
           <section id="components-heads" className="v3-detail-section">
             <div className="v3-components-samples">
-            <Sample name="SessionFilesPanel" state="두 구역 · diff · 새 파일 · 지움 · 이름 바꿈 · 바이너리 · 잘림 · 로딩 · 실패 · 옛 노드">
+            <Sample name="SessionFilesPanel" state="두 구역 · diff · 세션 기록 · 두 탭 · 삭제된 폴더 · 기록 없음 · 잘림 · 로딩 · 실패">
               <div className="v3-components-panel-pair v3-session-files-review-grid">{(["ready", "loading", "offline", "not-git", "error", "long"] as const).map(scene => {
                 const data = scene === "loading" || scene === "error" ? null : {
                   ...reviewSessionFiles,

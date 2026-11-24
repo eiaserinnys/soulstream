@@ -1,11 +1,12 @@
-import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties } from "react";
-import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Button, DashboardIconCap, formatWorkspaceTime } from "@seosoyoung/soul-ui";
 import { Maximize2 } from "lucide-react";
-import type { SessionWorkspaceDiffResponse, SessionWorkspaceResponse, WorkspaceGitStatus } from "../../../packages/wire-schema/src/session_workspace";
+import type { SessionWorkspaceDiffResponse, SessionWorkspaceResponse, SessionWorkspaceSessionDiffResponse, WorkspaceGitStatus } from "../../../packages/wire-schema/src/session_workspace";
+import { DetailTabs } from "./DetailTabs";
 
 export type WorkspaceDiffStatus = WorkspaceGitStatus | "unchanged";
 type ChangedFile = SessionWorkspaceResponse["files"][number];
-type DiffLine = { kind: "hunk"; heading: string } | { kind: "add" | "del" | "ctx"; text: string; number: number };
+type DiffLine = { kind: "hunk"; heading: string } | { kind: "add" | "del" | "ctx"; text: string; number: number | null };
 type DiffState = { kind: "loading" } | { kind: "error" } | { kind: "unsupported" } | { kind: "ready"; data: SessionWorkspaceDiffResponse };
 export const SessionFileDiffFetchContext = createContext<typeof fetch | null>(null);
 
@@ -20,10 +21,13 @@ export function parseUnifiedDiff(text: string): DiffLine[] {
   let oldLine = 0;
   let newLine = 0;
   let inHunk = false;
+  let numbered = true;
   for (const raw of text.split("\n")) {
     if (raw.startsWith("diff --git ")) { inHunk = false; continue; }
+    if (raw === "@@ @@") { inHunk = true; numbered = false; continue; }
     const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@ ?(.*)$/.exec(raw);
     if (hunk) {
+      numbered = true;
       oldLine = Number(hunk[1]);
       newLine = Number(hunk[2]);
       inHunk = true;
@@ -32,9 +36,9 @@ export function parseUnifiedDiff(text: string): DiffLine[] {
       continue;
     }
     if (!inHunk || raw.startsWith("\\")) continue;
-    if (raw.startsWith("+")) lines.push({ kind: "add", text: raw.slice(1), number: newLine++ });
-    else if (raw.startsWith("-")) lines.push({ kind: "del", text: raw.slice(1), number: oldLine++ });
-    else if (raw.startsWith(" ")) { lines.push({ kind: "ctx", text: raw.slice(1), number: newLine++ }); oldLine++; }
+    if (raw.startsWith("+")) lines.push({ kind: "add", text: raw.slice(1), number: numbered ? newLine++ : null });
+    else if (raw.startsWith("-")) lines.push({ kind: "del", text: raw.slice(1), number: numbered ? oldLine++ : null });
+    else if (raw.startsWith(" ")) { lines.push({ kind: "ctx", text: raw.slice(1), number: numbered ? newLine++ : null }); if (numbered) oldLine++; }
   }
   return lines;
 }
@@ -64,13 +68,24 @@ export function useSessionFileDiff(sessionId: string, file: ChangedFile, observe
   return { state, busy, retry: () => setAttempt(value => value + 1) };
 }
 
-export function SessionFileDiff({ id, sessionId, file, observedAt, onOpenFull }: {
-  id: string; sessionId: string; file: ChangedFile; observedAt: string | null; onOpenFull(trigger: HTMLElement): void;
+export function SessionFileDiff({ id, sessionId, file, observedAt, onOpenFull, live = true, history = false, noWorkspace = false }: {
+  id: string; sessionId: string; file: ChangedFile; observedAt: string | null; onOpenFull(trigger: HTMLElement): void; live?: boolean; history?: boolean; noWorkspace?: boolean;
 }) {
+  const [tab, setTab] = useState<"live" | "history">(live ? "live" : "history");
+  const tabChanged=useRef(false);
+  const selected = tab === "live" && live ? "live" : history ? "history" : "live";
+  useEffect(()=>{ if (tabChanged.current) { document.getElementById(`${id}-tabs-${selected}`)?.focus(); tabChanged.current=false; } },[id,selected]);
+  const tabs=live && history ? <DetailTabs id={`${id}-tabs`} label="변경분 출처" panelId={id} tabs={[["live", "커밋 전 변경"], ["history", "세션 기록"]] as const} value={selected} onChange={value=>{tabChanged.current=true;setTab(value);}}/> : null;
+  return <div className="v3-session-file-diff-shell">
+    {selected === "live" ? <LiveDiff id={id} sessionId={sessionId} file={file} observedAt={observedAt} onOpenFull={onOpenFull} tabs={tabs}/> : <SessionHistory id={id} sessionId={sessionId} file={file} noWorkspace={noWorkspace} onOpenFull={onOpenFull} tabs={tabs}/>}
+  </div>;
+}
+
+function LiveDiff({ id, sessionId, file, observedAt, onOpenFull, tabs }: { id:string; sessionId:string; file:ChangedFile; observedAt:string|null; onOpenFull(trigger:HTMLElement):void; tabs:ReactNode }) {
   const { state, busy, retry } = useSessionFileDiff(sessionId, file, observedAt);
   const status: WorkspaceDiffStatus = state.kind === "ready" ? state.data.status : file.git_status ?? "modified";
   const lines = useMemo(() => state.kind === "ready" && !state.data.binary ? parseUnifiedDiff(state.data.text) : [], [state]);
-  const digits = String(lines.reduce((max, line) => line.kind === "hunk" || line.kind === "del" ? max : Math.max(max, line.number), 1)).length;
+  const digits = String(lines.reduce((max, line) => line.kind === "hunk" || line.kind === "del" ? max : Math.max(max, line.number ?? 0), 1)).length;
   const name = file.path.split("/").at(-1) ?? file.path;
   // 같은 폴더 안의 이름 바꿈이면 옛 이름만, 폴더가 바뀌었으면 옛 경로 전체를 보인다.
   const dir = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));
@@ -83,20 +98,62 @@ export function SessionFileDiff({ id, sessionId, file, observedAt, onOpenFull }:
         <Maximize2 className="h-4 w-4" aria-hidden="true"/>
       </DashboardIconCap>}
     </div>
+    {tabs}
     {state.kind === "loading" ? <div className="v3-session-file-diff-skeleton" aria-label="변경분을 읽는 중"><span/><span/><span/><span/></div>
       : state.kind === "error" ? <div className="v3-session-file-diff-state" role="alert"><span data-slot="dialog-error-message">변경분을 불러오지 못했습니다</span><Button size="sm" variant="outline" onClick={retry}>다시 시도</Button></div>
       : state.kind === "unsupported" ? <div className="v3-session-file-diff-state">이 노드는 아직 변경분을 보이지 않습니다</div>
       : state.data.binary ? <div className="v3-session-file-diff-state">바이너리 파일</div>
       : lines.length === 0 ? <div className="v3-session-file-diff-state">바뀐 내용 없음</div>
       : <div className="v3-session-file-diff-body" tabIndex={0} aria-label={`${name} 변경 줄`} style={{ "--v3-diff-digits": digits } as CSSProperties}>
-        {lines.map((line, index) => line.kind === "hunk"
-          ? <div key={index} className="v3-session-file-diff-line" data-kind="hunk"><span className="v3-session-file-diff-num" aria-hidden="true">⋯</span><span/><span className="v3-session-file-diff-code">{line.heading}</span></div>
-          : <div key={index} className="v3-session-file-diff-line" data-kind={line.kind}>
-            <span className="v3-session-file-diff-num">{line.kind === "del" ? "" : line.number}</span>
-            <span className="v3-session-file-diff-sign">{line.kind === "add" ? "+" : line.kind === "del" ? "−" : ""}</span>
-            <span className="v3-session-file-diff-code" data-v3-selectable-content="true">{line.text || " "}</span>
-          </div>)}
+        <DiffLines lines={lines}/>
       </div>}
     {state.kind === "ready" && state.data.truncated && <div className="v3-session-file-diff-foot">앞 512KiB만 보입니다</div>}
+  </div>;
+}
+
+function DiffLines({lines}: {lines:DiffLine[]}) {
+  return <>{lines.map((line, index) => line.kind === "hunk"
+    ? <div key={index} className="v3-session-file-diff-line" data-kind="hunk"><span className="v3-session-file-diff-num" aria-hidden="true">⋯</span><span/><span className="v3-session-file-diff-code">{line.heading}</span></div>
+    : <div key={index} className="v3-session-file-diff-line" data-kind={line.kind}>
+      <span className="v3-session-file-diff-num">{line.kind === "del" ? "" : line.number}</span>
+      <span className="v3-session-file-diff-sign">{line.kind === "add" ? "+" : line.kind === "del" ? "−" : ""}</span>
+      <span className="v3-session-file-diff-code" data-v3-selectable-content="true">{line.text || " "}</span>
+    </div>)}</>;
+}
+
+function SessionHistory({id,sessionId,file,noWorkspace,onOpenFull,tabs}: {id:string;sessionId:string;file:ChangedFile;noWorkspace:boolean;onOpenFull(trigger:HTMLElement):void;tabs:ReactNode}) {
+  const [state,setState]=useState<{kind:"loading"}|{kind:"error"}|{kind:"ready";data:SessionWorkspaceSessionDiffResponse}>({kind:"loading"});
+  const [busy,setBusy]=useState(true);
+  const [attempt,setAttempt]=useState(0);
+  const request=useContext(SessionFileDiffFetchContext) ?? fetch;
+  useEffect(() => {
+    const controller=new AbortController();
+    setBusy(true);
+    setState(previous => previous.kind === "ready" ? previous : {kind:"loading"});
+    request(`/api/sessions/${encodeURIComponent(sessionId)}/workspace/session-diff?path=${encodeURIComponent(file.path)}`,{credentials:"same-origin",signal:controller.signal})
+      .then(async response => { if (!response.ok) throw new Error("session diff request failed"); const data=await response.json() as SessionWorkspaceSessionDiffResponse; if (!controller.signal.aborted) { setState({kind:"ready",data}); setBusy(false); } })
+      .catch(() => { if (!controller.signal.aborted) { setState({kind:"error"}); setBusy(false); } });
+    return () => controller.abort();
+  },[request,sessionId,file.path,file.last_activity_at,attempt]);
+  const name=file.path.split("/").at(-1) ?? file.path;
+  const data=state.kind === "ready" ? state.data : null;
+  const allLines=data?.edits.map(edit => parseUnifiedDiff(edit.text)) ?? [];
+  const digits=String(allLines.flat().reduce((max,line)=>line.kind === "hunk" || line.kind === "del" ? max : Math.max(max,line.number ?? 0),1)).length;
+  return <div id={id} role="region" aria-label={`${name} 변경분`} aria-busy={busy} className="v3-session-file-diff">
+    <div className="v3-session-file-diff-head"><span className="v3-session-file-diff-status">세션 기록</span>
+      {!noWorkspace && file.git_status !== "deleted" && <DashboardIconCap appearance="bare" size="small" label="전체 보기" onClick={event=>onOpenFull(event.currentTarget)}><Maximize2 className="h-4 w-4" aria-hidden="true"/></DashboardIconCap>}
+    </div>
+    {tabs}
+    {state.kind === "loading" ? <div className="v3-session-file-diff-skeleton" aria-label="변경분을 읽는 중"><span/><span/><span/><span/></div>
+      : state.kind === "error" ? <div className="v3-session-file-diff-state" role="alert"><span data-slot="dialog-error-message">변경분을 불러오지 못했습니다</span><Button size="sm" variant="outline" onClick={()=>setAttempt(value=>value+1)}>다시 시도</Button></div>
+      : <div className="v3-session-file-diff-body" tabIndex={0} aria-label={`${name} 변경 줄`} style={{"--v3-diff-digits":digits} as CSSProperties}>
+        {state.data.edits.map((edit,index) => <div key={index}>
+          <div className="v3-session-file-diff-edit-head">{index+1}/{state.data.edits.length} · {formatWorkspaceTime(edit.at)} · {edit.kind === "edit" ? edit.replace_all ? "고침, 모두 바꿈" : "고침" : {write:"전체 씀",add:"새 파일",delete:"지움"}[edit.kind]}</div>
+          <DiffLines lines={allLines[index]}/>
+        </div>)}
+        {state.data.unrecorded > 0 && <div className="v3-session-file-diff-state">{state.data.edits.length ? `내용이 기록되지 않은 편집 ${state.data.unrecorded}번` : "이 엔진은 고친 내용을 기록에 남기지 않습니다"}</div>}
+        {!state.data.edits.length && !state.data.unrecorded && <div className="v3-session-file-diff-state">바뀐 내용 없음</div>}
+      </div>}
+    {data?.truncated && <div className="v3-session-file-diff-foot">기록이 길어 오래된 편집은 빠졌습니다</div>}
   </div>;
 }
