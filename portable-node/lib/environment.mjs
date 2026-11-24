@@ -150,6 +150,7 @@ export function buildChildEnv({
     SOULSTREAM_UPSTREAM_URL: defaults.node_ws_url,
     AUTH_BEARER_TOKEN: node.token,
     // 실행기 기본 설정의 soulstream MCP Authorization 헤더가 env로 참조한다.
+    SOULSTREAM_PORTABLE_NODE: "1",
     PORTABLE_LOCAL_MCP_AUTHORIZATION: `Bearer ${node.token}`,
     ENVIRONMENT: "production",
     HOST: "127.0.0.1",
