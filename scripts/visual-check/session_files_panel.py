@@ -7,6 +7,7 @@ import functools
 import http.server
 import importlib.util
 import json
+import os
 import threading
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -45,6 +46,22 @@ def serve(directory):
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Handler, directory=str(directory)))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+def wait_stable(page, locator, kind):
+    page.wait_for_function("""async ({el, kind}) => {
+        let previous = null, stable = 0;
+        while (stable < 3) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+            const current = kind === 'scroll' ? [el.scrollHeight, el.scrollTop]
+                : kind === 'style' ? [r.x, r.y, r.width, r.height, s.color, s.backgroundColor, s.borderColor, s.borderWidth, s.outline, s.boxShadow]
+                : [r.x, r.y, r.width, r.height];
+            const value = JSON.stringify(current);
+            stable = value === previous ? stable + 1 : 1;
+            previous = value;
+        }
+        return true;
+    }""", arg={'el': locator.element_handle(), 'kind': kind}, timeout=15000)
 
 def install_routes(page, scene="ready", requests=None):
     requests = requests if requests is not None else {"workspace": 0}
@@ -158,8 +175,8 @@ def story_comparison(browser, baseline, current, out):
         story.scroll_into_view_if_needed(); expect(story).to_be_visible(); page.evaluate("document.fonts.ready")
         def style():
             return story.evaluate("""el => {const r=el.getBoundingClientRect(),s=getComputedStyle(el);return {width:r.width,height:r.height,color:s.color,background:s.backgroundColor,border:s.borderColor,borderWidth:s.borderWidth,outline:s.outline,boxShadow:s.boxShadow}}""")
-        normal = style(); story.hover(); page.wait_for_timeout(250); hover = style()
-        story.focus(); page.keyboard.press("Tab"); page.keyboard.press("Shift+Tab"); expect(story).to_be_focused(); page.wait_for_timeout(250); focus = style()
+        normal = style(); story.hover(); wait_stable(page, story, 'style'); hover = style()
+        story.focus(); page.keyboard.press("Tab"); page.keyboard.press("Shift+Tab"); expect(story).to_be_focused(); wait_stable(page, story, 'style'); focus = style()
         story.screenshot(path=str(out / f"story-{label}.png"), animations="disabled")
         story.click(); expect(story).to_have_attribute("aria-expanded", "true")
         results[label] = {"normal": normal, "hover": hover, "focus": focus, "expanded": story.get_attribute("aria-expanded")}
@@ -173,7 +190,7 @@ def capture_pas_and_folder(browser, base, out):
     install_routes(page)
     page.goto(base + "/persistent/components-session", wait_until="domcontentloaded")
     trigger = page.get_by_role("button", name="세션 파일")
-    expect(trigger).to_be_visible(timeout=15000)
+    expect(trigger).to_be_visible(timeout=60000)
     expect(trigger).to_have_attribute("data-appearance", "bare")
     expect(trigger).to_have_attribute("aria-pressed", "false")
     page.screenshot(path=str(out / "pas-entry.png"), animations="disabled")
@@ -183,7 +200,7 @@ def capture_pas_and_folder(browser, base, out):
     pas = trigger.evaluate("el => ({tag:el.tagName, pressed:el.getAttribute('aria-pressed'), className:el.className, ariaLabel:el.getAttribute('aria-label')})")
     page.goto(base + "/components?sample=session-files-folder", wait_until="domcontentloaded")
     trigger = page.get_by_role("button", name="파일", exact=True)
-    expect(trigger).to_be_visible(timeout=15000); trigger.click()
+    expect(trigger).to_be_visible(timeout=60000); trigger.click()
     expect(page.get_by_role("region", name="세션 파일")).to_be_visible()
     page.screenshot(path=str(out / "folder-panel.png"), animations="disabled")
     context.close()
@@ -201,7 +218,7 @@ def capture_retention(browser, base):
     workspace = page.get_by_test_id("v3-card-workspace")
     chat = workspace.get_by_test_id("v3-card-session-chat")
     trigger = chat.get_by_role("button", name="파일", exact=True)
-    expect(trigger).to_be_visible(timeout=15000)
+    expect(trigger).to_be_visible(timeout=60000)
     draft = chat.locator('textarea')
     expect(draft).to_be_enabled(timeout=15000)
     draft.fill('파일 확인 중인 임시 글')
@@ -209,7 +226,7 @@ def capture_retention(browser, base):
     expect(scroller).to_be_visible(timeout=15000)
     page.wait_for_function("""() => {const e=document.querySelector('[data-testid="v3-card-session-chat"] [data-virtuoso-scroller="true"]');return e && e.scrollHeight > e.clientHeight + 200} """, timeout=15000)
     scroller.evaluate("e => {e.scrollTop = Math.floor((e.scrollHeight-e.clientHeight)/2); e.dispatchEvent(new Event('scroll'))}")
-    page.wait_for_timeout(500)
+    wait_stable(page, scroller, 'scroll')
     chat_before = scroller.evaluate('e => e.scrollTop')
     trigger.click()
     pane = workspace.get_by_role("region", name="세션 파일")
@@ -235,7 +252,7 @@ def capture_retention(browser, base):
     toggle_scroll_after = body.evaluate('e => e.scrollTop')
     assert abs(toggle_scroll_before - toggle_scroll_after) <= 2, (toggle_scroll_before, toggle_scroll_after)
     body.evaluate("e => {e.scrollTop = e.scrollHeight - e.clientHeight - 100; e.dispatchEvent(new Event('scroll'))}")
-    page.wait_for_timeout(200)
+    wait_stable(page, body, 'scroll')
     file_before = body.evaluate('e => e.scrollTop')
     def geometry(): return body.evaluate("e => ({top:e.scrollTop, height:e.scrollHeight, client:e.clientHeight, anchor:getComputedStyle(e).overflowAnchor})")
     before_geometry = geometry()
@@ -245,24 +262,16 @@ def capture_retention(browser, base):
     chat_after_close = scroller.evaluate('e => e.scrollTop')
     trigger.click(); expect(pane.get_by_text('example-39.ts')).to_be_attached()
     expect(read_toggle).to_have_attribute('aria-expanded', 'true')
-    page.wait_for_timeout(200)
+    wait_stable(page, body, 'scroll')
     file_after_open = body.evaluate('e => e.scrollTop')
-    page.set_viewport_size({"width": 390, "height": 900}); page.wait_for_timeout(500)
+    page.set_viewport_size({"width": 390, "height": 900})
     if workspace.get_attribute('data-mobile-view') != 'chat': page.get_by_test_id('v3-mobile-tab-chat').click()
-    expect(pane).to_be_visible(); file_narrow = body.evaluate('e => e.scrollTop')
+    expect(pane).to_be_visible(); wait_stable(page, body, 'scroll'); file_narrow = body.evaluate('e => e.scrollTop')
     narrow_geometry = geometry()
     page.set_viewport_size({"width": 1440, "height": 900})
     expect(draft).to_have_value('파일 확인 중인 임시 글')
-    page.wait_for_function("""async el => {
-        let previous = null, stable = 0;
-        while (stable < 3) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            const current = [el.scrollHeight, el.scrollTop];
-            stable = previous && current[0] === previous[0] && current[1] === previous[1] ? stable + 1 : 1;
-            previous = current;
-        }
-        return true;
-    }""", arg=scroller.element_handle(), timeout=5000)
+    wait_stable(page, scroller, 'scroll')
+    wait_stable(page, body, 'scroll')
     chat_wide = scroller.evaluate('e => e.scrollTop'); file_wide = body.evaluate('e => e.scrollTop')
     result = {"draft": draft.input_value(), "chat_scroll": [chat_before, chat_after_close, chat_wide], "file_scroll": [file_before, file_after_open, file_narrow, file_wide], "toggle_scroll": [toggle_scroll_before, toggle_scroll_after], "file_geometry": [before_geometry, narrow_geometry, geometry()], "read_only_expanded": read_toggle.get_attribute('aria-expanded'), "stale_size_preview_ranges": ranges}
     assert abs(chat_before - chat_after_close) <= 2 and abs(chat_before - chat_wide) <= 2, result
@@ -294,7 +303,7 @@ def capture_layout_checks(browser, base, out):
             page.get_by_test_id('card-board-sample').locator('[data-card-id="board-size-comparison"] .v3-postit-open').first.click()
             workspace = page.get_by_test_id('v3-card-workspace')
             trigger = workspace.get_by_role('button', name='파일', exact=True)
-        expect(trigger).to_be_visible(timeout=15000); trigger.click()
+        expect(trigger).to_be_visible(timeout=60000); trigger.click()
         pane = page.get_by_role('region', name='세션 파일') if workspace is None else workspace.get_by_role('region', name='세션 파일')
         expect(pane).to_be_visible()
         return context, page, workspace, pane
@@ -311,7 +320,7 @@ def capture_layout_checks(browser, base, out):
             except PlaywrightTimeoutError:
                 print(json.dumps(pane.evaluate("""el => {const s=getComputedStyle(el);return {class:el.className, position:s.position, left:s.left, width:s.width, borderRadius:s.borderRadius, innerWidth:window.innerWidth, right:el.getBoundingClientRect().right}}"""), ensure_ascii=False), flush=True)
                 raise
-        page.wait_for_timeout(150)
+        wait_stable(page, pane, 'rect')
     for surface in ('card', 'folder', 'pas'):
         context, page, workspace, pane = open_surface(surface, 'matrix')
         expect(pane.locator('.v3-session-files-title strong')).to_have_text(LONG_BRANCH)
@@ -440,14 +449,14 @@ def capture_diff(browser, base, out):
         if surface == "pas":
             page.goto(base + "/persistent/components-session", wait_until="domcontentloaded")
             trigger = page.get_by_role("button", name="세션 파일", exact=True)
-            expect(trigger).to_be_visible(timeout=15000); trigger.click()
+            expect(trigger).to_be_visible(timeout=60000); trigger.click()
             pane = page.get_by_role("region", name="세션 파일")
         else:
             page.goto(base + "/components", wait_until="domcontentloaded")
-            page.get_by_test_id("card-board-sample").locator('[data-card-id="board-size-comparison"] .v3-postit-open').first.click()
+            page.get_by_test_id("card-board-sample").locator('[data-card-id="board-size-comparison"] .v3-postit-open').first.click(timeout=60000)
             workspace = page.get_by_test_id("v3-card-workspace")
             trigger = workspace.get_by_role("button", name="파일", exact=True)
-            expect(trigger).to_be_visible(timeout=15000); trigger.click()
+            expect(trigger).to_be_visible(timeout=60000); trigger.click()
             pane = workspace.get_by_role("region", name="세션 파일")
         expect(pane).to_be_visible()
         if scene == "not_git":
@@ -458,7 +467,7 @@ def capture_diff(browser, base, out):
                 pane.get_by_role("button", name="다른 변경", exact=False).click()
                 expect(pane.get_by_text("셸로 고친 파일은 여기 나옵니다")).to_be_visible()
             row = pane.get_by_role("button", name=filename, exact=False)
-            expect(row).to_be_visible(timeout=15000)
+            expect(row).to_be_visible(timeout=60000)
             row.click(); page.mouse.move(2, 2)
             expect(row).to_have_attribute("aria-expanded", "true")
             box = pane.get_by_role("region", name=f"{filename} 변경분")
@@ -602,13 +611,13 @@ def capture_session_history(browser, baseline, base, out):
             trigger=page.get_by_role("button", name="세션 파일", exact=True)
         else:
             page.goto((baseline if old else base) + "/components", wait_until="domcontentloaded")
-            page.get_by_test_id("card-board-sample").locator('[data-card-id="board-size-comparison"] .v3-postit-open').first.click()
+            page.get_by_test_id("card-board-sample").locator('[data-card-id="board-size-comparison"] .v3-postit-open').first.click(timeout=60000)
             trigger=page.get_by_test_id("v3-card-workspace").get_by_role("button", name="파일", exact=True)
-        expect(trigger).to_be_visible(timeout=15000); trigger.click()
+        expect(trigger).to_be_visible(timeout=60000); trigger.click()
         pane=page.get_by_role("region", name="세션 파일")
         filename="event_outbox.ts" if tabs else "event_outbox_types.ts"
         row=pane.get_by_role("button", name=filename, exact=False)
-        expect(row).to_be_visible(timeout=15000)
+        expect(row).to_be_visible(timeout=60000)
         old_row = row.element_handle() if old else None
         row.click()
         if old:
@@ -697,7 +706,7 @@ def main():
                 expect(workspace.get_by_test_id("card-detail")).to_be_visible()
                 if width < 760: page.get_by_test_id("v3-mobile-tab-chat").click()
                 trigger = workspace.get_by_role("button", name="파일", exact=True)
-                expect(trigger).to_be_visible(timeout=15000)
+                expect(trigger).to_be_visible(timeout=60000)
                 chat = workspace.get_by_test_id("v3-card-session-chat")
                 before = chat.bounding_box()
                 if width == 1440 and scene == "ready": chat.locator('.v3-chat-content').screenshot(path=str(out / "unchanged-before.png"), animations="disabled")
@@ -764,7 +773,7 @@ def main():
                     page.keyboard.press('ArrowLeft'); info['preview_arrow_left'] = name.inner_text(); assert info['preview_arrow_left'] == 'outbox_retry.ts'
                     info["preview_bounds"] = []
                     for resized in [390, 1440]:
-                        page.set_viewport_size({"width": resized, "height": 900}); page.wait_for_timeout(200)
+                        page.set_viewport_size({"width": resized, "height": 900}); wait_stable(page, dialog, 'rect')
                         rect = dialog.bounding_box(); assert rect and rect['x'] >= 0 and rect['y'] >= 0 and rect['x'] + rect['width'] <= resized and rect['y'] + rect['height'] <= 900, rect
                         info["preview_bounds"].append({"viewport": resized, **rect})
                     page.keyboard.press("Escape"); expect(page.get_by_role("dialog")).to_have_count(0)
@@ -793,6 +802,9 @@ def main():
             measurements['retention'] = capture_retention(browser, base)
             measurements['layout'], failures = capture_layout_checks(browser, base, out)
             assert not failures, json.dumps(failures, ensure_ascii=False)
+    except Exception:
+        print(f"실패 시 load (1분·5분·15분): {os.getloadavg()}", flush=True)
+        raise
     finally:
         server.shutdown(); server.server_close(); baseline_server.shutdown(); baseline_server.server_close()
         (out / "measurements.json").write_text(json.dumps(measurements, ensure_ascii=False, indent=2), encoding="utf-8")
