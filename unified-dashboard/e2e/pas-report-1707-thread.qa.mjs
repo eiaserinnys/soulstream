@@ -23,7 +23,8 @@ const dashboardDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = resolve(dashboardDir, "dist-mockups/pas-report-1707-thread");
 const captureDir = process.env.PAS_RT1707_CAPTURE_DIR ?? resolve(dashboardDir, ".local/artifacts/pas-report-1707-thread");
 const scope = process.env.PAS_RT1707_SCOPE ?? "all";
-const allowedScopes = new Set(["all", "flows", "remaining", "operations", "1440x900", "820x1180", "390x844", "360x780"]);
+const disableWebgl = process.env.PAS_RT1707_DISABLE_WEBGL === "1";
+const allowedScopes = new Set(["all", "flows", "critical", "remaining", "operations", "review", "1440x900", "820x1180", "390x844", "360x780"]);
 if (!allowedScopes.has(scope)) throw new Error(`알 수 없는 QA 범위: ${scope}`);
 const textExtensions = new Set([".ts", ".tsx", ".css", ".html", ".mjs", ".md", ".json"]);
 
@@ -70,6 +71,7 @@ const base = `http://127.0.0.1:${server.address().port}`;
 let browserErrors = [];
 async function newPage(browser, viewport, theme) {
   const page = await browser.newPage({ viewport, colorScheme: theme, deviceScaleFactor: 1, reducedMotion: "reduce" });
+  page.setDefaultTimeout(30_000);
   page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
   page.on("pageerror", (error) => browserErrors.push(`pageerror: ${error.message}`));
   return page;
@@ -181,7 +183,7 @@ async function decisionButtons(page) {
     }));
   assert(buttons.length > 0, "결재 단추가 없다");
   for (const button of buttons) {
-    assert(button.height >= 44, `결재 단추 높이가 44px 미만이다: ${JSON.stringify(button)}`);
+    assert(Math.abs(button.height - 44) <= 1, `결재 단추 높이가 44px가 아니다: ${JSON.stringify(button)}`);
     for (const other of buttons) {
       if (Math.abs(button.top - other.top) <= 1) {
         assert(Math.abs(button.height - other.height) <= 1, `같은 줄 단추의 높이가 다르다: ${JSON.stringify([button, other])}`);
@@ -202,19 +204,73 @@ async function choiceButtons(page) {
   return buttons;
 }
 async function selectRail(page, number) {
-  if (await page.getByTestId("pas-rt1707-rail-toggle").isVisible()) {
+  const mobile = await page.getByTestId("pas-rt1707-rail-toggle").isVisible();
+  if (mobile) {
     await page.getByTestId("pas-rt1707-rail-toggle").click();
   }
   await (await railItem(page, number)).click();
   await wait(250);
+  const focus = mobile ? page.getByTestId("pas-rt1707-rail-toggle") : page.locator('.pas-rt1707-rail-item[data-active="true"]');
+  assert(await focus.evaluate((el) => el === document.activeElement), "안건 선택 뒤 초점이 돌아오지 않았다");
 }
 async function clickText(page, selector, label) {
   await page.locator(selector).filter({ hasText: label }).first().click();
   await wait(300);
 }
+async function koreanSplits(page) {
+  return page.evaluate(() => {
+    const selector = ".pas-rt1707-rail-title, .pas-rt1707-report-title, .pas-rt1707-request, .pas-rt1707-session-summary, .pas-rt1707-turns p, .pas-rt1707-summary p, .pas-rt1707-check-label, .pas-rt1707-evidence figcaption, .pas-rt1707-comment p, .pas-rt1707-caveat p";
+    return [...document.querySelectorAll(selector)].filter((el) => el.getClientRects().length && getComputedStyle(el).visibility !== "hidden").flatMap((el) => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), chars = [];
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        for (let i = 0; i < node.textContent.length; i++) {
+          const range = document.createRange(); range.setStart(node, i); range.setEnd(node, i + 1);
+          chars.push({char:node.textContent[i], top:range.getBoundingClientRect().top});
+        }
+      }
+      return chars.slice(1).flatMap((current, i) => Math.abs(current.top - chars[i].top) > 2 && /[가-힣]/u.test(chars[i].char) && /[가-힣]/u.test(current.char)
+        ? [`${el.className}: ${chars[i].char}|${current.char}`] : []);
+    });
+  });
+}
+async function panelPixelsStable(page, panel) {
+  const clip = await panel.boundingBox();
+  assert(clip, "카드 패널의 화소 비교 영역이 없다");
+  // Keep the same viewport coordinates for both captures.
+  const capture = () => page.screenshot({ clip, animations: "disabled", caret: "hide" });
+  const before = await capture();
+  const thread = page.locator(".pas-rt1707-thread");
+  await thread.evaluate((el) => { el.style.visibility = "hidden"; });
+  let after;
+  try {
+    after = await capture();
+  } finally {
+    await thread.evaluate((el) => { el.style.visibility = ""; });
+  }
+  return page.evaluate(async ({first, second}) => {
+    const pixels = async (base64) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${base64}`;
+      await image.decode();
+      const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
+      const context = canvas.getContext("2d"); context.drawImage(image, 0, 0);
+      return context.getImageData(0, 0, canvas.width, canvas.height).data;
+    };
+    const a = await pixels(first), b = await pixels(second);
+    if (a.length !== b.length) return -1;
+    let changed = 0;
+    for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) changed++;
+    return changed;
+  }, {first:before.toString("base64"), second:after.toString("base64")});
+}
 
 try {
-  await runPlaywrightLifecycle({ lockName: "pas-report-1707-thread-qa", timeoutMs: 900_000, launchBrowser: (options) => chromium.launch(options) }, async ({ browser }) => {
+  await runPlaywrightLifecycle({
+    lockName: "pas-report-1707-thread-qa",
+    timeoutMs: 900_000,
+    launchOptions: { headless: true, args: disableWebgl ? ["--disable-webgl"] : [] },
+    launchBrowser: (options) => chromium.launch(options),
+  }, async ({ browser }) => {
     const viewports = [
       { id: "1440x900", width: 1440, height: 900 },
       { id: "820x1180", width: 820, height: 1180 },
@@ -268,16 +324,27 @@ try {
           if (viewport.width <= 767) {
             assert(!(await page.locator(".pas-rt1707-rail").isVisible()), "서랍이 처음부터 열렸다");
             await page.getByTestId("pas-rt1707-rail-toggle").click();
+            await page.waitForFunction(() => document.activeElement?.matches('.pas-rt1707-rail-item[data-active="true"]'));
+            assert(await page.locator(".pas-rt1707-thread").evaluate((el) => el.inert), "서랍 배경이 inert가 아니다");
+            for (let i = 0; i < 16; i++) {
+              await page.keyboard.press("Tab");
+              const inside = await page.evaluate(() => Boolean(document.activeElement?.closest(".pas-rt1707-report-head, .pas-rt1707-rail")));
+              assert(inside, "서랍과 머리줄 밖으로 초점이 이동했다");
+            }
+            await page.screenshot({ path: join(captureDir, `${viewport.id}-${theme}-drawer.png`) });
           }
           const rail = await rect(page, ".pas-rt1707-rail");
           const thread = await rect(page, ".pas-rt1707-thread");
-          if (viewport.width > 767) assert(Math.abs(rail.top - thread.top) <= 1, "레일과 스레드 위가 어긋난다");
+          const railThreadTopDifference = Math.abs(rail.top - thread.top);
+          if (viewport.width > 767) assert(railThreadTopDifference <= 1, "레일과 스레드 위가 어긋난다");
           assert(await page.locator(".pas-rt1707-rail-item").filter({hasText:"#1730"}).isVisible(), "진행 중 카드가 없다");
           const rows = await page.locator(".pas-rt1707-rail-item").evaluateAll((items) => items.slice(0, 2).map((el) => {
             const rect = el.getBoundingClientRect();
             return {top: rect.top, height: rect.height, title: getComputedStyle(el.querySelector(".pas-rt1707-rail-title")).display, portrait: getComputedStyle(el.querySelector("img")).display};
           }));
           assert(rows[1].top >= rows[0].top + rows[0].height - 1 && rows.every((row) => row.title !== "none" && row.portrait !== "none"), "안건이 세로 행으로 보이지 않는다");
+          const splits = await koreanSplits(page);
+          assert(splits.length === 0, `한글 어절 중간 줄바꿈: ${splits.join(", ")}`);
           if (viewport.width <= 767) {
             await page.keyboard.press("Escape");
             assert(!(await page.locator(".pas-rt1707-rail").isVisible()), "Escape로 서랍이 닫히지 않았다");
@@ -314,10 +381,41 @@ try {
           const snoozeBox = await page.getByTestId("pas-rt1707-snooze-trigger").boundingBox();
           const snoozeHit = await page.evaluate(({x,y}) => Boolean(document.elementFromPoint(x,y)?.closest('[data-testid="pas-rt1707-snooze-trigger"]')), {x:snoozeBox.x+snoozeBox.width/2,y:snoozeBox.y+snoozeBox.height/2});
           assert(snoozeHit, "답변 미루기 단추가 가려졌다");
+          assert(await page.locator('input[type="radio"]').count() === 0, "기본 라디오가 남았다");
+          const selection = await page.evaluate(() => {
+            const content = document.querySelector(".pas-rt1707-summary p");
+            const range = document.createRange(); range.selectNodeContents(content);
+            const selected = window.getSelection(); selected.removeAllRanges(); selected.addRange(range);
+            const readable = [...document.querySelectorAll('.pas-rt1707-thread-scroll [data-v3-selectable-content="true"]')].map((el) => getComputedStyle(el).userSelect);
+            const controls = [".pas-rt1707-rail-item", ".pas-rt1707-rail-head h2", ".pas-rt1707-report-count", '[data-testid="pas-rt1707-snooze-trigger"]']
+              .map((selector) => ({selector, userSelect:getComputedStyle(document.querySelector(selector)).userSelect}));
+            const result = {text:selected.toString(), readable, controls};
+            selected.removeAllRanges(); return result;
+          });
+          assert(selection.text && selection.readable.length > 0 && selection.readable.every((value) => value === "text")
+            && selection.controls.every((item) => item.userSelect === "none"), `본문과 조작 요소의 글 선택이 다르다: ${JSON.stringify(selection)}`);
+          const groups = await page.evaluate(() => {
+            const choices = [...document.querySelectorAll(".pas-rt1707-choice")].map((el) => el.getBoundingClientRect());
+            const snooze = document.querySelector('[data-testid="pas-rt1707-snooze-trigger"]').getBoundingClientRect();
+            return { choices:choices.map((r) => ({left:r.left,right:r.right,top:r.top,bottom:r.bottom})), snooze:{left:snooze.left,right:snooze.right,top:snooze.top,bottom:snooze.bottom} };
+          });
+          const lastChoice = groups.choices.at(-1);
+          const sameRow = Math.abs(lastChoice.top - groups.snooze.top) <= 1;
+          assert(sameRow ? groups.snooze.left - lastChoice.right > 8 : groups.snooze.top >= lastChoice.bottom,
+            `미루기 단추가 답 선택지와 구분되지 않는다: ${JSON.stringify(groups)}`);
           await page.screenshot({ path: join(captureDir, `${viewport.id}-${theme}-report.png`) });
+          const scrollBeforePanel = await page.locator(".pas-rt1707-thread-scroll").evaluate((el) => el.scrollTop);
           await page.getByTestId("pas-rt1707-open-card-panel").click();
           const panel = page.getByTestId("v3-card-workspace");
           await panel.waitFor({state:"visible"});
+          const panelSurface = await page.locator(".pas-rt1707-dialog > .v3-workspace-scrim").evaluate((el) => {
+            const style = getComputedStyle(el);
+            return {background:style.backgroundColor, backdrop:style.backdropFilter};
+          });
+          assert(!panelSurface.background.includes(" / ") && !panelSurface.background.startsWith("rgba") && panelSurface.backdrop === "none",
+            `카드 패널 배경이 불투명하지 않다: ${JSON.stringify(panelSurface)}`);
+          const changedPixels = await panelPixelsStable(page, panel);
+          assert(changedPixels === 0, `뒤쪽 보고 창을 숨기자 카드 패널의 ${changedPixels}개 화소가 바뀌었다`);
           const metadata = await panel.locator(".v3-task-default-summary").evaluate((summary) => {
             const values = summary.querySelector(".v3-task-default-values");
             const spans = [...values.querySelectorAll(":scope > span")];
@@ -358,8 +456,33 @@ try {
           await page.keyboard.press("Escape");
           await panel.waitFor({state:"hidden"});
           assert(await page.getByTestId("pas-rt1707-open-card-panel").evaluate((el) => el === document.activeElement), "카드 패널 닫기 뒤 초점이 돌아오지 않았다");
+          assert(Math.abs(await page.locator(".pas-rt1707-thread-scroll").evaluate((el) => el.scrollTop) - scrollBeforePanel) <= 1, "카드 패널을 닫고 스크롤 위치가 바뀌었다");
           assert((await unmocked(page)).length === 0, "카드 패널에서 등록되지 않은 API를 호출했다");
-          return { dialog: { width: dialog.width, height: dialog.height }, portraits: images.portraits.length, band: band.band, choiceCenter: center };
+          if (viewport.width <= 767) {
+            await selectRail(page, 1408);
+            const heading = await page.evaluate(() => {
+              const title = document.querySelector(".pas-rt1707-report-title"), head = document.querySelector(".pas-rt1707-report-head");
+              const buttons = [...head.querySelectorAll("button")].map((button) => button.getBoundingClientRect());
+              const titleRow = title.parentElement.getBoundingClientRect();
+              const titleParts = [...title.parentElement.children].map((child) => {
+                const part = child.getBoundingClientRect();
+                return (part.top + part.bottom) / 2;
+              });
+              return {text:title.textContent, clipped:title.scrollHeight > title.clientHeight + 1 || title.scrollWidth > title.clientWidth + 1,
+                tops:buttons.map((r) => r.top), heights:buttons.map((r) => r.height),
+                titleBelowTools: titleRow.top >= Math.max(...buttons.map((r) => r.bottom)),
+                titlePartsAligned: Math.max(...titleParts) - Math.min(...titleParts) <= 1};
+            });
+            assert(heading.text.includes("슬라이드 편집 장 순서 변경과 줄간격 보정") && !heading.clipped, `긴 제목이 잘렸다: ${JSON.stringify(heading)}`);
+            assert(Math.max(...heading.tops) - Math.min(...heading.tops) <= 1 && Math.max(...heading.heights) - Math.min(...heading.heights) <= 1, "머리 도구 단추가 한 줄이 아니다");
+            assert(heading.titleBelowTools && heading.titlePartsAligned, "머리 제목, 번호, 상태가 도구 아래 한 줄에 있지 않다");
+            const titleSplits = await koreanSplits(page);
+            assert(titleSplits.length === 0, `긴 제목의 한글 줄바꿈: ${titleSplits.join(", ")}`);
+            await page.screenshot({ path: join(captureDir, `${viewport.id}-${theme}-long-title.png`) });
+            await selectRail(page, 1680);
+          }
+          return { dialog: { width: dialog.width, height: dialog.height }, portraits: images.portraits.length, band: band.band,
+            choiceCenter: center, pageOverflow, railThreadTopDifference, changedPanelPixels: changedPixels };
         });
         {
           await check(`${viewport.id} 선택지와 결재 단추 크기`, async () => {
@@ -367,6 +490,8 @@ try {
             const agendas = {};
             for (const number of [1680, 1512, 1387, 1408, 1112]) {
               await selectRail(page, number);
+              const splits = await koreanSplits(page);
+              assert(splits.length === 0, `#${number} 한글 어절 중간 줄바꿈: ${splits.join(", ")}`);
               const bottom = await page.locator(".pas-rt1707-thread-scroll").evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
               assert(bottom <= 4, `#${number} 전환 뒤 최신 경과가 보이지 않는다: ${bottom}`);
               assert(await page.getByTestId("pas-rt1707-snooze-trigger").isVisible(), `#${number} 답변 미루기가 없다`);
@@ -375,6 +500,7 @@ try {
               await wait(300);
               const after = await decisionButtons(page);
               assert(after.some((button) => button.text === "되돌리기"), `#${number} 처분 뒤 되돌리기 단추가 없다`);
+              assert(await page.locator(".pas-rt1707-undo-slot button").evaluate((el) => el === document.activeElement), `#${number} 처분 뒤 되돌리기에 초점이 없다`);
               agendas[number] = { before, after };
               await page.locator(".pas-rt1707-undo-slot button").click();
               await wait(300);
@@ -397,6 +523,58 @@ try {
       }
     }
 
+    if (scope === "all" || scope === "review") {
+      await check("검수 보완 기본 동작", async () => {
+        const page = await newPage(browser, {width:1440, height:900}, "dark");
+        await gotoReport(page, "dark");
+        assert(await page.locator('input[type="radio"]').count() === 0, "기본 라디오가 남았다");
+        assert(await page.getByRole("button", {name:"되묻기", exact:true}).isVisible(), "정본 되묻기 단추가 없다");
+        assert(await page.locator(".pas-rt1707-decide-hint").count() === 0, "기본 중복 안내가 남았다");
+        const summary = page.locator(".pas-rt1707-summary p");
+        await summary.scrollIntoViewIfNeeded();
+        const textBounds = await summary.evaluate((el) => {
+          const range = document.createRange();
+          range.setStart(el.firstChild, 0);
+          range.setEnd(el.firstChild, 6);
+          const rect = range.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, y: rect.top + rect.height / 2 };
+        });
+        const selectedText = () => page.evaluate(() => window.getSelection().toString().trim());
+        await page.mouse.move(textBounds.left + 1, textBounds.y);
+        await page.mouse.down();
+        await page.mouse.move(textBounds.right - 1, textBounds.y, { steps: 5 });
+        await page.mouse.up();
+        assert((await selectedText()).length > 1, "결과 요약을 끌어서 선택할 수 없다");
+        await page.evaluate(() => window.getSelection().removeAllRanges());
+        await page.mouse.dblclick(textBounds.left + 4, textBounds.y);
+        assert((await selectedText()).length > 0, "결과 요약을 두 번 눌러 선택할 수 없다");
+        await page.getByRole("button", {name:"되묻기", exact:true}).click();
+        await page.locator(".pas-rt1707-choice").first().click();
+        await wait(450);
+        assert((await reportStatus(page)) === "완료", "되묻기 알림이 있을 때 선택지를 누르지 못했다");
+        await page.locator(".pas-rt1707-undo-slot button").click();
+        await page.locator(".v3-card-target-notice").waitFor();
+        await page.getByTestId("pas-rt1707-snooze-trigger").click();
+        assert(await page.getByRole("button", {name:"오늘 저녁", exact:true}).isVisible(), "되묻기 알림이 있을 때 미루기를 열지 못했다");
+        await page.keyboard.press("Escape");
+        await page.locator(".v3-card-target-notice button").click();
+        await page.setViewportSize({width:390, height:844});
+        await wait(400);
+        await page.getByTestId("pas-rt1707-snooze-trigger").click();
+        await page.getByRole("button", {name:"오늘 저녁", exact:true}).click();
+        await wait(200);
+        const toggle = page.getByTestId("pas-rt1707-rail-toggle");
+        const afterSnooze = await page.evaluate(() => ({tag:document.activeElement?.tagName, label:document.activeElement?.getAttribute("aria-label"), width:innerWidth}));
+        assert(await toggle.evaluate((el) => el === document.activeElement), `모바일 미루기 뒤 안건 목록 단추에 초점이 없다: ${JSON.stringify(afterSnooze)}`);
+        await toggle.click();
+        await page.waitForFunction(() => document.activeElement?.matches('.pas-rt1707-rail-item[data-active="true"]'));
+        await page.locator('.pas-rt1707-rail-item').filter({hasText:"#1680"}).click();
+        await wait(200);
+        assert(await toggle.evaluate((el) => el === document.activeElement), "모바일 안건 선택 뒤 안건 목록 단추에 초점이 없다");
+        await page.close();
+        return {radio:0, dragSelection:true, doubleClickSelection:true, noticeChoice:true, noticeSnooze:true, mobileSnoozeFocus:true, mobileSelectionFocus:true};
+      });
+    }
     if (scope === "all" || scope === "operations") {
       await check("대화상자 Enter와 첫 초점", async () => {
         const page = await newPage(browser, {width:1440, height:900}, "dark");
@@ -426,7 +604,7 @@ try {
         await toggle.focus();
         await page.keyboard.press("Enter");
         assert(await page.locator(".pas-rt1707-rail").isVisible(), "Enter로 안건 서랍이 열리지 않았다");
-        assert(await toggle.evaluate((el) => el === document.activeElement), "안건 서랍을 연 뒤 초점이 트리거에 있지 않다");
+        await page.waitForFunction(() => document.activeElement?.matches('.pas-rt1707-rail-item[data-active="true"]'));
         await page.keyboard.press("Escape");
         assert(await toggle.evaluate((el) => el === document.activeElement), "안건 서랍을 닫고 초점이 돌아오지 않았다");
         await page.setViewportSize({width:1440, height:900});
@@ -436,6 +614,7 @@ try {
         await page.keyboard.press("Enter");
         const evidenceDialog = page.getByTestId("pas-report-evidence-dialog");
         await evidenceDialog.waitFor();
+        await page.waitForFunction(() => document.activeElement?.closest('[data-testid="pas-report-evidence-dialog"]'));
         const evidenceFocus = await page.evaluate(() => ({
           inside: Boolean(document.activeElement?.closest('[data-testid="pas-report-evidence-dialog"]')),
           label: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent?.trim(),
@@ -473,10 +652,10 @@ try {
         await wait(250);
         assert(await trigger.evaluate((el) => el === document.activeElement), "Enter로 보고 창을 닫고 초점이 돌아오지 않았다");
         await page.close();
-        return {report:"안건에 첫 초점, Enter 줄바꿈", snooze:"트리거 초점", drawer:"트리거 초점", evidenceFocus, document:"본문에 첫 초점", panel:"닫기 단추에 첫 초점"};
+        return {report:"안건에 첫 초점, Enter 줄바꿈", snooze:"트리거 초점", drawer:"활성 안건 초점", evidenceFocus, document:"본문에 첫 초점", panel:"닫기 단추에 첫 초점"};
       });
     }
-    if (scope === "all" || scope === "flows" || scope === "remaining") {
+    if (scope === "all" || scope === "flows" || scope === "critical" || scope === "remaining") {
     const viewport = { width: 1440, height: 900 };
     const page = await newPage(browser, viewport, "dark");
     await gotoPas(page, "dark");
@@ -535,6 +714,8 @@ try {
       await page.getByRole("button", {name:"오늘 저녁", exact:true}).click();
       await wait(300);
       assert((await textOf(page, ".pas-rt1707-report-heading")).includes("#1512"), "다음 결재 대기로 이동하지 않았다");
+      assert(await page.locator('.pas-rt1707-rail-item[data-active="true"]').evaluate((el) => el === document.activeElement), "미루기 뒤 활성 안건에 초점이 없다");
+      assert(await textOf(page, ".pas-rt1707-undo-slot button") === "#1680 미루기 되돌리기", "되돌리기에 미룬 안건과 동작이 드러나지 않는다");
       assert((await textOf(page, '[data-testid="pas-report-bubble"]')).includes("1 / 4"), "대기 수가 줄지 않았다");
       assert((await textOf(page, ".pas-rt1707-hold-note")).includes("18개"), "보류함 수가 달라졌다");
       assert((await textOf(page, 'section[aria-label="미뤄 둠"]')).includes("오늘 저녁"), "미룬 카드와 시각이 없다");
@@ -567,15 +748,37 @@ try {
 
     await check("되묻기와 글 답 확정", async () => {
       const input = page.locator(".pas-rt1707-decide-input textarea");
+      assert(await input.getAttribute("placeholder") === "다르게 답하기", "글 답 입력 안내가 다르다");
+      await page.getByRole("button", {name:"되묻기", exact:true}).click();
+      const notice = page.locator(".v3-card-target-notice");
+      assert(await notice.isVisible() && (await notice.textContent()).includes("되묻기"), "되묻기 알림이 없다");
+      assert(await input.getAttribute("placeholder") === "물어볼 것", "되묻기 입력 안내가 다르다");
+      assert(await page.locator(".pas-rt1707-choice").first().isVisible() && await page.getByTestId("pas-rt1707-snooze-trigger").isVisible(), "되묻기 중 선택 동작이 가려졌다");
+      for (const selector of [".pas-rt1707-choice", '[data-testid="pas-rt1707-snooze-trigger"]']) {
+        const hit = await page.locator(selector).first().evaluate((el, target) => {
+          const r = el.getBoundingClientRect();
+          return !el.disabled && Boolean(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest(target));
+        }, selector);
+        assert(hit, `되묻기 중 단추를 누를 수 없다: ${selector}`);
+      }
+      await page.locator(".v3-card-target-notice button").click();
+      await wait(100);
+      assert(await input.evaluate((el) => el === document.activeElement), "되묻기 해제 뒤 입력창에 초점이 없다");
+      assert(await input.getAttribute("placeholder") === "다르게 답하기", "되묻기 해제 뒤 글 답 입력 안내가 돌아오지 않았다");
+      await page.getByRole("button", {name:"되묻기", exact:true}).click();
       await input.fill("왜 일주일이 적절한가요?");
       await page.locator('.pas-rt1707-decide-input [aria-label="지시 보내기"]').click();
       await wait(450);
       assert(await page.locator(".pas-rt1707-choice").first().isVisible(), "되묻기가 질문을 닫았다");
       const thread = await textOf(page, ".pas-rt1707-thread-scroll");
       assert(thread.includes("왜 일주일이 적절한가요?") && thread.includes("선택지는 그대로 열어"), "문답이 경과에 없다");
+      const phases = await page.locator(".pas-rt1707-event-number").allTextContents();
+      const resultIndex = await page.locator(".pas-rt1707-event").evaluateAll((items) => items.findIndex((item) => item.dataset.kind === "result"));
+      assert(resultIndex >= 0 && resultIndex < phases.length - 1 && phases.slice(resultIndex).every((phase) => phase === "4")
+        && phases.every((phase, index) => index === 0 || Number(phase) >= Number(phases[index - 1])), `경과 단계가 잘못됐다: ${phases}`);
+      assert(await textOf(page, ".pas-rt1707-decide-phase") === "5. 결재", "결재 단계가 5번이 아니다");
       await page.locator(".pas-rt1707-undo-slot button").click();
       await wait(450);
-      await page.getByLabel("글 답으로 확정").check();
       await input.fill("최근 일주일로 정합니다");
       await page.locator('.pas-rt1707-decide-input [aria-label="지시 보내기"]').click();
       await wait(450);
@@ -587,6 +790,7 @@ try {
 
     await check("진행 경과와 자동 스크롤", async () => {
       await selectRail(page, 1730);
+      assert((await page.locator(".pas-rt1707-turns").count()) === 0, "0턴 펼침이 표시된다");
       const scroll = page.locator(".pas-rt1707-thread-scroll");
       const distance = () => scroll.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
       assert(await distance() <= 4, "전환 직후 최신 경과가 아니다");
@@ -595,16 +799,24 @@ try {
       assert(await distance() <= 4, "새 경과를 따라가지 않았다");
       await scroll.evaluate((el) => {el.scrollTop = 0; el.dispatchEvent(new Event("scroll"));});
       await wait(200);
+      const jump = page.getByTestId("pas-rt1707-jump-latest");
+      assert((await jump.textContent()).includes("최신 경과로"), "최신 경과로 단추가 없다");
+      await jump.click();
+      assert(await distance() <= 4 && await scroll.evaluate((el) => el === document.activeElement), "최신 경과로 이동한 뒤 스레드에 초점이 없다");
+      await scroll.evaluate((el) => {el.scrollTop = 0; el.dispatchEvent(new Event("scroll"));});
+      await wait(200);
       const before = await scroll.evaluate((el) => ({top:el.scrollTop,height:el.clientHeight}));
       await page.getByTestId("pas-rt1707-simulate-event").click();
       await wait(300);
       const after = await scroll.evaluate((el) => ({top:el.scrollTop,height:el.clientHeight}));
       assert(Math.abs(after.top-before.top) <= 1 && after.height === before.height, "읽던 위치나 스레드 높이가 바뀌었다");
-      const jump = page.getByTestId("pas-rt1707-jump-latest");
       assert((await jump.textContent()).includes("새 경과"), "새 경과 표시가 없다");
       assert(await jump.evaluate((el) => getComputedStyle(el).position) === "absolute", "단추가 겹쳐 뜨지 않는다");
+      assert(await jump.evaluate((el) => getComputedStyle(el).userSelect) === "none", "최신 경과 단추의 글을 선택할 수 있다");
+      await page.screenshot({ path: join(captureDir, "1440x900-dark-autoscroll-pill.png") });
       await jump.click();
       assert(await distance() <= 4 && !(await jump.isVisible()), "최신 경과로 돌아가지 않았다");
+      assert(await scroll.evaluate((el) => el === document.activeElement), "최신 경과 복귀 뒤 스레드에 초점이 없다");
       return {position:after.top};
     });
 
@@ -621,6 +833,15 @@ try {
       await panel.waitFor({state:"hidden"});
       assert(await page.getByTestId("pas-report-thread-dialog").isVisible(), "보고 창도 닫혔다");
       assert(await page.getByTestId("pas-rt1707-open-card-panel").evaluate((el) => el === document.activeElement), "초점이 카드 열기 단추에 돌아오지 않았다");
+      const fileButton = page.getByRole("button", {name:"카드 패널에서 변경 파일 보기"});
+      await fileButton.click();
+      await panel.waitFor({state:"visible"});
+      const fileScroll = await page.locator(".pas-rt1707-thread-scroll").evaluate((el) => el.scrollTop);
+      await page.getByLabel("카드 닫기").click();
+      await panel.waitFor({state:"hidden"});
+      await wait(100);
+      assert(await fileButton.evaluate((el) => el === document.activeElement), "변경 파일 진입점에 초점이 돌아오지 않았다");
+      assert(Math.abs(await page.locator(".pas-rt1707-thread-scroll").evaluate((el) => el.scrollTop) - fileScroll) <= 1, "변경 파일을 닫고 스크롤 위치가 바뀌었다");
       assert((await unmocked(page)).length === 0, `등록되지 않은 API: ${(await unmocked(page)).join(", ")}`);
       await selectRail(page, 1680);
       return {topLayer:true};
@@ -727,6 +948,7 @@ try {
       await selectRail(page, 1512);
     }
 
+    if (scope !== "critical") {
     await check("부탁 장 했어와 저녁 재확인", async () => {
       await clickText(page, ".pas-rt1707-stamps button", "했어");
       assert((await reportStatus(page)) === "완료", `했어 뒤 상태가 완료가 아니다: ${await reportStatus(page)}`);
@@ -921,6 +1143,7 @@ try {
       return { narrowScroll, preserved: true };
     });
 
+    }
     await page.close();
     }
   });
@@ -956,7 +1179,7 @@ try {
   });
 
   const failed = checks.filter((item) => !item.ok);
-  const summary = { captureDir, failed: failed.length, checks };
+  const summary = { captureDir, webglDisabled: disableWebgl, failed: failed.length, checks };
   await mkdir(captureDir, { recursive: true });
   await writeFile(join(captureDir, "qa-report.json"), JSON.stringify(summary, null, 2));
   const resultFor = (name) => checks.find((item) => item.name === name)?.ok ? "통과" : "미확인 또는 실패";

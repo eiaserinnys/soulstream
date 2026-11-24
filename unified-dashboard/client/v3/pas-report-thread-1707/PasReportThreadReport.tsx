@@ -59,8 +59,9 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
   const pending = agendas.filter((item) => item.status === "review" && !item.snoozedLabel);
   const pendingIndex = pending.findIndex((item) => item.id === agenda.id);
   const threadRef = useRef<HTMLDivElement>(null);
-  const panelTrigger = useRef<HTMLButtonElement>(null);
+  const panelTrigger = useRef<HTMLElement | null>(null);
   const railTrigger = useRef<HTMLButtonElement>(null);
+  const undoButtonRef = useRef<HTMLButtonElement>(null);
   const [railOpen, setRailOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -68,6 +69,11 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
   const autoRef = useRef(true);
   const lastEvents = useRef({ id: agenda.id, count: agenda.events.length });
   const mobile = useIsMobile();
+  const closeRail = () => {
+    // Move focus before hiding the focused row so DialogPopup does not restore it to the popup.
+    railTrigger.current?.focus({ preventScroll: true });
+    setRailOpen(false);
+  };
   const jump = () => {
     const scroll = threadRef.current;
     if (scroll) scroll.scrollTop = scroll.scrollHeight;
@@ -97,8 +103,8 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
     // 닫히면 문서를 읽던 자리와 보고 창을 모두 잃는다.
     const closeInner = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (panelOpen) { event.preventDefault(); event.stopImmediatePropagation(); setPanelOpen(false); requestAnimationFrame(() => panelTrigger.current?.focus()); return; }
-      if (railOpen) { event.preventDefault(); event.stopImmediatePropagation(); setRailOpen(false); requestAnimationFrame(() => railTrigger.current?.focus()); return; }
+      if (panelOpen) { event.preventDefault(); event.stopImmediatePropagation(); setPanelOpen(false); requestAnimationFrame(() => panelTrigger.current?.focus({ preventScroll: true })); return; }
+      if (railOpen) { event.preventDefault(); event.stopImmediatePropagation(); closeRail(); return; }
       if (documentId) { event.preventDefault(); event.stopImmediatePropagation(); onCloseDocument(); return; }
       if (evidenceView) { event.preventDefault(); event.stopImmediatePropagation(); onCloseEvidence(); }
     };
@@ -113,7 +119,25 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
   const detail = { ...reviewDetail, card: { ...card, folderId: dialoguesFolders[0].id },
     reports: [{ ...reviewDetail.reports[0], title: "결과 보고", body: agenda.kind === "ui"
       ? `${agenda.summary}\n\n변경 파일: 슬라이드 편집 화면과 저장 처리` : agenda.summary }] };
-  const closePanel = () => { setPanelOpen(false); requestAnimationFrame(() => panelTrigger.current?.focus()); };
+  const openPanel = (trigger: HTMLElement | null) => { panelTrigger.current = trigger; setPanelOpen(true); };
+  const closePanel = () => { setPanelOpen(false); requestAnimationFrame(() => panelTrigger.current?.focus({ preventScroll: true })); };
+  const activeRailItem = () => document.querySelector<HTMLElement>('.pas-rt1707-rail-item[data-active="true"]');
+  const focusActive = () => requestAnimationFrame(() => activeRailItem()?.focus({ preventScroll: true }));
+  const runWithUndoFocus = (action: () => void) => {
+    // A decision can remove or disable the pressed button.
+    threadRef.current?.focus({ preventScroll: true });
+    action();
+    requestAnimationFrame(() => undoButtonRef.current?.focus({ preventScroll: true }));
+  };
+  const snooze = (label: string) => {
+    const focusAnchor = mobile ? railTrigger.current : threadRef.current;
+    focusAnchor?.focus({ preventScroll: true });
+    onSnooze(label);
+    if (!mobile) focusActive();
+  };
+  useEffect(() => {
+    if (mobile && railOpen) requestAnimationFrame(() => activeRailItem()?.focus({ preventScroll: true }));
+  }, [mobile, railOpen]);
   return <>
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
       <DialogPopup className="v3-surface pas-rt1707-dialog" showCloseButton={false} data-testid="pas-report-thread-dialog"
@@ -121,13 +145,19 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
         finalFocus={() => openTriggerRef.current}
         onKeyDown={(event) => {
           const element = event.target as HTMLElement | null;
+          if (event.key === "Tab" && mobile && railOpen) {
+            const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>(".pas-rt1707-report-head button:not(:disabled), .pas-rt1707-rail-item")].filter((item) => item.getClientRects().length > 0);
+            const first = items[0], last = items.at(-1);
+            if (event.shiftKey && element === first && last) { event.preventDefault(); last.focus(); }
+            else if (!event.shiftKey && element === last && first) { event.preventDefault(); first.focus(); }
+          }
           if (element?.closest("input, textarea, [contenteditable='true'], [role='textbox']")) return;
           if (event.key === "ArrowLeft") { event.preventDefault(); go(-1); }
           if (event.key === "ArrowRight") { event.preventDefault(); go(1); }
         }}>
         <header className="pas-rt1707-report-head">
           <div className="pas-rt1707-rail-toggle"><DashboardIconCap ref={railTrigger} size="small" appearance="bare" label="안건 목록"
-            data-testid="pas-rt1707-rail-toggle" aria-expanded={railOpen} onClick={() => setRailOpen((value) => !value)}><PanelLeft className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap></div>
+            data-testid="pas-rt1707-rail-toggle" aria-expanded={railOpen} onClick={railOpen ? closeRail : () => setRailOpen(true)}><PanelLeft className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap></div>
           <div className="pas-rt1707-report-heading">
             <span className="pas-rt1707-report-number">#{agenda.number}</span>
             <DialogTitle className="pas-rt1707-report-title">{agenda.title}</DialogTitle>
@@ -138,29 +168,33 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
             {pendingIndex >= 0 ? <span className="pas-rt1707-report-count" aria-label={`${pending.length}건 가운데 ${pendingIndex + 1}번째`}>{pendingIndex + 1} / {pending.length}</span> : null}
             <DashboardIconCap size="small" appearance="bare" label="이전 안건" disabled={activeIndex <= 0} onClick={() => go(-1)}><ChevronLeft className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap>
             <DashboardIconCap size="small" appearance="bare" label="다음 안건" disabled={activeIndex >= agendas.length - 1} onClick={() => go(1)}><ChevronRight className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap>
-            <DashboardIconCap ref={panelTrigger} size="small" appearance="bare" label="카드 패널 열기" data-testid="pas-rt1707-open-card-panel" onClick={() => setPanelOpen(true)}><ExternalLink className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap>
+            <DashboardIconCap size="small" appearance="bare" label="카드 패널 열기" data-testid="pas-rt1707-open-card-panel" onClick={(event) => openPanel(event.currentTarget)}><ExternalLink className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap>
             <DashboardIconCap size="small" appearance="bare" label="보고 창 닫기" onClick={onClose}><X className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap>
           </div>
         </header>
         <div className="pas-rt1707-report-main" data-rail-open={railOpen || undefined}>
-          {railOpen ? <button type="button" className="pas-rt1707-rail-scrim" aria-label="안건 목록 닫기" onClick={() => { setRailOpen(false); railTrigger.current?.focus(); }} /> : null}
-          <PasThreadRail agendas={agendas} activeId={agenda.id} onSelect={(id) => { onSelect(id); setRailOpen(false); }} />
-          <div className="pas-rt1707-thread">
+          {railOpen ? <button type="button" tabIndex={-1} className="pas-rt1707-rail-scrim" aria-label="안건 목록 닫기" onClick={closeRail} /> : null}
+          <PasThreadRail agendas={agendas} activeId={agenda.id} onSelect={(id) => {
+            if (railOpen) closeRail();
+            onSelect(id);
+            if (!mobile) focusActive();
+          }} />
+          <div className="pas-rt1707-thread" inert={mobile && railOpen ? true : undefined}>
             <div className="pas-rt1707-thread-content">
-            <div ref={threadRef} className="pas-rt1707-thread-scroll" data-auto-scroll={autoScroll} onScroll={(event) => {
+            <div ref={threadRef} tabIndex={-1} className="pas-rt1707-thread-scroll" data-auto-scroll={autoScroll} onScroll={(event) => {
               const node = event.currentTarget;
               const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight <= 24;
               autoRef.current = atBottom; setAutoScroll(atBottom); if (atBottom) setHasNew(false);
             }}>
               <PasThreadTimeline agenda={agenda} checks={checks} questionAnswer={questionAnswers[agenda.id] ?? null}
-                onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument} onOpenCard={() => setPanelOpen(true)} />
+                onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument} onOpenCard={openPanel} />
             </div>
-            {!autoScroll ? <Button className="pas-rt1707-jump" data-testid="pas-rt1707-jump-latest" onClick={jump}>{hasNew ? "새 경과 ↓" : "최신 경과로 ↓"}</Button> : null}
+            {!autoScroll ? <Button className="pas-rt1707-jump" data-testid="pas-rt1707-jump-latest" onClick={() => { jump(); threadRef.current?.focus({ preventScroll: true }); }}>{hasNew ? "새 경과 ↓" : "최신 경과로 ↓"}</Button> : null}
             </div>
             <PasThreadDecideBox key={agenda.id} agenda={agenda} target={target} onClearTarget={onClearTarget} text={instruction}
-              onChangeText={onChangeInstruction} onSend={onSendInstruction} onDispose={onDispose}
-              questionAnswer={questionAnswers[agenda.id] ?? null} onChooseQuestion={(label) => onChooseAnswer(agenda, label)}
-              undoLabel={undoLabel} onUndo={onUndo} onSnooze={onSnooze} onUnsnooze={onUnsnooze} onSimulate={onSimulate} />
+              onChangeText={onChangeInstruction} onSend={onSendInstruction} onDispose={(disposition) => runWithUndoFocus(() => onDispose(disposition))}
+              questionAnswer={questionAnswers[agenda.id] ?? null} onChooseQuestion={(label) => runWithUndoFocus(() => onChooseAnswer(agenda, label))}
+              undoLabel={undoLabel} onUndo={onUndo} onSnooze={snooze} onUnsnooze={onUnsnooze} onSimulate={onSimulate} undoButtonRef={undoButtonRef} />
           </div>
         </div>
         {panelOpen ? <CardWorkspace cardId={agenda.id} sampleDetail={detail} folders={dialoguesFolders}

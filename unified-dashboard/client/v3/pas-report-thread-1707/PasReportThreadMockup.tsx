@@ -19,7 +19,6 @@ import {
   INITIAL_HOLD_COUNT,
   chatMessageText,
   cloneAgendas,
-  dispositionLabel,
   taskCardsFor,
   type Agenda,
   type AgendaStatus,
@@ -31,7 +30,7 @@ import {
 import "./v3-pas-report-thread-1707.css";
 
 type ChatLine = { id: string; role: "user" | "assistant"; content: string; timestamp: number };
-type UndoRecord = { agendaId: string; status: AgendaStatus; answer: string | null; kept: boolean; snoozedLabel?: string | null; eventIds: string[]; chatIds: string[]; label: string };
+type UndoRecord = { agendaId: string; agendaNumber: number; status: AgendaStatus; answer: string | null; kept: boolean; snoozedLabel?: string | null; eventIds: string[]; chatIds: string[]; isSnooze?: true };
 
 function readReportRoute() {
   try {
@@ -149,8 +148,8 @@ export function PasReportThreadMockup() {
     const agenda = activeAgenda;
     const nextStatus = STATUS_AFTER[disposition];
     const chatId = `chat-act-${++seq.current}`;
-    const snapshot: UndoRecord = { agendaId: agenda.id, status: agenda.status, answer: questionAnswers[agenda.id] ?? null,
-      kept: agenda.keptAsReference === true, eventIds: [], chatIds: [chatId], label: dispositionLabel(disposition) };
+    const snapshot: UndoRecord = { agendaId: agenda.id, agendaNumber: agenda.number, status: agenda.status, answer: questionAnswers[agenda.id] ?? null,
+      kept: agenda.keptAsReference === true, eventIds: [], chatIds: [chatId] };
     setAgendas((previous) => previous.map((item) => item.id === agenda.id
       ? { ...item, status: nextStatus, keptAsReference: disposition === "keep" ? true : item.keptAsReference === true }
       : item));
@@ -165,8 +164,8 @@ export function PasReportThreadMockup() {
     setQuestionAnswers((previous) => ({ ...previous, [agenda.id]: label }));
     setAgendas((previous) => previous.map((item) => item.id === agenda.id ? { ...item, status: "done" } : item));
     addChat({ id: chatId, role: "assistant", content: `#${agenda.number} ${agenda.title}의 답을 "${label}"로 받았습니다. 이 안건을 완료로 처분했습니다.`, timestamp: Date.now() });
-    setUndo({ agendaId: agenda.id, status: agenda.status, answer: null, kept: agenda.keptAsReference === true,
-      eventIds: [], chatIds: [chatId], label });
+    setUndo({ agendaId: agenda.id, agendaNumber: agenda.number, status: agenda.status, answer: null, kept: agenda.keptAsReference === true,
+      eventIds: [], chatIds: [chatId] });
   };
 
   const sendInstruction = (mode: QuestionMode) => {
@@ -185,8 +184,8 @@ export function PasReportThreadMockup() {
       ? { ...agenda, status: followup ? "review" : isQuestion ? "done" : "running", snoozedLabel: null, events: [...agenda.events, event, ...(followup ? [reply] : [])] } : agenda));
     if (isQuestion && !followup) setQuestionAnswers((previous) => ({ ...previous, [activeAgenda.id]: text }));
     addChat({ id: chatId, role: "user", content: `#${activeAgenda.number} ${label}${text}`, timestamp: Date.now() });
-    setUndo({ agendaId: activeAgenda.id, status: activeAgenda.status, answer: questionAnswers[activeAgenda.id] ?? null,
-      kept: activeAgenda.keptAsReference === true, snoozedLabel: activeAgenda.snoozedLabel, eventIds: [eventId, ...(followup ? [replyId] : [])], chatIds: [chatId], label: followup ? "되묻기" : "지시 보내기" });
+    setUndo({ agendaId: activeAgenda.id, agendaNumber: activeAgenda.number, status: activeAgenda.status, answer: questionAnswers[activeAgenda.id] ?? null,
+      kept: activeAgenda.keptAsReference === true, snoozedLabel: activeAgenda.snoozedLabel, eventIds: [eventId, ...(followup ? [replyId] : [])], chatIds: [chatId] });
     setInstruction("");
     setTarget(null);
   };
@@ -198,16 +197,14 @@ export function PasReportThreadMockup() {
         events: agenda.events.filter((event) => !undo.eventIds.includes(event.id)) } : agenda));
     setQuestionAnswers((previous) => ({ ...previous, [undo.agendaId]: undo.answer }));
     setChat((previous) => previous.filter((line) => !undo.chatIds.includes(line.id)));
-    setActiveId(undo.agendaId);
-    setTarget(null);
-    setInstruction("");
+    selectAgenda(undo.agendaId);
     setUndo(null);
   };
 
   const snooze = (label: string) => {
     const agenda = activeAgenda;
-    setUndo({ agendaId: agenda.id, status: agenda.status, answer: questionAnswers[agenda.id] ?? null,
-      kept: agenda.keptAsReference === true, snoozedLabel: agenda.snoozedLabel, eventIds: [], chatIds: [], label: "답변 미루기" });
+    setUndo({ agendaId: agenda.id, agendaNumber: agenda.number, status: agenda.status, answer: questionAnswers[agenda.id] ?? null,
+      kept: agenda.keptAsReference === true, snoozedLabel: agenda.snoozedLabel, eventIds: [], chatIds: [], isSnooze: true });
     setAgendas((previous) => previous.map((item) => item.id === agenda.id ? { ...item, snoozedLabel: label } : item));
     const next = pending[pendingIndex + 1] ?? pending.find((item) => item.id !== agenda.id);
     if (next) selectAgenda(next.id);
@@ -242,6 +239,9 @@ export function PasReportThreadMockup() {
   const bubbleAgenda = pendingIndex >= 0 ? activeAgenda : pending[0] ?? activeAgenda;
   const bubbleIndex = pending.findIndex((item) => item.id === bubbleAgenda.id);
   const bubblePosition = pendingIndex >= 0 ? pendingIndex + 1 : pending.length > 0 ? 1 : Math.max(1, pending.length);
+  const undoLabel = undo && (undo.agendaId === activeAgenda.id
+    ? "되돌리기"
+    : `#${undo.agendaNumber} ${undo.isSnooze ? "미루기 " : ""}되돌리기`);
   const goBubble = (delta: number) => {
     const next = pending[Math.min(pending.length - 1, Math.max(0, bubbleIndex + delta))];
     if (next && next.id !== activeAgenda.id) selectAgenda(next.id);
@@ -311,7 +311,7 @@ export function PasReportThreadMockup() {
       onToggleCheck={(agendaId, checkId) => setChecks((previous) => ({ ...previous, [`${agendaId}:${checkId}`]: !previous[`${agendaId}:${checkId}`] }))}
       onInstruct={instruct} onChooseAnswer={chooseAnswer}
       target={target} onClearTarget={() => setTarget(null)} instruction={instruction} onChangeInstruction={setInstruction} onSendInstruction={sendInstruction}
-      onDispose={dispose} undoLabel={undo?.label ?? null} onUndo={undoLast}
+      onDispose={dispose} undoLabel={undoLabel} onUndo={undoLast}
       onSnooze={snooze} onUnsnooze={unsnooze} onSimulate={simulateEvent}
       evidenceView={evidenceView} onOpenEvidence={(evidence: Evidence, trigger: HTMLElement | null) => setEvidenceView({ evidence, trigger })}
       onCloseEvidence={() => setEvidenceView(null)} documentId={documentId} onOpenDocument={openDocument} onCloseDocument={() => setDocumentId(null)} />
