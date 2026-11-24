@@ -83,7 +83,7 @@ function processUnit(value: string, name: string, secrets: SecretSink): string {
   return `{{secret:${name}}}`;
 }
 
-function safeDecode(value: string): string {
+export function safeDecode(value: string): string {
   try {
     return decodeURIComponent(value);
   } catch {
@@ -252,8 +252,10 @@ export function extractHostedToolSecrets(
 /** 값 안의 모든 비밀 참조 이름을 모은다. 참조 확인(삭제 거절, 롤백 검사)용. */
 export function collectSecretReferences(value: unknown, into: Set<string> = new Set()): Set<string> {
   if (typeof value === "string") {
-    for (const match of value.matchAll(SECRET_REF_PATTERN)) {
-      if (match[1] === "secret" && match[2] !== undefined) into.add(match[2]);
+    for (const text of [value, safeDecode(value)]) {
+      for (const match of text.matchAll(SECRET_REF_PATTERN)) {
+        if (match[1] === "secret" && match[2] !== undefined) into.add(match[2]);
+      }
     }
     return into;
   }
