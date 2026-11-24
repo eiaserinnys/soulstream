@@ -61,6 +61,12 @@ function memorySql(state: MemoryState) {
       if (binding) binding.phase = phase;
       return [];
     }
+    if (text.includes("SET creation_request=jsonb_set")) {
+      const [modelOrder, sessionId] = values as any[];
+      const binding = state.bindings.find(item => item.session_id === sessionId);
+      if (binding) binding.creation_request = { ...binding.creation_request, model_order: modelOrder };
+      return [];
+    }
     if (text.includes("UPDATE conversation_bindings SET active_session_id=")) {
       const [active_session_id, selected_model, creation_request, instruction_id, session_id] = values as any[];
       const binding = state.bindings.find(item => item.session_id === session_id);
@@ -68,9 +74,13 @@ function memorySql(state: MemoryState) {
       return [];
     }
     if (text.includes("UPDATE conversation_bindings SET selected_model=")) {
-      const [selected_model, notices, session_id] = values as any[];
+      const [selected_model, ...rest] = values as any[];
+      const session_id = rest.at(-1);
       const binding = state.bindings.find(item => item.session_id === session_id);
-      if (binding) Object.assign(binding, { selected_model, notices });
+      if (binding) {
+        binding.selected_model = selected_model;
+        if (rest.length === 2) binding.notices = rest[0];
+      }
       return [];
     }
     if (text.includes("UPDATE conversation_bindings SET instruction_id=")) {
@@ -152,17 +162,22 @@ function seedThread(state: MemoryState, folderId: string | null) {
   });
 }
 
-function setup(options: { seedFolderId?: string | null; denyFolders?: string[] } = {}) {
+function setup(options: { seedFolderId?: string | null; denyFolders?: string[]; defaultModels?: string[]; firstUnavailable?: boolean } = {}) {
   const state: MemoryState = { bindings: [], executions: [], rows: new Map(), settings: new Map() };
   if ("seedFolderId" in options) seedThread(state, options.seedFolderId!);
   const catalog = new ConversationCatalog({
     defaultNodeId: "node-a",
+    modelCatalog: { snapshot: () => ({ persistent_defaults: {
+      model_preset: options.defaultModels?.[0] ?? "missing",
+      fallback_models: (options.defaultModels ?? []).slice(1).map(model_preset => ({ model_preset })),
+    } }) } as never,
     listNodes: () => [{ nodeId: "node-a", connected: true }],
     listKnownForNode: () => [{
-      id: "preset-a", label: "Preset A", backend: "claude", available: true,
-      reason: null, reason_label: null, resets_at: null,
+      id: "preset-a", label: "Preset A", backend: "claude", available: !options.firstUnavailable,
+      reason: options.firstUnavailable ? "limit_rejected" : null, reason_label: options.firstUnavailable ? "한도" : null, resets_at: null,
       usage_warning: false, weekly_headroom: null,
-    }],
+    }, { id: "preset-b", label: "Preset B", backend: "claude", available: true,
+      reason: null, reason_label: null, resets_at: null, usage_warning: false, weekly_headroom: null }],
     listAgentProfiles: async () => ({ "profile-a": { name: "Profile A" }, "profile-b": { name: "Profile B" } }),
   });
   const denied = new Set(["missing-folder", ...(options.denyFolders ?? [])]);
@@ -225,6 +240,68 @@ const ensure = (app: ReturnType<typeof Fastify>, key: string, payload: Record<st
   app.inject({ method: "PUT", url: `/api/conversations/v1/threads/by-key?namespace=ns&key=${key}`, payload });
 
 describe("conversation thread collection", () => {
+  it("expands default in creation, execution and patch before saving models", async () => {
+    const { app, state, createBodies } = setup({ defaultModels: ["preset-a", "preset-b"], firstUnavailable: true });
+    const payload = { ...basePayload, selected_model: "default", model_order: ["default", "preset-b", "n1:unregistered:preset-c"] };
+    const made = await ensure(app, "model-default", payload);
+    expect(made.statusCode, made.body).toBe(200);
+    const thread = made.json().thread;
+    expect(createBodies.at(-1)?.model_preset).toBe("preset-b");
+    expect(made.json().notices).toEqual([]);
+    expect(state.bindings[0]?.creation_request).toMatchObject({ selected_model: "preset-b", model_order: ["preset-a", "preset-b", "n1:unregistered:preset-c"] });
+    expect(state.settings.get(thread.id)?.settings).toMatchObject({
+      default_model: { model_preset: "preset-b" }, fallback_models: [{ model_preset: "preset-a" }],
+    });
+
+    const switched = await app.inject({ method: "PUT", url: `/api/conversations/v1/threads/${thread.id}/execution`,
+      payload: { ...payload, expected_execution_id: thread.execution_id } });
+    expect(switched.statusCode, switched.body).toBe(200);
+    expect(state.executions.at(-1)?.request).toMatchObject({ selected_model: "preset-b", model_order: ["preset-a", "preset-b", "n1:unregistered:preset-c"] });
+    expect(state.executions.at(-1)?.notices).toEqual([]);
+    const active = switched.json().thread.execution_id;
+    const patched = await app.inject({ method: "PATCH", url: `/api/conversations/v1/threads/${thread.id}`,
+      payload: { model: "default", model_order: ["default", "preset-b"] } });
+    expect(patched.statusCode, patched.body).toBe(200);
+    expect(state.bindings[0]?.creation_request.model_order).toEqual(["preset-a", "preset-b"]);
+    expect(state.bindings[0]?.selected_model).toBe("preset-b");
+    expect(state.settings.get(active)?.settings.fallback_models).toEqual([{ model_preset: "preset-a", reasoning_effort: null }]);
+  });
+
+  it("preserves unknown model ids in creation and execution orders without default", async () => {
+    const { app, state } = setup();
+    const order = ["preset-a", "n1:unregistered:preset-c", "preset-b"];
+    const payload = { ...basePayload, model_order: order };
+    const made = await ensure(app, "unknown-model", payload);
+    expect(made.statusCode, made.body).toBe(200);
+    expect(state.bindings[0]?.creation_request.model_order).toEqual(order);
+    const thread = made.json().thread;
+    const switched = await app.inject({ method: "PUT", url: `/api/conversations/v1/threads/${thread.id}/execution`,
+      payload: { ...payload, expected_execution_id: thread.execution_id } });
+    expect(switched.statusCode, switched.body).toBe(200);
+    expect(state.executions.at(-1)?.request.model_order).toEqual(order);
+  });
+
+  it("expands default after an explicit selection and when patching the selected model", async () => {
+    const { app, state } = setup({ defaultModels: ["preset-b", "preset-a"] });
+    const made = await ensure(app, "model-order", { ...basePayload, model_order: ["default", "preset-a"] });
+    expect(made.statusCode, made.body).toBe(200);
+    const id = made.json().thread.id;
+    expect(state.bindings[0]?.creation_request.model_order).toEqual(["preset-b", "preset-a"]);
+    expect(state.settings.get(id)?.settings.fallback_models).toEqual([{ model_preset: "preset-b", reasoning_effort: null }]);
+
+    const patched = await app.inject({ method: "PATCH", url: `/api/conversations/v1/threads/${id}`, payload: { model: "default" } });
+    expect(patched.statusCode, patched.body).toBe(200);
+    expect(state.bindings[0]).toMatchObject({ selected_model: "preset-b", creation_request: { model_order: ["preset-b", "preset-a"] } });
+    expect(state.settings.get(id)?.settings).toMatchObject({ default_model: { model_preset: "preset-b" }, fallback_models: [{ model_preset: "preset-a" }] });
+  });
+
+  it("uses the default candidate order even when no model order is supplied", async () => {
+    const { app, state } = setup({ defaultModels: ["preset-a", "preset-b"] });
+    const made = await ensure(app, "default-alone", { ...basePayload, selected_model: "default", model_order: [] });
+    expect(made.statusCode, made.body).toBe(200);
+    expect(state.bindings[0]?.creation_request).toMatchObject({ selected_model: "preset-a", model_order: ["preset-a", "preset-b"] });
+    expect(state.settings.get(made.json().thread.id)?.settings.fallback_models).toEqual([{ model_preset: "preset-b", reasoning_effort: null }]);
+  });
   it("moves the thread session to the collection and carries it in the patch response", async () => {
     const { app, state, moveSessionToFolder, requireFolderAccess } = setup({ seedFolderId: null });
     const patched = await app.inject({

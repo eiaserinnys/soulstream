@@ -61,6 +61,7 @@ describe("conversation thread API", () => {
     };
     const catalog = new ConversationCatalog({
       defaultNodeId: "eiaserinnys",
+      modelCatalog: { snapshot: () => ({ persistent_defaults: { model_preset: "missing", fallback_models: [] } }) } as never,
       listNodes: () => [
         { nodeId: "node-c", connected: false },
         { nodeId: "node-b", connected: true },

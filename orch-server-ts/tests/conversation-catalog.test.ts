@@ -6,6 +6,33 @@ const modelsFixture = JSON.parse(readFileSync(new URL("./fixtures/conversation-v
 const profilesFixture = JSON.parse(readFileSync(new URL("./fixtures/conversation-v1/profiles.json", import.meta.url), "utf8")) as ConversationProfilesReply;
 
 describe("conversation catalog", () => {
+  it("offers the live persistent default using the first available candidate", async () => {
+    let defaults = { model_preset: "preset-a", fallback_models: [{ model_preset: "preset-b" }, { model_preset: "missing" }] };
+    const catalog = new ConversationCatalog({
+      defaultNodeId: "node-a",
+      modelCatalog: { snapshot: () => ({ persistent_defaults: defaults }) } as never,
+      listNodes: () => [{ nodeId: "node-a", connected: true }],
+      listKnownForNode: () => [
+        { id: "preset-a", label: "A", available: false, reason: "limit_rejected", reason_label: "한도", resets_at: "2026-10-30T22:06:34Z" },
+        { id: "preset-b", label: "B", available: true, reason: null, reason_label: null, resets_at: null },
+      ] as never,
+      listAgentProfiles: async () => ({ "profile-a": {} }),
+    });
+    expect((await catalog.models("profile-a")).models[0]).toEqual({ id: "default", label: "기본 모델 (B)", available: true });
+    expect(await catalog.expand(["default", "n1:unregistered:preset-c", "default"], "profile-a")).toEqual({
+      order: ["preset-a", "preset-b", "n1:unregistered:preset-c"], selectedDefault: "preset-b",
+    });
+    expect((await catalog.models("missing-profile")).models[0]).toEqual({
+      id: "default", label: "기본 모델", available: false, reason: "이 노드에 프로필 없음", reason_code: "profile_unavailable",
+    });
+    defaults = { model_preset: "missing", fallback_models: [{ model_preset: "preset-a" }] };
+    expect((await catalog.models()).models[0]).toEqual({
+      id: "default", label: "기본 모델", available: false, reason: "한도", reason_code: "limit_rejected", resets_at: "2026-10-30T22:06:34Z",
+    });
+    expect(await catalog.expand(["default"])).toEqual({ order: ["preset-a"], selectedDefault: "preset-a" });
+    defaults = { model_preset: "missing", fallback_models: [] };
+    expect((await catalog.models()).models.map(model => model.id)).toEqual(["preset-a", "preset-b"]);
+  });
   it("reads both additive response fixtures as their response types", () => {
     expect(modelsFixture.models[1]).toMatchObject({
       id: "preset-b", available: false, reason: "한도 거부 중", reason_code: "limit_rejected",
@@ -19,6 +46,7 @@ describe("conversation catalog", () => {
   it("lists nodes in stable order and marks limited, disconnected, and profile-missing models", async () => {
     const catalog = new ConversationCatalog({
       defaultNodeId: "node-a",
+      modelCatalog: { snapshot: () => ({ persistent_defaults: { model_preset: "missing", fallback_models: [] } }) } as never,
       listNodes: () => [
         { nodeId: "node-c", connected: false },
         { nodeId: "node-b", connected: true },
@@ -63,6 +91,7 @@ describe("conversation catalog", () => {
   it("resolves legacy model ids to the default node and encodes other node ids", () => {
     const catalog = new ConversationCatalog({
       defaultNodeId: "node/a",
+      modelCatalog: { snapshot: () => ({ persistent_defaults: { model_preset: "missing", fallback_models: [] } }) } as never,
       listNodes: () => [],
       listKnownForNode: () => undefined,
       listAgentProfiles: async () => undefined,

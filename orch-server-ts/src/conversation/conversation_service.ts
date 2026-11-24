@@ -37,6 +37,7 @@ export class ConversationService {
     this.repo = new ConversationRepository(deps.sql);
     this.executions = new ConversationExecutions({ ...deps, repo:this.repo,
       row:id => this.requireRow(id), candidates:body => this.candidates(body),
+      expandRequest:body => this.expandRequest(body),
       notice:(preferred,selected,reason) => this.notice(preferred,selected,reason),
       initialize:(request,binding,execution) => this.initialize(request,binding,execution) });
   }
@@ -44,6 +45,13 @@ export class ConversationService {
   models(profile?: string) { return this.deps.catalog.models(profile); }
   profiles() { return this.deps.catalog.profiles(); }
   private model(id: string) { return this.deps.catalog.model(id); }
+  private async expandRequest(body: EnsureRequest): Promise<EnsureRequest> {
+    const { order, selectedDefault } = await this.deps.catalog.expand(
+      [...(body.selected_model === "default" ? ["default"] : []), ...body.model_order], body.profile,
+    );
+    return { ...body, selected_model: body.selected_model === "default" ? selectedDefault ?? order[0] ?? body.selected_model : body.selected_model,
+      model_order: order };
+  }
   private async candidates(body: EnsureRequest) {
     const profiles = await this.deps.catalog.profiles();
     if (!profiles.profiles.some(profile => profile.id === body.profile)) {
@@ -140,14 +148,14 @@ export class ConversationService {
     if (!binding) {
       // A conversation thread creates a claude agent session; without a named
       // collection it belongs in the same system folder as any other session.
-      const creation = { ...body, collection: body.collection ?? defaultFolderIdForSessionType("claude") };
+      const creation = await this.expandRequest({ ...body, collection: body.collection ?? defaultFolderIdForSessionType("claude") });
       await this.deps.access.requireFolderAccess({ request, folderId: creation.collection });
       const candidates = await this.candidates(creation);
       const selected = candidates.find(model => model.available);
       if (!selected) throw new ConversationError(422, "model_unavailable", "No requested model is available");
-      const preferred: ConversationModel = candidates.find(model => model.id === body.selected_model)
-        ?? { id: body.selected_model, label: body.selected_model, available: false, group: { id: this.deps.catalog.defaultNodeId, label: this.deps.catalog.defaultNodeId } };
-      const notices = selected.id === body.selected_model ? []
+      const preferred: ConversationModel = candidates.find(model => model.id === creation.selected_model)
+        ?? { id: creation.selected_model, label: creation.selected_model, available: false, group: { id: this.deps.catalog.defaultNodeId, label: this.deps.catalog.defaultNodeId } };
+      const notices = selected.id === creation.selected_model ? []
         : [this.notice(preferred, selected, preferred.reason ?? "사용할 수 없습니다")];
       created = await this.repo.reserve(account, namespace, key, randomUUID(), selected.id, creation, "reserved", notices);
       binding = await this.repo.byKey(account, namespace, key);
@@ -309,7 +317,10 @@ export class ConversationService {
     if (patch.model !== undefined || patch.model_order !== undefined) {
       const row = await this.requireRow(id);
       const currentNodeId = typeof row.node_id === "string" ? row.node_id : this.deps.catalog.defaultNodeId;
-      const selectedId = patch.model ?? binding.selected_model;
+      const profile = typeof row.agent_id === "string" ? row.agent_id : undefined;
+      const expandedSelection = patch.model === "default" ? await this.deps.catalog.expand(["default"], profile) : undefined;
+      if (expandedSelection && !expandedSelection.order.length) throw new ConversationError(422, "model_unavailable", "No requested model is available");
+      const selectedId = expandedSelection ? expandedSelection.selectedDefault! : patch.model ?? binding.selected_model;
       const selected = this.deps.catalog.resolve(selectedId);
       if (!selected) throw new ConversationError(422, "model_unavailable", "Model selection is invalid");
       if (selected.nodeId !== currentNodeId) {
@@ -317,10 +328,12 @@ export class ConversationService {
       }
       const current = (await this.deps.persistent.get(request, id)).session;
       const storedOrder = (binding.creation_request as EnsureRequest | null)?.model_order;
-      const order = patch.model_order ?? storedOrder ?? [
+      const requestedOrder = patch.model_order ?? storedOrder ?? [
         binding.selected_model,
         ...current.settings.fallback_models.flatMap(x => x.model_preset ? [this.deps.catalog.idFor(currentNodeId, x.model_preset)] : []),
       ];
+      const order = patch.model_order === undefined && !expandedSelection ? requestedOrder
+        : (await this.deps.catalog.expand([...(expandedSelection?.order ?? []), ...requestedOrder], profile)).order;
       const fallbacks = [...new Set(order)].flatMap(modelId => {
         const reference = this.deps.catalog.resolve(modelId);
         return reference && reference.nodeId === currentNodeId && reference.presetId !== selected.presetId
@@ -331,7 +344,7 @@ export class ConversationService {
         fallback_models: fallbacks.map(model_preset => ({ model_preset, reasoning_effort: null })),
       } });
       if (patch.model !== undefined) await this.repo.model(threadId, selectedId);
-      if (patch.model_order !== undefined) await this.repo.order(threadId, order);
+      if (patch.model_order !== undefined || expandedSelection) await this.repo.order(threadId, order);
     }
     if (patch.instructions !== undefined) {
       if (patch.instructions.trim()) await this.setInstruction(request, binding, patch.instructions);

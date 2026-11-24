@@ -62,6 +62,7 @@ describe("conversation adoptable candidates", () => {
     });
     const conversationCatalog = new ConversationCatalog({
       defaultNodeId: "eiaserinnys",
+      modelCatalog: { snapshot: () => ({ persistent_defaults: { model_preset: "missing", fallback_models: [] } }) } as never,
       listNodes: () => [{ nodeId: "eiaserinnys", connected: true }, { nodeId: "node-b", connected: true }],
       listKnownForNode: (nodeId: string) => nodeId === "node-b"
         ? [{ id: "preset-a", label: "Preset A", backend: "claude", available: true, reason: null,

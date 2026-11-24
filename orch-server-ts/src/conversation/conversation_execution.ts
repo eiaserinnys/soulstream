@@ -15,6 +15,7 @@ type Deps = {
   persistent: Pick<PersistentSessionSettingsService, "update">;
   row(id: string): Promise<HostSessionRow>;
   candidates(body: EnsureRequest): Promise<ConversationModel[]>;
+  expandRequest(body: EnsureRequest): Promise<EnsureRequest>;
   notice(preferred: ConversationModel, selected: ConversationModel, reason: string): string;
   initialize(request: FastifyRequest, binding: Binding, execution: Execution): Promise<void>;
 };
@@ -49,11 +50,12 @@ export class ConversationExecutions {
     }
   }
   async switch(request: FastifyRequest, binding: Binding, input: ExecutionRequest): Promise<void> {
-    const { expected_execution_id: expected, ...body } = input;
+    const { expected_execution_id: expected, ...rawBody } = input;
     const active = binding.active_session_id ?? binding.session_id;
     const row = await this.deps.row(active);
     // A switch without a collection keeps the thread's current folder and falls
     // back to the server default folder when the thread has none.
+    const body = await this.deps.expandRequest(rawBody);
     const resolved: EnsureRequest = { ...body, collection: body.collection ?? row.folder_id ?? defaultFolderIdForSessionType("claude") };
     await this.deps.access.requireFolderAccess({ request, folderId: resolved.collection });
     const executions = await this.deps.repo.executions(binding.session_id);

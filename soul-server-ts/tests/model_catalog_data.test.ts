@@ -764,6 +764,12 @@ describe("model catalogue schema validation", () => {
       .toThrow(/Duplicate model preset id/);
   });
 
+  it("reserves the default id for the conversation model", () => {
+    const reserved = BASE_CATALOG_YAML.replace("  - id: p2", "  - id: default")
+      .replace("    - model_preset: p2", "    - model_preset: default");
+    expect(() => parseModelCatalogYaml(reserved)).toThrow(/default is a reserved model preset id/);
+  });
+
   it("rejects a model or alias repeated across rows", () => {
     const duplicated = BASE_CATALOG_YAML.replace(
       "    model: m2\n    rates: null",
