@@ -8,7 +8,7 @@ import {
   createCardRefreshWindow,
   scheduleCardRefresh,
 } from '../lib/card-refresh-window';
-import { mergeCardRows, useCardStore } from '../store/cardStore';
+import { beginCardListRequest, mergeCardRows, useCardStore } from '../store/cardStore';
 import { usePlannerStore } from '../store/plannerStore';
 
 /** Board inventory is the authenticated list, independent of the daily feed. */
@@ -44,11 +44,11 @@ export function useCardList(api: ApiClient | null, folderId?: string, enabled = 
       try {
         // 스냅숏 경계는 요청을 시작한 시점이다. 요청 전에 스토어에만 있던 행은 목록에 없으면 버리고,
         // 응답을 기다리는 동안 들어온 행은 경계 뒤로 남겨 목록에 없어도 보이게 한다.
-        const snapshotSeq = useCardStore.getState().seq;
+        const { seq: snapshotSeq, ticket } = beginCardListRequest();
         const result = await api.listCards(folderId,{includeCompleted:false});
         if (generationRef.current !== generation || captureAuthScope().generation !== scope) return;
         // 목록 응답도 전역 행을 최신 버전으로 맞춘 뒤 그 행을 기준으로 첫 스냅숏을 연다.
-        useCardStore.getState().putCards(result.cards, snapshotSeq);
+        useCardStore.getState().putCards(result.cards, snapshotSeq, ticket);
         setState({ owner, cards: result.cards, snapshotSeq, hasSnapshot: true, loading: false, error: null });
       } catch (cause) {
         if (generationRef.current !== generation || captureAuthScope().generation !== scope) return;
