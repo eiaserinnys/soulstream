@@ -2,6 +2,7 @@
 """Capture the real card workspace with intercepted workspace responses."""
 from __future__ import annotations
 import argparse
+from contextlib import ExitStack
 import functools
 import http.server
 import importlib.util
@@ -250,8 +251,18 @@ def capture_retention(browser, base):
     if workspace.get_attribute('data-mobile-view') != 'chat': page.get_by_test_id('v3-mobile-tab-chat').click()
     expect(pane).to_be_visible(); file_narrow = body.evaluate('e => e.scrollTop')
     narrow_geometry = geometry()
-    page.set_viewport_size({"width": 1440, "height": 900}); page.wait_for_timeout(500)
+    page.set_viewport_size({"width": 1440, "height": 900})
     expect(draft).to_have_value('파일 확인 중인 임시 글')
+    page.wait_for_function("""async el => {
+        let previous = null, stable = 0;
+        while (stable < 3) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const current = [el.scrollHeight, el.scrollTop];
+            stable = previous && current[0] === previous[0] && current[1] === previous[1] ? stable + 1 : 1;
+            previous = current;
+        }
+        return true;
+    }""", arg=scroller.element_handle(), timeout=5000)
     chat_wide = scroller.evaluate('e => e.scrollTop'); file_wide = body.evaluate('e => e.scrollTop')
     result = {"draft": draft.input_value(), "chat_scroll": [chat_before, chat_after_close, chat_wide], "file_scroll": [file_before, file_after_open, file_narrow, file_wide], "toggle_scroll": [toggle_scroll_before, toggle_scroll_after], "file_geometry": [before_geometry, narrow_geometry, geometry()], "read_only_expanded": read_toggle.get_attribute('aria-expanded'), "stale_size_preview_ranges": ranges}
     assert abs(chat_before - chat_after_close) <= 2 and abs(chat_before - chat_wide) <= 2, result
@@ -648,8 +659,9 @@ def main():
     baseline_server, baseline_base = serve(Path(args.baseline_dist))
     measurements = {}
     try:
-        with sync_playwright() as p:
+        with sync_playwright() as p, ExitStack() as browser_cleanup:
             browser = p.chromium.launch(headless=True)
+            browser_cleanup.callback(browser.close)
             measurements["session_history"] = capture_session_history(browser, baseline_base, base, out)
             if args.session_only: return
             if args.pas_width_only:
@@ -781,7 +793,6 @@ def main():
             measurements['retention'] = capture_retention(browser, base)
             measurements['layout'], failures = capture_layout_checks(browser, base, out)
             assert not failures, json.dumps(failures, ensure_ascii=False)
-            browser.close()
     finally:
         server.shutdown(); server.server_close(); baseline_server.shutdown(); baseline_server.server_close()
         (out / "measurements.json").write_text(json.dumps(measurements, ensure_ascii=False, indent=2), encoding="utf-8")
