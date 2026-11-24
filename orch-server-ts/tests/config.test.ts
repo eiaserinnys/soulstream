@@ -18,6 +18,19 @@ const explicitTestConfig = {
   authBearerToken: "test-token",
 };
 
+it("reads PERSISTENT_SESSION_BOOTSTRAP as an off-by-default boolean", () => {
+  expect(loadOrchServerEnvironment(minimalEnvironment()).persistent_session_bootstrap).toBe(false);
+  expect(loadOrchServerEnvironment({
+    ...minimalEnvironment(), PERSISTENT_SESSION_BOOTSTRAP: "",
+  }).persistent_session_bootstrap).toBe(false);
+  expect(loadOrchServerEnvironment({
+    ...minimalEnvironment(), PERSISTENT_SESSION_BOOTSTRAP: "true",
+  }).persistent_session_bootstrap).toBe(true);
+  expect(() => loadOrchServerEnvironment({
+    ...minimalEnvironment(), PERSISTENT_SESSION_BOOTSTRAP: "sometimes",
+  })).toThrow(/PERSISTENT_SESSION_BOOTSTRAP/);
+});
+
 it("validates Tailscale identity and loopback only when that mode wins", () => {
   const base = { ...minimalEnvironment(), TAILSCALE_AUTH_ENABLED: "true", TAILSCALE_ALLOWED_LOGIN: " Owner@Example.com " };
   expect(loadOrchServerEnvironment(base)).toMatchObject({ tailscale_auth_enabled: true, tailscale_allowed_login: "owner@example.com" });
@@ -89,7 +102,7 @@ describe("orch-server-ts config scaffold", () => {
       mcp_allowed_hosts: ["localhost", "127.0.0.1"],
       node_name: "orch-primary",
       default_execution_node_id: "eias-linegames",
-      default_pas_agent_id: "claude-default",
+      default_pas_agent_id: "claude-default", persistent_session_bootstrap: false,
       host: "127.0.0.1",
       port: 5300,
       trusted_proxy: "loopback",
@@ -162,7 +175,7 @@ describe("orch-server-ts config scaffold", () => {
     expect(loadOrchServerEnvironment(minimalEnvironment())).toMatchObject({
       node_name: null,
       default_execution_node_id: "eiaserinnys",
-      default_pas_agent_id: null,
+      default_pas_agent_id: null, persistent_session_bootstrap: false,
       port: 5200,
       trusted_proxy: "loopback",
       dashboard_dir: "",

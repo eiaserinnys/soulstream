@@ -230,6 +230,22 @@ test('an empty map renders empty catalogs and no atom contexts', async () => {
   } finally { t.cleanup(); }
 });
 
+test('PERSISTENT_SESSION_BOOTSTRAP is written as true and a rerun refreshes an edited value', async () => {
+  const t = setup();
+  try {
+    const first = await t.run('parse_args --backends claude\nsetup_secrets "$ROOT" "$ATOM_ROOT"\ninit_atom "$ATOM_ROOT"\nrender_config "$HOME_DIR" "$ROOT"\n');
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(env(join(t.root, '.env.orch')).PERSISTENT_SESSION_BOOTSTRAP, 'true');
+    writeFileSync(join(t.root, '.env.orch'), `${t.read(t.root, '.env.orch').replace('PERSISTENT_SESSION_BOOTSTRAP=true', 'PERSISTENT_SESSION_BOOTSTRAP=false')}`);
+    assert.equal(env(join(t.root, '.env.orch')).PERSISTENT_SESSION_BOOTSTRAP, 'false');
+    const second = await t.run('parse_args --backends claude\nsetup_secrets "$ROOT" "$ATOM_ROOT"\ninit_atom "$ATOM_ROOT"\nrender_config "$HOME_DIR" "$ROOT"\n');
+    assert.equal(second.status, 0, second.stderr);
+    const orchText = t.read(t.root, '.env.orch');
+    assert.equal(env(join(t.root, '.env.orch')).PERSISTENT_SESSION_BOOTSTRAP, 'true');
+    assert.equal(orchText.split('\n').filter((line) => line.startsWith('PERSISTENT_SESSION_BOOTSTRAP=')).length, 1);
+  } finally { t.cleanup(); }
+});
+
 test('user lines survive in .env.orch and atom/.env while managed keys change and secrets persist', async () => {
   const t = setup();
   try {

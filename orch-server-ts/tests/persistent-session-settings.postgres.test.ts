@@ -335,6 +335,7 @@ describePostgres("PAS settings API on PostgreSQL", () => {
       },
       initial_instruction: "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.",
       unavailable_reason: null,
+      bootstrap_enabled: false,
     });
 
     expect((await call("GET", "/api/persistent-sessions/released")).body.session).toMatchObject({ persistent: false });
