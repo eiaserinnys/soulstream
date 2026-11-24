@@ -8,6 +8,7 @@ import {
 import { Gauge, House, Search } from "lucide-react";
 
 import { ConfigButton } from "../components/ConfigButton";
+import { AtomDashboardButton } from "./AtomDashboardButton";
 import { PersistentSessionEntry } from './PersistentSessionEntry';
 
 export function V3GlobalToolbar({
@@ -66,6 +67,7 @@ export function V3GlobalToolbar({
         onClick={onToggleUsage}>
         <Gauge className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
       </DashboardIconCap> : null}
+      <AtomDashboardButton appearance={appearance}/>
       <ConfigButton variant="chrome" appearance={appearance} onClick={onOpenConfig}/>
     </div>
   </header>;
@@ -94,6 +96,7 @@ export function V3GlobalToolbar({
       </button>
       <div className="dashboard-toolbar-actions">
         <PersistentSessionEntry/>
+        <AtomDashboardButton appearance={appearance}/>
         <ConfigButton variant="chrome" appearance={appearance} onClick={onOpenConfig} />
         <ThemeToggle variant="chrome" appearance={appearance} />
       </div>
