@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -8,6 +8,9 @@ import { loadBundledIsolationPolicy } from "../src/security/session_isolation_po
 import { McpConfigService } from "../src/mcp_config_service.js";
 import { McpConfigCommands } from "../src/upstream/mcp_config_commands.js";
 import { UnknownAgentProfileError } from "../src/upstream/task_runtime_commands.js";
+import { CommandDispatcher } from "../src/upstream/dispatcher.js";
+import { AgentRegistry } from "../src/agent_registry.js";
+import pino from "pino";
 
 const agent = AgentProfileSchema.parse({ id: "a", name: "A", backend: "codex", workspace_dir: "/tmp/a", mcp_profile: "p" });
 const policy = loadBundledIsolationPolicy().policy.localMcp;
@@ -85,5 +88,19 @@ describe("agent MCP preview", () => {
       context: { nodeId: "test", codexMode: "app-server", isolationEnabled: true, localMcpPolicy: () => policy } });
     const result = await commands.preview({ requestId: "1", agent_id: "a" });
     expect(result.data.restricted.servers).toContainEqual(expect.objectContaining({ server_id: "web", included: true }));
+  });
+
+  it("dispatches the preview command through the session profile source", async () => {
+    const service = new McpConfigService({ agentsConfigPath: "/tmp/preview-agents.yaml", processEnv: {} });
+    const snapshot = { registry: { servers: [server] }, profiles: { profiles: [{ id: "p", mcp_servers: ["atom"] }] }, agent_bindings: { a: "p" } };
+    await service.applyCentralSync({ revision: 4, runtime: snapshot, display: snapshot });
+    const send = vi.fn(async (_value: unknown) => {});
+    const dispatcher = new CommandDispatcher({ send, logger: pino({ enabled: false }), nodeId: "test", agentRegistry: new AgentRegistry([agent]),
+      taskManager: {} as never, taskExecutor: {} as never, reflectionRuntime: { mcpConfigService: service } as never,
+      agentProfileSource: { resolve: async () => ({ profile: agent, portraitSource: "yaml" }) } as never,
+      mcpPreviewContext: { nodeId: "test", codexMode: "app-server", isolationEnabled: true, localMcpPolicy: () => policy } });
+    await dispatcher.dispatch({ type: "preview_agent_mcp", requestId: "preview", agent_id: "a" });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: "preview_agent_mcp", requestId: "preview", success: true,
+      data: expect.objectContaining({ applied_revision: 4, normal: expect.objectContaining({ servers: [expect.objectContaining({ server_id: "atom", name: "catalog" })] }) }) }));
   });
 });
