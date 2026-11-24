@@ -8,6 +8,7 @@ import {
   type AtomFetchResult,
   type AtomFetchStatus,
 } from "../atom_context.js";
+import { extractContextDocuments, type ContextDocument } from "./context_documents.js";
 
 export type ContextRenderMode = "full" | "index" | "titles";
 
@@ -18,6 +19,7 @@ export interface ExplicitRenderResult {
   status: AtomFetchStatus;
   truncated: boolean;
   anchorCount: number;
+  documents: ContextDocument[];
 }
 
 interface AtomTreeNode {
@@ -84,6 +86,7 @@ async function renderFull(
   return successfulResult(
     appendAnchors(parsed.markdown, anchors),
     anchors,
+    extractContextDocuments(rendered.markdown, { maxDepth: depth }),
   );
 }
 
@@ -126,6 +129,7 @@ async function renderIndex(
     status: "ok",
     truncated: children.length > 0 || globalCut,
     anchorCount: children.length + extraAnchors.length,
+    documents: extractContextDocuments(titles.markdown, { maxDepth: 1 }),
   };
 }
 
@@ -173,7 +177,7 @@ async function renderTitles(
     joinBlocks(stripAtomMetadata(root.markdown!), titleTree),
     anchors,
   );
-  return successfulResult(markdown, anchors);
+  return successfulResult(markdown, anchors, extractContextDocuments(titles.markdown, { maxDepth: depth }));
 }
 
 async function fetchUnboundedRootProbe(
@@ -203,18 +207,21 @@ function unavailableResult(
     status: available.some((result) => result.status === "error") ? "error" : "empty",
     truncated: false,
     anchorCount: 0,
+    documents: [],
   };
 }
 
 function successfulResult(
   markdown: string,
   anchors: readonly AtomTreeNode[],
+  documents: ContextDocument[],
 ): ExplicitRenderResult {
   return {
     markdown,
     status: "ok",
     truncated: anchors.length > 0,
     anchorCount: anchors.length,
+    documents,
   };
 }
 

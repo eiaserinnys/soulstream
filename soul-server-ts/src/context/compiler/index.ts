@@ -25,6 +25,7 @@ import {
   type ContextRenderMode,
 } from "./render_modes.js";
 import { assembleContextSectionsWithMaterial } from "../input_material_parts.js";
+import { extractContextDocuments, type ContextDocument } from "./context_documents.js";
 
 type ContextCompilerLogger = Pick<Logger, "warn">;
 
@@ -55,6 +56,8 @@ export interface CompiledContextSection {
   status: ContextSourceStatus;
   truncated: boolean;
   anchorCount: number;
+  /** 이 소스로 실린 문서. 가져오지 않은 소스는 빈 목록이다. */
+  documents?: ContextDocument[];
 }
 
 export const CONTEXT_COMPILER_VERSION = "phase-d.v1";
@@ -148,6 +151,11 @@ const KNOWN_OS_VALUES = new Set(["windows", "linux", "darwin"]);
 const KNOWN_CARD_ROLES = new Set(["assignee", "member"]);
 const IDENTIFIER_VALUE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
 
+export interface ContextCompileOptions {
+  /** true면 applies_when을 따지지 않고 모든 소스를 읽는다. 매니페스트의 applies_when은 그대로다. */
+  ignoreConditions?: boolean;
+}
+
 interface FilteredContextSources {
   included: ContextSource[];
   filtered: Set<ContextSource>;
@@ -157,11 +165,12 @@ function filterContextSources(
   specs: readonly ContextSource[],
   parameters: ContextFilterParameters,
   logger: ContextCompilerLogger,
+  options: ContextCompileOptions,
 ): FilteredContextSources {
   const included: ContextSource[] = [];
   const filtered = new Set<ContextSource>();
   for (const source of specs) {
-    if (sourceMatches(source, parameters, logger)) included.push(source);
+    if (options.ignoreConditions || sourceMatches(source, parameters, logger)) included.push(source);
     else filtered.add(source);
   }
   return { included, filtered };
@@ -265,6 +274,7 @@ async function renderContextSources(
         status: rendered.status,
         truncated: rendered.truncated,
         anchorCount: rendered.anchorCount,
+        documents: rendered.documents,
       });
       continue;
     }
@@ -275,6 +285,7 @@ async function renderContextSources(
       status: result.status,
       truncated: false,
       anchorCount: 0,
+      documents: extractContextDocuments(result.markdown),
     });
   }
   return sections;
@@ -436,8 +447,9 @@ export async function compileContextSources(
   sources: readonly ContextSource[],
   logger: ContextCompilerLogger,
   parameters: ContextFilterParameters = {},
+  options: ContextCompileOptions = {},
 ): Promise<ContextCompilationResult> {
-  const decisions = filterContextSources(sources, parameters, logger);
+  const decisions = filterContextSources(sources, parameters, logger, options);
   const rendered = await renderContextSources(config, decisions.included, logger);
   const renderedBySource = new Map(rendered.map((section) => [section.source, section]));
   const observed = sources.map((source): CompiledContextSection => (
@@ -448,6 +460,7 @@ export async function compileContextSources(
           status: "filtered",
           truncated: false,
           anchorCount: 0,
+          documents: [],
         }
       : renderedBySource.get(source)!
   ));
@@ -467,6 +480,7 @@ export async function compileContexts(
   specs: readonly AtomContextSpec[],
   logger: ContextCompilerLogger,
   parameters: ContextFilterParameters = {},
+  options: ContextCompileOptions = {},
 ): Promise<ContextCompilationResult> {
-  return await compileContextSources(config, resolveContextSources(specs), logger, parameters);
+  return await compileContextSources(config, resolveContextSources(specs), logger, parameters, options);
 }

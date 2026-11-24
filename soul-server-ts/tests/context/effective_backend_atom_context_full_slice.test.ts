@@ -33,8 +33,10 @@ function markerCount(markdown: string | null): number {
 }
 
 function bodyCompileCalls(): number {
-  return vi.mocked(globalThis.fetch).mock.calls.filter(([url]) =>
-    new URL(String(url)).searchParams.get("titles_only") !== "true").length;
+  return vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => {
+    const parsed = new URL(String(url));
+    return parsed.pathname.endsWith("/compile") && parsed.searchParams.get("titles_only") !== "true";
+  }).length;
 }
 
 function expectedHostOsConditionValue(osType: string): string {
