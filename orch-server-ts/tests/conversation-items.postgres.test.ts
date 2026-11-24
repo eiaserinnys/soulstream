@@ -70,7 +70,7 @@ describe("conversation items and events", () => {
       sql: db.sql as never,
       access,
       reads: async () => ({ getSession: async () => ({ session_id:session, created_at:new Date(), model_preset:"sol" }) }) as never,
-      catalog: new ConversationCatalog({ defaultNodeId:"eiaserinnys", listNodes:() => [{nodeId:"eiaserinnys",connected:true}],
+      catalog: new ConversationCatalog({ defaultNodeId:"eiaserinnys", modelCatalog: { snapshot: () => ({ persistent_defaults: { model_preset: "missing", fallback_models: [] } }) } as never, listNodes:() => [{nodeId:"eiaserinnys",connected:true}],
         listKnownForNode:() => [], listAgentProfiles:async () => ({}) }), persistent: {} as never, create: async () => ({} as never),
       waitForCreatedSession: async () => true,
     });

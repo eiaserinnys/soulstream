@@ -396,6 +396,8 @@ bot thread mapping before acknowledging delivery to the chat platform.
 
 Authenticated clients use `/api/conversations/v1`. A thread ID is an opaque identifier. Namespace and key are URL query components and must be percent encoded. Folder access is checked for each thread; service-token requests use the service identity, while dashboard users use their authenticated account. OAuth tokens require the `conversations` scope.
 
+When the configured persistent-session defaults appear in the model list, its first entry is the generic `default` model. Its availability and label reflect the first available configured candidate. Supply `default` in a thread's selected model or model order to expand it into the current configured candidate order; the thread stores the resulting model IDs. If none of the configured candidates appear, the generic entry is omitted.
+
 - `GET /models` returns `{models: [{id, label, available, reason?}]}`.
 - `GET /threads?namespace=...&cursor=...` returns `{refs, next_cursor?}`; use the returned cursor to continue.
 - `GET /threads/adoptable` returns `{candidates: [{id, title, profile?, model?, updated_at}]}`: the persistent sessions the caller can access and could bind to a new external key. A session that already runs under a thread reports that thread id, and a thread appears once (its most recently active execution). Sessions whose thread belongs to another account are omitted. Candidates are ordered by `updated_at`, newest first. Bind one with `PUT /threads/by-key/adoption`.

@@ -1728,6 +1728,7 @@ export function buildProductionRouteOptions(
     reads: async () => (await persistenceRepositoryProvider()).sessionReads,
     catalog: new ConversationCatalog({
       defaultNodeId: defaultExecutionNodeId,
+      modelCatalog: providers.modelCatalog,
       listNodes: () => runtime.registry.listAllNodes().map(node => ({ nodeId: node.nodeId, connected: node.connected })),
       listKnownForNode: nodeId => providers.modelPresetAvailability.listKnownForNode(nodeId),
       listAgentProfiles: nodeId => providers.nodeAgentProfileRoutes.provider.listAgentProfiles(nodeId),

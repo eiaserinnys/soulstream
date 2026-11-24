@@ -50,7 +50,7 @@ const ReasoningEffortSchema = z.enum(MODEL_REASONING_EFFORTS);
 const NonEmptyMcpNameSchema = z.string().trim().min(1);
 
 export const ModelPresetSchema = z.object({
-  id: z.string().trim().min(1, "model preset id required"),
+  id: z.string().trim().min(1, "model preset id required").refine(id => id !== "default", "default is a reserved model preset id"),
   label: z.string().trim().min(1, "model preset label required"),
   backend: AgentBackendSchema,
   model: z.string().trim().min(1, "model preset model required"),

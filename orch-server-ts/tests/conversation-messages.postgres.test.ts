@@ -72,7 +72,7 @@ describe("conversation message receipts", () => {
       }, listFoldersForAccess:async () => (await db.sql`SELECT id,parent_folder_id FROM folders`).map(row => ({id:row.id,parentFolderId:row.parent_folder_id})) },
     });
     service = new ConversationService({sql:db.sql as never, access, reads:async () => ({getSession:async () => ({session_id:session,node_id:"test-node",created_at:new Date(),model_preset:"sol"})}) as never,
-      catalog:new ConversationCatalog({defaultNodeId:"eiaserinnys",listNodes:() => [{nodeId:"eiaserinnys",connected:true}],
+      catalog:new ConversationCatalog({defaultNodeId:"eiaserinnys",modelCatalog:{snapshot:()=>({persistent_defaults:{model_preset:"missing",fallback_models:[]}})} as never,listNodes:() => [{nodeId:"eiaserinnys",connected:true}],
         listKnownForNode:() => [],listAgentProfiles:async () => ({})}),persistent:{} as never,create:async () => ({} as never),waitForCreatedSession:async () => true});
     const token = (scope:string) => ({accountId:"person@example.test",clientId:"client",scope});
     await db.sql`INSERT INTO oauth_entities(kind,id,payload,expires_at) VALUES

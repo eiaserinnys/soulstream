@@ -1,4 +1,5 @@
 import type { ModelPresetAvailability } from "../model/model_preset_availability.js";
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 
 export type ConversationModelGroup = { id: string; label: string };
 export type ConversationModel = {
@@ -19,6 +20,7 @@ export type ConversationModelReference = { nodeId: string; presetId: string };
 type AgentProfile = { name?: unknown };
 type ConversationCatalogOptions = {
   defaultNodeId: string;
+  modelCatalog: ModelCatalogSource;
   listNodes(): readonly ConversationCatalogNode[];
   listKnownForNode(nodeId: string): ModelPresetAvailability[] | undefined;
   listAgentProfiles(nodeId: string): Promise<Record<string, AgentProfile> | undefined>;
@@ -33,6 +35,11 @@ export class ConversationCatalog {
   }
 
   async models(profile?: string): Promise<ConversationModelReply> {
+    const { models } = await this.modelsWithDefaults(profile);
+    return { models };
+  }
+
+  private async modelsWithDefaults(profile?: string): Promise<{ models: ConversationModel[]; defaults: ConversationModel[] }> {
     const nodes = this.orderedNodes();
     const profileSets = profile === undefined
       ? undefined
@@ -67,7 +74,34 @@ export class ConversationCatalog {
         });
       }
     }
-    return { models };
+    const defaults = this.defaultCandidates(models);
+    if (defaults.length) {
+      const firstAvailable = defaults.find(model => model.available);
+      const first = defaults[0]!;
+      models.unshift({ id: "default", label: firstAvailable ? `기본 모델 (${firstAvailable.label})` : "기본 모델",
+        available: Boolean(firstAvailable),
+        ...(!firstAvailable && first.reason ? { reason: first.reason } : {}),
+        ...(!firstAvailable && first.reason_code ? { reason_code: first.reason_code } : {}),
+        ...(!firstAvailable && first.resets_at ? { resets_at: first.resets_at } : {}),
+      });
+    }
+    return { models, defaults };
+  }
+
+  private defaultCandidates(models: ConversationModel[]): ConversationModel[] {
+    const defaults = this.options.modelCatalog.snapshot().persistent_defaults;
+    return [defaults.model_preset, ...defaults.fallback_models.map(model => model.model_preset)]
+      .flatMap(presetId => {
+        const id = this.idFor(this.options.defaultNodeId, presetId);
+        const model = models.find(item => item.id === id);
+        return model ? [model] : [];
+      });
+  }
+
+  async expand(ids: string[], profile?: string): Promise<string[]> {
+    const { models, defaults } = await this.modelsWithDefaults(profile);
+    const known = new Set(models.filter(model => model.id !== "default").map(model => model.id));
+    return [...new Set(ids.flatMap(id => id === "default" ? defaults.map(model => model.id) : known.has(id) ? [id] : []))];
   }
 
   async profiles(): Promise<ConversationProfilesReply> {
