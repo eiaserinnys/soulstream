@@ -51,6 +51,9 @@ export async function testMcpServer(server: Server, env: Record<string, string |
     return { ok: false as const, latency_ms: Date.now() - start, error_stage: stage, error_message: `MCP ${stage} failed` };
   } finally {
     if (timer) clearTimeout(timer);
+    if (stage === "timeout" && transport instanceof StdioClientTransport && transport.pid !== null) {
+      try { process.kill(transport.pid, "SIGKILL"); } catch { /* process already exited */ }
+    }
     await transport?.close().catch(() => {});
   }
 }
