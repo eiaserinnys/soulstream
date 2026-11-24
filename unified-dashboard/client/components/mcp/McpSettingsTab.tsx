@@ -22,7 +22,7 @@ import { errorText, PartialProfileSaveError } from "./McpErrors";
 import { McpDialogs, type DeleteTarget, type History } from "./McpDialogs";
 
 type Tab = "server" | "profile" | "secret";
-function SuccessMessage({ children }: { children: string }) {
+export function SuccessMessage({ children }: { children: string }) {
   const ref = useRef<HTMLParagraphElement>(null);
   useEffect(() => { ref.current?.scrollIntoView?.({ block: "nearest", behavior: "instant" }); }, [children]);
   return <p ref={ref} role="status" data-v3-selectable-content="true" className="text-sm text-success-foreground" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>{children}</p>;
@@ -66,7 +66,8 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
       if (!header) return;
       focusedInitialProfile.current = true;
       header.tabIndex = -1;
-      header.scrollIntoView?.({ block: "start" });
+      header.style.outline = "none";
+      header.scrollIntoView?.({ block: "nearest" });
       header.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(id);

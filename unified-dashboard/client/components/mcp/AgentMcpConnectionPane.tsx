@@ -5,6 +5,7 @@ import { DetailTabs } from "../../v3/DetailTabs";
 import { inputClassName } from "../AgentAtomContextFields";
 import { SettingsAlert, SettingsField, SettingsGroupBox } from "../config/SettingsListDetail";
 import { McpIconTile, McpServerIcons } from "./McpIcons";
+import { SuccessMessage } from "./McpSettingsTab";
 
 function message(error: unknown, preview = false): string {
   if (error instanceof McpApiError) {
@@ -32,6 +33,7 @@ export function AgentMcpConnectionPane({ agentId, nodeId, request = fetch, onEdi
   const [success, setSuccess] = useState("");
   const [retry, setRetry] = useState(0);
   const [forkOpen, setForkOpen] = useState(false);
+  const [restoreFocus, setRestoreFocus] = useState(false);
   const cancelButton = useRef<HTMLButtonElement>(null);
   const saveButton = useRef<HTMLButtonElement>(null);
   const profileSelect = useRef<HTMLSelectElement>(null);
@@ -67,6 +69,12 @@ export function AgentMcpConnectionPane({ agentId, nodeId, request = fetch, onEdi
     });
     return () => cancelAnimationFrame(id);
   }, [focusOnMount, config, managed, onFocusHandled]);
+  useEffect(() => {
+    if (!busy && !forkOpen && restoreFocus) {
+      saveButton.current?.focus();
+      setRestoreFocus(false);
+    }
+  }, [busy, forkOpen, restoreFocus]);
   const save = async (fork = false) => {
     if (!config) return;
     setBusy(true); setError(""); setSuccess("");
@@ -75,9 +83,9 @@ export function AgentMcpConnectionPane({ agentId, nodeId, request = fetch, onEdi
         ...(binding ? { expected_version: binding.version } : {}), expected_revision: config.current_revision, ...(fork ? { fork: true } : {}) });
       await load();
       setSuccess(fork ? "프로필을 분리했습니다." : "연결을 저장했습니다.");
-      if (fork) { forkSaved.current = true; setForkOpen(false); }
-    } catch (caught) { setError(message(caught)); setForkOpen(false); }
-    finally { setBusy(false); if (!fork) requestAnimationFrame(() => saveButton.current?.focus()); }
+      if (fork) setForkOpen(false);
+    } catch (caught) { setError(message(caught)); if (fork) setForkOpen(false); }
+    finally { if (fork) forkSaved.current = true; else setRestoreFocus(true); setBusy(false); }
   };
   if (!config) return error ? <SettingsAlert>{error} <Button variant="outline" onClick={() => void load().catch(caught => setError(message(caught)))}>다시 읽기</Button></SettingsAlert> : <FrameLoading inline label="MCP 설정을 불러오는 중…" />;
   if (!nodeId) return <p className="text-sm">연결된 노드가 없습니다.</p>;
@@ -90,15 +98,15 @@ export function AgentMcpConnectionPane({ agentId, nodeId, request = fetch, onEdi
       <div className="space-y-3">
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-40 flex-1 [&>label>span]:whitespace-nowrap"><SettingsField label="MCP 프로필"><select ref={profileSelect} className={inputClassName.replace("h-8", "h-9 sm:h-8")} value={profileId} onChange={event => { setPreview(null); setLoadingPreview(true); setProfileId(event.target.value); setSuccess(""); }}>
-            <option value="">연결 안 함</option>{config.profiles.map(item => <option key={item.id} value={item.id}>{item.name && config.profiles.filter(other => other.name === item.name).length > 1 ? `${item.name} (${item.id})` : item.name || item.id}</option>)}
+            <option value="">연결 안 함</option>{config.profiles.map(item => <option key={item.id} value={item.id}>{item.name && config.profiles.filter(other => other.name === item.name).length > 1 ? item.id : item.name || item.id}</option>)}
           </select></SettingsField></div>
           <Button ref={saveButton} type="button" disabled={busy} onClick={() => void save()}>연결 저장</Button>
           {profile ? <Button type="button" variant="outline" onClick={() => onEditProfile(profile.id)}>이 프로필 편집</Button> : null}
         </div>
+        {success ? <SuccessMessage>{success}</SuccessMessage> : null}
         {profile ? <><span className="sm:hidden"><McpServerIcons ids={profile.mcp_servers} servers={config.servers} /></span><span className="hidden sm:block"><McpServerIcons ids={profile.mcp_servers} servers={config.servers} limit={profile.mcp_servers.length} /></span></> : null}
-        <div><p className="mb-2 text-sm text-muted-foreground">함께 적용할 노드</p><div className="flex flex-wrap gap-3">{config.managed_nodes.map(node => <label key={node.node_id} className="flex items-center gap-2 text-sm"><Checkbox checked={node.node_id === nodeId || Boolean(profileId && nodes.includes(node.node_id))} disabled={node.node_id === nodeId || !profileId} onCheckedChange={checked => setNodes(current => checked ? [...current, node.node_id] : current.filter(id => id !== node.node_id))} />{node.node_id}</label>)}</div></div>
-        {profile ? <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span data-v3-selectable-content="true">{others.length ? <>같은 프로필 사용: {others.map((item, index) => <span key={`${item.agent_id}:${item.node_id}`} className="inline-block whitespace-nowrap">{index ? ", " : ""}{item.agent_id} ({item.node_id})</span>)}</> : "이 에이전트만 사용하는 프로필입니다."}</span>{others.length ? <Button type="button" variant="outline" onClick={() => setForkOpen(true)}>이 에이전트 전용으로 분리</Button> : null}</div> : null}
-        {success ? <p role="status" data-v3-selectable-content="true" className="text-sm text-success-foreground">{success}</p> : null}
+        <div><p className="mb-2 text-sm text-muted-foreground">함께 적용할 노드</p><div className="flex flex-wrap gap-3">{config.managed_nodes.map(node => <label key={node.node_id} className="flex items-center gap-2 text-sm"><Checkbox checked={node.node_id === nodeId || Boolean(profileId && nodes.includes(node.node_id))} disabled={node.node_id === nodeId || !profileId} onCheckedChange={checked => { setSuccess(""); setNodes(current => checked ? [...current, node.node_id] : current.filter(id => id !== node.node_id)); }} />{node.node_id}</label>)}</div></div>
+        {profile ? <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="min-w-0" data-v3-selectable-content="true">{others.length ? <>같은 프로필 사용: {others.map((item, index) => <span key={`${item.agent_id}:${item.node_id}`}>{index ? " " : ""}<span className="inline-block max-w-full align-top whitespace-normal [overflow-wrap:anywhere]">{item.agent_id} ({item.node_id}){index < others.length - 1 ? "," : ""}</span></span>)}</> : "이 에이전트만 사용하는 프로필입니다."}</span>{others.length ? <Button type="button" variant="outline" onClick={() => setForkOpen(true)}>이 에이전트 전용으로 분리</Button> : null}</div> : null}
         {error ? <SettingsAlert><span className="inline-flex flex-wrap items-center gap-2"><span>{error}</span>{error.includes("다시 읽은") ? <Button type="button" variant="outline" onClick={() => void load().catch(caught => setError(message(caught)))}>다시 읽기</Button> : null}</span></SettingsAlert> : null}
       </div>
     </SettingsGroupBox> : <p data-v3-selectable-content="true">이 노드는 중앙 MCP 관리 목록에 없습니다.</p>}
@@ -113,6 +121,6 @@ export function AgentMcpConnectionPane({ agentId, nodeId, request = fetch, onEdi
         </> : null}
       </div>
     </SettingsGroupBox>
-    <Dialog open={forkOpen} onOpenChange={open => setForkOpen(open)} onOpenChangeComplete={open => { if (!open) { forkSnapshot.current = ""; if (forkSaved.current) { forkSaved.current = false; saveButton.current?.focus(); } } }}><DialogPopup className="approved-dialog" initialFocus={cancelButton}><DialogHeader><DialogTitle>프로필 분리</DialogTitle><DialogDescription>{forkOpen ? profileId : forkSnapshot.current} 프로필을 복사해 선택한 노드의 이 에이전트에 연결할까요?</DialogDescription></DialogHeader><DialogFooter><Button ref={cancelButton} type="button" variant="outline" onClick={() => setForkOpen(false)}>취소</Button><Button type="button" disabled={busy} onClick={() => void save(true)}>분리</Button></DialogFooter></DialogPopup></Dialog>
+    <Dialog open={forkOpen} onOpenChange={open => setForkOpen(open)} onOpenChangeComplete={open => { if (!open) { forkSnapshot.current = ""; if (forkSaved.current) { forkSaved.current = false; setRestoreFocus(true); } } }}><DialogPopup className="approved-dialog" initialFocus={cancelButton}><DialogHeader><DialogTitle>프로필 분리</DialogTitle><DialogDescription>{forkOpen ? profileId : forkSnapshot.current} 프로필을 복사해 선택한 노드의 이 에이전트에 연결할까요?</DialogDescription></DialogHeader><DialogFooter><Button ref={cancelButton} type="button" variant="outline" onClick={() => setForkOpen(false)}>취소</Button><Button type="button" disabled={busy} onClick={() => void save(true)}>분리</Button></DialogFooter></DialogPopup></Dialog>
   </div>;
 }

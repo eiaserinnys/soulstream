@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { createMcpApi, McpApiError, mcpRequestErrorText } from "./mcp-api";
 
 describe("MCP 관리 API", () => {
+  it("오류 응답 본문이 null이어도 HTTP 오류를 보존한다", async () => {
+    const request = vi.fn(async () => Response.json(null, { status: 503 }));
+    await expect(createMcpApi(request).previewAgentMcp("agent", "node"))
+      .rejects.toMatchObject({ status: 503, code: "" } satisfies Partial<McpApiError>);
+  });
   it.each([
     [403, "MCP_NODE_NOT_MANAGED", "English", "이 노드는 중앙 MCP 관리 목록에 없습니다."],
     [403, "MCP_SERVER_OUT_OF_SCOPE", "English", "이 서버는 이 노드 범위에 없습니다."],

@@ -120,7 +120,7 @@ export function createMcpApi(request: typeof fetch = fetch) {
           }),
     });
     if (!response.ok) {
-      const error = (await response.json().catch(() => ({}))) as {
+      const error = ((await response.json().catch(() => ({}))) ?? {}) as {
         code?: string;
         message?: string;
         detail?: string;

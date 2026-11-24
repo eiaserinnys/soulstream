@@ -37,7 +37,7 @@ it("연결 해제 선택은 저장된 미리보기를 숨기고 같은 이름에
   try {
     await act(async () => { root.render(<AgentMcpConnectionPane agentId="a" nodeId="n" request={request as typeof fetch} onEditProfile={() => {}} />); await new Promise(resolve => setTimeout(resolve, 0)); });
     const select = host.querySelector("select")!;
-    expect([...select.options].map(item => item.textContent)).toEqual(["연결 안 함", "같은 이름 (p1)", "같은 이름 (p2)"]);
+    expect([...select.options].map(item => item.textContent)).toEqual(["연결 안 함", "p1", "p2"]);
     expect(host.textContent).toContain("이전 서버");
     const before = request.mock.calls.filter(([url]) => String(url).includes("/preview?")).length;
     await act(async () => { select.value = ""; select.dispatchEvent(new Event("change", { bubbles: true })); });
@@ -49,6 +49,7 @@ it("연결 해제 선택은 저장된 미리보기를 숨기고 같은 이름에
 
 it("선택 노드의 연결과 미리보기를 보여 주고 선택한 노드에 판을 확인해 저장한다", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("PointerEvent", MouseEvent);
   const config = { current_revision: 4, secrets: [], managed_nodes: ["n1", "n2"].map(node_id => ({ node_id, connected: true, central_sync_supported: true, applied_revision: 4, ack: null })),
     servers: [{ id: "s", name: "서버", type: "stdio", config: {}, icon: null, version: 1, node_scope: ["n1"], node_overrides: {} }],
     profiles: [{ id: "p", name: "프로필", description: null, mcp_servers: ["s"], hosted_tools: [], node_scope: ["n1"], version: 1 }],
@@ -72,6 +73,10 @@ it("선택 노드의 연결과 미리보기를 보여 주고 선택한 노드에
     expect(host.textContent).toContain("other (n2)");
     await click("연결 저장");
     expect(request).toHaveBeenCalledWith("/api/mcp/agents/agent", expect.objectContaining({ method: "PUT", body: JSON.stringify({ node_ids: ["n1"], mcp_profile_id: "p", expected_version: 2, expected_revision: 4 }) }));
+    expect(host.querySelector('[role="status"]')?.textContent).toContain("저장");
+    const otherNode = [...host.querySelectorAll("label")].find(label => label.textContent?.trim() === "n2");
+    await act(async () => { (otherNode?.querySelector('[role="checkbox"]') as HTMLElement).click(); });
+    expect(host.textContent).not.toContain("연결을 저장했습니다.");
     await click("격리 세션");
     expect(host.textContent).toContain("실행할 수 없습니다");
     expect(host.textContent).not.toContain("노드 덮어쓰기 적용");
