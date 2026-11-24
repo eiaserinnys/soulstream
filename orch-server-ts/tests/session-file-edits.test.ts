@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectSessionFileEdits } from "../src/session/session_file_edits.js";
+import { collectSessionFileEdits, countSessionFileEdits } from "../src/session/session_file_edits.js";
 
 const at = new Date("2026-01-01T00:00:00Z");
 const start = (tool_name: string, tool_input: object, tool_use_id = tool_name) => ({event_type:"tool_start",created_at:at,payload:{tool_name,tool_input,tool_use_id}});
@@ -26,5 +26,23 @@ describe("session file edits", () => {
     const value=collectSessionFileEdits("/repo","a.txt",events);
     expect(value.truncated).toBe(true); expect(value.edits).toHaveLength(1); expect(value.edits[0]!.text).toContain("yyy");
     expect(collectSessionFileEdits("/repo","a.txt",[{...events[0]!,payload:{...events[0]!.payload,truncation:{}}}]).truncated).toBe(true);
+  });
+  describe("countSessionFileEdits", () => {
+    const count=(events:any[],paths=["a.txt"])=>countSessionFileEdits("/repo",new Set(paths),events);
+    it("counts only the - and + lines of an Edit and the whole content of a Write", () => {
+      const value=count([start("Edit",{...edit("same\nold\nend","same\nnew\nmore\nend")},"e"),start("Write",{file_path:"/repo/a.txt",content:"1\n2\n3\n"},"w")]);
+      expect(value.get("a.txt")).toEqual({added:2+3,deleted:1});
+    });
+    it("counts codex diff lines for update and whole text for add and delete, skipping hunk headers and failed edits", () => {
+      const changes=[{path:"/repo/a.txt",kind:{type:"update"},diff:"@@ -1,2 +1,2 @@\n ctx\n-a\n+b\n+c\n\\ No newline"},{path:"/repo/a.txt",kind:{type:"add"},diff:"x\ny"},{path:"/repo/a.txt",kind:{type:"delete"},diff:"z"},{path:"/repo/b.txt",kind:{type:"add"},diff:"other"}];
+      const value=count([result({tool_name:"file_change",result:JSON.stringify(changes)}),result({tool_name:"file_change",result:"{"}),start("Edit",edit("x","y"),"bad"),result({tool_use_id:"bad",is_error:true})]);
+      expect(value.get("a.txt")).toEqual({added:2+2,deleted:1+1}); expect(value.has("b.txt")).toBe(false);
+    });
+    it("omits paths without recorded content and counts past the 512KiB display limit", () => {
+      expect(count([start("NotebookEdit",{notebook_path:"/repo/a.txt"}),start("edit_file",{Path:"/repo/a.txt"})]).size).toBe(0);
+      const big=Array.from({length:3},(_,i)=>start("Write",{file_path:"/repo/a.txt",content:`${"x".repeat(300000)}\nsecond`},`w${i}`));
+      expect(count(big).get("a.txt")).toEqual({added:6,deleted:0});
+      expect(collectSessionFileEdits("/repo","a.txt",big).edits.length).toBeLessThan(3);
+    });
   });
 });

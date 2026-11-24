@@ -24,13 +24,13 @@ _diff_spec.loader.exec_module(_diff_fixture)
 SHORT_TEXT = b"// session file preview\n"
 LONG_TEXT = ("// session file preview\n" + "".join(f"export const eventType{i:02} = 'session:{i:02}';\n" for i in range(40))).encode()
 LONG_BRANCH = "feature/" + "very-long-session-files-branch-" * 5
-FILE = dict(orig_path=None, added=None, deleted=None, size=len(SHORT_TEXT), wrote=False, read=False, committed=False, last_activity_at=None)
+FILE = dict(orig_path=None, added=None, deleted=None, session_added=None, session_deleted=None, size=len(SHORT_TEXT), wrote=False, read=False, committed=False, last_activity_at=None)
 DATA = {
     "session_id": "components-session", "root": "/workspace/card1789", "node": {"id": "eiaserinnys", "status": "ok"},
     "snapshot": {"state": "ready", "observed_at": "2026-11-22T15:12:00Z", "refreshing": False, "branch": "card1789-files-dashboard", "head": "abc", "upstream": "origin/main", "ahead": 1, "behind": 0, "truncated": False},
     "attribution": "partial", "files": [
         {**FILE, "path": "soul-server-ts/src/config.ts", "git_status": "modified", "added": _diff_fixture.CONFIG_ADD, "deleted": _diff_fixture.CONFIG_DEL},
-        {**FILE, "path": "soul-server-ts/src/upstream/event_outbox_types.ts", "size": len(LONG_TEXT), "git_status": None, "committed": True, "wrote": True},
+        {**FILE, "path": "soul-server-ts/src/upstream/event_outbox_types.ts", "size": len(LONG_TEXT), "git_status": None, "committed": True, "wrote": True, "session_added": 142, "session_deleted": 27},
         {**FILE, "path": "soul-server-ts/src/upstream/event_outbox.ts", "git_status": "modified", "added": _diff_fixture.EVENT_ADD, "deleted": _diff_fixture.EVENT_DEL, "wrote": True},
         {**FILE, "path": "soul-server-ts/src/upstream/outbox_retry.ts", "git_status": "untracked", "added": len(_diff_fixture.NEW_LINES), "deleted": 0, "wrote": True},
     ], "read_only": [{"path": "soul-server-ts/src/upstream/dispatcher.ts", "size": None, "last_read_at": None}],
@@ -600,8 +600,10 @@ def capture_session_history(browser, baseline, base, out):
         ("session-truncated-1440", "card", "dark", "session-truncated", False),
         ("session-error-1440", "card", "dark", "session-error", False),
     ]
-    for name, surface, theme, scene, tabs in [("session-before-1440", "card", "dark", "session-ready", False), ("session-before-384", "pas", "dark", "session-ready", False)] + scenarios:
-        old = name.startswith("session-before")
+    session_stat = {"session-card-1440", "session-pas-384", "session-no-workspace-1440", "session-light-1440"}
+    baseline_scenarios = [(name + "-before", *rest) for name, *rest in scenarios if name in session_stat]
+    for name, surface, theme, scene, tabs in baseline_scenarios + scenarios:
+        old = name.endswith("-before")
         width = 360 if name == "session-tabs-360" else 384 if surface == "pas" else 1440
         context = browser.new_context(viewport={"width": width, "height": 900}, color_scheme=theme, reduced_motion="reduce", locale="ko-KR", service_workers="block")
         page=context.new_page()
@@ -621,17 +623,20 @@ def capture_session_history(browser, baseline, base, out):
         expect(row).to_be_visible(timeout=60000)
         old_row = row.element_handle() if old else None
         row.click()
+        session_stat_span = row.locator('.v3-session-files-diff[title="세션 기록 기준"]')
         if old:
-            try:
-                assert old_row.get_attribute("aria-expanded") == "true"
-            except AssertionError:
-                pass
-            else:
-                raise AssertionError("수정 전 코드가 새 단언을 이미 만족함")
-            page.screenshot(path=str(out / (name + ".png")), animations="disabled")
-            results["before_red"] = "커밋된 행에 펼침 속성이 없어 새 단언 실패"
+            # 바꾸기 전 그림. 새 단언(세션 수치 span)은 바꾸기 전 코드에서 실패해야 한다.
+            assert session_stat_span.count() == 0, "수정 전 코드가 새 단언을 이미 만족함"
+            expect(row).to_have_attribute("aria-expanded", "true")
+            if scene == "session-no-workspace": pane.get_by_role("button",name="읽기만 한 파일",exact=False).click()
+            page.mouse.move(2,2); page.screenshot(path=str(out / (name + ".png")), animations="disabled")
+            results[name + "_red"] = "세션 수치 span 없음 = 새 단언 실패"
             context.close(); continue
         expect(row).to_have_attribute("aria-expanded", "true")
+        if name in session_stat:
+            expect(session_stat_span).to_have_count(1); expect(session_stat_span.locator(".is-add")).to_have_text("+142"); expect(session_stat_span.locator(".is-del")).to_have_text("−27")
+            assert session_stat_span.evaluate("e => e.className") == "v3-session-files-diff", "세션 수치는 git 수치와 같은 클래스여야 한다"
+            expect(pane.locator('.v3-session-files-diff[title="세션 기록 기준"]')).to_have_count(1)
         box=pane.get_by_role("region",name=f"{filename} 변경분")
         if scene == "session-error":
             expect(box.get_by_text("변경분을 불러오지 못했습니다")).to_be_visible()
@@ -652,6 +657,7 @@ def capture_session_history(browser, baseline, base, out):
             static_row = pane.locator(".v3-session-files-entry > div.v3-session-files-row").first
             expect(static_row).to_be_visible()
             page.mouse.move(2, 2)
+            wait_stable(page, static_row, "style"); wait_stable(page, pane.locator(".v3-session-files-group > button.v3-session-files-row").first, "style")
             row_style = pane.evaluate("""el => {
                 const measure = row => { const r=row.getBoundingClientRect(), s=getComputedStyle(row); return {height:r.height,weight:s.fontWeight,fontSize:s.fontSize,fontFamily:s.fontFamily,lineHeight:s.lineHeight,padding:s.padding,color:s.color,background:s.backgroundColor,cursor:s.cursor}; };
                 return {button:measure(el.querySelector('.v3-session-files-group > button.v3-session-files-row')), static:measure(el.querySelector('.v3-session-files-entry > div.v3-session-files-row'))};
@@ -783,7 +789,7 @@ def main():
                     for _ in range(6):
                         page.keyboard.press("Tab")
                         info["tab"].append(page.evaluate("document.activeElement?.getAttribute('aria-label') || document.activeElement?.textContent?.trim()"))
-                    assert info["tab"] == ["다시 읽기", "파일 닫기", "이번 세션3개일부", "event_outbox_types.ts", f"event_outbox.ts+{_diff_fixture.EVENT_ADD}−{_diff_fixture.EVENT_DEL}", f"outbox_retry.ts새+{len(_diff_fixture.NEW_LINES)}", "읽기만 한 파일1개"], info["tab"]
+                    assert info["tab"] == ["다시 읽기", "파일 닫기", "이번 세션3개일부", "event_outbox_types.ts+142−27", f"event_outbox.ts+{_diff_fixture.EVENT_ADD}−{_diff_fixture.EVENT_DEL}", f"outbox_retry.ts새+{len(_diff_fixture.NEW_LINES)}", "읽기만 한 파일1개"], info["tab"]
                     pane.get_by_role("button", name="다른 변경", exact=False).click()
                     pane.get_by_text("event_outbox.ts", exact=True).click()
                     pane.get_by_role("region", name="event_outbox.ts 변경분").get_by_role("button", name="전체 보기").click()

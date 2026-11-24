@@ -25,6 +25,7 @@ describe("session file activity", () => {
     const sql=async (parts:TemplateStringsArray)=>{
       const query=parts.join("?");
       if(query.includes("FROM sessions")) return [{session_id:"s",node_id:"n",agent_id:"a",worktree_id:null,created_at:new Date("2026-01-01T00:00:00Z"),model_preset:null}];
+      if(query.includes("SELECT event_type, payload, created_at")) return [];
       expect(query).toContain("payload->>'result'");
       expect(query).toContain("MAX(created_at)");
       expect(query).toMatch(/ORDER BY MAX\(created_at\) DESC/i);

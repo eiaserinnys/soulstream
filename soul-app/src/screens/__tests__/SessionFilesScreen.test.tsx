@@ -33,6 +33,19 @@ test('활동별 행, 새 파일과 줄 수를 보이고 읽기 전용은 접힌�
   expect(screen.props.onToggle).toHaveBeenCalled();
 });
 
+test('git 수치가 없는 쓴 파일에는 세션 기록 기준 줄 수를 같은 모양으로 보이고, 없으면 비운다', () => {
+  const screen = view();
+  expect(screen.getByLabelText('세션 기록 기준 추가 142줄, 삭제 27줄')).toBeTruthy();
+  expect(screen.getByText('+142')).toBeTruthy();
+  expect(screen.getByText(' −27')).toBeTruthy();
+  expect(screen.getAllByLabelText(/세션 기록 기준/)).toHaveLength(1);
+  expect(screen.getByText('+42')).toBeTruthy();
+  const files = reviewWorkspace.files.map(file => ({ ...file, session_added: null, session_deleted: null }));
+  const empty = view({ data: { ...reviewWorkspace, files } });
+  expect(empty.queryByText('+142')).toBeNull();
+  expect(empty.queryByLabelText(/세션 기록 기준/)).toBeNull();
+});
+
 test('행을 누르면 원문 주소를 가진 순서 목록을 미리보기에 넘기고 크기 미상의 읽은 파일도 연다', () => {
   const screen = view({ expanded: true, selected: 'soul-server-ts/src/upstream/dispatcher.ts' });
   fireEvent.press(screen.getByLabelText('outbox_retry.ts'));
