@@ -103,4 +103,11 @@ describe("agent MCP preview", () => {
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: "preview_agent_mcp", requestId: "preview", success: true,
       data: expect.objectContaining({ applied_revision: 4, normal: expect.objectContaining({ servers: [expect.objectContaining({ server_id: "atom", name: "catalog" })] }) }) }));
   });
+
+  it("does not forward values from profile resolution failures", async () => {
+    const service = new McpConfigService({ agentsConfigPath: "/tmp/preview-agents.yaml", processEnv: {} });
+    const commands = new McpConfigCommands(service, () => {}, { tasks: { resolveNewSessionAgent: async () => { throw new Error("fake-secret-value"); } },
+      context: { nodeId: "test", codexMode: "app-server", isolationEnabled: false, localMcpPolicy: () => policy } });
+    await expect(commands.preview({ requestId: "1", agent_id: "a" })).rejects.toMatchObject({ code: "MCP_PREVIEW_FAILED", message: "MCP preview failed" });
+  });
 });

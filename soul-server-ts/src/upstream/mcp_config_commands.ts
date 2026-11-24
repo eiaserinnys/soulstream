@@ -9,6 +9,7 @@ import { resolveModelPresetSelection } from "../task/task_model_preset.js";
 import { UnknownAgentProfileError, type TaskRuntimeCommands } from "./task_runtime_commands.js";
 import type { ModelCatalog } from "../model_catalog.js";
 import type { IsolationPolicy } from "../security/session_isolation_contract.js";
+import { CentralMcpNotSyncedError } from "../mcp_central/state.js";
 
 const SyncSchema = z.object({ type: z.literal("mcp_central_sync"), requestId: z.string().min(1),
   revision: z.number().int().nonnegative(), mode: z.never().optional(),
@@ -52,6 +53,14 @@ export class McpConfigCommands {
 
   async preview(input: unknown) {
     if (this.service?.isPortableNode()) throw new CommandDispatchError("Portable nodes cannot receive central MCP configuration", "MCP_PORTABLE_NODE");
+    try { return await this.previewChecked(input); }
+    catch (error) {
+      if (error instanceof CommandDispatchError || error instanceof CentralMcpNotSyncedError) throw error;
+      throw new CommandDispatchError("MCP preview failed", "MCP_PREVIEW_FAILED");
+    }
+  }
+
+  private async previewChecked(input: unknown) {
     const parsed = PreviewSchema.safeParse(input);
     if (!parsed.success) throw new CommandDispatchError("Invalid MCP preview request", "MCP_INVALID_INPUT");
     if (!this.service || !this.previewDeps) throw new CommandDispatchError("MCP preview unavailable");

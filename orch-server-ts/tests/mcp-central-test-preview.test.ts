@@ -58,16 +58,19 @@ describe("MCP test and preview operations", () => {
   });
 
   it("joins icons and out-of-scope rows only for current central runnable previews", async () => {
-    let mode = "central", revision = 4, runnable = true;
+    let mode = "central", revision = 4, runnable = true, duplicate = false;
     const sent: unknown[] = [];
     const sync = { sendAux: async (_node: string, build: () => Promise<unknown>) => {
       sent.push(await build());
-      return { applied_mode: mode, applied_revision: revision, normal: { runnable, servers: [{ server_id: "atom", name: "catalog", type: "stdio", included: true }] }, restricted: { runnable: false, servers: [] } };
+      return { applied_mode: mode, applied_revision: revision, normal: { runnable, servers: [{ server_id: "atom", name: "catalog", type: "stdio", included: true }, ...(duplicate ? [{ server_id: "other", name: "other", type: "sse", included: false }] : [])] }, restricted: { runnable: false, servers: [] } };
     } };
     const actions = createMcpTestPreviewService({ service: { getConfig: async () => config } as never, sync: sync as never, resolveSql: async () => { throw new Error("unexpected secret read"); } });
     const current = await actions.preview("a", "n") as { normal: { servers: unknown[] } };
     expect(current.normal.servers).toEqual(expect.arrayContaining([expect.objectContaining({ server_id: "atom", node_override: true, icon: config.servers[0]!.icon }), expect.objectContaining({ server_id: "other", excluded_reason: "이 노드 미적용" })]));
     expect(JSON.stringify(sent)).not.toContain("icon");
+    duplicate = true;
+    const duplicated = await actions.preview("a", "n") as { normal: { servers: Array<{ server_id: string }> } };
+    expect(duplicated.normal.servers.filter(row => row.server_id === "other")).toHaveLength(1); duplicate = false;
     const normalRows = async () => (await actions.preview("a", "n") as { normal: { servers: unknown[] } }).normal.servers;
     mode = "local"; expect(await normalRows()).toHaveLength(1);
     mode = "central"; revision = 3; expect(await normalRows()).toHaveLength(1);
