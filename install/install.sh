@@ -1124,7 +1124,7 @@ finish_message() {
     printf 'Atom: http://127.0.0.1:4200\n'
     printf 'Password for both: sudo cat %s/.admin-password\n' "$root"
   fi
-  printf 'PAS: create a persistent session in the Soulstream dashboard; it uses 서소영 (PAS) by default.\n'
+  printf 'PAS: once you connect a coding agent, the dashboard creates a default 서소영 (PAS) persistent session.\n'
   if [[ -n "${ATOM_SEED_WARNINGS:-}" ]]; then
     printf 'Atom instructions:\n'
     while IFS= read -r line; do

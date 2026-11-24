@@ -35,7 +35,7 @@ A session is a durable agent execution stream bound to a specific node, agent pr
 
 ## Persistent assistant session and report board
 
-The persistent assistant session (PAS) provides a dedicated, always-available coordinator view at `/persistent` and `/persistent/:sessionId` on the web dashboard and in `PersistentSessionScreen` on `soul-app`.
+The persistent assistant session (PAS) provides a dedicated, always-available coordinator view at `/persistent` and `/persistent/:sessionId` on the web dashboard and in `PersistentSessionScreen` on `soul-app`. When you visit `/` in a new browser, the web dashboard opens this view by default. The dashboard saves this choice per user in that browser, and you can change it in **Settings > Appearance** (`설정 > 화면과 읽기`).
 
 Key surfaces inside the persistent assistant view include:
 
