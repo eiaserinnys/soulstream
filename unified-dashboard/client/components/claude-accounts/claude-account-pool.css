@@ -279,9 +279,9 @@
   background: color-mix(in oklch, var(--background) 82%, transparent);
 }
 
-/* 프로그램이 시트에 초점을 주는 동안 사각 외곽선이 비치지 않게 한다. 안의 단추는 프로젝트 초점 고리를 쓴다. */
+/* 시트를 열어 초점이 시트 자신에 있는 동안(주소가 오기 전)에는 단추와 같은 프로젝트 초점 고리를 보인다. */
 .c724-auth-sheet:focus-visible {
-  outline: none;
+  outline: 2px solid var(--ring);
 }
 
 .c724-auth-sheet-header {
