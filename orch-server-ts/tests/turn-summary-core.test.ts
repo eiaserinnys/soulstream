@@ -256,6 +256,16 @@ describe("turn summary prompt", () => {
 });
 
 describe("TurnSummaryConfigService", () => {
+  it("accepts an openai-api overlay providing all three models", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-api-overlay-"));
+    const path = join(dir, "turn-summary.yaml");
+    const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8");
+    writeFileSync(path, source, "utf8");
+    writeFileSync(join(dir, "turn-summary.local.yaml"),
+      "provider: openai-api\nmodel: one\nstory_model: two\ninstruction_extraction_model: three\n", "utf8");
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog());
+    expect(service.read()).toMatchObject({ provider: "openai-api", model: "one", storyModel: "two", instructionExtractionModel: "three" });
+  });
   it("resolves each catalog task default and lets all local model overrides win", () => {
     const dir = trackTempDir(join(tmpdir(), "turn-summary-catalog-"));
     const path = join(dir, "turn-summary.yaml");

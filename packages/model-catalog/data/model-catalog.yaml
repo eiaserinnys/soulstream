@@ -238,6 +238,8 @@ presets:
     backend: antigravity
     model: gemini-4-argon
     persistent_decision:
+      # First-call observations, 2026-11-09 through 2026-11-14 06:50 UTC.
+      # Entries are [upper idle bound, cached input, total input, sample count].
       first_call_cache_bins:
         - [60, 3836757, 4772657, 29]
         - [180, 3156926, 4616740, 26]
@@ -249,10 +251,15 @@ presets:
         - [3300, 0, 961983, 5]
         - [3600, 0, 244153, 1]
         - [.inf, 228340, 1276231, 8]
+      # The Argon raw usage is the average of the two middle cost samples of 102
+      # initial-manifest turns; it is a cross-workload fallback, not a PAS measurement.
+      # Input: (1630116 + 1402165) / 2; growth: 24309 / 8.
+      # Cached: (1461045 + 1225596) / 2; output: (6224 + 11675) / 2;
+      # reasoning: (4054 + 6082) / 2.
       generation_cost_seed:
         baselineTokens: 120305.5
         growthTokensPerCall: 3038.625
-        input: 1511140.5
+        input: 1516140.5
         cached: 1343320.5
         output: 8949.5
         reasoning: 5068
@@ -273,6 +280,8 @@ presets:
     backend: antigravity
     model: gemini-4-hydrogen
     persistent_decision:
+      # First-call observations, 2026-11-09 through 2026-11-14 06:50 UTC.
+      # Entries are [upper idle bound, cached input, total input, sample count].
       first_call_cache_bins:
         - [60, 590944, 607686, 5]
         - [180, 575717, 588572, 4]

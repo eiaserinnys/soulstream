@@ -712,6 +712,35 @@ describe("model catalogue schema validation", () => {
   });
 
 
+  it("preserves every observed cache bin and generation cost seed", () => {
+    expect(catalog.presets.find((preset) => preset.id === "gemini-4-hydrogen")?.persistent_decision).toEqual({
+      first_call_cache_bins: [
+        [60, 590944, 607686, 5], [180, 575717, 588572, 4], [240, 341836, 441173, 4],
+        [300, 0, 0, 0], [600, 0, 0, 0], [900, 0, 0, 0], [1800, 101127, 523094, 3],
+        [3300, 0, 91181, 1], [3600, 0, 0, 0], [Infinity, 0, 0, 0],
+      ],
+      generation_cost_seed: {
+        baselineTokens: 130418, growthTokensPerCall: 9446 / 3,
+        input: 695025, cached: 565185, output: 8441, reasoning: 6693,
+        source: "hydrogen-pas-generation-296", sampleCount: 1,
+      },
+    });
+    expect(catalog.presets.find((preset) => preset.id === "gemini-4-argon")?.persistent_decision).toEqual({
+      first_call_cache_bins: [
+        [60, 3836757, 4772657, 29], [180, 3156926, 4616740, 26], [240, 1291316, 1520147, 9],
+        [300, 68117, 1984754, 11], [600, 1018136, 5053005, 29], [900, 702269, 3722782, 23],
+        [1800, 445443, 3167534, 17], [3300, 0, 961983, 5], [3600, 0, 244153, 1],
+        [Infinity, 228340, 1276231, 8],
+      ],
+      generation_cost_seed: {
+        baselineTokens: 120305.5, growthTokensPerCall: 24309 / 8,
+        input: (1630116 + 1402165) / 2, cached: (1461045 + 1225596) / 2,
+        output: (6224 + 11675) / 2, reasoning: (4054 + 6082) / 2,
+        source: "argon-cross-workload-median", sampleCount: 102,
+      },
+    });
+  });
+
   it("stores decision data and rejects task defaults pointing at missing presets", () => {
     const hydrogen = catalog.presets.find((preset) => preset.id === "gemini-4-hydrogen")!;
     expect(hydrogen.persistent_decision?.first_call_cache_bins?.[0]).toEqual([60, 590944, 607686, 5]);

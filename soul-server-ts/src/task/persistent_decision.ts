@@ -1,4 +1,3 @@
-// The existing decision rules share one context and remain together for consistent ordering.
 import { DEFAULT_CONFIG, firstCallCacheEstimate, type FirstCallCacheBin } from "./persistent_decision_config.js";
 import { generationCostThresholds, type GenerationCostProfile } from "./persistent_generation_cost.js";
 

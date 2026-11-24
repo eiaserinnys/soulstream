@@ -168,15 +168,14 @@ export class TurnSummaryConfigService {
         return preset.model;
       };
       const defaults = catalog.task_defaults;
-      const model = resolveTaskModel(defaults.turn_summary.model_preset);
-      const storyModel = resolveTaskModel(defaults.turn_story.model_preset);
-      const instructionModel = resolveTaskModel(defaults.instruction_extraction.model_preset);
       const merged = { ...base, ...overlay };
       const config = TurnSummaryConfigSchema.parse({
         ...merged,
-        model: merged.model ?? model,
-        story_model: merged.story_model ?? (base.model === undefined ? storyModel : merged.model),
-        instruction_extraction_model: merged.instruction_extraction_model ?? instructionModel,
+        model: merged.model ?? resolveTaskModel(defaults.turn_summary.model_preset),
+        story_model: merged.story_model ?? (base.model === undefined
+          ? resolveTaskModel(defaults.turn_story.model_preset) : merged.model),
+        instruction_extraction_model: merged.instruction_extraction_model
+          ?? resolveTaskModel(defaults.instruction_extraction.model_preset),
       });
       this.lastSuccessful = config;
       return config;
