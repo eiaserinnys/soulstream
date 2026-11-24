@@ -20,14 +20,14 @@
   }
 
   .v3-global-toolbar .dashboard-toolbar-actions > [data-slot="button"] {
-    width: 38px;
+    width: 40px;
     padding: 0;
     font-size: 0;
   }
 
   .v3-global-toolbar .dashboard-icon-cap {
-    width: 38px;
-    height: 38px;
+    width: 40px;
+    height: 40px;
   }
 
   /* 작업 공간 스크림 아래의 화면(도구 막대, 폴더 목록, 플래너, 세션 패널)은 조작이 닿지 않는데,
