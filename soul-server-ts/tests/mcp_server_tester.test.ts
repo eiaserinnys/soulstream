@@ -95,6 +95,14 @@ readline.createInterface({input: process.stdin}).on('line', line => {
     const hang = await startServer("hang");
     expect(await testMcpServer({ id: "s", name: "s", type: "streamable_http", config: { url: hang } }, {}, 300)).toMatchObject({ ok: false, error_stage: "timeout" });
   });
+
+  it("finishes the default initialization timeout within 13 seconds", async () => {
+    const url = await startServer("hang");
+    const started = Date.now();
+    const result = await testMcpServer({ id: "s", name: "s", type: "streamable_http", config: { url } }, {});
+    expect(result).toMatchObject({ ok: false, error_stage: "timeout" });
+    expect(Date.now() - started).toBeLessThanOrEqual(13_000);
+  }, 15_000);
   it("reports connection failure without exposing query or header values", async () => {
     const result = await testMcpServer({ id: "test", name: "test", type: "streamable_http", config: {
       url: "http://127.0.0.1:1/mcp?value=fake-query-value", headers: { Authorization: "fake-header-value" },
