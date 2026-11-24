@@ -48,7 +48,7 @@ PAS 세션은 대시보드에서 영구 세션을 만들어 시작합니다. 영
 
 업데이트는 비밀 값, `soulstream`과 `atom` 두 데이터베이스, 기존 작업실, 설치기가 관리하지 않는 환경 설정 줄, 고친 설정 파일을 보존합니다. 고친 설정 파일은 그대로 두고 새 기본본을 같은 자리의 `.installer-new` 파일로 남기며, 설치 끝 안내의 `Configuration:` 아래에 알립니다([관리 설정 파일](configuration.md#files-the-linux-installer-manages)). 업데이트는 기존 atom 지침을 바꾸지 않으며, 새 기본 지침은 새 설치에만 들어갑니다.
 
-확인을 마치면 세 서비스(`soulstream-worker`, `soulstream-orch`, `soulstream-atom`)를 멈춘 뒤 체크아웃, 빌드, 마이그레이션, 기동을 차례로 합니다. 설치 끝 안내에 두 저장소의 이전 리비전과 새 리비전이 나옵니다. 멈춘 뒤에 실패하면 세 서비스를 멈춘 채로 끝나고, 실패한 단계와 두 저장소의 리비전이 `/home/soulstream/soulstream/.local/install-state.json`에 남습니다. 원인을 고친 뒤 같은 명령을 다시 실행하면 복구합니다. 데이터베이스는 되돌리지 않습니다. 제거 도구는 포함하지 않습니다.
+확인을 마치면 세 서비스(`soulstream-worker`, `soulstream-orch`, `soulstream-atom`)를 멈춘 뒤 체크아웃, 빌드, 마이그레이션, 기동을 차례로 합니다. 설치 끝 안내에 두 저장소의 이전 리비전과 새 리비전이 나옵니다. 멈춘 뒤에 실패하면 세 서비스를 멈춘 채로 끝나고, 실패한 단계와 두 저장소의 리비전이 `/home/soulstream/soulstream/.local/install-state.json`에 남습니다. 원인을 고친 뒤 같은 명령을 다시 실행하면 복구합니다. 데이터베이스는 자동으로 되돌리지 않습니다. 그 대신 비추가형 스키마 변경을 적용하기 전에 `soulstream` 데이터베이스를, 업데이트할 때마다 마이그레이션 전에 비어 있지 않은 `atom` 데이터베이스를 `/home/soulstream/soulstream/.local/backups/`에 덤프합니다. 덤프 파일의 권한은 0600이고, 데이터베이스마다 최근 3개를 남깁니다. 실패 안내에 백업 경로와 복원 명령이 나오며 `install-state.json`의 `backups`에도 남습니다. 복원은 새 리비전을 버릴 때만 합니다. 서비스를 멈춘 채 호환 리비전을 체크아웃하고, 빈 대상 데이터베이스에 root 셸로 복원합니다. 제거 도구는 포함하지 않습니다.
 
 ### Tailscale Serve
 

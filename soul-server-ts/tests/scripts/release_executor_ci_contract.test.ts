@@ -57,7 +57,7 @@ describe("database release CI contract", () => {
     const workflow = parse(workflowText);
     expect(workflow.env.PNPM_VERSION).toBe("10.32.1");
     expect(workflowText.match(/corepack prepare pnpm@\$\{\{ env\.PNPM_VERSION \}\} --activate/g))
-      .toHaveLength(3);
+      .toHaveLength(4);
     expect(workflowText.match(/node-version: '22'/g)).toHaveLength(4);
     const allWorkflowSources = readdirSync(workflowsDirectory)
       .filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
@@ -133,6 +133,22 @@ describe("database release CI contract", () => {
     expect(commands).toContain("--reporter=default --reporter=json");
     expect(commands).toContain(
       "--outputFile.json=database-release-postgres-results.json",
+    );
+  });
+
+  it("runs the real installer schema step against an isolated PostgreSQL service on Linux", () => {
+    const workflow = parse(readFileSync(workflowPath, "utf8"));
+    const job = workflow.jobs["linux-installer"];
+    expect(job["runs-on"]).toBe("ubuntu-latest");
+    expect(job.services.postgres.image).toMatch(/^postgres:16/);
+    expect(job.env.TEST_DATABASE_URL).toContain("@127.0.0.1:5432/");
+    expect(job.env.PG_BIN_DIR).toBe("/usr/lib/postgresql/16/bin");
+    const commands = job.steps.map((step: { run?: string }) => step.run ?? "").join("\n");
+    expect(commands).toContain("corepack pnpm install --frozen-lockfile --ignore-scripts");
+    expect(commands).toContain("apt-get install -y postgresql-client-16");
+    expect(commands).toContain("node --test install/tests/*.test.mjs");
+    expect(commands).toContain(
+      "node --test install/tests/integration/install_schema_upgrade.postgres.test.mjs",
     );
   });
 

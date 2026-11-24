@@ -17,6 +17,12 @@ INSTALL_ROOT=
 MANAGED_CONFIG_WARNINGS=
 # Keyed by soulstream and atom; filled by check_repositories.
 declare -gA REPO_PATH=() REPO_PREVIOUS=() REPO_TARGET=() REPO_MODE=() REPO_BRANCH=()
+# Keyed by database name; holds the dumps this run confirmed. backup_database runs in this shell, so on_error sees them.
+declare -gA BACKUP_PATHS=()
+# Owner of both databases, and the role a manual restore creates objects as.
+DATABASE_OWNER=soulstream
+# Dumps kept per database in <root>/.local/backups.
+BACKUP_KEEP=3
 
 usage() {
   printf 'Usage: install.sh [--backends claude,codex,antigravity] [--ref git-ref] [--atom-ref git-ref] [--tailscale [--tailscale-auth-key-file path] [--tailscale-user login]] [--help]\n'
@@ -697,18 +703,33 @@ repo_state_json() {
   jq -n --arg path "$path" --arg previous "${REPO_PREVIOUS[$name]-}" --arg target "${REPO_TARGET[$name]-}" --arg current "$current" \
     'def sha: if . == "" then null else . end; {path: $path, previous_sha: ($previous | sha), target_sha: ($target | sha), current_sha: ($current | sha)}'
 }
+# The manual restore of one dump. The root shell opens the file, since postgres cannot read the backup directory.
+restore_command() {
+  printf "sudo -u postgres pg_restore --exit-on-error --no-owner --role=%s -d <empty_database> < '%s'" "$DATABASE_OWNER" "$1"
+}
+# Prints the backups object of install-state.json: each database dumped in this run, with its restore command.
+backups_state_json() {
+  local db json='{}'
+  for db in soulstream atom; do
+    [[ -n "${BACKUP_PATHS[$db]-}" ]] || continue
+    json=$(jq -c --arg db "$db" --arg path "${BACKUP_PATHS[$db]}" --arg restore "$(restore_command "${BACKUP_PATHS[$db]}")" \
+      '. + {($db): {path: $path, restore_command: $restore}}' <<< "$json") || return 1
+  done
+  printf '%s' "$json"
+}
 # write_install_state root status step [units-json]
 write_install_state() {
-  local root=$1 status=$2 step=$3 units=${4-} dir=$1/.local soulstream atom temp
+  local root=$1 status=$2 step=$3 units=${4-} dir=$1/.local soulstream atom backups temp
   if [[ ! -d "$dir" ]]; then
     { mkdir -p "$dir" && chown soulstream:soulstream "$dir"; } || return 1
   fi
   soulstream=$(repo_state_json soulstream) || return 1
   atom=$(repo_state_json atom) || return 1
+  backups=$(backups_state_json) || return 1
   temp=$(mktemp "$dir/install-state.json.XXXXXX") || return 1
   if ! jq -n --arg status "$status" --arg step "$step" --arg updated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-      --argjson soulstream "$soulstream" --argjson atom "$atom" --arg units "$units" \
-      '{status: $status, step: $step, updated_at: $updated_at, repositories: {soulstream: $soulstream, atom: $atom}}
+      --argjson soulstream "$soulstream" --argjson atom "$atom" --argjson backups "$backups" --arg units "$units" \
+      '{status: $status, step: $step, updated_at: $updated_at, repositories: {soulstream: $soulstream, atom: $atom}, backups: $backups}
         + (if $units == "" then {} else {units: ($units | fromjson)} end)' > "$temp" ||
      ! chmod 600 "$temp" || ! mv "$temp" "$dir/install-state.json"; then
     rm -f "$temp"; return 1
@@ -749,6 +770,30 @@ setup_database() {
     if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${name}'" | grep -qx 1; then sudo -u postgres createdb -O soulstream "$name"; fi
   done
 }
+# backup_database root db: dumps the local database db to <root>/.local/backups/<db>-<UTC>-<previous12>-to-<target12>.pgdump.
+# The commits are those of the repository with the same name. postgres writes to stdout and this root shell opens the file;
+# peer authentication over the local socket, so no password reaches argv or the environment.
+# The file is named and the oldest dumps beyond BACKUP_KEEP removed only after pg_restore reads it back.
+backup_database() {
+  local root=$1 db=$2 dir=$1/.local/backups previous=${REPO_PREVIOUS[$2]-} target=${REPO_TARGET[$2]-} temp final i
+  local -a dumps
+  previous=${previous:0:12}
+  [[ -n "$previous" ]] || previous=none
+  { mkdir -p "$dir" && chmod 700 "$dir" && chown soulstream:soulstream "$dir"; } || return 1
+  temp=$(mktemp "$dir/.$db.XXXXXX") || return 1
+  if ! { chmod 600 "$temp" && sudo -u postgres pg_dump --format=custom --no-password -d "$db" > "$temp" && pg_restore --list "$temp" > /dev/null; }; then
+    rm -f "$temp"
+    printf 'Backup of database %s failed.\n' "$db" >&2
+    return 1
+  fi
+  # A dump of the same database within the same second waits instead of replacing it.
+  while final=$dir/$db-$(date -u +%Y%m%dT%H%M%SZ)-$previous-to-${target:0:12}.pgdump; [[ -e "$final" ]]; do sleep 1; done
+  if ! { chown soulstream:soulstream "$temp" && mv "$temp" "$final"; }; then rm -f "$temp"; return 1; fi
+  BACKUP_PATHS[$db]=$final
+  printf 'Database backup (%s): %s\n' "$db" "$final"
+  dumps=("$dir/$db"-????????T??????Z-*.pgdump)
+  for ((i = 0; i < ${#dumps[@]} - BACKUP_KEEP; i++)); do rm -f -- "${dumps[i]}" || return 1; done
+}
 build_atom() {
   local atom_root=$1
   as_soul env NODE_ENV=development npm --prefix "$atom_root" ci --include=dev
@@ -756,8 +801,9 @@ build_atom() {
   # corepack picks the project from the working directory.
   as_soul bash -ec 'cd "$1/dashboard"; corepack pnpm install --frozen-lockfile --prod=false; corepack pnpm run build' bash "$atom_root"
 }
+# Uses INSTALL_ROOT for the backup directory.
 init_atom() {
-  local atom_root=$1 fresh frontend=http://127.0.0.1:4200
+  local atom_root=$1 fresh frontend=http://127.0.0.1:4200 populated
   if [[ "${TAILSCALE:-false}" == true ]]; then frontend=https://${TAILSCALE_DNS}:8443; fi
   fresh=$(mktemp)
   cat > "$fresh" <<ENV
@@ -773,6 +819,9 @@ ENV
   merge_env "$atom_root/.env" "$fresh" 'NODE_ENV API_HOST API_PORT DATABASE_URL JWT_SECRET DASHBOARD_ADMIN_PASSWORD DASHBOARD_DIR FRONTEND_URL'
   rm -f "$fresh"
   chown soulstream:soulstream "$atom_root/.env"
+  # A non-empty atom database is dumped before every migrate, the same revision included; the .env above names this database.
+  populated=$(sudo -u postgres psql -d atom -tA -v ON_ERROR_STOP=1 <<< "SELECT to_regclass('public.cards') IS NOT NULL;") || return 1
+  if [[ "$populated" == t ]]; then backup_database "$INSTALL_ROOT" atom || return 1; fi
   # migrate reads <atom_root>/.env, so it runs after the file is written.
   as_soul npm --prefix "$atom_root" run migrate
   sudo -u postgres psql -d atom -tAc "SELECT current_database() = 'atom' AND to_regclass('public.cards') IS NOT NULL AND to_regclass('public.agents') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'agents' AND column_name = 'scope');" | grep -qx t
@@ -873,10 +922,46 @@ build_project() {
   local root=$1
   as_soul bash -ec 'cd "$1"; corepack pnpm install --frozen-lockfile --prod=false; SOULSTREAM_RELEASE_ENV_FILE="$1/.env.soul-server-ts" corepack pnpm --filter @soulstream/soul-server-ts run build; corepack pnpm --filter @soulstream/orch-server-ts run build; corepack pnpm --dir "$1/unified-dashboard" run build' bash "$root"
 }
+# release_phase root head phase: runs one database release phase as soulstream under the installer authority.
+# Every phase of a run gets the same identity from head. The JSON results go to the log and the last stdout line
+# stays in RELEASE_RESULT; a failure adds its error code.
+release_phase() {
+  local root=$1 head=$2 phase=$3 err status=0 code
+  err=$(mktemp) || return 1
+  RELEASE_RESULT=$(as_soul bash -ec 'cd "$1"; release=clean-${2:0:12}
+export HANIEL_SERVICE_ENV_FILE="$1/.env.orch" HANIEL_TARGET_HEAD="$2" HANIEL_PREVIOUS_HEAD="$2" HANIEL_RELEASE_ID="$release" SOULSTREAM_RELEASE_ID="$release" HANIEL_REQUEST_ID="installer-$2" HANIEL_DEPLOY_REPO=soulstream HANIEL_BACKUP_DIR="$1/.local/database-release/$release"
+exec node packages/db-schema/scripts/release-executor.mjs "$3" --manifest install/release-manifest-installer.json --database-contract install/database-release-installer.json' bash "$root" "$head" "$phase" 2> "$err") || status=$?
+  printf '%s\n' "$RELEASE_RESULT"
+  cat "$err" >&2
+  if ((status != 0)); then
+    code=$(jq -Rr 'fromjson? | .error.code? // empty' < "$err" | tail -n 1) || code=
+    printf 'Database release %s failed: %s\n' "$phase" "${code:-no error code}" >&2
+  fi
+  rm -f "$err"
+  RELEASE_RESULT=$(tail -n 1 <<< "$RELEASE_RESULT")
+  return "$status"
+}
 setup_schema() {
-  local root=$1 sha
-  sha=$(as_soul git -C "$root" rev-parse --short=12 HEAD)
-  as_soul bash -ec 'cd "$1"; export HANIEL_SERVICE_ENV_FILE="$1/.env.orch" SOULSTREAM_RELEASE_ID="clean-$2"; node packages/db-schema/scripts/migrate.mjs initialize; node packages/db-schema/scripts/migrate.mjs verify' bash "$root" "$sha"
+  local root=$1 head fields operation status pending additive
+  head=$(as_soul git -C "$root" rev-parse HEAD) || return 1
+  release_phase "$root" "$head" preflight || return 1
+  if ! fields=$(jq -er 'select(.ok == true and (.operation | type) == "string" and (.status | type) == "string"
+      and (.pending_count | type) == "number" and (.pending_additive_only | type) == "boolean")
+      | "\(.operation) \(.status) \(.pending_count) \(.pending_additive_only)"' <<< "$RELEASE_RESULT"); then
+    printf 'Database release preflight returned an unexpected result.\n' >&2
+    return 1
+  fi
+  read -r operation status pending additive <<< "$fields"
+  # Only a journal that has not committed yet takes a dump. verified and applied_reconciled journals still report
+  # their first plan's count, so a same-target rerun would otherwise push the pre-change dump out of the newest three.
+  if [[ "$operation" == upgrade && "$additive" == false && " preflight_complete apply_started apply_failed " == *" $status "* ]] &&
+     ((pending > 0)); then
+    backup_database "$root" soulstream || return 1
+  fi
+  release_phase "$root" "$head" apply || return 1
+  release_phase "$root" "$head" verify || return 1
+  # The executor verify returns at once on a verified journal; this reads the ledger and the schema again.
+  as_soul bash -ec 'cd "$1"; export HANIEL_SERVICE_ENV_FILE="$1/.env.orch" SOULSTREAM_RELEASE_ID="clean-${2:0:12}"; node packages/db-schema/scripts/migrate.mjs verify' bash "$root" "$head" || return 1
   local owner=owner@local display_name=Owner
   if [[ "$TAILSCALE" == true ]]; then owner=$TAILSCALE_USER; display_name=$owner; fi
   sudo -u postgres psql -d soulstream -v ON_ERROR_STOP=1 -v "owner=$owner" -v "display_name=$display_name" >/dev/null <<'SQL'
@@ -1049,7 +1134,7 @@ on_error() {
   printf '\nInstallation failed at: %s\nLog: %s\n' "$STEP" "$LOG" >&3
   tail -n 30 "$LOG" >&3
   if [[ "$MAINTENANCE_ENTERED" == true ]]; then
-    local unit state units='{}' summary=
+    local unit state units='{}' summary= db
     # Leave no service partly started.
     for unit in $SERVICE_UNITS; do
       if [[ -e "$SYSTEMD_DIR/$unit" ]]; then systemctl stop "$unit" >> "$LOG" 2>&1 || true; fi
@@ -1061,7 +1146,13 @@ on_error() {
       units=$(jq -c --arg unit "$unit" --arg state "$state" '. + {($unit): $state}' <<< "$units" 2>/dev/null) || true
     done
     write_install_state "$INSTALL_ROOT" failed "$STEP" "$units" >> "$LOG" 2>&1 || true
-    printf 'Services stopped:%s\nState: %s/.local/install-state.json\nFix the cause, then run the same command again.\n' "$summary" "$INSTALL_ROOT" >&3
+    printf 'Services stopped:%s\nState: %s/.local/install-state.json\n' "$summary" "$INSTALL_ROOT" >&3
+    for db in soulstream atom; do
+      [[ -n "${BACKUP_PATHS[$db]-}" ]] || continue
+      printf 'Database backup (%s): %s\n' "$db" "${BACKUP_PATHS[$db]}" >&3
+      printf 'Restore it only to give up the new revision: with the services stopped and a compatible revision checked out, as root restore into an empty database: %s\n' "$(restore_command "${BACKUP_PATHS[$db]}")" >&3
+    done
+    printf 'Fix the cause, then run the same command again.\n' >&3
   fi
   exit 1
 }
