@@ -436,6 +436,7 @@ def capture_empty_states(browser, base, out: Path, prefix: str):
             page.locator('[data-slot="dialog-popup"]').get_by_role("button", name="완료").click()
             expect(page.get_by_test_id("persistent-empty-creating")).to_be_visible(timeout=15000)
             check("설정창을 닫은 뒤 목록을 다시 읽고 기본 세션 만들기로 이어짐", ("POST", "/api/persistent-sessions/bootstrap") in fake.calls, fake.calls[-6:])
+            fake.held_bootstrap.abort()  # 붙잡아 둔 요청을 놓아야 닫을 때 정리 오류가 나지 않는다.
         context.close()
 
     # 기본 세션 만드는 중, 그리고 성공하면 그 세션으로 이동
