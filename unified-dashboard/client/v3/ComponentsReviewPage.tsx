@@ -59,6 +59,7 @@ import { ReportTimelineRow } from './ReportTimelineRow';
 import type { ReportTimelineRowLine, ReportTimelineRowStatus } from '../../../packages/wire-schema/src/persistent_report';
 import { exhaustiveList } from '@shared/exhaustive';
 import { CENTRAL_REVIEW_SCENES, ClaudeAccountPoolReviewSample, ClaudeCentralPoolReviewSample, ClaudePoolPasReviewSample, isCentralReviewScene } from './ClaudeAccountPoolReviewSample';
+import { AgentLoginSheetReviewSamples, CodingAgentRowReviewSamples, CodingAgentsTabReviewSample, PersistentEmptyStateReviewSamples, PersistentSessionsTabReviewSample, SettingsToolbarReviewSamples } from "./SettingsToolbarReviewSamples";
 import { UsageShareRow } from "../components/usage-stats/UsageShareRow";
 import "../components/usage-stats/usage-stats.css";
 
@@ -487,6 +488,12 @@ export function ComponentsReviewPage() {
             <Sample name="MCP 아이콘과 값 단위" state="타일 · 고르기 · 서버 아이콘 줄 · 참조"><McpReviewSample /></Sample>
             <Sample name="PersistentSessionWeeklyUsage" state="1101px 이상 · 노드 3/2/0개 게이지 · 노드 이동 · 대기 · 조회 실패 · 갱신 지연"><PersistentSessionWeeklyUsageReviewSample/></Sample>
             <Sample name="NodeProvidersPanel / ClaudeAuthLoginSheet" state="공급자 중립 행 · 계정 풀 접힘/펼침 · 미설정 · 조회 오류 · 수집 지연 · 새로 고침"><ClaudeAccountPoolReviewSample/></Sample>
+            <Sample name="V3GlobalToolbar" state="PAS 창 툴바와 기존 대시보드 툴바 · atom 단추 있음/없음"><SettingsToolbarReviewSamples/></Sample>
+            <Sample name="NodeProvidersPanel · 코딩 에이전트 행" state="연결 안 됨(연결) · 연결됨(다시 연결) · 단추 없음(login_supported 거짓)"><CodingAgentRowReviewSamples/></Sample>
+            <Sample name="AgentLoginSheet" state="Codex 주소와 코드 · Antigravity 코드 입력칸 · 확인 중 · 연결됨 · 실패(device_code_disabled, invalid_code)"><AgentLoginSheetReviewSamples/></Sample>
+            <Sample name="CodingAgentsTab" state="노드 하나를 고른 채 열림 · 공급자 행"><CodingAgentsTabReviewSample/></Sample>
+            <Sample name="PersistentSessionEmptyState" state="만들기 단추 · 연결 필요(관리자/아님) · 만드는 중 · 실패와 다시 시도"><PersistentEmptyStateReviewSamples/></Sample>
+            <Sample name="PersistentSessionsTab 상세" state="지속 지시 · 계정과 모델 · 표시와 모션 · 기록 · 세션 스토리"><PersistentSessionsTabReviewSample/></Sample>
             <Sample name="NodePanel · 중앙 풀 / 중앙 풀 받기" state="중앙 빈 상태 · 계정 셋 · 로그인 · 목록 로딩/실패 · 받기 켬/끔/대기/실패">
               <div className="space-y-3">
                 {CENTRAL_REVIEW_SCENES.map((scene) => <div key={scene} data-review-scene={scene}>

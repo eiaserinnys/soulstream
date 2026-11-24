@@ -160,7 +160,7 @@ const usageFixtureAccountLists: Record<string, ClaudeAccountList> = {
   "sample-node": { mode: "pool", accounts: usageFixturePoolAccounts, pool: usageSummaryFixture(false).nodes[0]!.providers.claude?.pool ?? null, fable_pool: null },
   "sample-usage-node": { mode: "legacy", accounts: [], pool: null, fable_pool: null },
 };
-const persistentSettingsTimeline = [
+export const persistentSettingsTimeline = [
   { id: 106, event_type: "complete", payload: { usage: { input_tokens: 14320, output_tokens: 2840 }, turn_cost_usd: 0.62 }, created_at: "2026-10-06T03:40:12.418Z" },
   { id: 105, event_type: "user_message", payload: { text: "요약해 주세요." }, created_at: "2026-10-06T03:39:00.000Z" },
   { id: 104, event_type: "context_usage", payload: { used_tokens: 326000, max_tokens: 1000000, percent: 32.6, estimated: false }, created_at: "2026-10-06T03:38:00.000Z" },
@@ -169,13 +169,13 @@ const persistentSettingsTimeline = [
   { id: 101, event_type: "context_usage", payload: { used_tokens: 124000, max_tokens: 1000000, percent: 12.4, estimated: false }, created_at: "2026-10-06T02:29:00.000Z" },
   { id: 100, event_type: "generation_started", payload: { generation: 6, reason: "weekly_headroom", current: { model: "gpt-6.1-sol-preview-2026-09-30-long" } }, created_at: "2026-10-06T02:00:00.000Z" },
 ];
-const persistentSettingsModelPresets = [
+export const persistentSettingsModelPresets = [
   { id: "sample-a", label: "Sample A", backend: "claude", available: true, reason: null, reason_label: null, resets_at: "2026-10-08T00:00:00.000Z", usage_warning: false,
     weekly_headroom: { status: "ok", headroom: 12.5, remaining_percent: 72.5, window_remaining_percent: 60, resets_at: "2026-10-08T00:00:00.000Z", observed_at: "2026-10-06T02:00:00.000Z", quota_label: "7일" } },
   { id: "sample-sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
     weekly_headroom: { status: "ok", headroom: -56.6, remaining_percent: 21, window_remaining_percent: 77.6, resets_at: null, observed_at: "2026-10-06T02:01:00.000Z", quota_label: "7일" } },
 ];
-const persistentSettingsStory: SessionStory = {
+export const persistentSettingsStory: SessionStory = {
   highlight: "설정 탭에서 확인하는 세션의 주요 결정입니다.",
   narrative: Array.from({ length: 36 }, (_, index) =>
     `스토리 구간 ${index + 1}: 대화의 전개와 결정된 내용을 설정 탭에서 확인합니다.`,
