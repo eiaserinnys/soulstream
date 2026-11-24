@@ -46,15 +46,24 @@ test('installation commands start in a directory accessible to service users', (
     assert.equal(result.stdout.trim(), '/');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test('Claude login guidance works without a local browser', () => {
+test('login guidance points to the dashboard and keeps the SSH alternative for Codex and Antigravity', () => {
   const dir = mkdtempSync(join(tmpdir(), 'install-finish-'));
   try {
     writeFileSync(join(dir, '.admin-password'), 'test-password\n');
-    const result = spawnSync('bash', ['-c', 'source "$1"; as_soul() { printf abc; }; BACKENDS=claude; finish_message "$2"', 'bash', script, dir], { encoding: 'utf8' });
+    const message = (backends) => spawnSync('bash', ['-c', 'source "$1"; as_soul() { printf abc; }; BACKENDS="$3"; finish_message "$2"', 'bash', script, dir, backends], { encoding: 'utf8' });
+    const result = message('claude,codex,antigravity');
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /sudo -Hu soulstream env BROWSER=\/bin\/false \/home\/soulstream\/\.local\/bin\/claude auth login/);
+    assert.ok(result.stdout.includes('Login: connect Claude, Codex, and Antigravity in the dashboard under Settings → 코딩 에이전트.\n'));
+    assert.match(result.stdout, /SSH alternative: Codex with "sudo -Hu soulstream \/usr\/local\/bin\/codex login --device-auth".*Antigravity by running ~\/\.local\/bin\/agy/);
+    // Claude SSH login guidance is gone; only the dashboard connects Claude.
+    assert.ok(!result.stdout.includes('claude auth login'));
+    assert.ok(!result.stdout.includes('BROWSER=/bin/false'));
     assert.ok(!result.stdout.includes('test-password'));
     assert.ok(result.stdout.includes(`Password for both: sudo cat ${dir}/.admin-password\n`));
+    const claudeOnly = message('claude');
+    assert.equal(claudeOnly.status, 0, claudeOnly.stderr);
+    assert.ok(claudeOnly.stdout.includes('Login: connect Claude, Codex, and Antigravity in the dashboard'));
+    assert.ok(!claudeOnly.stdout.includes('SSH alternative'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 test('an auth key file reaches tailscale up by path only', () => {

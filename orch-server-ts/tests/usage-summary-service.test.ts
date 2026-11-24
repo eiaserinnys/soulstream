@@ -22,6 +22,28 @@ describe("UsageSummaryService", () => {
     }
   });
 
+  it("fills login_supported on codex and antigravity from the node's agent_login_v1 capability only", async () => {
+    const response = successResponse(10, 10);
+    Object.assign(response.data.providers.antigravity, limits(10, 10, []));
+    const registry = fakeRegistry(["login-node", "plain-node"]);
+    registry.getConnectedNode("login-node")!.capabilities = { agent_login_v1: true };
+    const service = new UsageSummaryService({ registry, bridge: { sendPendingCommand: vi.fn(async () => response) } as unknown as UsageSummaryBridge, pollIntervalMs: 300_000, sharedAccountGroups: [] });
+    await service.collectOnce();
+
+    const nodes = Object.fromEntries(service.getSummary().nodes.map((node) => [node.nodeId, node.providers]));
+    expect(nodes["login-node"]?.codex?.login_supported).toBe(true);
+    expect(nodes["login-node"]?.antigravity?.login_supported).toBe(true);
+    expect(nodes["plain-node"]?.codex?.login_supported).toBe(false);
+    expect(nodes["plain-node"]?.antigravity?.login_supported).toBe(false);
+    for (const providers of Object.values(nodes)) {
+      expect(providers.claude).not.toHaveProperty("login_supported");
+      expect(providers.opencode_go ?? {}).not.toHaveProperty("login_supported");
+    }
+
+    registry.getConnectedNode("login-node")!.capabilities = {};
+    expect(service.getSummary().nodes.find((node) => node.nodeId === "login-node")?.providers.codex?.login_supported).toBe(false);
+  });
+
   it("keeps an error when there has never been a successful provider sample", async () => {
     const response = successResponse(10);
     Object.assign(response.data.providers.codex, providerErrorLimits());
@@ -881,8 +903,8 @@ describe("UsageSummaryService", () => {
         staleSince: "2026-07-20T10:00:00.000Z",
         providers: {
           claude: errorProvider,
-          codex: errorProvider,
-          antigravity: errorProvider,
+          codex: { ...errorProvider, login_supported: false },
+          antigravity: { ...errorProvider, login_supported: false },
           opencode_go: {
             ...errorProvider,
             status: "not_configured",

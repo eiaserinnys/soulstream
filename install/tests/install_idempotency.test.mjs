@@ -49,6 +49,25 @@ test('configuration rendering preserves secrets and unmanaged lines across backe
   files.forEach((p,i)=>assert.ok(readFileSync(p).equals(before[i]),p));
  } finally { rmSync(dir,{recursive:true,force:true}); }
 });
+test('the worker enables the Claude account pool and a rerun switches an existing install over', () => {
+ const dir=mkdtempSync(join(tmpdir(),'install-pool-')), home=join(dir,'home'), root=join(home,'soulstream');
+ try {
+  const fake=prepareRoot(dir,root);
+  let run=render(home,root,'claude,codex',fake); assert.equal(run.status,0,run.stderr);
+  const workerPath=join(root,'.env.soul-server-ts');
+  assert.equal(env(workerPath).CLAUDE_ACCOUNT_POOL_ENABLED,'true');
+  // An install made before this change wrote false; the same render must flip it once, without a duplicate line.
+  writeFileSync(workerPath,readFileSync(workerPath,'utf8').replace('CLAUDE_ACCOUNT_POOL_ENABLED=true','CLAUDE_ACCOUNT_POOL_ENABLED=false'));
+  assert.equal(env(workerPath).CLAUDE_ACCOUNT_POOL_ENABLED,'false');
+  run=render(home,root,'claude,codex',fake); assert.equal(run.status,0,run.stderr);
+  assert.equal(env(workerPath).CLAUDE_ACCOUNT_POOL_ENABLED,'true');
+  assert.equal(readFileSync(workerPath,'utf8').split('\n').filter(x=>x.startsWith('CLAUDE_ACCOUNT_POOL_ENABLED=')).length,1);
+  // The legacy credential path stays: it is the source the worker moves into the pool on its first start.
+  assert.equal(env(workerPath).CLAUDE_AUTH_TOKEN_PATH,join(home,'.claude','.credentials.json'));
+  run=render(home,root,'codex',fake); assert.equal(run.status,0,run.stderr);
+  assert.equal(env(workerPath).CLAUDE_ACCOUNT_POOL_ENABLED,'true');
+ } finally { rmSync(dir,{recursive:true,force:true}); }
+});
 test('the worker gets the orchestrator JWT secret and keeps it across renders', () => {
  const dir=mkdtempSync(join(tmpdir(),'install-worker-jwt-')), home=join(dir,'home'), root=join(home,'soulstream');
  try {

@@ -1,3 +1,4 @@
+import type { AgentLoginCommandHandler } from "./agent_login_commands.js";
 import type { AuthorizeOrchestrationWorker } from "./task_runtime_commands.js";
 import type { AgentConfigService } from "../agent_config_service.js";
 import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
@@ -51,6 +52,7 @@ export interface UpstreamDependencies {
   claudeAuth?: ClaudeAuthCommandHandler;
   claudeAccounts?: ClaudeAccountsCommandHandler;
   claudeLoginService?: ClaudeLoginCommandHandler;
+  agentLoginService?: AgentLoginCommandHandler;
   claudeAccountPoolEnabled?: boolean;
   sessionDb?: SessionDB;
   realtimeBroker?: RealtimeBroker;

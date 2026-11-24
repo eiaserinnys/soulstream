@@ -1,5 +1,6 @@
 import path from "node:path";
 import { antigravityEnvironment } from "../engine/antigravity_env.js";
+import { composeAgentLoginService } from "../agent_login/index.js";
 import { AgentConfigService } from "../agent_config_service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ProviderUsageService } from "../auth/provider_usage.js";
@@ -82,6 +83,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   const { claudeAuth, claudeAccounts } = composeClaudeAccountServices(env, logger);
   if (claudeAccounts) await seedLegacyClaudeAccount({ env, accounts: claudeAccounts, claudeAuth, logger });
   const claudeLoginService = claudeAccounts ? composeClaudeLoginService({ accounts: claudeAccounts, claudeAuth, logger }) : undefined;
+  const agentLoginService = composeAgentLoginService({ logger, codexCliPath: env.CODEX_CLI_PATH, fetchUsage: (provider) => providerUsage.fetchProvider(provider) });
   const providerUsage = new ProviderUsageService({
     claudeAuth, claudeAccounts, modelCatalog, logger, enabledBackends: env.SOULSTREAM_BACKENDS, opencodeGo: { apiKey: process.env.OPENCODE_GO_API_KEY },
     antigravity: {
@@ -89,6 +91,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       environment: antigravityEnvironment(process.env),
       // In-process workers still need a writable directory for the CLI log.
       stateDirectory: env.SOUL_RUNNER_STATE_DIR ?? env.EVENT_OUTBOX_DIR,
+      loginActivity: agentLoginService.activity,
     },
   });
   const eventOutbox = await EventOutbox.open(env.EVENT_OUTBOX_DIR);
@@ -436,6 +439,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       claudeAuth,
       claudeAccounts,
       claudeLoginService,
+      agentLoginService,
       sessionDb: db,
       realtimeBroker,
       agentConfigService,
@@ -473,6 +477,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     claudeAuth,
     ...(claudeAccounts ? { claudeAccounts } : {}),
     ...(claudeLoginService ? { claudeLoginService } : {}),
+    agentLoginService,
     realtimeBroker,
     agentConfigService,
     mcpRuntime,

@@ -28,7 +28,13 @@ bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl
 
 설치가 끝나기 전에 모델 프리셋 상태를 갱신합니다. 최대 여섯 번 시도하며 각 요청은 최대 60초, 재시도 간격은 10초입니다. 갱신에 실패해도 설치는 계속됩니다.
 
-설치가 끝나면 안내된 명령으로 선택한 CLI에 로그인합니다. Codex는 ChatGPT 보안 설정에서 기기 코드 로그인을 켜야 합니다. Antigravity는 `ssh soulstream@<서버>`로 직접 접속해 `~/.local/bin/agy`에서 로그인하고 `/exit`로 나옵니다. 로그인 후 프리셋은 5분 안에 갱신되며, 즉시 갱신 명령도 설치 결과에 표시됩니다.
+설치가 끝나면 대시보드의 설정 → 코딩 에이전트에서 Claude, Codex, Antigravity를 연결합니다. 서버에서 따로 명령을 실행할 필요가 없습니다. 연결이 끝나면 그 노드의 모델 프리셋이 곧바로 다시 읽힙니다.
+
+- Claude는 계정 풀 로그인을 씁니다. 설치기가 계정 풀을 켠 채로 시작하므로 계정이 0개여도 됩니다. 이미 `~/.claude/.credentials.json`에 SSH 로그인 자격이 있으면 워커가 처음 시작할 때 그 자격을 풀로 옮깁니다.
+- Codex는 기기 코드 방식입니다. 대시보드가 보여 주는 주소를 브라우저에서 열고 함께 보이는 일회용 코드를 입력하면 연결됩니다. ChatGPT 보안 설정에서 기기 코드 로그인을 켜야 합니다.
+- Antigravity는 대시보드가 보여 주는 Google 인증 주소를 브라우저에서 열고, 인증 뒤에 나오는 코드를 대시보드에 붙여 넣으면 연결됩니다.
+
+대시보드를 쓸 수 없을 때는 SSH로 접속해 Codex와 Antigravity에 직접 로그인할 수도 있습니다. Codex는 `sudo -Hu soulstream /usr/local/bin/codex login --device-auth`, Antigravity는 `soulstream` 사용자로 `~/.local/bin/agy`를 실행해 로그인하고 `/exit`로 나옵니다. 이 방식으로 로그인한 뒤 프리셋은 5분 안에 갱신되며, 즉시 갱신 명령도 설치 결과에 표시됩니다. Claude의 SSH 로그인 안내는 없습니다.
 
 대시보드와 atom은 SSH 터널을 연 뒤 로컬 브라우저에서 접속합니다.
 

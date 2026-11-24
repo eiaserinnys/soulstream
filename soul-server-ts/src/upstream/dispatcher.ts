@@ -1,3 +1,4 @@
+import { AgentLoginCommands, type AgentLoginCommandHandler } from "./agent_login_commands.js";
 import { McpConfigCommands, type PreviewContext } from "./mcp_config_commands.js";
 import { createMcpConfigCommandFamily } from "./mcp_config_command_family.js";
 import { CentralMcpNotSyncedError } from "../mcp_central/state.js";
@@ -83,6 +84,7 @@ export interface CommandDispatcherOptions {
   claudeAuth?: ClaudeAuthCommandHandler;
   claudeAccounts?: ClaudeAccountsCommandHandler;
   claudeLoginService?: ClaudeLoginCommandHandler;
+  agentLoginService?: AgentLoginCommandHandler;
   claudeAccountPoolEnabled?: boolean;
   /** Missing wiring becomes an explicit command error instead of a silent fallback. */
   sessionDb?: SessionDB;
@@ -129,6 +131,7 @@ export class CommandDispatcher {
       claudeAuth,
       claudeAccounts,
       claudeLoginService,
+      agentLoginService,
       claudeAccountPoolEnabled,
       sessionDb,
       realtimeBroker,
@@ -214,6 +217,7 @@ export class CommandDispatcher {
       ...createAuthCommandFamily({
         send,
         claudeAuthCommands,
+        agentLoginCommands: new AgentLoginCommands({ agentLoginService }),
         providerUsageCommands,
       }),
       ...createMcpConfigCommandFamily({ send, commands: new McpConfigCommands(

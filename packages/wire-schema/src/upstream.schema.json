@@ -51,6 +51,10 @@
     "claude_auth_login_status",
     "claude_auth_login_submit_code",
     "claude_auth_login_cancel",
+    "agent_login_start",
+    "agent_login_status",
+    "agent_login_submit_code",
+    "agent_login_cancel",
     "claude_central_pool_sync",
     "mcp_central_sync",
     "test_mcp_server",
@@ -712,6 +716,7 @@
           "properties": {
             "runner_inventory_v1": { "type": "boolean" },
             "claude_account_pool_v1": { "type": "boolean" },
+            "agent_login_v1": { "type": "boolean", "description": "Codex와 Antigravity 로그인 명령(agent_login_*)을 처리할 수 있다." },
             "central_mcp_config_v1": { "type": "boolean" },
             "control_channel_v1": { "type": "boolean" }
           }
@@ -3071,6 +3076,96 @@
         "error": { "$ref": "#/$defs/ClaudeAuthError" }
       }
     },
+    "AgentLoginError": {
+      "type": "object",
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "AgentLoginFlow": {
+      "type": "object",
+      "description": "Codex 또는 Antigravity CLI 로그인 흐름의 스냅샷. 일회용 코드와 인증 주소는 이 값으로만 오간다.",
+      "required": ["login_id", "provider", "state", "auth_url", "user_code", "expects_code", "expires_at", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "login_id": { "type": "string" },
+        "provider": { "type": "string", "enum": ["codex", "antigravity"] },
+        "state": {
+          "type": "string",
+          "enum": ["requested", "url_ready", "code_submitted", "verifying", "done", "failed", "cancelled"]
+        },
+        "auth_url": { "type": ["string", "null"] },
+        "user_code": { "type": ["string", "null"] },
+        "expects_code": { "type": "boolean" },
+        "expires_at": { "type": ["string", "null"], "format": "date-time", "description": "UTC ISO 8601." },
+        "error": {
+          "anyOf": [
+            { "$ref": "#/$defs/AgentLoginError" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "AgentLoginStart": {
+      "type": "object",
+      "description": "orch→노드: Codex 또는 Antigravity 로그인 시작.",
+      "required": ["type", "provider"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "agent_login_start" },
+        "requestId": { "type": "string" },
+        "provider": { "type": "string", "enum": ["codex", "antigravity"] },
+        "success": { "type": "boolean", "description": "응답에만 존재." },
+        "data": { "$ref": "#/$defs/AgentLoginFlow" },
+        "error": { "$ref": "#/$defs/AgentLoginError" }
+      }
+    },
+    "AgentLoginStatus": {
+      "type": "object",
+      "description": "orch→노드: Codex 또는 Antigravity 로그인 상태 조회.",
+      "required": ["type", "login_id"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "agent_login_status" },
+        "requestId": { "type": "string" },
+        "login_id": { "type": "string" },
+        "success": { "type": "boolean", "description": "응답에만 존재." },
+        "data": { "$ref": "#/$defs/AgentLoginFlow" },
+        "error": { "$ref": "#/$defs/AgentLoginError" }
+      }
+    },
+    "AgentLoginSubmitCode": {
+      "type": "object",
+      "description": "orch→노드: Antigravity 로그인 인증 코드 제출.",
+      "required": ["type", "login_id", "code"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "agent_login_submit_code" },
+        "requestId": { "type": "string" },
+        "login_id": { "type": "string" },
+        "code": { "type": "string" },
+        "success": { "type": "boolean", "description": "응답에만 존재." },
+        "data": { "$ref": "#/$defs/AgentLoginFlow" },
+        "error": { "$ref": "#/$defs/AgentLoginError" }
+      }
+    },
+    "AgentLoginCancel": {
+      "type": "object",
+      "description": "orch→노드: Codex 또는 Antigravity 로그인 취소.",
+      "required": ["type", "login_id"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "agent_login_cancel" },
+        "requestId": { "type": "string" },
+        "login_id": { "type": "string" },
+        "success": { "type": "boolean", "description": "응답에만 존재." },
+        "data": { "$ref": "#/$defs/AgentLoginFlow" },
+        "error": { "$ref": "#/$defs/AgentLoginError" }
+      }
+    },
     "ClaudeCentralPoolAccount": {
       "type": "object",
       "description": "오케스트레이터가 내려주는 중앙 풀 계정 한 건. 접근 토큰은 needs_relogin이거나 enabled false면 null.",
@@ -5169,6 +5264,10 @@
     { "$ref": "#/$defs/ClaudeAuthLoginStatus" },
     { "$ref": "#/$defs/ClaudeAuthLoginSubmitCode" },
     { "$ref": "#/$defs/ClaudeAuthLoginCancel" },
+    { "$ref": "#/$defs/AgentLoginStart" },
+    { "$ref": "#/$defs/AgentLoginStatus" },
+    { "$ref": "#/$defs/AgentLoginSubmitCode" },
+    { "$ref": "#/$defs/AgentLoginCancel" },
     { "$ref": "#/$defs/ClaudeCentralPoolSync" },
     { "$ref": "#/$defs/McpCentralSync" },
     { "$ref": "#/$defs/McpTestServer" },

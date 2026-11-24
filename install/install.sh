@@ -439,7 +439,7 @@ SOUL_RUNNER_RELEASES_DIR=${root}/.local/runner-releases
 WORKTREE_MCP_ENABLED=true
 WORKTREE_PROJECTS_ROOT=${home}/workspace/.projects
 SESSION_ISOLATION_MODE=off
-CLAUDE_ACCOUNT_POOL_ENABLED=false
+CLAUDE_ACCOUNT_POOL_ENABLED=true
 ATOM_ENABLED=true
 ATOM_SERVER_URL=http://127.0.0.1:4200
 ATOM_API_KEY=${atom_api_key}
@@ -1137,9 +1137,8 @@ finish_message() {
       if [[ -n "$line" ]]; then printf '  %s\n' "$line"; fi
     done <<< "$MANAGED_CONFIG_WARNINGS"
   fi
-  if has_backend claude; then printf 'Claude: sudo -Hu soulstream env BROWSER=/bin/false /home/soulstream/.local/bin/claude auth login (open the URL on another device).\n'; fi
-  if has_backend codex; then printf 'Codex: sudo -Hu soulstream /usr/local/bin/codex login --device-auth (enable device code login in ChatGPT security settings).\n'; fi
-  if has_backend antigravity; then printf 'Antigravity: ssh soulstream@<server>, run ~/.local/bin/agy, sign in, then /exit.\n'; fi
+  printf 'Login: connect Claude, Codex, and Antigravity in the dashboard under Settings → 코딩 에이전트.\n'
+  if has_backend codex || has_backend antigravity; then printf 'SSH alternative: Codex with "sudo -Hu soulstream /usr/local/bin/codex login --device-auth" (enable device code login in ChatGPT security settings), Antigravity by running ~/.local/bin/agy as the soulstream user.\n'; fi
   printf 'After login, presets update within five minutes. To refresh now as root:\n'
   printf '%s\n' "awk -F= '/^AUTH_BEARER_TOKEN=/{print \"Authorization: Bearer \" substr(\$0,index(\$0,\"=\")+1)}' $root/.env.orch | curl -fsS -X POST -H @- http://127.0.0.1:5200/api/usage/refresh"
   if [[ "${PRESET_REFRESH_PENDING:-false}" == true ]]; then printf 'Model preset status is not confirmed yet; it updates within five minutes.\n'; fi

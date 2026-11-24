@@ -4,6 +4,11 @@ import {
   type SendFn,
 } from "./command_family.js";
 import {
+  AgentLoginCommandError,
+  AgentLoginCommands,
+  type AgentLoginCommand,
+} from "./agent_login_commands.js";
+import {
   ClaudeAuthCommandError,
   ClaudeAuthCommands,
   type ClaudeAuthCommand,
@@ -17,6 +22,7 @@ import {
 interface AuthCommandFamilyDeps {
   send: SendFn;
   claudeAuthCommands: ClaudeAuthCommands;
+  agentLoginCommands: AgentLoginCommands;
   providerUsageCommands: ProviderUsageCommands;
 }
 
@@ -37,6 +43,10 @@ export function createAuthCommandFamily(
     claude_auth_login_status: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
     claude_auth_login_submit_code: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
     claude_auth_login_cancel: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
+    agent_login_start: (cmd) => handleAgentLogin(deps, cmd as AgentLoginCommand),
+    agent_login_status: (cmd) => handleAgentLogin(deps, cmd as AgentLoginCommand),
+    agent_login_submit_code: (cmd) => handleAgentLogin(deps, cmd as AgentLoginCommand),
+    agent_login_cancel: (cmd) => handleAgentLogin(deps, cmd as AgentLoginCommand),
     claude_central_pool_sync: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
     provider_usage_get: (cmd) =>
       handleProviderUsage(deps, cmd as ProviderUsageCommand),
@@ -54,6 +64,20 @@ async function handleClaudeAuth(
     }
   } catch (err) {
     if (err instanceof ClaudeAuthCommandError) {
+      throw new CommandDispatchError(err.message, err.code);
+    }
+    throw err;
+  }
+}
+
+async function handleAgentLogin(
+  deps: AuthCommandFamilyDeps,
+  cmd: AgentLoginCommand,
+): Promise<void> {
+  try {
+    await deps.send(await deps.agentLoginCommands.handle(cmd));
+  } catch (err) {
+    if (err instanceof AgentLoginCommandError) {
       throw new CommandDispatchError(err.message, err.code);
     }
     throw err;

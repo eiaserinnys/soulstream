@@ -7,7 +7,7 @@ import type {
   NodeConnectionSnapshot,
 } from "../node/registry_types.js";
 import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
-import { supportsClaudeAccountPool } from "../node/registry_helpers.js";
+import { supportsAgentLogin, supportsClaudeAccountPool } from "../node/registry_helpers.js";
 import {
   getProviderLimitRejection,
   observeProviderExecution,
@@ -58,6 +58,8 @@ export type UsageSummaryProvider = {
   readonly accounts?: readonly UsageSummaryClaudeAccount[];
   readonly pool?: UsageSummaryClaudeAccountPool | null;
   readonly fable_pool?: UsageSummaryClaudeAccountPool | null;
+  /** codex와 antigravity에만 채운다. 그 노드가 agent_login_v1을 알렸는지다. */
+  readonly login_supported?: boolean;
   readonly source?: string | null;
   readonly sourceKind?: "remote" | "rollout" | "unknown";
   readonly observedAt?: string | null;
@@ -447,8 +449,11 @@ export class UsageSummaryService {
   }
 
   private summarizeNode(state: MutableNodeState): UsageSummaryNode {
-    const summary = summarizeNode(state, this.staleAfterMs, this.now());
     const node = this.registry.getConnectedNode(state.nodeId);
+    const summary = withLoginSupport(
+      summarizeNode(state, this.staleAfterMs, this.now()),
+      supportsAgentLogin(node?.capabilities),
+    );
     if (
       node === undefined
       || supportsClaudeAccountPool(node.capabilities)
@@ -550,6 +555,18 @@ export class UsageSummaryService {
     }
     return response;
   }
+}
+
+function withLoginSupport(summary: UsageSummaryNode, supported: boolean): UsageSummaryNode {
+  const { codex, antigravity } = summary.providers;
+  return {
+    ...summary,
+    providers: {
+      ...summary.providers,
+      codex: codex === null ? null : { ...codex, login_supported: supported },
+      antigravity: antigravity === null ? null : { ...antigravity, login_supported: supported },
+    },
+  };
 }
 
 function summarizeNode(
