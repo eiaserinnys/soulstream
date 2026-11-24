@@ -9,7 +9,7 @@ import json
 import threading
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
-from playwright.sync_api import sync_playwright, expect
+from playwright.sync_api import sync_playwright, expect, TimeoutError as PlaywrightTimeoutError
 
 ROOT = Path(__file__).resolve().parents[2]
 DIST = ROOT / "unified-dashboard" / "dist"
@@ -293,7 +293,14 @@ def capture_layout_checks(browser, base, out):
             page.get_by_test_id('v3-mobile-tab-chat').click()
         if surface == 'folder' and width <= 760:
             expect(page.locator('.v3-workspace[data-mobile-view="chat"][data-mobile-files="true"]')).to_be_visible(timeout=15000)
-        expect(pane).to_be_visible(); page.wait_for_timeout(150)
+        expect(pane).to_be_visible()
+        if surface == 'folder':
+            try:
+                page.wait_for_function('el => el.getBoundingClientRect().right <= window.innerWidth', arg=pane.element_handle(), timeout=15000)
+            except PlaywrightTimeoutError:
+                print(json.dumps(pane.evaluate("""el => {const s=getComputedStyle(el);return {class:el.className, position:s.position, left:s.left, width:s.width, borderRadius:s.borderRadius, innerWidth:window.innerWidth, right:el.getBoundingClientRect().right}}"""), ensure_ascii=False), flush=True)
+                raise
+        page.wait_for_timeout(150)
     for surface in ('card', 'folder', 'pas'):
         context, page, workspace, pane = open_surface(surface, 'matrix')
         expect(pane.locator('.v3-session-files-title strong')).to_have_text(LONG_BRANCH)
@@ -311,7 +318,8 @@ def capture_layout_checks(browser, base, out):
                   iconShrink:getComputedStyle(svg).flexShrink,strong:rect(strong),strongScroll:strong.scrollWidth,strongClient:strong.clientWidth,
                   strongOverflow:css.overflow,strongEllipsis:css.textOverflow,strongWhiteSpace:css.whiteSpace,strongFontSize:parseFloat(css.fontSize),strongTitle:strong.getAttribute('title'),
                   ahead:rect(title.querySelector('span')),aheadText:title.querySelector('span').textContent,
-                  caps:caps.map(rect),radius:getComputedStyle(el).borderRadius,border:getComputedStyle(el).borderTopWidth};
+                  caps:caps.map(rect),radius:getComputedStyle(el).borderRadius,border:getComputedStyle(el).borderTopWidth,
+                  class:el.className,position:getComputedStyle(el).position,left:getComputedStyle(el).left,width:getComputedStyle(el).width,innerWidth:window.innerWidth};
             }""")
             results['surfaces'][surface][str(width)] = m
             key = f'{surface}-{width}'
