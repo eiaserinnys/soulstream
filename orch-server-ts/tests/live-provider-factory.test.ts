@@ -390,6 +390,7 @@ describe("live provider factory boundary", () => {
       nodeName: "orch-live",
       authEnabled: true,
       atomEnabled: true,
+      atomPublicUrl: "https://atom.example.test",
     });
     await expect(
       bundle.authRoutes.configProvider.getConfig(),
