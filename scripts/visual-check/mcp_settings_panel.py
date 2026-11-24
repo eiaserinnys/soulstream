@@ -18,7 +18,7 @@ from playwright.sync_api import sync_playwright, expect
 ROOT = Path(__file__).resolve().parents[2]
 DIST = ROOT / 'unified-dashboard' / 'dist'
 NODES = ['eiaserinnys', 'eias-linegames', 'eias-linegames-wsl']
-NAMES = ['arbor', 'atom', 'atom-nl', 'chrome-devtools', 'clipper', 'cloistermont', 'corksheet', 'dorothy-memory', 'eb-index', 'exa', 'haniel', 'kaleidoscope', 'mbti-mcp', 'ms-todo', 'nnow', 'openaiDeveloperDocs', 'opgg', 'outline', 'seosoyoung-mcp', 'serendipity', 'shay', 'slack', 'slides', 'soulstream', 'soulstream-cogito', 'trello']
+NAMES = ['arbor', 'atom', 'atom-nl', 'chrome-devtools', 'clipper', 'cloistermont', 'corksheet', 'dorothy-memory', 'eb-index', 'exa', 'haniel', 'example-mcp', 'mbti-mcp', 'ms-todo', 'nnow', 'openaiDeveloperDocs', 'opgg', 'outline', 'seosoyoung-mcp', 'serendipity', 'shay', 'slack', 'slides', 'soulstream', 'soulstream-cogito', 'trello']
 IMAGE_BUFFER = io.BytesIO()
 Image.new('RGB', (24, 24), 'blue').save(IMAGE_BUFFER, format='PNG')
 FAKE_IMAGE = IMAGE_BUFFER.getvalue()
@@ -170,6 +170,8 @@ def run(browser, base, out):
             raise
         expect(page.get_by_test_id('mcp-settings')).to_be_visible()
         page.wait_for_timeout(300)  # 공용 DialogPopup의 열기 전환이 끝난 좌표를 잰다.
+        expect(page.get_by_test_id('mcp-no-nodes')).to_have_text('적용 노드 없음', timeout=3000)
+        expect(page.get_by_test_id('mcp-no-nodes')).to_have_attribute('data-slot', 'badge')
         assert req['index'] == 0 and not req['external'], req
         assert set(req.get('icons', [])) <= {'/brand-icons/icons/github.svg'}, req
         alignment = page.evaluate("""() => Object.fromEntries([['heading', '.config-detail-heading'], ['status', '.mcp-tabs + div'], ['tabs', '.mcp-tabs'], ['frame', '[data-testid=mcp-settings]']].map(([name, selector]) => {const el = document.querySelector(selector); const r = el?.getBoundingClientRect(); return [name, r ? {left: r.left, right: r.right} : null]}))""")
@@ -236,7 +238,7 @@ def run(browser, base, out):
     install(page, base, data, {'index': 0, 'external': []}, theme='dark'); open_panel(page, base); page.get_by_role('tab', name='프로필', exact=True).click()
     expect(page.get_by_text('seosoyoung', exact=True).first).to_be_visible(); capture(page, out, 'profile-40-360-dark')
     assert not page.evaluate('document.documentElement.scrollWidth > document.documentElement.clientWidth'); assert_controls_fit(page); context.close()
-    out.joinpath('operations.md').write_text('# 조작 결과\n\n| 항목 | 결과 | 근거 |\n|---|---|---|\n| 14 초점 | 통과 | 브랜드·새 값 입력에 초점, Esc 뒤 연 단추로 복귀 |\n| 15 Tab·Esc | 통과 | 되돌리기 창 안에 초점 유지, Esc로 닫힘 |\n| 16 최소 폭 | 통과 | 360px 문서 가로 넘침 없음 |\n| 17 오류 | 통과 | 실패 안내·재시도, 삭제 409 안내 |\n| 18 창 크기 | 통과 | 1440 ↔ 360px 변경 뒤 입력 보존 |\n| 노드 적용 판 | 통과 | 저장 뒤 ACK 재조회와 작성 중 입력 보존 |\n\n| 폭과 테마 | 실측 |\n|---|---|\n' + '\n'.join(records) + '\n\n| 대상 | 여는 법 | 첫 초점 | Enter | Esc | 닫은 뒤 초점 |\n|---|---|---|---|---|---|\n| 되돌리기 목록 | 되돌리기 단추 | 창 안 | 닫기 단추 실행 | 창 닫힘 | 연 단추 |\n| 삭제 확인 | 삭제 단추 | 창 안 | 취소 단추 실행 | 창 닫힘 | 삭제 단추 |\n| 아이콘 고르기 | 아이콘 고르기 | 브랜드 검색 | 입력 유지 | 편집 접힘 | 연 단추 |\n| 비밀값 교체 | 값 교체 | 빈 새 값 입력 | 입력 유지 | 편집 취소 | 연 단추 |\n| 서버 값 교체 | 값 교체 | 빈 새 값 입력 | 입력 유지 | 편집 취소 | 연 단추 |\n| 프로필 바로 추가 | 새 서버 저장 | 안내 묶음 | 체크 상태 유지, Space로 선택 | 해당 없음(화면 안 편집) | 아이콘 고르기 |\n\n실행: `python3 -P scripts/visual-check/mcp_settings_panel.py --output <shots> --baseline-dist <기준 dist>`\n', encoding='utf8')
+    out.joinpath('operations.md').write_text('# 조작 결과\n\n| 항목 | 결과 | 근거 |\n|---|---|---|\n| 14 초점 | 통과 | 브랜드·새 값 입력에 초점, Esc 뒤 연 단추로 복귀 |\n| 15 Tab·Esc | 통과 | 되돌리기 창 안에 초점 유지, Esc로 닫힘 |\n| 16 최소 폭 | 통과 | 360px 문서 가로 넘침 없음 |\n| 17 오류 | 통과 | 실패 안내·재시도, 삭제 409 안내 |\n| 18 창 크기 | 통과 | 1440 ↔ 360px 변경 뒤 입력 보존 |\n| 노드 적용 판 | 통과 | 저장 뒤 ACK 재조회와 작성 중 입력 보존 |\n\n| 폭과 테마 | 실측 |\n|---|---|\n' + '\n'.join(records) + '\n\n| 대상 | 여는 법 | 첫 초점 | Enter | Esc | 닫은 뒤 초점 |\n|---|---|---|---|---|---|\n| 되돌리기 목록 | 되돌리기 단추 | 닫기 단추 | 닫기 단추 실행 | 창 닫힘 | 연 단추 |\n| 삭제 확인 | 삭제 단추 | 취소 단추 | 취소 단추 실행 | 창 닫힘 | 삭제 단추 |\n| 아이콘 고르기 | 아이콘 고르기 | 브랜드 검색 | 입력 유지 | 편집 접힘 | 연 단추 |\n| 비밀값 교체 | 값 교체 | 빈 새 값 입력 | 입력 유지 | 편집 취소 | 연 단추 |\n| 서버 값 교체 | 값 교체 | 빈 새 값 입력 | 입력 유지 | 편집 취소 | 연 단추 |\n| 프로필 바로 추가 | 새 서버 저장 | 안내 묶음 | 체크 상태 유지, Space로 선택 | 해당 없음(화면 안 편집) | 아이콘 고르기 |\n\n실행: `python3 -P scripts/visual-check/mcp_settings_panel.py --output <shots> --baseline-dist <기준 dist>`\n', encoding='utf8')
 
 def compare_existing(browser, baseline, current, out):
     measurements = {}

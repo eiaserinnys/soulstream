@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, FrameLoading } from "@seosoyoung/soul-ui";
+import { Badge, Button, FrameLoading } from "@seosoyoung/soul-ui";
 import {
   createMcpApi,
   type McpConfig,
@@ -212,7 +212,8 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
               <SettingsListRow
                 key={server.id}
                 title={server.name || server.id}
-                meta={`${server.type} / ${server.node_scope.length ? `${server.node_scope.length}노드` : "적용 노드 없음"}`}
+                meta={server.node_scope.length ? `${server.type} / ${server.node_scope.length}노드` : server.type}
+                badge={server.node_scope.length ? undefined : <Badge variant="warning" size="sm" data-testid="mcp-no-nodes">적용 노드 없음</Badge>}
                 portrait={<McpIconTile id={server.id} icon={server.icon} />}
                 selected={!creating && currentServer?.id === server.id}
                 onSelect={() => {
