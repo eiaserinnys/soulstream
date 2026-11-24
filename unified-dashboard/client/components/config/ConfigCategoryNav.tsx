@@ -3,7 +3,7 @@ import { ChartNoAxesColumnIncreasing, ChevronRight, Monitor, Server, Workflow, U
 export interface ConfigCategoryNavItem { name: string; label: string }
 const icons: Record<string, typeof Monitor> = { appearance: Monitor, access_links: Link, webhooks: Webhook, account: Users, display: Monitor, record: Activity, nodes: Server, card_dispatch: Workflow, users: Users, session_review: ShieldCheck, file_storage: HardDrive, recurring_jobs: CalendarClock, persistent: InfinityIcon, usage_log: Activity, usage_stats: ChartNoAxesColumnIncreasing, agents: Bot };
 const personal = new Set(["appearance", "owned_agents", "access_links", "webhooks"]);
-const execution = new Set(["nodes", "agents", "card_dispatch", "recurring_jobs", "persistent"]);
+const execution = new Set(["nodes", "agents", "card_dispatch", "persistent_defaults", "recurring_jobs", "persistent"]);
 export function ConfigCategoryNav({ categories, extraTabs = [], activeCategory, onSelect, showGroupLabels = true, variant = "default" }: {
   categories: ConfigCategoryNavItem[]; extraTabs?: ConfigCategoryNavItem[];
   activeCategory: string; onSelect(name: string): void;
