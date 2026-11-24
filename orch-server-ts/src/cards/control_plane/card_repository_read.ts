@@ -76,6 +76,7 @@ export class CardRepositoryRead {
       WHERE archived=FALSE
         AND (${params.folderId ?? null}::text IS NULL OR folder_id=${params.folderId ?? null})
         AND (${params.status ?? null}::text IS NULL OR status=${params.status ?? null})
+        AND (${params.statuses ?? null}::text[] IS NULL OR status=ANY(${params.statuses ?? null}::text[]))
         AND (${params.allowedFolderIds ?? null}::text[] IS NULL OR folder_id=ANY(${params.allowedFolderIds ?? null}::text[]))
         AND (${params.includeClosed} OR status NOT IN ('done','cancelled'))
         AND (${params.q ?? ""} = '' OR strpos(lower(title),lower(${params.q ?? ""})) > 0

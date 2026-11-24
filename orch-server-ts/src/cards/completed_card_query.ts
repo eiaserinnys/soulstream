@@ -21,21 +21,24 @@ export type CompletedCardQuery = {
   after?: { time: string; id: string };
 };
 export type PagedCardQuery = {
-  folderId?: string; status?: string; includeClosed: boolean; allowedFolderIds?: readonly string[] | null;
+  folderId?: string; status?: string; statuses?: readonly string[]; includeClosed: boolean; allowedFolderIds?: readonly string[] | null;
   q?: string; limit: number; after?: { rank: number; time: string; id: string };
 };
 export function parseCardQuery(input: unknown) {
   try {
     const raw = typeof input === "object" && input !== null ? input as Record<string, unknown> : {};
     const parsed = querySchema.parse(input);
-    const paged = parsed.status !== "done"
-      && (raw.includeClosed !== undefined || raw.limit !== undefined || raw.cursor !== undefined);
+    // A comma-separated status selects several states at once; that is only served by the paged branch.
+    const statuses = parsed.status?.includes(",")
+      ? parsed.status.split(",").map(value => value.trim()).filter(value => value !== "") : undefined;
+    const paged = statuses !== undefined || (parsed.status !== "done"
+      && (raw.includeClosed !== undefined || raw.limit !== undefined || raw.cursor !== undefined));
     const after = parsed.cursor && parsed.status === "done"
       ? cursorSchema.parse(JSON.parse(Buffer.from(parsed.cursor, "base64url").toString("utf8"))) : undefined;
     const pagedAfter = parsed.cursor && parsed.status !== "done"
       ? pagedCursorSchema.parse(JSON.parse(Buffer.from(parsed.cursor, "base64url").toString("utf8"))) : undefined;
     return {
-      ...parsed, paged,
+      ...parsed, paged, statuses,
       includeClosed: parsed.includeClosed !== "false" && parsed.includeCompleted !== "false",
       includeCompleted: parsed.includeCompleted !== "false",
       after, pagedAfter,
