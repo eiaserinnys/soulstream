@@ -6,15 +6,18 @@
  */
 
 import { useState, useEffect } from "react";
+import { parseAtomPublicUrl } from "./useAtomPublicUrl";
 
 interface ServerStatus {
   isDraining: boolean;
   atomEnabled: boolean;
+  atomPublicUrl: string | null;
 }
 
 export function useServerStatus(intervalMs = 3000): ServerStatus {
   const [isDraining, setIsDraining] = useState(false);
   const [atomEnabled, setAtomEnabled] = useState(false);
+  const [atomPublicUrl, setAtomPublicUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +35,7 @@ export function useServerStatus(intervalMs = 3000): ServerStatus {
         if (!cancelled) {
           setIsDraining(data.is_draining ?? false);
           setAtomEnabled(data.atom_enabled ?? false);
+          setAtomPublicUrl(parseAtomPublicUrl(data.atom_public_url));
         }
       } catch {
         // 네트워크 오류 → draining으로 간주
@@ -48,5 +52,5 @@ export function useServerStatus(intervalMs = 3000): ServerStatus {
     };
   }, [intervalMs]);
 
-  return { isDraining, atomEnabled };
+  return { isDraining, atomEnabled, atomPublicUrl };
 }

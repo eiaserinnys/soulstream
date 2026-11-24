@@ -39,6 +39,7 @@ export type OrchServerEnvironmentConfig = Partial<ExternalIngressEnvironmentConf
   readonly dashboard_user_folder_access_configured: boolean;
   readonly atom_enabled: boolean;
   readonly atom_server_url: string;
+  readonly atom_public_url?: string;
   readonly atom_api_key: string;
   readonly atom_root_node_id: string | null;
   readonly skill_catalog_node_id: string;
@@ -82,6 +83,7 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "SOULSTREAM_PUBLIC_URL",
   "ATOM_ENABLED",
   "ATOM_SERVER_URL",
+  "ATOM_PUBLIC_URL",
   "ATOM_API_KEY",
   "ATOM_ROOT_NODE_ID",
   "SKILL_CATALOG_NODE_ID",
@@ -193,6 +195,7 @@ export function loadOrchServerEnvironment(
       (env.DASHBOARD_USER_FOLDER_ACCESS?.trim() ?? "").length > 0,
     atom_enabled: parseBoolean(env.ATOM_ENABLED, "ATOM_ENABLED", false),
     atom_server_url: env.ATOM_SERVER_URL ?? "",
+    ...(optionalNonEmptyString(env.ATOM_PUBLIC_URL) ? { atom_public_url: optionalNonEmptyString(env.ATOM_PUBLIC_URL) as string } : {}),
     atom_api_key: env.ATOM_API_KEY ?? "",
     atom_root_node_id: optionalString(env.ATOM_ROOT_NODE_ID),
     skill_catalog_node_id: env.SKILL_CATALOG_NODE_ID ?? DEFAULT_SKILL_CATALOG_NODE_ID,

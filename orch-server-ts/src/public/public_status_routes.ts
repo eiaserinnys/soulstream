@@ -12,6 +12,7 @@ export type PublicStatusRouteConfig = {
   nodeName?: string | null;
   authEnabled: boolean;
   atomEnabled: boolean;
+  atomPublicUrl?: string | null;
 };
 
 export type PublicStatusRouteConfigProvider = {
@@ -108,6 +109,7 @@ export function registerPublicStatusRoutes(
       is_draining: lifecycle?.draining ?? false,
       healthy: lifecycle?.healthy ?? true,
       atom_enabled: config.atomEnabled,
+      atom_public_url: config.atomPublicUrl ?? null,
     };
   });
 
