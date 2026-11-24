@@ -4,6 +4,8 @@ if [ "$#" -ne 1 ]; then echo "usage: $0 <output-dir>" >&2; exit 2; fi
 root=$(dirname "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")")
 baseline_dir=$(mktemp -d)
 trap 'rm -rf "$baseline_dir"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 baseline=$(git -C "$root" merge-base HEAD origin/main)
 git -C "$root" archive "$baseline" | tar -x -C "$baseline_dir"
 corepack pnpm@10.32.1 -C "$baseline_dir" install --frozen-lockfile

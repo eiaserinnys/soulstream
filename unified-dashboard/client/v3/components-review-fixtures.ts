@@ -133,3 +133,12 @@ export const reviewSessionFiles: import('../../../packages/wire-schema/src/sessi
   ],
   read_only: [{ path: 'soul-server-ts/src/upstream/dispatcher.ts', size: null, last_read_at: null }],
 };
+
+export const reviewSessionFileHistory: import('../../../packages/wire-schema/src/session_workspace').SessionWorkspaceSessionDiffResponse = {
+  path: 'session.ts', unrecorded: 0, truncated: false,
+  edits: [
+    {at:'2026-11-22T15:12:00Z',tool:'Edit',kind:'edit',text:'@@ @@\n 같은 줄\n-이전 내용\n+바뀐 내용',line_numbers:false,replace_all:false},
+    {at:'2026-11-22T15:13:00Z',tool:'Write',kind:'write',text:'@@ -0,0 +1,2 @@\n+첫 줄\n+둘째 줄',line_numbers:true,replace_all:false},
+    {at:'2026-11-22T15:14:00Z',tool:'file_change',kind:'edit',text:'@@ -10,1 +10,1 @@\n-old\n+new',line_numbers:true,replace_all:false},
+  ],
+};

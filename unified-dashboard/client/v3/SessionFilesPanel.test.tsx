@@ -77,18 +77,83 @@ describe('session files panel', () => {
     click(buttons().find(el => el.textContent?.includes('outbox_retry.ts'))!);
     expect(requests[2].signal.aborted).toBe(true);
   });
-  it('opens read-only, committed, image and non-git rows directly in the viewer', async () => {
+  it('opens session history for a committed file and refreshes only after activity changes', async () => {
+    const request=vi.fn().mockResolvedValue({ok:true,json:async()=>({path:'committed.ts',edits:[{at:'2026-01-01T00:00:00Z',tool:'Edit',kind:'edit',text:'@@ @@\n-old\n+new',line_numbers:false,replace_all:true}],unrecorded:0,truncated:false})});
+    vi.stubGlobal('fetch',request);
+    const file={...reviewSessionFiles.files[1],path:'committed.ts',last_activity_at:'2026-01-01T00:00:00Z'};
+    const data={...reviewSessionFiles,files:[file],read_only:[]};
+    await render(data);
+    await act(async()=>click([...host.querySelectorAll('button')].find(button=>button.textContent?.includes('committed.ts'))!));
+    expect(request.mock.calls[0][0]).toContain('/workspace/session-diff?path=committed.ts');
+    expect(host.textContent).toContain('1/1'); expect(host.textContent).toContain('고침, 모두 바꿈');
+    expect(host.querySelector('[role="tablist"]')).toBeNull();
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('세션 기록');
+    await render({...data}); expect(request).toHaveBeenCalledTimes(1);
+    await render({...data,files:[{...file,last_activity_at:'2026-01-02T00:00:00Z'}]}); expect(request).toHaveBeenCalledTimes(2);
+  });
+  it('starts with live diff, switches to history and aborts the old request', async () => {
+    const signals:AbortSignal[]=[]; const urls:string[]=[];
+    vi.stubGlobal('fetch',vi.fn((url:string,options:{signal:AbortSignal})=>{urls.push(url);signals.push(options.signal);return new Promise(()=>{});}));
+    await render({...reviewSessionFiles,files:[reviewSessionFiles.files[2]],read_only:[]});
+    click([...host.querySelectorAll('button')].find(button=>button.textContent?.includes('event_outbox.ts'))!);
+    expect(urls[0]).toContain('/workspace/diff?');
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('수정');
+    click([...host.querySelectorAll('[role="tab"]')].find(tab=>tab.textContent==='세션 기록')!);
+    expect(signals[0].aborted).toBe(true); expect(urls[1]).toContain('/workspace/session-diff?');
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('수정');
+  });
+  it('keeps the actual live diff status when switching to session history', async () => {
+    let liveCalls=0;
+    vi.stubGlobal('fetch',vi.fn((url:string)=>{
+      if (url.includes('/session-diff?')) return Promise.resolve({ok:true,json:async()=>({path:'event_outbox.ts',edits:[],unrecorded:0,truncated:false})});
+      if (++liveCalls > 1) return new Promise(()=>{});
+      return Promise.resolve({ok:true,json:async()=>({status:'untracked',text:'',binary:false,truncated:false})});
+    }));
+    await render({...reviewSessionFiles,files:[reviewSessionFiles.files[2]],read_only:[]});
+    await act(async()=>click([...host.querySelectorAll('button')].find(button=>button.textContent?.includes('event_outbox.ts'))!));
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('새 파일');
+    await act(async()=>click([...host.querySelectorAll('[role="tab"]')].find(tab=>tab.textContent==='세션 기록')!));
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('새 파일');
+    await act(async()=>click([...host.querySelectorAll('[role="tab"]')].find(tab=>tab.textContent==='커밋 전 변경')!));
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('새 파일');
+    await act(async()=>click([...host.querySelectorAll('[role="tab"]')].find(tab=>tab.textContent==='세션 기록')!));
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('새 파일');
+  });
+  it('shows a deleted workspace list but disables rows without recorded diffs', async () => {
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({path:'gone.ts',edits:[],unrecorded:2,truncated:true})}));
+    await render({...reviewSessionFiles,root:null,node:{...reviewSessionFiles.node,status:'no_workspace'},snapshot:null,files:[{...reviewSessionFiles.files[1],path:'gone.ts'},{...reviewSessionFiles.files[1],path:'image.png'}],read_only:[{path:'read.txt',size:null,last_read_at:null}]});
+    expect(host.textContent).toContain('작업 폴더가 지워져');
+    expect([...host.querySelectorAll('button')].some(button=>button.textContent?.includes('image.png'))).toBe(false);
+    await act(async()=>click([...host.querySelectorAll('button')].find(button=>button.textContent?.includes('gone.ts'))!));
+    expect(host.textContent).toContain('이 엔진은 고친 내용을 기록에 남기지 않습니다');
+    expect(host.textContent).toContain('기록이 길어 오래된 편집은 빠졌습니다');
+    expect(host.querySelector('[aria-label="전체 보기"]')).toBeNull();
+  });
+  it('shows mixed, empty and failed history and retries', async () => {
+    const request=vi.fn().mockResolvedValueOnce({ok:false,status:403}).mockResolvedValueOnce({ok:true,json:async()=>({path:'nongit.ts',edits:[{at:'2026-01-01T00:00:00Z',tool:'Write',kind:'write',text:'@@ -0,0 +1,1 @@\n+new',line_numbers:true,replace_all:false}],unrecorded:2,truncated:false})}).mockResolvedValue({ok:true,json:async()=>({path:'nongit.ts',edits:[],unrecorded:0,truncated:false})});
+    vi.stubGlobal('fetch',request);
+    const file={...reviewSessionFiles.files[1],path:'nongit.ts'};
+    const data={...reviewSessionFiles,snapshot:{...reviewSessionFiles.snapshot!,state:'not_git' as const},files:[file],read_only:[]};
+    await render(data);
+    await act(async()=>click([...host.querySelectorAll('button')].find(button=>button.textContent?.includes('nongit.ts'))!));
+    expect(host.textContent).toContain('변경분을 불러오지 못했습니다');
+    await act(async()=>click([...host.querySelectorAll('button')].find(button=>button.textContent==='다시 시도')!));
+    expect(host.textContent).toContain('전체 씀'); expect(host.textContent).toContain('내용이 기록되지 않은 편집 2번');
+    await render({...data,files:[{...file,last_activity_at:'2026-01-03T00:00:00Z'}]});
+    expect(host.textContent).toContain('바뀐 내용 없음');
+  });
+  it('opens image and non-git read-only rows directly in the viewer', async () => {
     const request = vi.fn(); vi.stubGlobal('fetch', request);
     const base = reviewSessionFiles.files[2];
     for (const file of [
-      { ...base, path: 'committed.ts', git_status: null },
       { ...base, path: 'image.png' },
     ] as typeof reviewSessionFiles.files) {
       await render({ ...reviewSessionFiles, files: [file], read_only: [] });
       click([...host.querySelectorAll('button')].find(el => el.textContent?.includes(file.path))!);
       expect(host.querySelector('[data-testid="viewer"]')?.textContent).toContain(encodeURIComponent(file.path));
     }
-    await render({ ...reviewSessionFiles, snapshot: { ...reviewSessionFiles.snapshot!, state: 'not_git' }, files: [{ ...base, path: 'nongit.ts' }] });
+    await render({ ...reviewSessionFiles, snapshot: { ...reviewSessionFiles.snapshot!, state: 'not_git' }, files: [{ ...base, path: 'nongit.ts', wrote: false, read: true }] });
+    click([...host.querySelectorAll('button')].find(el => el.textContent?.includes('읽기만 한 파일'))!);
     click([...host.querySelectorAll('button')].find(el => el.textContent?.includes('nongit.ts'))!);
     expect(host.querySelector('[data-testid="viewer"]')?.textContent).toContain('nongit.ts');
     expect(request).not.toHaveBeenCalled();
@@ -107,7 +172,7 @@ describe('session files panel', () => {
     await render({ ...reviewSessionFiles, node: { ...reviewSessionFiles.node, status: 'offline' } }); expect(host.textContent).toContain('노드 끊김');
     await render({ ...reviewSessionFiles, snapshot: { ...reviewSessionFiles.snapshot!, state: 'not_git' }, files: [] }); expect(host.textContent).toContain('Git 작업 폴더가 아닙니다');
     await render({ ...reviewSessionFiles, node: { ...reviewSessionFiles.node, status: 'unsupported' }, snapshot: null }); expect(host.textContent).toContain('지원하지 않습니다');
-    await render({ ...reviewSessionFiles, node: { ...reviewSessionFiles.node, status: 'no_workspace' }, snapshot: null }); expect(host.textContent).toContain('작업 폴더가 없습니다');
+    await render({ ...reviewSessionFiles, node: { ...reviewSessionFiles.node, status: 'no_workspace' }, snapshot: null, files: [], read_only: [] }); expect(host.textContent).toContain('작업 폴더가 없습니다');
     await render(null, true); expect(host.textContent).toContain('다시 시도');
   });
   it('shows committed activity even when the file has subsequent git changes', async () => {
@@ -115,7 +180,8 @@ describe('session files panel', () => {
     expect(host.querySelector('[data-activity="commit"]')).not.toBeNull();
   });
   it.each([0, 5])('opens a text file using its current size rather than snapshot size %s', async size => {
-    await render({ ...reviewSessionFiles, files: [{ ...reviewSessionFiles.files[0], size, wrote: true, git_status: null }] });
+    await render({ ...reviewSessionFiles, files: [{ ...reviewSessionFiles.files[0], size, wrote: false, read: true, git_status: null }] });
+    click([...host.querySelectorAll('button')].find(el => el.textContent?.includes('읽기만 한 파일'))!);
     click([...host.querySelectorAll('button')].find(el => el.textContent?.includes('config.ts'))!);
     expect(host.querySelector('[data-testid="viewer"]')?.textContent).toContain('&download=true|null');
   });

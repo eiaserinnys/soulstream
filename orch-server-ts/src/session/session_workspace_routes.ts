@@ -1,16 +1,16 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { SessionWorkspaceDiffResponse, SessionWorkspaceResponse } from "@soulstream/wire-schema/session-workspace";
+import type { SessionWorkspaceDiffResponse, SessionWorkspaceResponse, SessionWorkspaceSessionDiffResponse } from "@soulstream/wire-schema/session-workspace";
 import { relativePath } from "./session_file_activity.js";
 import { SessionResourceAccessError, type SessionResourceAccessProvider } from "./session_resource_access.js";
 
 export type WorkspaceFile = { content_b64: string; content_type: string; size: number; offset: number; length: number };
 export interface SessionWorkspaceProvider {
   readWorkspace(sessionId: string): Promise<SessionWorkspaceResponse>;
-  openWorkspace(sessionId: string): Promise<{workspace:SessionWorkspaceResponse; readDiff(file:string,origPath:string|null):Promise<SessionWorkspaceDiffResponse>; readFile(file:string,offset:number,length?:number):Promise<WorkspaceFile>}>;
+  openWorkspace(sessionId: string): Promise<{workspace:SessionWorkspaceResponse; activityRoot:string|null; readSessionDiff(file:string):Promise<SessionWorkspaceSessionDiffResponse>; readDiff(file:string,origPath:string|null):Promise<SessionWorkspaceDiffResponse>; readFile(file:string,offset:number,length?:number):Promise<WorkspaceFile>}>;
 }
 export class WorkspaceRouteError extends Error { constructor(public readonly statusCode: number, message: string) { super(message); } }
 export type SessionWorkspaceRouteOptions = { provider: SessionWorkspaceProvider; accessProvider: Pick<SessionResourceAccessProvider, "requireSessionAccess" | "resolveAccess"> };
-export const sessionWorkspaceRouteAuthRequirements = { "GET /api/sessions/:session_id/workspace": true, "GET /api/sessions/:session_id/workspace/file": true, "GET /api/sessions/:session_id/workspace/diff": true } as const;
+export const sessionWorkspaceRouteAuthRequirements = { "GET /api/sessions/:session_id/workspace": true, "GET /api/sessions/:session_id/workspace/file": true, "GET /api/sessions/:session_id/workspace/diff": true, "GET /api/sessions/:session_id/workspace/session-diff": true } as const;
 export function registerSessionWorkspaceRoutes(app: FastifyInstance, options: SessionWorkspaceRouteOptions): void {
   app.get("/api/sessions/:session_id/workspace", async (request, reply) => {
     reply.header("Cache-Control", "private, no-store");
@@ -51,6 +51,24 @@ export function registerSessionWorkspaceRoutes(app: FastifyInstance, options: Se
       if(typeof query.path !== "string" || !query.path) throw new WorkspaceRouteError(400,"path is required");
       const {file,origPath,opened}=await authorizedFile(options,request,session_id,query.path);
       return await opened.readDiff(file,origPath);
+    } catch(error) { return sendError(reply,error); }
+  });
+  app.get("/api/sessions/:session_id/workspace/session-diff", async (request,reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const {session_id}=request.params as {session_id:string};
+    try {
+      await options.accessProvider.requireSessionAccess({request,sessionId:session_id});
+      const query=request.query as {path?:unknown};
+      if(typeof query.path !== "string" || !query.path) throw new WorkspaceRouteError(400,"path is required");
+      const opened=await options.provider.openWorkspace(session_id);
+      const normalized=relativePath(opened.activityRoot,query.path);
+      const entries=[...opened.workspace.files,...opened.workspace.read_only];
+      const windows=!!opened.activityRoot && (/^[a-z]:[\\/]/i.test(opened.activityRoot) || opened.activityRoot.startsWith("\\\\"));
+      const lookup=(name:string) => entries.find(item=>item.path === name) ?? (windows ? entries.find(item=>item.path.toLowerCase() === name.toLowerCase()) : undefined);
+      const candidate=lookup(query.path) ?? (normalized ? lookup(normalized) : undefined);
+      const entry=opened.workspace.files.find(file=>file.path === candidate?.path && file.wrote);
+      if (!entry) throw new WorkspaceRouteError(403,"file not written in session");
+      return await opened.readSessionDiff(entry.path);
     } catch(error) { return sendError(reply,error); }
   });
 }
