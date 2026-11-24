@@ -371,7 +371,17 @@ def run_r1(browser, base, out):
         expect(page.get_by_role('button', name='GitHub', exact=True)).to_be_visible()
         def picker_layout():
             names = ['브랜드 검색', '기호 고르기', '이미지 올리기', '머리글자로 두기']
-            rects = [page.get_by_role('button', name=name, exact=True).bounding_box() for name in names]
+            rects = page.evaluate("""async names => {
+              await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+              const buttons = [...document.querySelectorAll('.config-dialog button')];
+              return names.map(name => {
+                const button = buttons.find(el => el.textContent.trim() === name);
+                if (!button) return null;
+                const r = button.getBoundingClientRect();
+                return {x:r.x, y:r.y, width:r.width, height:r.height};
+              });
+            }""", names)
+            if any(rect is None for rect in rects): return False, rects
             tops = {round(r['y']) for r in rects}
             return len(tops) <= 2 and all(sum(round(r['y']) == top for r in rects) >= 2 for top in tops), rects
         check(f'5 꼴 선택 묶음 {tag}', picker_layout)
@@ -670,9 +680,59 @@ def run_r2(browser, base, out):
     lines.extend(['', '실측과 문구: `r2-checks.json`.', '각 상태의 화면은 같은 폴더의 `r2-*.png`.', ''])
     out.joinpath('r2-operations.md').write_text('\n'.join(lines), encoding='utf8')
 
+def run_r3(browser, base, out):
+    """삭제 충돌 뒤 다른 곳에서 지운 대상의 ID가 다시 읽기 결과에 남는지 확인한다."""
+    results = []
+    for width, theme in [(1440, 'light'), (360, 'dark')]:
+        tag = f'{width}-{theme}'
+        context = browser.new_context(viewport={'width': width, 'height': 900 if width > 360 else 800}, color_scheme=theme, reduced_motion='reduce', service_workers='block')
+        page = context.new_page(); page.set_default_timeout(10000)
+        errors = []; page.on('pageerror', lambda error: errors.append(str(error)))
+        page.add_init_script(f"localStorage.setItem('soul-dashboard-theme','{theme}'); localStorage.setItem('ls.webglGlass','0');")
+        data = fixture(); install(page, base, data, {'index': 0, 'external': []}, theme=theme)
+        def delete_gone(route):
+            request = route.request; parts = urlsplit(request.url).path.split('/')
+            if request.method != 'DELETE': return route.fallback()
+            kind, item_id = parts[3], unquote(parts[4])
+            key = 'name' if kind == 'secrets' else 'id'
+            data[kind] = [item for item in data[kind] if item[key] != item_id]
+            data['current_revision'] += 1
+            code = 'MCP_REVISION_CONFLICT' if kind == 'secrets' else 'MCP_' + kind[:-1].upper() + '_VERSION_CONFLICT'
+            return route.fulfill(status=409, json={'code': code, 'message': 'fake'})
+        page.route('**/api/mcp/**', delete_gone)
+        open_panel(page, base); expect(page.get_by_test_id('mcp-settings')).to_be_visible()
+        for tab, slug, item_id in [('서버', 'server', 'corksheet'), ('프로필', 'profile', 'keke'), ('비밀값', 'secret', 'srv-atom-hdr-example')]:
+            page.get_by_role('tab', name=tab, exact=True).click()
+            row = page.get_by_test_id('mcp-settings').locator('aside button', has_text=item_id).first
+            row.scroll_into_view_if_needed(); row.click()
+            page.get_by_role('button', name='삭제', exact=True).first.click()
+            dialog = page.get_by_role('dialog', name='삭제')
+            dialog.get_by_role('button', name='삭제', exact=True).click()
+            alert = dialog.get_by_role('alert'); expect(alert).to_be_visible()
+            dialog.get_by_role('button', name='다시 읽기').click(); expect(alert).to_have_count(0)
+            status = page.get_by_role('status').filter(has_text='이미 삭제되었습니다')
+            messages = status.all_inner_texts()
+            if messages and item_id in messages[0]: expect(dialog).to_be_hidden()
+            detail = {'messages': messages, 'id': item_id}
+            ok = bool(messages) and item_id in messages[0] and status.first.is_visible()
+            results.append({'check': f'F {tab} 이미 삭제 대상 {tag}', 'ok': ok, 'detail': detail})
+            out.joinpath('r3-checks.json').write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding='utf8')
+            print(f"{'PASS' if ok else 'FAIL'} F {tab} 이미 삭제 대상 {tag}: {detail}", flush=True)
+            capture(page, out, f'r3-gone-{slug}-{tag}')
+            if not messages and dialog.is_visible(): page.keyboard.press('Escape')
+        results.append({'check': f'브라우저 오류 {tag}', 'ok': not errors, 'detail': errors})
+        context.close()
+    out.joinpath('r3-checks.json').write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding='utf8')
+    failed = [result['check'] for result in results if not result['ok']]
+    if failed: raise AssertionError(f'3차 검수 항목 미충족: {failed}')
+    lines = ['## 3차 화면 검수 보완 조작', '', '| 항목과 화면 | 결과 |', '|---|---|']
+    lines.extend(f"| {result['check']} | 통과 |" for result in results)
+    lines.extend(['', '이미 삭제된 대상과 확인 창 상태: `r3-checks.json`.', '해당 화면은 같은 폴더의 `r3-gone-*.png`.', ''])
+    out.joinpath('r3-operations.md').write_text('\n'.join(lines), encoding='utf8')
+
 def check_artifact_references(out):
     checked = 0
-    for document in [out / 'operations.md', out.parent / 'r1-report.md', out.parent / 'r2-report.md']:
+    for document in [out / 'operations.md', out.parent / 'r1-report.md', out.parent / 'r2-report.md', out.parent / 'r3-report.md']:
         if not document.exists(): continue
         for reference in re.findall(r'`([^`]+)`', document.read_text(encoding='utf8')):
             if reference.startswith('shots/'):
@@ -703,24 +763,26 @@ def compare_existing(browser, baseline, current, out):
         result.write(f"\n기존 반복 작업 머리 전후 좌표·글꼴·색 일치: {measurements['after']}\n")
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument('--output', default=os.environ.get('MCP_SHOTS_DIR', str(ROOT / '.local' / 'mcp-settings-shots'))); parser.add_argument('--baseline-dist', default=os.environ.get('MCP_BASELINE_DIST')); parser.add_argument('--r1-only', action='store_true'); parser.add_argument('--r2-only', action='store_true'); args = parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument('--output', default=os.environ.get('MCP_SHOTS_DIR', str(ROOT / '.local' / 'mcp-settings-shots'))); parser.add_argument('--baseline-dist', default=os.environ.get('MCP_BASELINE_DIST')); parser.add_argument('--r1-only', action='store_true'); parser.add_argument('--r2-only', action='store_true'); parser.add_argument('--r3-only', action='store_true'); args = parser.parse_args()
     out = Path(args.output); out.mkdir(parents=True, exist_ok=True)
     server, base = serve()
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
-            if args.r2_only: run_r2(browser, base, out)
+            if args.r3_only: run_r3(browser, base, out)
+            elif args.r2_only: run_r2(browser, base, out)
             elif args.r1_only: run_r1(browser, base, out)
             else:
-                run(browser, base, out); run_r1(browser, base, out); run_r2(browser, base, out)
+                run(browser, base, out); run_r1(browser, base, out); run_r2(browser, base, out); run_r3(browser, base, out)
                 with out.joinpath('operations.md').open('a', encoding='utf8') as operations:
                     operations.write('\n' + out.joinpath('r1-operations.md').read_text(encoding='utf8'))
                     operations.write('\n' + out.joinpath('r2-operations.md').read_text(encoding='utf8'))
+                    operations.write('\n' + out.joinpath('r3-operations.md').read_text(encoding='utf8'))
             if args.baseline_dist:
                 baseline_server, baseline = serve(Path(args.baseline_dist))
                 try: compare_existing(browser, baseline, base, out)
                 finally: baseline_server.shutdown()
-            if not args.r1_only and not args.r2_only: check_artifact_references(out)
+            if not args.r1_only and not args.r2_only and not args.r3_only: check_artifact_references(out)
             browser.close()
     finally: server.shutdown()
     print(f'MCP 화면 캡처와 조작 결과: {out}')

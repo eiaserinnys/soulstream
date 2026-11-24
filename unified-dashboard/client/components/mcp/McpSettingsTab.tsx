@@ -459,11 +459,12 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
         error={error}
         profiles={deleting?.kind === "server" ? profiles.filter((p) => p.mcp_servers.includes(deleting.id)).map((p) => p.name || p.id) : []}
         reload={() => void refresh().then((next) => {
-          if (deleting?.kind === "server" || deleting?.kind === "profile") {
-            const items = deleting.kind === "server" ? next.servers : next.profiles;
-            const item = items.find((candidate) => candidate.id === deleting.id);
-            if (item) setDeleting({ ...deleting, version: item.version });
-            else { setDeleting(null); setMessagePlace("header"); setSuccess("항목이 이미 삭제되었습니다."); }
+          if (deleting) {
+            const item = deleting.kind === "server" ? next.servers.find((candidate) => candidate.id === deleting.id)
+              : deleting.kind === "profile" ? next.profiles.find((candidate) => candidate.id === deleting.id)
+              : next.secrets.find((candidate) => candidate.name === deleting.id);
+            if (!item) { setDeleting(null); setMessagePlace("header"); setSuccess(`“${deleting.id}” 항목은 이미 삭제되었습니다.`); }
+            else if ("version" in item) setDeleting({ ...deleting, version: item.version });
           }
           setError("");
         }).catch(() => undefined)}
