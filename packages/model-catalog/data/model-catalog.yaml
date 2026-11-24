@@ -4,6 +4,9 @@ schema_version: 1
 # preset with `group` is advertised only when the node enables that group.
 groups: [china]
 
+# JSON flow mapping keeps these defaults readable before installer dependencies exist.
+install_defaults: {"backends":{"claude":"claude-opus","codex":"codex-6.2-sol","antigravity":"gemini-4-carbon"},"profiles":{"card-orchestrator":"claude-sonnet"}}
+
 presets:
   - id: claude-haiku
     label: Claude - Haiku

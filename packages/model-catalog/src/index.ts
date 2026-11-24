@@ -156,6 +156,15 @@ export const PersistentCatalogDefaultsSchema = z.object({
 });
 export type PersistentCatalogDefaults = z.infer<typeof PersistentCatalogDefaultsSchema>;
 
+const InstallDefaultsSchema = z.object({
+  backends: z.object({
+    claude: z.string().trim().min(1),
+    codex: z.string().trim().min(1),
+    antigravity: z.string().trim().min(1),
+  }),
+  profiles: z.object({ "card-orchestrator": z.string().trim().min(1) }),
+});
+
 export const ModelCatalogSchema = z.object({
   schema_version: z.literal(1),
   groups: z.array(z.string().trim().min(1)),
@@ -163,6 +172,7 @@ export const ModelCatalogSchema = z.object({
   models: z.array(ModelCatalogModelSchema),
   price_snapshot: PriceSnapshotMetadataSchema,
   persistent_defaults: PersistentCatalogDefaultsSchema,
+  install_defaults: InstallDefaultsSchema.optional(),
 }).superRefine((catalog, ctx) => {
   const seenPresetIds = new Set<string>();
   for (const [index, preset] of catalog.presets.entries()) {
@@ -206,6 +216,18 @@ export const ModelCatalogSchema = z.object({
   }
 
   const presetIds = new Set(catalog.presets.map((preset) => preset.id));
+  if (catalog.install_defaults) {
+    const installDefaults = [
+      ...Object.entries(catalog.install_defaults.backends).map(([backend, id]) => ({ path: ["backends", backend], backend, id })),
+      { path: ["profiles", "card-orchestrator"], backend: "claude", id: catalog.install_defaults.profiles["card-orchestrator"] },
+    ];
+    for (const { path, backend, id } of installDefaults) {
+      const preset = catalog.presets.find((entry) => entry.id === id);
+      if (!preset || preset.backend !== backend) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["install_defaults", ...path], message: `Install default ${id} must name a ${backend} preset` });
+      }
+    }
+  }
   if (!presetIds.has(catalog.persistent_defaults.model_preset)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

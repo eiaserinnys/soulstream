@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createFakeCommands, runBash } from './support/fake_commands.mjs';
 import { startFakeAtom } from './support/fake_atom_server.mjs';
 import { PAS_DISALLOWED_TOOLS } from './support/pas_disallowed_tools.mjs';
+import { copyCatalog, installDefaults } from './support/catalog.mjs';
 
 const script = resolve('install/install.sh');
 const NAMES = ['skill_catalog', 'domain_catalog', 'common_rules', 'common_rules_extra', 'common_rules_templates', 'codex_rules',
@@ -30,6 +31,7 @@ function setup({ map = U, apiKey = API_KEY } = {}) {
   const home = join(dir, 'home'), root = join(home, 'soulstream'), atomRoot = join(home, 'atom');
   mkdirSync(join(root, 'config'), { recursive: true });
   mkdirSync(atomRoot, { recursive: true });
+  copyCatalog(root);
   if (map !== undefined) writeFileSync(join(root, 'config', '.atom-seed-map.json'), typeof map === 'string' ? map : JSON.stringify(map));
   if (apiKey !== null) writeFileSync(join(root, '.atom-api-key'), `${apiKey}\n`);
   const fake = createFakeCommands(dir);
@@ -47,7 +49,8 @@ const renderBody = (backends) => `parse_args --backends ${backends}\nsetup_secre
 const ctx = (name, depth) => `      - node_id: ${U[name]}\n        depth: ${depth}\n        titles_only: false\n        include_ids: false\n`;
 const idx = (name) => `      - node_id: ${U[name]}\n        depth: 1\n        titles_only: false\n        mode: index\n`;
 const backendRules = (backend) => (backend === 'claude' ? ctx('claude_common_rules', 5) : backend === 'codex' ? ctx('codex_rules', 5) : '');
-const PRESET = { claude: 'claude-opus', codex: 'codex-6.2-sol', antigravity: 'gemini-4-carbon' };
+const DEFAULTS = installDefaults();
+const PRESET = DEFAULTS.backends;
 const LABEL = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity' };
 function expectedAgents(home, root, backends) {
   const first = backends[0];
@@ -84,7 +87,7 @@ ${ctx('common_rules', 5)}${backendRules(first)}${ctx('seosoyoung_general', 0)}${
     text += `  - id: card-orchestrator
     name: 카드 오케스트레이터
     backend: claude
-    default_preset: claude-sonnet
+    default_preset: ${DEFAULTS.profiles['card-orchestrator']}
     workspace_dir: ${home}/workspace
     context_scope: minimal
     atom_contexts:
@@ -131,6 +134,38 @@ The \`soulstream\` MCP server provides session and workspace tools.
 The \`atom\` MCP server holds your instructions and skills. Rules live under \`에이전트 > 공통 > rules\` and skills under \`에이전트 > 공통 > skills\`.
 Find skills with \`search_skills\` and read them with \`load_skill\`. Read any other atom node with \`compile_subtree\`.
 `;
+
+test('installer refuses missing catalog defaults', async () => {
+  const t = setup();
+  try {
+    unlinkSync(join(t.root, 'packages/model-catalog/data/model-catalog.yaml'));
+    const result = await t.run('parse_args --backends claude\nsetup_secrets "$ROOT" "$ATOM_ROOT"\nrender_config "$HOME_DIR" "$ROOT"\n');
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /install_defaults|model-catalog/);
+  } finally { t.cleanup(); }
+});
+
+test('installer renders each backend and profile from the checked-out catalog', async () => {
+  const t = setup();
+  try {
+    const path = join(t.root, 'packages/model-catalog/data/model-catalog.yaml');
+    const defaults = { backends: { claude: 'test-claude', codex: 'test-codex', antigravity: 'test-antigravity' }, profiles: { 'card-orchestrator': 'test-orchestrator' } };
+    const raw = readFileSync(path, 'utf8');
+    writeFileSync(path, raw.replace(/^install_defaults: .*$/m, `install_defaults: ${JSON.stringify(defaults)}`));
+    const result = await t.run(renderBody('claude,codex,antigravity'));
+    assert.equal(result.status, 0, result.stderr);
+    const agents = t.read(t.root, 'config', 'agents.yaml');
+    assert.equal((agents.match(/default_preset: test-claude/g) ?? []).length, 3);
+    for (const value of ['test-codex', 'test-antigravity', 'test-orchestrator']) assert.ok(agents.includes(`default_preset: ${value}`));
+    const stage1 = await t.run('load_install_defaults "$ROOT/packages/model-catalog/data/model-catalog.yaml"\nstage1_managed_output agents "$HOME_DIR" claude,codex,antigravity\n');
+    assert.equal(stage1.status, 0, stage1.stderr);
+    for (const value of Object.values(defaults.backends)) assert.ok(stage1.stdout.includes(`default_preset: ${value}`));
+    writeFileSync(path, raw.replace(/^install_defaults: .*$/m, 'install_defaults: {"backends":{}}'));
+    const missing = await t.run(renderBody('claude'));
+    assert.notEqual(missing.status, 0);
+    assert.match(missing.stderr, /install_defaults/);
+  } finally { t.cleanup(); }
+});
 
 test('a full seed map renders atom env lines, profiles, MCP files and AGENTS.md', async () => {
   for (const backends of ['claude,codex', 'codex', 'antigravity,claude']) {

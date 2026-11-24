@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { appendFile, cp, readFile, rm } from "node:fs/promises";
+import { appendFile, cp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import {
@@ -14,6 +14,7 @@ import { buildChildEnv, modelCatalogPathForRepoRoot } from "../lib/environment.m
 import { PORTABLE_SOURCE, makeTempRoot, sha256 } from "./helpers.mjs";
 
 const TEMPLATES_DIR = join(PORTABLE_SOURCE, "config");
+const CATALOG_PATH = resolve(PORTABLE_SOURCE, "../packages/model-catalog/data/model-catalog.yaml");
 const TEMPLATE_FILES = [
   { key: "agents", file: "agents.yaml" },
   { key: "mcp_registry", file: "mcp-registry.yaml" },
@@ -47,6 +48,7 @@ test("템플릿을 치환해 sha256 기반 세대 폴더에 쓰고 env.json은 �
     stateRoot,
     configRoot,
     hostPort: 41117,
+    catalogPath: CATALOG_PATH,
   });
   const expectedGeneration = `local-${await templateDigest()}`;
   assert.equal(rendered.generation, expectedGeneration);
@@ -71,11 +73,27 @@ test("템플릿을 치환해 sha256 기반 세대 폴더에 쓰고 env.json은 �
     stateRoot,
     configRoot,
     hostPort: 42229,
+    catalogPath: CATALOG_PATH,
   });
   assert.equal(rerendered.generation, rendered.generation, "템플릿 내용이 같으면 같은 세대 폴더를 다시 씁니다.");
   const updated = await readFile(join(rerendered.dir, "mcp-registry.yaml"), "utf8");
   assert.equal(updated.includes(":41117/"), false, "같은 세대 폴더에 낡은 포트가 남으면 안 됩니다.");
   assert.ok(updated.includes("url: http://127.0.0.1:42229/mcp"));
+});
+
+test("카탈로그의 백엔드 기본값을 설정 생성에 반영하고 누락되면 실패한다", async (t) => {
+  const root = await makeTempRoot("config-catalog");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const catalogPath = join(root, "catalog.yaml");
+  const defaults = { backends: { claude: "test-claude", codex: "test-codex", antigravity: "test-other" }, profiles: { "card-orchestrator": "test-profile" } };
+  await writeFile(catalogPath, `install_defaults: ${JSON.stringify(defaults)}\n`);
+  const options = { templatesDir: TEMPLATES_DIR, stateRoot: join(root, "state"), configRoot: join(root, "config"), hostPort: 41117, catalogPath };
+  const generation = await writeConfigGeneration(options);
+  const agents = await readFile(generation.files.agents, "utf8");
+  assert.match(agents, /default_preset: test-claude/);
+  assert.match(agents, /default_preset: test-codex/);
+  await writeFile(catalogPath, "schema_version: 1\n");
+  await assert.rejects(writeConfigGeneration(options), /install_defaults/);
 });
 
 test("child 환경에는 bootstrap이 주던 값과 ATOM_ENABLED가 없고 노드 토큰 헤더 값이 있다", async (t) => {
@@ -111,9 +129,9 @@ test("템플릿 내용이 바뀌면 새 세대 폴더를 쓰고 이전 세대 �
   const stateRoot = join(root, "state");
   const configRoot = join(stateRoot, "config");
 
-  const first = await writeConfigGeneration({ templatesDir, stateRoot, configRoot, hostPort: 41117 });
+  const first = await writeConfigGeneration({ templatesDir, stateRoot, configRoot, hostPort: 41117, catalogPath: CATALOG_PATH });
   await appendFile(join(templatesDir, "agents.yaml"), "\n# 시험용 변경\n");
-  const second = await writeConfigGeneration({ templatesDir, stateRoot, configRoot, hostPort: 41117 });
+  const second = await writeConfigGeneration({ templatesDir, stateRoot, configRoot, hostPort: 41117, catalogPath: CATALOG_PATH });
 
   assert.notEqual(second.generation, first.generation, "템플릿이 바뀌면 새 세대 폴더를 씁니다.");
   assert.equal(existsSync(first.dir), true, "지난 세대 폴더는 rollback을 위해 그대로 둡니다.");

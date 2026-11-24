@@ -31,6 +31,7 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFile
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createFakeCommands, runBash } from './support/fake_commands.mjs';
+import { copyCatalog, installDefaults } from './support/catalog.mjs';
 
 const script = resolve('install/install.sh');
 const fixtures = resolve('install/tests/fixtures/stage1');
@@ -435,6 +436,7 @@ function configSetup() {
   const home = join(dir, 'home'), root = join(home, 'soulstream'), atomRoot = join(home, 'atom');
   mkdirSync(join(root, 'config'), { recursive: true });
   mkdirSync(atomRoot);
+  copyCatalog(root);
   writeFileSync(join(root, 'config', '.atom-seed-map.json'), JSON.stringify(MAP));
   writeFileSync(join(root, '.atom-api-key'), `${API_KEY}\n`);
   const fake = createFakeCommands(dir);
@@ -601,8 +603,14 @@ test('a regular CLAUDE.md file is kept', async () => {
 test('the first-stage output function matches the files the first-stage installer wrote', () => {
   for (const backends of ['claude,codex', 'codex', 'claude,codex,antigravity']) {
     for (const [kind, name] of Object.entries(KINDS)) {
-      const output = execFileSync('bash', ['-c', 'source "$1"; stage1_managed_output "$2" /home/soulstream "$3"', 'bash', script, kind, backends]);
-      assert.ok(output.equals(readFileSync(join(fixtures, backends.replaceAll(',', '-'), name))), `${backends} ${kind}`);
+      const output = execFileSync('bash', ['-c', 'source "$1"; load_install_defaults "$4"; stage1_managed_output "$2" /home/soulstream "$3"', 'bash', script, kind, backends, resolve('packages/model-catalog/data/model-catalog.yaml')]);
+      let expected = readFileSync(join(fixtures, backends.replaceAll(',', '-'), name), 'utf8');
+      if (kind === 'agents') {
+        const defaults = installDefaults().backends;
+        expected = expected.replace(/(    backend: (claude|codex|antigravity)\n    default_preset:) [^\n]+/g,
+          (_match, prefix, backend) => `${prefix} ${defaults[backend]}`);
+      }
+      assert.equal(output.toString(), expected, `${backends} ${kind}`);
     }
   }
 });

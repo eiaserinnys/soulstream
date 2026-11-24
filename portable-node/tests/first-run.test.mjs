@@ -63,6 +63,11 @@ test("첫 실행: 참여→판 맞춤→구성→묶음→빈 작업 폴더→�
     for (const file of ["agents.yaml", "mcp-registry.yaml", "mcp-profiles.yaml"]) {
       assert.ok(existsSync(join(configDir, file)), file);
     }
+    const catalog = await readFile(join(source.repo, "packages/model-catalog/data/model-catalog.yaml"), "utf8");
+    const defaults = JSON.parse(catalog.match(/^install_defaults: (.+)$/m)[1]).backends;
+    const agents = await readFile(join(configDir, "agents.yaml"), "utf8");
+    assert.ok(agents.split(/\r?\n/).includes(`    default_preset: ${defaults.claude}`));
+    assert.ok(agents.split(/\r?\n/).includes(`    default_preset: ${defaults.codex}`));
     assert.equal(existsSync(join(configDir, "model-catalog.yaml")), false, "카탈로그는 구성 템플릿이 아닙니다.");
     assert.equal(existsSync(join(configDir, "env.json")), false);
 

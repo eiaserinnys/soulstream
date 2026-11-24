@@ -1,6 +1,6 @@
 /**
  * 무설치 노드 실행기의 기본 설정(portable-node/config)을 soul-server가 실제로 읽는지 확인한다.
- * 실행기는 두 자리표시자를 이번 실행 값으로 바꿔 쓰고, soul-server는 그 파일을 자기 schema로 읽는다.
+ * 실행기가 자리표시자를 채운 설정을 soul-server가 자기 schema로 읽는다.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -10,29 +10,26 @@ import { describe, expect, it } from "vitest";
 
 import { readAgentsConfig } from "../src/agent_registry.js";
 import { McpConfigService } from "../src/mcp_config_service.js";
+import { parseModelCatalogYaml } from "@soulstream/model-catalog";
+import { writeConfigGeneration } from "../../portable-node/lib/config.mjs";
 
 import { makeTempDirSync } from "./helpers/temp_dir.js";
 
 const TEMPLATES_DIR = fileURLToPath(new URL("../../portable-node/config/", import.meta.url));
-const FILES = ["agents.yaml", "mcp-registry.yaml", "mcp-profiles.yaml"];
-
-function renderTemplates(stateRoot: string, hostPort: number): string {
-  const directory = makeTempDirSync("portable-node-config-");
-  for (const file of FILES) {
-    const rendered = fs
-      .readFileSync(path.join(TEMPLATES_DIR, file), "utf8")
-      .split("__STATE_ROOT__").join(stateRoot)
-      .split("__SOUL_HOST_PORT__").join(String(hostPort));
-    fs.writeFileSync(path.join(directory, file), rendered);
-  }
-  return directory;
-}
+const CATALOG_PATH = fileURLToPath(new URL("../../packages/model-catalog/data/model-catalog.yaml", import.meta.url));
 
 describe("portable node default config", () => {
-  it("renders two default agents with their presets and one local soulstream MCP server", () => {
+  it("renders two default agents with their presets and one local soulstream MCP server", async () => {
     const stateRoot = makeTempDirSync("portable-node-state-");
     const hostPort = 43117;
-    const configDir = renderTemplates(stateRoot, hostPort);
+    const { dir: configDir } = await writeConfigGeneration({
+      templatesDir: TEMPLATES_DIR,
+      stateRoot,
+      configRoot: makeTempDirSync("portable-node-config-"),
+      hostPort,
+      catalogPath: CATALOG_PATH,
+    });
+    const defaults = parseModelCatalogYaml(fs.readFileSync(CATALOG_PATH, "utf8")).install_defaults!.backends;
     const agentsConfigPath = path.join(configDir, "agents.yaml");
 
     const config = readAgentsConfig(agentsConfigPath);
@@ -40,8 +37,8 @@ describe("portable node default config", () => {
     expect(config.agents.map((agent) => agent.name)).toEqual(["Claude", "Codex"]);
     expect(config.agents.map((agent) => agent.backend)).toEqual(["claude", "codex"]);
     expect(config.agents.map((agent) => agent.default_preset)).toEqual([
-      "claude-opus",
-      "codex-6.2-sol",
+      defaults.claude,
+      defaults.codex,
     ]);
     for (const agent of config.agents) {
       expect(agent.workspace_dir).toBe(path.join(stateRoot, "workspace"));

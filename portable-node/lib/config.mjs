@@ -62,10 +62,18 @@ function substituteSoulHostPort(value, hostPort) {
  * 세대 이름은 치환 전 세 템플릿 내용을 이어 붙인 sha256의 앞 12자다.
  * 같은 템플릿은 같은 폴더를 다시 쓰고, 그 폴더를 지난 판의 rollback도 다시 렌더한다.
  */
-export async function writeConfigGeneration({ templatesDir, stateRoot, configRoot, hostPort }) {
+export async function writeConfigGeneration({ templatesDir, stateRoot, configRoot, hostPort, catalogPath }) {
   const templates = {};
   for (const { key, file } of CONFIG_FILES) {
     templates[key] = await readFile(join(templatesDir, file), "utf8");
+  }
+  const catalog = await readFile(catalogPath, "utf8");
+  const line = catalog.match(/^install_defaults: (.+)$/m);
+  if (!line) throw new Error("model-catalog의 install_defaults가 없습니다.");
+  const defaults = JSON.parse(line[1]);
+  const { claude, codex } = defaults.backends ?? {};
+  if (typeof claude !== "string" || !claude || typeof codex !== "string" || !codex) {
+    throw new Error("model-catalog의 install_defaults.backends가 올바르지 않습니다.");
   }
   const digest = createHash("sha256")
     .update(CONFIG_FILES.map(({ key }) => templates[key]).join(""))
@@ -74,7 +82,9 @@ export async function writeConfigGeneration({ templatesDir, stateRoot, configRoo
   const dir = join(configRoot, generation);
   await mkdir(dir, { recursive: true, mode: 0o700 });
 
-  const resolve = (value) => substituteSoulHostPort(substituteStateRoot(value, stateRoot), hostPort);
+  const resolve = (value) => substituteSoulHostPort(substituteStateRoot(value, stateRoot), hostPort)
+    .replaceAll("__CLAUDE_DEFAULT_PRESET__", claude)
+    .replaceAll("__CODEX_DEFAULT_PRESET__", codex);
   const files = {};
   for (const { key, file } of CONFIG_FILES) {
     const path = join(dir, file);
