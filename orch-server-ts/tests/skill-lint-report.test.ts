@@ -36,7 +36,7 @@ describe("put_skill_lint_report", () => {
     const result = await call(host(store, {}), { report }, "session-1");
 
     expect(result.isError).not.toBe(true);
-    expect(result.structuredContent ?? JSON.parse((result.content[0] as { text: string }).text)).toEqual({
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toEqual({
       ok: true, generated_at: report.generated_at, skill_count: 2, catalog_count: 1,
     });
     expect(state.writes).toBe(1);
