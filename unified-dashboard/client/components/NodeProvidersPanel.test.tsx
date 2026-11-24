@@ -34,6 +34,15 @@ vi.mock("../hooks/useClaudeAuthFlow", () => ({
   useClaudeAuthFlow: () => flowMock.current,
 }));
 
+vi.mock("./claude-accounts/AgentLoginSheet", () => ({
+  AgentLoginSheet: (props: { provider: string; nodeId: string; onClose(): void; onDone(): void }) => (
+    <div data-testid="agent-login-sheet-stub" data-provider={props.provider} data-node={props.nodeId}>
+      <button type="button" onClick={props.onDone}>끝남</button>
+      <button type="button" onClick={props.onClose}>닫기</button>
+    </div>
+  ),
+}));
+
 import { NodeProvidersPanel } from "./NodeProvidersPanel";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -354,5 +363,69 @@ describe("NodeProvidersPanel", () => {
     expect(row.querySelector('[data-testid="provider-quota-skeleton"]')).not.toBeNull();
     expect(host.textContent).not.toContain("로딩 중");
     expect(host.querySelectorAll("[data-provider-id]")).toHaveLength(1);
+  });
+
+  describe("coding agent login buttons", () => {
+    const loginButton = (id: "codex" | "antigravity") => host.querySelector<HTMLButtonElement>(`[data-testid="agent-login-button-${id}"]`);
+
+    it.each([
+      ["codex", "not_configured", true, "연결"],
+      ["codex", "error", true, "연결"],
+      ["codex", "auto", true, "다시 연결"],
+      ["antigravity", "not_configured", true, "연결"],
+      ["antigravity", "auto", true, "다시 연결"],
+    ] as const)("%s row with status %s and login_supported=%s shows %s", async (id, status, supported, label) => {
+      await mount(summaryNode({ [id]: provider([], { status, login_supported: supported }) }), legacyRequest());
+      expect(loginButton(id)?.textContent).toBe(label);
+    });
+
+    it("shows no button without the capability, with a false capability, and never on OpenCode Go", async () => {
+      await mount(summaryNode({
+        codex: provider([], { status: "not_configured" }),
+        antigravity: provider([], { status: "not_configured", login_supported: false }),
+        opencode_go: provider([], { status: "not_configured", login_supported: true }),
+      }), legacyRequest());
+      expect(loginButton("codex")).toBeNull();
+      expect(loginButton("antigravity")).toBeNull();
+      expect(rowOf("opencode_go")!.querySelector("button")).toBeNull();
+    });
+
+    it("opens the login sheet at once for a disconnected row", async () => {
+      await mount(summaryNode({ codex: provider([], { status: "not_configured", login_supported: true }) }), legacyRequest());
+      await act(async () => loginButton("codex")!.click());
+      expect(host.querySelector('[data-testid="agent-login-sheet-stub"]')?.getAttribute("data-provider")).toBe("codex");
+      expect(host.querySelector('[data-testid="agent-login-sheet-stub"]')?.getAttribute("data-node")).toBe("node-a");
+      expect(host.querySelector('[data-testid="agent-login-confirm-codex"]')).toBeNull();
+    });
+
+    it("asks once before reconnecting a connected row and does nothing when declined", async () => {
+      await mount(summaryNode({ antigravity: provider([], { status: "auto", login_supported: true }) }), legacyRequest());
+      await act(async () => loginButton("antigravity")!.click());
+      const confirm = host.querySelector('[data-testid="agent-login-confirm-antigravity"]')!;
+      expect(confirm.textContent).toContain("다시 연결할까요?");
+      expect(host.querySelector('[data-testid="agent-login-sheet-stub"]')).toBeNull();
+      await act(async () => [...confirm.querySelectorAll("button")].find((button) => button.textContent === "취소")!.click());
+      expect(host.querySelector('[data-testid="agent-login-confirm-antigravity"]')).toBeNull();
+      expect(host.querySelector('[data-testid="agent-login-sheet-stub"]')).toBeNull();
+
+      await act(async () => loginButton("antigravity")!.click());
+      await act(async () => [...host.querySelectorAll<HTMLButtonElement>('[data-testid="agent-login-confirm-antigravity"] button')].find((button) => button.textContent === "다시 연결")!.click());
+      expect(host.querySelector('[data-testid="agent-login-sheet-stub"]')?.getAttribute("data-provider")).toBe("antigravity");
+    });
+
+    it("re-reads the usage summary when the sheet reports done", async () => {
+      const onUsageChanged = vi.fn();
+      await act(async () => root.render(
+        <QueryClientProvider client={client}>
+          <NodeProvidersPanel nodeId="node-a" request={legacyRequest() as unknown as typeof fetch} node={summaryNode({ codex: provider([], { status: "not_configured", login_supported: true }) })} loading={false} onUsageChanged={onUsageChanged} />
+        </QueryClientProvider>,
+      ));
+      await settle();
+      await act(async () => loginButton("codex")!.click());
+      await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "끝남")!.click());
+      expect(onUsageChanged).toHaveBeenCalledTimes(1);
+      await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "닫기")!.click());
+      expect(host.querySelector('[data-testid="agent-login-sheet-stub"]')).toBeNull();
+    });
   });
 });

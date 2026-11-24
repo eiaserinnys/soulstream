@@ -55,6 +55,7 @@ import { SessionReviewPolicyTab } from "./SessionReviewPolicyTab";
 import { UsageLogTab } from "./UsageLogTab";
 import { RecurringJobsTab } from "./RecurringJobsTab";
 import { PersistentSessionsTab } from "./PersistentSessionsTab";
+import { CodingAgentsTab } from "./CodingAgentsTab";
 import { UsageStatsTab } from "./usage-stats/UsageStatsTab";
 
 const LIQUID_GLASS_TAB_NAME = "liquid_glass";
@@ -70,6 +71,7 @@ const USAGE_LOG_TAB_NAME = "usage_log";
 const USAGE_STATS_TAB_NAME = "usage_stats";
 const RECURRING_JOBS_TAB_NAME = "recurring_jobs";
 const PERSISTENT_TAB_NAME = "persistent";
+const CODING_AGENTS_TAB_NAME = "coding_agents";
 
 export interface ConfigModalApi {
   request: typeof fetch;
@@ -137,6 +139,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
         { name: SESSION_REVIEW_TAB_NAME, label: "요청 검수" },
         { name: "file_storage", label: "파일 저장소" },
         { name: "card_dispatch", label: "카드 실행" },
+        { name: CODING_AGENTS_TAB_NAME, label: "코딩 에이전트" },
         { name: "persistent_defaults", label: "영구 세션 기본 모델" },
         { name: "mcp", label: "MCP" },
         { name: AGENTS_TAB_NAME, label: "에이전트" },
@@ -168,6 +171,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
     selectedTab === PERSISTENT_TAB_NAME ||
     selectedTab === "file_storage" ||
     selectedTab === "card_dispatch" ||
+    selectedTab === CODING_AGENTS_TAB_NAME ||
     selectedTab === "persistent_defaults" ||
     selectedTab === "mcp" ||
     selectedTab === SESSION_REVIEW_TAB_NAME ||
@@ -189,6 +193,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
     webhooks: "내 세션과 외부 서비스가 주고받는 웹훅을 관리합니다.",
     nodes: "작업을 실행할 기기와 연결 상태를 확인합니다.", agents: "에이전트의 프로필과 기본 실행 환경을 관리합니다.",
     recurring_jobs: "반복할 작업과 다음 실행 시점을 관리합니다.", persistent: "Persistent Agent Session의 이름과 기본 모델을 관리합니다.", card_dispatch: "카드의 실행 방식과 동시 실행 수를 조정합니다.",
+    coding_agents: "노드마다 Claude, Codex, Antigravity 로그인을 연결합니다.",
     persistent_defaults: "새 영구 세션이 쓸 기본 모델과 대체 순서를 정합니다. 이미 있는 세션은 바뀌지 않습니다.",
     users: "서버를 사용할 사람과 접근 범위를 관리합니다.", session_review: "실행 전 검수가 필요한 요청을 정합니다.",
     file_storage: "첨부 파일을 보관할 저장소를 연결합니다.", usage_log: "사용 기록을 확인하고 필요한 범위로 좁힙니다.",
@@ -260,6 +265,8 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
                 <FileStorageTab request={api?.request} />
               ) : selectedTab === "card_dispatch" ? (
                 <CardDispatchTab api={api?.cards} orchestration={api?.orchestration} />
+              ) : selectedTab === CODING_AGENTS_TAB_NAME && (api || user?.isAdmin) ? (
+                <CodingAgentsTab request={api?.request} sampleNodes={api?.nodes} />
               ) : selectedTab === "persistent_defaults" && (api || user?.isAdmin) ? (
                 <PersistentDefaultsSettingsForm />
               ) : selectedTab === "mcp" && (api || user?.isAdmin) ? (

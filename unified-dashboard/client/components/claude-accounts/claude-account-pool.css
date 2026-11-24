@@ -325,6 +325,21 @@
   align-self: flex-start;
 }
 
+.c724-device-code {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--v3-space-2);
+}
+
+.c724-device-code-value {
+  font: var(--v3-type-page) var(--font-mono);
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 .c724-pool-notice,
 .c724-pool-error {
   margin: 0;
