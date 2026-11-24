@@ -96,14 +96,15 @@ export function PersistentDefaultsSettingsForm({ service = defaultService }: { s
       <div className="grid gap-4 sm:grid-cols-2">
         <NodeModelPresetSelect nodeId={catalog.nodeId} value={draft.model_preset} label="기본 모델" className="v3-model-preset-field" triggerClassName="v3-model-preset-trigger" modelPresetCatalog={catalog} missingPresetLabel={missingLabel} disabled={pending || !ready} onValueChange={model_preset => { setMessage(null); setDraft({ ...draft, model_preset }); }}/>
       </div>
-      <div className="space-y-3">
-      <div className="space-y-4">
+      <div className={draft.fallback_models.length ? "space-y-3 pt-2" : "space-y-3"}>
+      <div className="space-y-6">
       {draft.fallback_models.map((item, index) => {
         const efforts = catalog.presets.find(preset => preset.id === item.model_preset)?.supported_efforts ?? [];
         const effortOptions = [...efforts];
         if (item.reasoning_effort && !effortOptions.includes(item.reasoning_effort)) effortOptions.unshift(item.reasoning_effort);
-        return <fieldset key={index} className="space-y-3" disabled={pending || !ready}>
+        return <fieldset key={index} className="space-y-2" disabled={pending || !ready}>
           <legend>대체 {index + 1}</legend>
+          <div className="space-y-3">
           <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
             <NodeModelPresetSelect nodeId={catalog.nodeId} value={item.model_preset} label="모델" ariaLabel={`대체 ${index + 1} 모델`} className="v3-model-preset-field" triggerClassName="v3-model-preset-trigger" modelPresetCatalog={catalog} missingPresetLabel={missingLabel} disabled={pending || !ready} onValueChange={model_preset => updateFallback(index, { model_preset, reasoning_effort: null })}/>
             <CatalogSelectionField label="노력" ariaLabel={`대체 ${index + 1} 노력`} value={item.reasoning_effort ?? ""} selectedLabel={item.reasoning_effort ?? "프리셋 기본"} disabled={pending || !ready} options={[{ value: "", label: "프리셋 기본" }, ...effortOptions.map(effort => ({ value: effort, label: effort }))]} onValueChange={reasoning_effort => updateFallback(index, { reasoning_effort: reasoning_effort || null })}/>
@@ -112,6 +113,7 @@ export function PersistentDefaultsSettingsForm({ service = defaultService }: { s
             <Button type="button" variant="outline" aria-label={`대체 ${index + 1} 위로`} disabled={pending || index === 0} onClick={() => move(index, -1)}>위로</Button>
             <Button type="button" variant="outline" aria-label={`대체 ${index + 1} 아래로`} disabled={pending || index === draft.fallback_models.length - 1} onClick={() => move(index, 1)}>아래로</Button>
             <Button type="button" variant="outline" aria-label={`대체 ${index + 1} 제거`} disabled={pending} onClick={() => { setMessage(null); setDraft({ ...draft, fallback_models: draft.fallback_models.filter((_, i) => i !== index) }); }}>제거</Button>
+          </div>
           </div>
         </fieldset>;
       })}
