@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { mcpRequestErrorText } from "../../lib/mcp-api";
 import { Button, Checkbox, Input } from "@seosoyoung/soul-ui";
-import type {
-  Definition,
-  McpConfig,
-  McpIcon,
-  McpProfile,
-  McpServer,
-  McpTestInput,
-  McpTestResult,
+import {
+  mcpRequestErrorText,
+  type Definition,
+  type McpConfig,
+  type McpIcon,
+  type McpProfile,
+  type McpServer,
+  type McpTestInput,
+  type McpTestResult,
 } from "../../lib/mcp-api";
 import {
   SettingsAlert,
