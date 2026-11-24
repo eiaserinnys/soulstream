@@ -592,6 +592,7 @@ def capture_session_history(browser, baseline, base, out):
         ("session-card-1440", "card", "dark", "session-ready", False),
         ("session-pas-384", "pas", "dark", "session-ready", False),
         ("session-tabs-1440", "card", "dark", "session-ready", True),
+        ("session-tabs-360", "pas", "dark", "session-ready", True),
         ("session-no-workspace-1440", "card", "dark", "session-no-workspace", False),
         ("session-unrecorded-384", "pas", "dark", "session-unrecorded", False),
         ("session-light-1440", "card", "light", "session-ready", False),
@@ -601,7 +602,7 @@ def capture_session_history(browser, baseline, base, out):
     ]
     for name, surface, theme, scene, tabs in [("session-before-1440", "card", "dark", "session-ready", False), ("session-before-384", "pas", "dark", "session-ready", False)] + scenarios:
         old = name.startswith("session-before")
-        width = 384 if surface == "pas" else 1440
+        width = 360 if name == "session-tabs-360" else 384 if surface == "pas" else 1440
         context = browser.new_context(viewport={"width": width, "height": 900}, color_scheme=theme, reduced_motion="reduce", locale="ko-KR", service_workers="block")
         page=context.new_page()
         page.add_init_script(f"localStorage.setItem('soul-dashboard-theme','{theme}'); localStorage.setItem('ls.webglGlass','0');")
@@ -637,7 +638,9 @@ def capture_session_history(browser, baseline, base, out):
             page.screenshot(path=str(out / "session-error-before-retry.png"),animations="disabled")
             box.get_by_role("button",name="다시 시도").click()
         if tabs:
+            status_before = box.locator(".v3-session-file-diff-status").inner_text()
             tab=box.get_by_role("tab",name="세션 기록"); tab.click(); expect(box.get_by_role("tab",name="세션 기록")).to_be_focused()
+            expect(box.locator(".v3-session-file-diff-status")).to_have_text(status_before)
         if scene == "session-unrecorded": expect(box.get_by_text("이 엔진은 고친 내용을 기록에 남기지 않습니다")).to_be_visible()
         else:
             expect(box.get_by_text("1/3",exact=False)).to_be_visible()
@@ -645,12 +648,47 @@ def capture_session_history(browser, baseline, base, out):
         if scene == "session-no-workspace":
             expect(pane.get_by_text("작업 폴더가 지워져",exact=False)).to_be_visible()
             expect(box.get_by_role("button",name="전체 보기")).to_have_count(0)
+            pane.get_by_role("button",name="읽기만 한 파일",exact=False).click()
+            static_row = pane.locator(".v3-session-files-entry > div.v3-session-files-row").first
+            expect(static_row).to_be_visible()
+            page.mouse.move(2, 2)
+            row_style = pane.evaluate("""el => {
+                const measure = row => { const r=row.getBoundingClientRect(), s=getComputedStyle(row); return {height:r.height,weight:s.fontWeight,fontSize:s.fontSize,fontFamily:s.fontFamily,lineHeight:s.lineHeight,padding:s.padding,color:s.color,background:s.backgroundColor,cursor:s.cursor}; };
+                return {button:measure(el.querySelector('.v3-session-files-group > button.v3-session-files-row')), static:measure(el.querySelector('.v3-session-files-entry > div.v3-session-files-row'))};
+            }""")
+            assert row_style["static"]["height"] == 34 and all(row_style["static"][key] == row_style["button"][key] for key in ("height", "weight", "fontSize", "fontFamily", "lineHeight", "padding", "color")), row_style
+            static_row.hover()
+            static_hover = static_row.evaluate("e => ({background:getComputedStyle(e).backgroundColor,color:getComputedStyle(e).color,cursor:getComputedStyle(e).cursor})")
+            assert static_hover["background"] == row_style["static"]["background"] and static_hover["color"] == row_style["static"]["color"] and static_hover["cursor"] != "pointer", (row_style, static_hover)
         if scene == "session-mixed": expect(box.get_by_text("내용이 기록되지 않은 편집 2번")).to_be_visible()
         if scene == "session-truncated": expect(box.get_by_text("기록이 길어 오래된 편집은 빠졌습니다")).to_be_visible()
         page.mouse.move(2,2); page.screenshot(path=str(out / (name + ".png")),animations="disabled")
         metrics=pane.evaluate("""el => {const r=el.getBoundingClientRect(), b=el.querySelector('.v3-session-file-diff-body');return {pane:{left:r.left,right:r.right,width:r.width},scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,bodyWidth:b?.clientWidth,bodyScroll:b?.scrollWidth}}""")
         assert metrics["scrollWidth"] <= metrics["clientWidth"] and metrics["bodyScroll"] <= metrics["bodyWidth"], metrics
+        if scene == "session-no-workspace": metrics["row_style"] = {**row_style, "hover": static_hover}
+        if name in ("session-card-1440", "session-pas-384", "session-tabs-1440", "session-tabs-360"):
+            first_padding = box.locator(".v3-session-file-diff-edit-head").first.evaluate("e => {const s=getComputedStyle(e);return {actual:s.paddingBlockEnd,expected:s.getPropertyValue('--v3-space-1').trim()}}")
+            assert first_padding["actual"] == first_padding["expected"], first_padding
+            gaps = box.locator(".v3-session-file-diff-body").evaluate("""body => {
+                const groups=[...body.children].filter(e=>e.querySelector(':scope > .v3-session-file-diff-edit-head'));
+                return groups.slice(1).map((group,index)=>{
+                    const title=group.querySelector(':scope > .v3-session-file-diff-edit-head'), range=document.createRange(); range.selectNodeContents(title);
+                    const text=range.getBoundingClientRect(), previous=groups[index].querySelectorAll('.v3-session-file-diff-line'), first=group.querySelector('.v3-session-file-diff-line'), style=getComputedStyle(title);
+                    return {before:text.top-previous[previous.length-1].getBoundingClientRect().bottom, after:first.getBoundingClientRect().top-text.bottom, paddingBefore:style.paddingBlockStart, paddingAfter:style.paddingBlockEnd, expectedBefore:style.getPropertyValue('--v3-space-4').trim(), expectedAfter:style.getPropertyValue('--v3-space-1').trim()};
+                });
+            }""")
+            assert len(gaps) >= 2 and all(gap["after"] < gap["before"] and gap["paddingBefore"] == gap["expectedBefore"] and gap["paddingAfter"] == gap["expectedAfter"] for gap in gaps), gaps
+            metrics["edit_gaps"] = {"first_padding": first_padding, "subsequent": gaps}
         if tabs:
+            tab_layout = box.evaluate("""box => {
+                const rect=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};};
+                const head=box.querySelector('.v3-session-file-diff-head'), status=head.querySelector('.v3-session-file-diff-status'), action=head.querySelector('button svg');
+                const tabs=[...box.querySelectorAll('[role=tab]')].map(t=>{const range=document.createRange();range.selectNodeContents(t);return {...rect(t),lines:[...new Set([...range.getClientRects()].map(r=>Math.round(r.top)))].length,scroll:t.scrollWidth,client:t.clientWidth};});
+                return {status:rect(status),action:rect(action),tabs,documentScroll:document.documentElement.scrollWidth,documentWidth:document.documentElement.clientWidth};
+            }""")
+            assert len(tab_layout["tabs"]) == 2 and abs(tab_layout["tabs"][0]["left"] - tab_layout["status"]["left"]) <= 1 and abs(tab_layout["tabs"][1]["right"] - tab_layout["action"]["right"]) <= 1, tab_layout
+            assert abs(tab_layout["tabs"][0]["top"] - tab_layout["tabs"][1]["top"]) <= 1 and all(t["lines"] == 1 and t["scroll"] <= t["client"] for t in tab_layout["tabs"]) and tab_layout["documentScroll"] <= tab_layout["documentWidth"], tab_layout
+            metrics["tab_layout"] = tab_layout
             row.focus(); page.keyboard.press("Tab"); expect(box.get_by_role("button",name="전체 보기")).to_be_focused()
             page.keyboard.press("Tab"); expect(box.get_by_role("tab",name="커밋 전 변경")).to_be_focused()
             page.keyboard.press("Tab"); expect(box.get_by_role("tab",name="세션 기록")).to_be_focused()

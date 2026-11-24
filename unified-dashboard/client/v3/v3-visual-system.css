@@ -55,6 +55,7 @@
 }
 
 .v3-nav-list button,
+.v3-nav-list .v3-session-files-entry > div.v3-session-files-row,
 .v3-session-group h2,
 .v3-chat-header strong,
 .v3-project-head h3 {

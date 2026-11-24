@@ -10,13 +10,13 @@ import { registerSessionWorkspaceRoutes } from "../src/session/session_workspace
 function harness() {
   let connected=true; let restricted=false; let fileError:Error | null=null; let rootChecked=true;
   let sessionReads=0; let moveOnSecondRead=false;
-  let worktreeId:string|null=null; let events:any[]=[];
+  let worktreeId:string|null=null; let events:any[]=[]; let sessionDiffQuery="";
   let activities:any[]=[{event_type:"tool_start",tool_name:"Read",file_path:"read.txt",created_at:new Date("2026-01-02T00:00:00Z")}];
   let outcome: any = {root:"/repo",state:"ready",observed_at:"2026-01-02T00:00:00.000Z",refreshing:false,git:{branch:"main",head:"abc",upstream:null,ahead:0,behind:0,truncated:false,files:[],commits:[]}};
   const sql=async (strings:TemplateStringsArray) => strings.join("?").includes("FROM sessions")
     ? [{session_id:"s",node_id:"n",agent_id:moveOnSecondRead && ++sessionReads > 1 ? "other" : "a",worktree_id:worktreeId,created_at:new Date("2026-01-01T00:00:00Z"),model_preset:"claude"}]
     : strings.join("?").includes("FROM worktrees") ? [{canonical_path:"/repo"}]
-    : strings.join("?").includes("SELECT event_type, payload, created_at") ? events : activities;
+    : strings.join("?").includes("SELECT event_type, payload, created_at") ? (sessionDiffQuery=strings.join("?"),events) : activities;
   const registry={getConnectedNode:()=>connected ? {nodeId:"n",connectionId:"c"} : undefined,createCommand:(_node:string,payload:any)=>({message:payload})};
   const bridge={sendPendingCommand:vi.fn(async ({command}:any) => {
     if(command.message.type === "workspace_snapshot" && outcome instanceof Error) throw outcome;
@@ -31,10 +31,24 @@ function harness() {
   })};
   const provider=createLiveSessionWorkspaceProvider({sqlResolver:{resolveSql:async()=>sql} as never,registry:registry as never,bridge:bridge as never,modelCatalog:{snapshot:()=>({presets:[{id:"claude",backend:"claude"}]})} as never});
   const app=Fastify(); registerSessionWorkspaceRoutes(app,{provider,accessProvider:{requireSessionAccess:async()=>{},resolveAccess:async()=>({restricted})} as never});
-  return {app,bridge,setConnected:(value:boolean)=>{connected=value;},setOutcome:(value:any)=>{outcome=value;},setRestricted:(value:boolean)=>{restricted=value;},setFileError:(value:Error|null)=>{fileError=value;},setRootChecked:(value:boolean)=>{rootChecked=value;},setActivities:(value:any[])=>{activities=value;},setEvents:(value:any[])=>{events=value;},setWorktree:()=>{worktreeId="w";},moveOnSecondRead:()=>{moveOnSecondRead=true;}};
+  return {app,bridge,setConnected:(value:boolean)=>{connected=value;},setOutcome:(value:any)=>{outcome=value;},setRestricted:(value:boolean)=>{restricted=value;},setFileError:(value:Error|null)=>{fileError=value;},setRootChecked:(value:boolean)=>{rootChecked=value;},setActivities:(value:any[])=>{activities=value;},setEvents:(value:any[])=>{events=value;},getSessionDiffQuery:()=>sessionDiffQuery,setWorktree:()=>{worktreeId="w";},moveOnSecondRead:()=>{moveOnSecondRead=true;}};
 }
 function rejected(commandType:string,message:string,code?:string) {return new PendingNodeCommandRejectedError({commandType,requestId:"r",message,response:{type:"error",code}});}
 describe("session workspace routes", () => {
+  it("queries nameless failed tool results and removes their matching edit", async () => {
+    const h=harness(); const created_at=new Date("2026-01-02T00:00:00Z");
+    h.setActivities([{event_type:"tool_start",tool_name:"Edit",file_path:"/repo/wrote.txt",created_at}]);
+    h.setEvents([
+      {event_type:"tool_start",created_at,payload:{tool_name:"Edit",tool_use_id:"failed",tool_input:{file_path:"/repo/wrote.txt",old_string:"old",new_string:"bad"}}},
+      {event_type:"tool_result",created_at,payload:{tool_name:"",tool_use_id:"failed",is_error:true}},
+      {event_type:"tool_start",created_at,payload:{tool_name:"Edit",tool_use_id:"good",tool_input:{file_path:"/repo/wrote.txt",old_string:"old",new_string:"good"}}},
+    ]);
+    const response=await h.app.inject({url:"/api/sessions/s/workspace/session-diff?path=wrote.txt"});
+    expect(response.statusCode).toBe(200);
+    expect(h.getSessionDiffQuery()).toMatch(/OR\s*\(\s*event_type\s*=\s*'tool_result'\s+AND\s+payload->>'is_error'\s*=\s*'true'\s*\)/i);
+    expect(response.json().edits.map((edit:{text:string})=>edit.text)).toEqual(["@@ @@\n-old\n+good"]);
+    await h.app.close();
+  });
   it("serves a recorded edit only for a written path", async () => {
     const h=harness();
     h.setActivities([{event_type:"tool_start",tool_name:"Write",file_path:"/repo/wrote.txt",created_at:new Date("2026-01-02T00:00:00Z")}]);

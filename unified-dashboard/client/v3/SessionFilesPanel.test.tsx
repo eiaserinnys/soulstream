@@ -87,6 +87,7 @@ describe('session files panel', () => {
     expect(request.mock.calls[0][0]).toContain('/workspace/session-diff?path=committed.ts');
     expect(host.textContent).toContain('1/1'); expect(host.textContent).toContain('고침, 모두 바꿈');
     expect(host.querySelector('[role="tablist"]')).toBeNull();
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('세션 기록');
     await render({...data}); expect(request).toHaveBeenCalledTimes(1);
     await render({...data,files:[{...file,last_activity_at:'2026-01-02T00:00:00Z'}]}); expect(request).toHaveBeenCalledTimes(2);
   });
@@ -96,8 +97,27 @@ describe('session files panel', () => {
     await render({...reviewSessionFiles,files:[reviewSessionFiles.files[2]],read_only:[]});
     click([...host.querySelectorAll('button')].find(button=>button.textContent?.includes('event_outbox.ts'))!);
     expect(urls[0]).toContain('/workspace/diff?');
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('수정');
     click([...host.querySelectorAll('[role="tab"]')].find(tab=>tab.textContent==='세션 기록')!);
     expect(signals[0].aborted).toBe(true); expect(urls[1]).toContain('/workspace/session-diff?');
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('수정');
+  });
+  it('keeps the actual live diff status when switching to session history', async () => {
+    let liveCalls=0;
+    vi.stubGlobal('fetch',vi.fn((url:string)=>{
+      if (url.includes('/session-diff?')) return Promise.resolve({ok:true,json:async()=>({path:'event_outbox.ts',edits:[],unrecorded:0,truncated:false})});
+      if (++liveCalls > 1) return new Promise(()=>{});
+      return Promise.resolve({ok:true,json:async()=>({status:'untracked',text:'',binary:false,truncated:false})});
+    }));
+    await render({...reviewSessionFiles,files:[reviewSessionFiles.files[2]],read_only:[]});
+    await act(async()=>click([...host.querySelectorAll('button')].find(button=>button.textContent?.includes('event_outbox.ts'))!));
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('새 파일');
+    await act(async()=>click([...host.querySelectorAll('[role="tab"]')].find(tab=>tab.textContent==='세션 기록')!));
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('새 파일');
+    await act(async()=>click([...host.querySelectorAll('[role="tab"]')].find(tab=>tab.textContent==='커밋 전 변경')!));
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('새 파일');
+    await act(async()=>click([...host.querySelectorAll('[role="tab"]')].find(tab=>tab.textContent==='세션 기록')!));
+    expect(host.querySelector('.v3-session-file-diff-status')?.textContent).toBe('새 파일');
   });
   it('shows a deleted workspace list but disables rows without recorded diffs', async () => {
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({path:'gone.ts',edits:[],unrecorded:2,truncated:true})}));

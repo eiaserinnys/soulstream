@@ -140,7 +140,8 @@
   gap: 2px;
 }
 
-.v3-nav-list button {
+.v3-nav-list button,
+.v3-nav-list .v3-session-files-entry > div.v3-session-files-row {
   display: flex;
   min-height: 34px;
   align-items: center;
@@ -154,8 +155,9 @@
   font-size: var(--font-size-sm);
   line-height: var(--font-size-sm--line-height);
   font-weight: 680;
-  cursor: pointer;
 }
+
+.v3-nav-list button { cursor: pointer; }
 
 .v3-nav-list button:hover {
   color: var(--foreground);

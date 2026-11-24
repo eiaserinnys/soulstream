@@ -76,7 +76,7 @@ export function createLiveSessionWorkspaceProvider(options: Options): SessionWor
     activityRoot,
     async readSessionDiff(file) {
       const sql=await options.sqlResolver.resolveSql();
-      const events=await sql`SELECT event_type, payload, created_at FROM events WHERE session_id = ${sessionId} AND event_type IN ('tool_start', 'tool_result') AND payload->>'tool_name' IN ('Edit','MultiEdit','Write','NotebookEdit','file_change','write_file','write_to_file','edit_file','replace_file_content','multi_replace_file_content','notebook_edit','edit','write') ORDER BY id`;
+      const events=await sql`SELECT event_type, payload, created_at FROM events WHERE session_id = ${sessionId} AND event_type IN ('tool_start', 'tool_result') AND (payload->>'tool_name' IN ('Edit','MultiEdit','Write','NotebookEdit','file_change','write_file','write_to_file','edit_file','replace_file_content','multi_replace_file_content','notebook_edit','edit','write') OR (event_type = 'tool_result' AND payload->>'is_error' = 'true')) ORDER BY id`;
       return collectSessionFileEdits(activityRoot,file,events as any);
     },
     async readDiff(file,origPath) {

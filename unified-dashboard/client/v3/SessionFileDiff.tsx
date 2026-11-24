@@ -72,18 +72,20 @@ export function SessionFileDiff({ id, sessionId, file, observedAt, onOpenFull, l
   id: string; sessionId: string; file: ChangedFile; observedAt: string | null; onOpenFull(trigger: HTMLElement): void; live?: boolean; history?: boolean; noWorkspace?: boolean;
 }) {
   const [tab, setTab] = useState<"live" | "history">(live ? "live" : "history");
+  const [lastLiveStatus, setLastLiveStatus] = useState<WorkspaceDiffStatus>(file.git_status ?? "modified");
   const tabChanged=useRef(false);
   const selected = tab === "live" && live ? "live" : history ? "history" : "live";
   useEffect(()=>{ if (tabChanged.current) { document.getElementById(`${id}-tabs-${selected}`)?.focus(); tabChanged.current=false; } },[id,selected]);
   const tabs=live && history ? <DetailTabs id={`${id}-tabs`} label="변경분 출처" panelId={id} tabs={[["live", "커밋 전 변경"], ["history", "세션 기록"]] as const} value={selected} onChange={value=>{tabChanged.current=true;setTab(value);}}/> : null;
   return <div className="v3-session-file-diff-shell">
-    {selected === "live" ? <LiveDiff id={id} sessionId={sessionId} file={file} observedAt={observedAt} onOpenFull={onOpenFull} tabs={tabs}/> : <SessionHistory id={id} sessionId={sessionId} file={file} noWorkspace={noWorkspace} onOpenFull={onOpenFull} tabs={tabs}/>}
+    {selected === "live" ? <LiveDiff id={id} sessionId={sessionId} file={file} observedAt={observedAt} onOpenFull={onOpenFull} tabs={tabs} previousStatus={lastLiveStatus} onStatusChange={setLastLiveStatus}/> : <SessionHistory id={id} sessionId={sessionId} file={file} noWorkspace={noWorkspace} onOpenFull={onOpenFull} tabs={tabs} liveStatus={tabs ? lastLiveStatus : null}/>}
   </div>;
 }
 
-function LiveDiff({ id, sessionId, file, observedAt, onOpenFull, tabs }: { id:string; sessionId:string; file:ChangedFile; observedAt:string|null; onOpenFull(trigger:HTMLElement):void; tabs:ReactNode }) {
+function LiveDiff({ id, sessionId, file, observedAt, onOpenFull, tabs, previousStatus, onStatusChange }: { id:string; sessionId:string; file:ChangedFile; observedAt:string|null; onOpenFull(trigger:HTMLElement):void; tabs:ReactNode; previousStatus:WorkspaceDiffStatus; onStatusChange(status:WorkspaceDiffStatus):void }) {
   const { state, busy, retry } = useSessionFileDiff(sessionId, file, observedAt);
-  const status: WorkspaceDiffStatus = state.kind === "ready" ? state.data.status : file.git_status ?? "modified";
+  const status: WorkspaceDiffStatus = state.kind === "ready" ? state.data.status : tabs ? previousStatus : file.git_status ?? "modified";
+  useEffect(() => { onStatusChange(status); }, [onStatusChange, status]);
   const lines = useMemo(() => state.kind === "ready" && !state.data.binary ? parseUnifiedDiff(state.data.text) : [], [state]);
   const digits = String(lines.reduce((max, line) => line.kind === "hunk" || line.kind === "del" ? max : Math.max(max, line.number ?? 0), 1)).length;
   const name = file.path.split("/").at(-1) ?? file.path;
@@ -121,7 +123,7 @@ function DiffLines({lines}: {lines:DiffLine[]}) {
     </div>)}</>;
 }
 
-function SessionHistory({id,sessionId,file,noWorkspace,onOpenFull,tabs}: {id:string;sessionId:string;file:ChangedFile;noWorkspace:boolean;onOpenFull(trigger:HTMLElement):void;tabs:ReactNode}) {
+function SessionHistory({id,sessionId,file,noWorkspace,onOpenFull,tabs,liveStatus}: {id:string;sessionId:string;file:ChangedFile;noWorkspace:boolean;onOpenFull(trigger:HTMLElement):void;tabs:ReactNode;liveStatus:WorkspaceDiffStatus|null}) {
   const [state,setState]=useState<{kind:"loading"}|{kind:"error"}|{kind:"ready";data:SessionWorkspaceSessionDiffResponse}>({kind:"loading"});
   const [busy,setBusy]=useState(true);
   const [attempt,setAttempt]=useState(0);
@@ -140,7 +142,7 @@ function SessionHistory({id,sessionId,file,noWorkspace,onOpenFull,tabs}: {id:str
   const allLines=data?.edits.map(edit => parseUnifiedDiff(edit.text)) ?? [];
   const digits=String(allLines.flat().reduce((max,line)=>line.kind === "hunk" || line.kind === "del" ? max : Math.max(max,line.number ?? 0),1)).length;
   return <div id={id} role="region" aria-label={`${name} 변경분`} aria-busy={busy} className="v3-session-file-diff">
-    <div className="v3-session-file-diff-head"><span className="v3-session-file-diff-status">세션 기록</span>
+    <div className="v3-session-file-diff-head"><span className="v3-session-file-diff-status">{liveStatus ? STATUS_LABEL[liveStatus] : "세션 기록"}</span>
       {!noWorkspace && file.git_status !== "deleted" && <DashboardIconCap appearance="bare" size="small" label="전체 보기" onClick={event=>onOpenFull(event.currentTarget)}><Maximize2 className="h-4 w-4" aria-hidden="true"/></DashboardIconCap>}
     </div>
     {tabs}
