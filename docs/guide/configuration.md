@@ -130,7 +130,7 @@ agents:
     name: Codex Default
     backend: codex
     workspace_dir: /tmp/codex-default
-    # model: gpt-5.5
+    # model: <provider-model-id>
     # max_turns: 50
     # allowed_tools:
     #   - bash
@@ -145,13 +145,13 @@ agents:
 
 ### Profiles created by the Linux installer
 
-The installer writes `config/agents.yaml` with these profiles, in this order (a file you edited is kept; see [Files the Linux installer manages](#files-the-linux-installer-manages)). "First backend" is the first value of `--backends`; its preset is `claude-opus` for `claude`, `codex-6.2-sol` for `codex`, and `gemini-4-carbon` for `antigravity`.
+The installer writes `config/agents.yaml` with these profiles, in this order (a file you edited is kept; see [Files the Linux installer manages](#files-the-linux-installer-manages)). "First backend" is the first value of `--backends`; its preset comes from the corresponding entry in the catalog's `install_defaults.backends`.
 
 | Profile | Backend and preset | Other settings |
 |---|---|---|
 | `seosoyoung` (서소영) | first backend | `mcp_profile: default`, `claude_auto_memory_enabled: false`, a short `disallowed_tools` list, `portrait_path` under `install/assets/portraits/` |
 | `seosoyoung-pas` (서소영 (PAS)) | first backend | `mcp_profile: pas`, `context_scope: minimal`, `claude_auto_memory_enabled: false`, the PAS `disallowed_tools` list, its own portrait; set as the orchestrator's `DEFAULT_PAS_AGENT_ID` |
-| `card-orchestrator` (카드 오케스트레이터) | `claude`, `claude-sonnet`; only when `claude` is selected | `context_scope: minimal`; card orchestration itself stays disabled until it is turned on in the dashboard |
+| `card-orchestrator` (카드 오케스트레이터) | `claude`, with the preset from the catalog's `install_defaults.profiles.card-orchestrator`; only when `claude` is selected | `context_scope: minimal`; card orchestration itself stays disabled until it is turned on in the dashboard |
 | `<backend>-default` (Claude, Codex, Antigravity) | each selected backend in `--backends` order | `mcp_profile: default` |
 
 Each profile receives `atom_contexts` from the nodes loaded with the default instructions (depth in parentheses; "index" entries use `mode: index` with depth 1):
@@ -188,7 +188,9 @@ Atom runs as `soulstream-atom.service`, which starts before the Soulstream servi
 
 ## Model catalog (`packages/model-catalog/data/model-catalog.yaml`)
 
-Model presets, priced model rows with usage rates and display names, and persistent session defaults live in one repository data file: [`packages/model-catalog/data/model-catalog.yaml`](../../packages/model-catalog/data/model-catalog.yaml). Edit only that file for changes to the preset list, usage rates, display names, and persistent session defaults; do not keep copies in code or in node-local configuration directories.
+Model presets, priced model rows with usage rates and display names, and catalog persistent session defaults live in one repository data file: [`packages/model-catalog/data/model-catalog.yaml`](../../packages/model-catalog/data/model-catalog.yaml). Edit that file for changes to the preset list, usage rates, display names, and catalog defaults; do not keep copies in code or in node-local configuration directories.
+
+For new persistent sessions, the catalog's `persistent_defaults` supplies the agent, initial model preset, and fallback models. Administrators can override the model and fallback defaults in the web settings tab **영구 세션 기본 모델** or with the MCP tools `get_persistent_session_defaults` and `update_persistent_session_defaults`.
 
 - **Node groups**: a preset without `group` is advertised on every node. A preset with `group: china` is advertised only when the node sets `MODEL_CATALOG_GROUPS=china` (comma-separated; empty by default).
 - **No restart**: `soul-server-ts` re-reads the file when it changes and re-advertises its catalog, so data-only edits apply without restarting the process.

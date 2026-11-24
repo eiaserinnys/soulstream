@@ -2,6 +2,12 @@
 
 Use package-scoped scripts from the repository root so typechecking and tests stay proportional to the surface you changed.
 
+## Model names
+
+Keep specific model names, including preset IDs, provider model IDs, aliases, and display names, out of production code, configuration, installers, and scripts. Read model data from [`model-catalog.yaml`](../../packages/model-catalog/data/model-catalog.yaml) and global settings. The catalog's `install_defaults`, `task_defaults`, `provider_model_prefixes`, `presets[].persistent_decision`, and `persistent_defaults` define the corresponding defaults and model behavior. The administrator's `persistent-defaults` setting overrides the persistent session model and fallback defaults; the conversation API's `default` model resolves from those effective defaults and available models.
+
+The only model-specific operational exception is Fable limit handling, which identifies the provider's separate quota. The guard in `soul-server-ts/tests/model_catalog_code_tables.test.ts` scans production source, configuration, generated packages, installers, and scripts for catalog names. It excludes tests, fixtures, review-only samples, examples, seed data, and experimental tools. Its file-and-name allowlists are reserved for Fable limit handling, identical text that is not a model name (such as the Opus audio codec), and comments or documentation in app inputs awaiting the next app change. Each entry records why it is needed and fails when it becomes stale; do not use an allowlist to retain an operational model selection or table.
+
 ## Package scripts and tests
 
 Typecheck and run unit tests for the orchestrator, worker, web dashboard, and shared UI library:

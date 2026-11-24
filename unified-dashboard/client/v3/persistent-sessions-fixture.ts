@@ -1,7 +1,7 @@
 import type { ModelSelection, PersistentCreateDefaults, PersistentInstruction, PersistentSession } from "../lib/persistent-sessions";
 
-const defaultEffort: Record<string, string | null> = { "sample-sol": "high", "sample-opus": null };
-const modelName: Record<string, string> = { "sample-sol": "sample-sol-model", "sample-opus": "sample-opus-model" };
+const defaultEffort: Record<string, string | null> = { "sample-sol": "high", "sample-a": null };
+const modelName: Record<string, string> = { "sample-sol": "sample-sol-model", "sample-a": "sample-a-model" };
 
 /**
  * In-memory review transport for the four persistent-session routes.
@@ -42,8 +42,8 @@ export function createPersistentSessionsFixture({ scenario = "normal", nodeId, f
       pending: null,
     },
   });
-  const first = build("sample-pas-1", "서소영 관제", "roselin", "로젤린", "sample-opus", "sample-sol");
-  first.runtime.pending = { target_model_preset: "sample-opus", target_reasoning_effort: null };
+  const first = build("sample-pas-1", "서소영 관제", "roselin", "로젤린", "sample-a", "sample-sol");
+  first.runtime.pending = { target_model_preset: "sample-a", target_reasoning_effort: null };
   const sessions: PersistentSession[] = [first, build("sample-pas-2", "리뷰 관제", "roselin", "로젤린", "sample-sol", "sample-sol")];
   type FixtureInstruction = PersistentInstruction & { status?: "removed" };
   const instructions = new Map<string, FixtureInstruction[]>([[first.session_id, [{

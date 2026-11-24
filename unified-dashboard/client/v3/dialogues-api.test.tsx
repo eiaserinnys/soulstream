@@ -27,6 +27,13 @@ it("keeps fixture mutations local and refuses unimplemented endpoints", async ()
   expect(saved.users.some((user: {email:string}) => user.email === "new@sample.invalid")).toBe(true);
   await expect(api.request("/api/unimplemented", {method:"DELETE"})).rejects.toThrow("샘플 API");
 });
+it("advertises the preset used by the persistent session sample", async () => {
+  const api = createDialoguesApi();
+  const sessions = await (await api.request("/api/persistent-sessions")).json();
+  const catalog = await (await api.request("/api/nodes/sample-node/model-presets")).json();
+  const presetId = sessions.sessions[0].settings.default_model.model_preset;
+  expect(catalog.model_presets).toContainEqual(expect.objectContaining({ id: presetId, label: "Sample A" }));
+});
 it("preserves the empty usage node and adds a separate three-provider usage node", async () => {
   const api = createDialoguesApi();
   expect(api.config.nodes.has("sample-node")).toBe(true);
