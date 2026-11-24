@@ -21,8 +21,8 @@
 
   /* 단추 넷(영구 세션, atom, 설정, 테마)이 40px 자리를 지키며 360px에서 넘치지 않도록 이름 캡슐의 안쪽 여백을 줄인다. */
   .v3-global-toolbar .dashboard-toolbar-brand {
-    gap: 8px;
-    padding: 0 12px;
+    gap: var(--v3-space-2);
+    padding: 0 var(--v3-space-3);
   }
 
   .v3-global-toolbar .dashboard-toolbar-actions > [data-slot="button"] {
