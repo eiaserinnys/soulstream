@@ -8,15 +8,16 @@ import { testMcpServer } from "../src/mcp_central/server_tester.js";
 const cleanup: Array<() => Promise<void> | void> = [];
 afterEach(async () => { for (const close of cleanup.splice(0)) await close(); });
 
-function reply(message: { id?: number; method?: string }) {
+function reply(message: { id?: number; method?: string; params?: { cursor?: string } }, paginated = false) {
   if (message.id === undefined) return undefined;
   const result = message.method === "initialize"
     ? { protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" } }
-    : { tools: [{ name: "example", inputSchema: { type: "object" } }] };
+    : { tools: [{ name: message.params?.cursor ? "next" : "example", inputSchema: { type: "object" } }],
+      ...(paginated && !message.params?.cursor ? { nextCursor: "page-2" } : {}) };
   return { jsonrpc: "2.0", id: message.id, result };
 }
 
-async function startServer(mode: "http" | "sse" | "unauthorized" | "hang") {
+async function startServer(mode: "http" | "sse" | "unauthorized" | "hang", paginated = false) {
   let stream: ServerResponse | undefined;
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     if (mode === "unauthorized") { res.writeHead(401).end(); return; }
@@ -27,7 +28,7 @@ async function startServer(mode: "http" | "sse" | "unauthorized" | "hang") {
     }
     if (req.method !== "POST") { res.writeHead(405).end(); return; }
     let body = ""; for await (const chunk of req) body += chunk;
-    const response = reply(JSON.parse(body));
+    const response = reply(JSON.parse(body), paginated);
     if (mode === "sse") {
       res.writeHead(202).end();
       if (response) stream?.write(`event: message\ndata: ${JSON.stringify(response)}\n\n`);
@@ -47,6 +48,12 @@ describe("MCP server tester", () => {
     const url = await startServer(mode);
     const result = await testMcpServer({ id: "test", name: "test", type: mode === "http" ? "streamable_http" : "sse", config: { url } }, {});
     expect(result).toMatchObject({ ok: true, server_info: { name: "fixture", version: "1" }, tool_count: 1, tools: ["example"] });
+  });
+
+  it("counts tools across pages", async () => {
+    const url = await startServer("http", true);
+    const result = await testMcpServer({ id: "test", name: "test", type: "streamable_http", config: { url } }, {});
+    expect(result).toMatchObject({ ok: true, tool_count: 2, tools: ["example", "next"] });
   });
 
   it("cleans up stdio processes after success and timeout", async () => {
@@ -92,5 +99,12 @@ readline.createInterface({input: process.stdin}).on('line', line => {
     } }, { FAKE_VALUE: "fake-env-value" }, 1000);
     expect(result.ok).toBe(false);
     expect(JSON.stringify(result)).not.toContain("fake-env-value");
+  });
+
+  it("accepts full_command without returning its contents", async () => {
+    const command = `${process.execPath} --version`;
+    const result = await testMcpServer({ id: "s", name: "s", type: "stdio", config: { full_command: command } }, {}, 1000);
+    expect(result).toMatchObject({ ok: false, error_stage: "initialize" });
+    expect(JSON.stringify(result)).not.toContain(command);
   });
 });
