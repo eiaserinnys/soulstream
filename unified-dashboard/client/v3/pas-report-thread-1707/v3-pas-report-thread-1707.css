@@ -169,6 +169,7 @@
 .pas-rt1707-question-mode label { display: inline-flex; align-items: center; gap: var(--v3-space-1); }
 .pas-rt1707-snooze-options { display: flex; flex-wrap: wrap; gap: var(--v3-space-2); width: 100%; }
 .pas-rt1707-dialog > .v3-workspace-scrim { position: absolute; z-index: var(--v3-layer-modal); inset: 0; }
+.pas-rt1707-dialog .v3-task-default-values { flex-wrap: wrap; }
 .pas-rt1707-decide-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--v3-space-3); min-height: var(--v3-action-size); }
 .pas-rt1707-decide-actions [data-slot="button"] { width: auto; max-width: 100%; height: auto; min-height: var(--v3-action-size); justify-content: center; gap: var(--v3-space-1); padding: var(--v3-space-1) var(--v3-space-3); border-radius: var(--radius-lg); font: var(--v3-type-body) var(--v3-font-family); white-space: nowrap; }
 .pas-rt1707-stamps { display: flex; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--v3-space-2); }

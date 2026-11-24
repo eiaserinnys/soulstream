@@ -315,6 +315,12 @@ try {
           await page.getByTestId("pas-rt1707-open-card-panel").click();
           const panel = page.getByTestId("v3-card-workspace");
           await panel.waitFor({state:"visible"});
+          const metadataLines = await panel.locator(".v3-task-default-values > span").evaluateAll((spans) => spans.map((span) => {
+            const range = document.createRange();
+            range.selectNodeContents(span);
+            return { text: span.textContent, lines: range.getClientRects().length };
+          }));
+          assert(metadataLines.length === 4 && metadataLines.every((item) => item.lines === 1), `카드 실행 설정이 빠졌거나 값 중간에서 줄바꿈됐다: ${JSON.stringify(metadataLines)}`);
           const panelHit = await panel.evaluate((el) => {
             const box = el.getBoundingClientRect();
             return Boolean(document.elementFromPoint(box.left + box.width * .75, box.top + box.height * .25)?.closest('[data-testid="v3-card-workspace"]'));
