@@ -15,7 +15,19 @@ export function SettingsListDetailFrame({ testId, list, children }: {
   return (
     <section data-testid={testId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(13rem,0.8fr)_minmax(0,1.6fr)]" onClick={(event) => {
       if (!(event.target instanceof Element) || !event.target.closest("aside [data-settings-list-row], aside [data-settings-open-detail]")) return;
-      requestAnimationFrame(() => detail.current?.querySelector("header")?.scrollIntoView?.({ block: "nearest", behavior: "instant" }));
+      requestAnimationFrame(() => {
+        const pane = detail.current;
+        const header = pane?.querySelector("header");
+        if (!pane || !header) return;
+        const view = pane.closest(".config-detail")?.getBoundingClientRect();
+        const paneBounds = pane.getBoundingClientRect();
+        const bounds = header.getBoundingClientRect();
+        const top = Math.max(view?.top ?? 0, paneBounds.top);
+        const bottom = Math.min(view?.bottom ?? window.innerHeight, paneBounds.bottom);
+        if (bounds.top < top - 1 || bounds.bottom > bottom + 1) {
+          header.scrollIntoView?.({ block: "nearest", behavior: "instant" });
+        }
+      });
     }}>
       <aside className="min-h-0 rounded-floor border border-border bg-muted/20 p-3">{list}</aside>
       <div ref={detail} className="min-h-0 space-y-4 lg:-mr-1 lg:overflow-y-auto lg:pr-1">{children}</div>
