@@ -26,7 +26,7 @@ When `load_skill` is called, the orchestrator's link-block compiler resolves emb
 
 Agents can also search the broader skill catalog with `search_skills` and match domain catalogs directly with `match_skill_catalogs`.
 
-After running `skill_lint.py --json --out <file>`, an agent uploads the report with `put_skill_lint_report(report_file)`; the worker reads the file (inside the session workspace, up to 900KB) and the orchestrator keeps only the latest report in `system_settings` for the dashboard's skills and catalogs tab.
+After running `skill_lint.py --json-out <file>`, an agent uploads the report with `put_skill_lint_report(report_file)`; the worker reads the file (inside the session workspace, up to 900KB) and the orchestrator keeps only the latest report in `system_settings` for the dashboard's skills and catalogs tab.
 
 ## MCP tool groups
 

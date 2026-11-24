@@ -43,7 +43,7 @@ export const skillTools = {
     timeoutMs: 60000,
     config: {
       description:
-        "skill_lint.py --json --out 으로 만든 린트 보고 파일(JSON, 900KB 이하)을 읽어 orch에 마지막 한 건으로 간직한다. 설정 창의 「스킬과 카탈로그」 탭이 이 보고를 읽는다. report_file은 이 세션의 작업 폴더 안 경로여야 한다.",
+        "skill_lint.py --json-out <파일> 로 만든 린트 보고 파일(JSON, 900KB 이하)을 읽어 orch에 마지막 한 건으로 간직한다. 설정 창의 「스킬과 카탈로그」 탭이 이 보고를 읽는다. report_file은 이 세션의 작업 폴더 안 경로여야 한다.",
       inputSchema: { report_file: z.string().min(1) },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },

@@ -1,3 +1,4 @@
+import { asRecord } from "@soulstream/wire-schema/json-record";
 import type { DomainCatalogEntry, SkillCatalogEntry } from "./skill_catalog.js";
 import type { StoredSkillLintReport } from "./skill_lint_report_store.js";
 
@@ -5,11 +6,8 @@ type Json = Record<string, unknown>;
 export type GuideFinding = { code: string; level: string; message: string };
 export type GuideLink = { kind: string | null; target: string; target_kind: string };
 
-function record(value: unknown): Json | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Json : null;
-}
 function records(value: unknown): Json[] {
-  return Array.isArray(value) ? value.flatMap((item) => { const r = record(item); return r ? [r] : []; }) : [];
+  return Array.isArray(value) ? value.flatMap((item) => { const r = asRecord(item); return r ? [r] : []; }) : [];
 }
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
@@ -46,7 +44,7 @@ function normalizeFindings(own: unknown, related: Json[]): GuideFinding[] {
       const match = related.find((finding) => finding.code === item);
       add(item, match?.level, match?.message ?? "");
     } else {
-      const object = record(item);
+      const object = asRecord(item);
       if (object && typeof object.code === "string") add(object.code, object.level, object.message);
     }
   }
@@ -91,7 +89,7 @@ export function mergeSkillGuides(
           body_chars: typeof item.body_chars === "number" ? item.body_chars : 0,
           links: linksOf(item, catalogNames),
           called_by: strings(item.called_by),
-          block_counts: record(item.block_counts) ?? { call: 0, include: 0, pick: 0 },
+          block_counts: asRecord(item.block_counts) ?? { call: 0, include: 0, pick: 0 },
           agent_count: typeof item.agent_count === "number" ? item.agent_count : 0,
           findings: normalizeFindings(item.findings, top.byName.get(entry.name) ?? []),
         } : null,
