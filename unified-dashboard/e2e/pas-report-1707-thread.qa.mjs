@@ -574,6 +574,41 @@ try {
         await page.close();
         return {radio:0, dragSelection:true, doubleClickSelection:true, noticeChoice:true, noticeSnooze:true, mobileSnoozeFocus:true, mobileSelectionFocus:true};
       });
+      for (const viewport of [{width:1440, height:900}, {width:390, height:844}]) {
+        await check(`${viewport.width} 지시 보내기와 연속 처분 뒤 되돌리기 초점`, async () => {
+          const page = await newPage(browser, viewport, "dark");
+          await gotoReport(page, "dark");
+          const input = page.locator(".pas-rt1707-decide-input textarea");
+          const undo = page.locator(".pas-rt1707-undo-slot button");
+          const focusState = () => page.evaluate(() => ({ tag: document.activeElement?.tagName,
+            className: String(document.activeElement?.className ?? "").slice(0, 40), text: document.activeElement?.textContent?.trim().slice(0, 20) }));
+          const undoFocused = async (step) => {
+            const state = await focusState();
+            assert(state.tag !== "BODY" && await undo.evaluate((el) => el === document.activeElement), `${step} 뒤 되돌리기에 초점이 없다: ${JSON.stringify(state)}`);
+          };
+          await page.getByRole("button", {name:"되묻기", exact:true}).click();
+          await input.fill("왜 일주일이 적절한가요?");
+          await page.locator('.pas-rt1707-decide-input [aria-label="지시 보내기"]').click();
+          await wait(300);
+          await undoFocused("#1680 되묻기 보내기");
+          await page.locator(".pas-rt1707-decide .pas-rt1707-choice").filter({hasText:"최근 7일 유지"}).first().click();
+          await wait(300);
+          assert((await reportStatus(page)) === "완료", "되돌리기가 떠 있는 채로 누른 선택지가 반영되지 않았다");
+          await undoFocused("#1680 연속 선택지");
+          await undo.click();
+          await wait(300);
+          await selectRail(page, 1512);
+          await input.fill("확인 부탁");
+          await page.locator('.pas-rt1707-decide-input [aria-label="지시 보내기"]').click();
+          await wait(300);
+          await undoFocused("#1512 지시 보내기");
+          await undo.click();
+          await wait(300);
+          assert((await reportStatus(page)) === "검수 대기", "#1512 지시 되돌리기가 실패했다");
+          await page.close();
+          return { width: viewport.width, followupSend: "되돌리기", chainedChoice: "되돌리기", plainSend: "되돌리기" };
+        });
+      }
     }
     if (scope === "all" || scope === "operations") {
       await check("대화상자 Enter와 첫 초점", async () => {

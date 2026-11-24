@@ -23,7 +23,7 @@ import {
 export type EvidenceView = { evidence: Evidence; trigger: HTMLElement | null } | null;
 
 export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClose, openTriggerRef, checks, questionAnswers,
-  onToggleCheck, onInstruct, onChooseAnswer, target, onClearTarget, instruction, onChangeInstruction, onSendInstruction, onDispose, undoLabel, onUndo,
+  onToggleCheck, onInstruct, onChooseAnswer, target, onClearTarget, instruction, onChangeInstruction, onSendInstruction, onDispose, undoLabel, undoSeq, onUndo,
   evidenceView, onOpenEvidence, onCloseEvidence, documentId, onOpenDocument, onCloseDocument, onSnooze, onUnsnooze, onSimulate }: {
   agendas: readonly Agenda[];
   activeId: string;
@@ -43,6 +43,7 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
   onSendInstruction(mode: QuestionMode): void;
   onDispose(disposition: DispositionId): void;
   undoLabel: string | null;
+  undoSeq: number;
   onUndo(): void;
   evidenceView: EvidenceView;
   onOpenEvidence(evidence: Evidence, trigger: HTMLElement | null): void;
@@ -144,7 +145,7 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
     action();
   };
   useEffect(() => {
-    if (!open || !undoLabel || !pendingUndoFocusRef.current) return;
+    if (!open || !undoLabel || !undoSeq || !pendingUndoFocusRef.current) return;
     pendingUndoFocusRef.current = false;
     const focusUndo = () => undoButtonRef.current?.focus({ preventScroll: true });
     focusUndo();
@@ -157,10 +158,11 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
       cancelAnimationFrame(firstFrame);
       cancelAnimationFrame(secondFrame);
     };
-  }, [open, undoLabel, agenda.id]);
+  }, [open, undoSeq, undoLabel, agenda.id]);
   const snooze = (label: string) => {
     const focusAnchor = mobile ? railTrigger.current : threadRef.current;
     focusAnchor?.focus({ preventScroll: true });
+    pendingUndoFocusRef.current = false;
     if (!mobile) pendingFocusActiveRef.current = true;
     onSnooze(label);
   };
@@ -232,7 +234,7 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
             {!autoScroll ? <Button className="pas-rt1707-jump" data-testid="pas-rt1707-jump-latest" onClick={() => { jump(); threadRef.current?.focus({ preventScroll: true }); }}>{hasNew ? "새 경과 ↓" : "최신 경과로 ↓"}</Button> : null}
             </div>
             <PasThreadDecideBox key={agenda.id} agenda={agenda} target={target} onClearTarget={onClearTarget} text={instruction}
-              onChangeText={onChangeInstruction} onSend={onSendInstruction} onDispose={(disposition) => runWithUndoFocus(() => onDispose(disposition))}
+              onChangeText={onChangeInstruction} onSend={(mode) => runWithUndoFocus(() => onSendInstruction(mode))} onDispose={(disposition) => runWithUndoFocus(() => onDispose(disposition))}
               questionAnswer={questionAnswers[agenda.id] ?? null} onChooseQuestion={(label) => runWithUndoFocus(() => onChooseAnswer(agenda, label))}
               undoLabel={undoLabel} onUndo={onUndo} onSnooze={snooze} onUnsnooze={onUnsnooze} onSimulate={onSimulate} undoButtonRef={undoButtonRef} />
           </div>

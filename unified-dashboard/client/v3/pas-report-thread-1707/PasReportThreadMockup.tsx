@@ -30,7 +30,7 @@ import {
 import "./v3-pas-report-thread-1707.css";
 
 type ChatLine = { id: string; role: "user" | "assistant"; content: string; timestamp: number };
-type UndoRecord = { agendaId: string; agendaNumber: number; status: AgendaStatus; answer: string | null; kept: boolean; snoozedLabel?: string | null; eventIds: string[]; chatIds: string[]; isSnooze?: true };
+type UndoRecord = { agendaId: string; agendaNumber: number; status: AgendaStatus; answer: string | null; kept: boolean; snoozedLabel?: string | null; eventIds: string[]; chatIds: string[]; isSnooze?: true; seq: number };
 
 function readReportRoute() {
   try {
@@ -83,7 +83,7 @@ export function PasReportThreadMockup() {
   const composerAnchorRef = useRef<HTMLDivElement>(null);
   const openTriggerRef = useRef<HTMLButtonElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
-  const actionAt = useRef(0);
+  const lastAction = useRef({ key: "", at: 0 });
   const seq = useRef(0);
   const isMobile = useIsMobile();
   const geometry = usePersistentSessionGeometry({ app: appRef, header: headerRef, main: mainRef, composer: composerAnchorRef, enabled: true, showCharacter });
@@ -116,10 +116,11 @@ export function PasReportThreadMockup() {
   }, [reportOpen]);
 
   const setCharacter = useCallback((element: HTMLDivElement | null) => setCharacterTarget(element), []);
-  const guard = () => {
+  // Blocks only a repeated press of the same action; a different next action goes through.
+  const guard = (key: string) => {
     const now = Date.now();
-    if (now - actionAt.current < 400) return false;
-    actionAt.current = now;
+    if (lastAction.current.key === key && now - lastAction.current.at < 400) return false;
+    lastAction.current = { key, at: now };
     return true;
   };
   const openReport = () => {
@@ -144,12 +145,12 @@ export function PasReportThreadMockup() {
   const addChat = (line: ChatLine) => setChat((previous) => [...previous, line]);
 
   const dispose = (disposition: DispositionId) => {
-    if (!guard()) return;
+    if (!guard(`dispose:${activeAgenda.id}:${disposition}`)) return;
     const agenda = activeAgenda;
     const nextStatus = STATUS_AFTER[disposition];
     const chatId = `chat-act-${++seq.current}`;
     const snapshot: UndoRecord = { agendaId: agenda.id, agendaNumber: agenda.number, status: agenda.status, answer: questionAnswers[agenda.id] ?? null,
-      kept: agenda.keptAsReference === true, eventIds: [], chatIds: [chatId] };
+      kept: agenda.keptAsReference === true, eventIds: [], chatIds: [chatId], seq: ++seq.current };
     setAgendas((previous) => previous.map((item) => item.id === agenda.id
       ? { ...item, status: nextStatus, keptAsReference: disposition === "keep" ? true : item.keptAsReference === true }
       : item));
@@ -159,18 +160,18 @@ export function PasReportThreadMockup() {
   };
 
   const chooseAnswer = (agenda: Agenda, label: string) => {
-    if (!guard() || (questionAnswers[agenda.id] ?? null) !== null) return;
+    if (!guard(`answer:${agenda.id}`) || (questionAnswers[agenda.id] ?? null) !== null) return;
     const chatId = `chat-act-${++seq.current}`;
     setQuestionAnswers((previous) => ({ ...previous, [agenda.id]: label }));
     setAgendas((previous) => previous.map((item) => item.id === agenda.id ? { ...item, status: "done" } : item));
     addChat({ id: chatId, role: "assistant", content: `#${agenda.number} ${agenda.title}의 답을 "${label}"로 받았습니다. 이 안건을 완료로 처분했습니다.`, timestamp: Date.now() });
     setUndo({ agendaId: agenda.id, agendaNumber: agenda.number, status: agenda.status, answer: null, kept: agenda.keptAsReference === true,
-      eventIds: [], chatIds: [chatId] });
+      eventIds: [], chatIds: [chatId], seq: ++seq.current });
   };
 
   const sendInstruction = (mode: QuestionMode) => {
     const text = instruction.trim();
-    if (!text || !guard()) return;
+    if (!text || !guard(`send:${activeAgenda.id}`)) return;
     const label = target ? `${target.label}: ` : "";
     const eventId = `event-${++seq.current}`;
     const chatId = `chat-act-${++seq.current}`;
@@ -185,7 +186,7 @@ export function PasReportThreadMockup() {
     if (isQuestion && !followup) setQuestionAnswers((previous) => ({ ...previous, [activeAgenda.id]: text }));
     addChat({ id: chatId, role: "user", content: `#${activeAgenda.number} ${label}${text}`, timestamp: Date.now() });
     setUndo({ agendaId: activeAgenda.id, agendaNumber: activeAgenda.number, status: activeAgenda.status, answer: questionAnswers[activeAgenda.id] ?? null,
-      kept: activeAgenda.keptAsReference === true, snoozedLabel: activeAgenda.snoozedLabel, eventIds: [eventId, ...(followup ? [replyId] : [])], chatIds: [chatId] });
+      kept: activeAgenda.keptAsReference === true, snoozedLabel: activeAgenda.snoozedLabel, eventIds: [eventId, ...(followup ? [replyId] : [])], chatIds: [chatId], seq: ++seq.current });
     setInstruction("");
     setTarget(null);
   };
@@ -204,7 +205,7 @@ export function PasReportThreadMockup() {
   const snooze = (label: string) => {
     const agenda = activeAgenda;
     setUndo({ agendaId: agenda.id, agendaNumber: agenda.number, status: agenda.status, answer: questionAnswers[agenda.id] ?? null,
-      kept: agenda.keptAsReference === true, snoozedLabel: agenda.snoozedLabel, eventIds: [], chatIds: [], isSnooze: true });
+      kept: agenda.keptAsReference === true, snoozedLabel: agenda.snoozedLabel, eventIds: [], chatIds: [], isSnooze: true, seq: ++seq.current });
     setAgendas((previous) => previous.map((item) => item.id === agenda.id ? { ...item, snoozedLabel: label } : item));
     const next = pending[pendingIndex + 1] ?? pending.find((item) => item.id !== agenda.id);
     if (next) selectAgenda(next.id);
@@ -311,7 +312,7 @@ export function PasReportThreadMockup() {
       onToggleCheck={(agendaId, checkId) => setChecks((previous) => ({ ...previous, [`${agendaId}:${checkId}`]: !previous[`${agendaId}:${checkId}`] }))}
       onInstruct={instruct} onChooseAnswer={chooseAnswer}
       target={target} onClearTarget={() => setTarget(null)} instruction={instruction} onChangeInstruction={setInstruction} onSendInstruction={sendInstruction}
-      onDispose={dispose} undoLabel={undoLabel} onUndo={undoLast}
+      onDispose={dispose} undoLabel={undoLabel} undoSeq={undo?.seq ?? 0} onUndo={undoLast}
       onSnooze={snooze} onUnsnooze={unsnooze} onSimulate={simulateEvent}
       evidenceView={evidenceView} onOpenEvidence={(evidence: Evidence, trigger: HTMLElement | null) => setEvidenceView({ evidence, trigger })}
       onCloseEvidence={() => setEvidenceView(null)} documentId={documentId} onOpenDocument={openDocument} onCloseDocument={() => setDocumentId(null)} />
