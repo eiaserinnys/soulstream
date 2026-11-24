@@ -4,6 +4,7 @@ import { CommandDispatchError } from "./command_family.js";
 import { testMcpServer } from "../mcp_central/server_tester.js";
 import { previewAgentMcp } from "../mcp_central/agent_preview.js";
 import { loadMcpServers } from "../engine/claude_sdk_mcp_options.js";
+import { resolveCentralTemplate } from "../mcp_central/templates.js";
 import { resolveModelPresetSelection } from "../task/task_model_preset.js";
 import { UnknownAgentProfileError, type TaskRuntimeCommands } from "./task_runtime_commands.js";
 import type { ModelCatalog } from "../model_catalog.js";
@@ -70,7 +71,10 @@ export class McpConfigCommands {
       const entry = registry.find(item => item.id === id);
       if (!entry || typeof entry.type !== "string") return [];
       const virtual = parsed.data.servers?.find(item => item.server_id === id);
-      return [{ ...entry, id, name: virtual?.name ?? (typeof entry.name === "string" ? entry.name : id), type: virtual?.type ?? entry.type }];
+      const baseUrl = typeof entry.url === "string" ? entry.url.split("?")[0] : undefined;
+      const url = baseUrl && this.service!.configStatus().mode === "central" && !baseUrl.includes("{{secret:")
+        ? resolveCentralTemplate(baseUrl, this.service!.testEnvironment(), "MCP preview URL") : baseUrl;
+      return [{ ...entry, ...(url ? { url } : {}), id, name: virtual?.name ?? (typeof entry.name === "string" ? entry.name : id), type: virtual?.type ?? entry.type }];
     });
     if (profileId === undefined && (preset?.backend ?? agent.backend) === "claude") {
       const fallback = loadMcpServers(agent.workspace_dir, { debug() {} }) ?? {};

@@ -47,13 +47,15 @@ describe("agent MCP preview", () => {
   it("uses display data for current and virtual profiles, and rejects unknown agents", async () => {
     const service = new McpConfigService({ agentsConfigPath: "/tmp/preview-agents.yaml", processEnv: {} });
     const snapshot = { registry: { servers: [server] }, profiles: { profiles: [{ id: "p", mcp_servers: ["atom"] }] }, agent_bindings: { a: "p" } };
-    await service.applyCentralSync({ revision: 4, runtime: snapshot, display: snapshot });
+    const runtime = { ...snapshot, registry: { servers: [{ ...server, name: "fake-runtime-value" }] } };
+    await service.applyCentralSync({ revision: 4, runtime, display: snapshot });
     const commands = new McpConfigCommands(service, () => {}, { tasks: { resolveNewSessionAgent: async id => {
       if (id !== "a") throw new UnknownAgentProfileError(id);
       return { profile: agent, hasDbPortrait: false, fromSource: false };
     } }, context: { nodeId: "test", codexMode: "app-server", isolationEnabled: true, localMcpPolicy: () => policy } });
     const current = await commands.preview({ requestId: "1", agent_id: "a" });
     expect(current.data.normal.servers).toMatchObject([{ server_id: "atom", name: "catalog", included: true }]);
+    expect(JSON.stringify(current)).not.toContain("fake-runtime-value");
     const virtual = await commands.preview({ requestId: "2", agent_id: "a", mcp_profile_id: "virtual", servers: [{ server_id: "atom", name: "alternate", type: "streamable_http" }] });
     expect(virtual.data.normal.servers).toMatchObject([{ server_id: "atom", name: "alternate" }]);
     await expect(commands.preview({ requestId: "3", agent_id: "missing" })).rejects.toMatchObject({ code: "MCP_AGENT_NOT_FOUND" });
@@ -72,5 +74,16 @@ describe("agent MCP preview", () => {
       const result = await commands.preview({ requestId: "1", agent_id: "a" });
       expect(result.data.normal.servers).toMatchObject([{ server_id: "external", name: "external", type: "sse", included: true }]);
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("evaluates environment templates from the display URL for isolation", async () => {
+    const service = new McpConfigService({ agentsConfigPath: "/tmp/preview-agents.yaml", processEnv: { PREVIEW_HOST: "public.example" } });
+    const snapshot = (url: string) => ({ registry: { servers: [{ id: "web", type: "streamable_http", url }] },
+      profiles: { profiles: [{ id: "p", mcp_servers: ["web"] }] }, agent_bindings: { a: "p" } });
+    await service.applyCentralSync({ revision: 1, runtime: snapshot("https://public.example/mcp"), display: snapshot("https://{{env:PREVIEW_HOST}}/mcp") });
+    const commands = new McpConfigCommands(service, () => {}, { tasks: { resolveNewSessionAgent: async () => ({ profile: { ...agent, backend: "claude" }, hasDbPortrait: false, fromSource: false }) },
+      context: { nodeId: "test", codexMode: "app-server", isolationEnabled: true, localMcpPolicy: () => policy } });
+    const result = await commands.preview({ requestId: "1", agent_id: "a" });
+    expect(result.data.restricted.servers).toContainEqual(expect.objectContaining({ server_id: "web", included: true }));
   });
 });
