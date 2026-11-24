@@ -60,8 +60,11 @@ export function AgentMcpConnectionPane({ agentId, nodeId, request = fetch, onEdi
     return () => { active = false; };
   }, [api, agentId, nodeId, profileId, binding?.mcp_profile_id, config?.current_revision, managed, retry]);
   useEffect(() => {
-    if (!focusOnMount || !config || !managed) return;
-    const id = requestAnimationFrame(() => { profileSelect.current?.scrollIntoView?.({ block: "nearest" }); profileSelect.current?.focus(); onFocusHandled?.(); });
+    if (!focusOnMount || !config) return;
+    const id = requestAnimationFrame(() => {
+      const target = managed ? profileSelect.current : document.getElementById("agent-profile-pane-mcp");
+      target?.scrollIntoView?.({ block: "nearest" }); target?.focus(); onFocusHandled?.();
+    });
     return () => cancelAnimationFrame(id);
   }, [focusOnMount, config, managed, onFocusHandled]);
   const save = async (fork = false) => {

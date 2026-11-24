@@ -53,6 +53,20 @@ it("저장된 서버와 편집 중인 초안을 각각 선택 노드에서 시�
   } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
 });
 
+it("서버 연결 시험의 관리자 거부를 한국어로 보여 준다", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const request = vi.fn(async (url: RequestInfo | URL) => String(url) === "/api/mcp/config"
+    ? Response.json(sample())
+    : Response.json({ detail: "Admin access required" }, { status: 403 }));
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  try {
+    await act(async () => { root.render(<McpSettingsTab request={request as typeof fetch} />); await new Promise(resolve => setTimeout(resolve, 0)); });
+    await click(button(host, "연결 시험"));
+    expect(host.textContent).toContain("관리자만 볼 수 있습니다.");
+    expect(host.textContent).not.toContain("Admin access required");
+  } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
+});
+
 it("편집한 값은 시험 요청의 inline_secrets로만 보내고 결과에서는 감춘다", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const config = sample();

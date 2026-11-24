@@ -131,7 +131,7 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
   useEffect(() => {
     if (loadedNodeId === selectedNodeId && nodeProfileId && !nodeOnlyProfiles.some((agent) => agent.id === nodeProfileId) && !(nodeProfileId === initialMcpTarget?.agentId && selectedNodeId === initialMcpTarget.nodeId)) setNodeProfileId(null);
   }, [nodeOnlyProfiles, nodeProfileId, loadedNodeId, selectedNodeId, initialMcpTarget]);
-  const selectedNodeProfile = nodeOnlyProfiles.find((agent) => agent.id === nodeProfileId)
+  const selectedNodeProfile: NodeAgent | null = nodeOnlyProfiles.find((agent) => agent.id === nodeProfileId)
     ?? (nodeProfileId && nodeProfileId === initialMcpTarget?.agentId && selectedNodeId === initialMcpTarget.nodeId ? { id: nodeProfileId, name: nodeProfileId, source: "yaml" as const } : null);
   useEffect(() => { if (selectedNodeProfile && pane === "edit") setPane("assembly"); }, [selectedNodeProfile, pane]);
   const assemblyAgentId = selectedNodeProfile?.id ?? draft?.agent_id ?? "";
