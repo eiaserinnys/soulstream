@@ -16,7 +16,7 @@ function harness() {
   const sql = Object.assign(async (strings: TemplateStringsArray, ...args: unknown[]) => {
     if (fail) throw new Error("database down");
     const query = strings.join("?");
-    if (query.includes("SELECT")) return row ? [row] : [];
+    if (query.includes("SELECT")) return row ? [{ ...row }] : [];
     if (query.includes("INSERT")) {
       if (row) return [];
       row = { value: args[0], version: 1 };
@@ -49,13 +49,13 @@ describe("persistent global defaults", () => {
     await expect(h.service.put({ value, expectedVersion: 0, updatedBy: "admin" })).rejects.toMatchObject({ statusCode: 409 });
     expect(await h.service.put({ value, expectedVersion: 1, updatedBy: "admin" })).toEqual({ value, version: 2, source: "settings" });
     expect(await h.service.get()).toEqual({ value, version: 2, source: "settings" });
-    h.setRow({ value: { model_preset: ids[1], fallback_models: [] }, version: 2 });
+    h.setRow({ value: { model_preset: ids[1], fallback_models: [] }, version: 3 });
     await vi.advanceTimersByTimeAsync(30_000);
     expect(h.service.snapshot().persistent_defaults.model_preset).toBe(ids[1]);
     h.setFail(true);
     await vi.advanceTimersByTimeAsync(30_000);
     expect(h.service.snapshot().persistent_defaults.model_preset).toBe(ids[1]);
-    expect(await h.service.get()).toMatchObject({ value: { model_preset: ids[1] }, version: 2, source: "settings" });
+    expect(await h.service.get()).toMatchObject({ value: { model_preset: ids[1] }, version: 3, source: "settings" });
     expect(h.warn).toHaveBeenCalled();
     h.service.close();
   });
@@ -103,6 +103,11 @@ describe("persistent global defaults", () => {
     expect(h.service.snapshot()).toBe(original);
     expect(h.warn).toHaveBeenCalledTimes(1);
 
+    h.setRow({ value: { model_preset: "missing", fallback_models: [] }, version: "1" });
+    await h.service.refresh();
+    expect(h.service.snapshot()).toBe(original);
+    expect(h.warn).toHaveBeenCalledTimes(1);
+
     const changedCatalog = { ...original };
     h.setCatalog(changedCatalog);
     expect(h.service.snapshot()).toBe(changedCatalog);
@@ -119,10 +124,19 @@ describe("persistent global defaults", () => {
     const merged = h.service.snapshot();
     expect(merged.persistent_defaults).toMatchObject(value);
     expect(h.service.snapshot()).toBe(merged);
+    await h.service.refresh();
+    expect(h.service.snapshot()).toBe(merged);
     const nextCatalog = { ...original };
     h.setCatalog(nextCatalog);
     expect(h.service.snapshot()).not.toBe(merged);
     expect(h.service.snapshot().persistent_defaults).toMatchObject(value);
+    h.setRow(undefined);
+    await h.service.refresh();
+    expect(h.service.snapshot()).toBe(nextCatalog);
+    h.setRow({ value: { model_preset: "missing", fallback_models: [] }, version: 3 });
+    await h.service.refresh();
+    expect(h.service.snapshot()).toBe(nextCatalog);
+    expect(h.warn).toHaveBeenCalledTimes(4);
   });
 
   it("explains the invalid fields in 422 errors", async () => {

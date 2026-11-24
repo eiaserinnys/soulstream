@@ -50,8 +50,11 @@ export class PersistentDefaultsSettings implements ModelCatalogSource {
       const rows = await sql<Row[]>`SELECT value, version FROM system_settings WHERE setting_key='persistent_defaults'`;
       if (revision === this.revision) {
         const row = rows[0] ?? null;
-        if (row !== this.cached) this.memo = undefined;
-        this.cached = row;
+        if (row && this.cached && Number(row.version) === Number(this.cached.version)) return;
+        if (row !== this.cached) {
+          this.cached = row;
+          this.memo = undefined;
+        }
       }
     } catch (error) {
       this.warn(`Failed to refresh persistent defaults: ${String(error)}`);
