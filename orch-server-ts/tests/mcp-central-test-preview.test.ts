@@ -94,7 +94,10 @@ describe("MCP test and preview operations", () => {
     const actions = createMcpTestPreviewService({ service: { getConfig: async () => config } as never, sync, resolveSql: async () => sql as never });
     managed = false; await expect(actions.test({ node_id: node.nodeId, server_id: "atom" })).rejects.toMatchObject({ statusCode: 403 });
     managed = true; await expect(actions.test({ node_id: "missing", server_id: "atom" })).rejects.toMatchObject({ statusCode: 503 });
-    await expect(actions.test({ node_id: "unsupported", server_id: "atom" })).rejects.toMatchObject({ statusCode: 503 });
+    await expect(actions.test({ node_id: "unsupported", server_id: "atom" })).rejects.toMatchObject({ statusCode: 503,
+      message: "이 노드는 중앙 MCP 설정을 받지 않습니다(무설치 실행기이거나 옛 판)." });
+    await expect(actions.preview("a", "unsupported")).rejects.toMatchObject({ statusCode: 503,
+      message: "이 노드는 중앙 MCP 설정을 받지 않습니다(무설치 실행기이거나 옛 판)." });
     await expect(actions.test({ node_id: "n", server_id: "missing" })).rejects.toMatchObject({ statusCode: 404 });
     await expect(actions.test({ node_id: "n", server_id: "other" })).rejects.toMatchObject({ statusCode: 403 });
     expect(sql).not.toHaveBeenCalled();

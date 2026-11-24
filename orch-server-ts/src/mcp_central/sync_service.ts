@@ -40,7 +40,8 @@ export class McpCentralSyncService {
   async sendAux(nodeId: string, build: () => Promise<RequestResponseNodeCommandPayload>, inScope?: () => Promise<boolean>) {
     const gate = await checkMcpSendGate({ nodeId, registry: this.options.registry, readGate: this.options.readGate, inScope });
     if (!gate.ok) throw new McpCentralError(gate.reason === "unmanaged" ? "MCP_NODE_NOT_MANAGED" : gate.reason === "out_of_scope" ? "MCP_SERVER_OUT_OF_SCOPE" : "MCP_NODE_UNAVAILABLE",
-      gate.reason === "unmanaged" || gate.reason === "out_of_scope" ? 403 : 503, "MCP node is unavailable for this request");
+      gate.reason === "unmanaged" || gate.reason === "out_of_scope" ? 403 : 503,
+      gate.reason === "unsupported" ? "이 노드는 중앙 MCP 설정을 받지 않습니다(무설치 실행기이거나 옛 판)." : "MCP node is unavailable for this request");
     try {
       const payload = await build();
       const command = this.options.registry.createCommand(nodeId, payload, { timeoutMs: 15_000 });
