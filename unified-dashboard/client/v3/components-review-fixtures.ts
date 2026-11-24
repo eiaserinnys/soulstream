@@ -126,10 +126,10 @@ export const reviewSessionFiles: import('../../../packages/wire-schema/src/sessi
   snapshot: { state: 'ready', observed_at: '2026-11-22T15:12:00Z', refreshing: false, branch: 'card1789-files-dashboard', head: 'abc123', upstream: 'origin/main', ahead: 1, behind: 0, truncated: false },
   attribution: 'partial',
   files: [
-    { path: 'soul-server-ts/src/config.ts', git_status: 'modified', orig_path: null, added: 3, deleted: 1, size: 24, wrote: false, read: false, committed: false, last_activity_at: null },
-    { path: 'soul-server-ts/src/upstream/event_outbox_types.ts', git_status: null, orig_path: null, added: null, deleted: null, size: 24, wrote: true, read: false, committed: true, last_activity_at: null },
-    { path: 'soul-server-ts/src/upstream/event_outbox.ts', git_status: 'modified', orig_path: null, added: 42, deleted: 18, size: 24, wrote: true, read: true, committed: false, last_activity_at: null },
-    { path: 'soul-server-ts/src/upstream/outbox_retry.ts', git_status: 'untracked', orig_path: null, added: 33, deleted: 0, size: 24, wrote: true, read: false, committed: false, last_activity_at: null },
+    { path: 'soul-server-ts/src/config.ts', git_status: 'modified', orig_path: null, added: 3, deleted: 1, session_added: null, session_deleted: null, size: 24, wrote: false, read: false, committed: false, last_activity_at: null },
+    { path: 'soul-server-ts/src/upstream/event_outbox_types.ts', git_status: null, orig_path: null, added: null, deleted: null, session_added: 142, session_deleted: 27, size: 24, wrote: true, read: false, committed: true, last_activity_at: null },
+    { path: 'soul-server-ts/src/upstream/event_outbox.ts', git_status: 'modified', orig_path: null, added: 42, deleted: 18, session_added: null, session_deleted: null, size: 24, wrote: true, read: true, committed: false, last_activity_at: null },
+    { path: 'soul-server-ts/src/upstream/outbox_retry.ts', git_status: 'untracked', orig_path: null, added: 33, deleted: 0, session_added: null, session_deleted: null, size: 24, wrote: true, read: false, committed: false, last_activity_at: null },
   ],
   read_only: [{ path: 'soul-server-ts/src/upstream/dispatcher.ts', size: null, last_read_at: null }],
 };

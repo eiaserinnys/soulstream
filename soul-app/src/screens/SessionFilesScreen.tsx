@@ -222,6 +222,9 @@ export function FileRow({ file, onPress }: { file: FileEntry | ReadEntry; onPres
       {changed && (changed.added !== null || changed.deleted !== null) ? <Text style={{ ...t.foundation.typography.meta, fontVariant: ['tabular-nums'] }}>
         {changed.added !== null ? <Text style={{ color: t.colors.successText }}>+{changed.added}</Text> : null}
         {changed.deleted !== null && changed.deleted !== 0 ? <Text style={{ color: t.colors.errorText }}>{` −${changed.deleted}`}</Text> : null}
+      </Text> : changed && (changed.session_added !== null || changed.session_deleted !== null) ? <Text accessibilityLabel={`세션 기록 기준 추가 ${changed.session_added ?? 0}줄, 삭제 ${changed.session_deleted ?? 0}줄`} style={{ ...t.foundation.typography.meta, fontVariant: ['tabular-nums'] }}>
+        {changed.session_added ? <Text style={{ color: t.colors.successText }}>+{changed.session_added}</Text> : null}
+        {changed.session_deleted ? <Text style={{ color: t.colors.errorText }}>{` −${changed.session_deleted}`}</Text> : null}
       </Text> : null}
     </View>
   </GroupedGlassRow>;

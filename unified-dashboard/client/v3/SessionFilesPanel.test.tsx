@@ -23,6 +23,16 @@ const click = (button: Element) => act(() => (button as HTMLElement).click());
 const render = async (data: typeof reviewSessionFiles | null, error = false, loading = false) => act(async () => root.render(<SessionFilesPanel sessionId="a/b" data={data} loading={loading} error={error} onRefresh={() => {}} onClose={() => {}}/>));
 
 describe('session files panel', () => {
+  it('shows session line counts for a written row without git numbers, only that row', async () => {
+    await render(reviewSessionFiles);
+    const committed = [...host.querySelectorAll('button')].find(button => button.textContent?.includes('event_outbox_types.ts'))!;
+    expect(committed.querySelector('[title="세션 기록 기준"]')?.textContent).toBe('+142−27');
+    const dirty = [...host.querySelectorAll('button')].find(button => button.textContent?.includes('event_outbox.ts'))!;
+    expect(dirty.textContent).toContain('+42'); expect(dirty.querySelector('[title="세션 기록 기준"]')).toBeNull();
+    await render({ ...reviewSessionFiles, files: [{ ...reviewSessionFiles.files[1], session_added: null, session_deleted: null }] });
+    const empty = [...host.querySelectorAll('button')].find(button => button.textContent?.includes('event_outbox_types.ts'))!;
+    expect(empty.querySelector('.v3-session-files-diff')).toBeNull(); expect(empty.textContent).not.toMatch(/[+−]\d/);
+  });
   it('hides zero additions on a deleted file', async () => {
     await render({ ...reviewSessionFiles, files: [{ ...reviewSessionFiles.files[2], git_status: 'deleted', added: 0, deleted: 7 }] });
     const row = [...host.querySelectorAll('button')].find(button => button.textContent?.includes('event_outbox.ts'))!;

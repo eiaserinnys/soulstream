@@ -3,7 +3,7 @@ import type { NodeCommandRegistryPort } from "../node/registry_types.js";
 import { PendingNodeCommandRejectedError, PendingNodeCommandTimeoutError, type RequestResponseNodeCommandPayload } from "../node/pending_commands.js";
 import { NodeCommandTransportError, type SessionCommandTransportBridge } from "../session/session_command_transport.js";
 import { collectSessionFileActivity, type FileActivityRow } from "../session/session_file_activity.js";
-import { collectSessionFileEdits } from "../session/session_file_edits.js";
+import { collectSessionFileEdits, countSessionFileEdits } from "../session/session_file_edits.js";
 import { WorkspaceRouteError, type SessionWorkspaceProvider, type WorkspaceFile } from "../session/session_workspace_routes.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
 import type { ModelCatalogSource } from "../model/model_catalog_source.js";
@@ -26,7 +26,11 @@ export function createLiveSessionWorkspaceProvider(options: Options): SessionWor
       return await options.bridge.sendPendingCommand({node,command});
     } catch(error) { throw mapError(error); }
   }
-  async function workspace(sessionId:string, row:SessionRow):Promise<{listing:SessionWorkspaceResponse; activityRoot:string|null}> {
+  async function editEvents(sessionId:string) {
+    const sql=await options.sqlResolver.resolveSql();
+    return await sql`SELECT event_type, payload, created_at FROM events WHERE session_id = ${sessionId} AND event_type IN ('tool_start', 'tool_result') AND (payload->>'tool_name' IN ('Edit','MultiEdit','Write','NotebookEdit','file_change','write_file','write_to_file','edit_file','replace_file_content','multi_replace_file_content','notebook_edit','edit','write') OR (event_type = 'tool_result' AND payload->>'is_error' = 'true')) ORDER BY id` as any[];
+  }
+  async function workspace(sessionId:string, row:SessionRow, countSession:boolean):Promise<{listing:SessionWorkspaceResponse; activityRoot:string|null}> {
       const since = dateString(row.created_at);
       let snapshot: NodeWorkspaceSnapshot | undefined; let status:SessionWorkspaceResponse["node"]["status"]="ok";
       try {
@@ -59,25 +63,25 @@ export function createLiveSessionWorkspaceProvider(options: Options): SessionWor
       const git=snapshot?.git; const changed=new Map((git?.files ?? []).map(file=>[file.path,file]));
       const committed=new Set((git?.commits ?? []).filter(commit=>Date.parse(commit.committed_at) >= Date.parse(since)).flatMap(commit=>commit.files));
       const names=new Set([...changed.keys(), ...[...activity].filter(([,v])=>v.wrote).map(([p])=>p)]);
+      const candidates=new Set([...names].filter(file=>!changed.has(file)));
+      const counts=countSession && candidates.size ? countSessionFileEdits(activityRoot,candidates,await editEvents(sessionId)) : new Map<string,{added:number;deleted:number}>();
       const files=[...names].sort().map(file=>{
-        const change=changed.get(file), act=activity.get(file);
-        return {path:file,git_status:change?.status ?? null,orig_path:change?.orig_path ?? null,added:change?.added ?? null,deleted:change?.deleted ?? null,size:change?.size ?? null,wrote:act?.wrote ?? false,read:act?.read ?? false,committed:!!act?.wrote && committed.has(file),last_activity_at:act?.last_activity_at ?? null};
+        const change=changed.get(file), act=activity.get(file), count=counts.get(file);
+        return {path:file,git_status:change?.status ?? null,orig_path:change?.orig_path ?? null,added:change?.added ?? null,deleted:change?.deleted ?? null,session_added:count?.added ?? null,session_deleted:count?.deleted ?? null,size:change?.size ?? null,wrote:act?.wrote ?? false,read:act?.read ?? false,committed:!!act?.wrote && committed.has(file),last_activity_at:act?.last_activity_at ?? null};
       });
       const read_only=[...activity].filter(([file,act])=>act.read && !act.wrote && !changed.has(file)).map(([file,act])=>({path:file,size:null,last_read_at:act.last_read_at})).sort((a,b)=>a.path.localeCompare(b.path));
       const listing:SessionWorkspaceResponse={session_id:sessionId,root:snapshot?.root ?? null,node:{id:row.node_id,status},snapshot:snapshot ? {state:snapshot.state,observed_at:snapshot.observed_at,refreshing:snapshot.refreshing,branch:git?.branch ?? null,head:git?.head ?? null,upstream:git?.upstream ?? null,ahead:git?.ahead ?? 0,behind:git?.behind ?? 0,truncated:git?.truncated ?? false} : null,attribution:options.modelCatalog.snapshot().presets.find(p=>p.id===row.model_preset)?.backend === "claude" ? "full" : "partial",files,read_only};
       return {listing,activityRoot};
   }
   return {
-    async readWorkspace(sessionId) { return (await workspace(sessionId,await session(sessionId))).listing; },
+    async readWorkspace(sessionId) { return (await workspace(sessionId,await session(sessionId),true)).listing; },
     async openWorkspace(sessionId) {
       const row=await session(sessionId);
-      const {listing,activityRoot}=await workspace(sessionId,row);
+      const {listing,activityRoot}=await workspace(sessionId,row,false);
       return {workspace:listing,
     activityRoot,
     async readSessionDiff(file) {
-      const sql=await options.sqlResolver.resolveSql();
-      const events=await sql`SELECT event_type, payload, created_at FROM events WHERE session_id = ${sessionId} AND event_type IN ('tool_start', 'tool_result') AND (payload->>'tool_name' IN ('Edit','MultiEdit','Write','NotebookEdit','file_change','write_file','write_to_file','edit_file','replace_file_content','multi_replace_file_content','notebook_edit','edit','write') OR (event_type = 'tool_result' AND payload->>'is_error' = 'true')) ORDER BY id`;
-      return collectSessionFileEdits(activityRoot,file,events as any);
+      return collectSessionFileEdits(activityRoot,file,await editEvents(sessionId));
     },
     async readDiff(file,origPath) {
       const result=await send(row,{type:"workspace_file_diff",session_id:sessionId,agent_id:row.agent_id,worktree_id:row.worktree_id,path:file,orig_path:origPath,...(listing.root === null ? {} : {expected_root:listing.root})},60_000);
