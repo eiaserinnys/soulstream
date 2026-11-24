@@ -553,6 +553,7 @@ describe("AgentProfileEditorTab", () => {
 
   it.each(["slow", "unavailable", "missing"])("keeps the requested agent for %s node lookup", async mode => {
     let release: (response: Response) => void = () => {};
+    const target = mode === "missing" ? "ghost-agent" : "yaml-worker";
     const previews: string[] = [];
     const request = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
@@ -567,13 +568,15 @@ describe("AgentProfileEditorTab", () => {
       return jsonResponse({});
     });
     container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container);
-    flushSync(() => root?.render(createElement(AgentProfileEditorTab, { request: request as typeof fetch, initialMcpTarget: { agentId: "yaml-worker", nodeId: "node-a" } })));
+    flushSync(() => root?.render(createElement(AgentProfileEditorTab, { request: request as typeof fetch, initialMcpTarget: { agentId: target, nodeId: "node-a" } })));
     await settle();
-    expect(previews.every(url => url.includes("/yaml-worker/"))).toBe(true);
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="프로필"]')?.selectedOptions[0]?.value).toBe(`node:${target}`);
+    expect(previews.every(url => url.includes(`/${target}/`))).toBe(true);
     if (mode === "slow") expect(container.textContent).not.toContain("에이전트 MCP 연결 (node-a)");
     if (mode === "slow") { release(jsonResponse({ agents: [{ id: "yaml-worker", name: "YAML 작업자", source: "yaml" }] })); await settle(); }
-    await vi.waitFor(() => expect(previews.some(url => url.includes("/yaml-worker/"))).toBe(true));
-    expect(previews.every(url => url.includes("/yaml-worker/"))).toBe(true);
+    await vi.waitFor(() => expect(previews.some(url => url.includes(`/${target}/`))).toBe(true));
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="프로필"]')?.selectedOptions[0]?.value).toBe(`node:${target}`);
+    expect(previews.every(url => url.includes(`/${target}/`))).toBe(true);
   });
 
   it("applies the navigation target once when a manually selected agent changes nodes", async () => {

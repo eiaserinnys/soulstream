@@ -285,6 +285,9 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
             >
               {!draft?.version && !selectedNodeProfile && <option value="">새 프로필</option>}
               {profiles.map((profile) => <option key={profile.agent_id} value={`central:${profile.agent_id}`}>{profile.name}</option>)}
+              {selectedNodeProfile && !nodeOnlyProfiles.some((agent) => agent.id === selectedNodeProfile.id) && (
+                <option value={`node:${selectedNodeProfile.id}`}>{selectedNodeProfile.name}</option>
+              )}
               {nodeOnlyProfiles.length > 0 && (
                 <optgroup label="노드 설정">
                   {nodeOnlyProfiles.map((agent) => <option key={agent.id} value={`node:${agent.id}`}>{agent.name}</option>)}
