@@ -4,7 +4,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentLoginSheet } from "./AgentLoginSheet";
-import type { AgentLoginFlow, AgentLoginProvider } from "../../lib/agent-login-api";
+import type { AgentLoginProvider } from "../../lib/agent-login-api";
+import type { AgentLoginFlow } from "../../../../packages/wire-schema/generated/typescript/index";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

@@ -5,7 +5,8 @@ import { CodingAgentsTab } from "../components/CodingAgentsTab";
 import { NodeProvidersPanel } from "../components/NodeProvidersPanel";
 import { PersistentSessionsTab } from "../components/PersistentSessionsTab";
 import { AgentLoginSheet } from "../components/claude-accounts/AgentLoginSheet";
-import type { AgentLoginFlow, AgentLoginProvider } from "../lib/agent-login-api";
+import type { AgentLoginProvider } from "../lib/agent-login-api";
+import type { AgentLoginFlow } from "../../../packages/wire-schema/generated/typescript/index";
 import type { PersistentCreateDefaults } from "../lib/persistent-sessions";
 import type { OrchestratorNode } from "../store/orchestrator-store";
 import {

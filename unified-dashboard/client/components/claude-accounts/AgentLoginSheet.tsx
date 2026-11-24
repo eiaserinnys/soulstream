@@ -11,9 +11,9 @@ import {
   safeAuthUrl,
   startAgentLogin,
   submitAgentLoginCode,
-  type AgentLoginFlow,
   type AgentLoginProvider,
 } from "../../lib/agent-login-api";
+import type { AgentLoginFlow } from "../../../../packages/wire-schema/generated/typescript/index";
 
 type Props = {
   nodeId: string;

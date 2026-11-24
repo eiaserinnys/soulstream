@@ -4,29 +4,11 @@
  * 서버가 준 오류 문장, 인증 주소, 일회용 코드는 화면 문구에 섞거나 기록하지 않는다.
  */
 
+import type { AgentLoginFlow } from "../../../packages/wire-schema/generated/typescript/index";
 import { ClaudeAuthRequestError, requestClaudeAuthData } from "./claude-auth-api";
 
-export type AgentLoginProvider = "codex" | "antigravity";
-
-export type AgentLoginState =
-  | "requested"
-  | "url_ready"
-  | "code_submitted"
-  | "verifying"
-  | "done"
-  | "failed"
-  | "cancelled";
-
-export type AgentLoginFlow = {
-  login_id: string;
-  provider: AgentLoginProvider;
-  state: AgentLoginState;
-  auth_url: string | null;
-  user_code: string | null;
-  expects_code: boolean;
-  expires_at: string | null;
-  error: { code: string; message: string } | null;
-};
+export type AgentLoginProvider = AgentLoginFlow["provider"];
+export type AgentLoginState = AgentLoginFlow["state"];
 
 export const AGENT_LOGIN_PROVIDER_LABEL: Record<AgentLoginProvider, string> = {
   codex: "Codex",
