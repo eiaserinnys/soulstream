@@ -606,3 +606,199 @@ test('the first-stage output function matches the files the first-stage installe
     }
   }
 });
+
+// The schema step and the database dumps with fake release results, a fake pg_dump and a fake pg_restore.
+// schema-bin comes before support/fake_commands.mjs on PATH, so no PostgreSQL client or executor really runs.
+const realDate = execFileSync('bash', ['-c', 'command -v date'], { encoding: 'utf8' }).trim();
+const SCHEMA_FAKES = {
+  // Answers the three executor phases and migrate.mjs verify; release.log records each phase's identity.
+  node: `printf '%s\\n' "== node" "$@" >> "$FAKE_ARGV_LOG"
+case "$1" in
+  packages/db-schema/scripts/release-executor.mjs)
+    printf '%s %s\\n' "$2" "head=$HANIEL_TARGET_HEAD previous=$HANIEL_PREVIOUS_HEAD release=$HANIEL_RELEASE_ID soulstream_release=$SOULSTREAM_RELEASE_ID request=$HANIEL_REQUEST_ID repo=$HANIEL_DEPLOY_REPO backup=$HANIEL_BACKUP_DIR env=$HANIEL_SERVICE_ENV_FILE journal=\${HANIEL_DEPLOYMENT_JOURNAL-unset} $3 $4 $5 $6 cwd=$PWD" >> "$FAKE_DIR/release.log"
+    if [[ "$2" == "\${FAKE_RELEASE_FAIL:-}" ]]; then printf '{"ok":false,"phase":"%s","error":{"code":"APPLY_FAILED","message":"fake failure"}}\\n' "$2" >&2; exit 1; fi
+    if [[ "$2" == preflight ]]; then printf '[dotenv] injecting env\\n%s\\n' "$FAKE_PREFLIGHT"; else printf '{"ok":true,"phase":"%s","status":"verified"}\\n' "$2"; fi ;;
+  packages/db-schema/scripts/migrate.mjs) printf 'migrate-%s\\n' "$2" >> "$FAKE_DIR/release.log"; printf '{"status":"ok"}\\n' ;;
+  *) exit 99 ;;
+esac`,
+  pg_dump: `printf '%s\\n' "== pg_dump" "$@" >> "$FAKE_ARGV_LOG"
+if [[ "\${FAKE_PG_DUMP_FAIL:-0}" == 1 ]]; then printf 'pg_dump: error: connection failed\\n' >&2; exit 1; fi
+printf 'PGDMP %s\\n' "\${!#}"`,
+  pg_restore: `printf '%s\\n' "== pg_restore" "$@" >> "$FAKE_ARGV_LOG"
+[[ "$1" == --list && "$(head -c 5 "$2")" == PGDMP ]]`,
+  // The dump stamp counts up, so names differ without waiting a second; other formats are the real date.
+  date: `if [[ "$*" == '-u +%Y%m%dT%H%M%SZ' ]]; then
+  n=$(( $(cat "$FAKE_DIR/date-count" 2>/dev/null || printf 0) + 1 )); printf '%s' "$n" > "$FAKE_DIR/date-count"
+  printf '20261124T0000%02dZ\\n' "$n"
+else exec ${realDate} "$@"; fi`,
+  // The atom emptiness query arrives on stdin and is answered with FAKE_ATOM_POPULATED.
+  psql: `printf '%s\\n' "== psql" "$@" >> "$FAKE_ARGV_LOG"
+if [[ " $* " == *to_regclass* ]]; then printf 't\\n'; exit 0; fi
+input=$(cat)
+if [[ "$input" == *"to_regclass('public.cards')"* ]]; then printf '%s\\n' "\${FAKE_ATOM_POPULATED:-f}"; fi`,
+};
+const SCHEMA_PRELUDE = `set -Eeuo pipefail
+source "$INSTALL_SH"
+as_soul() { "$@"; }
+LOG=$FAKE_DIR/install.log
+: >> "$LOG"
+exec 3>>"$FAKE_DIR/fd3.log"
+parse_args
+INSTALL_ROOT=$ROOT
+REPO_PATH[soulstream]=$ROOT; REPO_PREVIOUS[soulstream]=\${PREVIOUS-}; REPO_TARGET[soulstream]=$TARGET
+REPO_PREVIOUS[atom]=\${PREVIOUS-}; REPO_TARGET[atom]=$TARGET
+`;
+const PREVIOUS = '1234567890abcdef1234567890abcdef12345678';
+
+function schemaSetup() {
+  const dir = mkdtempSync(join(tmpdir(), 'install-schema-'));
+  const root = join(dir, 'soulstream'), atomRoot = join(dir, 'atom'), bin = join(dir, 'schema-bin');
+  mkdirSync(root); mkdirSync(atomRoot); mkdirSync(bin);
+  git('init', '-q', '--initial-branch=main', root);
+  git('-C', root, 'commit', '-q', '--allow-empty', '-m', 'target');
+  const head = git('-C', root, 'rev-parse', 'HEAD');
+  const fake = createFakeCommands(dir);
+  for (const [name, body] of Object.entries(SCHEMA_FAKES)) writeFileSync(join(bin, name), `#!/usr/bin/env bash\n${body}\n`, { mode: 0o755 });
+  const run = async (body, extra = {}) => {
+    const result = await runBash(SCHEMA_PRELUDE + body, [], {
+      env: fake.env({ ...GIT_ENV, INSTALL_SH: script, ROOT: root, ATOM_ROOT: atomRoot, TARGET: head, PREVIOUS, PATH: `${bin}:${fake.bin}:${process.env.PATH}`, ...extra }),
+    });
+    fake.assertNoProtectedRequests();
+    return result;
+  };
+  const backups = join(root, '.local', 'backups');
+  const dumps = (db = 'soulstream') => (existsSync(backups) ? readdirSync(backups).filter((name) => name.startsWith(`${db}-`)).sort() : []);
+  const releaseLog = () => (existsSync(join(dir, 'release.log')) ? readFileSync(join(dir, 'release.log'), 'utf8') : '');
+  const fd3 = () => (existsSync(join(dir, 'fd3.log')) ? readFileSync(join(dir, 'fd3.log'), 'utf8') : '');
+  const state = () => JSON.parse(readFileSync(join(root, '.local', 'install-state.json'), 'utf8'));
+  return { dir, root, head, fake, run, backups, dumps, releaseLog, fd3, state, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+const preflightResult = (operation, status, pending, additive) => JSON.stringify({ ok: true, phase: 'preflight', operation, status, pending_count: pending, pending_additive_only: additive });
+const dumpName = (db, n, head, previous = PREVIOUS.slice(0, 12)) => `${db}-20261124T0000${String(n).padStart(2, '0')}Z-${previous}-to-${head.slice(0, 12)}.pgdump`;
+const restoreLine = (path) => `sudo -u postgres pg_restore --exit-on-error --no-owner --role=soulstream -d <empty_database> < '${path}'`;
+
+test('the schema step dumps soulstream only before an uncommitted non-additive upgrade, then applies and verifies', async () => {
+  const rows = [
+    ['upgrade', 'preflight_complete', 2, false, true],
+    ['upgrade', 'apply_started', 2, false, true],
+    ['upgrade', 'apply_failed', 2, false, true],
+    ['upgrade', 'verified', 2, false, false],
+    ['upgrade', 'applied_reconciled', 2, false, false],
+    ['upgrade', 'preflight_complete', 2, true, false],
+    ['upgrade', 'preflight_complete', 0, false, false],
+    ['fresh_install', 'preflight_complete', 173, false, false],
+  ];
+  for (const [operation, status, pending, additive, dumped] of rows) {
+    const t = schemaSetup();
+    const label = `${operation} ${status} ${pending} additive=${additive}`;
+    try {
+      const result = await t.run('setup_schema "$ROOT"\n', { FAKE_PREFLIGHT: preflightResult(operation, status, pending, additive) });
+      assert.equal(result.status, 0, `${label}\n${result.stderr}`);
+      assert.deepEqual(t.dumps(), dumped ? [dumpName('soulstream', 1, t.head)] : [], label);
+      const release = `clean-${t.head.slice(0, 12)}`;
+      const identity = `head=${t.head} previous=${t.head} release=${release} soulstream_release=${release} request=installer-${t.head} repo=soulstream`
+        + ` backup=${t.root}/.local/database-release/${release} env=${t.root}/.env.orch journal=unset`
+        + ` --manifest install/release-manifest-installer.json --database-contract install/database-release-installer.json cwd=${t.root}`;
+      assert.equal(t.releaseLog(), ['preflight', 'apply', 'verify'].map((phase) => `${phase} ${identity}\n`).join('') + 'migrate-verify\n', label);
+      const argv = t.fake.argv();
+      if (dumped) assert.ok(argv.indexOf('== pg_dump\n') < argv.indexOf('== node\npackages/db-schema/scripts/release-executor.mjs\napply\n'), label);
+      else assert.ok(!argv.includes('== pg_dump\n'), label);
+    } finally { t.cleanup(); }
+  }
+});
+
+test('a failed dump stops the schema step before apply, and a failed phase reports its error code', async () => {
+  const t = schemaSetup();
+  try {
+    const nonAdditive = preflightResult('upgrade', 'preflight_complete', 2, false);
+    const dump = await t.run('setup_schema "$ROOT"\n', { FAKE_PREFLIGHT: nonAdditive, FAKE_PG_DUMP_FAIL: '1' });
+    assert.notEqual(dump.status, 0);
+    assert.equal(t.releaseLog().split('\n')[0].split(' ')[0], 'preflight');
+    assert.ok(!t.releaseLog().includes('\napply '), t.releaseLog());
+    assert.deepEqual(readdirSync(t.backups), []);
+    assert.match(dump.stderr, /Backup of database soulstream failed\./);
+
+    const apply = await t.run('setup_schema "$ROOT"\n', { FAKE_PREFLIGHT: nonAdditive, FAKE_RELEASE_FAIL: 'apply' });
+    assert.notEqual(apply.status, 0);
+    assert.match(apply.stderr, /\nDatabase release apply failed: APPLY_FAILED\n/);
+    assert.ok(!t.releaseLog().includes('\nverify '), t.releaseLog());
+    assert.deepEqual(t.dumps(), [dumpName('soulstream', 1, t.head)]);
+
+    const preflight = await t.run('setup_schema "$ROOT"\n', { FAKE_PREFLIGHT: '{"ok":true,"operation":"upgrade"}' });
+    assert.notEqual(preflight.status, 0);
+    assert.match(preflight.stderr, /Database release preflight returned an unexpected result\./);
+  } finally { t.cleanup(); }
+});
+
+test('backups keep the newest three per database, and a failed dump leaves the existing ones', async () => {
+  const t = schemaSetup();
+  try {
+    const three = await t.run('for i in 1 2 3; do backup_database "$ROOT" soulstream; done\nbackup_database "$ROOT" atom\n');
+    assert.equal(three.status, 0, three.stderr);
+    const first = [1, 2, 3].map((n) => dumpName('soulstream', n, t.head));
+    assert.deepEqual(t.dumps(), first);
+    assert.equal(statSync(t.backups).mode & 0o777, 0o700);
+    for (const name of readdirSync(t.backups)) assert.equal(statSync(join(t.backups, name)).mode & 0o777, 0o600, name);
+    assert.match(t.fake.argv(), /== pg_dump\n--format=custom\n--no-password\n-d\nsoulstream\n/);
+    assert.ok(t.fake.argv().includes(`== chown\nsoulstream:soulstream\n${t.backups}\n`));
+
+    const failed = await t.run('backup_database "$ROOT" soulstream\n', { FAKE_PG_DUMP_FAIL: '1' });
+    assert.notEqual(failed.status, 0);
+    assert.deepEqual(readdirSync(t.backups).sort(), [dumpName('atom', 4, t.head), ...first]);
+
+    const fourth = await t.run('backup_database "$ROOT" soulstream\nprintf "path=%s\\n" "${BACKUP_PATHS[soulstream]}"\n', { PREVIOUS: '' });
+    assert.equal(fourth.status, 0, fourth.stderr);
+    const latest = dumpName('soulstream', 5, t.head, 'none');
+    assert.deepEqual(t.dumps(), [...first.slice(1), latest]);
+    assert.deepEqual(t.dumps('atom'), [dumpName('atom', 4, t.head)]);
+    assert.ok(fourth.stdout.includes(`path=${join(t.backups, latest)}\n`), fourth.stdout);
+  } finally { t.cleanup(); }
+});
+
+test('a failure after a dump reports its path and restore command; without a dump there is no such line', async () => {
+  const body = `MAINTENANCE_ENTERED=true; SYSTEMD_DIR=$FAKE_DIR/units; STEP='Initializing schema'
+trap on_error ERR
+if [[ "$WITH_BACKUP" == 1 ]]; then backup_database "$ROOT" soulstream; fi
+false
+`;
+  const t = schemaSetup();
+  try {
+    const result = await t.run(body, { WITH_BACKUP: '1' });
+    assert.equal(result.status, 1);
+    const path = join(t.backups, dumpName('soulstream', 1, t.head));
+    assert.ok(t.fd3().endsWith(`State: ${t.root}/.local/install-state.json
+Database backup (soulstream): ${path}
+Restore it only to give up the new revision: with the services stopped and a compatible revision checked out, as root restore into an empty database: ${restoreLine(path)}
+Fix the cause, then run the same command again.
+`), t.fd3());
+    assert.deepEqual(t.state().backups, { soulstream: { path, restore_command: restoreLine(path) } });
+    assert.equal(t.state().status, 'failed');
+  } finally { t.cleanup(); }
+  const none = schemaSetup();
+  try {
+    const result = await none.run(body, { WITH_BACKUP: '0' });
+    assert.equal(result.status, 1);
+    assert.ok(!none.fd3().includes('Database backup'), none.fd3());
+    assert.ok(none.fd3().endsWith(`State: ${none.root}/.local/install-state.json\nFix the cause, then run the same command again.\n`), none.fd3());
+    assert.deepEqual(none.state().backups, {});
+  } finally { none.cleanup(); }
+});
+
+test('a non-empty atom database is dumped right before migrate, and an empty one is not', async () => {
+  for (const populated of ['t', 'f']) {
+    const t = schemaSetup();
+    try {
+      const result = await t.run('setup_secrets "$ROOT" "$ATOM_ROOT"\ninit_atom "$ATOM_ROOT"\n', { FAKE_ATOM_POPULATED: populated });
+      assert.equal(result.status, 0, result.stderr);
+      const argv = t.fake.argv(), migrate = argv.indexOf('== npm\n--prefix\n');
+      assert.ok(migrate >= 0, argv);
+      if (populated === 't') {
+        assert.deepEqual(t.dumps('atom'), [dumpName('atom', 1, t.head)]);
+        assert.ok(argv.lastIndexOf('== pg_dump\n--format=custom\n--no-password\n-d\natom\n', migrate) >= 0, argv);
+      } else {
+        assert.ok(!argv.includes('== pg_dump\n'), argv);
+        assert.deepEqual(t.dumps('atom'), []);
+      }
+    } finally { t.cleanup(); }
+  }
+});

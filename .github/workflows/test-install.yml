@@ -174,7 +174,25 @@ jobs:
 
   linux-installer:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: installer_schema_test
+          POSTGRES_PASSWORD: installer_schema_secret
+          POSTGRES_DB: installer_schema_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U installer_schema_test -d installer_schema_test_db"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: >-
+        postgresql://installer_schema_test:installer_schema_secret@127.0.0.1:5432/installer_schema_test_db
+      PG_BIN_DIR: /usr/lib/postgresql/16/bin
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -184,11 +202,32 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install repository dependencies
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+          corepack pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install PostgreSQL 16 client tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          if ! apt-cache show postgresql-client-16 >/dev/null 2>&1; then
+            sudo apt-get install -y postgresql-common
+            sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          fi
+          sudo apt-get install -y postgresql-client-16
+          "$PG_BIN_DIR/pg_dump" --version
+
       - name: Check installer syntax
         run: bash -n install/install.sh
 
       - name: Run installer tests
         run: node --test install/tests/*.test.mjs
+
+      - name: Run the installer schema step against PostgreSQL
+        run: node --test install/tests/integration/install_schema_upgrade.postgres.test.mjs
 
   test-install:
     runs-on: windows-latest
