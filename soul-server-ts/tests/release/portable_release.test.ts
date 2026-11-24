@@ -319,5 +319,11 @@ it("classifies a real bound legacy portable release by its catalog path", async 
   const releaseDirectory = await createReleaseDirectory();
   const envFile = await writeEnvDocument(releaseDirectory);
   const { manifest } = await bindPortableRelease({ releaseDirectory, envFile, catalogPath: join(releaseDirectory, "catalog.yaml") });
-  expect(isPortableMcpNode({ PORTABLE_LOCAL_MCP_AUTHORIZATION: "fake" }, manifest)).toBe(true);
+  const portable = isPortableMcpNode({ PORTABLE_LOCAL_MCP_AUTHORIZATION: "fake" }, manifest);
+  expect(portable).toBe(true);
+  const { buildRegistrationMsg } = await import("../../src/upstream/registration.js");
+  const { AgentRegistry } = await import("../../src/agent_registry.js");
+  const { McpConfigCommands } = await import("../../src/upstream/mcp_config_commands.js");
+  expect(buildRegistrationMsg({ nodeId: "old", host: "localhost", port: 1, userName: "", agentRegistry: new AgentRegistry([]), isPortableNode: portable }).capabilities).not.toHaveProperty("central_mcp_config_v1");
+  await expect(new McpConfigCommands(undefined, undefined, portable).sync({})).rejects.toMatchObject({ code: "MCP_PORTABLE_NODE" });
 });

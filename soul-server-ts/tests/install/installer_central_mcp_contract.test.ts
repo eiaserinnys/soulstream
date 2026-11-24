@@ -51,6 +51,9 @@ it("uses the installer-rendered environment and actual catalog-free manifest", a
     expect(portable).toBe(false);
     const msg = buildRegistrationMsg({ nodeId: "test", host: "localhost", port: 1, userName: "", agentRegistry: new AgentRegistry([]), isPortableNode: portable });
     expect(msg.capabilities.central_mcp_config_v1).toBe(true);
-    await expect(new McpConfigCommands(undefined, undefined, portable).sync({})).rejects.toMatchObject({ code: "INVALID_MCP_CENTRAL_SYNC" });
+    const { McpConfigService } = await import("../../src/mcp_config_service.js");
+    const service = new McpConfigService({ agentsConfigPath: join(root, "config/agents.yaml"), processEnv: env, isPortableNode: portable });
+    const snapshot = { registry: { servers: [] }, profiles: { profiles: [] }, agent_bindings: {} };
+    await expect(new McpConfigCommands(service, () => {}, portable).sync({ type: "mcp_central_sync", requestId: "test", revision: 1, runtime: snapshot, display: snapshot })).resolves.toMatchObject({ success: true });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
