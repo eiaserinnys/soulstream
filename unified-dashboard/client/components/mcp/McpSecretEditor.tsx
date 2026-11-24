@@ -10,11 +10,13 @@ import {
 export function McpSecretEditor({
   secret,
   busy,
+  onEdit,
   replace,
   remove,
 }: {
   secret: McpSecret;
   busy: boolean;
+  onEdit(): void;
   replace(name: string, value: string): Promise<boolean>;
   remove(secret: McpSecret): void;
 }) {
@@ -90,7 +92,7 @@ export function McpSecretEditor({
                 autoFocus
                 autoComplete="off"
                 value={value}
-                onChange={(event) => setValue(event.target.value)}
+                onChange={(event) => { setValue(event.target.value); onEdit(); }}
               />
             </SettingsField>
             <div className="flex justify-end gap-2">

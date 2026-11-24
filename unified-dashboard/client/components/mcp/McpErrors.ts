@@ -6,6 +6,7 @@ export function errorText(
   error: unknown,
   config: McpConfig | null,
   target: DeleteTarget | null,
+  action: "save" | "delete" | "rollback" = "save",
 ): string {
   if (error instanceof PartialProfileSaveError)
     return "일부 프로필에 추가됐습니다. 다시 읽은 뒤 나머지를 확인해 주세요.";
@@ -15,7 +16,7 @@ export function errorText(
     error.code.endsWith("_VERSION_CONFLICT") ||
     error.code === "MCP_REVISION_CONFLICT"
   )
-    return "다른 곳에서 변경됐습니다. 다시 읽은 뒤 저장해 주세요.";
+    return `다른 곳에서 변경됐습니다. 다시 읽은 뒤 ${action === "delete" ? "다시 삭제해" : action === "rollback" ? "다시 되돌려" : "저장해"} 주세요.`;
   if (error.code === "MCP_SERVER_INUSE") {
     const profiles = config?.profiles
         .filter((p) => p.mcp_servers.includes(target?.id ?? ""))

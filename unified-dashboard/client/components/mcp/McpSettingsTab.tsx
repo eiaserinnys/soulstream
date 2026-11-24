@@ -82,6 +82,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
     target: DeleteTarget | null = null,
     successMessage = "",
     place: "header" | "footer" = "footer",
+    actionKind: "save" | "delete" | "rollback" = "save",
   ): Promise<boolean> => {
     setBusy(true);
     setError("");
@@ -92,7 +93,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
       setSuccess(successMessage);
       return true;
     } catch (caught) {
-      setError(errorText(caught, config, target));
+      setError(errorText(caught, config, target, actionKind));
       return false;
     } finally {
       setBusy(false);
@@ -346,6 +347,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
               server={currentServer}
               config={config}
               busy={busy}
+              onEdit={() => setSuccess("")}
               justCreated={justCreated}
               dismissCreated={() => setJustCreated(false)}
               upload={upload}
@@ -408,6 +410,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
               profile={currentProfile}
               config={config}
               busy={busy}
+              onEdit={() => setSuccess("")}
               remove={(profile) =>
                 openDelete({
                   kind: "profile",
@@ -430,6 +433,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
             <McpSecretEditor
               secret={currentSecret}
               busy={busy}
+              onEdit={() => setSuccess("")}
               remove={(secret: McpSecret) =>
                 openDelete({ kind: "secret", id: secret.name })
               }
@@ -474,13 +478,13 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
             else await api.deleteSecret(target.id, config.current_revision);
             await refresh();
             setSelected(null);
-          }, target, "삭제했습니다.", "header").then((ok) => { if (ok) setDeleting(null); });
+          }, target, `“${target.id}” 항목을 삭제했습니다.`, "header", "delete").then((ok) => { if (ok) setDeleting(null); });
         }}
         rollback={(id) => {
           void mutate(async () => {
             await api.rollback(id, config.current_revision);
             await refresh();
-          }, null, "되돌렸습니다.", "header").then((ok) => { if (ok) setHistory(null); });
+          }, null, "되돌렸습니다.", "header", "rollback").then((ok) => { if (ok) setHistory(null); });
         }}
       />
     </div>

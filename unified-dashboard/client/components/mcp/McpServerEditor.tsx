@@ -27,6 +27,7 @@ type Props = {
   server: McpServer | null;
   config: McpConfig;
   busy: boolean;
+  onEdit(): void;
   save(
     id: string,
     input: {
@@ -52,6 +53,7 @@ export function McpServerEditor({
   server,
   config,
   busy,
+  onEdit,
   save,
   remove,
   rollback,
@@ -118,13 +120,15 @@ export function McpServerEditor({
     server?.version,
     config.managed_nodes.map((node) => node.node_id).join("\u0000"),
   ]);
-  const setSecret = (unitId: string, name: string, value: string | null) =>
+  const setSecret = (unitId: string, name: string, value: string | null) => {
+    onEdit();
     setSecrets((current) => {
       const next = { ...current };
       if (value === null) delete next[unitId];
       else next[unitId] = { name, value };
       return next;
     });
+  };
   const users = config.profiles.filter((profile) =>
     profile.mcp_servers.includes(server?.id ?? ""),
   );
@@ -229,15 +233,13 @@ export function McpServerEditor({
               <Input
                 value={id}
                 disabled={Boolean(server)}
-                onChange={(event) => setId(event.target.value)}
+                onChange={(event) => { setId(event.target.value); onEdit(); }}
               />
             </SettingsField>
             <SettingsField label="전송 이름">
               <Input
                 value={draft.name}
-                onChange={(event) =>
-                  setDraft({ ...draft, name: event.target.value })
-                }
+                onChange={(event) => { setDraft({ ...draft, name: event.target.value }); onEdit(); }}
               />
             </SettingsField>
           </div>
@@ -265,7 +267,7 @@ export function McpServerEditor({
                 name={draft.name}
                 url={draft.url}
                 value={icon}
-                onChange={setIcon}
+                onChange={(value) => { setIcon(value); onEdit(); }}
                 upload={upload}
               />
             </div>
@@ -275,7 +277,7 @@ export function McpServerEditor({
       <DefinitionEditor
         value={draft}
         secretNames={secretNames}
-        onChange={setDraft}
+        onChange={(value) => { setDraft(value); onEdit(); }}
         onSecretValue={setSecret}
       />
       <SettingsGroupBox title="적용 노드 및 덮어쓰기">
@@ -289,6 +291,7 @@ export function McpServerEditor({
                 <Checkbox
                   checked={scope.includes(node.node_id)}
                   onCheckedChange={(checked) => {
+                    onEdit();
                     setScope((current) =>
                       checked
                         ? [...current, node.node_id]
@@ -314,15 +317,16 @@ export function McpServerEditor({
                   <label className="flex items-center gap-2 break-keep">
                     <Checkbox
                       checked={Boolean(overrides[node])}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked) => {
+                        onEdit();
                         setOverrides((current) => {
                           const next = { ...current };
                           if (checked)
                             next[node] = readDefinition(writeDefinition(draft));
                           else delete next[node];
                           return next;
-                        })
-                      }
+                        });
+                      }}
                     />
                     {node} · 이 노드는 다른 정의
                   </label>
@@ -331,12 +335,13 @@ export function McpServerEditor({
                       value={overrides[node]}
                       secretNames={secretNames}
                       isolateValue
-                      onChange={(value) =>
+                      onChange={(value) => {
+                        onEdit();
                         setOverrides((current) => ({
                           ...current,
                           [node]: value,
-                        }))
-                      }
+                        }));
+                      }}
                       onSecretValue={setSecret}
                     />
                   ) : null}

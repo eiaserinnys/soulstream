@@ -28,7 +28,7 @@ it("서버 편집기에서 적용 노드를 해제하면 덮어쓰기도 저장�
   const config = sample(), save = vi.fn().mockResolvedValue(true), host = document.createElement("div");
   document.body.append(host); const root = createRoot(host);
   try {
-    await act(async () => root.render(<McpServerEditor server={config.servers[0]} config={config} busy={false} save={save} remove={() => {}} rollback={() => {}} upload={vi.fn()} addToProfiles={vi.fn()} justCreated={false} dismissCreated={() => {}} />));
+    await act(async () => root.render(<McpServerEditor server={config.servers[0]} config={config} busy={false} onEdit={() => {}} save={save} remove={() => {}} rollback={() => {}} upload={vi.fn()} addToProfiles={vi.fn()} justCreated={false} dismissCreated={() => {}} />));
     const label = [...host.querySelectorAll("label")].find(item => item.textContent?.trim() === "example-node")!;
     await click(label.querySelector('[role="checkbox"], input[type="checkbox"]'));
     await click(button(host, "저장"));

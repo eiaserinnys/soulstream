@@ -13,6 +13,7 @@ export function McpProfileEditor({
   profile,
   config,
   busy,
+  onEdit,
   save,
   remove,
   rollback,
@@ -20,6 +21,7 @@ export function McpProfileEditor({
   profile: McpProfile | null;
   config: McpConfig;
   busy: boolean;
+  onEdit(): void;
   save(
     id: string,
     input: {
@@ -81,19 +83,19 @@ export function McpProfileEditor({
             <Input
               value={id}
               disabled={Boolean(profile)}
-              onChange={(event) => setId(event.target.value)}
+              onChange={(event) => { setId(event.target.value); onEdit(); }}
             />
           </SettingsField>
           <SettingsField label="이름">
             <Input
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => { setName(event.target.value); onEdit(); }}
             />
           </SettingsField>
           <SettingsField label="설명">
             <Input
               value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              onChange={(event) => { setDescription(event.target.value); onEdit(); }}
             />
           </SettingsField>
           <McpServerIcons
@@ -109,13 +111,14 @@ export function McpProfileEditor({
             <label key={server.id} className="flex min-w-0 items-center gap-2">
               <Checkbox
                 checked={servers.includes(server.id)}
-                onCheckedChange={(checked) =>
+                onCheckedChange={(checked) => {
                   setServers((current) =>
                     checked
                       ? [...current, server.id]
                       : current.filter((id) => id !== server.id),
-                  )
-                }
+                  );
+                  onEdit();
+                }}
               />
               <McpIconTile id={server.id} icon={server.icon} />
               <span className="truncate">{server.name || server.id}</span>

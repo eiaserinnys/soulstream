@@ -10,6 +10,7 @@ import http.server
 import io
 import json
 import os
+import re
 import threading
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, unquote
@@ -534,6 +535,158 @@ def run_r1(browser, base, out):
     lines.extend(['', '실측 좌표·상태와 선택 스타일: `r1-checks.json`.', '서버·참조·목록·충돌·각 성공/실패·공용 탭·로딩 캡처는 같은 폴더의 `r1-*.png`.', '긴 참조 이름은 입력의 실제 폭과 scrollWidth를 재고, 넘치면 전체 이름 보기로 확인했다.', ''])
     out.joinpath('r1-operations.md').write_text('\n'.join(lines), encoding='utf8')
 
+def run_r2(browser, base, out):
+    """2차 검수의 참조 입력·충돌·삭제·저장 뒤 편집을 실제 설정 창에서 조작한다."""
+    results = []
+    def check(label, ok, detail):
+        results.append({'check': label, 'ok': bool(ok), 'detail': detail})
+        out.joinpath('r2-checks.json').write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding='utf8')
+        print(f"{'PASS' if ok else 'FAIL'} {label}: {detail}", flush=True)
+    for width, theme in [(1440, 'dark'), (360, 'light')]:
+        tag = f'{width}-{theme}'
+        context = browser.new_context(viewport={'width': width, 'height': 900 if width > 360 else 800}, color_scheme=theme, reduced_motion='reduce', service_workers='block')
+        page = context.new_page(); page.set_default_timeout(10000)
+        errors = []; page.on('pageerror', lambda error: errors.append(str(error)))
+        page.add_init_script(f"localStorage.setItem('soul-dashboard-theme','{theme}'); localStorage.setItem('ls.webglGlass','0');")
+        data = fixture(); requests = {'index': 0, 'external': []}
+        long_ref = 'fake-ovr-eias-linegames-hdr-authorization'
+        data['servers'][0]['config']['headers']['Authorization'] = '{{secret:' + long_ref + '}}'
+        data['servers'][0]['node_overrides'][NODES[1]]['config']['headers']['Authorization'] = '{{secret:' + long_ref + '}}'
+        data['secrets'].append({'name': long_ref, 'updated_at': None, 'servers': ['arbor'], 'profiles': []})
+        install(page, base, data, requests, theme=theme)
+        state = {'server_conflict': True, 'secret_conflict': True, 'delete': set()}
+        def writes(route):
+            request = route.request; parsed = urlsplit(request.url); path = parsed.path
+            if request.method == 'PUT' and path == '/api/mcp/servers/atom' and state['server_conflict']:
+                state['server_conflict'] = False
+                return route.fulfill(status=409, json={'code':'MCP_SERVER_VERSION_CONFLICT', 'message':'fake'})
+            if request.method == 'PUT' and path.startswith('/api/mcp/secrets/'):
+                if state['secret_conflict']:
+                    state['secret_conflict'] = False
+                    return route.fulfill(status=409, json={'code':'MCP_REVISION_CONFLICT', 'message':'fake'})
+                data['current_revision'] += 1
+                return route.fulfill(json={'current_revision':data['current_revision']})
+            if request.method == 'POST' and '/rollback' in path:
+                return route.fulfill(status=409, json={'code':'MCP_REVISION_CONFLICT', 'message':'fake'})
+            if request.method == 'DELETE':
+                kind = path.split('/')[3]; item_id = unquote(path.rsplit('/', 1)[-1])
+                if kind not in state['delete']:
+                    state['delete'].add(kind)
+                    if kind != 'secrets': next(item for item in data[kind] if item['id'] == item_id)['version'] += 1
+                    data['current_revision'] += 1
+                    return route.fulfill(status=409, json={'code':'MCP_REVISION_CONFLICT' if kind == 'secrets' else 'MCP_' + kind[:-1].upper() + '_VERSION_CONFLICT', 'message':'fake'})
+                data[kind] = [item for item in data[kind] if item['name' if kind == 'secrets' else 'id'] != item_id]
+                data['current_revision'] += 1
+                return route.fulfill(json={'current_revision':data['current_revision']})
+            return route.fallback()
+        page.route('**/api/mcp/**', writes)
+        open_panel(page, base); expect(page.get_by_test_id('mcp-settings')).to_be_visible()
+        summary = page.locator('summary', has_text='노드별 덮어쓰기')
+        if not summary.locator('..').evaluate('el => el.open'): summary.click()
+        refs = page.locator('input[aria-label="참조 이름"][title="' + long_ref + '"]')
+        expect(refs).to_have_count(2)
+        for name, slug, ref in [('기본', 'default', refs.first.element_handle()), ('덮어쓰기', 'override', refs.last.element_handle())]:
+            ref.scroll_into_view_if_needed(); ref.evaluate('el => el.blur()')
+            info = ref.evaluate("el => ({value:el.value, client:el.clientWidth, scroll:el.scrollWidth, overflow:getComputedStyle(el).textOverflow})")
+            check(f'A {name} 말줄임 {tag}', info['scroll'] <= info['client'] + 1 or info['overflow'] == 'ellipsis', info)
+            if width == 1440: check(f'A {name} 넓은 화면 표시 {tag}', info['scroll'] <= info['client'] + 1, info)
+            else: check(f'A {name} 좁은 화면 넘침 {tag}', info['scroll'] > info['client'] + 1, info)
+            capture(page, out, f'r2-reference-{slug}-{tag}')
+            ref.focus(); ref.press('End'); ref.type('-fake'); edited = ref.input_value()
+            check(f'A {name} 초점 편집 {tag}', edited == long_ref + '-fake', edited)
+            ref.fill(long_ref); ref.evaluate('el => el.blur()')
+        def row(text):
+            return page.get_by_test_id('mcp-settings').locator('aside button', has_text=text).first
+        def status(text):
+            return page.get_by_role('status').filter(has_text=text)
+        def saved():
+            ok = status('저장했습니다'); expect(ok).to_be_visible(); return ok
+        page.get_by_role('tab', name='서버', exact=True).click(); row('atom').click()
+        expect(page.get_by_label('서버 ID')).to_have_value('atom')
+        page.get_by_role('button', name='저장', exact=True).click()
+        alert = page.get_by_role('alert').first; expect(alert).to_be_visible()
+        text = alert.inner_text(); check(f'B 서버 저장 충돌 유지 {tag}', '저장' in text, text)
+        capture(page, out, f'r2-save-conflict-server-{tag}')
+        alert.get_by_role('button', name='다시 읽기').click(); expect(alert).to_have_count(0)
+        page.get_by_role('button', name='저장', exact=True).click(); ok = saved()
+        page.get_by_label('전송 이름').fill('fake-atom-edited')
+        check(f'D 서버 이름 편집 {tag}', ok.count() == 0, ok.count())
+        page.get_by_role('button', name='저장', exact=True).evaluate("el => el.scrollIntoView({block:'center', behavior:'instant'})")
+        capture(page, out, f'r2-server-edited-{tag}')
+        page.get_by_role('button', name='저장', exact=True).click(); ok = saved()
+        page.get_by_test_id('mcp-settings').get_by_role('checkbox').first.click()
+        check(f'D 서버 적용 노드 편집 {tag}', ok.count() == 0, ok.count())
+        page.get_by_role('button', name='저장', exact=True).click(); ok = saved()
+        page.get_by_role('button', name='줄 더하기').first.click()
+        check(f'D 서버 값 줄 추가 {tag}', ok.count() == 0, ok.count())
+        page.get_by_role('tab', name='프로필', exact=True).click()
+        page.get_by_role('button', name='저장', exact=True).click(); ok = saved()
+        page.get_by_label('이름', exact=True).fill('가짜 프로필 수정')
+        check(f'D 프로필 이름 편집 {tag}', ok.count() == 0, ok.count())
+        page.get_by_role('button', name='저장', exact=True).evaluate("el => el.scrollIntoView({block:'center', behavior:'instant'})")
+        capture(page, out, f'r2-profile-edited-{tag}')
+        page.get_by_role('button', name='저장', exact=True).click(); ok = saved()
+        page.get_by_test_id('mcp-settings').get_by_role('checkbox').first.click()
+        check(f'D 프로필 서버 선택 {tag}', ok.count() == 0, ok.count())
+        page.get_by_role('tab', name='비밀값', exact=True).click()
+        page.get_by_role('button', name='값 교체').click(); page.get_by_label('새 값').fill('obviously-fake-r2')
+        page.get_by_role('button', name='저장', exact=True).click(); alert = page.get_by_role('alert').first; expect(alert).to_be_visible()
+        text = alert.inner_text(); check(f'B 값 교체 저장 충돌 유지 {tag}', '저장' in text, text)
+        capture(page, out, f'r2-save-conflict-secret-{tag}')
+        alert.get_by_role('button', name='다시 읽기').click(); expect(alert).to_have_count(0)
+        page.get_by_role('button', name='저장', exact=True).click()
+        ok = status('값을 교체했습니다'); expect(ok).to_be_visible()
+        page.get_by_role('button', name='값 교체').click(); page.get_by_label('새 값').fill('obviously-fake-r2-next')
+        check(f'D 비밀값 재편집 {tag}', ok.count() == 0, ok.count())
+        page.get_by_role('button', name='저장', exact=True).evaluate("el => el.scrollIntoView({block:'center', behavior:'instant'})")
+        capture(page, out, f'r2-secret-edited-{tag}')
+        page.get_by_role('button', name='취소', exact=True).click()
+        for tab, kind, item in [('서버', 'servers', 'cloistermont'), ('프로필', 'profiles', 'ariella-system1'), ('비밀값', 'secrets', 'srv-atom-hdr-example')]:
+            page.get_by_role('tab', name=tab, exact=True).click(); row(item).click()
+            page.get_by_role('button', name='삭제', exact=True).first.click()
+            dialog = page.get_by_role('dialog', name='삭제'); dialog.get_by_role('button', name='삭제', exact=True).click()
+            alert = dialog.get_by_role('alert'); expect(alert).to_be_visible(); text = alert.inner_text()
+            check(f'B {tab} 삭제 충돌 {tag}', '삭제' in text and '저장' not in text, text)
+            capture(page, out, f'r2-delete-conflict-{kind}-{tag}')
+            dialog.get_by_role('button', name='다시 읽기').click(); expect(alert).to_have_count(0)
+            dialog.get_by_role('button', name='삭제', exact=True).click()
+            done = status('삭제했습니다'); expect(done).to_be_visible(); text = done.inner_text()
+            check(f'C {tab} 삭제 대상 {tag}', item in text, text)
+            capture(page, out, f'r2-delete-success-{kind}-{tag}')
+        for tab, slug, item in [('서버', 'server', 'arbor'), ('프로필', 'profile', 'ariella-system2')]:
+            page.get_by_role('tab', name=tab, exact=True).click(); row(item).click()
+            page.get_by_role('button', name='되돌리기', exact=True).click()
+            dialog = page.get_by_role('dialog', name='되돌리기')
+            dialog.get_by_role('button', name='이 판으로 되돌리기').click()
+            alert = dialog.get_by_role('alert'); expect(alert).to_be_visible(); text = alert.inner_text()
+            check(f'B {tab} 되돌리기 충돌 {tag}', '되돌' in text and '저장' not in text, text)
+            capture(page, out, f'r2-rollback-conflict-{slug}-{tag}'); page.keyboard.press('Escape')
+        check(f'브라우저 오류 {tag}', not errors, errors)
+        context.close()
+    failed = [result['check'] for result in results if not result['ok']]
+    if failed: raise AssertionError(f'2차 검수 항목 미충족: {failed}')
+    lines = ['## 2차 화면 검수 보완 조작', '', '| 항목과 화면 | 결과 |', '|---|---|']
+    lines.extend(f"| {result['check']} | 통과 |" for result in results)
+    lines.extend(['', '실측과 문구: `r2-checks.json`.', '각 상태의 화면은 같은 폴더의 `r2-*.png`.', ''])
+    out.joinpath('r2-operations.md').write_text('\n'.join(lines), encoding='utf8')
+
+def check_artifact_references(out):
+    checked = 0
+    for document in [out / 'operations.md', out.parent / 'r1-report.md', out.parent / 'r2-report.md']:
+        if not document.exists(): continue
+        for reference in re.findall(r'`([^`]+)`', document.read_text(encoding='utf8')):
+            if reference.startswith('shots/'):
+                reference = reference.removeprefix('shots/')
+                if not reference: continue
+            elif document.parent != out or not reference.endswith(('.png', '.json', '.md', '.log')):
+                continue
+            if '*' in reference:
+                assert any(out.glob(reference)), (document, reference)
+            else:
+                assert (out / reference).is_file(), (document, reference)
+            checked += 1
+    print(f'보고·조작 기록 참조 파일 확인: {checked}개', flush=True)
+
 def compare_existing(browser, baseline, current, out):
     measurements = {}
     for name, base in [('before', baseline), ('after', current)]:
@@ -550,21 +703,24 @@ def compare_existing(browser, baseline, current, out):
         result.write(f"\n기존 반복 작업 머리 전후 좌표·글꼴·색 일치: {measurements['after']}\n")
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument('--output', default=os.environ.get('MCP_SHOTS_DIR', str(ROOT / '.local' / 'mcp-settings-shots'))); parser.add_argument('--baseline-dist', default=os.environ.get('MCP_BASELINE_DIST')); parser.add_argument('--r1-only', action='store_true'); args = parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument('--output', default=os.environ.get('MCP_SHOTS_DIR', str(ROOT / '.local' / 'mcp-settings-shots'))); parser.add_argument('--baseline-dist', default=os.environ.get('MCP_BASELINE_DIST')); parser.add_argument('--r1-only', action='store_true'); parser.add_argument('--r2-only', action='store_true'); args = parser.parse_args()
     out = Path(args.output); out.mkdir(parents=True, exist_ok=True)
     server, base = serve()
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
-            if args.r1_only: run_r1(browser, base, out)
+            if args.r2_only: run_r2(browser, base, out)
+            elif args.r1_only: run_r1(browser, base, out)
             else:
-                run(browser, base, out); run_r1(browser, base, out)
+                run(browser, base, out); run_r1(browser, base, out); run_r2(browser, base, out)
                 with out.joinpath('operations.md').open('a', encoding='utf8') as operations:
                     operations.write('\n' + out.joinpath('r1-operations.md').read_text(encoding='utf8'))
+                    operations.write('\n' + out.joinpath('r2-operations.md').read_text(encoding='utf8'))
             if args.baseline_dist:
                 baseline_server, baseline = serve(Path(args.baseline_dist))
                 try: compare_existing(browser, baseline, base, out)
                 finally: baseline_server.shutdown()
+            if not args.r1_only and not args.r2_only: check_artifact_references(out)
             browser.close()
     finally: server.shutdown()
     print(f'MCP 화면 캡처와 조작 결과: {out}')

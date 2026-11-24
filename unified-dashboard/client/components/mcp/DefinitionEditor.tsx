@@ -122,7 +122,7 @@ export function McpValueUnit({
             <Input
               ref={referenceInput}
               aria-label="참조 이름"
-              className="min-w-0"
+              className="min-w-0 [&_[data-slot=input]]:truncate [&_[data-slot=input]:focus]:text-clip"
               title={ref.name}
               list={ref.kind !== "env" ? listId : undefined}
               value={ref.name}
