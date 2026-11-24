@@ -72,11 +72,8 @@ export function inferProvider(
     if (catalogProvider !== undefined && catalogProvider !== "unknown") return catalogProvider;
   }
   const value = model?.toLowerCase() ?? "";
-  if (value.startsWith("kimi-")) return "kimi";
-  if (value.startsWith("claude-")) return "claude";
-  if (value.startsWith("gpt-")) return "codex";
-  if (value.startsWith("gemini-")) return "antigravity";
-  if (value.startsWith("deepseek-") || value.startsWith("opencode/deepseek-")) return "deepseek";
+  const match = catalog.provider_model_prefixes.find(({ prefix }) => value.startsWith(prefix));
+  if (match) return match.provider;
   if (isRecord(usage) && isRecord(usage.model_usage)) return "claude";
   return "unknown";
 }

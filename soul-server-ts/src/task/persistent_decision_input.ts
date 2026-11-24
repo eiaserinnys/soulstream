@@ -8,7 +8,7 @@ import {
 } from "../auth/provider_usage_observation.js";
 import type { ProviderLimits } from "../auth/provider_limits.js";
 import type { ProviderUsageCommandHandler } from "../auth/provider_usage.js";
-import { DEFAULT_CONFIG, GENERATION_COST_SEEDS, firstCallCacheEstimate } from "./persistent_decision_config.js";
+import { DEFAULT_CONFIG, firstCallCacheEstimate, type FirstCallCacheBin } from "./persistent_decision_config.js";
 import { findModelRow, UnknownModelPresetError } from "@soulstream/model-catalog";
 import { extractPersistentGeneration } from "./task_metadata.js";
 import type { GenerationCostProfile } from "./persistent_generation_cost.js";
@@ -126,16 +126,19 @@ export async function buildPersistentDecisionInput(
   const catalog = deps.modelCatalog.snapshot();
   const generationCosts: Record<string, GenerationCostProfile | undefined> = {};
   const cacheFractions: Record<string, number | null> = {};
+  const cacheBins: Record<string, FirstCallCacheBin[] | undefined> = {};
   const idle = (now.getTime() - Date.parse(lastCallEndedAt)) / 1000;
   for (const [preset, provider] of Object.entries(presetProviders)) {
     if (provider !== "antigravity") continue;
+    const decision = catalog.presets.find((entry) => entry.id === preset)?.persistent_decision;
+    cacheBins[preset] = decision?.first_call_cache_bins;
     const model = deps.modelCatalog.resolve(preset).model;
     const row = findModelRow(catalog, model);
     const rates = row?.provider === "antigravity" ? row.rates : null;
     if (!rates?.input || rates.cache_read === null || rates.output === null) continue;
     const read = rates.cache_read / rates.input;
     const out = rates.output / rates.input;
-    const seed = GENERATION_COST_SEEDS[preset as keyof typeof GENERATION_COST_SEEDS];
+    const seed = decision?.generation_cost_seed;
     const states = [...generationMetadataEvents].sort((a, b) => b.id - a.id)
       .map(event => extractPersistentGeneration([{ type: "persistent_generation", value: event.payload.value }]));
     if (task.persistentGeneration) states.unshift(task.persistentGeneration);
@@ -182,7 +185,7 @@ export async function buildPersistentDecisionInput(
         source: seed.source, sampleCount: seed.sampleCount, priceVersion: catalog.price_snapshot.price_version,
       };
     }
-    cacheFractions[preset] = firstCallCacheEstimate(preset, idle).fraction;
+    cacheFractions[preset] = firstCallCacheEstimate(decision?.first_call_cache_bins, idle).fraction;
   }
 
   return {
@@ -199,6 +202,7 @@ export async function buildPersistentDecisionInput(
     checkpoint_tokens_by_preset: checkpointTokens,
     generation_cost_by_preset: generationCosts,
     first_call_cache_fraction_by_preset: cacheFractions,
+    first_call_cache_bins_by_preset: cacheBins,
     context_max_tokens: task.claudeContextUsage?.maxTokens ?? contextUsage?.maxTokens ?? 1_000_000,
     accounts,
     ...(options.limitResetAt ? { limit_reset_at: options.limitResetAt } : {}),

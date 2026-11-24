@@ -401,6 +401,11 @@ price_snapshot:
   refreshed_model_rows: {}
   sources: {}
   assumptions: []
+task_defaults:
+  turn_summary: {model_preset: p1}
+  turn_story: {model_preset: p1}
+  instruction_extraction: {model_preset: p1}
+provider_model_prefixes: []
 persistent_defaults:
   model_preset: p1
   fallback_models:
@@ -706,6 +711,18 @@ describe("model catalogue schema validation", () => {
     expect(() => parseModelCatalogYaml(changed({ ...defaults, profiles: {} }))).toThrow();
   });
 
+
+  it("stores decision data and rejects task defaults pointing at missing presets", () => {
+    const hydrogen = catalog.presets.find((preset) => preset.id === "gemini-4-hydrogen")!;
+    expect(hydrogen.persistent_decision?.first_call_cache_bins?.[0]).toEqual([60, 590944, 607686, 5]);
+    expect(hydrogen.persistent_decision?.generation_cost_seed?.source).toBe("hydrogen-pas-generation-296");
+    expect(catalog.provider_model_prefixes[0]).toEqual({ prefix: "kimi-", provider: "kimi" });
+    expect(catalog.task_defaults.turn_summary.model_preset).toBe("codex-5.6-terra");
+    for (const [task, preset] of [["turn_summary", "codex-5.6-terra"], ["turn_story", "codex-5.6-terra"], ["instruction_extraction", "codex-6.2-sol"]]) {
+      const missing = REPOSITORY_CATALOG_YAML.replace(`${task}: {model_preset: ${preset}}`, `${task}: {model_preset: missing}`);
+      expect(() => parseModelCatalogYaml(missing)).toThrow(new RegExp(`${task}.*missing`));
+    }
+  });
   it("rejects duplicate preset ids", () => {
     expect(() => parseModelCatalogYaml(BASE_CATALOG_YAML.replace("  - id: p2", "  - id: p1")))
       .toThrow(/Duplicate model preset id/);

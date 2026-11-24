@@ -1,5 +1,4 @@
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
-import { resolveCodexModelReasoningEffort } from "../codex_adapter.js";
 import type { EngineExecuteParams } from "../protocol.js";
 import {
   isSoulstreamInternalMcpServer,
@@ -98,7 +97,7 @@ export function buildTurnStartParams(
     sandboxPolicy: { type: "dangerFullAccess" },
     permissions: null,
     model,
-    effort: resolveCodexModelReasoningEffort(model, params.reasoningEffort) ?? null,
+    effort: params.reasoningEffort ?? null,
     summary: null,
     personality: null,
     outputSchema: null,

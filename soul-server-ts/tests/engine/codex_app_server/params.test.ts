@@ -402,7 +402,7 @@ describe("Codex app-server parameter builders", () => {
     expect(JSON.stringify(params)).not.toContain('"serviceTier"');
   });
 
-  it("drops reasoning effort for non-reasoning models without changing the model", () => {
+  it("passes requested effort through for older model names", () => {
     expect(
       buildTurnStartParams(
         "thread-1",
@@ -415,7 +415,7 @@ describe("Codex app-server parameter builders", () => {
       ),
     ).toMatchObject({
       model: "gpt-4o",
-      effort: null,
+      effort: "xhigh",
     });
   });
 });

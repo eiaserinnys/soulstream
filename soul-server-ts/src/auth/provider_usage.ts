@@ -963,11 +963,8 @@ function claudeQuotaLabel(
   const modelKey = key.slice("seven_day_".length);
   const dynamicLabel = optionalString(entry.display_name);
   const catalogLabel = findClaudePresetLabel(modelKey, modelPresets);
-  const legacyLabel: Record<string, string> = {
-    sonnet: "Sonnet",
-    opus: "Opus",
-  };
-  const modelLabel = dynamicLabel ?? catalogLabel ?? legacyLabel[modelKey];
+  const lastPart = modelKey.split("_").at(-1) ?? "";
+  const modelLabel = dynamicLabel ?? catalogLabel ?? (lastPart.charAt(0).toUpperCase() + lastPart.slice(1));
   return modelLabel ? `7일 (${modelLabel})` : key;
 }
 

@@ -39,6 +39,7 @@ import {
 } from "../src/runtime/child_process_env.js";
 
 import { addVirtualFile, resetVirtualFs } from "./helpers/virtual_fs.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -255,13 +256,51 @@ describe("turn summary prompt", () => {
 });
 
 describe("TurnSummaryConfigService", () => {
+  it("resolves each catalog task default and lets all local model overrides win", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-catalog-"));
+    const path = join(dir, "turn-summary.yaml");
+    const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8")
+      .replace(/^model:.*\n|^story_model:.*\n|^instruction_extraction_model:.*\n/gm, "");
+    writeFileSync(path, source, "utf8");
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog());
+    expect(service.read()).toMatchObject({ model: "gpt-5.6-terra", storyModel: "gpt-5.6-terra", instructionExtractionModel: "gpt-6.2-sol" });
+    writeFileSync(join(dir, "turn-summary.local.yaml"), "model: one\nstory_model: two\ninstruction_extraction_model: three\n", "utf8");
+    expect(service.read()).toMatchObject({ model: "one", storyModel: "two", instructionExtractionModel: "three" });
+  });
+
+  it("resolves changed task defaults from the supplied catalog", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-changed-catalog-"));
+    const path = join(dir, "turn-summary.yaml");
+    const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8");
+    writeFileSync(path, source, "utf8");
+    const catalog = repositoryModelCatalog().snapshot();
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, {
+      snapshot: () => ({ ...catalog, task_defaults: {
+        turn_summary: { model_preset: "codex-6.2-sol" },
+        turn_story: { model_preset: "codex-6.1-terra" },
+        instruction_extraction: { model_preset: "codex-5.6-luna" },
+      } }),
+    });
+    expect(service.read()).toMatchObject({ model: "gpt-6.2-sol", storyModel: "gpt-6.1-terra", instructionExtractionModel: "gpt-5.6-luna" });
+  });
+
+  it("rejects a task preset whose backend differs from the configured provider", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-provider-"));
+    const path = join(dir, "turn-summary.yaml");
+    const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8")
+      .replace(/^model:.*\n|^story_model:.*\n|^instruction_extraction_model:.*\n/gm, "")
+      .replace("provider: codex", "provider: openai-api");
+    writeFileSync(path, source, "utf8");
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog());
+    expect(() => service.read()).toThrow(/backend.*provider/i);
+  });
   it("uses the disabled repository default when no local overlay exists", () => {
     const path = fileURLToPath(
       new URL("../config/turn-summary.yaml", import.meta.url),
     );
     const service = new TurnSummaryConfigService(path, {
       warn: vi.fn(),
-    });
+    }, repositoryModelCatalog());
 
     expect(service.read()).toMatchObject({
       enabled: false,
@@ -337,7 +376,7 @@ describe("TurnSummaryConfigService", () => {
     const path = join(dir, "turn-summary.yaml");
     const service = new TurnSummaryConfigService(path, {
       warn: vi.fn(),
-    });
+    }, repositoryModelCatalog());
 
     writeFileSync(path, yamlConfig("gpt-5.6-terra", false), "utf8");
     writeFileSync(
@@ -364,7 +403,7 @@ describe("TurnSummaryConfigService", () => {
     const path = join(dir, "turn-summary.yaml");
     const service = new TurnSummaryConfigService(path, {
       warn: vi.fn(),
-    });
+    }, repositoryModelCatalog());
 
     writeFileSync(path, yamlConfig("gpt-5.6-luna", false), "utf8");
     writeFileSync(
@@ -387,7 +426,7 @@ describe("TurnSummaryConfigService", () => {
     const warnings: unknown[] = [];
     const service = new TurnSummaryConfigService(path, {
       warn: (...args) => warnings.push(args),
-    });
+    }, repositoryModelCatalog());
 
     writeFileSync(path, yamlConfig("gpt-5.6-terra", false), "utf8");
     writeFileSync(localPath, "enabled: true\n", "utf8");
@@ -405,7 +444,7 @@ describe("TurnSummaryConfigService", () => {
     const warnings: unknown[] = [];
     const service = new TurnSummaryConfigService(path, {
       warn: (...args) => warnings.push(args),
-    });
+    }, repositoryModelCatalog());
 
     writeFileSync(path, yamlConfig("gpt-5.6-terra", false), "utf8");
     expect(service.read().enabled).toBe(false);

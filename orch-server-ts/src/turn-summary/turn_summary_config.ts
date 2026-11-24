@@ -3,6 +3,8 @@ import { basename, dirname, extname, join } from "node:path";
 
 import { parse } from "yaml";
 import { z } from "zod";
+import { resolveModelPreset } from "@soulstream/model-catalog";
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 
 export type TurnSummaryLogger = {
   readonly debug?: (...args: unknown[]) => void;
@@ -29,10 +31,10 @@ const TurnSummaryConfigFileSchema = z
     catch_up_window_hours: z.number().int().positive(),
     catch_up_max_jobs_per_round: z.number().int().positive(),
     provider: z.enum(["codex", "openai-api"]),
-    model: z.string().trim().min(1),
+    model: z.string().trim().min(1).optional(),
     story_model: z.string().trim().min(1).optional(),
     reasoning_effort: z.enum(["minimal", "low", "medium", "high", "xhigh"]),
-    instruction_extraction_model: z.string().trim().min(1),
+    instruction_extraction_model: z.string().trim().min(1).optional(),
     instruction_extraction_reasoning_effort: z.enum([
       "minimal",
       "low",
@@ -121,10 +123,10 @@ const TurnSummaryConfigSchema = TurnSummaryConfigFileSchema
     catchUpWindowHours: value.catch_up_window_hours,
     catchUpMaxJobsPerRound: value.catch_up_max_jobs_per_round,
     provider: value.provider,
-    model: value.model,
-    storyModel: value.story_model ?? value.model,
+    model: value.model!,
+    storyModel: value.story_model ?? value.model!,
     reasoningEffort: value.reasoning_effort,
-    instructionExtractionModel: value.instruction_extraction_model,
+    instructionExtractionModel: value.instruction_extraction_model!,
     instructionExtractionReasoningEffort:
       value.instruction_extraction_reasoning_effort,
     timeoutMs: value.timeout_ms,
@@ -143,6 +145,7 @@ export class TurnSummaryConfigService {
   constructor(
     private readonly configPath: string,
     private readonly logger: TurnSummaryLogger,
+    private readonly modelCatalog: ModelCatalogSource,
   ) {}
 
   read(): TurnSummaryConfig {
@@ -155,7 +158,26 @@ export class TurnSummaryConfigService {
           parse(readFileSync(localConfigPath, "utf8")),
         )
         : {};
-      const config = TurnSummaryConfigSchema.parse({ ...base, ...overlay });
+      const catalog = this.modelCatalog.snapshot();
+      const provider = overlay.provider ?? base.provider;
+      const resolveTaskModel = (presetId: string): string => {
+        const preset = resolveModelPreset(catalog, presetId);
+        if (preset.backend !== provider) {
+          throw new Error(`Task model preset backend ${preset.backend} does not match provider ${provider}`);
+        }
+        return preset.model;
+      };
+      const defaults = catalog.task_defaults;
+      const model = resolveTaskModel(defaults.turn_summary.model_preset);
+      const storyModel = resolveTaskModel(defaults.turn_story.model_preset);
+      const instructionModel = resolveTaskModel(defaults.instruction_extraction.model_preset);
+      const merged = { ...base, ...overlay };
+      const config = TurnSummaryConfigSchema.parse({
+        ...merged,
+        model: merged.model ?? model,
+        story_model: merged.story_model ?? (base.model === undefined ? storyModel : merged.model),
+        instruction_extraction_model: merged.instruction_extraction_model ?? instructionModel,
+      });
       this.lastSuccessful = config;
       return config;
     } catch (error) {

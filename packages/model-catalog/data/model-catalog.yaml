@@ -7,6 +7,19 @@ groups: [china]
 # JSON flow mapping keeps these defaults readable before installer dependencies exist.
 install_defaults: {"backends":{"claude":"claude-opus","codex":"codex-6.2-sol","antigravity":"gemini-4-carbon"},"profiles":{"card-orchestrator":"claude-sonnet"}}
 
+task_defaults:
+  turn_summary: {model_preset: codex-5.6-terra}
+  turn_story: {model_preset: codex-5.6-terra}
+  instruction_extraction: {model_preset: codex-6.2-sol}
+
+provider_model_prefixes:
+  - {prefix: "kimi-", provider: kimi}
+  - {prefix: "claude-", provider: claude}
+  - {prefix: "gpt-", provider: codex}
+  - {prefix: "gemini-", provider: antigravity}
+  - {prefix: "deepseek-", provider: deepseek}
+  - {prefix: "opencode/deepseek-", provider: deepseek}
+
 presets:
   - id: claude-haiku
     label: Claude - Haiku
@@ -224,6 +237,27 @@ presets:
     label: Gemini - 4 Argon
     backend: antigravity
     model: gemini-4-argon
+    persistent_decision:
+      first_call_cache_bins:
+        - [60, 3836757, 4772657, 29]
+        - [180, 3156926, 4616740, 26]
+        - [240, 1291316, 1520147, 9]
+        - [300, 68117, 1984754, 11]
+        - [600, 1018136, 5053005, 29]
+        - [900, 702269, 3722782, 23]
+        - [1800, 445443, 3167534, 17]
+        - [3300, 0, 961983, 5]
+        - [3600, 0, 244153, 1]
+        - [.inf, 228340, 1276231, 8]
+      generation_cost_seed:
+        baselineTokens: 120305.5
+        growthTokensPerCall: 3038.625
+        input: 1511140.5
+        cached: 1343320.5
+        output: 8949.5
+        reasoning: 5068
+        source: argon-cross-workload-median
+        sampleCount: 102
     supported_efforts: [low, medium, high]
     default_effort: high
     trusted_execution: true
@@ -238,6 +272,27 @@ presets:
     label: Gemini - 4 Hydrogen
     backend: antigravity
     model: gemini-4-hydrogen
+    persistent_decision:
+      first_call_cache_bins:
+        - [60, 590944, 607686, 5]
+        - [180, 575717, 588572, 4]
+        - [240, 341836, 441173, 4]
+        - [300, 0, 0, 0]
+        - [600, 0, 0, 0]
+        - [900, 0, 0, 0]
+        - [1800, 101127, 523094, 3]
+        - [3300, 0, 91181, 1]
+        - [3600, 0, 0, 0]
+        - [.inf, 0, 0, 0]
+      generation_cost_seed:
+        baselineTokens: 130418
+        growthTokensPerCall: 3148.6666666666665
+        input: 695025
+        cached: 565185
+        output: 8441
+        reasoning: 6693
+        source: hydrogen-pas-generation-296
+        sampleCount: 1
     supported_efforts: [low, medium, high, xhigh]
     default_effort: high
     trusted_execution: true
