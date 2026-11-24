@@ -14,9 +14,7 @@ export function AtomDashboardButton({ url, appearance = "default" }: { url: stri
       appearance={appearance}
       onClick={() => { window.open(url, "_blank", "noopener,noreferrer"); }}
     >
-      {appearance === "bare"
-        ? <Atom className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
-        : <Atom className="size-5" aria-hidden="true" />}
+      <Atom className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
     </DashboardIconCap>
   );
 }

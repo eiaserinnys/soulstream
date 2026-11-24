@@ -102,7 +102,7 @@ export function agentLoginRequestErrorMessage(provider: AgentLoginProvider, erro
     if (code === "node_not_connected") return "노드가 연결되어 있지 않습니다. 연결을 확인한 뒤 다시 시도해 주세요.";
     if (code === "login_not_found") return "이 로그인 요청을 찾을 수 없습니다. 다시 시도해 주세요.";
     if (code === "login_not_ready") return "아직 코드를 받을 수 있는 단계가 아닙니다.";
-    if (code === "code_not_expected") return `${label}은 코드를 붙여 넣지 않고 브라우저에서 승인합니다.`;
+    if (code === "code_not_expected") return "이 로그인은 코드를 붙여 넣지 않고 브라우저에서 승인합니다.";
     if (error.status === 403) return "관리자만 코딩 에이전트를 연결할 수 있습니다.";
     if (error.status === 502) return "노드의 워커가 요청을 처리하지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
     return `요청에 실패했습니다 (HTTP ${error.status}).`;

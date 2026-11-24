@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, type UsageSummaryProvider } from "@seosoyoung/soul-ui";
-import { AGENT_LOGIN_PROVIDER_LABEL, type AgentLoginProvider } from "../../lib/agent-login-api";
+import type { AgentLoginProvider } from "../../lib/agent-login-api";
 import { AgentLoginSheet } from "./AgentLoginSheet";
 
 type Phase = "idle" | "confirming" | "sheet";
@@ -20,23 +20,50 @@ export function useAgentLoginRowAction({ nodeId, provider, usage, request, onUsa
   onUsageChanged?: () => void;
 }): { action: ReactNode; panel: ReactNode } {
   const [phase, setPhase] = useState<Phase>("idle");
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const confirmCancelRef = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+
+  // 확인줄이 열리면 첫 동작(취소)에 초점을 둔다. 닫으면 눌렀던 단추로 돌아온다.
+  useEffect(() => {
+    if (phase === "confirming") confirmCancelRef.current?.focus();
+    if (phase === "idle" && returnFocus.current) {
+      returnFocus.current = false;
+      buttonRef.current?.focus();
+    }
+  }, [phase]);
+
   if (provider === null || usage.login_supported !== true) return { action: null, panel: null };
 
-  const label = AGENT_LOGIN_PROVIDER_LABEL[provider];
   const connected = usage.status === "auto";
+  const close = () => {
+    returnFocus.current = true;
+    setPhase("idle");
+  };
+  // 열려 있는 동안에도 단추를 비활성으로 두지 않는다. 비활성이 되면 눌렀던 단추의 초점이 사라진다.
   const action = <Button
+    ref={buttonRef}
     size="sm"
     variant={connected ? "outline" : "default"}
     data-testid={`agent-login-button-${provider}`}
-    disabled={phase !== "idle"}
-    onClick={() => setPhase(connected ? "confirming" : "sheet")}
+    aria-expanded={phase !== "idle"}
+    onClick={() => { if (phase === "idle") setPhase(connected ? "confirming" : "sheet"); }}
   >{connected ? "다시 연결" : "연결"}</Button>;
 
   const panel = phase === "confirming"
-    ? <div className="c724-confirm-bar" data-testid={`agent-login-confirm-${provider}`}>
-      <span className="c724-confirm-text">{label}을 다시 연결할까요? 지금의 로그인이 새 로그인으로 바뀝니다.</span>
+    ? <div
+      className="c724-confirm-bar"
+      data-testid={`agent-login-confirm-${provider}`}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      }}
+    >
+      <span className="c724-confirm-text">다시 연결할까요? 지금 로그인은 새 로그인으로 바뀝니다.</span>
       <div className="c724-confirm-actions">
-        <Button variant="outline" size="sm" onClick={() => setPhase("idle")}>취소</Button>
+        <Button ref={confirmCancelRef} variant="outline" size="sm" onClick={close}>취소</Button>
         <Button size="sm" onClick={() => setPhase("sheet")}>다시 연결</Button>
       </div>
     </div>
@@ -45,7 +72,7 @@ export function useAgentLoginRowAction({ nodeId, provider, usage, request, onUsa
         nodeId={nodeId}
         provider={provider}
         request={request}
-        onClose={() => setPhase("idle")}
+        onClose={close}
         onDone={() => onUsageChanged?.()}
       />
       : null;

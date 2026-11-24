@@ -118,8 +118,8 @@ export function PersistentEmptyStateReviewSamples() {
   const failing = { bootstrap: async (): Promise<{ created: boolean; session_id: string }> => { throw new Error("서버가 응답하지 않았습니다 (503)."); } };
   const scenes = [
     { id: "manual", label: "bootstrap 꺼짐 · 영구 세션 만들기", api: pending, defaults: emptyDefaults({}), admin: true },
-    { id: "unavailable-admin", label: "연결 필요 · 관리자", api: pending, defaults: emptyDefaults({ bootstrap_enabled: true, unavailable_reason: "쓸 수 있는 모델이 없습니다. 코딩 에이전트를 먼저 연결해 주십시오." }), admin: true },
-    { id: "unavailable-user", label: "연결 필요 · 관리자가 아님", api: pending, defaults: emptyDefaults({ bootstrap_enabled: true, unavailable_reason: "쓸 수 있는 모델이 없습니다. 코딩 에이전트를 먼저 연결해 주십시오." }), admin: false },
+    { id: "unavailable-admin", label: "연결 필요 · 관리자", api: pending, defaults: emptyDefaults({ bootstrap_enabled: true, unavailable_reason: "기본 모델 sample-sol을(를) 지금 쓸 수 없습니다." }), admin: true },
+    { id: "unavailable-user", label: "연결 필요 · 관리자가 아님", api: pending, defaults: emptyDefaults({ bootstrap_enabled: true, unavailable_reason: "기본 모델 sample-sol을(를) 지금 쓸 수 없습니다." }), admin: false },
     { id: "creating", label: "기본 영구 세션을 만드는 중", api: pending, defaults: emptyDefaults({ bootstrap_enabled: true }), admin: true },
     { id: "failed", label: "만들기 실패 · 다시 시도", api: failing, defaults: emptyDefaults({ bootstrap_enabled: true }), admin: true },
   ];

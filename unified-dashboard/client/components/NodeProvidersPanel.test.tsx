@@ -413,6 +413,27 @@ describe("NodeProvidersPanel", () => {
       expect(host.querySelector('[data-testid="agent-login-sheet-stub"]')?.getAttribute("data-provider")).toBe("antigravity");
     });
 
+    it("moves focus into the confirm bar, keeps the row button enabled, and returns focus to it on Esc", async () => {
+      await mount(summaryNode({ antigravity: provider([], { status: "auto", login_supported: true }) }), legacyRequest());
+      const button = loginButton("antigravity")!;
+      await act(async () => button.click());
+      const confirm = host.querySelector<HTMLElement>('[data-testid="agent-login-confirm-antigravity"]')!;
+      expect(document.activeElement).toBe([...confirm.querySelectorAll("button")].find((item) => item.textContent === "취소"));
+      expect(button.disabled).toBe(false);
+      expect(confirm.textContent).not.toMatch(/Antigravity[은는이가을를]/);
+      await act(async () => { document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+      expect(host.querySelector('[data-testid="agent-login-confirm-antigravity"]')).toBeNull();
+      expect(document.activeElement).toBe(loginButton("antigravity"));
+    });
+
+    it("returns focus to the row button when the login sheet closes", async () => {
+      await mount(summaryNode({ codex: provider([], { status: "not_configured", login_supported: true }) }), legacyRequest());
+      await act(async () => loginButton("codex")!.click());
+      expect(loginButton("codex")!.disabled).toBe(false);
+      await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "닫기")!.click());
+      expect(document.activeElement).toBe(loginButton("codex"));
+    });
+
     it("re-reads the usage summary when the sheet reports done", async () => {
       const onUsageChanged = vi.fn();
       await act(async () => root.render(

@@ -66,6 +66,9 @@
 .config-dialog .config-detail .config-pas-open-on-start { padding:0 0 var(--v3-space-6); }
 .config-dialog .persistent-settings-read-only-value { min-width:0; overflow-wrap:anywhere; white-space:normal; color:var(--foreground); font:var(--v3-type-body) var(--v3-font-family); }
 .config-dialog .config-detail .persistent-session-quota-rows [data-testid="config-field-row"]:last-child { border-bottom:0; }
+/* 영구 세션 상세는 절 위의 선이 구분을 맡는다. 절의 마지막 행 아래 선은 그 선과 붙어 두 줄이 되므로 뺀다. */
+.config-dialog .config-detail [data-section] > [data-testid="config-field-row"]:last-child,
+.config-dialog .config-detail [data-section] > div > [data-testid="config-field-row"]:last-child { border-bottom:0; }
 .approved-dialog :is(.config-category-item,.config-back,.config-advanced > summary):focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); border-radius: var(--radius-floor); }
 
 .config-dialog .session-story-settings-content { display:flex; flex-direction:column; gap:var(--v3-space-6); }

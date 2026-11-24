@@ -97,6 +97,9 @@
 @media (max-width: 767px) {
   .persistent-session-screen { --pas-task-toggle-right: var(--v3-space-5); }
   .persistent-session-brand > span { display: none; }
+  /* 좁은 폭에서도 홈과 세션 바꾸기까지 단추가 최대 여섯이다. 대시보드 툴바의 좁은 폭 규칙처럼 40px 단추와 좁은 간격으로 맞춰 에이전트 이름 자리를 남긴다. */
+  .persistent-session-header .dashboard-toolbar-actions { gap: var(--v3-space-1); }
+  .persistent-session-header .dashboard-icon-cap { width: 40px; height: 40px; }
   .persistent-session-task-toggle { top: calc(var(--pas-header-height) + var(--v3-space-2)); right: var(--pas-task-toggle-right); }
   .persistent-session-tasks { top: calc(var(--pas-header-height) + var(--v3-space-2)); right: 0; left: 0; width: auto; padding-inline: var(--v3-space-5); background: var(--persistent-session-paper); }
 }

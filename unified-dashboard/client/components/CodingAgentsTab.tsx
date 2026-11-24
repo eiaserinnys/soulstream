@@ -51,7 +51,7 @@ export function CodingAgentsTab({ request, sampleNodes }: {
     </SettingsListSection>
   </>}>
     {selected ? <>
-      <SettingsDetailHeader title={selected.nodeId} subtitle="이 노드에서 쓸 코딩 에이전트 로그인" />
+      <SettingsDetailHeader title={selected.nodeId} />
       {selected.status === "connected"
         ? <NodeProvidersPanel nodeId={selected.nodeId} request={send} node={summaryNode} loading={usage.loading && summaryNode === null} onUsageChanged={usage.retry} />
         : <SettingsAlert><span data-v3-selectable-content="true">노드가 연결되어 있지 않아 로그인할 수 없습니다.</span></SettingsAlert>}

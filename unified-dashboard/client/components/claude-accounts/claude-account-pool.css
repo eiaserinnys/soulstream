@@ -256,6 +256,9 @@
 .c724-confirm-text {
   font: var(--v3-type-body) var(--v3-font-family);
   color: var(--foreground);
+  /* 한국어는 어절 단위로 줄을 바꾼다. 아주 긴 토큰만 어디서든 끊는다. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .c724-confirm-actions,
@@ -274,6 +277,11 @@
   border-radius: var(--radius-floor);
   border: 1px solid color-mix(in oklch, var(--v3-accent) 50%, var(--border));
   background: color-mix(in oklch, var(--background) 82%, transparent);
+}
+
+/* 프로그램이 시트에 초점을 주는 동안 사각 외곽선이 비치지 않게 한다. 안의 단추는 프로젝트 초점 고리를 쓴다. */
+.c724-auth-sheet:focus-visible {
+  outline: none;
 }
 
 .c724-auth-sheet-header {
@@ -309,6 +317,8 @@
   color: color-mix(in oklch, var(--color-red-500) 58%, var(--foreground));
   /* 오류 문구는 읽고 옮겨 적는 글이라 선택된다. */
   user-select: text;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .c724-login-error svg {

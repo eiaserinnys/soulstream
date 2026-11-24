@@ -44,6 +44,7 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
   const activeLogin = useRef<{ loginId: string; shouldCancel: boolean } | null>(null);
   const unmounted = useRef(false);
   const doneNotified = useRef(false);
+  const sheetRef = useRef<HTMLElement>(null);
   const context = useRef({ nodeId, request, onDone });
   context.current = { nodeId, request, onDone };
 
@@ -163,6 +164,19 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
     }
   }
 
+  // 초점은 시트가 지금 기다리는 첫 동작으로 간다. 열 때는 시트 자신(연결 단추가 비활성이 되어도 초점이 사라지지 않게),
+  // 주소가 오면 「주소 열기」(Antigravity는 코드 입력칸), 실패하면 「다시 시도」.
+  const focusKey = flow ? `${flow.state}:${flow.expects_code ? "code" : "open"}` : message ? "error" : "starting";
+  useEffect(() => {
+    const root = sheetRef.current;
+    if (!root) return;
+    const target = focusKey === "url_ready:code" ? root.querySelector<HTMLElement>("input")
+      : focusKey.startsWith("url_ready") ? root.querySelector<HTMLElement>("a[href]")
+        : focusKey === "error" || focusKey.startsWith("failed") || focusKey.startsWith("cancelled") ? root.querySelector<HTMLElement>("[data-retry]")
+          : null;
+    (target ?? root).focus();
+  }, [focusKey]);
+
   const authUrl = safeAuthUrl(flow?.auth_url ?? null);
   const terminal = flow !== null && isTerminalAgentLoginState(flow.state);
   const failedText = flow?.state === "failed" ? agentLoginFailureMessage(provider, flow.error?.code) : null;
@@ -171,6 +185,8 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
   const showsDeviceCode = flow?.state === "url_ready" && !flow.expects_code && Boolean(flow.user_code);
 
   return <section
+    ref={sheetRef}
+    tabIndex={-1}
     className="c724-auth-sheet"
     data-testid="agent-login-sheet"
     data-provider-id={provider}
@@ -239,7 +255,7 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
     </div> : null}
 
     {(flow === null && message) || (flow !== null && (flow.state === "failed" || flow.state === "cancelled")) ? <div className="c724-login-actions">
-      <Button variant="outline" size="sm" disabled={busy} onClick={() => void start()}>
+      <Button data-retry variant="outline" size="sm" disabled={busy} onClick={() => void start()}>
         <RotateCcw className="size-4" aria-hidden="true" /> 다시 시도
       </Button>
     </div> : null}

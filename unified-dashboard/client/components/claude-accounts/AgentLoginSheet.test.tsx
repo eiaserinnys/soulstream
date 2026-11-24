@@ -308,4 +308,43 @@ describe("AgentLoginSheet", () => {
     expect(host.querySelector("a[href]")).toBeNull();
     expect(text()).toContain("인증 주소를 열 수 없습니다");
   });
+
+  describe("focus", () => {
+    const sheet = () => host.querySelector<HTMLElement>('[data-testid="agent-login-sheet"]')!;
+
+    it("holds focus on the sheet while the login starts, then moves it to the address button", async () => {
+      let release: (response: Response) => void = () => undefined;
+      const server = fakeServer({ get: [flow("url_ready", "codex", { auth_url: AUTH_URL, user_code: USER_CODE })], del: [flow("cancelled", "codex")] });
+      const slow = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "POST") return new Promise<Response>((resolve) => { release = resolve; });
+        return server.request(input, init);
+      }) as typeof fetch;
+      await open("codex", slow);
+      expect(document.activeElement).toBe(sheet());
+      expect(text()).toContain("로그인을 준비하고 있습니다");
+      await act(async () => { release(Response.json(flow("url_ready", "codex", { auth_url: AUTH_URL, user_code: USER_CODE }))); });
+      expect(document.activeElement).toBe(host.querySelector("a[href]"));
+    });
+
+    it("puts focus on the code input when Antigravity asks for a code", async () => {
+      const server = fakeServer({ post: [flow("url_ready", "antigravity", { auth_url: AUTH_URL })], get: [flow("url_ready", "antigravity", { auth_url: AUTH_URL })] });
+      await open("antigravity", server.request);
+      expect(document.activeElement).toBe(host.querySelector("input"));
+    });
+
+    it("puts focus on the retry button when the login fails", async () => {
+      const server = fakeServer({ post: [flow("failed", "codex", { error: { code: "timeout", message: "x" } })] });
+      await open("codex", server.request);
+      expect(document.activeElement?.textContent).toContain("다시 시도");
+    });
+
+    it("cancels the login and closes on Esc", async () => {
+      const onClose = vi.fn();
+      const server = fakeServer({ post: [flow("url_ready", "codex", { auth_url: AUTH_URL, user_code: USER_CODE })], get: [flow("url_ready", "codex", { auth_url: AUTH_URL, user_code: USER_CODE })], del: [flow("cancelled", "codex")] });
+      await open("codex", server.request, { onClose });
+      await act(async () => { document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+      expect(server.count("DELETE")).toBe(1);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
 });

@@ -1,223 +1,20 @@
 #!/usr/bin/env python3
 """Capture the PAS first window, the merged settings window, the coding agents tab, and the toolbar with fake responses.
 
-카드 #1787 U17. 서버 PR(U18a 로그인, U18b 기본 PAS)이 없어도 약속 문서의 모양대로 가짜 응답을 내려 화면을 찍는다.
-기준선(merge-base 빌드)이 있는 화면은 같은 이름 규칙으로 baseline- 접두어를 붙여 함께 찍는다.
-일회용 코드와 인증 주소는 모두 가짜 값이다.
+카드 #1787 U17. 기준선(merge-base 빌드)이 있는 화면은 같은 이름 규칙으로 baseline- 접두어를 붙여 함께 찍는다.
+가짜 응답과 공용 도구는 settings_toolbar_fakes.py, 2차 보강 그림은 settings_toolbar_r2.py에 있다.
 """
 from __future__ import annotations
 
 import argparse
-import functools
-import http.server
-import json
-import threading
-from datetime import datetime, timedelta, timezone
+import sys
 from pathlib import Path
-from urllib.parse import urlsplit
 
-from playwright.sync_api import expect, sync_playwright
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-ROOT = Path(__file__).resolve().parents[2]
-DIST = ROOT / "unified-dashboard" / "dist"
-ATOM_URL = "https://atom.example.invalid"
-FAKE_USER_CODE = "WXYZ-1234"
-FAKE_PASTED_CODE = "pasted-fake-code-777"
-SESSION_ID = "components-session"
-INDEX: list[tuple[str, int, str]] = []
-CHECKS: list[dict] = []
+from playwright.sync_api import expect, sync_playwright  # noqa: E402
 
-
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def do_GET(self):
-        path = urlsplit(self.path).path
-        if path == "/components" or path.startswith("/persistent"):
-            self.path = "/index.html"
-        return super().do_GET()
-
-    def log_message(self, format, *args):
-        pass
-
-
-def serve(directory):
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Handler, directory=str(directory)))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server, f"http://127.0.0.1:{server.server_address[1]}"
-
-
-SETTINGS = {
-    "default_model": {"model_preset": "sample-sol", "reasoning_effort": None}, "fallback_models": [],
-    "show_generation_separator": True, "show_character": False, "animate_character": False, "show_jev_candidates": True,
-    "show_work_details": False, "show_turn_usage": True, "turn_usage_mode": "collapsed",
-}
-PAS = {
-    "session_id": SESSION_ID, "display_name": "검수 PAS", "node_id": "eiaserinnys", "folder_id": None, "agent_id": "roselin",
-    "agent_name": "로젤린", "persistent": True, "settings": SETTINGS,
-    "runtime": {"current_model": {"model_preset": "sample-sol", "reasoning_effort": None, "model": "sample-sol-model"}, "pending": None},
-}
-SUMMARY = {"agentSessionId": SESSION_ID, "displayName": "검수 PAS", "status": "running", "eventCount": 3, "agentId": "roselin", "agentName": "로젤린", "nodeId": "eiaserinnys", "backend": "codex", "createdAt": "2026-10-01T00:00:00Z", "updatedAt": "2026-10-01T00:00:00Z"}
-NODE = {"nodeId": "eiaserinnys", "host": "localhost", "port": 3105, "status": "connected", "capabilities": {}, "connectedAt": 0, "sessionCount": 1}
-MODEL_PRESETS = [{"id": "sample-sol", "label": "Sol", "backend": "codex", "available": True, "reason": None, "reason_label": None, "resets_at": None, "usage_warning": False}]
-CREATE_DEFAULTS = {"node_id": "eiaserinnys", "preferred_agent_id": "roselin", "settings": SETTINGS, "initial_instruction": "새 영구 에이전트 세션입니다."}
-UNAVAILABLE = "쓸 수 있는 모델이 없습니다. 코딩 에이전트를 먼저 연결해 주십시오."
-
-
-def quota(qid, label, window, percent):
-    return {"id": qid, "label": label, "window": window, "model": None, "remainingPercent": percent, "resetAt": 1_900_000_000}
-
-
-def provider(status, quotas=(), **extra):
-    base = {"status": status, "weeklyRemainingPercent": None, "weeklyResetAt": None, "shortRemainingPercent": None, "shortResetAt": None, "quotas": list(quotas)}
-    if quotas:
-        base.update(weeklyRemainingPercent=quotas[0]["remainingPercent"], weeklyResetAt=quotas[0]["resetAt"])
-    return {**base, **extra}
-
-
-def usage_summary(login_supported: bool):
-    """Codex는 연결 안 됨, Antigravity는 연결됨. login_supported는 서버가 더하는 새 필드다."""
-    extra = {"login_supported": True} if login_supported else {"login_supported": False}
-    return {
-        "generatedAt": "2026-11-24T00:00:00Z", "collectedAt": None,
-        "nodes": [{"nodeId": "eiaserinnys", "fetchedAt": "2026-11-24T00:00:00Z", "stale": False, "staleSince": None, "providers": {
-            "claude": provider("auto", [quota("claude:weekly", "7일", "7d", 66)], mode="legacy"),
-            "opencode_go": None,
-            "codex": provider("not_configured", **extra),
-            "antigravity": provider("auto", [quota("antigravity:weekly", "7일", "7d", 56)], **extra),
-        }}],
-    }
-
-
-def soon():
-    """Codex 기기 코드의 만료 시각. 열 때마다 14분 뒤로 둔다."""
-    return (datetime.now(timezone.utc) + timedelta(minutes=14)).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def flow(provider_id, state, **patch):
-    return {"login_id": f"fake-login-{provider_id}", "provider": provider_id, "state": state, "auth_url": None, "user_code": None,
-            "expects_code": provider_id == "antigravity", "expires_at": None, "error": None, **patch}
-
-
-class Fake:
-    """한 페이지가 부르는 API의 가짜 응답. 장면별 값은 속성으로 바꾼다."""
-
-    def __init__(self, atom=True, sessions="one", login_supported=True):
-        self.atom = atom
-        self.sessions = sessions  # one | two | manual | unavailable | bootstrap
-        self.login_supported = login_supported
-        self.flows: dict[str, dict] = {}
-        self.calls: list[tuple[str, str]] = []
-        self.held_bootstrap = None
-        self.login_posts = 0
-
-    def handle(self, route):
-        request = route.request
-        path = urlsplit(request.url).path
-        method = request.method
-        self.calls.append((method, path))
-        if path == "/api/health":
-            return route.fulfill(json={"healthy": True, "ready": True, "draining": False, "build_id": "dev"})
-        if path == "/api/status":
-            return route.fulfill(json={"status": "ok", "atom_public_url": ATOM_URL if self.atom else None})
-        if path == "/api/auth/status":
-            return route.fulfill(json={"authenticated": True, "user": {"email": "qa@example.test", "name": "QA", "isAdmin": True}})
-        if path == "/api/auth/config":
-            return route.fulfill(json={"authEnabled": True, "devModeEnabled": False})
-        if path == "/api/persistent-sessions" and method == "GET":
-            defaults = {**CREATE_DEFAULTS, "unavailable_reason": UNAVAILABLE if self.sessions == "unavailable" else None}
-            if self.sessions in ("unavailable", "bootstrap"):
-                defaults["bootstrap_enabled"] = True
-            sessions = {"one": [PAS], "two": [PAS, {**PAS, "session_id": "components-session-2", "display_name": "둘째 PAS"}]}.get(self.sessions, [])
-            return route.fulfill(json={"sessions": sessions, "total": len(sessions), "create_defaults": defaults})
-        if path == "/api/persistent-sessions/bootstrap" and method == "POST":
-            self.held_bootstrap = route  # 만드는 중 화면을 찍는 동안 응답하지 않는다.
-            return
-        if path == f"/api/persistent-sessions/{SESSION_ID}":
-            return route.fulfill(json={"session": PAS})
-        if path == f"/api/persistent-sessions/{SESSION_ID}/instructions":
-            return route.fulfill(json={"instructions": [{"id": "i-1", "text": "결정에 필요한 근거만 간결하게 알려 줍니다.", "source_turns": ["T195"], "created_at": "2026-10-06T10:00:00Z", "updated_at": "2026-10-06T11:00:00Z", "origin": "agent"}]})
-        if path == "/api/sessions":
-            return route.fulfill(json={"sessions": [SUMMARY], "total": 1})
-        if path == "/api/nodes":
-            return route.fulfill(json={"nodes": [NODE]})
-        if path == "/api/nodes/stream":
-            return route.fulfill(content_type="text/event-stream", body=f"event: snapshot\ndata: {json.dumps([NODE])}\n\n")
-        if path == "/api/sessions/stream":
-            return route.fulfill(content_type="text/event-stream", body=f"event: session_list\ndata: {json.dumps({'type': 'session_list', 'sessions': [SUMMARY], 'total': 1})}\n\n")
-        if path.endswith("/events"):
-            return route.fulfill(content_type="text/event-stream", body='event: history_sync\ndata: {"type":"history_sync","last_event_id":3,"is_live":true,"status":"running"}\n\n')
-        if path.endswith("/timeline"):
-            return route.fulfill(json={"messages": [], "next_cursor": None})
-        if path.endswith("/story"):
-            return route.fulfill(json={"highlight": None, "narrative": "세션 줄거리 예시입니다.", "unfolded_turn_summaries": [], "narrative_through_event_id": 0, "fold_count": 0, "updated_at": None})
-        if path.endswith("/model-presets"):
-            return route.fulfill(json={"model_presets": MODEL_PRESETS})
-        if path == "/api/usage/summary":
-            return route.fulfill(json=usage_summary(self.login_supported))
-        if path == "/api/config/settings":
-            return route.fulfill(json={"categories": []})
-        if path.endswith("/claude-auth/accounts"):
-            return route.fulfill(json={"mode": "legacy", "accounts": [], "pool": None, "fable_pool": None})
-        if path.endswith("/claude-auth/status"):
-            return route.fulfill(json={"has_token": True})
-        if path.endswith("/claude-auth/profile"):
-            return route.fulfill(json={"account": {"email": "qa@example.test", "display_name": "QA", "has_claude_max": True}})
-        if path.startswith("/api/claude-auth/central"):
-            return route.fulfill(json={"mode": "pool", "accounts": [], "pool": None, "fable_pool": None, "default_receive": True, "nodes": {}, "effective": []})
-        if path == "/cogito/briefs":
-            return route.fulfill(json={"nodes": []})
-        parts = path.split("/")
-        if "agent-logins" in parts:
-            return self.agent_login(route, method, parts)
-        return route.continue_()
-
-    def agent_login(self, route, method, parts):
-        tail = parts[parts.index("agent-logins") + 1:]
-        if method == "POST" and len(tail) == 1:  # /agent-logins/<provider>
-            self.login_posts += 1
-            current = self.flows[tail[0]]
-            return route.fulfill(status=202, json=current)
-        provider_id = next(key for key, value in self.flows.items() if value["login_id"] == tail[0])
-        if method == "POST" and tail[-1] == "code":
-            self.flows[provider_id] = self.after_code.get(provider_id, flow(provider_id, "verifying"))
-            return route.fulfill(json=self.flows[provider_id])
-        if method == "DELETE":
-            return route.fulfill(json={**self.flows[provider_id], "state": "cancelled"})
-        return route.fulfill(json=self.flows[provider_id])
-
-    after_code: dict[str, dict] = {}
-
-
-def new_page(browser, base, fake, width, height=900, theme="dark", preferences=None):
-    context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=theme, reduced_motion="reduce", locale="ko-KR", timezone_id="Asia/Seoul", service_workers="block")
-    page = context.new_page()
-    init = f"localStorage.setItem('soul-dashboard-theme','{theme}'); localStorage.setItem('ls.webglGlass','0');"
-    if preferences is not None:
-        init += f"localStorage.setItem('soulstream-pas-device:qa@example.test', {json.dumps(json.dumps(preferences))});"
-    page.add_init_script(init)
-    page.route("**/api/**", fake.handle)
-    page.route("**/cogito/**", fake.handle)
-    return context, page
-
-
-def shot(page, out: Path, name: str, width: int, state: str, locator=None):
-    target = locator if locator is not None else page
-    target.screenshot(path=str(out / name), animations="disabled")
-    INDEX.append((name, width, state))
-
-
-def toolbar_metrics(page, selector):
-    return page.evaluate("""(selector) => {
-        const bar = document.querySelector(selector);
-        const actions = bar.querySelector('.dashboard-toolbar-actions');
-        const buttons = [...actions.querySelectorAll('button')].map(b => { const r = b.getBoundingClientRect(); return { label: b.getAttribute('aria-label'), width: Math.round(r.width * 10) / 10, height: Math.round(r.height * 10) / 10, right: Math.round(r.right * 10) / 10 }; });
-        return { scrollWidth: bar.scrollWidth, clientWidth: bar.clientWidth, docScrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth, buttons };
-    }""", selector)
-
-
-def check(label, condition, detail):
-    CHECKS.append({"check": label, "ok": bool(condition), "detail": detail})
-    assert condition, f"{label}: {json.dumps(detail, ensure_ascii=False)}"
-
+from settings_toolbar_fakes import CHECKS, INDEX, Fake, SESSION_ID, FAKE_PASTED_CODE, FAKE_USER_CODE, assert_no_secret_output, check, DIST, flow, listen, new_page, open_settings, serve, shot, soon, toolbar_metrics  # noqa: E402
 
 def capture_toolbars(browser, base, out: Path, prefix: str, atom_expected: bool):
     """PAS 창 툴바 360, 768, 1280과 기존 대시보드 툴바 360, 1280. atom 단추 유무와 넘침, 단추 크기를 잰다."""
@@ -250,20 +47,6 @@ def capture_toolbars(browser, base, out: Path, prefix: str, atom_expected: bool)
         shot(page, out, f"{prefix}dashboard-toolbar-{width}.png", width, "기존 대시보드 툴바", page.get_by_test_id("v3-global-toolbar"))
         context.close()
 
-
-def listen(page, sink):
-    page.on("console", lambda message: sink.append(message.text))
-    page.on("pageerror", lambda error: sink.append(str(error)))
-
-
-def assert_no_secret_output(sink, label):
-    leaked = [line for line in sink if FAKE_USER_CODE in line or FAKE_PASTED_CODE in line or "auth.example.invalid" in line]
-    check(f"{label}: 일회용 코드, 인증 주소, 붙여 넣은 코드가 콘솔에 없음", not leaked, {"lines": len(sink)})
-
-
-def open_settings(page):
-    page.get_by_role("button", name="서버 설정").click()
-    expect(page.locator('[data-slot="dialog-popup"]')).to_be_visible(timeout=15000)
 
 
 def capture_settings_and_logins(browser, base, out: Path):

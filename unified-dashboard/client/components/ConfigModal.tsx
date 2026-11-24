@@ -192,7 +192,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
     access_links: "외부 에이전트가 내 세션에 일을 맡길 수 있는 링크를 관리합니다.",
     webhooks: "내 세션과 외부 서비스가 주고받는 웹훅을 관리합니다.",
     nodes: "작업을 실행할 기기와 연결 상태를 확인합니다.", agents: "에이전트의 프로필과 기본 실행 환경을 관리합니다.",
-    recurring_jobs: "반복할 작업과 다음 실행 시점을 관리합니다.", persistent: "Persistent Agent Session의 이름과 기본 모델을 관리합니다.", card_dispatch: "카드의 실행 방식과 동시 실행 수를 조정합니다.",
+    recurring_jobs: "반복할 작업과 다음 실행 시점을 관리합니다.", persistent: "영구 세션의 지시, 계정과 모델, 표시, 기록, 세션 스토리를 관리합니다.", card_dispatch: "카드의 실행 방식과 동시 실행 수를 조정합니다.",
     coding_agents: "노드마다 Claude, Codex, Antigravity 로그인을 연결합니다.",
     persistent_defaults: "새 영구 세션이 쓸 기본 모델과 대체 순서를 정합니다. 이미 있는 세션은 바뀌지 않습니다.",
     users: "서버를 사용할 사람과 접근 범위를 관리합니다.", session_review: "실행 전 검수가 필요한 요청을 정합니다.",
