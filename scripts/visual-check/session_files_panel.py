@@ -789,7 +789,7 @@ def main():
                     for _ in range(6):
                         page.keyboard.press("Tab")
                         info["tab"].append(page.evaluate("document.activeElement?.getAttribute('aria-label') || document.activeElement?.textContent?.trim()"))
-                    assert info["tab"] == ["다시 읽기", "파일 닫기", "이번 세션3개일부", "event_outbox_types.ts", f"event_outbox.ts+{_diff_fixture.EVENT_ADD}−{_diff_fixture.EVENT_DEL}", f"outbox_retry.ts새+{len(_diff_fixture.NEW_LINES)}", "읽기만 한 파일1개"], info["tab"]
+                    assert info["tab"] == ["다시 읽기", "파일 닫기", "이번 세션3개일부", "event_outbox_types.ts+142−27", f"event_outbox.ts+{_diff_fixture.EVENT_ADD}−{_diff_fixture.EVENT_DEL}", f"outbox_retry.ts새+{len(_diff_fixture.NEW_LINES)}", "읽기만 한 파일1개"], info["tab"]
                     pane.get_by_role("button", name="다른 변경", exact=False).click()
                     pane.get_by_text("event_outbox.ts", exact=True).click()
                     pane.get_by_role("region", name="event_outbox.ts 변경분").get_by_role("button", name="전체 보기").click()
