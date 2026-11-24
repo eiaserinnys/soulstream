@@ -3334,6 +3334,18 @@
     "name": "get_page_markdown"
   },
   {
+    "description": "새 영구 세션의 전역 기본 모델과 대체 순서 및 설정 버전을 조회한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {},
+      "type": "object"
+    },
+    "name": "get_persistent_session_defaults"
+  },
+  {
     "description": "반복 작업 한 건과 서버가 계산한 다음 실행 정보를 조회한다.",
     "execution": {
       "taskSupport": "forbidden"
@@ -10061,6 +10073,71 @@
       "type": "object"
     },
     "name": "update_persistent_instruction"
+  },
+  {
+    "description": "새 영구 세션의 전역 기본 모델과 대체 순서를 조회한 버전으로 저장한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "expectedVersion": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "value": {
+          "additionalProperties": false,
+          "properties": {
+            "fallback_models": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "model_preset": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "reasoning_effort": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "model_preset",
+                  "reasoning_effort"
+                ],
+                "type": "object"
+              },
+              "maxItems": 3,
+              "type": "array"
+            },
+            "model_preset": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "model_preset",
+            "fallback_models"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "value",
+        "expectedVersion"
+      ],
+      "type": "object"
+    },
+    "name": "update_persistent_session_defaults"
   },
   {
     "description": "영구 세션 설정을 저장한다. 기본 모델을 바꾸면 설정창과 같이 다음 실행에서 새 세대로 바뀐다. 문맥 초기화와 함께 바꾸려면 이어서 request_session_generation_rollover(reset_context=true)를 부른다. fallback_models는 기본 모델 다음의 대체 순위 목록이다(앞이 2순위). 주면 목록 전체를 바꾸고, 빈 배열이면 대체가 없다. 표시 토글만 바꾸면 세대는 그대로다.",

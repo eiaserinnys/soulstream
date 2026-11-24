@@ -51,4 +51,4 @@ export const persistentSessionSettingsHandlers = {
       return errorResult(error instanceof Error ? error.message : String(error));
     }
   },
-} satisfies Record<keyof typeof persistentSessionSettingsTools, McpToolHandler>;
+} satisfies Record<Exclude<keyof typeof persistentSessionSettingsTools, keyof typeof import("@soulstream/mcp-contract").persistentDefaultsTools>, McpToolHandler>;

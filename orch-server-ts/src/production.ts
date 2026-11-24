@@ -1,3 +1,4 @@
+import { PersistentDefaultsSettings } from "./settings/persistent_defaults_settings.js";
 import { McpCentralSyncService } from "./mcp_central/sync_service.js";
 import { createMcpCentralRepository } from "./mcp_central/repository.js";
 import { buildNodeSnapshot } from "./mcp_central/node_snapshot.js";
@@ -354,6 +355,10 @@ export async function createLiveProductionApplication(
   const configProvider = createEnvironmentConfigProvider(config);
   const sqlResolver = overrides.sqlResolver ??
     createLiveDbSqlResolver({ databaseUrl: config.database_url });
+  const persistentDefaults = new PersistentDefaultsSettings(
+    async () => await sqlResolver.resolveSql() as unknown as SqlClient, overrides.modelCatalog, context.warn,
+  );
+  await persistentDefaults.start();
   const searchDbConnectionFactory = createLiveSearchDbConnectionFactory({
     databaseUrl: config.database_url,
   });
@@ -412,7 +417,7 @@ export async function createLiveProductionApplication(
     applyCardWorkErrorEffect,
     deadLetterStore,
     {
-      modelCatalog: overrides.modelCatalog,
+      modelCatalog: persistentDefaults,
       warn: eventIngressWarn,
       onSessionStatisticsFactsInserted: () => sessionStatisticsUpdates.notify(),
     },
@@ -750,7 +755,7 @@ export async function createLiveProductionApplication(
     providers = createLiveOrchestratorProviderBundle({
       dependencies,
       runtimeServices,
-      modelCatalog: overrides.modelCatalog,
+      modelCatalog: persistentDefaults,
       nodeCredentials: nodeCredentialStore,
       uiEventRepository,
       usageSummaryRoutes: {
@@ -1194,6 +1199,7 @@ export async function createLiveProductionApplication(
     },
     recurringJobRoutes: recurringJobWiring.routes,
     recurringJobHostRoutes: recurringJobWiring.hostRoutes,
+    persistentDefaultsRoutes: { ...providers.adminUsersRoutes.provider, ...orchestrationAccess, service: persistentDefaults },
     cardDispatchSettingsRoutes:cardDispatchRuntime.settingsRoutes,
     cardOrchestrationRoutes: {
       ...providers.adminUsersRoutes.provider,
@@ -1214,7 +1220,7 @@ export async function createLiveProductionApplication(
   });
   turnSummaryPipeline = createLiveTurnSummaryPipeline({
     config,
-    modelCatalog: overrides.modelCatalog,
+    modelCatalog: persistentDefaults,
     configPath: overrides.turnSummaryConfigPath ??
       fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)),
     sqlResolver,
@@ -1462,6 +1468,7 @@ export async function createLiveProductionApplication(
       await runShutdownStep("card_dispatch_drain", () => cardDispatchRuntime.dispatcher.drain());
       await runShutdownStep("turn_summary_drain", () => turnSummaryPipeline?.drain());
     }
+    persistentDefaults.close();
     await runShutdownStep("push_notifier_close", () => pushNotifier.close());
     await runShutdownStep("db_catalog_close", () => dbCatalogRepository.close());
   };
