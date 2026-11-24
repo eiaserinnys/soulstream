@@ -12,7 +12,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
-  useCardStore.setState({ rows: {}, seq: 0, rowSeq: {}, details: {}, pendingItemConfirmations: {} });
+  useCardStore.setState({ rows: {}, seq: 0, rowSeq: {}, listTicket: {}, details: {}, pendingItemConfirmations: {} });
 });
 
 test('요청 전에 store에만 있던 행은 목록 스냅숏에서 빠진다', async () => {
@@ -56,6 +56,39 @@ test('목록과 store에 같은 카드가 있으면 version이 높은 행을 쓴
 
   await waitFor(() => expect(hook.result.current.cards[0]?.title).toBe('store 최신'));
 });
+
+test.each(['이른 요청부터 완료', '늦은 요청부터 완료'] as const)(
+  '동시 목록 조회에서 %s해도 두 소비자는 최신 활동을 본다', async (order) => {
+    const oldCard = cardFixture({ id: 'same-card', latestActivity: {
+      kind: 'report', body: 'old', format: 'markdown', createdAt: '2026-11-24T00:00:00Z',
+    } });
+    const newCard = cardFixture({ ...oldCard, latestActivity: {
+      kind: 'report', body: 'new', format: 'markdown', createdAt: '2026-11-24T01:00:00Z',
+    } });
+    const first = deferred<{ cards: typeof oldCard[] }>();
+    const second = deferred<{ cards: typeof oldCard[] }>();
+    const listCards = jest.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const api = { listCards } as unknown as ApiClient;
+    const a = renderHook(() => useCardList(api));
+    const b = renderHook(() => useCardList(api));
+    await waitFor(() => expect(listCards).toHaveBeenCalledTimes(2));
+
+    if (order === '이른 요청부터 완료') {
+      await act(async () => first.resolve({ cards: [oldCard] }));
+      await waitFor(() => expect(a.result.current.loading).toBe(false));
+      await act(async () => second.resolve({ cards: [newCard] }));
+    } else {
+      await act(async () => second.resolve({ cards: [newCard] }));
+      await waitFor(() => expect(b.result.current.loading).toBe(false));
+      await act(async () => first.resolve({ cards: [oldCard] }));
+    }
+
+    await waitFor(() => {
+      expect(a.result.current.cards[0]?.latestActivity?.body).toBe('new');
+      expect(b.result.current.cards[0]?.latestActivity?.body).toBe('new');
+    });
+  },
+);
 
 test('폴더 요청 전에 store에만 있던 행은 폴더 스냅숏에서 빠진다', async () => {
   const stale = cardFixture({ id: 'finished-folder-card', folderId: 'folder-1', status: 'review' });
