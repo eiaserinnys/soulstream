@@ -141,6 +141,27 @@ it('traverses every card without duplicates or gaps in status-group and update o
   expect(pageSizes).toEqual([4,4,3]);
 });
 
+it('filters paged cards by a comma-separated status list', async () => {
+  await seedPagedCards([
+    {id:'paged-multi-todo', status:'todo', updatedAt:'2026-11-05 00:00:01+00', title:'pagedmulti todo'},
+    {id:'paged-multi-run', status:'running', updatedAt:'2026-11-05 00:00:02+00', title:'pagedmulti run'},
+    {id:'paged-multi-review', status:'review', updatedAt:'2026-11-05 00:00:03+00', title:'pagedmulti review'},
+    {id:'paged-multi-blocked', status:'blocked', updatedAt:'2026-11-05 00:00:04+00', title:'pagedmulti blocked'},
+    {id:'paged-multi-done', status:'done', updatedAt:'2026-11-05 00:00:05+00', title:'pagedmulti done'},
+  ]);
+  const ids: string[] = [];
+  let cursor: string | null = null;
+  do {
+    const query: URLSearchParams = new URLSearchParams({status:'review,blocked,running',limit:'2',q:'pagedmulti',...(cursor ? {cursor} : {})});
+    const page:{cards:{id:string}[];nextCursor:string | null} = (await app.inject(`/api/cards?${query}`)).json();
+    ids.push(...page.cards.map(card=>card.id));
+    cursor = page.nextCursor;
+  } while (cursor);
+  expect(ids).toEqual(['paged-multi-run','paged-multi-blocked','paged-multi-review']);
+  const single = (await app.inject('/api/cards?status=review&limit=10&q=pagedmulti')).json();
+  expect(single.cards.map((c:{id:string})=>c.id)).toEqual(['paged-multi-review']);
+});
+
 it('searches paged cards by title, request and #number and rejects malformed cursors', async () => {
   await seedPagedCards([
     {id:'paged-num-target', status:'todo', updatedAt:'2026-11-05 00:00:00+00', title:'번호 검색 카드', request:'pagednum 요청', number:987001},
