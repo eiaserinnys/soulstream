@@ -29,6 +29,7 @@ export async function testMcpServer(server: Server, env: Record<string, string |
     };
     const record = (value: unknown) => Object.fromEntries(Object.entries(value && typeof value === "object" ? value : {}).map(([k, v]) => [k, resolve(v)]));
     if (server.type === "stdio") {
+      // @openai/agents MCPServerStdio also splits full_command on spaces.
       const fullCommand = typeof config.full_command === "string" ? config.full_command.split(" ") : undefined;
       if (typeof config.full_command === "string") sensitive.add(config.full_command);
       const command = fullCommand ? fullCommand.shift() : resolve(config.command);
@@ -66,16 +67,18 @@ export async function testMcpServer(server: Server, env: Record<string, string |
       state.stage = "list_tools";
       let cursor: string | undefined;
       let count = 0;
+      let pages = 0;
       const tools: string[] = [];
       do {
         const result = await client.listTools(cursor ? { cursor } : undefined);
+        pages += 1;
         count += result.tools.length;
         tools.push(...result.tools.slice(0, Math.max(0, 100 - tools.length)).map(tool => tool.name));
         cursor = result.nextCursor;
-      } while (cursor);
+      } while (cursor && pages < 20);
       const info = client.getServerVersion();
-      const secrets = [...sensitive].sort((a, b) => b.length - a.length);
-      const scrub = (value: string) => secrets.reduce((text, secret) => text.split(secret).join("[비공개]"), value);
+      const secrets = [...sensitive].filter(value => value.length >= 4).sort((a, b) => b.length - a.length);
+      const scrub = (value: string) => secrets.reduce((text, secret) => text.split(secret).join("[비공개]"), value.replace(/(https?:\/\/[^\s?#]+)\?[^\s]*/g, "$1"));
       return { ok: true as const, latency_ms: Date.now() - start, ...(info ? { server_info: { name: scrub(info.name), version: scrub(info.version) } } : {}),
         tool_count: count, tools: tools.map(scrub) };
     };
