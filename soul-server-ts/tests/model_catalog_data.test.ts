@@ -723,6 +723,13 @@ describe("model catalogue schema validation", () => {
       expect(() => parseModelCatalogYaml(missing)).toThrow(new RegExp(`${task}.*missing`));
     }
   });
+
+  it("preserves the unbounded last cache bin across a JSON round trip", () => {
+    const roundTrip = parseModelCatalogYaml(JSON.stringify(catalog));
+    const bins = roundTrip.presets.find((preset) => preset.id === "gemini-4-argon")
+      ?.persistent_decision?.first_call_cache_bins;
+    expect(bins?.at(-1)).toEqual([Infinity, 228340, 1276231, 8]);
+  });
   it("rejects duplicate preset ids", () => {
     expect(() => parseModelCatalogYaml(BASE_CATALOG_YAML.replace("  - id: p2", "  - id: p1")))
       .toThrow(/Duplicate model preset id/);

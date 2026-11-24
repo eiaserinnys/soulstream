@@ -83,7 +83,11 @@ export const ModelPresetSchema = z.object({
   supported_efforts: z.array(ReasoningEffortSchema).nonempty().optional(),
   default_effort: ReasoningEffortSchema.optional(),
   persistent_decision: z.object({
-    first_call_cache_bins: z.array(z.tuple([z.union([z.number(), z.literal(Infinity)]), z.number(), z.number(), z.number()])).optional(),
+    // JSON represents an infinite bound as null; restore it on catalog reload.
+    first_call_cache_bins: z.array(z.tuple([
+      z.union([z.number(), z.literal(Infinity), z.null().transform(() => Infinity)]),
+      z.number(), z.number(), z.number(),
+    ])).optional(),
     generation_cost_seed: z.object({
       baselineTokens: z.number(), growthTokensPerCall: z.number(),
       input: z.number(), cached: z.number(), output: z.number(), reasoning: z.number(),
