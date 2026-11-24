@@ -992,8 +992,6 @@ function claudeQuotaSortKey(quota: ProviderQuota): string {
   const existingOrder: Record<string, string> = {
     "claude:five_hour": "00",
     "claude:seven_day": "01",
-    "claude:seven_day_sonnet": "02",
-    "claude:seven_day_opus": "03",
     "claude:seven_day_oauth_apps": "04",
     "claude:seven_day_cowork": "05",
     "claude:monthly_extra": "90",
@@ -1001,7 +999,7 @@ function claudeQuotaSortKey(quota: ProviderQuota): string {
   const fixed = existingOrder[quota.id];
   if (fixed) return `${fixed}:${quota.id}`;
   if (quota.id.startsWith("claude:seven_day_")) {
-    return `06:${quota.label.toLocaleLowerCase()}:${quota.id}`;
+    return `02:${quota.label.toLocaleLowerCase()}:${quota.id}`;
   }
   return `99:${quota.id}`;
 }
