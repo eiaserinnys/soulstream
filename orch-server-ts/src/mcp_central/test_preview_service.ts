@@ -2,7 +2,7 @@ import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { LivePostgresSql } from "../runtime/live_db_sql.js";
 import { invalidInput, notFound } from "./errors.js";
 import { mapValues } from "./node_snapshot.js";
-import { collectSecretReferences, SECRET_REF_PATTERN } from "./secret_refs.js";
+import { assertSecretName, collectSecretReferences, SECRET_REF_PATTERN } from "./secret_refs.js";
 import { parseServerInput } from "./server_validation.js";
 import type { McpCentralService } from "./service.js";
 import type { McpCentralSyncService } from "./sync_service.js";
@@ -32,6 +32,7 @@ export function createMcpTestPreviewService(options: { service: McpCentralServic
     if (body.inline_secrets !== undefined && !isRecord(body.inline_secrets)) throw invalidInput("inline_secrets must be an object");
     let inline = isRecord(body.inline_secrets) ? body.inline_secrets : {};
     if (Object.values(inline).some(value => typeof value !== "string")) throw invalidInput("inline_secrets must contain strings");
+    for (const name of Object.keys(inline)) assertSecretName(name);
     const response = await options.sync.sendAux(nodeId, async () => {
       if (!definition) {
         if (!isRecord(body.draft_server)) throw invalidInput("draft_server is required");

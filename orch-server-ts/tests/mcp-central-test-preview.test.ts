@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createApp, parseOrchServerConfig, InMemoryNodeRegistry, loadContractFixtures, type NodeRegistrationPayload } from "../src/index.js";
+import { createApp, parseOrchServerConfig, InMemoryNodeRegistry, NodeCommandTransportHub, SessionCommandTransportBridge, loadContractFixtures, type NodeRegistrationPayload } from "../src/index.js";
 import { createMcpTestPreviewService } from "../src/mcp_central/test_preview_service.js";
 import { McpCentralSyncService } from "../src/mcp_central/sync_service.js";
 
@@ -52,6 +52,7 @@ describe("MCP test and preview operations", () => {
     expect(JSON.stringify(sent)).not.toContain("icon");
     expect(JSON.stringify(result)).not.toContain("fake-secret-value");
     expect(JSON.stringify(result)).not.toContain("?key=");
+    await expect(actions.test({ node_id: "n", server_id: "atom", inline_secrets: { "invalid key": "fake-inline-value" } })).rejects.toMatchObject({ statusCode: 400 });
     sql.mockClear();
     await expect(actions.test({ node_id: "n", server_id: "other" })).rejects.toThrow();
     expect(sql).not.toHaveBeenCalled();
@@ -108,6 +109,28 @@ describe("MCP test and preview operations", () => {
     await actions.test({ node_id: "n", draft_server: { id: "new", type: "stdio", config: { command: "node", env: { KEY: "{{secret:key}}" } }, node_scope: ["n"] }, inline_secrets: { key: "fake-inline-value" } });
     expect(sent[0]).toMatchObject({ server: { id: "new", config: { env: { KEY: "fake-inline-value" } } } });
     expect(sql).not.toHaveBeenCalled();
+    expect(config.current_revision).toBe(4);
+  });
+
+  it("sends the bounded request through the node transport without icon data", async () => {
+    const registry = new InMemoryNodeRegistry();
+    const registration = loadContractFixtures().fakeNodeReconnect.registration as NodeRegistrationPayload;
+    const node = registry.registerNode({ ...registration, node_id: "n", capabilities: { ...registration.capabilities, central_mcp_config_v1: true } }).node;
+    const transports = new NodeCommandTransportHub();
+    const sent: Record<string, unknown>[] = [];
+    transports.attach({ nodeId: node.nodeId, connectionId: node.connectionId, transport: { send(data) {
+      const message = JSON.parse(data) as Record<string, unknown>; sent.push(message);
+      registry.receiveNodeMessage({ nodeId: node.nodeId, connectionId: node.connectionId }, { type: "test_mcp_server", requestId: message.requestId,
+        success: true, data: { ok: true, latency_ms: 1, tool_count: 0, tools: [] } });
+    } } });
+    const bridge = new SessionCommandTransportBridge({ registry, transports });
+    const sync = new McpCentralSyncService({ registry, bridge, readGate: async () => ({ managed: { activated_at: null }, hasBindings: true }),
+      buildSnapshot: async () => { throw new Error("unexpected"); }, updateAck: async () => {}, listManagedNodes: async () => [], currentRevision: async () => 4 });
+    const actions = createMcpTestPreviewService({ service: { getConfig: async () => config } as never, sync,
+      resolveSql: async () => (async () => [{ name: "key", value: "fake-secret-value" }]) as never });
+    expect(await actions.test({ node_id: "n", server_id: "atom" })).toMatchObject({ ok: true });
+    expect(sent).toHaveLength(1);
+    expect(JSON.stringify(sent)).not.toContain("icon");
     expect(config.current_revision).toBe(4);
   });
 });
