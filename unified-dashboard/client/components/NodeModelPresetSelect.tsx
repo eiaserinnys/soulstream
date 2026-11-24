@@ -19,6 +19,7 @@ export function NodeModelPresetSelect({
   nodeId,
   value,
   label,
+  ariaLabel,
   disabled = false,
   className,
   triggerClassName,
@@ -32,6 +33,7 @@ export function NodeModelPresetSelect({
   nodeId: string;
   value: string;
   label: string;
+  ariaLabel?: string;
   disabled?: boolean;
   className?: string;
   triggerClassName?: string;
@@ -76,14 +78,14 @@ export function NodeModelPresetSelect({
     status: catalogStatus,
     missingLabel: missingPresetLabel?.(value),
   });
-  const missingText = selectedPresetMissing && loaded && missingPresetLabel ? missingPresetLabel(value) : null;
+  const missingText = selectedPresetMissing && loaded && missingPresetLabel ? "이 노드 목록에 없음" : null;
 
-  return <CatalogSelectionField className={className} label={label} ariaLabel={label}
+  return <CatalogSelectionField className={className} label={label} ariaLabel={ariaLabel ?? label}
     value={value} disabled={disabled || !nodeId} selectedLabel={selection.preset?.reason === "quota_exhausted" ? <span className="text-destructive">{triggerLabel}</span> : triggerLabel}
     triggerClassName={triggerClassName} invalid={Boolean(selection.warning)}
     options={[
       { value: "", label: "미지정" },
-      ...(selectedPresetMissing ? [{ value, disabled: loaded, label: loading ? "선택한 모델 확인 중…" : missingText ?? "선택한 모델" }] : []),
+      ...(selectedPresetMissing ? [{ value, disabled: loaded, label: loading ? "선택한 모델 확인 중…" : missingPresetLabel?.(value) ?? "선택한 모델" }] : []),
       ...presets.map(preset => {
         const reason = modelPresetUnavailableReason(preset);
         return {

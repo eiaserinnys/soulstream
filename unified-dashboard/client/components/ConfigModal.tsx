@@ -182,6 +182,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
     webhooks: "내 세션과 외부 서비스가 주고받는 웹훅을 관리합니다.",
     nodes: "작업을 실행할 기기와 연결 상태를 확인합니다.", agents: "에이전트의 프로필과 기본 실행 환경을 관리합니다.",
     recurring_jobs: "반복할 작업과 다음 실행 시점을 관리합니다.", persistent: "Persistent Agent Session의 이름과 기본 모델을 관리합니다.", card_dispatch: "카드의 실행 방식과 동시 실행 수를 조정합니다.",
+    persistent_defaults: "새 영구 세션이 쓸 기본 모델과 대체 순서를 정합니다. 이미 있는 세션은 바뀌지 않습니다.",
     users: "서버를 사용할 사람과 접근 범위를 관리합니다.", session_review: "실행 전 검수가 필요한 요청을 정합니다.",
     file_storage: "첨부 파일을 보관할 저장소를 연결합니다.", usage_log: "사용 기록을 확인하고 필요한 범위로 좁힙니다.",
     usage_stats: "기간별 토큰과 정가 환산을 봅니다.",
