@@ -53,6 +53,8 @@
     "claude_auth_login_cancel",
     "claude_central_pool_sync",
     "mcp_central_sync",
+    "test_mcp_server",
+    "preview_agent_mcp",
     "provider_usage_get",
     "reflect_brief",
     "plan_agent_profile_update",
@@ -3127,6 +3129,45 @@
         "agent_bindings": { "type": "object", "additionalProperties": { "type": "string" } }
       }
     },
+    "McpTestServer": {
+      "type": "object", "required": ["type", "requestId", "server"], "additionalProperties": false,
+      "properties": {
+        "type": { "const": "test_mcp_server" }, "requestId": { "type": "string" },
+        "server": { "type": "object", "required": ["id", "name", "type", "config"], "additionalProperties": false,
+          "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "type": { "enum": ["stdio", "sse", "streamable_http"] }, "config": { "type": "object" } } },
+        "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 13000, "default": 10000 },
+        "success": { "type": "boolean" }, "data": { "$ref": "#/$defs/McpTestResult" }, "error": { "$ref": "#/$defs/ClaudeAuthError" }
+      }
+    },
+    "McpPreviewAgent": {
+      "type": "object", "required": ["type", "requestId", "agent_id"], "additionalProperties": false,
+      "properties": {
+        "type": { "const": "preview_agent_mcp" }, "requestId": { "type": "string" }, "agent_id": { "type": "string" },
+        "mcp_profile_id": { "type": "string" },
+        "servers": { "type": "array", "items": { "type": "object", "required": ["server_id", "name", "type"], "additionalProperties": false,
+          "properties": { "server_id": { "type": "string" }, "name": { "type": "string" }, "type": { "enum": ["stdio", "sse", "streamable_http"] } } } },
+        "success": { "type": "boolean" }, "data": { "$ref": "#/$defs/McpPreviewResult" }, "error": { "$ref": "#/$defs/ClaudeAuthError" }
+      }
+    },
+    "McpTestResult": {
+      "type": "object", "required": ["ok", "latency_ms"], "additionalProperties": false,
+      "properties": { "ok": { "type": "boolean" }, "latency_ms": { "type": "number", "minimum": 0 },
+        "server_info": { "type": "object", "required": ["name", "version"], "additionalProperties": false, "properties": { "name": { "type": "string" }, "version": { "type": "string" } } },
+        "tool_count": { "type": "integer", "minimum": 0 }, "tools": { "type": "array", "maxItems": 100, "items": { "type": "string" } },
+        "error_stage": { "enum": ["config", "connect", "initialize", "list_tools", "timeout"] }, "error_message": { "type": "string", "maxLength": 500 } }
+    },
+    "McpPreviewResult": {
+      "type": "object", "required": ["applied_mode", "applied_revision", "effective_backend", "default_preset", "isolation_enabled", "normal", "restricted"], "additionalProperties": false,
+      "properties": { "applied_mode": { "enum": ["central", "local"] }, "applied_revision": { "type": "integer", "minimum": 0 },
+        "effective_backend": { "type": "string" }, "default_preset": { "type": ["string", "null"] }, "isolation_enabled": { "type": "boolean" },
+        "normal": { "$ref": "#/$defs/McpPreviewVariant" }, "restricted": { "$ref": "#/$defs/McpPreviewVariant" } }
+    },
+    "McpPreviewVariant": {
+      "type": "object", "required": ["runnable", "servers"], "additionalProperties": false,
+      "properties": { "runnable": { "type": "boolean" }, "blocked_reason": { "type": "string" }, "servers": { "type": "array", "items": {
+        "type": "object", "required": ["server_id", "name", "type", "included"], "additionalProperties": false,
+        "properties": { "server_id": { "type": "string" }, "name": { "type": "string" }, "type": { "type": "string" }, "included": { "type": "boolean" }, "excluded_reason": { "type": "string" } } } } }
+    },
     "McpCentralSync": {
       "type": "object", "required": ["type", "requestId", "revision", "runtime", "display"], "additionalProperties": true,
       "properties": {
@@ -5130,6 +5171,8 @@
     { "$ref": "#/$defs/ClaudeAuthLoginCancel" },
     { "$ref": "#/$defs/ClaudeCentralPoolSync" },
     { "$ref": "#/$defs/McpCentralSync" },
+    { "$ref": "#/$defs/McpTestServer" },
+    { "$ref": "#/$defs/McpPreviewAgent" },
     { "$ref": "#/$defs/ClaudeRuntimeListTasks" },
     { "$ref": "#/$defs/ClaudeRuntimeTaskOutput" },
     { "$ref": "#/$defs/ClaudeRuntimeStopTask" },

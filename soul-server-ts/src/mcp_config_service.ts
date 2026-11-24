@@ -147,6 +147,8 @@ export class McpConfigService {
 
   isPortableNode(): boolean { return isPortableMcpNode(this.processEnv); }
 
+  testEnvironment(): Record<string, string | undefined> { return this.processEnv; }
+
   async applyCentralSync(input: CentralSync): Promise<void> { await this.central.apply(input); }
 
   waitForInitialCentralSync(timeoutMs: number): Promise<void> { return this.central.wait(timeoutMs); }

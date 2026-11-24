@@ -25,6 +25,17 @@ def _load_schema() -> dict:
     return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
+def test_mcp_test_and_preview_command_contracts() -> None:
+    schema = _load_schema()
+    validator = jsonschema.Draft202012Validator(schema)
+    test = {"type": "test_mcp_server", "requestId": "r", "server": {"id": "s", "name": "s", "type": "stdio", "config": {"command": "node"}}}
+    preview = {"type": "preview_agent_mcp", "requestId": "r", "agent_id": "a", "mcp_profile_id": "p", "servers": [{"server_id": "s", "name": "s", "type": "stdio"}]}
+    assert validator.is_valid(test)
+    assert validator.is_valid(preview)
+    assert not validator.is_valid({**test, "timeout_ms": 13001})
+    assert not validator.is_valid({**preview, "servers": [{"server_id": "s", "name": "s", "type": "stdio", "config": {}}]})
+
+
 def _event_append_batch_with_effect(effect: dict) -> dict:
     stream_id = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10"
     return {
