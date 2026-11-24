@@ -41,6 +41,7 @@ import { PersistentTurnEndCaptionsReviewSample } from "./PersistentTurnEndCaptio
 import { PersistentAgentMessageGroupReviewSample } from "./PersistentAgentMessageGroupReviewSample";
 import { ManuscriptActivityReviewSample } from "./ManuscriptActivityReviewSample";
 import { PersistentSessionSettingsReviewSample } from "./PersistentSessionSettingsReviewSample";
+import { McpReviewSample } from "./McpReviewSample";
 import { PersistentSessionInstructionsReviewSample } from "./PersistentSessionInstructionsReviewSample";
 import { PersistentSessionScreenReviewSample } from './PersistentSessionScreenReviewSample';
 import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
@@ -162,6 +163,7 @@ export function ComponentsReviewPage() {
   };
 
   const sampleParams = new URLSearchParams(window.location.search);
+  if (sampleParams.get('sample') === 'mcp') return <McpReviewSample />;
   if (sampleParams.get('sample') === 'session-files-folder') return <SessionFilesFolderReviewSample/>;
   if (sampleParams.get('sample') === 'runtime-loading') return <RuntimeLoadingReviewSample />;
   if (sampleParams.get('sample') === 'external-sender') return <div className="v3-detail-pane v3-detail-pane--inline"><ExternalSenderSamples presentation={sampleParams.get('presentation') === 'manuscript' ? 'manuscript' : 'default'} /></div>;
@@ -482,6 +484,7 @@ export function ComponentsReviewPage() {
             </Sample>
             <ComponentsReviewControls/>
             <Sample name="PersistentSessionDetails / PersistentSessionMonitoring" state="표시 필드 · 판단 있음/없음 · 값 있음 · 기록 없음 · 불러오는 중 · 조회 실패"><PersistentSessionSettingsReviewSample/></Sample>
+            <Sample name="MCP 아이콘과 값 단위" state="타일 · 고르기 · 서버 아이콘 줄 · 참조"><McpReviewSample /></Sample>
             <Sample name="PersistentSessionWeeklyUsage" state="1101px 이상 · 노드 3/2/0개 게이지 · 노드 이동 · 대기 · 조회 실패 · 갱신 지연"><PersistentSessionWeeklyUsageReviewSample/></Sample>
             <Sample name="NodeProvidersPanel / ClaudeAuthLoginSheet" state="공급자 중립 행 · 계정 풀 접힘/펼침 · 미설정 · 조회 오류 · 수집 지연 · 새로 고침"><ClaudeAccountPoolReviewSample/></Sample>
             <Sample name="NodePanel · 중앙 풀 / 중앙 풀 받기" state="중앙 빈 상태 · 계정 셋 · 로그인 · 목록 로딩/실패 · 받기 켬/끔/대기/실패">

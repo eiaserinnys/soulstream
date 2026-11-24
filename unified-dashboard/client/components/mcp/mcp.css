@@ -1,0 +1,48 @@
+.mcp-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-floor);
+  color: var(--mcp-color);
+  background: color-mix(in srgb, var(--mcp-color) 14%, transparent);
+  font: var(--v3-type-badge);
+  font-weight: 700;
+  overflow: hidden;
+}
+.mcp-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mcp-icon-brand {
+  background: var(--mcp-bg);
+  color: var(--mcp-fg);
+}
+.dark .mcp-icon-brand {
+  background: var(--mcp-dark-bg);
+  color: var(--mcp-dark-fg);
+}
+.mcp-icon-mask {
+  width: 65%;
+  height: 65%;
+  background: currentColor;
+  mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+}
+.mcp-color {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+}
+.mcp-color[aria-pressed="true"] {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.mcp-tabs .v3-folder-picker-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}

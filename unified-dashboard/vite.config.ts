@@ -1,5 +1,6 @@
-import { defineConfig, loadEnv, type ConfigEnv } from "vite";
+import { defineConfig, loadEnv, type ConfigEnv, type Plugin } from "vite";
 import { resolve } from "path";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
@@ -8,6 +9,29 @@ import { DASHBOARD_PWA_OPTIONS } from "./pwa-config";
 import { version as dashboardVersion } from "./package.json";
 import {dashboardBuildIdentity,dashboardBuildManifest} from "./build-identity";
 import { handleRollupWarning } from "./rollup-warning";
+
+/** 로고는 JS 그래프와 서비스 워커 밖의 정적 자산으로만 제공한다. */
+function brandIcons(): Plugin {
+  const root = resolve(__dirname, "node_modules/simple-icons");
+  const index = () => JSON.stringify((JSON.parse(readFileSync(resolve(root, "data/simple-icons.json"), "utf8")) as { slug: string; title: string; hex: string }[]).map(({ slug, title, hex }) => ({ slug, title, hex })));
+  return {
+    name: "brand-icons",
+    configureServer(server) {
+      server.middlewares.use("/brand-icons", (req, res, next) => {
+        if (req.url === "/index.json") { res.setHeader("Content-Type", "application/json"); res.end(index()); return; }
+        const match = /^\/icons\/([a-z0-9_-]+\.svg)$/.exec(req.url ?? "");
+        if (!match) return next();
+        try { res.setHeader("Content-Type", "image/svg+xml"); res.end(readFileSync(resolve(root, "icons", match[1]))); } catch { next(); }
+      });
+    },
+    writeBundle(options) {
+      const destination = resolve(options.dir ?? resolve(__dirname, "dist"), "brand-icons");
+      mkdirSync(destination, { recursive: true });
+      cpSync(resolve(root, "icons"), resolve(destination, "icons"), { recursive: true });
+      writeFileSync(resolve(destination, "index.json"), index());
+    },
+  };
+}
 
 function requireDevProxyApiBase(env: Record<string, string | undefined>): string {
   const apiBase = env.VITE_API_BASE?.trim();
@@ -40,6 +64,7 @@ export default defineConfig(({ command, mode, isPreview }: ConfigEnv) => {
     plugins: [
       tailwindcss(),
       react(),
+      brandIcons(),
       dashboardBuildManifest(buildId),
       VitePWA(DASHBOARD_PWA_OPTIONS),
     ],

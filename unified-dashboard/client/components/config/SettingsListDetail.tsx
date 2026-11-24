@@ -69,18 +69,19 @@ export function SettingsListRow({ title, meta, selected, onSelect, portrait }: {
   );
 }
 
-export function SettingsDetailHeader({ title, subtitle, actions, selectableTitle = false }: {
+export function SettingsDetailHeader({ title, subtitle, actions, selectableTitle = false, leadingIcon }: {
   title: string;
+  leadingIcon?: ReactNode;
   selectableTitle?: boolean;
   subtitle?: string | null;
   actions?: ReactNode;
 }) {
   return (
     <header className="flex flex-wrap items-start justify-between gap-2">
-      <div>
+      {leadingIcon ? <div className="flex min-w-0 items-center gap-2">{leadingIcon}<div className="min-w-0"><h3 data-v3-selectable-content={selectableTitle ? "true" : undefined} className="text-base font-semibold">{title}</h3>{subtitle ? <p data-v3-selectable-content="true" className="text-xs text-muted-foreground">{subtitle}</p> : null}</div></div> : <div>
         <h3 data-v3-selectable-content={selectableTitle ? "true" : undefined} className="text-base font-semibold">{title}</h3>
         {subtitle ? <p data-v3-selectable-content="true" className="text-xs text-muted-foreground">{subtitle}</p> : null}
-      </div>
+      </div>}
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </header>
   );
