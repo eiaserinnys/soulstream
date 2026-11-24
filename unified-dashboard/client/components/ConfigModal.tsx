@@ -4,6 +4,7 @@ import { fileToWallpaperDataUrl } from "@seosoyoung/soul-ui/lib/wallpaper-settin
 import { ArrowLeft, Check } from "lucide-react";
 import { FileStorageTab } from "./FileStorageTab";
 import { CardDispatchTab } from "./CardDispatchTab";
+import { PersistentDefaultsSettingsForm } from "./PersistentDefaultsSettingsForm";
 /**
  * ConfigModal - 서버 설정 편집 모달 (unified-dashboard)
  *
@@ -131,6 +132,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
         { name: SESSION_REVIEW_TAB_NAME, label: "요청 검수" },
         { name: "file_storage", label: "파일 저장소" },
         { name: "card_dispatch", label: "카드 실행" },
+        { name: "persistent_defaults", label: "영구 세션 기본 모델" },
         { name: AGENTS_TAB_NAME, label: "에이전트" },
         { name: USERS_TAB_NAME, label: "사용자" },
       ] : []),
@@ -160,6 +162,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
     selectedTab === PERSISTENT_TAB_NAME ||
     selectedTab === "file_storage" ||
     selectedTab === "card_dispatch" ||
+    selectedTab === "persistent_defaults" ||
     selectedTab === SESSION_REVIEW_TAB_NAME ||
     selectedTab === USAGE_LOG_TAB_NAME ||
     selectedTab === AGENTS_TAB_NAME ||
@@ -248,6 +251,8 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
                 <FileStorageTab request={api?.request} />
               ) : selectedTab === "card_dispatch" ? (
                 <CardDispatchTab api={api?.cards} orchestration={api?.orchestration} />
+              ) : selectedTab === "persistent_defaults" && (api || user?.isAdmin) ? (
+                <PersistentDefaultsSettingsForm />
               ) : selectedTab === AGENTS_TAB_NAME ? (
                 <AgentProfileEditorTab request={api?.request} />
               ) : selectedTab === OWNED_AGENTS_TAB_NAME ? (

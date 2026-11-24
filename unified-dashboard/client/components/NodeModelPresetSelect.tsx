@@ -23,6 +23,7 @@ export function NodeModelPresetSelect({
   className,
   triggerClassName,
   modelPresetCatalog,
+  missingPresetLabel,
   onValueChange,
   onPresetChange,
   onValidityChange,
@@ -35,6 +36,7 @@ export function NodeModelPresetSelect({
   className?: string;
   triggerClassName?: string;
   modelPresetCatalog?: NodeModelPresetCatalog;
+  missingPresetLabel?(id: string): string;
   onValueChange(value: string): void;
   onPresetChange?(preset: ModelPresetAvailability | null): void;
   onValidityChange?(valid: boolean): void;
@@ -72,14 +74,16 @@ export function NodeModelPresetSelect({
     selectedId: value,
     preset: selection.preset,
     status: catalogStatus,
+    missingLabel: missingPresetLabel?.(value),
   });
+  const missingText = selectedPresetMissing && loaded && missingPresetLabel ? missingPresetLabel(value) : null;
 
   return <CatalogSelectionField className={className} label={label} ariaLabel={label}
     value={value} disabled={disabled || !nodeId} selectedLabel={selection.preset?.reason === "quota_exhausted" ? <span className="text-destructive">{triggerLabel}</span> : triggerLabel}
     triggerClassName={triggerClassName} invalid={Boolean(selection.warning)}
     options={[
       { value: "", label: "미지정" },
-      ...(selectedPresetMissing ? [{ value, disabled: loaded, label: loading ? "선택한 모델 확인 중…" : "선택한 모델" }] : []),
+      ...(selectedPresetMissing ? [{ value, disabled: loaded, label: loading ? "선택한 모델 확인 중…" : missingText ?? "선택한 모델" }] : []),
       ...presets.map(preset => {
         const reason = modelPresetUnavailableReason(preset);
         return {
@@ -92,5 +96,5 @@ export function NodeModelPresetSelect({
       }),
     ]}
     adornment={selection.preset?.usage_warning ? <Badge variant="warning">사용량 확인 지연</Badge> : null}
-    message={selection.warning} onValueChange={onValueChange}/>;
+    message={missingText ?? selection.warning} onValueChange={onValueChange}/>;
 }

@@ -30,6 +30,7 @@ import "./components-review.css";
 import { PostItCardSamples } from "./PostItCardSamples";
 import { ReadOnlyCardListSample } from "./ReadOnlyCardListSample";
 import { CardOrchestrationSettingsSample } from "./CardOrchestrationSettingsSample";
+import { PersistentDefaultsSettingsReviewSample } from "./PersistentDefaultsSettingsReviewSample";
 import { CardBoardSamples } from "./CardBoardSamples";
 import { CardCheckItemsSamples } from "./CardCheckItemsSamples";
 import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
@@ -494,6 +495,7 @@ export function ComponentsReviewPage() {
             <Sample name="PersistentSessionInstructions" state="빈 목록 · 항목 여럿 · 편집 중 · 상한 안내"><PersistentSessionInstructionsReviewSample/></Sample>
             <Sample name="PersistentSessionPortraitToggle" state="표시 · 숨김"><PersistentSessionPortraitToggleReviewSample/></Sample>
             <Sample name="CardOrchestrationSettingsForm / Input / Button" state="실제 설정 폼 · 모델 순서 · 저장 · 로컬 샘플"><CardOrchestrationSettingsSample/></Sample>
+            <Sample name="PersistentDefaultsSettingsForm" state="카탈로그 · 저장된 설정 · 충돌"><PersistentDefaultsSettingsReviewSample/></Sample>
             </div>
           </section>
           <section id="components-surfaces" className="v3-detail-section">
