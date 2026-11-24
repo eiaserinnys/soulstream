@@ -161,9 +161,9 @@ test('case 1: full run via CLI, then an idempotent rerun', async () => {
     const { nodes } = await readAll(atom, cookie);
 
     const markers = markerMap(nodes, state.install_id);
-    assert.equal(nodes.filter((node) => !node.is_symlink && node.card.source_type === 'soulstream-seed').length, 148);
-    assert.equal(markers.size, 148);
-    assert.equal(nodes.filter((node) => node.is_symlink).length, 28);
+    assert.equal(nodes.filter((node) => !node.is_symlink && node.card.source_type === 'soulstream-seed').length, 159);
+    assert.equal(markers.size, 159);
+    assert.equal(nodes.filter((node) => node.is_symlink).length, 30);
 
     const parents = new Set(SEED.entries.map((entry) => entry.parent ?? null));
     for (const parentKey of parents) {
@@ -255,7 +255,7 @@ test('case 2a: lost /batch response resumes from markers without resending', asy
     assert.ok(roots.some((node) => node.card.title === '사용자 카드 2a'), 'user card must be preserved');
     const state = readState(stateDir);
     const { nodes } = await readAll(atom, cookie);
-    assert.equal(markerMap(nodes, state.install_id).size, 148);
+    assert.equal(markerMap(nodes, state.install_id).size, 159);
   });
 });
 
@@ -322,9 +322,9 @@ test('case 3a: user edit before replacement is preserved as a conflict', async (
       assert.equal(card.content.includes('{{node_id:'), false);
       replaced += 1;
     }
-    assert.equal(replaced, 39);
+    assert.equal(replaced, 41);
     const conflictReferences = placeholderKeys(REPLACEMENTS.find((entry) => entry.key === key).content ?? '').length;
-    assert.equal(61 - conflictReferences, REPLACEMENTS.reduce((sum, entry) => sum + (entry.key === key ? 0 : placeholderKeys(entry.content ?? '').length), 0));
+    assert.equal(71 - conflictReferences, REPLACEMENTS.reduce((sum, entry) => sum + (entry.key === key ? 0 : placeholderKeys(entry.content ?? '').length), 0));
   });
 });
 
