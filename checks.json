@@ -1,0 +1,1809 @@
+[
+  {
+    "check": "PAS 창 툴바 360px atom 단추 있음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 360,
+      "clientWidth": 360,
+      "docScrollWidth": 360,
+      "innerWidth": 360,
+      "buttons": [
+        {
+          "label": "영구 세션 바꾸기",
+          "width": 40,
+          "height": 40,
+          "right": 120
+        },
+        {
+          "label": "홈",
+          "width": 40,
+          "height": 40,
+          "right": 164
+        },
+        {
+          "label": "세션 파일",
+          "width": 40,
+          "height": 40,
+          "right": 208
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 40,
+          "height": 40,
+          "right": 252
+        },
+        {
+          "label": "atom 열기",
+          "width": 40,
+          "height": 40,
+          "right": 296
+        },
+        {
+          "label": "서버 설정",
+          "width": 40,
+          "height": 40,
+          "right": 340
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 360px 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 360,
+      "clientWidth": 360,
+      "docScrollWidth": 360,
+      "innerWidth": 360,
+      "buttons": [
+        {
+          "label": "영구 세션 바꾸기",
+          "width": 40,
+          "height": 40,
+          "right": 120
+        },
+        {
+          "label": "홈",
+          "width": 40,
+          "height": 40,
+          "right": 164
+        },
+        {
+          "label": "세션 파일",
+          "width": 40,
+          "height": 40,
+          "right": 208
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 40,
+          "height": 40,
+          "right": 252
+        },
+        {
+          "label": "atom 열기",
+          "width": 40,
+          "height": 40,
+          "right": 296
+        },
+        {
+          "label": "서버 설정",
+          "width": 40,
+          "height": 40,
+          "right": 340
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 360px 단추 40x40 이상",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 360,
+      "clientWidth": 360,
+      "docScrollWidth": 360,
+      "innerWidth": 360,
+      "buttons": [
+        {
+          "label": "영구 세션 바꾸기",
+          "width": 40,
+          "height": 40,
+          "right": 120
+        },
+        {
+          "label": "홈",
+          "width": 40,
+          "height": 40,
+          "right": 164
+        },
+        {
+          "label": "세션 파일",
+          "width": 40,
+          "height": 40,
+          "right": 208
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 40,
+          "height": 40,
+          "right": 252
+        },
+        {
+          "label": "atom 열기",
+          "width": 40,
+          "height": 40,
+          "right": 296
+        },
+        {
+          "label": "서버 설정",
+          "width": 40,
+          "height": 40,
+          "right": 340
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 768px atom 단추 있음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "docScrollWidth": 768,
+      "innerWidth": 768,
+      "buttons": [
+        {
+          "label": "영구 세션 바꾸기",
+          "width": 44,
+          "height": 44,
+          "right": 466
+        },
+        {
+          "label": "홈",
+          "width": 44,
+          "height": 44,
+          "right": 520
+        },
+        {
+          "label": "세션 파일",
+          "width": 44,
+          "height": 44,
+          "right": 574
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 44,
+          "height": 44,
+          "right": 628
+        },
+        {
+          "label": "atom 열기",
+          "width": 44,
+          "height": 44,
+          "right": 682
+        },
+        {
+          "label": "서버 설정",
+          "width": 44,
+          "height": 44,
+          "right": 736
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 768px 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "docScrollWidth": 768,
+      "innerWidth": 768,
+      "buttons": [
+        {
+          "label": "영구 세션 바꾸기",
+          "width": 44,
+          "height": 44,
+          "right": 466
+        },
+        {
+          "label": "홈",
+          "width": 44,
+          "height": 44,
+          "right": 520
+        },
+        {
+          "label": "세션 파일",
+          "width": 44,
+          "height": 44,
+          "right": 574
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 44,
+          "height": 44,
+          "right": 628
+        },
+        {
+          "label": "atom 열기",
+          "width": 44,
+          "height": 44,
+          "right": 682
+        },
+        {
+          "label": "서버 설정",
+          "width": 44,
+          "height": 44,
+          "right": 736
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 768px 단추 40x40 이상",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "docScrollWidth": 768,
+      "innerWidth": 768,
+      "buttons": [
+        {
+          "label": "영구 세션 바꾸기",
+          "width": 44,
+          "height": 44,
+          "right": 466
+        },
+        {
+          "label": "홈",
+          "width": 44,
+          "height": 44,
+          "right": 520
+        },
+        {
+          "label": "세션 파일",
+          "width": 44,
+          "height": 44,
+          "right": 574
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 44,
+          "height": 44,
+          "right": 628
+        },
+        {
+          "label": "atom 열기",
+          "width": 44,
+          "height": 44,
+          "right": 682
+        },
+        {
+          "label": "서버 설정",
+          "width": 44,
+          "height": 44,
+          "right": 736
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 1280px atom 단추 있음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 1280,
+      "clientWidth": 1280,
+      "docScrollWidth": 1280,
+      "innerWidth": 1280,
+      "buttons": [
+        {
+          "label": "영구 세션 바꾸기",
+          "width": 44,
+          "height": 44,
+          "right": 924
+        },
+        {
+          "label": "홈",
+          "width": 44,
+          "height": 44,
+          "right": 978
+        },
+        {
+          "label": "세션 파일",
+          "width": 44,
+          "height": 44,
+          "right": 1032
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 44,
+          "height": 44,
+          "right": 1086
+        },
+        {
+          "label": "주간 사용량",
+          "width": 44,
+          "height": 44,
+          "right": 1140
+        },
+        {
+          "label": "atom 열기",
+          "width": 44,
+          "height": 44,
+          "right": 1194
+        },
+        {
+          "label": "서버 설정",
+          "width": 44,
+          "height": 44,
+          "right": 1248
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 1280px 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 1280,
+      "clientWidth": 1280,
+      "docScrollWidth": 1280,
+      "innerWidth": 1280,
+      "buttons": [
+        {
+          "label": "영구 세션 바꾸기",
+          "width": 44,
+          "height": 44,
+          "right": 924
+        },
+        {
+          "label": "홈",
+          "width": 44,
+          "height": 44,
+          "right": 978
+        },
+        {
+          "label": "세션 파일",
+          "width": 44,
+          "height": 44,
+          "right": 1032
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 44,
+          "height": 44,
+          "right": 1086
+        },
+        {
+          "label": "주간 사용량",
+          "width": 44,
+          "height": 44,
+          "right": 1140
+        },
+        {
+          "label": "atom 열기",
+          "width": 44,
+          "height": 44,
+          "right": 1194
+        },
+        {
+          "label": "서버 설정",
+          "width": 44,
+          "height": 44,
+          "right": 1248
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 1280px 단추 40x40 이상",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 1280,
+      "clientWidth": 1280,
+      "docScrollWidth": 1280,
+      "innerWidth": 1280,
+      "buttons": [
+        {
+          "label": "영구 세션 바꾸기",
+          "width": 44,
+          "height": 44,
+          "right": 924
+        },
+        {
+          "label": "홈",
+          "width": 44,
+          "height": 44,
+          "right": 978
+        },
+        {
+          "label": "세션 파일",
+          "width": 44,
+          "height": 44,
+          "right": 1032
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 44,
+          "height": 44,
+          "right": 1086
+        },
+        {
+          "label": "주간 사용량",
+          "width": 44,
+          "height": 44,
+          "right": 1140
+        },
+        {
+          "label": "atom 열기",
+          "width": 44,
+          "height": 44,
+          "right": 1194
+        },
+        {
+          "label": "서버 설정",
+          "width": 44,
+          "height": 44,
+          "right": 1248
+        }
+      ]
+    }
+  },
+  {
+    "check": "대시보드 툴바 360px atom 단추 있음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 332,
+      "clientWidth": 332,
+      "docScrollWidth": 360,
+      "innerWidth": 360,
+      "buttons": [
+        {
+          "label": "영구 세션 열기",
+          "width": 40,
+          "height": 40,
+          "right": 208
+        },
+        {
+          "label": "atom 열기",
+          "width": 40,
+          "height": 40,
+          "right": 254
+        },
+        {
+          "label": "서버 설정",
+          "width": 40,
+          "height": 40,
+          "right": 300
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 40,
+          "height": 40,
+          "right": 346
+        }
+      ]
+    }
+  },
+  {
+    "check": "대시보드 툴바 360px 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 332,
+      "clientWidth": 332,
+      "docScrollWidth": 360,
+      "innerWidth": 360,
+      "buttons": [
+        {
+          "label": "영구 세션 열기",
+          "width": 40,
+          "height": 40,
+          "right": 208
+        },
+        {
+          "label": "atom 열기",
+          "width": 40,
+          "height": 40,
+          "right": 254
+        },
+        {
+          "label": "서버 설정",
+          "width": 40,
+          "height": 40,
+          "right": 300
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 40,
+          "height": 40,
+          "right": 346
+        }
+      ]
+    }
+  },
+  {
+    "check": "대시보드 툴바 360px 단추 40x40 이상",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 332,
+      "clientWidth": 332,
+      "docScrollWidth": 360,
+      "innerWidth": 360,
+      "buttons": [
+        {
+          "label": "영구 세션 열기",
+          "width": 40,
+          "height": 40,
+          "right": 208
+        },
+        {
+          "label": "atom 열기",
+          "width": 40,
+          "height": 40,
+          "right": 254
+        },
+        {
+          "label": "서버 설정",
+          "width": 40,
+          "height": 40,
+          "right": 300
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 40,
+          "height": 40,
+          "right": 346
+        }
+      ]
+    }
+  },
+  {
+    "check": "대시보드 툴바 1280px atom 단추 있음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 1236,
+      "clientWidth": 1236,
+      "docScrollWidth": 1280,
+      "innerWidth": 1280,
+      "buttons": [
+        {
+          "label": "영구 세션 열기",
+          "width": 44,
+          "height": 44,
+          "right": 1096
+        },
+        {
+          "label": "atom 열기",
+          "width": 44,
+          "height": 44,
+          "right": 1150
+        },
+        {
+          "label": "서버 설정",
+          "width": 44,
+          "height": 44,
+          "right": 1204
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 44,
+          "height": 44,
+          "right": 1258
+        }
+      ]
+    }
+  },
+  {
+    "check": "대시보드 툴바 1280px 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 1236,
+      "clientWidth": 1236,
+      "docScrollWidth": 1280,
+      "innerWidth": 1280,
+      "buttons": [
+        {
+          "label": "영구 세션 열기",
+          "width": 44,
+          "height": 44,
+          "right": 1096
+        },
+        {
+          "label": "atom 열기",
+          "width": 44,
+          "height": 44,
+          "right": 1150
+        },
+        {
+          "label": "서버 설정",
+          "width": 44,
+          "height": 44,
+          "right": 1204
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 44,
+          "height": 44,
+          "right": 1258
+        }
+      ]
+    }
+  },
+  {
+    "check": "대시보드 툴바 1280px 단추 40x40 이상",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 1236,
+      "clientWidth": 1236,
+      "docScrollWidth": 1280,
+      "innerWidth": 1280,
+      "buttons": [
+        {
+          "label": "영구 세션 열기",
+          "width": 44,
+          "height": 44,
+          "right": 1096
+        },
+        {
+          "label": "atom 열기",
+          "width": 44,
+          "height": 44,
+          "right": 1150
+        },
+        {
+          "label": "서버 설정",
+          "width": 44,
+          "height": 44,
+          "right": 1204
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 44,
+          "height": 44,
+          "right": 1258
+        }
+      ]
+    }
+  },
+  {
+    "check": "설정창 persistent 탭: 요청한 PAS를 고른 채 다섯 절이 모두 보임",
+    "ok": true,
+    "detail": [
+      "지속 지시",
+      "계정과 모델",
+      "표시와 모션",
+      "기록",
+      "세션 스토리"
+    ]
+  },
+  {
+    "check": "설정창 persistent 탭: 새 세션 양식이 아님",
+    "ok": true,
+    "detail": "세션 추가 단추 없음"
+  },
+  {
+    "check": "설정창을 닫으면 PAS 창에 그대로 있음",
+    "ok": true,
+    "detail": "http://127.0.0.1:40419/persistent/components-session"
+  },
+  {
+    "check": "Codex 시트: 주소 열기가 새 탭, noopener",
+    "ok": true,
+    "detail": "noopener noreferrer"
+  },
+  {
+    "check": "다시 연결: 확인 전에는 로그인을 시작하지 않음",
+    "ok": true,
+    "detail": 2
+  },
+  {
+    "check": "제출한 코드는 화면에 남지 않음",
+    "ok": true,
+    "detail": "DOM에 없음"
+  },
+  {
+    "check": "invalid_code 뒤 다시 시도는 새 흐름을 시작함",
+    "ok": true,
+    "detail": 5
+  },
+  {
+    "check": "설정창 로그인 흐름: 일회용 코드, 인증 주소, 붙여 넣은 코드가 콘솔에 없음",
+    "ok": true,
+    "detail": {
+      "lines": 6
+    }
+  },
+  {
+    "check": "로그인 시트 360px 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "scroll": 250,
+      "client": 250,
+      "doc": 360,
+      "inner": 360
+    }
+  },
+  {
+    "check": "빈 상태(bootstrap 꺼짐): 설정창이 저절로 열리지 않음",
+    "ok": true,
+    "detail": "설정창 없음"
+  },
+  {
+    "check": "빈 상태(bootstrap 꺼짐): bootstrap을 부르지 않음",
+    "ok": true,
+    "detail": [
+      [
+        "GET",
+        "/api/persistent-sessions"
+      ],
+      [
+        "GET",
+        "/api/nodes/stream"
+      ],
+      [
+        "GET",
+        "/api/sessions/stream"
+      ],
+      [
+        "GET",
+        "/api/health"
+      ],
+      [
+        "GET",
+        "/api/auth/status"
+      ]
+    ]
+  },
+  {
+    "check": "빈 상태(연결 필요) 1280px: bootstrap을 부르지 않음",
+    "ok": true,
+    "detail": [
+      [
+        "GET",
+        "/api/persistent-sessions"
+      ],
+      [
+        "GET",
+        "/api/nodes/stream"
+      ],
+      [
+        "GET",
+        "/api/sessions/stream"
+      ],
+      [
+        "GET",
+        "/api/health"
+      ],
+      [
+        "GET",
+        "/api/auth/status"
+      ]
+    ]
+  },
+  {
+    "check": "빈 상태(연결 필요) 1280px: 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "doc": 1280,
+      "inner": 1280
+    }
+  },
+  {
+    "check": "설정창을 닫은 뒤 목록을 다시 읽고 기본 세션 만들기로 이어짐",
+    "ok": true,
+    "detail": [
+      [
+        "GET",
+        "/api/auth/status"
+      ],
+      [
+        "GET",
+        "/api/nodes/stream"
+      ],
+      [
+        "GET",
+        "/api/health"
+      ],
+      [
+        "GET",
+        "/api/auth/status"
+      ],
+      [
+        "GET",
+        "/api/persistent-sessions"
+      ],
+      [
+        "POST",
+        "/api/persistent-sessions/bootstrap"
+      ]
+    ]
+  },
+  {
+    "check": "빈 상태(연결 필요) 360px: bootstrap을 부르지 않음",
+    "ok": true,
+    "detail": [
+      [
+        "GET",
+        "/api/persistent-sessions"
+      ],
+      [
+        "GET",
+        "/api/nodes/stream"
+      ],
+      [
+        "GET",
+        "/api/sessions/stream"
+      ],
+      [
+        "GET",
+        "/api/health"
+      ],
+      [
+        "GET",
+        "/api/auth/status"
+      ]
+    ]
+  },
+  {
+    "check": "빈 상태(연결 필요) 360px: 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "doc": 360,
+      "inner": 360
+    }
+  },
+  {
+    "check": "빈 상태(기본 세션): bootstrap을 한 번만 부름",
+    "ok": true,
+    "detail": 1
+  },
+  {
+    "check": "기본 세션을 만들면 그 세션으로 옮김",
+    "ok": true,
+    "detail": "http://127.0.0.1:40419/persistent/components-session"
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 0개): 홈 단추가 있음",
+    "ok": true,
+    "detail": [
+      "홈",
+      "라이트 모드로 전환",
+      "atom 열기",
+      "서버 설정"
+    ]
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 0개): 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "sw": 360,
+      "cw": 360,
+      "doc": 360,
+      "inner": 360,
+      "brandRight": 20,
+      "nameClipped": false,
+      "buttons": [
+        {
+          "label": "홈",
+          "left": 168,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "left": 212,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "atom 열기",
+          "left": 256,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "서버 설정",
+          "left": 300,
+          "width": 40,
+          "height": 40
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 0개): 단추가 모두 40x40 이상",
+    "ok": true,
+    "detail": {
+      "sw": 360,
+      "cw": 360,
+      "doc": 360,
+      "inner": 360,
+      "brandRight": 20,
+      "nameClipped": false,
+      "buttons": [
+        {
+          "label": "홈",
+          "left": 168,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "left": 212,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "atom 열기",
+          "left": 256,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "서버 설정",
+          "left": 300,
+          "width": 40,
+          "height": 40
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 0개): 이름과 단추가 겹치지 않음",
+    "ok": true,
+    "detail": {
+      "sw": 360,
+      "cw": 360,
+      "doc": 360,
+      "inner": 360,
+      "brandRight": 20,
+      "nameClipped": false,
+      "buttons": [
+        {
+          "label": "홈",
+          "left": 168,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "left": 212,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "atom 열기",
+          "left": 256,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "서버 설정",
+          "left": 300,
+          "width": 40,
+          "height": 40
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 0개): 홈을 한 번 누르면 /로 감",
+    "ok": true,
+    "detail": "http://127.0.0.1:40419/"
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 1개): 홈 단추가 있음",
+    "ok": true,
+    "detail": [
+      "홈",
+      "세션 파일",
+      "라이트 모드로 전환",
+      "atom 열기",
+      "서버 설정"
+    ]
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 1개): 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "sw": 360,
+      "cw": 360,
+      "doc": 360,
+      "inner": 360,
+      "brandRight": 56,
+      "nameClipped": false,
+      "buttons": [
+        {
+          "label": "홈",
+          "left": 124,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "세션 파일",
+          "left": 168,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "left": 212,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "atom 열기",
+          "left": 256,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "서버 설정",
+          "left": 300,
+          "width": 40,
+          "height": 40
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 1개): 단추가 모두 40x40 이상",
+    "ok": true,
+    "detail": {
+      "sw": 360,
+      "cw": 360,
+      "doc": 360,
+      "inner": 360,
+      "brandRight": 56,
+      "nameClipped": false,
+      "buttons": [
+        {
+          "label": "홈",
+          "left": 124,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "세션 파일",
+          "left": 168,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "left": 212,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "atom 열기",
+          "left": 256,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "서버 설정",
+          "left": 300,
+          "width": 40,
+          "height": 40
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 1개): 이름과 단추가 겹치지 않음",
+    "ok": true,
+    "detail": {
+      "sw": 360,
+      "cw": 360,
+      "doc": 360,
+      "inner": 360,
+      "brandRight": 56,
+      "nameClipped": false,
+      "buttons": [
+        {
+          "label": "홈",
+          "left": 124,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "세션 파일",
+          "left": 168,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "left": 212,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "atom 열기",
+          "left": 256,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "서버 설정",
+          "left": 300,
+          "width": 40,
+          "height": 40
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 1개): 에이전트 이름이 잘리지 않음",
+    "ok": true,
+    "detail": {
+      "sw": 360,
+      "cw": 360,
+      "doc": 360,
+      "inner": 360,
+      "brandRight": 56,
+      "nameClipped": false,
+      "buttons": [
+        {
+          "label": "홈",
+          "left": 124,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "세션 파일",
+          "left": 168,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "left": 212,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "atom 열기",
+          "left": 256,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "서버 설정",
+          "left": 300,
+          "width": 40,
+          "height": 40
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 1개): 홈을 한 번 누르면 /로 감",
+    "ok": true,
+    "detail": "http://127.0.0.1:40419/"
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 2개): 홈 단추가 있음",
+    "ok": true,
+    "detail": [
+      "영구 세션 바꾸기",
+      "홈",
+      "세션 파일",
+      "라이트 모드로 전환",
+      "atom 열기",
+      "서버 설정"
+    ]
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 2개): 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "sw": 360,
+      "cw": 360,
+      "doc": 360,
+      "inner": 360,
+      "brandRight": 56,
+      "nameClipped": false,
+      "buttons": [
+        {
+          "label": "영구 세션 바꾸기",
+          "left": 80,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "홈",
+          "left": 124,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "세션 파일",
+          "left": 168,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "left": 212,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "atom 열기",
+          "left": 256,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "서버 설정",
+          "left": 300,
+          "width": 40,
+          "height": 40
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 2개): 단추가 모두 40x40 이상",
+    "ok": true,
+    "detail": {
+      "sw": 360,
+      "cw": 360,
+      "doc": 360,
+      "inner": 360,
+      "brandRight": 56,
+      "nameClipped": false,
+      "buttons": [
+        {
+          "label": "영구 세션 바꾸기",
+          "left": 80,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "홈",
+          "left": 124,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "세션 파일",
+          "left": 168,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "left": 212,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "atom 열기",
+          "left": 256,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "서버 설정",
+          "left": 300,
+          "width": 40,
+          "height": 40
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 2개): 이름과 단추가 겹치지 않음",
+    "ok": true,
+    "detail": {
+      "sw": 360,
+      "cw": 360,
+      "doc": 360,
+      "inner": 360,
+      "brandRight": 56,
+      "nameClipped": false,
+      "buttons": [
+        {
+          "label": "영구 세션 바꾸기",
+          "left": 80,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "홈",
+          "left": 124,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "세션 파일",
+          "left": 168,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "left": 212,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "atom 열기",
+          "left": 256,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "서버 설정",
+          "left": 300,
+          "width": 40,
+          "height": 40
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 2개): 에이전트 이름이 잘리지 않음",
+    "ok": true,
+    "detail": {
+      "sw": 360,
+      "cw": 360,
+      "doc": 360,
+      "inner": 360,
+      "brandRight": 56,
+      "nameClipped": false,
+      "buttons": [
+        {
+          "label": "영구 세션 바꾸기",
+          "left": 80,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "홈",
+          "left": 124,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "세션 파일",
+          "left": 168,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "left": 212,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "atom 열기",
+          "left": 256,
+          "width": 40,
+          "height": 40
+        },
+        {
+          "label": "서버 설정",
+          "left": 300,
+          "width": 40,
+          "height": 40
+        }
+      ]
+    }
+  },
+  {
+    "check": "PAS 창 툴바 360px(PAS 2개): 홈을 한 번 누르면 /로 감",
+    "ok": true,
+    "detail": "http://127.0.0.1:40419/"
+  },
+  {
+    "check": "PAS 창 툴바 360px(가장 긴 에이전트 이름): 가로 넘침 없음, 이름은 말줄임, 단추와 겹치지 않음",
+    "ok": true,
+    "detail": {
+      "sw": 360,
+      "cw": 360,
+      "brandRight": 64,
+      "firstLeft": 80,
+      "brandWidth": 44,
+      "ellipsis": "ellipsis"
+    }
+  },
+  {
+    "check": "대시보드 툴바 768px: atom 단추 있음, 가로 넘침 없음, 마지막 단추가 화면 안에 있음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 724,
+      "clientWidth": 724,
+      "docScrollWidth": 768,
+      "innerWidth": 768,
+      "buttons": [
+        {
+          "label": "영구 세션 열기",
+          "width": 44,
+          "height": 44,
+          "right": 584
+        },
+        {
+          "label": "atom 열기",
+          "width": 44,
+          "height": 44,
+          "right": 638
+        },
+        {
+          "label": "서버 설정",
+          "width": 44,
+          "height": 44,
+          "right": 692
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 44,
+          "height": 44,
+          "right": 746
+        }
+      ]
+    }
+  },
+  {
+    "check": "대시보드 툴바 820px: atom 단추 있음, 가로 넘침 없음, 마지막 단추가 화면 안에 있음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 776,
+      "clientWidth": 776,
+      "docScrollWidth": 820,
+      "innerWidth": 820,
+      "buttons": [
+        {
+          "label": "영구 세션 열기",
+          "width": 44,
+          "height": 44,
+          "right": 636
+        },
+        {
+          "label": "atom 열기",
+          "width": 44,
+          "height": 44,
+          "right": 690
+        },
+        {
+          "label": "서버 설정",
+          "width": 44,
+          "height": 44,
+          "right": 744
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 44,
+          "height": 44,
+          "right": 798
+        }
+      ]
+    }
+  },
+  {
+    "check": "대시보드 툴바 863px: atom 단추 있음, 가로 넘침 없음, 마지막 단추가 화면 안에 있음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 819,
+      "clientWidth": 819,
+      "docScrollWidth": 863,
+      "innerWidth": 863,
+      "buttons": [
+        {
+          "label": "영구 세션 열기",
+          "width": 44,
+          "height": 44,
+          "right": 679
+        },
+        {
+          "label": "atom 열기",
+          "width": 44,
+          "height": 44,
+          "right": 733
+        },
+        {
+          "label": "서버 설정",
+          "width": 44,
+          "height": 44,
+          "right": 787
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 44,
+          "height": 44,
+          "right": 841
+        }
+      ]
+    }
+  },
+  {
+    "check": "대시보드 툴바 900px: atom 단추 있음, 가로 넘침 없음, 마지막 단추가 화면 안에 있음",
+    "ok": true,
+    "detail": {
+      "scrollWidth": 856,
+      "clientWidth": 856,
+      "docScrollWidth": 900,
+      "innerWidth": 900,
+      "buttons": [
+        {
+          "label": "영구 세션 열기",
+          "width": 44,
+          "height": 44,
+          "right": 716
+        },
+        {
+          "label": "atom 열기",
+          "width": 44,
+          "height": 44,
+          "right": 770
+        },
+        {
+          "label": "서버 설정",
+          "width": 44,
+          "height": 44,
+          "right": 824
+        },
+        {
+          "label": "라이트 모드로 전환",
+          "width": 44,
+          "height": 44,
+          "right": 878
+        }
+      ]
+    }
+  },
+  {
+    "check": "영구 세션 탭: 절 사이 구분선이 두 줄로 붙지 않음",
+    "ok": true,
+    "detail": {
+      "sections": 5,
+      "offenders": []
+    }
+  },
+  {
+    "check": "단언 자체 확인: 행 아래 선을 되돌리면 구분선 단언이 실패함",
+    "ok": true,
+    "detail": {
+      "sections": 5,
+      "offenders": [
+        "표시와 모션"
+      ]
+    }
+  },
+  {
+    "check": "설정창 영구 세션 탭 360px: 설명과 지시 글이 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "설정창 영구 세션 탭 360px: 가로 넘침 없음",
+    "ok": true,
+    "detail": "detail"
+  },
+  {
+    "check": "코딩 에이전트 탭 360px: Codex 시트가 스크롤 영역 안에 통째로 보이고 하단 바에 가리지 않음",
+    "ok": true,
+    "detail": {
+      "sheetTop": 558,
+      "sheetBottom": 760,
+      "detailTop": 131,
+      "detailBottom": 784,
+      "footerTop": 801
+    }
+  },
+  {
+    "check": "코딩 에이전트 탭 360px: Antigravity 시트와 입력칸이 보이고 하단 바에 가리지 않음",
+    "ok": true,
+    "detail": {
+      "sheetTop": 550,
+      "sheetBottom": 760,
+      "detailTop": 131,
+      "detailBottom": 784,
+      "footerTop": 801
+    }
+  },
+  {
+    "check": "실패 문구 timeout 1280px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "실패 문구 cli_exited 1280px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "실패 문구 verify_failed 1280px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "실패 문구 cancelled_by_new_login 1280px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "실패 문구 unknown_code 1280px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "실패 문구 cli_not_installed 1280px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "실패 문구 timeout 360px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "실패 문구 cli_exited 360px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "실패 문구 verify_failed 360px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "실패 문구 cancelled_by_new_login 360px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "실패 문구 unknown_code 360px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "실패 문구 cli_not_installed 360px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "빈 상태(연결 필요) 관리자가 아님: 코딩 에이전트 연결 단추가 없음",
+    "ok": true,
+    "detail": "단추 없음"
+  },
+  {
+    "check": "기본 세션 만들기 실패 1280px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "기본 세션 만들기 실패 1280px: 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "doc": 1280,
+      "inner": 1280
+    }
+  },
+  {
+    "check": "기본 세션 만들기 실패: 다시 시도를 눌러도 초점이 그 단추에 남음",
+    "ok": true,
+    "detail": "다시 시도"
+  },
+  {
+    "check": "기본 세션 만들기 실패 360px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "기본 세션 만들기 실패 360px: 가로 넘침 없음",
+    "ok": true,
+    "detail": {
+      "doc": 360,
+      "inner": 360
+    }
+  },
+  {
+    "check": "확인 글 360px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "단언 자체 확인: keep-all을 끄면 확인 글 360px에서 어절이 끊김(단언이 실제로 실패함)",
+    "ok": true,
+    "detail": [
+      "바뀝니다."
+    ]
+  },
+  {
+    "check": "확인 글 1280px: 어절 가운데서 줄이 바뀌지 않음",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "check": "설정창을 열면 초점이 창 안에 있음",
+    "ok": true,
+    "detail": "완료"
+  },
+  {
+    "check": "Codex 시트가 열리고 주소가 오면 초점이 「주소 열기」에 있음",
+    "ok": true,
+    "detail": "주소 열기"
+  },
+  {
+    "check": "Codex 시트 Tab 순서: 취소, 주소 열기, 복사 순으로 읽는 순서를 따르고 안 보이는 요소에 들어가지 않음",
+    "ok": true,
+    "detail": [
+      "취소",
+      "주소 열기",
+      "복사",
+      "다시 연결"
+    ]
+  },
+  {
+    "check": "Codex 시트: Shift+Tab으로 다시 시트 안(주소 열기)으로 돌아옴",
+    "ok": true,
+    "detail": "주소 열기"
+  },
+  {
+    "check": "Codex 시트: Esc는 시트만 닫고 설정창은 그대로이며 초점이 「연결」 단추로 돌아옴",
+    "ok": true,
+    "detail": {
+      "focus": "연결",
+      "dialog": true
+    }
+  },
+  {
+    "check": "다시 연결 확인줄이 열리면 초점이 첫 동작(취소)에 있음",
+    "ok": true,
+    "detail": "취소"
+  },
+  {
+    "check": "확인줄 Esc: 줄만 닫히고 초점이 「다시 연결」 단추로 돌아옴",
+    "ok": true,
+    "detail": "다시 연결"
+  },
+  {
+    "check": "확인줄 취소(Enter): 초점이 「다시 연결」 단추로 돌아옴",
+    "ok": true,
+    "detail": "다시 연결"
+  },
+  {
+    "check": "Antigravity 시트: 코드 입력칸이 나타나면 초점이 입력칸에 있음",
+    "ok": true,
+    "detail": "Antigravity 인증 코드"
+  },
+  {
+    "check": "창 크기 바꾸기: 열린 시트와 입력 중인 글이 1280 → 360 → 1280에서 유지되고 가로 넘침이 없음",
+    "ok": true,
+    "detail": {
+      "narrow": {
+        "value": "typed-partial",
+        "overflow": false
+      },
+      "wide": {
+        "value": "typed-partial",
+        "overflow": false
+      }
+    }
+  },
+  {
+    "check": "Antigravity 시트 Esc: 시트가 닫히고 초점이 「다시 연결」 단추로 돌아옴",
+    "ok": true,
+    "detail": "다시 연결"
+  },
+  {
+    "check": "설정창 Esc: 창이 닫히고 PAS 창이 그대로임",
+    "ok": true,
+    "detail": {
+      "closed": true,
+      "focus": "서버 설정"
+    }
+  },
+  {
+    "check": "표시 항목 스위치: 스페이스로 바꾸면 바로 저장 요청이 감",
+    "ok": true,
+    "detail": [
+      "http://127.0.0.1:40419/api/persistent-sessions/components-session"
+    ]
+  }
+]
