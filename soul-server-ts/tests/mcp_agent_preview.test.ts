@@ -91,6 +91,17 @@ describe("agent MCP preview", () => {
     expect(result.data.restricted.servers).toContainEqual(expect.objectContaining({ server_id: "web", included: true }));
   });
 
+  it("uses the configured default preset backend for preview", async () => {
+    const service = new McpConfigService({ agentsConfigPath: "/tmp/preview-agents.yaml", processEnv: {} });
+    const snapshot = { registry: { servers: [server] }, profiles: { profiles: [{ id: "p", mcp_servers: ["atom"] }] }, agent_bindings: { a: "p" } };
+    await service.applyCentralSync({ revision: 1, runtime: snapshot, display: snapshot });
+    const commands = new McpConfigCommands(service, () => {}, { tasks: { resolveNewSessionAgent: async () => ({ profile: { ...agent, default_preset: "fixture-preset" }, hasDbPortrait: false, fromSource: false }) },
+      catalog: { resolve: () => ({ backend: "claude" }) as never },
+      context: { nodeId: "test", codexMode: "sdk", isolationEnabled: true, localMcpPolicy: () => policy } });
+    const result = await commands.preview({ requestId: "1", agent_id: "a" });
+    expect(result.data).toMatchObject({ effective_backend: "claude", default_preset: "fixture-preset", normal: { runnable: true } });
+  });
+
   it("dispatches the preview command through the session profile source", async () => {
     const service = new McpConfigService({ agentsConfigPath: "/tmp/preview-agents.yaml", processEnv: {} });
     const snapshot = { registry: { servers: [server] }, profiles: { profiles: [{ id: "p", mcp_servers: ["atom"] }] }, agent_bindings: { a: "p" } };
