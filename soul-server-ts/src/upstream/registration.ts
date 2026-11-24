@@ -1,4 +1,3 @@
-import { isPortableMcpNode } from "../mcp_central/state.js";
 import { readFileSync } from "node:fs";
 
 import type { Logger } from "pino";
@@ -12,6 +11,7 @@ import type { ReleaseActivationState } from "../release/release_activation_state
 import { toWireReleaseManifest } from "../release/wire_release_manifest.js";
 
 export interface RegistrationParams {
+  isPortableNode?: boolean;
   nodeId: string;
   host: string;
   port: number;
@@ -113,7 +113,7 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
     capabilities: {
       max_concurrent: agents.length,
       reflect_brief: true,
-      ...(!isPortableMcpNode(process.env) ? { central_mcp_config_v1: true } : {}),
+      ...(!params.isPortableNode ? { central_mcp_config_v1: true } : {}),
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,

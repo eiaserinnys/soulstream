@@ -9,10 +9,11 @@ const SyncSchema = z.object({ type: z.literal("mcp_central_sync"), requestId: z.
 
 export class McpConfigCommands {
   constructor(private readonly service: McpConfigService | undefined,
-    private readonly rebuild: (() => void) | undefined) {}
+    private readonly rebuild: (() => void) | undefined,
+    private readonly isPortableNode = service?.isPortableNode() ?? false) {}
 
   async sync(input: unknown) {
-    if (this.service?.isPortableNode()) throw new CommandDispatchError("Portable nodes cannot receive central MCP configuration", "MCP_PORTABLE_NODE");
+    if (this.isPortableNode) throw new CommandDispatchError("Portable nodes cannot receive central MCP configuration", "MCP_PORTABLE_NODE");
     const parsed = SyncSchema.safeParse(input);
     if (!parsed.success) throw new CommandDispatchError("Invalid central MCP sync request", "INVALID_MCP_CENTRAL_SYNC");
     if (!this.service || !this.rebuild) throw new CommandDispatchError("MCP configuration service unavailable");

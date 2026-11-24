@@ -171,6 +171,8 @@ Backend rules are the Claude rules for `claude` and the Codex rules for `codex`;
 
 The Linux installer registers two MCP servers in `config/mcp-registry.yaml`: `soulstream` (`http://127.0.0.1:4205/mcp`, `Authorization` from `PORTABLE_LOCAL_MCP_AUTHORIZATION`) and `atom` (`http://127.0.0.1:4200/mcp`, `x-api-key` from `ATOM_API_KEY`). `config/mcp-profiles.yaml` defines `default` and `pas` (named `PAS`), and both use `mcp_servers: [soulstream, atom]`.
 
+Portable nodes use `SOULSTREAM_PORTABLE_NODE=1`. For older launchers, a node is also portable when the local MCP authorization variable is present and the release manifest contains `model_catalog_path`.
+
 ## Files the Linux installer manages
 
 The installer manages `config/agents.yaml`, `config/mcp-registry.yaml`, `config/mcp-profiles.yaml`, and `/home/soulstream/workspace/AGENTS.md` (`CLAUDE.md` links to it). `config/.installer-managed.sha256` records, in `sha256sum` format, the SHA-256 of each file as the installer last wrote it. A rerun replaces a file only when it is missing, still has the recorded hash, or has no record line and is exactly what the first-stage installer (before atom support) wrote; a file already identical to the new version is left as it is. Any other file is treated as yours: it is kept unchanged, the installer's new version is written next to it as `<file>.installer-new`, the finish message lists it under `Configuration:`, and its record line is not updated, so later reruns keep it too. To take the new version, move `<file>.installer-new` over the file and run the same command again; the record then follows the file. A `CLAUDE.md` that is a regular file or links somewhere else is also kept.

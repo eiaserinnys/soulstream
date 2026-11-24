@@ -147,3 +147,21 @@ describe("secret reference extraction", () => {
   });
 
 });
+
+it("collects encoded query references alongside raw references", async () => {
+  const { collectSecretReferences } = await import("../../src/mcp_central/secret_refs.js");
+  const { secretReferences } = await import("../../src/mcp_central/service_shared.js");
+  const url = (name: string) => `https://example.com/?key=${encodeURIComponent(`{{secret:${name}}}`)}`;
+  const server = { id: "server", config: { url: url("server-query") }, node_overrides: { node: { config: { url: url("override-query") } } } };
+  const profile = { id: "profile", hosted_tools: [{ server_url: url("hosted-query") }, { authorization: "{{secret:raw}}" }] };
+  expect([...collectSecretReferences([server, profile])].sort()).toEqual(["hosted-query", "override-query", "raw", "server-query"]);
+  const refs = secretReferences([server as never], [profile as never]);
+  expect([...refs.keys()].sort()).toEqual(["hosted-query", "override-query", "raw", "server-query"]);
+});
+
+it("collects query references when another query value has a malformed percent", async () => {
+  const { collectSecretReferences } = await import("../../src/mcp_central/secret_refs.js");
+  const url = (name: string) => `https://example.com/?q=50%&key=${encodeURIComponent(`{{secret:${name}}}`)}`;
+  const value = { config: { url: url("server") }, hosted_tools: [{ server_url: url("hosted") }] };
+  expect([...collectSecretReferences(value)].sort()).toEqual(["hosted", "server"]);
+});

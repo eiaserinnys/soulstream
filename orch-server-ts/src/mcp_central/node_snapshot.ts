@@ -2,15 +2,11 @@ import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { McpCentralSnapshot } from "@soulstream/wire-schema";
 import type { LivePostgresSql } from "../runtime/live_db_sql.js";
 import { createMcpCentralRepository } from "./repository.js";
-import { SECRET_REF_PATTERN, collectSecretReferences } from "./secret_refs.js";
+import { SECRET_REF_PATTERN, collectSecretReferences, safeDecode } from "./secret_refs.js";
 
 export class MissingMcpSecretError extends Error {
   readonly code = "MCP_SECRET_NOT_FOUND";
   constructor(name: string) { super(`MCP secret not found: ${name}`); }
-}
-
-function decode(value: string): string {
-  try { return decodeURIComponent(value); } catch { return value; }
 }
 
 /** Query values are stored encoded, unlike headers and environment values. */
@@ -22,7 +18,7 @@ function mapValues(value: unknown, replace: (value: string) => string, key = "")
         const equals = part.indexOf("=");
         if (equals < 0) return part;
         const raw = part.slice(equals + 1);
-        const decoded = decode(raw);
+        const decoded = safeDecode(raw);
         const resolved = replace(decoded);
         return resolved === decoded ? part : `${part.slice(0, equals + 1)}${encodeURIComponent(resolved)}`;
       }).join("&");

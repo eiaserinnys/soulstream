@@ -11,7 +11,7 @@ import {
   type AgentsSdkMcpServer,
   type AgentProfile,
 } from "@soulstream/agent-profile-contract";
-import { CentralMcpState, isPortableMcpNode, type CentralSync } from "./mcp_central/state.js";
+import { CentralMcpState, type CentralSync } from "./mcp_central/state.js";
 import { sanitizeServer, sanitizeHostedTool } from "./mcp_central/display.js";
 import { resolveCentralTemplate, resolveHostedTool } from "./mcp_central/templates.js";
 
@@ -110,6 +110,7 @@ export interface McpConfigServiceOptions {
   profilesPath?: string;
   processEnv?: Record<string, string | undefined>;
   modePath?: string;
+  isPortableNode?: boolean;
 }
 
 export function defaultMcpRegistryPath(agentsConfigPath: string): string {
@@ -124,6 +125,7 @@ export class McpConfigService {
   readonly registryPath: string;
   readonly profilesPath: string;
 
+  private readonly portableNode: boolean;
   private readonly processEnv: Record<string, string | undefined>;
   private readonly central: CentralMcpState<McpRegistryConfig, McpProfilesConfig>;
 
@@ -131,6 +133,7 @@ export class McpConfigService {
     this.registryPath = options.registryPath ?? defaultMcpRegistryPath(options.agentsConfigPath);
     this.profilesPath = options.profilesPath ?? defaultMcpProfilesPath(options.agentsConfigPath);
     this.processEnv = options.processEnv ?? process.env;
+    this.portableNode = options.isPortableNode ?? false;
     this.central = new CentralMcpState(options.modePath, (input) => {
       const raw = z.object({ registry: McpRegistryConfigSchema, profiles: McpProfilesConfigSchema,
         agent_bindings: z.record(z.string(), z.string().min(1)) }).parse(input);
@@ -145,7 +148,7 @@ export class McpConfigService {
 
   configStatus() { return this.central.status(); }
 
-  isPortableNode(): boolean { return isPortableMcpNode(this.processEnv); }
+  isPortableNode(): boolean { return this.portableNode; }
 
   async applyCentralSync(input: CentralSync): Promise<void> { await this.central.apply(input); }
 

@@ -115,6 +115,7 @@ test("child 환경에는 bootstrap이 주던 값과 ATOM_ENABLED가 없고 노�
   assert.equal("ATOM_API_KEY" in env, false);
   assert.equal("EXTRA_FROM_BOOTSTRAP" in env, false);
   assert.equal(env.PORTABLE_LOCAL_MCP_AUTHORIZATION, "Bearer test-node-token-7f3a");
+  assert.equal(env.SOULSTREAM_PORTABLE_NODE, "1");
   assert.equal(env.AGENTS_CONFIG_PATH, join(configDir, "agents.yaml"));
   assert.equal(env.MCP_INTERNAL_PORT, "41117");
   assert.equal("MODEL_CATALOG_PATH" in env, false, "카탈로그 경로는 bind가 정본 경로로 넘깁니다.");

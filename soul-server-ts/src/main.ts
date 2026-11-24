@@ -1,4 +1,4 @@
-import { resolveMcpCentralModePath } from "./mcp_central/state.js";
+import { isPortableMcpNode, resolveMcpCentralModePath } from "./mcp_central/state.js";
 import dotenv from "dotenv";
 import { ZodError } from "zod";
 import { dirname, join } from "node:path";
@@ -83,6 +83,7 @@ async function main(): Promise<void> {
     declaredEnv: declaredDeploymentEnv,
   });
   const releaseActivationState = new ReleaseActivationState(releaseManifest);
+  const isPortableNode = isPortableMcpNode(process.env, releaseManifest);
 
   // Portable bind records the catalogue absolute path it was bound with; a
   // repository checkout derives it from the entry module location.
@@ -114,6 +115,7 @@ async function main(): Promise<void> {
   }
   const mcpConfigService = new McpConfigService({
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
+    isPortableNode,
     processEnv: process.env,
     modePath: resolveMcpCentralModePath(env),
   });
