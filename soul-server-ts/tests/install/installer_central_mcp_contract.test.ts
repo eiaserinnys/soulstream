@@ -57,3 +57,15 @@ it("uses the installer-rendered environment and actual catalog-free manifest", a
     await expect(new McpConfigCommands(service, () => {}, portable).sync({ type: "mcp_central_sync", requestId: "test", revision: 1, runtime: snapshot, display: snapshot })).resolves.toMatchObject({ success: true });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+it("uses the new launcher's actual child environment for registration and sync", async () => {
+  // @ts-expect-error portable launcher is an ESM JavaScript package
+  const { buildChildEnv } = await import("../../../portable-node/lib/environment.mjs");
+  const runtime = { executable: "/tmp/fake/bin" };
+  const env = buildChildEnv({ stateRoot: "/tmp/fake", defaults: { node_ws_url: "ws://localhost" }, node: { node_id: "new", token: "fake" }, configDir: "/tmp/fake/config", releaseDir: "/tmp/fake/release", runtimes: { node: runtime, python: runtime, claude: runtime, codex: runtime }, ports: { host: 1234, mcp: 1235 } });
+  expect(env.SOULSTREAM_PORTABLE_NODE).toBe("1");
+  const portable = isPortableMcpNode(env, {});
+  expect(portable).toBe(true);
+  expect(buildRegistrationMsg({ nodeId: "new", host: "localhost", port: 1, userName: "", agentRegistry: new AgentRegistry([]), isPortableNode: portable }).capabilities).not.toHaveProperty("central_mcp_config_v1");
+  await expect(new McpConfigCommands(undefined, undefined, portable).sync({})).rejects.toMatchObject({ code: "MCP_PORTABLE_NODE" });
+});
