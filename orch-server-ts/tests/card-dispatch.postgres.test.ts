@@ -493,8 +493,8 @@ describe("card dispatch and session lifecycle", () => {
     });
 });
 it("assembles the exact card execution first prompt", () => {
-    expect(buildCardPrompt({ cardId: 'c1', title: '작업', folderName: '실험', request: '원문', brief: '경과', reason: '검증 보완',
-        running: [{ title: '다른 작업', folderName: '개발' }] })).toMatchSnapshot();
+    expect(buildCardPrompt({ cardId: 'c1', folderId: 'f1', title: '작업', folderName: '실험', request: '원문', brief: '경과', reason: '검증 보완',
+        running: [{ id: 'c2', folder_id: 'f1', number: 42, title: '다른 작업' }] })).toMatchSnapshot();
 });
 it("runs card availability from the existing recurring scheduler tick", async () => {
     const onTick = vi.fn();

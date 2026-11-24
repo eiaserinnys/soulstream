@@ -12,6 +12,6 @@ exports[`assembles the exact card execution first prompt 1`] = `
 ## 상태 변경 사유 (있을 때만)
 검증 보완
 
-## 지금 실행 중인 다른 카드 세션
-다른 작업 (개발)"
+## 같은 폴더에서 실행 중인 다른 카드
+#42 다른 작업"
 `;

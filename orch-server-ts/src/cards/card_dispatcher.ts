@@ -451,10 +451,10 @@ export class CardDispatcher {
                 continue;
             const answers = detail.questions.filter(q => q.answer !== null).map(q => `${String(q.text)} → ${String(q.answer)}`).join("\n");
             const running = await this.options.repository.running();
-            const prompt = buildCardPrompt({ cardId: card.id, title: card.title, folderName: card.folder_name, request: card.request,
+            const prompt = buildCardPrompt({ cardId: card.id, folderId: card.folder_id, title: card.title, folderName: card.folder_name, request: card.request,
                 brief: [card.brief, answers].filter(Boolean).join("\n"), reason: await this.options.repository.rejectionReason(card.id),
                 comments: detail.comments.filter(comment => comment.author_kind === "user").map(comment => ({ id:String(comment.id),createdAt: comment.created_at as Date | string, body: String(comment.body) })),
-                running: running.filter(c => c.id !== card.id).map(c => ({ title: c.title, folderName: c.folder_name })) });
+                running });
             const sessionId = randomUUID();
             await cards.recordDispatch({ cardId: card.id, expectedVersion: detail.card.version, sessionId, nodeId: target.nodeId });
             try {

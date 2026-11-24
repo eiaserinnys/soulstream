@@ -450,6 +450,7 @@ export class CardOrchestrationCoordinator {
         priorTerminationEventId: executionOwner?.termination_event_id ?? null,
         prompt: buildCardPrompt({
           cardId: card.id,
+          folderId: card.folder_id,
           title: card.title,
           folderName: card.folder_name,
           request: card.request,
@@ -467,10 +468,7 @@ export class CardOrchestrationCoordinator {
             createdAt: c.created_at as Date | string,
             body: String(c.body),
           })),
-          running: (await this.options.dispatch.running()).map((c) => ({
-            title: c.title,
-            folderName: c.folder_name,
-          })),
+          running: await this.options.dispatch.running(),
         }),
       };
       input.prompt = `${String(input.prompt)}\n\n자동 배정 실행이다. 일을 시작할 때 get_card로 version을 읽어 start_card_work를 부른다.`;
