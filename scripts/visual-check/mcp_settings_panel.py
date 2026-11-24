@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import base64
 import copy
+from concurrent.futures import ThreadPoolExecutor
 import functools
 import http.server
 import io
@@ -909,25 +910,35 @@ def main():
     out = Path(args.output); out.mkdir(parents=True, exist_ok=True)
     server, base = serve()
     try:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch()
-            if args.r4_only: run_r4(browser, base, out)
-            elif args.r3_only: run_r3(browser, base, out)
-            elif args.r2_only: run_r2(browser, base, out)
-            elif args.r1_only: run_r1(browser, base, out)
-            else:
-                run(browser, base, out); run_r1(browser, base, out); run_r2(browser, base, out); run_r3(browser, base, out); run_r4(browser, base, out)
-                with out.joinpath('operations.md').open('a', encoding='utf8') as operations:
-                    operations.write('\n' + out.joinpath('r1-operations.md').read_text(encoding='utf8'))
-                    operations.write('\n' + out.joinpath('r2-operations.md').read_text(encoding='utf8'))
-                    operations.write('\n' + out.joinpath('r3-operations.md').read_text(encoding='utf8'))
-                    operations.write('\n' + out.joinpath('r4-operations.md').read_text(encoding='utf8'))
-            if args.baseline_dist:
-                baseline_server, baseline = serve(Path(args.baseline_dist))
-                try: compare_existing(browser, baseline, base, out)
-                finally: baseline_server.shutdown()
-            if not args.r1_only and not args.r2_only and not args.r3_only and not args.r4_only: check_artifact_references(out)
-            browser.close()
+        def run_suites(suites):
+            # Playwright의 동기 API는 스레드마다 별도 인스턴스와 브라우저를 쓴다.
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch()
+                try:
+                    for suite in suites: suite(browser, base, out)
+                finally: browser.close()
+
+        single = run_r4 if args.r4_only else run_r3 if args.r3_only else run_r2 if args.r2_only else run_r1 if args.r1_only else None
+        if single:
+            run_suites((single,))
+        else:
+            # 각 묶음은 독립 페이지와 별도 파일을 쓴다. 두 작업자가 끝난 뒤 결과를 합친다.
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                workers = [pool.submit(run_suites, suites) for suites in ((run, run_r2), (run_r1, run_r3, run_r4))]
+                for worker in workers: worker.result()
+            with out.joinpath('operations.md').open('a', encoding='utf8') as operations:
+                for stage in ('r1', 'r2', 'r3', 'r4'):
+                    operations.write('\n' + out.joinpath(f'{stage}-operations.md').read_text(encoding='utf8'))
+
+        if args.baseline_dist:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch()
+                try:
+                    baseline_server, baseline = serve(Path(args.baseline_dist))
+                    try: compare_existing(browser, baseline, base, out)
+                    finally: baseline_server.shutdown()
+                finally: browser.close()
+        if not single: check_artifact_references(out)
     finally: server.shutdown()
     print(f'MCP 화면 캡처와 조작 결과: {out}')
 
