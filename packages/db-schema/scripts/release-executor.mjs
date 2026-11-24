@@ -28,6 +28,12 @@ import {
 } from "./database-release-subphase.mjs";
 import { prepareLegacyInitializeEnvironment } from "./database-release-legacy.mjs";
 import {
+  INSTALLER_DATABASE_AUTHORITY,
+  assertInstallerInvocation,
+  assertInstallerQuiescence,
+  databaseReleaseAuthority,
+} from "./database-release-installer.mjs";
+import {
   classifyDatabaseOperation,
   discoverDatabaseOperation,
   probeDatabaseOperation,
@@ -62,8 +68,17 @@ function stableError(code, error) {
 
 export async function runDatabaseRelease(command, options = {}) {
   if (!COMMANDS.has(command)) throw new Error(`unknown database release command: ${command}`);
+  const authority = databaseReleaseAuthority(options.authority);
+  if (authority === INSTALLER_DATABASE_AUTHORITY) {
+    // The caller's own environment, before any service env file is merged.
+    assertInstallerInvocation({
+      command,
+      env: options.env ?? process.env,
+      platform: options.platform ?? process.platform,
+    });
+  }
   if (command === "initialize") await prepareLegacyInitializeEnvironment(options);
-  const context = await resolveDatabaseReleaseContext(options, command);
+  const context = await resolveDatabaseReleaseContext({ ...options, authority }, command);
   try {
     if (command === "probe") return await probe(context);
     await mkdir(required(context.env, "HANIEL_BACKUP_DIR"), { recursive: true });
@@ -145,6 +160,7 @@ async function preflight(context, options) {
     plan,
     inventory,
     now: options.now,
+    authority: context.authority,
   });
   if (["apply_started", "apply_failed"].includes(journal.status)) {
     const reconciliation = classifyLedgerReconciliation(journal, plan, inventory);
@@ -181,7 +197,7 @@ function inheritedOperationJournal(context, existing) {
   try {
     assertDatabaseReleaseIdentity(
       existing,
-      journalIdentity(context.env, existing.operation),
+      journalIdentity(context.env, existing.operation, context.authority),
     );
     return existing;
   } catch (error) {
@@ -197,7 +213,7 @@ async function currentJournal(context, operation = null) {
   const journal = await readDatabaseReleaseJournal(path);
   assertDatabaseReleaseIdentity(
     journal,
-    journalIdentity(context.env, operation ?? journal.operation),
+    journalIdentity(context.env, operation ?? journal.operation, context.authority),
   );
   return { journal, path };
 }
@@ -242,7 +258,14 @@ async function apply(context, options) {
   const skippedMigrationRun =
     journal.operation === "upgrade" && plannedSchemaWorkCount(journal) === 0;
   let evidence = null;
-  if (requiresQuiescence(journal)) {
+  if (requiresQuiescence(journal) && context.authority === INSTALLER_DATABASE_AUTHORITY) {
+    // First live check; the deepest writer checks again inside the advisory lock.
+    await assertInstallerQuiescence({
+      operation: journal.operation,
+      services: journal.affected_services,
+      systemctlShow: options.systemctlShow,
+    });
+  } else if (requiresQuiescence(journal)) {
     evidence = await readHanielReleaseEvidence({
       env: context.env,
       journal,
@@ -264,7 +287,12 @@ async function apply(context, options) {
   const mode = journal.operation === "fresh_install" ? "fresh-install" : "apply";
   try {
     if (!skippedMigrationRun) {
-      await context.migrationRun(mode, { env: context.env, journalPath: path });
+      await context.migrationRun(mode, {
+        env: context.env,
+        journalPath: path,
+        authority: context.authority,
+        systemctlShow: options.systemctlShow,
+      });
     }
   } catch (error) {
     let failedPlan;

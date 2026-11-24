@@ -48,10 +48,16 @@ export interface DatabaseReleaseOptions {
   sql?: import("postgres").Sql;
   inventoryRead?: () => Promise<import("./database-release-journal.mjs").DatabaseInventory>;
   planRead?: () => Promise<import("./database-release-journal.mjs").DatabasePlan>;
-  migrationRun?: (mode: string, options: { env: NodeJS.ProcessEnv; sql?: import("postgres").Sql | null }) => Promise<unknown>;
+  migrationRun?: (mode: string, options: { env: NodeJS.ProcessEnv; sql?: import("postgres").Sql | null; journalPath?: string; authority?: import("./database-release-installer.mjs").DatabaseReleaseAuthority; systemctlShow?: import("./database-release-installer.mjs").SystemctlShow }) => Promise<unknown>;
   subphase?: string;
   childCommand?: string[];
   manifestMigration?: unknown;
+  /** Chosen by the CLI from the release files. Defaults to "haniel". */
+  authority?: import("./database-release-installer.mjs").DatabaseReleaseAuthority;
+  /** Test seam for the installer platform fence. Defaults to process.platform. */
+  platform?: NodeJS.Platform | string;
+  /** Test seam for the installer live unit check. Defaults to the absolute systemctl. */
+  systemctlShow?: import("./database-release-installer.mjs").SystemctlShow;
   afterApplyCommit?: () => void | Promise<void>;
   subphaseRun?: (command: string[], env: NodeJS.ProcessEnv, timeoutMs: number) => void | Promise<void>;
   timeoutMs?: number;

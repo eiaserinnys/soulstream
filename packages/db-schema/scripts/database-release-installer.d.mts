@@ -1,0 +1,12 @@
+export type DatabaseReleaseAuthority = "haniel" | "linux-systemd-installer";
+export type SystemctlShow = (unit: string) => Promise<string>;
+export const HANIEL_DATABASE_AUTHORITY: "haniel";
+export const INSTALLER_DATABASE_AUTHORITY: "linux-systemd-installer";
+export function installerContractPaths(): { manifest: string; databaseContract: string };
+export function resolveDatabaseReleaseAuthority(options?: { manifestPath?: string | null; databaseContractPath?: string | null; contract?: Record<string, unknown> | null }): Promise<DatabaseReleaseAuthority>;
+export function databaseReleaseAuthority(value: unknown): DatabaseReleaseAuthority;
+export function assertInstallerInvocation(options: { command: string; env: NodeJS.ProcessEnv; platform: NodeJS.Platform | string }): void;
+export function assertInstallerDatabaseTarget(env: NodeJS.ProcessEnv): void;
+export function systemctlExecutable(exists?: (path: string) => boolean): string | null;
+export function showSystemdUnit(unit: string): Promise<string>;
+export function assertInstallerQuiescence(options: { operation: string; services: string[]; systemctlShow?: SystemctlShow }): Promise<void>;
