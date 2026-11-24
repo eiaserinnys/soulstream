@@ -248,6 +248,15 @@ def toolbar_metrics(page, selector):
     }""", selector)
 
 
+def wait_for_call(page, fake, call, timeout_ms=5000):
+    """가짜 서버가 그 호출을 받을 때까지 기다린다. 화면이 먼저 바뀌고 요청이 뒤따르는 경우의 경쟁을 막는다."""
+    waited = 0
+    while call not in fake.calls and waited < timeout_ms:
+        page.wait_for_timeout(100)
+        waited += 100
+    return call in fake.calls
+
+
 def check(label, condition, detail):
     CHECKS.append({"check": label, "ok": bool(condition), "detail": detail})
     assert condition, f"{label}: {json.dumps(detail, ensure_ascii=False)}"

@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from playwright.sync_api import expect, sync_playwright  # noqa: E402
 
 from settings_toolbar_r2 import capture_r2  # noqa: E402
-from settings_toolbar_fakes import CHECKS, INDEX, Fake, SESSION_ID, FAKE_PASTED_CODE, FAKE_USER_CODE, assert_no_secret_output, check, DIST, flow, listen, new_page, open_settings, serve, shot, soon, toolbar_metrics  # noqa: E402
+from settings_toolbar_fakes import CHECKS, INDEX, Fake, SESSION_ID, FAKE_PASTED_CODE, FAKE_USER_CODE, assert_no_secret_output, check, DIST, flow, listen, new_page, open_settings, serve, shot, soon, toolbar_metrics, wait_for_call  # noqa: E402
 
 def capture_toolbars(browser, base, out: Path, prefix: str, atom_expected: bool):
     """PAS 창 툴바 360, 768, 1280과 기존 대시보드 툴바 360, 1280. atom 단추 유무와 넘침, 단추 크기를 잰다."""
@@ -220,7 +220,7 @@ def capture_empty_states(browser, base, out: Path, prefix: str):
             fake.sessions = "bootstrap"
             page.locator('[data-slot="dialog-popup"]').get_by_role("button", name="완료").click()
             expect(page.get_by_test_id("persistent-empty-creating")).to_be_visible(timeout=15000)
-            check("설정창을 닫은 뒤 목록을 다시 읽고 기본 세션 만들기로 이어짐", ("POST", "/api/persistent-sessions/bootstrap") in fake.calls, fake.calls[-6:])
+            check("설정창을 닫은 뒤 목록을 다시 읽고 기본 세션 만들기로 이어짐", wait_for_call(page, fake, ("POST", "/api/persistent-sessions/bootstrap")), fake.calls[-6:])
             fake.held_bootstrap.abort()  # 붙잡아 둔 요청을 놓아야 닫을 때 정리 오류가 나지 않는다.
         context.close()
 
@@ -230,7 +230,8 @@ def capture_empty_states(browser, base, out: Path, prefix: str):
     page.goto(base + "/persistent", wait_until="domcontentloaded")
     creating = page.get_by_test_id("persistent-empty-creating")
     expect(creating).to_contain_text("기본 영구 세션을 만드는 중입니다", timeout=20000)
-    page.wait_for_timeout(300)
+    wait_for_call(page, fake, ("POST", "/api/persistent-sessions/bootstrap"))
+    page.wait_for_timeout(300)  # 두 번째 요청이 뒤따르는지 잠시 더 본다.
     posts = [call for call in fake.calls if call == ("POST", "/api/persistent-sessions/bootstrap")]
     check("빈 상태(기본 세션): bootstrap을 한 번만 부름", len(posts) == 1, len(posts))
     shot(page, out, "pas-empty-creating-1280.png", width, "PAS 0개, bootstrap 켜짐: 기본 영구 세션을 만드는 중", page)
