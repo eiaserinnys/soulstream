@@ -413,6 +413,24 @@ try {
         await page.keyboard.type("둘째 줄");
         assert((await input.inputValue()).includes("\n"), "입력창의 Enter가 줄바꿈하지 않았다");
         await input.fill("");
+        const snooze = page.getByTestId("pas-rt1707-snooze-trigger");
+        await snooze.focus();
+        await page.keyboard.press("Enter");
+        assert(await page.getByRole("button", {name:"오늘 저녁", exact:true}).isVisible(), "Enter로 미루기 선택이 열리지 않았다");
+        assert(await snooze.evaluate((el) => el === document.activeElement), "미루기 선택을 연 뒤 초점이 트리거에 있지 않다");
+        await page.keyboard.press("Escape");
+        assert(await snooze.evaluate((el) => el === document.activeElement), "미루기 선택을 닫고 초점이 돌아오지 않았다");
+        await page.setViewportSize({width:390, height:844});
+        await wait(400);
+        const toggle = page.getByTestId("pas-rt1707-rail-toggle");
+        await toggle.focus();
+        await page.keyboard.press("Enter");
+        assert(await page.locator(".pas-rt1707-rail").isVisible(), "Enter로 안건 서랍이 열리지 않았다");
+        assert(await toggle.evaluate((el) => el === document.activeElement), "안건 서랍을 연 뒤 초점이 트리거에 있지 않다");
+        await page.keyboard.press("Escape");
+        assert(await toggle.evaluate((el) => el === document.activeElement), "안건 서랍을 닫고 초점이 돌아오지 않았다");
+        await page.setViewportSize({width:1440, height:900});
+        await wait(400);
         const evidence = page.locator(".pas-rt1707-evidence-button").first();
         await evidence.focus();
         await page.keyboard.press("Enter");
@@ -455,7 +473,7 @@ try {
         await wait(250);
         assert(await trigger.evaluate((el) => el === document.activeElement), "Enter로 보고 창을 닫고 초점이 돌아오지 않았다");
         await page.close();
-        return {report:"안건에 첫 초점, Enter 줄바꿈", evidenceFocus, document:"본문에 첫 초점", panel:"닫기 단추에 첫 초점"};
+        return {report:"안건에 첫 초점, Enter 줄바꿈", snooze:"트리거 초점", drawer:"트리거 초점", evidenceFocus, document:"본문에 첫 초점", panel:"닫기 단추에 첫 초점"};
       });
     }
     if (scope === "all" || scope === "flows" || scope === "remaining") {
