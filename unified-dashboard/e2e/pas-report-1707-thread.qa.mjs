@@ -315,12 +315,37 @@ try {
           await page.getByTestId("pas-rt1707-open-card-panel").click();
           const panel = page.getByTestId("v3-card-workspace");
           await panel.waitFor({state:"visible"});
-          const metadataLines = await panel.locator(".v3-task-default-values > span").evaluateAll((spans) => spans.map((span) => {
-            const range = document.createRange();
-            range.selectNodeContents(span);
-            return { text: span.textContent, lines: range.getClientRects().length };
-          }));
-          assert(metadataLines.length === 4 && metadataLines.every((item) => item.lines === 1), `카드 실행 설정이 빠졌거나 값 중간에서 줄바꿈됐다: ${JSON.stringify(metadataLines)}`);
+          const metadata = await panel.locator(".v3-task-default-summary").evaluate((summary) => {
+            const values = summary.querySelector(".v3-task-default-values");
+            const spans = [...values.querySelectorAll(":scope > span")];
+            const edit = summary.querySelector(".v3-task-default-edit");
+            const rects = spans.map((span) => span.getBoundingClientRect());
+            const intersects = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1
+              && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+            const entries = spans.map((span, index) => {
+              const node = span.firstChild;
+              const text = node?.textContent ?? "";
+              const lines = [];
+              for (let offset = 0; node && offset < text.length; offset++) {
+                const range = document.createRange();
+                range.setStart(node, offset);
+                range.setEnd(node, offset + 1);
+                lines.push(range.getBoundingClientRect().top);
+              }
+              const splits = [];
+              for (let i = 1; i < lines.length; i++) {
+                if (Math.abs(lines[i] - lines[i - 1]) > 1 && /[\p{L}\p{N}]/u.test(text[i - 1]) && /[\p{L}\p{N}]/u.test(text[i])) {
+                  splits.push(i);
+                }
+              }
+              const overlap = rects.some((other, otherIndex) => otherIndex !== index && intersects(rects[index], other))
+                || (edit && intersects(rects[index], edit.getBoundingClientRect()));
+              return { text, splits, overflow: span.scrollWidth - span.clientWidth, overlap: Boolean(overlap) };
+            });
+            return { entries, overflow: values.scrollWidth - values.clientWidth };
+          });
+          assert(metadata.entries.length === 4 && metadata.overflow <= 1 && metadata.entries.every((item) =>
+            item.splits.length === 0 && item.overflow <= 1 && !item.overlap), `카드 실행 설정이 쪼개지거나 넘치거나 겹쳤다: ${JSON.stringify(metadata)}`);
           const panelHit = await panel.evaluate((el) => {
             const box = el.getBoundingClientRect();
             return Boolean(document.elementFromPoint(box.left + box.width * .75, box.top + box.height * .25)?.closest('[data-testid="v3-card-workspace"]'));
@@ -442,6 +467,15 @@ try {
       await page.getByRole("button", {name:"내일 아침", exact:true}).click();
       assert((await textOf(page, ".pas-rt1707-report-heading")).includes("#1112"), "현재 안건 다음의 결재 대기로 이동하지 않았다");
       await page.getByRole("button", {name:"되돌리기"}).click();
+      for (const number of [1512, 1387, 1112]) {
+        await selectRail(page, number);
+        await page.getByTestId("pas-rt1707-snooze-trigger").click();
+        await page.getByRole("button", {name:"사흘 뒤", exact:true}).click();
+        await selectRail(page, number);
+        assert((await textOf(page, ".pas-rt1707-decide")).includes("미뤄 둠: 사흘 뒤"), `#${number} 미루기가 보이지 않는다`);
+        await page.getByRole("button", {name:"미루기 해제"}).click();
+        assert(await page.getByTestId("pas-rt1707-snooze-trigger").isVisible(), `#${number} 미루기 해제가 실패했다`);
+      }
       await selectRail(page, 1680);
       return {hold:18};
     });
