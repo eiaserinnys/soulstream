@@ -516,7 +516,10 @@ def run_r1(browser, base, out):
         check(f'12 로딩 표시 하나 {tag}', lambda: (page.get_by_text('불러오는 중', exact=False).count() == 1, page.get_by_text('불러오는 중', exact=False).count()))
         page.wait_for_timeout(400)
         status = page.locator('.mcp-tabs').locator('xpath=preceding-sibling::*[1]')
-        loading_height = status.bounding_box()['height']; capture(page, out, f'r1-loading-{tag}')
+        page.wait_for_function("""el => { const dialog = el.closest('[role=dialog]'); return dialog &&
+          !dialog.hasAttribute('data-starting-style') && dialog.getAnimations().every(a => a.playState !== 'running'); }""", arg=status.element_handle(), timeout=10000)
+        capture(page, out, f'r1-loading-{tag}')
+        loading_height = status.bounding_box()['height']
         requests['held'].fulfill(json=data); expect(page.get_by_test_id('mcp-settings')).to_be_visible(); page.wait_for_timeout(300)
         ready_height = status.bounding_box()['height']
         check(f'12 로딩 높이 {tag}', lambda: (abs(loading_height-ready_height) <= 1, {'loading':loading_height,'ready':ready_height}))
