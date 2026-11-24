@@ -161,6 +161,33 @@ export const PersistentModelDefaultSchema = z.object({
 });
 export type PersistentModelDefault = z.infer<typeof PersistentModelDefaultSchema>;
 
+export const PersistentDefaultsSchema = z.object({
+  model_preset: z.string().trim().min(1),
+  fallback_models: z.array(PersistentModelDefaultSchema.strict()),
+}).strict();
+export type PersistentDefaults = z.infer<typeof PersistentDefaultsSchema>;
+
+/** Shared cross-field rules for catalogue defaults and administrator settings. */
+export function persistentDefaultsIssues(
+  defaults: PersistentDefaults,
+  presets: readonly ModelPreset[],
+): Array<{ path: (string | number)[]; message: string }> {
+  const issues: Array<{ path: (string | number)[]; message: string }> = [];
+  const seen = new Set<string>();
+  const candidates = [{ model_preset: defaults.model_preset, reasoning_effort: null }, ...defaults.fallback_models];
+  for (const [index, candidate] of candidates.entries()) {
+    const path = index === 0 ? ["model_preset"] : ["fallback_models", index - 1, "model_preset"];
+    const preset = presets.find((entry) => entry.id === candidate.model_preset);
+    if (!preset) issues.push({ path, message: `Unknown model preset: ${candidate.model_preset}` });
+    if (seen.has(candidate.model_preset)) issues.push({ path, message: `Duplicate model preset: ${candidate.model_preset}` });
+    seen.add(candidate.model_preset);
+    if (candidate.reasoning_effort !== null && preset && !preset.supported_efforts?.includes(candidate.reasoning_effort as ReasoningEffort)) {
+      issues.push({ path: ["fallback_models", index - 1, "reasoning_effort"], message: `Unsupported reasoning effort for ${candidate.model_preset}` });
+    }
+  }
+  return issues;
+}
+
 export const PersistentCatalogDefaultsSchema = z.object({
   agent_id: z.string().trim().min(1).optional(),
   model_preset: z.string().trim().min(1),
@@ -258,24 +285,8 @@ export const ModelCatalogSchema = z.object({
       message: `task_defaults.${task}.model_preset "${value.model_preset}" is not a known model preset`,
     });
   }
-  if (!presetIds.has(catalog.persistent_defaults.model_preset)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["persistent_defaults", "model_preset"],
-      message:
-        `persistent_defaults.model_preset "${catalog.persistent_defaults.model_preset}" `
-        + "is not a known model preset",
-    });
-  }
-  for (const [index, fallback] of catalog.persistent_defaults.fallback_models.entries()) {
-    if (presetIds.has(fallback.model_preset)) continue;
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["persistent_defaults", "fallback_models", index, "model_preset"],
-      message:
-        `persistent_defaults.fallback_models[${index}] "${fallback.model_preset}" `
-        + "is not a known model preset",
-    });
+  for (const issue of persistentDefaultsIssues(catalog.persistent_defaults, catalog.presets)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["persistent_defaults", ...issue.path], message: issue.message });
   }
 });
 

@@ -25,3 +25,5 @@ export * from "./node_pairing_tools.js";
 export * from "./webhook_tools.js";
 export * from "./session_data_host.js";
 export * from "./persistence_host.js";
+
+export * from "./persistent_defaults_tools.js";

@@ -155,6 +155,9 @@
     "get_page_markdown": {
       "category": "allow"
     },
+    "get_persistent_session_defaults": {
+      "category": "allow"
+    },
     "get_recurring_job": {
       "category": "allow"
     },
@@ -459,6 +462,9 @@
       "category": "allow"
     },
     "update_persistent_instruction": {
+      "category": "deny"
+    },
+    "update_persistent_session_defaults": {
       "category": "deny"
     },
     "update_persistent_session_settings": {

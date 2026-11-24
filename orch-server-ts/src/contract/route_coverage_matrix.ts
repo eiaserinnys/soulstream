@@ -1,3 +1,4 @@
+import { persistentDefaultsRouteAuthRequirements } from "../admin/persistent_defaults_routes.js";
 import { mcpCentralRouteAuthRequirements } from "../mcp_central/routes.js";
 import { conversationRouteAuthRequirements } from "../conversation/conversation_routes.js";
 import { ownedAgentRouteAuthRequirements } from "../owned-agents/routes.js";
@@ -74,6 +75,7 @@ export const routeCoverageOwners = [
   { owner: "mcp.host", authRequirements: mcpHostRouteAuthRequirements },
   { owner: "mcp.central", authRequirements: mcpCentralRouteAuthRequirements },
   { owner: "schedule.host", authRequirements: scheduleHostRouteAuthRequirements },
+  {owner:"admin.persistent-defaults",authRequirements:persistentDefaultsRouteAuthRequirements},
   {owner:"cards.settings",authRequirements:cardDispatchSettingsRouteAuthRequirements},
   {owner:"cards.orchestration",authRequirements:{...cardOrchestrationRouteAuthRequirements,...cardOrchestrationDecisionRouteAuthRequirements}},
   { owner: "admin.users", authRequirements: { ...adminUsersRouteAuthRequirements, ...r2SettingsRouteAuthRequirements } },
@@ -193,6 +195,8 @@ export const tsOnlyRouteKeys = [
   "POST /api/nodes/{node_id}/claude-auth/logins/{login_id}/code",
   "DELETE /api/nodes/{node_id}/claude-auth/logins/{login_id}",
   "GET /api/usage/stream",
+  "GET /api/admin/settings/persistent-defaults",
+  "PUT /api/admin/settings/persistent-defaults",
   "GET /api/admin/settings/session-review-policy",
   "GET /api/admin/settings/board-r2",
   "PUT /api/admin/settings/board-r2",

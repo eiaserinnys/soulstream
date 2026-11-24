@@ -194,6 +194,7 @@ function createAllOptInRouteApp() {
     ephemeralLlmRoutes: inert,
     folderRoutes: inert,
     mcpHostRoutes: { authBearerToken: "test-token", folders: { serviceProvider: async () => inert as never, authBearerToken: "test-token" } },
+    persistentDefaultsRoutes: inert,
     cardDispatchSettingsRoutes: inert,
     cardOrchestrationRoutes: inert,
     cardOrchestrationDecisionRoutes: inert,

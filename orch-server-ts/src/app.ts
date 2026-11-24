@@ -1,3 +1,4 @@
+import { registerPersistentDefaultsRoutes, type PersistentDefaultsRoutes } from "./admin/persistent_defaults_routes.js";
 import { registerMcpCentralRoutes, type McpCentralRouteOptions } from "./mcp_central/routes.js";
 import { registerConversationRoutes, type ConversationRouteOptions } from "./conversation/conversation_routes.js";
 import { registerOwnedAgentRoutes, type OwnedAgentRouteOptions } from "./owned-agents/routes.js";
@@ -230,6 +231,7 @@ export type CreateAppOptions = {
   agentAttachmentRoutes?: AgentAttachmentRouteOptions;
   workerAttachmentRoutes?: WorkerAttachmentRouteOptions;
   folderRoutes?: FolderRouteOptions;
+  persistentDefaultsRoutes?: PersistentDefaultsRoutes;
   cardDispatchSettingsRoutes?:CardDispatchSettingsRouteOptions;
   cardOrchestrationRoutes?:CardOrchestrationRouteOptions;
   cardOrchestrationDecisionRoutes?:CardOrchestrationDecisionRouteOptions;
@@ -367,6 +369,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.mcpHostRoutes) {
     const mcpOptions: McpHostOptions = { ...options.mcpHostRoutes,
+    ...(options.persistentDefaultsRoutes ? { persistentDefaults: options.persistentDefaultsRoutes } : {}),
     ownedAgents: options.ownedAgentRoutes?.service, resolveSessionOwner: options.resolveSessionOwner ?? options.mcpHostRoutes.resolveSessionOwner, environment: options.config.environment,
     sessionMessages: options.sessionActionCommandRoutes ?? options.mcpHostRoutes.sessionMessages,
     ...(options.mcpHostRoutes.cluster?.readSession ? { externalLlm: {
@@ -467,6 +470,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.userPreferencesRoutes !== undefined) {
     registerUserPreferencesRoutes(app, options.userPreferencesRoutes);
   }
+  if (options.persistentDefaultsRoutes) registerPersistentDefaultsRoutes(app, options.persistentDefaultsRoutes);
   if (options.cardDispatchSettingsRoutes) registerCardDispatchSettingsRoutes(app,options.cardDispatchSettingsRoutes);
   if (options.cardOrchestrationRoutes) registerCardOrchestrationRoutes(app,options.cardOrchestrationRoutes);
   if (options.cardOrchestrationDecisionRoutes) registerCardOrchestrationDecisionRoutes(app,options.cardOrchestrationDecisionRoutes);

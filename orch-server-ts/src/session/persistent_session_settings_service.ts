@@ -225,6 +225,9 @@ export class PersistentSessionSettingsService {
         }),
       };
     }
+    if (body.enabled === true && settings === undefined && !hasStoredFallbacks(row.metadata)) {
+      settings = { fallback_models: this.deps.modelCatalog.snapshot().persistent_defaults.fallback_models };
+    }
     if (body.display_name !== undefined && body.display_name !== row.display_name) {
       await this.deps.catalog.renameSession(sessionId, body.display_name);
     }
@@ -686,4 +689,17 @@ function rejectUnknownKeys(body: Record<string, unknown>, allowed: readonly stri
 
 function invalid(message: string): PersistentSessionApiError {
   return new PersistentSessionApiError(422, "INVALID_REQUEST", message);
+}
+
+/** Legacy singular fallback is also a stored choice and must be preserved. */
+function hasStoredFallbacks(metadata: unknown): boolean {
+  if (!Array.isArray(metadata)) return false;
+  for (let index = metadata.length - 1; index >= 0; index--) {
+    const entry = metadata[index];
+    if (!entry || typeof entry !== "object" || entry.type !== "persistent_settings") continue;
+    const value = entry.value;
+    return value !== null && typeof value === "object" &&
+      (Array.isArray(value.fallback_models) || Object.hasOwn(value, "fallback_model"));
+  }
+  return false;
 }

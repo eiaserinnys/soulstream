@@ -29,7 +29,7 @@ const currentSettings: PersistentSessionSettings = {
   show_work_details: true,
 };
 
-function setup() {
+function setup(modelCatalog: { snapshot: () => typeof CATALOG } = catalog) {
   const rows = new Map<string, Record<string, unknown>>();
   const accessCalls: unknown[] = [];
   const commandPayloads: Record<string, unknown>[] = [];
@@ -79,7 +79,8 @@ function setup() {
         sendPendingCommand: async (payload: Record<string, unknown>) => {
           commandPayloads.push(payload);
           const row = rows.get(String(payload.agentSessionId))!;
-          const previous = readStoredPersistentSettings(row.metadata, CATALOG.persistent_defaults.fallback_models)!;
+          const previous = readStoredPersistentSettings(row.metadata, CATALOG.persistent_defaults.fallback_models)
+            ?? currentSettings;
           const patch = (payload.settings ?? {}) as Record<string, unknown>;
           const turnUsageMode = typeof patch.turn_usage_mode === "string"
             ? patch.turn_usage_mode
@@ -106,7 +107,7 @@ function setup() {
       timeoutMs: 1_000,
     } as never,
     createSession: async () => ({ status: 201, body: {} }),
-    modelCatalog: catalog,
+    modelCatalog,
     presets: {
       resolveStaticForNode: (_nodeId: string, id: string) => ({
         id,
@@ -156,6 +157,34 @@ describe("update_persistent_session_settings MCP tool", () => {
       settings: { default_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" } },
     }, { warn: vi.fn() })).rejects.toMatchObject({ statusCode: 422, code: "INVALID_MODEL_PRESET" });
     expect(h.requireAvailable).toHaveBeenNthCalledWith(2, "eiaserinnys", "codex-6.1-sol");
+  });
+
+  it("sends global fallbacks only when enabling without supplied or stored fallbacks", async () => {
+    const configuredFallbacks = [{ model_preset: "opencode-example", reasoning_effort: null }];
+    const h = setup({ snapshot: () => ({ ...CATALOG, persistent_defaults: {
+      ...CATALOG.persistent_defaults, fallback_models: configuredFallbacks,
+    } }) });
+    const row = h.makeRow("enable", false);
+    row.metadata = [{ type: "persistent_session", value: { enabled: false } },
+      { type: "persistent_settings", value: {} }] as typeof row.metadata;
+    h.rows.set("enable", row);
+    await h.service.update({} as never, "enable", { enabled: true });
+    expect(h.commandPayloads[0]).toMatchObject({ enabled: true, settings: { fallback_models: configuredFallbacks } });
+    const stored = h.makeRow("stored", false);
+    h.rows.set("stored", stored);
+    await h.service.update({} as never, "stored", { enabled: true });
+    expect(h.commandPayloads[1]!.settings).toBeUndefined();
+    const supplied = h.makeRow("supplied", false);
+    supplied.metadata = row.metadata;
+    h.rows.set("supplied", supplied);
+    await h.service.update({} as never, "supplied", { enabled: true, settings: { show_character: false } });
+    expect(h.commandPayloads[2]).toMatchObject({ settings: { show_character: false } });
+    expect(h.commandPayloads[2]!.settings).not.toHaveProperty("fallback_models");
+    const fresh = h.makeRow("fresh", false);
+    fresh.metadata = [{ type: "persistent_session", value: { enabled: false } }] as typeof fresh.metadata;
+    h.rows.set("fresh", fresh);
+    await h.service.update({} as never, "fresh", { enabled: true });
+    expect(h.commandPayloads[3]).toMatchObject({ settings: { fallback_models: configuredFallbacks } });
   });
 
   it("saves ordered fallback ranks through MCP and returns them on read", async () => {

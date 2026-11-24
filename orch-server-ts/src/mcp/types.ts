@@ -65,6 +65,7 @@ export interface McpHostOptions {
   };
   sessions?: SessionMcpDependencies;
   persistentSessionSettings?: PersistentSessionSettingsService;
+  persistentDefaults?: import("../admin/persistent_defaults_routes.js").PersistentDefaultsRoutes;
   authBearerToken: string;
   /** Node pairing credentials; `null` is explicit outside production composition. */
   nodeCredentials: import("../node_credentials/types.js").NodeCredentialResolver | null;

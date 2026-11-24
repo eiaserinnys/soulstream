@@ -15,6 +15,7 @@ import { cardHandlers } from "./card_handlers.js";
 import { pageHandlers } from "./page_handlers.js";
 import { liveCardHandlers } from "./live_card_handlers.js";
 import { skillHandlers } from "./skill_handlers.js";
+import { persistentDefaultsHandlers } from "./persistent_defaults_handlers.js";
 import { persistentSessionSettingsHandlers } from "./persistent_session_settings_handlers.js";
 import { nodePairingHandlers } from "./node_pairing_handlers.js";
 import { webhookHandlers } from "./webhook_handlers.js";
@@ -35,6 +36,7 @@ export const mcpToolHandlers = {
   ...skillHandlers,
   ...sessionHandlers,
   ...persistentSessionSettingsHandlers,
+  ...persistentDefaultsHandlers,
   ...nodePairingHandlers,
   ...webhookHandlers,
 } satisfies Record<McpToolName, McpToolHandler>;

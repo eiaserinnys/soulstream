@@ -2,7 +2,7 @@ import { required } from "./typecheck-helpers.js";
 /**
  * restricted 실행 정책 정본(§4) 검증.
  *
- * 156 도구의 분류(106/43/6/1), inventory fixture와의 전수 일치, digest 안정성,
+ * 158 도구의 분류(107/44/6/1), inventory fixture와의 전수 일치, digest 안정성,
  * 잘못된 정책의 거부, loader의 실패 처리(빈 정책 fallback 금지), 번들 인라인
  * 기본 provider와 리포 JSON의 동일성.
  */
@@ -44,20 +44,20 @@ function namesByCategory(policy: { tools: Record<string, { category: string }> }
 }
 
 describe("session isolation policy canonical file", () => {
-  it("classifies all 156 inventory tools exactly once (106 allow / 43 deny / 6 guarded / 1 inherit)", () => {
+  it("classifies all 158 inventory tools exactly once (107 allow / 44 deny / 6 guarded / 1 inherit)", () => {
     const policy = parseIsolationPolicy(rawPolicy);
     const names = Object.keys(policy.tools).sort();
 
-    expect(names).toHaveLength(156);
+    expect(names).toHaveLength(158);
     expect(names).toEqual([...fixtureNames].sort());
-    expect(namesByCategory(policy, "allow")).toHaveLength(106);
-    expect(namesByCategory(policy, "deny")).toHaveLength(43);
+    expect(namesByCategory(policy, "allow")).toHaveLength(107);
+    expect(namesByCategory(policy, "deny")).toHaveLength(44);
     expect(namesByCategory(policy, "guarded")).toHaveLength(6);
     expect(namesByCategory(policy, "inherit")).toHaveLength(1);
 
     const categories = ["allow", "deny", "guarded", "inherit"] as const;
     const buckets = categories.map((category) => new Set(namesByCategory(policy, category)));
-    expect(buckets.reduce((sum, bucket) => sum + bucket.size, 0)).toBe(156);
+    expect(buckets.reduce((sum, bucket) => sum + bucket.size, 0)).toBe(158);
     for (let left = 0; left < buckets.length; left += 1) {
       for (let right = left + 1; right < buckets.length; right += 1) {
         const intersection = [...required(buckets[left])].filter((name) => required(buckets[right]).has(name));
@@ -77,6 +77,8 @@ describe("session isolation policy canonical file", () => {
     expect(policy.tools["send_message_to_session"]).toEqual({ category: "guarded", guard: "message-recipient" });
     expect(policy.tools["create_agent_session"]).toEqual({ category: "inherit", guard: "create-local-session" });
     expect(policy.tools["observe_node_services"]).toEqual({ category: "allow" });
+    expect(policy.tools["get_persistent_session_defaults"]).toEqual({ category: "allow" });
+    expect(policy.tools["update_persistent_session_defaults"]).toEqual({ category: "deny" });
     expect(policy.tools["get_central_agent_profile"]).toEqual({ category: "allow" });
     expect(policy.tools["update_central_agent_profile"]).toEqual({ category: "deny" });
     expect(policy.tools["delete_central_agent_profile"]).toEqual({ category: "deny" });
