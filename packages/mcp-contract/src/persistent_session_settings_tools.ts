@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { persistentDefaultsTools } from "./persistent_defaults_tools.js";
 import { PERSISTENT_TURN_USAGE_MODES } from "@soulstream/wire-schema/persistent-session-settings";
 import type { McpToolDefinition } from "./tool_definitions.js";
 
@@ -21,6 +22,7 @@ const settingFields = {
 };
 
 export const persistentSessionSettingsTools = {
+  ...persistentDefaultsTools,
   list_persistent_sessions: {
     name: "list_persistent_sessions",
     audience: "internal",

@@ -178,7 +178,10 @@ export function persistentDefaultsIssues(
   for (const [index, candidate] of candidates.entries()) {
     const path = index === 0 ? ["model_preset"] : ["fallback_models", index - 1, "model_preset"];
     const preset = presets.find((entry) => entry.id === candidate.model_preset);
-    if (!preset) issues.push({ path, message: `Unknown model preset: ${candidate.model_preset}` });
+    if (!preset) {
+      const field = index === 0 ? "persistent_defaults.model_preset" : `persistent_defaults.fallback_models[${index - 1}]`;
+      issues.push({ path, message: `${field} "${candidate.model_preset}" is not a known model preset` });
+    }
     if (seen.has(candidate.model_preset)) issues.push({ path, message: `Duplicate model preset: ${candidate.model_preset}` });
     seen.add(candidate.model_preset);
     if (candidate.reasoning_effort !== null && preset && !preset.supported_efforts?.includes(candidate.reasoning_effort as ReasoningEffort)) {

@@ -60,6 +60,7 @@ describe("production orchestrator entrypoint", () => {
           created_at: new Date("2026-07-10T00:00:00.000Z"),
         }];
       }
+      if (statement.includes("FROM system_settings") && statement.includes("persistent_defaults")) return [];
       if (statement.includes("FROM system_settings")) {
         return [{
           value: {
@@ -122,12 +123,10 @@ describe("production orchestrator entrypoint", () => {
     // composition, through the shared resolver.
     expect(nodeCredentialQueries).toHaveLength(1);
     expect(nodeCredentialQueries[0]).toContain("WHERE revoked_at IS NULL");
-    // OAuth storage and the node credential store also use the shared resolver
-    // alongside the existing adapters: six composition reads plus one for the
-    // credential store.
-    expect(sqlResolver.resolveSql).toHaveBeenCalledTimes(7);
-    // Health reads schema_migrations; the credential store read is the other.
-    expect(schemaQuery).toHaveBeenCalledTimes(2);
+    // The defaults cache and node credential store both load during composition.
+    expect(sqlResolver.resolveSql).toHaveBeenCalledTimes(8);
+    expect(schemaQuery).toHaveBeenCalledTimes(3);
+    expect(schemaQuery.mock.calls.some(([strings]) => strings.join("?").includes("persistent_defaults"))).toBe(true);
     expect(application.app.hasRoute({
       method: "GET",
       url: "/api/session-statistics",

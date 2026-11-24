@@ -13,7 +13,6 @@ import { pageTools } from "./page_tools.js";
 import { liveCardTools } from "./live_card_view_tools.js";
 import { skillTools } from "./skills_tools.js";
 import { persistentSessionSettingsTools } from "./persistent_session_settings_tools.js";
-import { persistentDefaultsTools } from "./persistent_defaults_tools.js";
 import { nodePairingTools } from "./node_pairing_tools.js";
 import { webhookTools } from "./webhook_tools.js";
 
@@ -64,7 +63,6 @@ export const mcpTools = {
   ...skillTools,
   ...sessionTools,
   ...persistentSessionSettingsTools,
-  ...persistentDefaultsTools,
   ...nodePairingTools,
   ...webhookTools,
 } as const satisfies Record<string, McpToolDefinition>;

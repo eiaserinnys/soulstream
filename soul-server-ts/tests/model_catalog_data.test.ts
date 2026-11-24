@@ -382,6 +382,7 @@ presets:
     label: P2
     backend: claude
     model: m2
+    supported_efforts: [high]
     group: china
 models:
   - provider: claude
@@ -414,8 +415,8 @@ persistent_defaults:
 `;
 
 const EDITED_CATALOG_YAML = BASE_CATALOG_YAML.replace(
-  "  - id: p2\n    label: P2\n    backend: claude\n    model: m2\n    group: china\n",
-  "  - id: p2\n    label: P2\n    backend: claude\n    model: m2\n    group: china\n"
+  "  - id: p2\n    label: P2\n    backend: claude\n    model: m2\n    supported_efforts: [high]\n    group: china\n",
+  "  - id: p2\n    label: P2\n    backend: claude\n    model: m2\n    supported_efforts: [high]\n    group: china\n"
   + "  - id: p3\n    label: P3\n    backend: codex\n    model: gpt-x\n",
 );
 
