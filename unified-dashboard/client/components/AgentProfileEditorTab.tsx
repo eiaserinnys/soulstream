@@ -356,14 +356,14 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
         {selectedNodeProfile ? (
           <>
           {/* 노드 설정 전용 프로필은 여기서 고치지 않는다. 편집 탭을 끈 채로 두어 자리와 읽기 전용임을 함께 보인다. */}
-          <DetailTabs<"assembly" | "edit" | "mcp">
+          <div className="mcp-tabs"><DetailTabs<"assembly" | "edit" | "mcp">
             id="agent-profile-pane"
             label="프로필 보기"
             panelId="agent-profile-pane-panel"
             tabs={[["assembly", "조립"], ["edit", "편집", true], ["mcp", "MCP"]]}
             value={pane === "edit" ? "assembly" : pane}
             onChange={setPane}
-          />
+          /></div>
           <div id="agent-profile-pane-panel" role="tabpanel" className="mt-3 flex min-h-0 flex-1 flex-col">
             {pane === "mcp" ? <AgentMcpConnectionPane key={`${selectedNodeProfile.id}:${selectedNodeId}`} agentId={selectedNodeProfile.id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} /> : <AgentContextAssemblyView
               key={`node:${selectedNodeProfile.id}`}
@@ -379,14 +379,14 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
           <div className="py-10 text-center text-sm text-muted-foreground">편집할 프로필을 선택하거나 새로 만드세요.</div>
         ) : (
           <>
-          <DetailTabs<"assembly" | "edit" | "mcp">
+          <div className="mcp-tabs"><DetailTabs<"assembly" | "edit" | "mcp">
             id="agent-profile-pane"
             label="프로필 보기"
             panelId="agent-profile-pane-panel"
             tabs={[["assembly", "조립"], ["edit", "편집"], ["mcp", "MCP", !draft.version]]}
             value={pane}
             onChange={setPane}
-          />
+          /></div>
           <div id="agent-profile-pane-panel" role="tabpanel" className="mt-3 flex min-h-0 flex-1 flex-col">
           {pane === "mcp" ? <AgentMcpConnectionPane key={`${draft.agent_id}:${selectedNodeId}`} agentId={draft.agent_id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} /> : pane === "assembly" ? !selectedNodeId ? (
             <FrameNotice>연결된 노드가 없습니다.</FrameNotice>

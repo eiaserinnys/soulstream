@@ -95,6 +95,6 @@ export function AgentMcpConnectionPane({ agentId, nodeId, request = fetch, onEdi
         </> : null}
       </div>
     </SettingsGroupBox>
-    <Dialog open={forkOpen} onOpenChange={open => setForkOpen(open)} onOpenChangeComplete={open => { if (!open) forkSnapshot.current = ""; }}><DialogPopup className="approved-dialog" initialFocus={cancelButton}><DialogHeader><DialogTitle>프로필 분리</DialogTitle><DialogDescription>{forkSnapshot.current} 프로필을 복사해 선택한 노드의 이 에이전트에 연결할까요?</DialogDescription></DialogHeader><DialogFooter><Button ref={cancelButton} type="button" variant="outline" onClick={() => setForkOpen(false)}>취소</Button><Button type="button" disabled={busy} onClick={() => void save(true)}>분리</Button></DialogFooter></DialogPopup></Dialog>
+    <Dialog open={forkOpen} onOpenChange={open => setForkOpen(open)} onOpenChangeComplete={open => { if (!open) forkSnapshot.current = ""; }}><DialogPopup className="approved-dialog" initialFocus={cancelButton}><DialogHeader><DialogTitle>프로필 분리</DialogTitle><DialogDescription>{forkOpen ? profileId : forkSnapshot.current} 프로필을 복사해 선택한 노드의 이 에이전트에 연결할까요?</DialogDescription></DialogHeader><DialogFooter><Button ref={cancelButton} type="button" variant="outline" onClick={() => setForkOpen(false)}>취소</Button><Button type="button" disabled={busy} onClick={() => void save(true)}>분리</Button></DialogFooter></DialogPopup></Dialog>
   </div>;
 }
