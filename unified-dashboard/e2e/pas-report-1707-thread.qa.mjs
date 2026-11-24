@@ -405,6 +405,7 @@ try {
     await check("직접 #report 진입", async () => {
       await gotoReport(page, "dark");
       assert(await page.locator('[data-testid="pas-report-thread-dialog"]').isVisible(), "보고 창이 보이지 않는다");
+      assert(await page.locator('.pas-rt1707-rail-item[data-active="true"]').evaluate((el) => el === document.activeElement), "보고 창의 첫 초점이 현재 안건에 있지 않다");
       assert((await reportStatus(page)) === "질문", `직접 진입한 질문 안건의 상태가 질문이 아니다: ${await reportStatus(page)}`);
       const hash = await page.evaluate(() => window.location.hash);
       assert(hash === "#report", `주소가 #report가 아니다: ${hash}`);
@@ -532,6 +533,7 @@ try {
       await page.getByTestId("pas-rt1707-open-card-panel").click();
       const panel = page.getByTestId("v3-card-workspace");
       await panel.waitFor({state:"visible"});
+      await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "카드 닫기");
       assert((await panel.textContent()).includes("슬라이드 편집"), "선택한 카드가 열리지 않았다");
       const hit = await panel.evaluate((el) => {const r=el.getBoundingClientRect(); return Boolean(document.elementFromPoint(r.left+r.width*.75,r.top+r.height*.25)?.closest('[data-testid="v3-card-workspace"]'));});
       assert(hit, "카드 패널이 다른 층에 가렸다");
@@ -542,6 +544,29 @@ try {
       assert((await unmocked(page)).length === 0, `등록되지 않은 API: ${(await unmocked(page)).join(", ")}`);
       await selectRail(page, 1680);
       return {topLayer:true};
+    });
+
+    await check("안건 서랍과 미루기 키보드 조작", async () => {
+      await selectRail(page, 1680);
+      const snooze = page.getByTestId("pas-rt1707-snooze-trigger");
+      await snooze.focus();
+      await page.keyboard.press("Enter");
+      assert(await page.getByRole("button", {name:"오늘 저녁", exact:true}).isVisible(), "Enter로 미루기 선택이 열리지 않았다");
+      await page.keyboard.press("Escape");
+      assert(!(await page.getByRole("button", {name:"오늘 저녁", exact:true}).isVisible()), "Escape로 미루기 선택이 닫히지 않았다");
+      assert(await snooze.evaluate((el) => el === document.activeElement), "미루기 선택을 닫고 초점이 돌아오지 않았다");
+      await page.setViewportSize({width:390, height:844});
+      await wait(400);
+      const toggle = page.getByTestId("pas-rt1707-rail-toggle");
+      await toggle.focus();
+      await page.keyboard.press("Enter");
+      assert(await page.locator(".pas-rt1707-rail").isVisible(), "Enter로 안건 서랍이 열리지 않았다");
+      await page.keyboard.press("Escape");
+      assert(!(await page.locator(".pas-rt1707-rail").isVisible()), "Escape로 안건 서랍이 닫히지 않았다");
+      assert(await toggle.evaluate((el) => el === document.activeElement), "서랍을 닫고 초점이 돌아오지 않았다");
+      await page.setViewportSize({width:1440, height:900});
+      await wait(400);
+      return {snooze:"Enter와 Escape", drawer:"Enter와 Escape"};
     });
 
     let stable;
