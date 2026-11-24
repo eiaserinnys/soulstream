@@ -526,6 +526,22 @@ describe("AgentProfileEditorTab", () => {
     expect(document.body.textContent).toContain("345자");
   });
 
+  it("opens the MCP tab for a node-only YAML agent while edit stays disabled", async () => {
+    const request = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/agents")) return jsonResponse({ agents: [{ id: "yaml-agent", name: "YAML 에이전트", source: "yaml" }] });
+      if (url === "/api/mcp/config") return jsonResponse({ current_revision: 1, servers: [], profiles: [], secrets: [], bindings: [], managed_nodes: [{ node_id: "node-a", connected: true, central_sync_supported: true, applied_revision: 1, ack: null }] });
+      if (url.includes("/preview?")) return jsonResponse({ applied_mode: "local", applied_revision: 0, current_revision: 1, effective_backend: "sample", default_preset: null, isolation_enabled: false, normal: { runnable: true, servers: [] }, restricted: { runnable: true, servers: [] } });
+      if (url === "/api/context-bundles") return jsonResponse({ bundles: [] });
+      return jsonResponse({ profiles: [profile] });
+    });
+    container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container);
+    flushSync(() => root?.render(createElement(AgentProfileEditorTab, { request: request as typeof fetch, initialMcpTarget: { agentId: "yaml-agent", nodeId: "node-a" } })));
+    await vi.waitFor(() => expect(document.body.textContent).toContain("로컬 설정 사용 중"));
+    expect([...document.body.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button => button.textContent === "편집")?.disabled).toBe(true);
+    expect(request).toHaveBeenCalledWith("/api/mcp/agents/yaml-agent/preview?node_id=node-a", expect.any(Object));
+  });
+
   async function renderEditor(edit = true) {
     container = document.createElement("div");
     document.body.appendChild(container);

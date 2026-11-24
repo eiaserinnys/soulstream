@@ -27,7 +27,7 @@ function SuccessMessage({ children }: { children: string }) {
   useEffect(() => { ref.current?.scrollIntoView?.({ block: "nearest", behavior: "instant" }); }, [children]);
   return <p ref={ref} role="status" data-v3-selectable-content="true" className="text-sm text-success-foreground" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>{children}</p>;
 }
-export function McpSettingsTab({ request }: { request?: typeof fetch }) {
+export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { request?: typeof fetch; initialProfileId?: string; onOpenAgent?: (agentId: string, nodeId: string) => void }) {
   const api = useMemo(() => createMcpApi(request), [request]);
   const [config, setConfig] = useState<McpConfig | null>(null);
   const [liveRevision, setLiveRevision] = useState<number | null>(null);
@@ -36,8 +36,8 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [messagePlace, setMessagePlace] = useState<"header" | "footer">("footer");
-  const [tab, setTab] = useState<Tab>("server");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>(initialProfileId ? "profile" : "server");
+  const [selected, setSelected] = useState<string | null>(initialProfileId ?? null);
   const [creating, setCreating] = useState(false);
   const [justCreated, setJustCreated] = useState(false);
   const [deleting, setDeleting] = useState<DeleteTarget | null>(null);
@@ -410,6 +410,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
               profile={currentProfile}
               config={config}
               busy={busy}
+              onOpenAgent={onOpenAgent}
               onEdit={() => setSuccess("")}
               remove={(profile) =>
                 openDelete({

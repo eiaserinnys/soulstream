@@ -17,6 +17,7 @@ export function McpProfileEditor({
   save,
   remove,
   rollback,
+  onOpenAgent,
 }: {
   profile: McpProfile | null;
   config: McpConfig;
@@ -35,6 +36,7 @@ export function McpProfileEditor({
   ): Promise<unknown>;
   remove(profile: McpProfile): void;
   rollback(profile: McpProfile): void;
+  onOpenAgent?: (agentId: string, nodeId: string) => void;
 }) {
   const [id, setId] = useState("");
   const [name, setName] = useState("");
@@ -135,16 +137,9 @@ export function McpProfileEditor({
                 ? profile.node_scope.join(", ")
                 : "소속 노드 없음"}
             </p>
-            <p data-v3-selectable-content="true">
-              연결된 에이전트:{" "}
-              {bindings.length
-                ? bindings
-                    .map(
-                      (binding) => `${binding.agent_id} (${binding.node_id})`,
-                    )
-                    .join(", ")
-                : "없음"}
-            </p>
+            <div className="flex flex-wrap items-center gap-2"><span>연결된 에이전트:</span>
+              {bindings.length ? bindings.map(binding => <Button key={`${binding.agent_id}:${binding.node_id}`} type="button" variant="outline" onClick={() => onOpenAgent?.(binding.agent_id, binding.node_id)}>{binding.agent_id} ({binding.node_id})</Button>) : "없음"}
+            </div>
           </div>
         </SettingsGroupBox>
       ) : null}

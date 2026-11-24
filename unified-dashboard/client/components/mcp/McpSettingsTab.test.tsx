@@ -22,6 +22,20 @@ const setInput = async (input: HTMLInputElement, value: string) => act(async () 
   input.dispatchEvent(new Event("input", { bubbles: true }));
 });
 
+it("프로필에서 연결된 에이전트와 노드를 선택해 이동한다", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const data = sample();
+  data.profiles = [{ id: "profile-a", name: "프로필 A", description: null, mcp_servers: ["example"], hosted_tools: [], node_scope: ["example-node"], version: 1 }];
+  data.bindings = [{ agent_id: "agent-a", node_id: "example-node", mcp_profile_id: "profile-a", version: 1 }];
+  const open = vi.fn(), request = vi.fn(async () => Response.json(data));
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  try {
+    await act(async () => { root.render(<McpSettingsTab request={request as typeof fetch} initialProfileId="profile-a" onOpenAgent={open} />); await new Promise(resolve => setTimeout(resolve, 0)); });
+    await click(button(host, "agent-a (example-node)"));
+    expect(open).toHaveBeenCalledWith("agent-a", "example-node");
+  } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
+});
+
 it("서버 편집기에서 적용 노드를 해제하면 덮어쓰기도 저장에서 빠진다", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("PointerEvent", MouseEvent);
