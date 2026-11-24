@@ -17,7 +17,7 @@ function reply(message: { id?: number; method?: string; params?: { cursor?: stri
   return { jsonrpc: "2.0", id: message.id, result };
 }
 
-async function startServer(mode: "http" | "sse" | "unauthorized" | "hang", paginated = false) {
+async function startServer(mode: "http" | "sse" | "unauthorized" | "hang", paginated = false, echo?: string) {
   let stream: ServerResponse | undefined;
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     if (mode === "unauthorized") { res.writeHead(401).end(); return; }
@@ -28,7 +28,9 @@ async function startServer(mode: "http" | "sse" | "unauthorized" | "hang", pagin
     }
     if (req.method !== "POST") { res.writeHead(405).end(); return; }
     let body = ""; for await (const chunk of req) body += chunk;
-    const response = reply(JSON.parse(body), paginated);
+    const request = JSON.parse(body);
+    const response = reply(request, paginated);
+    if (echo && response && request.method === "tools/list") response.result = { tools: [{ name: echo, inputSchema: { type: "object" } }] };
     if (mode === "sse") {
       res.writeHead(202).end();
       if (response) stream?.write(`event: message\ndata: ${JSON.stringify(response)}\n\n`);
@@ -54,6 +56,16 @@ describe("MCP server tester", () => {
     const url = await startServer("http", true);
     const result = await testMcpServer({ id: "test", name: "test", type: "streamable_http", config: { url } }, {});
     expect(result).toMatchObject({ ok: true, tool_count: 2, tools: ["example", "next"] });
+  });
+
+  it("does not echo header or URL query values returned by a server", async () => {
+    const url = await startServer("http", false, "fake-query-value-fake-header-value");
+    const result = await testMcpServer({ id: "s", name: "s", type: "streamable_http", config: {
+      url: `${url}?license=fake-query-value`, headers: { "x-license": "fake-header-value" },
+    } }, {});
+    expect(result.ok).toBe(true);
+    expect(JSON.stringify(result)).not.toContain("fake-query-value");
+    expect(JSON.stringify(result)).not.toContain("fake-header-value");
   });
 
   it("cleans up stdio processes after success and timeout", async () => {

@@ -13,6 +13,7 @@ export async function testMcpServer(server: Server, env: Record<string, string |
   let stage: Stage = "config";
   let transport: Transport | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const sensitive = new Set<string>();
   const client = new Client({ name: "soulstream-mcp-test", version: "1" });
   try {
     const config = server.config;
@@ -28,14 +29,24 @@ export async function testMcpServer(server: Server, env: Record<string, string |
     const record = (value: unknown) => Object.fromEntries(Object.entries(value && typeof value === "object" ? value : {}).map(([k, v]) => [k, resolve(v)]));
     if (server.type === "stdio") {
       const fullCommand = typeof config.full_command === "string" ? config.full_command.split(" ") : undefined;
+      if (typeof config.full_command === "string") sensitive.add(config.full_command);
       const command = fullCommand ? fullCommand.shift() : resolve(config.command);
       if (!command) throw new Error("Invalid command");
+      const variables = record(config.env);
+      Object.values(variables).forEach(value => { if (value) sensitive.add(value); });
       transport = new StdioClientTransport({ command, args: fullCommand ?? (Array.isArray(config.args) ? config.args.map(resolve) : []),
-        env: { ...getDefaultEnvironment(), ...record(config.env) }, stderr: "ignore",
+        env: { ...getDefaultEnvironment(), ...variables }, stderr: "ignore",
         ...(typeof config.cwd === "string" ? { cwd: config.cwd } : {}) });
     } else {
       const url = new URL(resolve(config.url));
-      const options = { requestInit: { headers: record(config.headers) } };
+      for (const value of url.searchParams.values()) if (value) sensitive.add(value);
+      for (const part of url.search.slice(1).split("&")) {
+        const separator = part.indexOf("=");
+        if (separator >= 0 && part.slice(separator + 1)) sensitive.add(part.slice(separator + 1));
+      }
+      const headers = record(config.headers);
+      Object.values(headers).forEach(value => { if (value) sensitive.add(value); });
+      const options = { requestInit: { headers } };
       transport = server.type === "sse" ? new SSEClientTransport(url, options) : new StreamableHTTPClientTransport(url, options);
     }
     const run = async () => {
@@ -62,8 +73,10 @@ export async function testMcpServer(server: Server, env: Record<string, string |
         cursor = result.nextCursor;
       } while (cursor);
       const info = client.getServerVersion();
-      return { ok: true as const, latency_ms: Date.now() - start, ...(info ? { server_info: { name: info.name, version: info.version } } : {}),
-        tool_count: count, tools };
+      const secrets = [...sensitive].sort((a, b) => b.length - a.length);
+      const scrub = (value: string) => secrets.reduce((text, secret) => text.split(secret).join("[비공개]"), value);
+      return { ok: true as const, latency_ms: Date.now() - start, ...(info ? { server_info: { name: scrub(info.name), version: scrub(info.version) } } : {}),
+        tool_count: count, tools: tools.map(scrub) };
     };
     return await Promise.race([run(), new Promise<never>((_, reject) => {
       timer = setTimeout(() => { stage = "timeout"; reject(new Error("timeout")); }, Math.min(timeoutMs, 13_000));
