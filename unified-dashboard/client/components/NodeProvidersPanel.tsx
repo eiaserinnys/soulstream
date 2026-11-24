@@ -10,8 +10,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, DashboardIconCap, providerQuotaSlots, type ProviderQuotaSlots, type UsageSummaryNode, type UsageSummaryProvider } from "@seosoyoung/soul-ui";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { getClaudeAccounts, nodeClaudeTarget } from "../lib/claude-auth-api";
+import type { AgentLoginProvider } from "../lib/agent-login-api";
 import { useClaudeAuthFlow } from "../hooks/useClaudeAuthFlow";
 import { ClaudePoolRow } from "./claude-accounts/ClaudePoolRow";
+import { useAgentLoginRowAction } from "./claude-accounts/AgentLoginRowAction";
 import { ClaudeCentralReceiveRow } from "./claude-accounts/ClaudeCentralReceiveRow";
 import { ProviderQuotaGrid, ProviderQuotaSkeleton } from "./claude-accounts/ProviderQuotaGrid";
 import "./claude-accounts/claude-account-pool.css";
@@ -21,25 +23,42 @@ type Props = {
   request: typeof fetch;
   node: UsageSummaryNode | null;
   loading: boolean;
+  /** 화면 로그인이 끝나 사용량 요약을 다시 읽어야 할 때. 없으면 다시 읽지 않는다. */
+  onUsageChanged?: () => void;
 };
 
 type ProviderRowSpec = {
   id: "opencode_go" | "codex" | "antigravity";
   label: string;
+  /** 화면 로그인이 있는 공급자의 로그인 이름. */
+  login: AgentLoginProvider | null;
 };
 
 const PROVIDER_ROWS: readonly ProviderRowSpec[] = [
-  { id: "opencode_go", label: "OpenCode Go" },
-  { id: "codex", label: "Codex" },
-  { id: "antigravity", label: "Antigravity" },
+  { id: "opencode_go", label: "OpenCode Go", login: null },
+  { id: "codex", label: "Codex", login: "codex" },
+  { id: "antigravity", label: "Antigravity", login: "antigravity" },
 ];
 
 function hasAnySlot(slots: ProviderQuotaSlots): boolean {
   return slots.some((slot) => slot !== null);
 }
 
-function ProviderRow({ spec, provider }: { spec: ProviderRowSpec; provider: UsageSummaryProvider }) {
+function ProviderRow({ spec, provider, nodeId, request, onUsageChanged }: {
+  spec: ProviderRowSpec;
+  provider: UsageSummaryProvider;
+  nodeId: string;
+  request: typeof fetch;
+  onUsageChanged?: () => void;
+}) {
   const slots = providerQuotaSlots(provider);
+  const login = useAgentLoginRowAction({
+    nodeId,
+    provider: spec.login,
+    usage: provider,
+    request,
+    onUsageChanged,
+  });
   const dotColor = provider.status === "error"
     ? "var(--color-red-400)"
     : provider.status === "not_configured"
@@ -54,7 +73,9 @@ function ProviderRow({ spec, provider }: { spec: ProviderRowSpec; provider: Usag
       </div>
       {provider.status === "not_configured" ? <span className="c724-meta-inline">미설정</span> : null}
       {provider.status === "error" ? <span className="c724-badge c724-badge-danger">조회 오류</span> : null}
+      {login.action ? <div className="c724-account-actions">{login.action}</div> : null}
     </div>
+    {login.panel}
     {provider.status === "auto" && hasAnySlot(slots)
       ? <ProviderQuotaGrid slots={slots} label={`${spec.label} 사용량`} />
       : null}
@@ -174,7 +195,7 @@ export function PendingClaudeRow() {
   </div>;
 }
 
-export function NodeProvidersPanel({ nodeId, request, node, loading }: Props) {
+export function NodeProvidersPanel({ nodeId, request, node, loading, onUsageChanged }: Props) {
   const accounts = useQuery({
     queryKey: ["claude-auth-accounts", nodeId],
     queryFn: () => getClaudeAccounts(request, nodeClaudeTarget(nodeId)),
@@ -203,7 +224,7 @@ export function NodeProvidersPanel({ nodeId, request, node, loading }: Props) {
         : <LegacyClaudeRow nodeId={nodeId} request={request} slots={claudeSlots} loading={loading} />}
     {PROVIDER_ROWS.map((spec) => {
       const provider = node?.providers[spec.id] ?? null;
-      return provider === null ? null : <ProviderRow key={spec.id} spec={spec} provider={provider} />;
+      return provider === null ? null : <ProviderRow key={spec.id} spec={spec} provider={provider} nodeId={nodeId} request={request} onUsageChanged={onUsageChanged} />;
     })}
   </div>;
 }

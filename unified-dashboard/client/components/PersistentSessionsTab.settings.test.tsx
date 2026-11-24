@@ -4,7 +4,8 @@ import { act, useMemo, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useDashboardStore } from "@seosoyoung/soul-ui";
-import { PersistentSessionSettingsDialog } from "./PersistentSessionSettingsDialog";
+import { PersistentSessionsTab } from "./PersistentSessionsTab";
+import type { AssignmentData } from "../v3/AgentNodeAssignmentFields";
 import { type PersistentSession, createPersistentSessionsApi } from "../lib/persistent-sessions";
 import { PersistentSessionDetails, usePersistentSessionDetailsController } from "./PersistentSessionDetails";
 import { persistentSessionQuotaRows } from "./PersistentSessionMonitoring";
@@ -47,11 +48,9 @@ it("saves one display field immediately and publishes only the returned settings
     throw new Error(`Unexpected request: ${method} ${url.pathname}`);
   };
 
-  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await act(async () => root.render(<PersistentSessionsTab request={listed(request, resource)} assignment={assignment} initialPersistentSessionId="sample-pas" />));
   await settle();
   expect(calls.some((call) => call.path === "/api/persistent-sessions/sample-pas/instructions" && call.method === "GET")).toBe(true);
-  click("지속 지시");
-  click("표시와 모션");
   expect([...document.body.querySelectorAll<HTMLButtonElement>("[role=switch]")].map((control) => control.getAttribute("aria-label"))).toEqual([
     "캐릭터 표시", "캐릭터 움직임", "세대 구분선 표시", "Jev 후보 표시", "작업 세부 표시",
   ]);
@@ -91,19 +90,18 @@ it("keeps the persisted switch value when an immediate update fails", async () =
     throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url.pathname}`);
   };
 
-  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await act(async () => root.render(<PersistentSessionsTab request={listed(request, resource)} assignment={assignment} initialPersistentSessionId="sample-pas" />));
   await settle();
-  click("표시와 모션");
   await act(async () => switchFor("캐릭터 표시")?.click());
   await settle();
 
   expect(switchFor("캐릭터 표시")?.getAttribute("aria-checked")).toBe("true");
-  expect(document.body.textContent).toContain("저장하지 못했습니다. 다시 눌러 주세요.");
   expect(useDashboardStore.getState().persistentSessionDisplaySettings?.showCharacter).toBe(true);
-  click("계정과 모델");
-  expect(document.body.textContent).not.toContain("저장하지 못했습니다. 다시 눌러 주세요.");
-  click("표시와 모션");
-  expect(document.body.textContent).toContain("저장하지 못했습니다. 다시 눌러 주세요.");
+  // 표시 항목의 저장 오류는 표시 절에만 보이고 계정 절에는 번지지 않는다.
+  const sectionText = (label: string) => document.querySelector(`[data-testid=persistent-session-settings-sections] > section[aria-label="${label}"]`)!.textContent;
+  expect(sectionText("표시와 모션")).toContain("저장하지 못했습니다. 다시 눌러 주세요.");
+  expect(sectionText("계정과 모델")).not.toContain("저장하지 못했습니다. 다시 눌러 주세요.");
+  expect(document.body.textContent?.split("저장하지 못했습니다. 다시 눌러 주세요.").length).toBe(2);
 });
 
 it.each([
@@ -174,7 +172,7 @@ it("shows server-calculated weekly headroom for session providers and omits rema
     throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url.pathname}`);
   };
 
-  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await act(async () => root.render(<PersistentSessionsTab request={listed(request, resource)} assignment={assignment} initialPersistentSessionId="sample-pas" />));
   await settle();
 
   expect(document.body.textContent).toContain("12.5%");
@@ -262,7 +260,7 @@ it("uses the shared account detail draft and save action", async () => {
     throw new Error(`Unexpected request: ${method} ${url.pathname}`);
   };
 
-  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await act(async () => root.render(<PersistentSessionsTab request={listed(request, resource)} assignment={assignment} initialPersistentSessionId="sample-pas" />));
   await settle();
   const nameInput = [...document.body.querySelectorAll<HTMLInputElement>("input")].find((input) => input.closest("[data-testid=config-field-row]")?.textContent?.includes("세션 이름"));
   expect(nameInput).toBeDefined();
@@ -282,9 +280,8 @@ it("uses the shared account detail draft and save action", async () => {
   expect(document.body.textContent).toContain("수정한 검수 세션");
 });
 
-it("keeps the settings dialog open when Escape cancels instruction editing and closes it otherwise", async () => {
+it("cancels instruction editing with Escape and keeps the saved text", async () => {
   const resource = makeSession();
-  const onClose = vi.fn();
   const instruction = {
     id: "instruction-1",
     text: "간결하게 답합니다.",
@@ -295,35 +292,22 @@ it("keeps the settings dialog open when Escape cancels instruction editing and c
   };
   const request: typeof fetch = async (input, init) => {
     const url = new URL(String(input), "https://sample.invalid");
-    if (url.pathname === "/api/persistent-sessions/sample-pas" && (init?.method ?? "GET") === "GET") {
-      return Response.json({ session: resource });
-    }
     if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [instruction] });
-    if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
-    if (url.pathname === "/api/nodes/sample-node/model-presets") return Response.json({ model_presets: [] });
     throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url.pathname}`);
   };
 
-  await act(async () => root.render(<DismissiblePersistentSessionSettingsDialog request={request} onClose={onClose} />));
+  await act(async () => root.render(<PersistentSessionsTab request={listed(request, resource)} assignment={assignment} initialPersistentSessionId="sample-pas" />));
   await settle();
-  click("지속 지시");
   click("수정");
 
   const editInput = document.querySelector<HTMLInputElement>('input[aria-label="지속 지시 수정"]')!;
   await act(async () => editInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
 
-  expect(document.querySelector('[data-testid="persistent-session-settings-dialog"]')).not.toBeNull();
   expect(document.querySelector('input[aria-label="지속 지시 수정"]')).toBeNull();
   expect(document.body.textContent).toContain("간결하게 답합니다.");
-  expect(onClose).not.toHaveBeenCalled();
-
-  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
-  await settle();
-  expect(onClose).toHaveBeenCalledTimes(1);
-  expect(document.querySelector('[data-testid="persistent-session-settings-dialog"]')).toBeNull();
 });
 
-it("opens in the instructions section and preserves its draft while sections change", async () => {
+it("opens the requested session and draws all five sections in the settings dialog order", async () => {
   const resource = makeSession();
   const instruction = {
     id: "instruction-1",
@@ -336,9 +320,7 @@ it("opens in the instructions section and preserves its draft while sections cha
   let storyRequests = 0;
   const request: typeof fetch = async (input, init) => {
     const url = new URL(String(input), "https://sample.invalid");
-    if (url.pathname === "/api/persistent-sessions/sample-pas" && (init?.method ?? "GET") === "GET") return Response.json({ session: resource });
     if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [instruction] });
-    if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
     if (url.pathname === "/api/sessions/sample-pas/story") {
       storyRequests += 1;
       return Response.json({ highlight: null, narrative: "부분 줄거리", unfolded_turn_summaries: [], narrative_through_event_id: null, fold_count: 0, updated_at: null });
@@ -346,30 +328,58 @@ it("opens in the instructions section and preserves its draft while sections cha
     throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url.pathname}`);
   };
 
-  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await act(async () => root.render(<PersistentSessionsTab request={listed(request, resource)} assignment={assignment} initialPersistentSessionId="sample-pas" />));
   await settle();
 
-  expect([...document.body.querySelectorAll<HTMLButtonElement>("[data-testid=config-category-nav] button")].map((button) => button.textContent?.trim())).toEqual([
+  // 목록이 아니라 요청한 세션의 상세가 열려 있다.
+  expect(document.querySelector("[data-testid=persistent-sessions-tab] h3.text-base")?.textContent).toBe("검수 세션");
+  expect([...document.body.querySelectorAll("[data-testid=persistent-session-settings-sections] > section")].map((section) => section.getAttribute("aria-label"))).toEqual([
     "지속 지시", "계정과 모델", "표시와 모션", "기록", "세션 스토리",
   ]);
-  expect(document.querySelector('[aria-label="지속 지시"]')).not.toBeNull();
-  expect(document.body.textContent).toContain("이 세션에 계속 적용됩니다.");
-  expect(document.body.textContent).toContain("T195");
-  expect(document.body.textContent).not.toContain("2026.");
-  expect(document.querySelector('[aria-label="새 지속 지시"]')).toBeNull();
-
-  click("지시 추가");
-  const addInput = document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')!;
-  await setInput(addInput, "섹션을 바꿔도 남는 초안");
-  click("계정과 모델");
-  click("지속 지시");
-  expect(document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')?.value).toBe("섹션을 바꿔도 남는 초안");
-  click("세션 스토리");
-  await settle();
+  const section = (label: string) => document.querySelector<HTMLElement>(`[data-testid=persistent-session-settings-sections] > section[aria-label="${label}"]`)!;
+  expect(section("지속 지시").textContent).toContain("이 세션에 계속 적용됩니다.");
+  expect(section("지속 지시").textContent).toContain("T195");
+  expect(section("계정과 모델").textContent).toContain("세션 이름");
+  expect(section("계정과 모델").textContent).toContain("변경 저장");
+  expect([...section("표시와 모션").querySelectorAll("[role=switch]")]).toHaveLength(5);
+  expect(section("세션 스토리").textContent).toContain("부분 줄거리");
   expect(storyRequests).toBe(1);
-  expect(document.body.textContent).toContain("부분 줄거리");
-  click("지속 지시");
-  expect(document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')?.value).toBe("섹션을 바꿔도 남는 초안");
+  expect(document.body.textContent).not.toContain("세션 추가");
+});
+
+it("notifies the outer window with the saved session and keeps the list row in step", async () => {
+  const resource = makeSession();
+  const saved: PersistentSession[] = [];
+  const request: typeof fetch = async (input, init) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    const method = init?.method ?? "GET";
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [] });
+    if (method === "PUT") {
+      resource.display_name = body.display_name;
+      return Response.json({ session: { ...resource }, model_change: "none" });
+    }
+    throw new Error(`Unexpected request: ${method} ${url.pathname}`);
+  };
+  await act(async () => root.render(<PersistentSessionsTab request={listed(request, resource)} assignment={assignment} initialPersistentSessionId="sample-pas" onSessionSaved={(session) => saved.push(session)} />));
+  await settle();
+  const nameInput = [...document.body.querySelectorAll<HTMLInputElement>("input")].find((input) => input.getAttribute("aria-label") === "세션 이름")!;
+  await setInput(nameInput, "바뀐 표시 이름");
+  click("변경 저장");
+  await settle();
+
+  expect(saved.map((session) => session.display_name)).toEqual(["바뀐 표시 이름"]);
+  expect(document.querySelector("[data-testid=persistent-sessions-tab] aside")?.textContent).toContain("바뀐 표시 이름");
+  expect(useDashboardStore.getState().persistentSessionDisplaySettings?.sessionId).toBe("sample-pas");
+});
+
+it("leaves nothing selected when the requested session is not in the list", async () => {
+  const resource = makeSession();
+  const request: typeof fetch = async (input, init) => { throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${String(input)}`); };
+  await act(async () => root.render(<PersistentSessionsTab request={listed(request, resource)} assignment={assignment} initialPersistentSessionId="missing" />));
+  await settle();
+  expect(document.querySelector("[data-testid=persistent-session-settings-sections]")).toBeNull();
+  expect(document.body.textContent).toContain("새 영구 에이전트 세션");
 });
 
 it("cancels an instruction draft without a request and closes a failed submission with its text retained", async () => {
@@ -387,7 +397,7 @@ it("cancels an instruction draft without a request and closes a failed submissio
     throw new Error(`Unexpected request: ${method} ${url.pathname}`);
   };
 
-  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await act(async () => root.render(<PersistentSessionsTab request={listed(request, resource)} assignment={assignment} initialPersistentSessionId="sample-pas" />));
   await settle();
   click("지시 추가");
   await setInput(document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')!, "취소할 초안");
@@ -427,7 +437,7 @@ it("closes the add form only after the instruction is acknowledged", async () =>
     throw new Error(`Unexpected request: ${method} ${url.pathname}`);
   };
 
-  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await act(async () => root.render(<PersistentSessionsTab request={listed(request, resource)} assignment={assignment} initialPersistentSessionId="sample-pas" />));
   await settle();
   click("지시 추가");
   await setInput(document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')!, "저장 확인 뒤 닫힐 지시");
@@ -464,9 +474,8 @@ it("saves the usage display mode after acknowledgement and keeps the old selecti
     throw new Error(`Unexpected request: ${method} ${url.pathname}`);
   };
 
-  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await act(async () => root.render(<PersistentSessionsTab request={listed(request, resource)} assignment={assignment} initialPersistentSessionId="sample-pas" />));
   await settle();
-  click("표시와 모션");
   const row = [...document.body.querySelectorAll<HTMLElement>("[data-testid=config-field-row]")].find((item) => item.textContent?.includes("턴 끝 사용량"))!;
   const buttons = [...row.querySelectorAll<HTMLButtonElement>("button")];
   expect(buttons.map((button) => button.textContent?.trim())).toEqual(["접어서", "펼쳐서", "숨김"]);
@@ -480,7 +489,7 @@ it("saves the usage display mode after acknowledgement and keeps the old selecti
   expect(useDashboardStore.getState().persistentSessionDisplaySettings?.turnUsageMode).toBe("expanded");
 });
 
-it("keeps the target identity accessible and displays the read-only agent value without repeated explanation", async () => {
+it("names the selected session and displays the read-only agent value without repeated explanation", async () => {
   const resource = makeSession();
   const request: typeof fetch = async (input) => {
     const url = new URL(String(input), "https://sample.invalid");
@@ -491,14 +500,10 @@ it("keeps the target identity accessible and displays the read-only agent value 
     throw new Error(`Unexpected request: ${url.pathname}`);
   };
 
-  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await act(async () => root.render(<PersistentSessionsTab request={listed(request, resource)} assignment={assignment} initialPersistentSessionId="sample-pas" />));
   await settle();
 
-  const description = document.querySelector<HTMLElement>('[data-slot="dialog-description"]');
-  expect(description?.classList.contains("sr-only")).toBe(true);
-  expect(description?.textContent).toContain("검수 세션");
-  expect(description?.textContent).toContain("로젤린");
-  click("계정과 모델");
+  expect(document.querySelector("[data-testid=persistent-sessions-tab] h3.text-base")?.textContent).toBe("검수 세션");
   const accountRows = [...document.body.querySelectorAll<HTMLElement>("[data-testid=config-field-row]")];
   const agentRow = accountRows.find((row) => row.textContent?.includes("에이전트"));
   expect(agentRow?.querySelector('[data-testid="config-field-value"]')?.textContent).toBe("로젤린");
@@ -530,7 +535,7 @@ it("shows a failed instruction edit beside its retained draft and save controls"
     throw new Error(`Unexpected request: ${method} ${url.pathname}`);
   };
 
-  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await act(async () => root.render(<PersistentSessionsTab request={listed(request, resource)} assignment={assignment} initialPersistentSessionId="sample-pas" />));
   await settle();
   const row = document.querySelector<HTMLElement>('[data-testid="persistent-instruction-row"]')!;
   click("수정");
@@ -582,18 +587,6 @@ function DraftPreservationHarness({ resource: initialResource, request }: { reso
   </>;
 }
 
-function DismissiblePersistentSessionSettingsDialog({ request, onClose }: { request: typeof fetch; onClose(): void }) {
-  const [open, setOpen] = useState(true);
-  if (!open) return null;
-  return <PersistentSessionSettingsDialog
-    sessionId="sample-pas"
-    nodeId="sample-node"
-    request={request}
-    onClose={() => { onClose(); setOpen(false); }}
-    modelPresetCatalog={modelPresetCatalog}
-  />;
-}
-
 function click(label: string) {
   const button = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent === label);
   if (!button) throw new Error(`Button not found: ${label}`);
@@ -640,3 +633,33 @@ const modelPresetCatalog = {
     { id: "sample-sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false },
   ],
 };
+
+const assignment = { modelPresetCatalog } as unknown as AssignmentData;
+
+/**
+ * 설정 탭은 먼저 영구 세션 목록을 읽고 그 안에서 세션을 고른다. 각 시험의 전송에 목록과 줄거리 기본 응답을 더한다.
+ * 시험이 직접 처리하는 요청은 그 응답을 쓰고, 처리하지 않은(던진) 줄거리·모델·타임라인 읽기만 빈 응답으로 받는다.
+ */
+function listed(inner: typeof fetch, resource: PersistentSession): typeof fetch {
+  return async (input, init) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    const method = init?.method ?? "GET";
+    if (url.pathname === "/api/persistent-sessions" && method === "GET") {
+      return Response.json({
+        sessions: [resource],
+        total: 1,
+        create_defaults: { node_id: "sample-node", preferred_agent_id: "roselin", settings: resource.settings, initial_instruction: "", unavailable_reason: null },
+      });
+    }
+    try {
+      return await inner(input, init);
+    } catch (caught) {
+      if (url.pathname === "/api/sessions/sample-pas/story" && method === "GET") {
+        return Response.json({ highlight: null, narrative: null, unfolded_turn_summaries: [], narrative_through_event_id: null, fold_count: 0, updated_at: null });
+      }
+      if (url.pathname === "/api/nodes/sample-node/model-presets" && method === "GET") return Response.json({ model_presets: [] });
+      if (url.pathname === "/api/sessions/sample-pas/timeline" && method === "GET") return Response.json({ messages: [], next_cursor: null });
+      throw caught;
+    }
+  };
+}

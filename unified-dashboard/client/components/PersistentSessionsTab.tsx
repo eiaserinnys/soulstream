@@ -16,7 +16,8 @@ import {
   type PersistentCreateDefaults,
   type PersistentSession,
 } from "../lib/persistent-sessions";
-import { PersistentSessionDetails, usePersistentSessionDetailsController } from "./PersistentSessionDetails";
+import { usePersistentSessionDetailsController } from "./PersistentSessionDetails";
+import { PersistentSessionSettingsSections } from "./PersistentSessionSettingsSections";
 import { NodeModelPresetSelect } from "./NodeModelPresetSelect";
 import { SettingFieldWidget } from "./config/SettingFieldWidget";
 import { currentModelText, textField } from "./persistent-session-fields";
@@ -55,7 +56,14 @@ const PARTIAL_SAVE_NOTE = "일부 변경이 저장됐을 수 있습니다. 다�
 /** 서버가 분명히 거절한 응답(4xx)이 아니면 요청이 처리됐는지 알 수 없다. */
 const isClearRejection = (caught: unknown) => caught instanceof HttpResponseError && caught.status < 500;
 
-export function PersistentSessionsTab({ request, assignment }: { request?: typeof fetch; assignment?: AssignmentData }) {
+export function PersistentSessionsTab({ request, assignment, initialPersistentSessionId, onSessionSaved }: {
+  request?: typeof fetch;
+  assignment?: AssignmentData;
+  /** 처음 읽은 목록에서 이 세션을 골라 연다. 없는 id면 고르지 않는다. */
+  initialPersistentSessionId?: string | null;
+  /** 저장이 끝난 뒤 저장값을 바깥 화면(PAS 창)에 알린다. 목록 갱신과 표시 설정 반영은 이 탭이 이미 한다. */
+  onSessionSaved?(session: PersistentSession): void;
+}) {
   const api = useMemo(() => createPersistentSessionsApi(request), [request]);
   const catalog = useDashboardStore((state) => state.catalog);
   const setPersistentSessionDisplaySettings = useDashboardStore((state) => state.setPersistentSessionDisplaySettings);
@@ -75,6 +83,7 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
   // 같은 문구가 다시 나와도 새 오류 상자로 그려 화면 안으로 스크롤되게 한다.
   const fail = useCallback((text: string) => { errorKey.current += 1; setError({ message: text, key: errorKey.current }); }, []);
 
+  const initialSelection = useRef(initialPersistentSessionId ?? null);
   const refresh = useCallback(async ({ select = null, keepEditor = false }: { select?: string | null; keepEditor?: boolean } = {}) => {
     let result;
     try {
@@ -92,7 +101,11 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
     if (!keepEditor || (select && !next)) setEditor(editorFromDefaults(result.create_defaults));
   }, [api]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    const select = initialSelection.current;
+    initialSelection.current = null;
+    void refresh({ select });
+  }, [refresh]);
 
   const nodeId = defaults?.node_id ?? "";
   useEffect(() => {
@@ -120,7 +133,8 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
     setRegistration(null);
     setError(null);
     setPersistentSessionDisplaySettings(session.session_id, session.settings);
-  }, [setPersistentSessionDisplaySettings]);
+    onSessionSaved?.(session);
+  }, [onSessionSaved, setPersistentSessionDisplaySettings]);
 
   const mutate = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -253,16 +267,15 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
 
       {error && !selected ? <SettingsAlert key={error.key} scrollIntoView><span data-v3-selectable-content="true">{error.message}</span></SettingsAlert> : null}
 
-      {selected ? <PersistentSessionDetails
+      {selected ? <PersistentSessionSettingsSections
+        key={selected.session_id}
         resource={selected}
-        draft={details.draft}
-        pending={busy || details.pending}
-        error={details.error ?? error?.message ?? null}
-        errorScope={details.errorScope}
+        api={api}
+        request={request}
+        details={details}
+        localError={error?.message ?? null}
+        busy={busy}
         modelPresetCatalog={modelPresetCatalog}
-        onFieldChange={details.onFieldChange}
-        onSave={() => { void details.save(); }}
-        onModelError={fail}
       /> : defaults ? <>
         {defaults.unavailable_reason ? <SettingsAlert><span data-v3-selectable-content="true">{defaults.unavailable_reason}</span></SettingsAlert> : null}
         {registration ? <SettingsAlert scrollIntoView><span data-v3-selectable-content="true">세션은 만들어졌으나 등록하지 못했습니다. “{registration.name}” 세션이 일반 세션으로 남아 있습니다.</span></SettingsAlert> : null}

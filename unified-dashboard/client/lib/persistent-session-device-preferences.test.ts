@@ -17,29 +17,39 @@ describe("persistent session device preferences", () => {
   it("normalizes the email and stores device-specific PAS choices", () => {
     expect(persistentSessionDevicePreferenceKey("  Admin@Example.com ")).toBe("soulstream-pas-device:admin@example.com");
     expect(readPersistentSessionDevicePreferences("Admin@Example.com")).toEqual({
-      openOnStart: false,
+      openOnStart: true,
       lastSessionId: null,
       showWeeklyUsage: false,
       weeklyUsageNodeSelection: null,
     });
 
-    setPersistentSessionOpenOnStart("Admin@Example.com", true);
+    setPersistentSessionOpenOnStart("Admin@Example.com", false);
     setPersistentSessionLastSessionId("Admin@Example.com", "session-42");
     setPersistentSessionShowWeeklyUsage("Admin@Example.com", true);
 
-    expect(localStorage.getItem("soulstream-pas-device:admin@example.com")).toBe(JSON.stringify({ openOnStart: true, lastSessionId: "session-42", showWeeklyUsage: true, weeklyUsageNodeSelection: null }));
+    expect(localStorage.getItem("soulstream-pas-device:admin@example.com")).toBe(JSON.stringify({ openOnStart: false, lastSessionId: "session-42", showWeeklyUsage: true, weeklyUsageNodeSelection: null }));
     expect(readPersistentSessionDevicePreferences("admin@example.com")).toEqual({
-      openOnStart: true,
+      openOnStart: false,
       lastSessionId: "session-42",
       showWeeklyUsage: true,
       weeklyUsageNodeSelection: null,
     });
   });
 
+  it("opens the PAS window on start by default and keeps a saved false", () => {
+    expect(readPersistentSessionDevicePreferences("fresh@example.com").openOnStart).toBe(true);
+    setPersistentSessionLastSessionId("fresh@example.com", "session-1");
+    expect(readPersistentSessionDevicePreferences("fresh@example.com").openOnStart).toBe(true);
+    setPersistentSessionOpenOnStart("fresh@example.com", false);
+    expect(readPersistentSessionDevicePreferences("fresh@example.com").openOnStart).toBe(false);
+    setPersistentSessionLastSessionId("fresh@example.com", "session-2");
+    expect(readPersistentSessionDevicePreferences("fresh@example.com").openOnStart).toBe(false);
+  });
+
   it("keeps the default values when stored JSON cannot provide the preference fields", () => {
     localStorage.setItem("soulstream-pas-device:admin@example.com", "not-json");
     expect(readPersistentSessionDevicePreferences("admin@example.com")).toEqual({
-      openOnStart: false,
+      openOnStart: true,
       lastSessionId: null,
       showWeeklyUsage: false,
       weeklyUsageNodeSelection: null,

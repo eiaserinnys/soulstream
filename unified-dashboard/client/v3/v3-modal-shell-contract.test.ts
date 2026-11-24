@@ -28,7 +28,6 @@ const sharedV3DialogConsumers = [
   "../components/InboundWebhooksSection.tsx",
   "../components/OutboundWebhooksSection.tsx",
   "../components/OwnedAgentsTab.tsx",
-  "../components/PersistentSessionSettingsDialog.tsx",
   "../components/SearchModal.tsx",
   "../components/UserManagementTab.tsx",
 ] as const;

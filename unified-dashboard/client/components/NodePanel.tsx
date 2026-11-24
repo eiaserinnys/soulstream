@@ -161,6 +161,7 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
                     nodeId={node.nodeId}
                     node={summaryNode}
                     loading={summaryQuery.isPending}
+                    onUsageChanged={() => { void summaryQuery.refetch(); }}
                   />
                   {cogito.loading ? (
                     <CogitoNodeHealthNote state={{ kind: "loading" }} />

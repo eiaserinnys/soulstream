@@ -42,6 +42,11 @@ export type UsageSummaryProvider = {
   readonly shortRemainingPercent: number | null;
   readonly shortResetAt: number | null;
   readonly quotas: readonly UsageSummaryQuota[];
+  /**
+   * Codex와 Antigravity 행에서 그 노드의 워커가 화면 로그인(agent_login_v1)을 알렸는지.
+   * 서버가 아직 이 필드를 주지 않으면 없으므로 없는 값은 false로 본다.
+   */
+  readonly login_supported?: boolean;
 };
 
 export type UsageSummaryNode = {

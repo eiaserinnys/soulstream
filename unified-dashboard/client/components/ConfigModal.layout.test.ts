@@ -259,12 +259,13 @@ describe("ConfigModal layout", () => {
       .find((element) => element.textContent?.includes("시작할 때 영구 세션으로 열기"));
     expect(row).not.toBeUndefined();
     const toggle = row?.querySelector<HTMLButtonElement>("[role=switch]");
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+    // 저장값이 없으면 새 기본값대로 켜져 있고, 끄면 그 선택이 저장된다.
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
     flushSync(() => toggle?.click());
 
     expect(JSON.parse(localStorage.getItem("soulstream-pas-device:admin@example.com") ?? "null"))
       .toEqual({
-        openOnStart: true,
+        openOnStart: false,
         lastSessionId: null,
         showWeeklyUsage: false,
         weeklyUsageNodeSelection: null,

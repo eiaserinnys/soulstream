@@ -12,7 +12,6 @@ import { SessionDeleteDialog, SessionContinueErrorDialog } from "@seosoyoung/sou
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { useLocalDialogueUpload } from "./use-local-dialogue-upload";
 import { ConfigModal } from "../components/ConfigModal";
-import { PersistentSessionSettingsDialog } from "../components/PersistentSessionSettingsDialog";
 import { SearchModal } from "../components/SearchModal";
 import {saveProjectFormContext} from "./project-form-actions";
 import { ProjectDialog } from "./ProjectDialog";
@@ -43,7 +42,7 @@ export function DialoguesSamples({
   const pageApi = useMemo(() => createPageApiClient({ fetch: api.request }), [api]);
   // 설정 탭의 폴더 선택기는 대시보드 저장소의 카탈로그를 읽는다. 검수 창에는 카탈로그 스트림이 없어 검수 폴더를 넣어 둔다.
   useEffect(() => {
-    if (id === "settings") useDashboardStore.getState().setCatalog({ folders: dialoguesFolders, sessions: {} });
+    if (id === "settings" || id.startsWith("persistent-settings-window")) useDashboardStore.getState().setCatalog({ folders: dialoguesFolders, sessions: {} });
   }, [id]);
   const done = (name: string) => {
     api.record(name);
@@ -56,12 +55,12 @@ export function DialoguesSamples({
   };
   const stars: readonly string[] = [];
   if (id.startsWith("connection-")) return <ConnectionDialog snapshot={{phase: id.slice("connection-".length) as "planned" | "disconnected" | "checking" | "recovering" | "new-version", fresh: false}}/>;
-  if (id.startsWith("persistent-settings-window")) return <PersistentSessionSettingsDialog
-    sessionId="sample-pas-1"
-    nodeId="sample-node"
-    request={api.request}
-    modelPresetCatalog={dialoguesAssignment.modelPresetCatalog}
-    onClose={onClose}
+  if (id.startsWith("persistent-settings-window")) return <ConfigModal
+    open
+    api={api.config}
+    initialTab="persistent"
+    initialPersistentSessionId="sample-pas-1"
+    onOpenChange={openChange}
   />;
   if (id === "project-create" || id === "project-edit")
     return (

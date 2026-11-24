@@ -2,19 +2,21 @@ import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
   ThemeToggle,
   DashboardIconCap,
+  useAtomPublicUrl,
   useGlassSurface,
   useLiquidLens,
 } from "@seosoyoung/soul-ui";
 import { Gauge, House, Search } from "lucide-react";
 
 import { ConfigButton } from "../components/ConfigButton";
+import { AtomDashboardButton } from "./AtomDashboardButton";
 import { PersistentSessionEntry } from './PersistentSessionEntry';
 
 export function V3GlobalToolbar({
   onOpenConfig,
   onOpenSearch,
   variant = 'default', agentName, agentOnly = false, showHome = true, onOpenHome, headerRef, showWeeklyUsage, onToggleUsage, sessionSwitch, sessionAction,
-  appearance = 'default',
+  appearance = 'default', atomUrl,
 }: {
   onOpenConfig(): void;
   onOpenSearch?(): void;
@@ -30,7 +32,11 @@ export function V3GlobalToolbar({
   appearance?: "default" | "bare";
   showWeeklyUsage?: boolean;
   onToggleUsage?(): void;
+  /** 검수 창이 두 상태를 한 화면에 나란히 보일 때만 넣는다. 없으면 서버가 알려 준 atom 주소를 쓴다. */
+  atomUrl?: string | null;
 }) {
+  const publicAtomUrl = useAtomPublicUrl();
+  const atomHref = atomUrl === undefined ? publicAtomUrl : atomUrl;
   const brandCapsuleRef = useRef<HTMLDivElement>(null);
   const searchCapsuleRef = useRef<HTMLButtonElement>(null);
   const brandWebglActive = useGlassSurface(brandCapsuleRef, { enabled: true });
@@ -66,6 +72,7 @@ export function V3GlobalToolbar({
         onClick={onToggleUsage}>
         <Gauge className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
       </DashboardIconCap> : null}
+      <AtomDashboardButton url={atomHref} appearance={appearance}/>
       <ConfigButton variant="chrome" appearance={appearance} onClick={onOpenConfig}/>
     </div>
   </header>;
@@ -94,6 +101,7 @@ export function V3GlobalToolbar({
       </button>
       <div className="dashboard-toolbar-actions">
         <PersistentSessionEntry/>
+        <AtomDashboardButton url={atomHref} appearance={appearance}/>
         <ConfigButton variant="chrome" appearance={appearance} onClick={onOpenConfig} />
         <ThemeToggle variant="chrome" appearance={appearance} />
       </div>

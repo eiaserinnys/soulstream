@@ -62,7 +62,7 @@ function sessionStoryMounts(): string[] {
 describe("SessionStoryDisclosure stacking contract", () => {
   it("enumerates every production mount surface", () => {
     expect(sessionStoryMounts()).toEqual([
-      "unified-dashboard/client/components/PersistentSessionSettingsDialog.tsx",
+      "unified-dashboard/client/components/PersistentSessionSettingsSections.tsx",
       "unified-dashboard/client/v3/WorkspacePanelHeaders.tsx",
     ]);
   });

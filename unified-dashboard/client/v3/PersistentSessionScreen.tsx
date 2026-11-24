@@ -17,7 +17,7 @@ import { resolveSessionForOpen } from './v3-session-workspace';
 import { activateRunSession } from './folder-workspace-run-model';
 import { SessionStreamStatus } from './SessionStreamStatus';
 import { PersistentSessionChatView } from './PersistentSessionChatView';
-import { PersistentSessionSettingsDialog } from '../components/PersistentSessionSettingsDialog';
+import { PersistentSessionEmptyState } from './PersistentSessionEmptyState';
 import { V3GlobalToolbar } from './V3GlobalToolbar';
 import { PersistentSessionChoiceRow, PersistentSessionSwitch } from './PersistentSessionEntry';
 import { PersistentSessionTaskList } from './PersistentSessionTaskList';
@@ -59,8 +59,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
   const [activatedId, setActivatedId] = useState<string | null>(null);
-  const [configOpen, setConfigOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [config, setConfig] = useState<{ tab: 'persistent' | 'coding_agents'; sessionId: string | null } | null>(null);
   const [tasksOpen, setTasksOpen] = useState(false);
   const files = useSessionFilesToggle();
   const isMobile = useIsMobile();
@@ -280,6 +279,18 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     }
     return result;
   }, [api]);
+  // 설정창을 닫으면 PAS 창에 그대로 있는다. 영구 세션이 하나도 없던 빈 상태에서만 목록을 다시 읽어,
+  // 방금 만들었거나 코딩 에이전트를 연결했으면 첫 세션으로 가거나 기본 세션 만들기를 이어 간다.
+  const closeConfig = useCallback((open: boolean) => {
+    if (open) return;
+    setConfig(null);
+    if (sessionId || (listing && listing.sessions.length > 0)) return;
+    void refreshPersistentReports().then(result => {
+      setListing(result);
+      const first = result.sessions[0];
+      if (first) navigateDashboard(`/persistent/${encodeURIComponent(first.session_id)}`, true);
+    }).catch(caught => setError(caught instanceof Error ? caught.message : String(caught)));
+  }, [listing, refreshPersistentReports, sessionId]);
   useEffect(() => {
     let current = true;
     setLoading(true); setError(null); setActivatedId(null);
@@ -288,8 +299,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
       if (!current) return;
       setListing(result);
       if (!sessionId) {
-        if (!result.sessions.length) setConfigOpen(true);
-        else if (result.sessions.length === 1) navigateDashboard(`/persistent/${encodeURIComponent(result.sessions[0]!.session_id)}`, true);
+        if (result.sessions.length === 1) navigateDashboard(`/persistent/${encodeURIComponent(result.sessions[0]!.session_id)}`, true);
         return;
       }
       const selectedSession = result.sessions.find(session => session.session_id === sessionId && session.persistent);
@@ -334,14 +344,14 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   const errorContent = error ? <SettingsAlert>{error}<div className="flex gap-2"><Button data-testid="persistent-retry" onClick={() => setRetry(value => value + 1)}>다시 시도</Button><Button onClick={() => navigateDashboard('/')}>홈</Button><Button onClick={() => navigateDashboard('/persistent')}>세션 선택</Button></div></SettingsAlert> : null;
   return <div ref={appRef} className={`v3-shell persistent-session-screen${hasWeeklyUsage ? ' has-weekly-usage' : ''}${files.open ? ' has-session-files' : ''}`}
     style={{ ...shellStyle, '--pas-usage-height': `${usageHeight}px`, '--pas-baseline-bottom': geometry ? `calc(100% - ${geometry.lineY}px)` : undefined } as CSSProperties} data-testid="persistent-session-screen">
-    <V3GlobalToolbar headerRef={headerRef} variant="minimal" appearance="bare" sessionName={resource?.display_name ?? undefined} agentName={resource?.agent_name ?? undefined} agentOnly={isMobile} showHome={!isMobile} onOpenHome={() => navigateDashboard('/')} onOpenConfig={() => setSettingsOpen(true)}
+    <V3GlobalToolbar headerRef={headerRef} variant="minimal" appearance="bare" sessionName={resource?.display_name ?? undefined} agentName={resource?.agent_name ?? undefined} agentOnly={isMobile} onOpenHome={() => navigateDashboard('/')} onOpenConfig={() => setConfig({ tab: 'persistent', sessionId: sessionId ?? null })}
       sessionSwitch={sessionId ? <PersistentSessionSwitch sessions={listing?.sessions ?? []} currentSessionId={sessionId}/> : undefined}
       sessionAction={sessionId ? <DashboardIconCap appearance="bare" label="세션 파일" aria-pressed={files.open} onClick={files.toggle}><FolderOpen className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true"/></DashboardIconCap> : undefined}
       showWeeklyUsage={sessionId && usageAvailable && user?.email ? showWeeklyUsage : undefined}
       onToggleUsage={sessionId && usageAvailable && user?.email ? toggleWeeklyUsage : undefined}/>
     <main ref={mainRef} className="persistent-session-main">
       {details.error && <div className="persistent-session-save-error"><SettingsAlert>{details.error}</SettingsAlert></div>}
-      {!frameReady && (loading ? <FrameLoading label="불러오는 중…" /> : error ? <FrameNotice>{errorContent}</FrameNotice> : !sessionId ? <div className="persistent-session-choices">{listing?.sessions.map(session => <div key={session.session_id} data-pas-choice={session.session_id}><PersistentSessionChoiceRow session={session} selected={lastId === session.session_id} onSelect={() => navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`)}/></div>)}</div> : null)}
+      {!frameReady && (loading ? <FrameLoading label="불러오는 중…" /> : error ? <FrameNotice>{errorContent}</FrameNotice> : !sessionId ? (listing && listing.sessions.length === 0 ? <PersistentSessionEmptyState api={api} defaults={listing.create_defaults} isAdmin={user?.isAdmin === true} onOpenCodingAgents={() => setConfig({ tab: 'coding_agents', sessionId: null })} onCreate={() => setConfig({ tab: 'persistent', sessionId: null })}/> : <div className="persistent-session-choices">{listing?.sessions.map(session => <div key={session.session_id} data-pas-choice={session.session_id}><PersistentSessionChoiceRow session={session} selected={lastId === session.session_id} onSelect={() => navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`)}/></div>)}</div>) : null)}
       {frameReady && <PersistentSessionChatView key={sessionId} sessionId={sessionId!} showReport reportSeat={{ ready: geometry !== null && (!geometry.reportBubble || reportTarget !== null), inlineWidth: geometry?.mainWidth, inlineMaxHeight: geometry?.reportInlineMaxHeight, target: reportTarget, layout: geometry?.reportBubble ?? null, body: geometry?.body ?? null }} presentation="manuscript" composerAnchorRef={composerAnchorRef} chatInputDisabled={disabled} fileUploadUrl={chatReady && !disabled && activeSessionSummary?.nodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSessionSummary.nodeId)}` : undefined} historyEnabled={chatReady && stream.synchronizedSessionKey === activeSessionKey} loadDisplaySettings={chatReady} transcriptFallbackLayout={error || streamErrorHeld ? "content" : "fill"} transcriptFallback={error ? errorContent : (!chatReady || stream.synchronizedSessionKey !== activeSessionKey) ? streamErrorHeld ? <SessionStreamStatus active status="error" reconnect={reconnectStream}/> : <FrameLoading label="대화를 불러오는 중" /> : undefined} showRuntimeStrips={!isMobile && showWorkDetails}/>}
     </main>
     {frameReady && <>
@@ -366,10 +376,9 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
         sessionStreamActive={Boolean(overlaySessionId && overlayStreamState.status === 'connected')} sessionConnectionStatus={overlayStreamState.status} reconnectSession={overlayStreamState.reconnect} onAcknowledgedReview={acknowledgeOverlayReview}/>}
     </>}
     {geometry?.body && geometry.lineLeftReach > 0 && <div aria-hidden="true" className="persistent-session-line" style={{ top: geometry.lineY, left: geometry.mainLeft - geometry.lineLeftReach, width: geometry.lineLeftReach }}/>}
-    {displaySettings && geometry?.body && <div ref={setReportTarget} data-testid="persistent-character" className="persistent-session-character" style={{ left: geometry.body.left, top: geometry.body.top, width: geometry.body.width, height: geometry.body.height }}><SwayCharacter shown width={geometry.body.width} height={geometry.body.height} motionEnabled={displaySettings.animateCharacter} active={visible && !settingsOpen && !selectedCardId} assetBaseUrl="/characters/seosoyoung"/></div>}
+    {displaySettings && geometry?.body && <div ref={setReportTarget} data-testid="persistent-character" className="persistent-session-character" style={{ left: geometry.body.left, top: geometry.body.top, width: geometry.body.width, height: geometry.body.height }}><SwayCharacter shown width={geometry.body.width} height={geometry.body.height} motionEnabled={displaySettings.animateCharacter} active={visible && !config && !selectedCardId} assetBaseUrl="/characters/seosoyoung"/></div>}
     {displaySettings && geometry?.toggle && <div className="persistent-session-character-toggle" style={{ left: geometry.toggle.left + geometry.toggle.width / 2, top: geometry.toggle.top + geometry.toggle.height / 2 }}><DashboardIconCap appearance="bare" label={displaySettings.showCharacter ? '캐릭터 숨기기' : '캐릭터 표시'} disabled={!chatReady || Boolean(error) || details.pending || !resource?.node_id} onClick={() => details.onFieldChange('showCharacter', !displaySettings.showCharacter, { saveImmediately: true })}>{displaySettings.showCharacter ? <PersistentSessionPortraitOffIcon/> : <PersistentSessionPortraitIcon/>}</DashboardIconCap></div>}
-    {settingsOpen && resource?.node_id && <PersistentSessionSettingsDialog sessionId={resource.session_id} nodeId={resource.node_id} onSaved={applySaved} onClose={() => setSettingsOpen(false)}/>}
-    <ConfigModal open={configOpen} initialTab="persistent" onOpenChange={open => { setConfigOpen(open); if (!open) navigateDashboard('/'); }}/>
+    {config && <ConfigModal open initialTab={config.tab} initialPersistentSessionId={config.sessionId} onPersistentSessionSaved={applySaved} onOpenChange={closeConfig}/>}
     <InternalLinkViewers />
   </div>;
 }

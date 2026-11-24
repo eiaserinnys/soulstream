@@ -1,3 +1,11 @@
+/* 가운데 검색 칸이 380px을 지키는 기본 격자는 단추 넷(영구 세션, atom, 설정, 테마)이 들어가려면 864px 이상이어야 한다.
+   그보다 좁은 태블릿 폭에서는 검색 칸이 남는 자리만 쓰게 해 마지막 단추가 화면 밖으로 나가지 않게 한다. */
+@media (min-width: 761px) and (max-width: 863px) {
+  .v3-global-toolbar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+}
+
 @media (max-width: 760px) {
   .v3-planner-scroll {
     padding: 0 14px 76px;
@@ -19,15 +27,21 @@
     gap: 6px;
   }
 
+  /* 단추 넷(영구 세션, atom, 설정, 테마)이 40px 자리를 지키며 360px에서 넘치지 않도록 이름 캡슐의 안쪽 여백을 줄인다. */
+  .v3-global-toolbar .dashboard-toolbar-brand {
+    gap: var(--v3-space-2);
+    padding: 0 var(--v3-space-3);
+  }
+
   .v3-global-toolbar .dashboard-toolbar-actions > [data-slot="button"] {
-    width: 38px;
+    width: 40px;
     padding: 0;
     font-size: 0;
   }
 
   .v3-global-toolbar .dashboard-icon-cap {
-    width: 38px;
-    height: 38px;
+    width: 40px;
+    height: 40px;
   }
 
   /* 작업 공간 스크림 아래의 화면(도구 막대, 폴더 목록, 플래너, 세션 패널)은 조작이 닿지 않는데,
