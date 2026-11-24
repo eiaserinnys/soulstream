@@ -657,6 +657,7 @@ def capture_session_history(browser, baseline, base, out):
             static_row = pane.locator(".v3-session-files-entry > div.v3-session-files-row").first
             expect(static_row).to_be_visible()
             page.mouse.move(2, 2)
+            wait_stable(page, static_row, "style"); wait_stable(page, pane.locator(".v3-session-files-group > button.v3-session-files-row").first, "style")
             row_style = pane.evaluate("""el => {
                 const measure = row => { const r=row.getBoundingClientRect(), s=getComputedStyle(row); return {height:r.height,weight:s.fontWeight,fontSize:s.fontSize,fontFamily:s.fontFamily,lineHeight:s.lineHeight,padding:s.padding,color:s.color,background:s.backgroundColor,cursor:s.cursor}; };
                 return {button:measure(el.querySelector('.v3-session-files-group > button.v3-session-files-row')), static:measure(el.querySelector('.v3-session-files-entry > div.v3-session-files-row'))};
