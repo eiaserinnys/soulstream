@@ -220,6 +220,8 @@ def capture_retention(browser, base):
     expect(dialog.locator('.chat-image-viewer-metadata')).to_have_text(f'{len(SHORT_TEXT)} B')
     page.wait_for_function("document.querySelector('[data-slot=dialog-popup][data-attachment-kind]')?.contains(document.activeElement)", timeout=5000)
     page.keyboard.press('Escape'); expect(dialog).to_have_count(0)
+    row = pane.get_by_role('button', name='config.ts', exact=False)
+    row.click(); expect(row).to_have_attribute('aria-expanded', 'false')
     ranges = [entry['range'] for entry in requests['file_ranges'] if entry['path'].endswith('config.ts')]
     assert ranges == ['bytes=0-0', f'bytes=0-{len(SHORT_TEXT)-1}'], ranges
     read_toggle = pane.get_by_role('button', name='읽기만 한 파일', exact=False)
