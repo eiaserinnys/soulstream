@@ -163,7 +163,7 @@ describe("advertised MCP tool inventory", () => {
     expect(Object.keys(required(observation!.inputSchema.properties)).sort()).toEqual([
       "include_logs", "include_pending", "lines", "service",
     ]);
-    expect(internal).toHaveLength(158);
+    expect(internal).toHaveLength(159);
     await expect(serializeInventory(internal)).toMatchFileSnapshot("./fixtures/tool_inventory.internal.json");
   });
 });

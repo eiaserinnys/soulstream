@@ -187,6 +187,11 @@ export class RecurringJobService {
     return await this.options.repository.listRuns(jobId, boundedLimit(limit));
   }
 
+  /** 이 세션이 반복 예약 실행이 띄운 세션이면 그 실행. */
+  async getRunBySessionId(sessionId: string): Promise<RecurringJobRun | null> {
+    return await this.options.repository.getRunBySessionId(sessionId);
+  }
+
   async runManual(
     actor: RecurringJobActor,
     jobId: string,

@@ -93,6 +93,8 @@ export interface McpHostOptions {
   environment?: string;
   folders: FolderControlPlaneHostRouteOptions;
   pages?: { service: PageYjsService; logger: Pick<FastifyBaseLogger, "error"> };
+  /** 스킬 린트 보고 한 건의 저장소. 없는 host는 put_skill_lint_report에서만 오류를 낸다. */
+  skillLintReport?: import("../skills/skill_lint_report_store.js").SkillLintReportStorePort;
   skills?: { enabled: boolean; serverUrl: string; apiKey: string; nodeId: string; catalogsNodeId?: string; typesafeApiKey: string; httpClient: AtomHttpClient; logger?: Pick<FastifyBaseLogger, "warn"> };
   cards: CardRouteBodyOptions & { resolveAccess: () => BoardAccess | Promise<BoardAccess>;
     cardExecutionServiceProvider?: NonNullable<import("../folders/folder_routes.js").FolderRouteOptions["cardExecutionServiceProvider"]>;

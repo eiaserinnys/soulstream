@@ -44,6 +44,8 @@ export interface McpToolDefinition {
   strictInputSchema?: boolean;
   /** Input schema shown to and enforced for external callers when it differs from `config.inputSchema`. */
   externalInputSchema?: z.ZodRawShape;
+  /** Input schema the orchestrator enforces for the worker-forwarded call when the worker rewrites the input (e.g. file path -> file content). */
+  hostInputSchema?: z.ZodRawShape;
   /** Forward timeout for the worker-to-orchestrator call when the default is too short. */
   timeoutMs?: number;
 }

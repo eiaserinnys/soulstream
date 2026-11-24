@@ -314,6 +314,9 @@
     "put_report_entry": {
       "category": "allow"
     },
+    "put_skill_lint_report": {
+      "category": "allow"
+    },
     "redeliver_outbound_webhook": {
       "category": "deny"
     },

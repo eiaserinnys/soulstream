@@ -19,6 +19,8 @@ export interface SkillCatalogEntry {
   description: string;
   bodyNodeId: string;
   nodeId?: string;
+  /** 엔트리 카드 ID(머리 주석의 card 값). 프로필 미리보기의 문서 목록과 카드 ID로 잇는다. */
+  cardId?: string;
   notes?: string;
   activity?: { medium?: string; operations?: string[]; acceptsInput?: string[] };
   probeIntents?: string[];
@@ -42,6 +44,9 @@ export interface DomainCatalogEntry {
   name: string;
   description: string;
   bodyNodeId: string;
+  /** 카탈로그 엔트리 노드와 카드(머리 주석의 node, card 값). */
+  nodeId?: string;
+  cardId?: string;
   aliases?: string[];
   axis: string[];
   composition: "orthogonal" | "bundle";
@@ -78,15 +83,16 @@ export function parseSkillCatalogMarkdown(
   logger: CatalogLogger,
 ): SkillCatalogEntry[] {
   const lines = markdown.split("\n");
-  const headings: Array<{ name: string; nodeId?: string; bodyStart: number }> = [];
+  const headings: Array<{ name: string; nodeId?: string; cardId?: string; bodyStart: number }> = [];
   for (const [index, line] of lines.entries()) {
     const heading = /^#{2,6}\s+(.+?)\s*$/.exec(line);
     if (!heading) continue;
     const nodeId = /<!--\s*node:([0-9a-f-]{36})\b.*?-->/.exec(heading[1]!)?.[1];
+    const cardId = /<!--[^>]*?\bcard:([0-9a-f-]{36})\b.*?-->/.exec(heading[1]!)?.[1];
     const name = heading[1]!
       .replace(/\s*<!--.*?-->\s*$/, "")
       .trim();
-    headings.push({ name, ...(nodeId ? { nodeId } : {}), bodyStart: index + 1 });
+    headings.push({ name, ...(nodeId ? { nodeId } : {}), ...(cardId ? { cardId } : {}), bodyStart: index + 1 });
   }
 
   const entries: SkillCatalogEntry[] = [];
@@ -118,6 +124,7 @@ export function parseSkillCatalogMarkdown(
       description: typeof data.description === "string" ? data.description : "",
       bodyNodeId,
       ...(heading.nodeId ? { nodeId: heading.nodeId } : {}),
+      ...(heading.cardId ? { cardId: heading.cardId } : {}),
     };
     if (typeof data.notes === "string") entry.notes = data.notes;
     const activityData = asRecord(data.activity);
@@ -142,15 +149,16 @@ export function parseDomainCatalogMarkdown(
   logger: CatalogLogger,
 ): DomainCatalogEntry[] {
   const lines = markdown.split("\n");
-  const headings: Array<{ name: string; nodeId: string | undefined; bodyStart: number }> = [];
+  const headings: Array<{ name: string; nodeId: string | undefined; cardId: string | undefined; bodyStart: number }> = [];
   for (const [index, line] of lines.entries()) {
     const heading = /^#{2,6}\s+(.+?)\s*$/.exec(line);
     if (!heading) continue;
     const nodeId = /<!--\s*node:([0-9a-f-]{36})\b.*?-->/.exec(heading[1]!)?.[1];
+    const cardId = /<!--[^>]*?\bcard:([0-9a-f-]{36})\b.*?-->/.exec(heading[1]!)?.[1];
     const name = heading[1]!
       .replace(/\s*<!--.*?-->\s*$/, "")
       .trim();
-    headings.push({ name, nodeId, bodyStart: index + 1 });
+    headings.push({ name, nodeId, cardId, bodyStart: index + 1 });
   }
 
   const entries: DomainCatalogEntry[] = [];
@@ -191,6 +199,8 @@ export function parseDomainCatalogMarkdown(
       bodyNodeId,
       axis,
       composition,
+      nodeId: heading.nodeId,
+      ...(heading.cardId ? { cardId: heading.cardId } : {}),
     };
     const aliases = stringArray(data.aliases);
     if (aliases) entry.aliases = aliases;

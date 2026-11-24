@@ -153,7 +153,7 @@ describe("stateful principal binding", () => {
 
     const fullList = await listTools(baseUrl, `Bearer ${KEY}`, sessionId);
     const fullPayload = await payloadOf(fullList);
-    expect(fullPayload.result?.tools).toHaveLength(158);
+    expect(fullPayload.result?.tools).toHaveLength(159);
 
     const borrowed = await listTools(baseUrl, `Bearer ${TOKEN_A}`, sessionId);
     expect(borrowed.status).toBe(403);
@@ -163,7 +163,7 @@ describe("stateful principal binding", () => {
     const { baseUrl } = await startServer({ restricted: restrictedConfig });
     const sessionId = await initialize(baseUrl, `Bearer ${TOKEN_A}`);
     const payload = await payloadOf(await listTools(baseUrl, `Bearer ${TOKEN_A}`, sessionId));
-    expect(payload.result?.tools).toHaveLength(114);
+    expect(payload.result?.tools).toHaveLength(115);
   });
 
   it("refuses restricted start with 503 on policy failure while full stays up", async () => {
@@ -179,7 +179,7 @@ describe("stateful principal binding", () => {
 
     const fullSession = await initialize(baseUrl, `Bearer ${KEY}`);
     const fullList = await listTools(baseUrl, `Bearer ${KEY}`, fullSession);
-    expect((await payloadOf(fullList)).result?.tools).toHaveLength(158);
+    expect((await payloadOf(fullList)).result?.tools).toHaveLength(159);
   });
 
   it("refuses restricted credentials when MCP_REQUIRE_AUTH is false", async () => {

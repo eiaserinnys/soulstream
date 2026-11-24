@@ -1,3 +1,4 @@
+import { SkillLintReportStore } from "./skills/skill_lint_report_store.js";
 import { PersistentDefaultsSettings } from "./settings/persistent_defaults_settings.js";
 import { McpCentralSyncService } from "./mcp_central/sync_service.js";
 import { createMcpTestPreviewService } from "./mcp_central/test_preview_service.js";
@@ -1053,6 +1054,9 @@ export async function createLiveProductionApplication(
     authorizeUser: outboundAuthorizeUser,
     sessionAccess: outboundSessionAccess,
   };
+  const mcpSkills = { enabled: config.atom_enabled, serverUrl: config.atom_server_url, apiKey: config.atom_api_key,
+    nodeId: config.skill_catalog_node_id, catalogsNodeId: config.domain_catalog_node_id,
+    typesafeApiKey: config.typesafe_api_key, httpClient: providers.atomRoutes.httpClient };
   const app = createApp({
     oauthRoutes: {
       issuer: config.soulstream_public_url,
@@ -1135,9 +1139,7 @@ export async function createLiveProductionApplication(
       createScheduleRepositoryProvider(sqlResolver),
       createFolderControlPlaneServiceProvider(sqlResolver),
       new LiveDatabaseSchemaProvider(sqlResolver),
-      { enabled: config.atom_enabled, serverUrl: config.atom_server_url, apiKey: config.atom_api_key,
-        nodeId: config.skill_catalog_node_id, catalogsNodeId: config.domain_catalog_node_id,
-        typesafeApiKey: config.typesafe_api_key, httpClient: providers.atomRoutes.httpClient },
+      mcpSkills,
       cardDispatchRuntime.executionServiceProvider,
       lifecycle,
       cardDispatchRuntime.workDispatchServiceProvider,
@@ -1203,6 +1205,17 @@ export async function createLiveProductionApplication(
     },
     recurringJobRoutes: recurringJobWiring.routes,
     recurringJobHostRoutes: recurringJobWiring.hostRoutes,
+    skillGuidesRoutes: {
+      store: new SkillLintReportStore(async () => await sqlResolver.resolveSql() as unknown as SqlClient),
+      skills: mcpSkills,
+      recurringJobs: recurringJobService,
+      resolveActor: recurringJobWiring.routes.resolveActor,
+    },
+    agentContextOverviewRoutes: {
+      provider: providers.nodeAgentProfileRoutes.provider,
+      profileRepository: providers.agentProfileRoutes.repository,
+      bundleRepository: providers.agentProfileRoutes.bundleRepository,
+    },
     persistentDefaultsRoutes: { ...providers.adminUsersRoutes.provider, ...orchestrationAccess, service: persistentDefaults },
     cardDispatchSettingsRoutes:cardDispatchRuntime.settingsRoutes,
     cardOrchestrationRoutes: {

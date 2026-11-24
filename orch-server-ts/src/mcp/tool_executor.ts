@@ -49,8 +49,9 @@ export async function executeMcpTool(options: McpHostOptions, name: McpToolName,
   const definition = findMcpTool(name)!;
   try {
     const externalSchema = "externalInputSchema" in definition ? definition.externalInputSchema : undefined;
+    const hostSchema = "hostInputSchema" in definition ? definition.hostInputSchema : undefined;
     const schema = context.principal === "external" && externalSchema
-      ? externalSchema : definition.config.inputSchema;
+      ? externalSchema : hostSchema ?? definition.config.inputSchema;
     const objectSchema = z.object(schema);
     const input = "strictInputSchema" in definition && definition.strictInputSchema
       ? objectSchema.strict().parse(args)

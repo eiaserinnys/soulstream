@@ -55,6 +55,10 @@ export type AgentContextPreviewInput = (
   | { readonly agent_id: string; readonly atom_contexts?: never }
 ) & {
   readonly session?: Readonly<Record<string, unknown>>;
+  /** 소스의 조건(applies_when)을 무시하고 모두 읽는다. 쓰이는 곳 모음이 쓴다. */
+  readonly ignore_conditions?: boolean;
+  /** 본문 없이 소스 목록(manifest)만 받는다. */
+  readonly summary_only?: boolean;
 };
 
 export type NodeAgentProfileProvider = {
