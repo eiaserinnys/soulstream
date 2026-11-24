@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { AgentProfileSchema } from "@soulstream/agent-profile-contract";
 import { previewAgentMcp } from "../src/mcp_central/agent_preview.js";
 import { loadBundledIsolationPolicy } from "../src/security/session_isolation_policy.js";
@@ -56,5 +59,18 @@ describe("agent MCP preview", () => {
     await expect(commands.preview({ requestId: "3", agent_id: "missing" })).rejects.toMatchObject({ code: "MCP_AGENT_NOT_FOUND" });
     const portable = new McpConfigService({ agentsConfigPath: "/tmp/preview-agents.yaml", processEnv: { PORTABLE_LOCAL_MCP_AUTHORIZATION: "fake-portable-value" } });
     await expect(new McpConfigCommands(portable, undefined).preview({})).rejects.toMatchObject({ code: "MCP_PORTABLE_NODE" });
+  });
+
+  it("uses the actual Claude workspace fallback when no profile is bound", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "preview-claude-"));
+    try {
+      writeFileSync(join(dir, ".mcp.json"), JSON.stringify({ mcpServers: { external: { type: "sse", url: "https://example.test/mcp" } } }));
+      const service = new McpConfigService({ agentsConfigPath: join(dir, "agents.yaml"), processEnv: {} });
+      const claude = { ...agent, backend: "claude" as const, workspace_dir: dir, mcp_profile: undefined };
+      const commands = new McpConfigCommands(service, () => {}, { tasks: { resolveNewSessionAgent: async () => ({ profile: claude, hasDbPortrait: false, fromSource: false }) },
+        context: { nodeId: "test", codexMode: "app-server", isolationEnabled: true, localMcpPolicy: () => policy } });
+      const result = await commands.preview({ requestId: "1", agent_id: "a" });
+      expect(result.data.normal.servers).toMatchObject([{ server_id: "external", name: "external", type: "sse", included: true }]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

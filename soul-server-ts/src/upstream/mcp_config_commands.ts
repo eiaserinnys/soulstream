@@ -3,6 +3,7 @@ import type { McpConfigService } from "../mcp_config_service.js";
 import { CommandDispatchError } from "./command_family.js";
 import { testMcpServer } from "../mcp_central/server_tester.js";
 import { previewAgentMcp } from "../mcp_central/agent_preview.js";
+import { loadMcpServers } from "../engine/claude_sdk_mcp_options.js";
 import { resolveModelPresetSelection } from "../task/task_model_preset.js";
 import { UnknownAgentProfileError, type TaskRuntimeCommands } from "./task_runtime_commands.js";
 import type { ModelCatalog } from "../model_catalog.js";
@@ -65,12 +66,22 @@ export class McpConfigCommands {
     const profile = this.service.listProfiles().profiles.find(item => item.id === profileId);
     const ids = parsed.data.mcp_profile_id ? parsed.data.servers?.map(server => server.server_id) ?? []
       : Array.isArray(profile?.mcp_servers) ? profile.mcp_servers as string[] : [];
-    const servers = ids.flatMap(id => {
+    let servers = ids.flatMap(id => {
       const entry = registry.find(item => item.id === id);
       if (!entry || typeof entry.type !== "string") return [];
       const virtual = parsed.data.servers?.find(item => item.server_id === id);
       return [{ ...entry, id, name: virtual?.name ?? (typeof entry.name === "string" ? entry.name : id), type: virtual?.type ?? entry.type }];
     });
+    if (profileId === undefined && (preset?.backend ?? agent.backend) === "claude") {
+      const fallback = loadMcpServers(agent.workspace_dir, { debug() {} }) ?? {};
+      servers = Object.entries(fallback).flatMap(([name, config]) => {
+        if (!config || typeof config !== "object") return [];
+        const kind = "type" in config ? config.type : "stdio";
+        const type = kind === "http" ? "streamable_http" : kind ?? "stdio";
+        if (type !== "streamable_http" && type !== "stdio" && type !== "sse") return [];
+        return [{ ...config, id: name, name, type }];
+      });
+    }
     const status = this.service.configStatus();
     const context = this.previewDeps.context;
     const data = previewAgentMcp({ agent, mode: status.mode, revision: status.revision, profileId,

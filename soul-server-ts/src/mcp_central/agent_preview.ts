@@ -2,6 +2,7 @@ import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { selectCodexMcpServers } from "../engine/codex_app_server/params.js";
 import { antigravityMcpGatewayUpstreams } from "../engine/antigravity/agent_definition.js";
 import { openCodeMcpServers } from "../engine/opencode/config.js";
+import { isSoulstreamInternalMcpServer } from "../engine/soulstream_internal_mcp.js";
 import type { ResolvedMcpServer } from "../mcp_config_service.js";
 import { restrictedIsolationBackend } from "../runner/runner_process_isolation.js";
 import type { IsolationPolicy } from "../security/session_isolation_contract.js";
@@ -26,7 +27,7 @@ export function previewAgentMcp(input: {
   if (backend === "codex") supported = selectCodexMcpServers(servers).supportedServers ?? [];
   if (backend === "antigravity") {
     const names = new Set(antigravityMcpGatewayUpstreams({ resolvedMcpServers: servers, logger: { warn() {} } }).map(item => item.name));
-    supported = servers.filter(server => server.name && names.has(server.name));
+    supported = servers.filter(server => isSoulstreamInternalMcpServer(server) || (server.name && names.has(server.name)));
   }
   if (backend === "opencode") {
     const selected = openCodeMcpServers({ workspaceDir: input.agent.workspace_dir, sessionDirectory: "", model: "", agentSessionId: "",
