@@ -25,7 +25,7 @@ type Tab = "server" | "profile" | "secret";
 function SuccessMessage({ children }: { children: string }) {
   const ref = useRef<HTMLParagraphElement>(null);
   useEffect(() => { ref.current?.scrollIntoView?.({ block: "nearest", behavior: "instant" }); }, [children]);
-  return <p ref={ref} role="status" data-v3-selectable-content="true" className="text-sm text-success-foreground">{children}</p>;
+  return <p ref={ref} role="status" data-v3-selectable-content="true" className="text-sm text-success-foreground" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>{children}</p>;
 }
 export function McpSettingsTab({ request }: { request?: typeof fetch }) {
   const api = useMemo(() => createMcpApi(request), [request]);

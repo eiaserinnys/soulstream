@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import {
   Button,
   Dialog,
@@ -50,6 +50,14 @@ export function McpDialogs({
 }) {
   const cancelButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+  const deleteSnapshot = useRef<{ target: DeleteTarget; error: string; nodes: string[]; profiles: string[] } | null>(null);
+  const historySnapshot = useRef<{ target: History; error: string } | null>(null);
+  useLayoutEffect(() => {
+    if (deleting) deleteSnapshot.current = { target: deleting, error, nodes, profiles };
+    if (history) historySnapshot.current = { target: history, error };
+  }, [deleting, history, error, nodes, profiles]);
+  const deleteContent = deleting ? { target: deleting, error, nodes, profiles } : deleteSnapshot.current;
+  const historyContent = history ? { target: history, error } : historySnapshot.current;
   return (
     <>
       <Dialog
@@ -57,30 +65,31 @@ export function McpDialogs({
         onOpenChange={(open) => {
           if (!open) closeDelete();
         }}
+        onOpenChangeComplete={(open) => { if (!open && !deleting) deleteSnapshot.current = null; }}
       >
         <DialogPopup className="approved-dialog" initialFocus={cancelButton}>
           <DialogHeader>
             <DialogTitle>삭제</DialogTitle>
             <DialogDescription>
-              “{deleting?.id}” 항목을 삭제할까요? 사용 중이면 삭제할 수 없습니다.
-              {deleting?.kind === "profile" && nodes.length
-                ? ` 소속 노드: ${nodes.join(", ")}`
+              “{deleteContent?.target.id}” 항목을 삭제할까요? 사용 중이면 삭제할 수 없습니다.
+              {deleteContent?.target.kind === "profile" && deleteContent.nodes.length
+                ? ` 소속 노드: ${deleteContent.nodes.join(", ")}`
                 : ""}
             </DialogDescription>
           </DialogHeader>
-          {error ? (
+          {deleteContent?.error ? (
             <DialogPanel>
               <SettingsAlert>
-                {error}
-                {error.includes("다시 읽은") ? (
+                {deleteContent.error}
+                {deleteContent.error.includes("다시 읽은") ? (
                   <Button type="button" variant="outline" onClick={reload}>
                     다시 읽기
                   </Button>
                 ) : null}
-                {profiles.length > 0 && error.includes("사용 중인 프로필") ? (
+                {deleteContent.profiles.length > 0 && deleteContent.error.includes("사용 중인 프로필") ? (
                   <details className="config-advanced">
-                    <summary>사용 중인 프로필 전체 <span>{profiles.length}개</span></summary>
-                    <p>{profiles.join(", ")}</p>
+                    <summary>사용 중인 프로필 전체 <span>{deleteContent.profiles.length}개</span></summary>
+                    <p>{deleteContent.profiles.join(", ")}</p>
                   </details>
                 ) : null}
               </SettingsAlert>
@@ -113,27 +122,28 @@ export function McpDialogs({
         onOpenChange={(open) => {
           if (!open) closeHistory();
         }}
+        onOpenChangeComplete={(open) => { if (!open && !history) historySnapshot.current = null; }}
       >
         <DialogPopup className="approved-dialog" initialFocus={closeButton}>
           <DialogHeader>
             <DialogTitle>되돌리기</DialogTitle>
             <DialogDescription>
-              {history?.id}의 저장된 판을 고릅니다.
+              {historyContent?.target.id}의 저장된 판을 고릅니다.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            {error ? (
+            {historyContent?.error ? (
               <SettingsAlert>
-                {error}
-                {error.includes("다시 읽은") ? (
+                {historyContent.error}
+                {historyContent.error.includes("다시 읽은") ? (
                   <Button type="button" variant="outline" onClick={reload}>
                     다시 읽기
                   </Button>
                 ) : null}
               </SettingsAlert>
             ) : null}
-            {history?.revisions.length ? (
-              history.revisions.map((revision) => (
+            {historyContent?.target.revisions.length ? (
+              historyContent.target.revisions.map((revision) => (
                 <div
                   key={revision.id}
                   className="flex items-center justify-between gap-2 py-2"
