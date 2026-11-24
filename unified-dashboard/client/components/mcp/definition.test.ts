@@ -9,6 +9,12 @@ import {
 } from "./definition";
 
 describe("연결 정보 편집", () => {
+  it("편집할 수 없는 헤더와 env 값도 저장할 때 보존한다", () => {
+    for (const definition of [
+      { type: "streamable_http" as const, config: { url: "https://example.invalid", headers: { Known: "{{env:EXAMPLE}}", Number: 42, Object: { future: true } } } },
+      { type: "stdio" as const, config: { command: "fake-tool", env: { Known: { env: "EXAMPLE" }, Number: 42, Object: { future: true } } } },
+    ]) expect(writeDefinition(readDefinition(definition))).toEqual(definition);
+  });
   it("헤더와 여러 쿼리 참조를 각각 읽고 손실 없이 저장한다", () => {
     const definition = {
       type: "streamable_http" as const,

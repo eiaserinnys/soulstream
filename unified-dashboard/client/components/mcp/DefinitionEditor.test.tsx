@@ -151,3 +151,38 @@ it("stdio 명령을 새로 입력하면 숨은 full_command를 제거한다", as
     vi.unstubAllGlobals();
   }
 });
+
+it.each([
+  ["streamable_http", "stdio", "env"],
+  ["stdio", "streamable_http", "header"],
+] as const)("%s에서 %s로 바꾼 뒤 줄을 더하면 %s다", async (initial, next, kind) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const changes = vi.fn();
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  const editor = (type: "streamable_http" | "stdio") => (
+    <DefinitionEditor
+      value={readDefinition({ type, config: {} })}
+      secretNames={[]}
+      onChange={changes}
+      onSecretValue={() => undefined}
+    />
+  );
+  try {
+    await act(async () => root.render(editor(initial)));
+    await act(async () => root.render(editor(next)));
+    await act(async () =>
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "줄 더하기")!
+        .click(),
+    );
+    expect(changes).toHaveBeenCalledWith(
+      expect.objectContaining({ units: [expect.objectContaining({ kind })] }),
+    );
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});

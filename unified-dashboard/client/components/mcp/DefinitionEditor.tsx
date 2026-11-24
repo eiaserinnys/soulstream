@@ -1,5 +1,5 @@
-import { useId, useRef, useState } from "react";
-import { Button, Input } from "@seosoyoung/soul-ui";
+import { useEffect, useId, useRef, useState } from "react";
+import { Button, Checkbox, Input } from "@seosoyoung/soul-ui";
 import {
   inputControlClassName,
   inputFieldClassName,
@@ -37,6 +37,20 @@ export function McpValueUnit({
   const listId = useId();
   const original = useRef(unit.value);
   const ref = reference(unit.value);
+  const referenceInput = useRef<HTMLInputElement>(null);
+  const [referenceOverflow, setReferenceOverflow] = useState(false);
+  const [showReference, setShowReference] = useState(false);
+  useEffect(() => {
+    const input = referenceInput.current;
+    if (!input) return;
+    const measure = () =>
+      setReferenceOverflow(input.scrollWidth > input.clientWidth + 1);
+    measure();
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(input);
+    return () => observer?.disconnect();
+  }, [ref.name]);
   const updateReference = (kind: "secret" | "env", name: string) => {
     if (ref.kind === "secret" && ref.name) onSecretValue(ref.name, null);
     setReplace(false);
@@ -52,6 +66,7 @@ export function McpValueUnit({
   };
   return (
     <div
+      data-testid="mcp-value-unit"
       className="grid min-w-0 gap-2 rounded-floor bg-muted/20 p-3"
       onKeyDown={(event) => {
         if (event.key !== "Escape" || !replace) return;
@@ -63,7 +78,7 @@ export function McpValueUnit({
         replaceButton.current?.focus();
       }}
     >
-      <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+      <div className="grid min-w-0 gap-2">
         <SettingsField
           label={
             unit.kind === "header"
@@ -81,28 +96,34 @@ export function McpValueUnit({
           />
         </SettingsField>
         <SettingsField label="참조">
-          <span className="flex min-w-0 items-center gap-2">
-            <span
-              className={`${inputControlClassName} w-auto`}
-              data-slot="input-control"
-            >
-              <select
-                aria-label="참조 종류"
-                value={ref.kind === "literal" ? "secret" : ref.kind}
-                onChange={(event) =>
-                  updateReference(
-                    event.target.value as "secret" | "env",
-                    ref.name,
-                  )
-                }
-                className={selectClass}
+          <span className="grid min-w-0 gap-1">
+            <span className="flex min-w-0 items-center gap-2">
+              <span
+                className={`${inputControlClassName} shrink-0`}
+                style={{ width: "auto" }}
+                data-slot="input-control"
               >
-                <option value="secret">비밀</option>
-                <option value="env">환경 변수</option>
-              </select>
+                <select
+                  aria-label="참조 종류"
+                  value={ref.kind === "literal" ? "secret" : ref.kind}
+                  onChange={(event) =>
+                    updateReference(
+                      event.target.value as "secret" | "env",
+                      ref.name,
+                    )
+                  }
+                  className={selectClass}
+                >
+                  <option value="secret">비밀</option>
+                  <option value="env">환경 변수</option>
+                </select>
+              </span>
             </span>
             <Input
+              ref={referenceInput}
               aria-label="참조 이름"
+              className="min-w-0"
+              title={ref.name}
               list={ref.kind !== "env" ? listId : undefined}
               value={ref.name}
               onChange={(event) =>
@@ -124,6 +145,25 @@ export function McpValueUnit({
             ) : null}
           </span>
         </SettingsField>
+        {referenceOverflow ? (
+          <div className="space-y-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-expanded={showReference}
+              onClick={() => setShowReference(!showReference)}
+              data-testid="mcp-reference-full-toggle"
+            >
+              {showReference ? "참조 이름 접기" : "참조 이름 전체 보기"}
+            </Button>
+            {showReference ? (
+              <p data-v3-selectable-content="true" className="break-all text-sm">
+                {ref.name}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <div className="flex flex-wrap gap-2">
         <Button
@@ -201,6 +241,8 @@ export function DefinitionEditor({
   const [newKind, setNewKind] = useState<Unit["kind"] | "bearer">(
     value.type === "stdio" ? "env" : "header",
   );
+  const effectiveKind =
+    value.type === "stdio" ? "env" : newKind === "env" ? "header" : newKind;
   const setConfig = (key: string, next: unknown) => {
     const config = { ...value.config };
     if (key === "command" && typeof next === "string" && next)
@@ -289,53 +331,55 @@ export function DefinitionEditor({
             }
           />
         ))}
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            className={`${inputControlClassName} w-auto`}
-            data-slot="input-control"
-          >
-            <select
-              aria-label="인증 방식"
-              value={newKind}
-              onChange={(event) =>
-                setNewKind(event.target.value as Unit["kind"] | "bearer")
-              }
-              className={selectClass}
-            >
-              {value.type !== "stdio" ? (
-                <>
+        <div className="space-y-1">
+          {value.type !== "stdio" ? (
+            <span className="text-sm text-muted-foreground">인증 방식</span>
+          ) : null}
+          <div className="flex items-center gap-2">
+            {value.type !== "stdio" ? (
+              <span
+                className={`${inputControlClassName} shrink-0`}
+                style={{ width: "auto" }}
+                data-slot="input-control"
+              >
+                <select
+                  aria-label="인증 방식"
+                  value={effectiveKind}
+                  onChange={(event) =>
+                    setNewKind(event.target.value as Unit["kind"] | "bearer")
+                  }
+                  className={selectClass}
+                >
                   <option value="header">헤더</option>
                   <option value="bearer">Bearer</option>
                   <option value="query">쿼리</option>
-                </>
-              ) : (
-                <option value="env">env</option>
-              )}
-            </select>
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() =>
-              onChange({
-                ...value,
-                units: [
-                  ...value.units,
-                  newUnit(
-                    newKind === "bearer"
-                      ? {
-                          kind: "header",
-                          name: "Authorization",
-                          value: "Bearer {{secret:}}",
-                        }
-                      : { kind: newKind, name: "", value: "{{secret:}}" },
-                  ),
-                ],
-              })
-            }
-          >
-            줄 더하기
-          </Button>
+                </select>
+              </span>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() =>
+                onChange({
+                  ...value,
+                  units: [
+                    ...value.units,
+                    newUnit(
+                      effectiveKind === "bearer"
+                        ? {
+                            kind: "header",
+                            name: "Authorization",
+                            value: "Bearer {{secret:}}",
+                          }
+                        : { kind: effectiveKind, name: "", value: "{{secret:}}" },
+                    ),
+                  ],
+                })
+              }
+            >
+              줄 더하기
+            </Button>
+          </div>
         </div>
         <SettingsField label="타임아웃">
           <Input
@@ -351,11 +395,10 @@ export function DefinitionEditor({
           />
         </SettingsField>
         <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={Boolean(value.config.cache_tools_list)}
-            onChange={(event) =>
-              setConfig("cache_tools_list", event.target.checked)
+            onCheckedChange={(checked) =>
+              setConfig("cache_tools_list", checked)
             }
           />
           도구 목록 캐시

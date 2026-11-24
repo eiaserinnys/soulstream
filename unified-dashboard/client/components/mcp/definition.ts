@@ -91,6 +91,7 @@ export function readDefinition(definition: Definition): DefinitionDraft {
     if ((definition.type === "stdio") !== (key === "env")) continue;
     const record = config[key];
     if (record && typeof record === "object" && !Array.isArray(record)) {
+      const unknown: Record<string, unknown> = {};
       for (const [name, value] of Object.entries(record))
         if (
           typeof value === "string" ||
@@ -99,8 +100,10 @@ export function readDefinition(definition: Definition): DefinitionDraft {
             typeof (value as { env?: unknown }).env === "string")
         )
           units.push(newUnit({ kind, name, value: value as Unit["value"] }));
+        else unknown[name] = value;
+      if (Object.keys(unknown).length) config[key] = unknown;
+      else delete config[key];
     }
-    delete config[key];
   }
   let url =
     definition.type !== "stdio" && typeof config.url === "string"
@@ -179,7 +182,7 @@ export function writeDefinition(draft: DefinitionDraft): Definition {
     const entries = draft.units
       .filter((unit) => unit.kind === kind)
       .map((unit) => [unit.name, unit.value]);
-    if (entries.length) config[key] = Object.fromEntries(entries);
+    if (entries.length) config[key] = { ...(config[key] as Record<string, unknown> | undefined), ...Object.fromEntries(entries) };
   }
   return {
     ...(draft.name ? { name: draft.name } : {}),

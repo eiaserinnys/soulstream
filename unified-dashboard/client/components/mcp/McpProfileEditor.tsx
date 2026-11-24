@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Input } from "@seosoyoung/soul-ui";
+import { Button, Checkbox, Input } from "@seosoyoung/soul-ui";
 import type { McpConfig, McpProfile } from "../../lib/mcp-api";
 import {
   SettingsAlert,
@@ -66,7 +66,7 @@ export function McpProfileEditor({
               </Button>
               <Button
                 type="button"
-                variant="outline"
+                variant="destructive-outline"
                 onClick={() => remove(profile)}
               >
                 삭제
@@ -107,12 +107,11 @@ export function McpProfileEditor({
         <div className="grid gap-2 sm:grid-cols-2">
           {config.servers.map((server) => (
             <label key={server.id} className="flex min-w-0 items-center gap-2">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={servers.includes(server.id)}
-                onChange={(event) =>
+                onCheckedChange={(checked) =>
                   setServers((current) =>
-                    event.target.checked
+                    checked
                       ? [...current, server.id]
                       : current.filter((id) => id !== server.id),
                   )
@@ -127,13 +126,13 @@ export function McpProfileEditor({
       {profile ? (
         <SettingsGroupBox title="소속과 연결">
           <div className="space-y-2 text-sm">
-            <p>
+            <p data-v3-selectable-content="true">
               소속 노드:{" "}
               {profile.node_scope.length
                 ? profile.node_scope.join(", ")
                 : "소속 노드 없음"}
             </p>
-            <p>
+            <p data-v3-selectable-content="true">
               연결된 에이전트:{" "}
               {bindings.length
                 ? bindings

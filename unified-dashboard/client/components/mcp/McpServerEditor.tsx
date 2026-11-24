@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Input } from "@seosoyoung/soul-ui";
+import { Button, Checkbox, Input } from "@seosoyoung/soul-ui";
 import type {
   Definition,
   McpConfig,
@@ -147,7 +147,7 @@ export function McpServerEditor({
               </Button>
               <Button
                 type="button"
-                variant="outline"
+                variant="destructive-outline"
                 onClick={() => remove(server)}
               >
                 삭제
@@ -170,12 +170,11 @@ export function McpServerEditor({
                   className="flex items-center justify-between gap-2 rounded-floor border border-border p-2"
                 >
                   <span className="flex min-w-0 items-center gap-2">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={selectedProfiles.includes(profile.id)}
-                      onChange={(event) =>
+                      onCheckedChange={(checked) =>
                         setSelectedProfiles((current) =>
-                          event.target.checked
+                          checked
                             ? [...current, profile.id]
                             : current.filter((id) => id !== profile.id),
                         )
@@ -287,16 +286,15 @@ export function McpServerEditor({
                 key={node.node_id}
                 className="flex items-center gap-2 text-sm"
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={scope.includes(node.node_id)}
-                  onChange={(event) => {
+                  onCheckedChange={(checked) => {
                     setScope((current) =>
-                      event.target.checked
+                      checked
                         ? [...current, node.node_id]
                         : current.filter((id) => id !== node.node_id),
                     );
-                    if (!event.target.checked)
+                    if (!checked)
                       setOverrides((current) => {
                         const next = { ...current };
                         delete next[node.node_id];
@@ -308,19 +306,18 @@ export function McpServerEditor({
               </label>
             ))}
           </div>
-          <details>
-            <summary>노드별 덮어쓰기</summary>
+          <details className="config-advanced">
+            <summary>노드별 덮어쓰기 <span data-v3-selectable-content="true">{Object.keys(overrides).join(", ") || "없음"}</span></summary>
             <div className="space-y-3 pt-3">
               {scope.map((node) => (
                 <div key={node} className="space-y-2">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
+                  <label className="flex items-center gap-2 break-keep">
+                    <Checkbox
                       checked={Boolean(overrides[node])}
-                      onChange={(event) =>
+                      onCheckedChange={(checked) =>
                         setOverrides((current) => {
                           const next = { ...current };
-                          if (event.target.checked)
+                          if (checked)
                             next[node] = readDefinition(writeDefinition(draft));
                           else delete next[node];
                           return next;
@@ -347,12 +344,7 @@ export function McpServerEditor({
               ))}
             </div>
           </details>
-          <p className="text-sm text-muted-foreground">
-            사용 프로필:{" "}
-            {users.length
-              ? users.map((p) => p.name || p.id).join(", ")
-              : "없음"}
-          </p>
+          {server ? <details className="config-advanced"><summary>사용 프로필 <span>{users.length}개</span></summary><p data-v3-selectable-content="true" className="break-keep text-sm text-muted-foreground">{users.length ? users.map((p) => p.name || p.id).join(", ") : "없음"}</p></details> : null}
           {formError ? (
             <SettingsAlert scrollIntoView>{formError}</SettingsAlert>
           ) : null}

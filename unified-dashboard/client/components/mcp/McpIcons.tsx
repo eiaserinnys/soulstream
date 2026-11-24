@@ -33,6 +33,7 @@ import {
   Lock,
 } from "lucide-react";
 import type { McpIcon, McpServer } from "../../lib/mcp-api";
+import { SettingsAlert } from "../config/SettingsListDetail";
 import "./mcp.css";
 
 export const SYMBOLS = {
@@ -209,13 +210,15 @@ export function McpServerIcons({
   ids,
   servers,
   limit = 4,
+  singleLine = false,
 }: {
   ids: string[];
   servers: McpServer[];
   limit?: number;
+  singleLine?: boolean;
 }) {
   return (
-    <span className="flex flex-wrap items-center gap-1">
+    <span className={singleLine ? "flex min-h-7 flex-nowrap items-center gap-1" : "flex flex-wrap items-center gap-1"}>
       {ids.slice(0, limit).map((id) => (
         <McpIconTile
           key={id}
@@ -248,12 +251,16 @@ export function McpIconPicker({
   upload(file: File): Promise<McpIcon>;
 }) {
   const [mode, setMode] = useState<"brand" | "symbol" | "upload" | "initial">(
-    "brand",
+    value?.kind ?? "initial",
   );
   const [brands, setBrands] = useState<Brand[]>([]);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
+  const initialModeButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => { initialModeButton.current?.focus(); }, []);
   useEffect(() => {
+    if (mode !== "brand" || brands.length) return;
     let active = true;
     fetch("/brand-icons/index.json", { credentials: "same-origin" })
       .then((response) => {
@@ -269,7 +276,7 @@ export function McpIconPicker({
     return () => {
       active = false;
     };
-  }, []);
+  }, [mode, brands.length]);
   const suggestions = useMemo(() => {
     let host = "";
     try {
@@ -293,8 +300,10 @@ export function McpIconPicker({
     : suggestions;
   return (
     <div className="space-y-3 rounded-floor bg-muted/30 p-3">
-      <div className="flex flex-wrap items-center gap-2">
+      <div>
         <McpIconTile id={id || "M"} icon={value} />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
         {(
           [
             ["brand", "브랜드 검색"],
@@ -306,7 +315,9 @@ export function McpIconPicker({
           <Button
             key={key}
             type="button"
+            ref={mode === key && key !== "brand" ? initialModeButton : undefined}
             variant={mode === key ? "secondary" : "ghost"}
+            aria-pressed={mode === key}
             onClick={() => {
               setMode(key);
               setError("");
@@ -334,7 +345,9 @@ export function McpIconPicker({
               <Button
                 key={item.slug}
                 type="button"
-                variant="outline"
+                variant={value?.kind === "brand" && value.slug === item.slug ? "secondary" : "outline"}
+                aria-pressed={value?.kind === "brand" && value.slug === item.slug}
+                className="aria-pressed:ring-2 aria-pressed:ring-accent-blue"
                 onClick={() =>
                   onChange({
                     kind: "brand",
@@ -351,7 +364,7 @@ export function McpIconPicker({
               </Button>
             ))}
           </div>
-          {error ? <p role="alert">{error}</p> : null}
+          {error ? <SettingsAlert>{error}</SettingsAlert> : null}
         </div>
       ) : null}
       {mode === "symbol" ? (
@@ -361,9 +374,10 @@ export function McpIconPicker({
               <Button
                 key={key}
                 type="button"
-                variant="ghost"
+                variant={value?.kind === "symbol" && value.name === key ? "secondary" : "ghost"}
                 aria-label={key}
                 aria-pressed={value?.kind === "symbol" && value.name === key}
+                className="aria-pressed:ring-2 aria-pressed:ring-accent-blue"
                 onClick={() =>
                   onChange({
                     kind: "symbol",
@@ -398,10 +412,14 @@ export function McpIconPicker({
         </div>
       ) : null}
       {mode === "upload" ? (
-        <label className="block text-sm">
-          PNG, JPEG, WebP · 최대 256 KiB, 512 × 512
-          <Input
+        <div className="space-y-2 text-sm">
+          <p>PNG, JPEG, WebP · 최대 256 KiB, 512 × 512</p>
+          <Button type="button" variant="outline" onClick={() => fileInput.current?.click()}>이미지 선택</Button>
+          <input
+            ref={fileInput}
             type="file"
+            aria-label="이미지 파일"
+            className="hidden"
             accept="image/png,image/jpeg,image/webp"
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -417,8 +435,8 @@ export function McpIconPicker({
               }
             }}
           />
-          {error ? <span role="alert">{error}</span> : null}
-        </label>
+          {error ? <SettingsAlert>{error}</SettingsAlert> : null}
+        </div>
       ) : null}
     </div>
   );

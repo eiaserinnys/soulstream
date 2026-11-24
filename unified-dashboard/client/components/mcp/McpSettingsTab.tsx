@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, FrameLoading } from "@seosoyoung/soul-ui";
 import {
   createMcpApi,
@@ -22,6 +22,11 @@ import { errorText, PartialProfileSaveError } from "./McpErrors";
 import { McpDialogs, type DeleteTarget, type History } from "./McpDialogs";
 
 type Tab = "server" | "profile" | "secret";
+function SuccessMessage({ children }: { children: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => { ref.current?.scrollIntoView?.({ block: "nearest", behavior: "instant" }); }, [children]);
+  return <p ref={ref} role="status" data-v3-selectable-content="true" className="text-sm text-success-foreground">{children}</p>;
+}
 export function McpSettingsTab({ request }: { request?: typeof fetch }) {
   const api = useMemo(() => createMcpApi(request), [request]);
   const [config, setConfig] = useState<McpConfig | null>(null);
@@ -29,6 +34,8 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
   const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [messagePlace, setMessagePlace] = useState<"header" | "footer">("footer");
   const [tab, setTab] = useState<Tab>("server");
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -73,11 +80,16 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
   const mutate = async (
     action: () => Promise<void>,
     target: DeleteTarget | null = null,
+    successMessage = "",
+    place: "header" | "footer" = "footer",
   ): Promise<boolean> => {
     setBusy(true);
     setError("");
+    setSuccess("");
+    setMessagePlace(place);
     try {
       await action();
+      setSuccess(successMessage);
       return true;
     } catch (caught) {
       setError(errorText(caught, config, target));
@@ -92,12 +104,16 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
     setCreating(false);
     setJustCreated(false);
     setError("");
+    setSuccess("");
   };
   if (!config)
     return (
       <div className="space-y-4">
-        <div className="rounded-floor border border-border bg-muted/20 p-3 text-sm">
-          DB 저장 판 · 노드 적용 판
+        <div aria-hidden="true" className="flex flex-wrap items-center gap-2 rounded-floor border border-border bg-muted/20 p-3">
+          <span className="h-7.5 w-24 rounded-full bg-muted sm:h-7" />
+          <span className="h-7.5 w-32 rounded-full bg-muted sm:h-7" />
+          <span className="h-7.5 w-44 rounded-full bg-muted sm:h-7" />
+          <span className="h-7.5 w-48 rounded-full bg-muted sm:h-7" />
         </div>
         <div className="mcp-tabs">
           <DetailTabs
@@ -121,9 +137,6 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
           list={
             <>
               <SettingsListHeader title="서버" description="" actions={null} />
-              {!loadError ? (
-                <FrameLoading inline label="서버를 불러오는 중…" />
-              ) : null}
             </>
           }
         >
@@ -158,7 +171,12 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
     void mutate(async () => {
       const result = await api.revisions(target, id);
       setHistory({ target, id, revisions: result.revisions });
-    });
+    }, null, "", "header");
+  const openDelete = (target: DeleteTarget) => {
+    setError("");
+    setSuccess("");
+    setDeleting(target);
+  };
   const upload = async (file: File): Promise<McpIcon> => {
     if (
       file.size > 262144 ||
@@ -185,11 +203,13 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
           tab !== "secret" ? (
             <Button
               type="button"
+              data-settings-open-detail
               onClick={() => {
                 setCreating(true);
                 setSelected(null);
                 setJustCreated(false);
                 setError("");
+                setSuccess("");
               }}
             >
               + 새 {tab === "server" ? "서버" : "프로필"}
@@ -221,6 +241,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
                   setCreating(false);
                   setJustCreated(false);
                   setError("");
+                  setSuccess("");
                 }}
               />
             ))
@@ -230,10 +251,11 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
                   key={profile.id}
                   title={profile.name || profile.id}
                   meta={profile.description || profile.id}
-                  portrait={
+                  footer={
                     <McpServerIcons
                       ids={profile.mcp_servers}
                       servers={servers}
+                      singleLine
                     />
                   }
                   selected={!creating && currentProfile?.id === profile.id}
@@ -241,6 +263,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
                     setSelected(profile.id);
                     setCreating(false);
                     setError("");
+                    setSuccess("");
                   }}
                 />
               ))
@@ -249,14 +272,13 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
                   key={secret.name}
                   title={secret.name}
                   meta={
-                    secret.servers.length || secret.profiles.length
-                      ? "DB에 저장됨"
-                      : "사용처 없음"
+                    secret.servers.length ? secret.servers.join(", ") : secret.profiles.length ? secret.profiles.join(", ") : "사용처 없음"
                   }
                   selected={currentSecret?.name === secret.name}
                   onSelect={() => {
                     setSelected(secret.name);
                     setError("");
+                    setSuccess("");
                   }}
                 />
               ))}
@@ -303,24 +325,6 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
           onChange={chooseTab}
         />
       </div>
-      {error ? (
-        <SettingsAlert>
-          {error}{" "}
-          {error.includes("다시 읽은") ? (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() =>
-                void refresh()
-                  .then(() => setError(""))
-                  .catch(() => undefined)
-              }
-            >
-              다시 읽기
-            </Button>
-          ) : null}
-        </SettingsAlert>
-      ) : null}
       {loadError ? (
         <SettingsAlert>
           갱신하지 못했습니다.{" "}
@@ -335,6 +339,8 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
       ) : null}
       <div id="mcp-panel" role="tabpanel" aria-labelledby={`mcp-tabs-${tab}`}>
         <SettingsListDetailFrame testId="mcp-settings" list={list}>
+          {messagePlace === "header" && !deleting && !history && error ? <SettingsAlert scrollIntoView>{error}</SettingsAlert> : null}
+          {messagePlace === "header" && success ? <SuccessMessage>{success}</SuccessMessage> : null}
           {tab === "server" && (currentServer || creating) ? (
             <McpServerEditor
               server={currentServer}
@@ -344,7 +350,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
               dismissCreated={() => setJustCreated(false)}
               upload={upload}
               remove={(server) =>
-                setDeleting({
+                openDelete({
                   kind: "server",
                   id: server.id,
                   version: server.version,
@@ -368,7 +374,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
                   setSelected(id);
                   setCreating(false);
                   setJustCreated(version === undefined);
-                })
+                }, null, version === undefined ? "" : "저장했습니다.")
               }
               addToProfiles={async (id, chosen) =>
                 mutate(async () => {
@@ -393,7 +399,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
                   }
                   await refresh();
                   setJustCreated(false);
-                })
+                }, null, "프로필에 추가했습니다.")
               }
             />
           ) : null}
@@ -403,7 +409,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
               config={config}
               busy={busy}
               remove={(profile) =>
-                setDeleting({
+                openDelete({
                   kind: "profile",
                   id: profile.id,
                   version: profile.version,
@@ -416,7 +422,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
                   await refresh();
                   setSelected(id);
                   setCreating(false);
-                })
+                }, null, "저장했습니다.")
               }
             />
           ) : null}
@@ -425,16 +431,20 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
               secret={currentSecret}
               busy={busy}
               remove={(secret: McpSecret) =>
-                setDeleting({ kind: "secret", id: secret.name })
+                openDelete({ kind: "secret", id: secret.name })
               }
               replace={async (name, value) =>
                 mutate(async () => {
                   await api.putSecret(name, value, config.current_revision);
                   await refresh();
-                })
+                }, null, "값을 교체했습니다.")
               }
             />
           ) : null}
+          {messagePlace === "footer" && !deleting && !history && error ? (
+            <SettingsAlert scrollIntoView>{error}{" "}{error.includes("다시 읽은") ? <Button type="button" variant="outline" onClick={() => void refresh().then(() => setError("")).catch(() => undefined)}>다시 읽기</Button> : null}</SettingsAlert>
+          ) : null}
+          {messagePlace === "footer" && success ? <SuccessMessage>{success}</SuccessMessage> : null}
         </SettingsListDetailFrame>
       </div>
       <McpDialogs
@@ -442,8 +452,19 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
         history={history}
         nodes={currentProfile?.node_scope ?? []}
         busy={busy}
-        closeDelete={() => setDeleting(null)}
-        closeHistory={() => setHistory(null)}
+        error={error}
+        profiles={deleting?.kind === "server" ? profiles.filter((p) => p.mcp_servers.includes(deleting.id)).map((p) => p.name || p.id) : []}
+        reload={() => void refresh().then((next) => {
+          if (deleting?.kind === "server" || deleting?.kind === "profile") {
+            const items = deleting.kind === "server" ? next.servers : next.profiles;
+            const item = items.find((candidate) => candidate.id === deleting.id);
+            if (item) setDeleting({ ...deleting, version: item.version });
+            else { setDeleting(null); setMessagePlace("header"); setSuccess("항목이 이미 삭제되었습니다."); }
+          }
+          setError("");
+        }).catch(() => undefined)}
+        closeDelete={() => { setError(""); setDeleting(null); }}
+        closeHistory={() => { setError(""); setHistory(null); }}
         remove={(target) => {
           void mutate(async () => {
             if (target.kind === "server")
@@ -453,15 +474,13 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
             else await api.deleteSecret(target.id, config.current_revision);
             await refresh();
             setSelected(null);
-          }, target);
-          setDeleting(null);
+          }, target, "삭제했습니다.", "header").then((ok) => { if (ok) setDeleting(null); });
         }}
         rollback={(id) => {
           void mutate(async () => {
             await api.rollback(id, config.current_revision);
             await refresh();
-          });
-          setHistory(null);
+          }, null, "되돌렸습니다.", "header").then((ok) => { if (ok) setHistory(null); });
         }}
       />
     </div>

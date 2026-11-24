@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """빌드된 대시보드와 가짜 관리 API로 MCP 설정을 조작하고 캡처한다."""
+# 500줄 예외: 위임된 기존 조작과 검수 보완 시나리오의 단일 실행 진입점이다.
 from __future__ import annotations
 import argparse
 import base64
@@ -11,9 +12,9 @@ import json
 import os
 import threading
 from pathlib import Path
-from urllib.parse import urlsplit, unquote
+from urllib.parse import parse_qs, urlsplit, unquote
 from PIL import Image
-from playwright.sync_api import sync_playwright, expect
+from playwright.sync_api import sync_playwright, expect, TimeoutError as PlaywrightTimeoutError
 
 ROOT = Path(__file__).resolve().parents[2]
 DIST = ROOT / 'unified-dashboard' / 'dist'
@@ -55,6 +56,9 @@ def serve(directory=DIST):
     return server, f'http://127.0.0.1:{server.server_address[1]}'
 
 def install(page, base, data, requests, state='ready', theme='light'):
+    # Playwright가 서비스 워커를 차단할 때 register()가 빈 결과를 돌려주므로,
+    # 화면 검수에서는 워커 미지원 브라우저로 두고 SW 산출물은 별도 시험에서 검사한다.
+    page.add_init_script("Object.defineProperty(navigator, 'serviceWorker', {value: undefined, configurable: true});")
     def route_handler(route):
         request = route.request
         parsed = urlsplit(request.url)
@@ -139,7 +143,8 @@ def assert_controls_fit(page):
       const root = document.querySelector('[data-testid=mcp-settings]');
       const boundary = document.querySelector('.config-detail').getBoundingClientRect();
       const issues = [];
-      for (const el of root.querySelectorAll('button,input,select,textarea')) {
+      for (const el of root.querySelectorAll('button,input,select,textarea,[role=checkbox]')) {
+        if (el.closest('[aria-hidden="true"]')) continue;
         const r = el.getBoundingClientRect();
         if (!el.getClientRects().length || (!r.width && !r.height)) continue;
         if ((r.width < 16 && !(el.tagName === 'INPUT' && el.type === 'checkbox')) || r.left < boundary.left - 1 || r.right > boundary.right + 1) issues.push(`${el.tagName}:${el.getAttribute('aria-label') || el.textContent}:${r.left},${r.right}`);
@@ -193,7 +198,7 @@ def run(browser, base, out):
         page.get_by_role('button', name='이미지 올리기').click(); page.locator('input[type=file]').set_input_files({'name': 'fake-icon.png', 'mimeType': 'image/png', 'buffer': FAKE_IMAGE}); capture(page, out, f'upload-{width}-{theme}')
         page.get_by_role('button', name='머리글자로 두기').click(); capture(page, out, f'initial-{width}-{theme}')
         page.keyboard.press('Escape'); expect(page.get_by_role('button', name='아이콘 고르기', exact=True)).to_be_focused(); expect(page.get_by_role('dialog')).to_have_count(1)
-        page.get_by_text('노드별 덮어쓰기', exact=True).click(); capture(page, out, f'override-{width}-{theme}')
+        page.locator('summary', has_text='노드별 덮어쓰기').click(); capture(page, out, f'override-{width}-{theme}')
         history_button = page.get_by_role('button', name='되돌리기', exact=True)
         history_button.click(); expect(page.get_by_role('dialog').last.get_by_text('판 10', exact=False)).to_be_visible(); capture(page, out, f'history-{width}-{theme}')
         expect(page.get_by_role('dialog').last.get_by_role('button', name='닫기', exact=True).first).to_be_focused()
@@ -206,6 +211,7 @@ def run(browser, base, out):
         delete_button.click(); expect(page.get_by_role('dialog', name='삭제').get_by_role('button', name='취소')).to_be_focused(); capture(page, out, f'delete-{width}-{theme}')
         page.get_by_role('dialog').last.get_by_role('button', name='취소').focus(); page.keyboard.press('Enter'); expect(delete_button).to_be_focused(); delete_button.click(); page.keyboard.press('Escape'); expect(delete_button).to_be_focused(); delete_button.click()
         page.get_by_role('dialog').last.get_by_role('button', name='삭제', exact=True).click(); expect(page.get_by_role('alert')).to_contain_text('사용 중인 프로필'); capture(page, out, f'conflict-{width}-{theme}')
+        page.keyboard.press('Escape')
         page.get_by_role('tab', name='프로필', exact=True).click(); capture(page, out, f'profiles-{width}-{theme}')
         page.get_by_role('tab', name='비밀값', exact=True).click(); capture(page, out, f'secrets-{width}-{theme}')
         page.get_by_role('button', name='값 교체').click(); field = page.get_by_label('새 값'); assert field.input_value() == '' and field.get_attribute('autocomplete') == 'off'; expect(field).to_be_focused(); page.keyboard.press('Enter'); expect(field).to_be_visible(); capture(page, out, f'replace-{width}-{theme}'); page.keyboard.press('Escape'); expect(page.get_by_role('button', name='값 교체')).to_be_focused(); expect(page.get_by_role('dialog')).to_have_count(1)
@@ -215,7 +221,7 @@ def run(browser, base, out):
         page.get_by_role('button', name='저장', exact=True).click(); expect(page.get_by_text('어느 프로필에 바로 추가할까요?')).to_be_visible(); assert page.evaluate("document.activeElement?.textContent.includes('어느 프로필에 바로 추가할까요?')")
         page.get_by_label('전송 이름').fill('저장 뒤 작성 중'); expect(page.get_by_text('eiaserinnys 판 15', exact=False)).to_be_visible(timeout=12000); assert page.get_by_label('전송 이름').input_value() == '저장 뒤 작성 중'
         page.get_by_text('어느 프로필에 바로 추가할까요?').scroll_into_view_if_needed(); capture(page, out, f'add-profile-{width}-{theme}')
-        checkbox = page.get_by_text('seosoyoung', exact=True).last.locator('..').locator('input[type=checkbox]'); checkbox.focus(); page.keyboard.press('Enter'); assert not checkbox.is_checked(); page.keyboard.press('Space'); assert checkbox.is_checked(); page.get_by_role('button', name='선택한 프로필에 추가').click(); expect(page.get_by_text('어느 프로필에 바로 추가할까요?')).to_have_count(0); expect(page.get_by_role('button', name='아이콘 고르기', exact=True)).to_be_focused(); assert 'fake-new-server' in data['profiles'][0]['mcp_servers']
+        checkbox = page.get_by_text('seosoyoung', exact=True).last.locator('..').get_by_role('checkbox'); checkbox.focus(); expect(checkbox).not_to_be_checked(); page.keyboard.press('Enter'); expect(checkbox).to_be_checked(); page.keyboard.press('Space'); expect(checkbox).not_to_be_checked(); page.keyboard.press('Space'); expect(checkbox).to_be_checked(); page.get_by_role('button', name='선택한 프로필에 추가').click(); expect(page.get_by_text('어느 프로필에 바로 추가할까요?')).to_have_count(0); expect(page.get_by_role('button', name='아이콘 고르기', exact=True)).to_be_focused(); assert 'fake-new-server' in data['profiles'][0]['mcp_servers']
         overflow = page.evaluate('document.documentElement.scrollWidth > document.documentElement.clientWidth'); assert not overflow and not req['external']; assert_controls_fit(page)
         records.append(f"| {width}px / {theme} | 왼쪽 정렬: {alignment}; GitHub 대비 {github_contrast}:1, Linear 대비 {linear_contrast}:1(캡처 화소); 입력 초점과 폭 변경 뒤 입력 보존 |")
         context.close()
@@ -238,7 +244,295 @@ def run(browser, base, out):
     install(page, base, data, {'index': 0, 'external': []}, theme='dark'); open_panel(page, base); page.get_by_role('tab', name='프로필', exact=True).click()
     expect(page.get_by_text('seosoyoung', exact=True).first).to_be_visible(); capture(page, out, 'profile-40-360-dark')
     assert not page.evaluate('document.documentElement.scrollWidth > document.documentElement.clientWidth'); assert_controls_fit(page); context.close()
-    out.joinpath('operations.md').write_text('# 조작 결과\n\n| 항목 | 결과 | 근거 |\n|---|---|---|\n| 14 초점 | 통과 | 브랜드·새 값 입력에 초점, Esc 뒤 연 단추로 복귀 |\n| 15 Tab·Esc | 통과 | 되돌리기 창 안에 초점 유지, Esc로 닫힘 |\n| 16 최소 폭 | 통과 | 360px 문서 가로 넘침 없음 |\n| 17 오류 | 통과 | 실패 안내·재시도, 삭제 409 안내 |\n| 18 창 크기 | 통과 | 1440 ↔ 360px 변경 뒤 입력 보존 |\n| 노드 적용 판 | 통과 | 저장 뒤 ACK 재조회와 작성 중 입력 보존 |\n\n| 폭과 테마 | 실측 |\n|---|---|\n' + '\n'.join(records) + '\n\n| 대상 | 여는 법 | 첫 초점 | Enter | Esc | 닫은 뒤 초점 |\n|---|---|---|---|---|---|\n| 되돌리기 목록 | 되돌리기 단추 | 닫기 단추 | 닫기 단추 실행 | 창 닫힘 | 연 단추 |\n| 삭제 확인 | 삭제 단추 | 취소 단추 | 취소 단추 실행 | 창 닫힘 | 삭제 단추 |\n| 아이콘 고르기 | 아이콘 고르기 | 브랜드 검색 | 입력 유지 | 편집 접힘 | 연 단추 |\n| 비밀값 교체 | 값 교체 | 빈 새 값 입력 | 입력 유지 | 편집 취소 | 연 단추 |\n| 서버 값 교체 | 값 교체 | 빈 새 값 입력 | 입력 유지 | 편집 취소 | 연 단추 |\n| 프로필 바로 추가 | 새 서버 저장 | 안내 묶음 | 체크 상태 유지, Space로 선택 | 해당 없음(화면 안 편집) | 아이콘 고르기 |\n\n실행: `python3 -P scripts/visual-check/mcp_settings_panel.py --output <shots> --baseline-dist <기준 dist>`\n', encoding='utf8')
+    out.joinpath('operations.md').write_text('# 조작 결과\n\n| 항목 | 결과 | 근거 |\n|---|---|---|\n| 14 초점 | 통과 | 브랜드·새 값 입력에 초점, Esc 뒤 연 단추로 복귀 |\n| 15 Tab·Esc | 통과 | 되돌리기 창 안에 초점 유지, Esc로 닫힘 |\n| 16 최소 폭 | 통과 | 360px 문서 가로 넘침 없음 |\n| 17 오류 | 통과 | 실패 안내·재시도, 삭제 409 안내 |\n| 18 창 크기 | 통과 | 1440 ↔ 360px 변경 뒤 입력 보존 |\n| 노드 적용 판 | 통과 | 저장 뒤 ACK 재조회와 작성 중 입력 보존 |\n\n| 폭과 테마 | 실측 |\n|---|---|\n' + '\n'.join(records) + '\n\n| 대상 | 여는 법 | 첫 초점 | Enter | Esc | 닫은 뒤 초점 |\n|---|---|---|---|---|---|\n| 되돌리기 목록 | 되돌리기 단추 | 닫기 단추 | 닫기 단추 실행 | 창 닫힘 | 연 단추 |\n| 삭제 확인 | 삭제 단추 | 취소 단추 | 취소 단추 실행 | 창 닫힘 | 삭제 단추 |\n| 아이콘 고르기 | 아이콘 고르기 | 브랜드 검색 또는 고른 꼴 | 검색 입력 유지, 꼴 선택 | 편집 접힘 | 연 단추 |\n| 비밀값 교체 | 값 교체 | 빈 새 값 입력 | 입력 유지 | 편집 취소 | 연 단추 |\n| 서버 값 교체 | 값 교체 | 빈 새 값 입력 | 입력 유지 | 편집 취소 | 연 단추 |\n| 프로필 바로 추가 | 새 서버 저장 | 안내 묶음 | 체크박스에서 선택 전환, Space도 전환 | 해당 없음(화면 안 편집) | 아이콘 고르기 |\n\n실행: `python3 -P scripts/visual-check/mcp_settings_panel.py --output <shots> --baseline-dist <기준 dist>`\n', encoding='utf8')
+
+def run_r1(browser, base, out):
+    """세라피엘의 긴 데이터·선택·스크롤 시나리오를 실제 설정 창에서 잰다."""
+    results = []
+    def check(label, callback):
+        try:
+            ok, detail = callback()
+            results.append({'check': label, 'ok': bool(ok), 'detail': detail})
+        except Exception as error:
+            results.append({'check': label, 'ok': False, 'detail': str(error)[:500]})
+    def in_view(locator):
+        return locator.evaluate("""el => { const view = el.closest('.config-detail').getBoundingClientRect();
+          const r = el.getBoundingClientRect(); return {top:r.top, bottom:r.bottom, viewTop:view.top, viewBottom:view.bottom,
+          visible:r.top >= view.top - 1 && r.bottom <= view.bottom + 1}; }""")
+    def visible_after_scroll(page, locator):
+        try:
+            page.wait_for_function("""el => { const view = el.closest('.config-detail').getBoundingClientRect();
+              const r = el.getBoundingClientRect(); return r.top >= view.top - 1 && r.bottom <= view.bottom + 1; }""",
+              arg=locator.element_handle(), timeout=3000)
+        except PlaywrightTimeoutError:
+            pass
+        rect = in_view(locator)
+        return rect['visible'], rect
+    def input_fits(page):
+        values = page.locator('.config-dialog input[aria-label="참조 이름"]').evaluate_all("""items => items.filter(el => el.clientWidth > 0 && el.getClientRects().length).map(el => {
+          const css = getComputedStyle(el), canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+          ctx.font = css.font; const needed = ctx.measureText(el.value).width + parseFloat(css.paddingLeft) + parseFloat(css.paddingRight);
+          const unit = el.closest('[data-testid="mcp-value-unit"]');
+          return {client:el.clientWidth, scroll:el.scrollWidth, needed, full:el.title === el.value && !!unit?.querySelector('[data-testid="mcp-reference-full-toggle"]')};
+        })""")
+        return bool(values) and all((v['scroll'] <= v['client'] + 1 and v['needed'] <= v['client'] + 1) or v['full'] for v in values), values
+    def row_alignment(page):
+        rows = page.locator('[data-testid="mcp-settings"] aside button').evaluate_all("""buttons => buttons.flatMap(button => {
+          const title = button.querySelector('.font-medium'); if (!title) return [];
+          const b = button.getBoundingClientRect(), r = title.getBoundingClientRect();
+          return [{left:r.left,height:b.height,client:title.clientWidth,scroll:title.scrollWidth,text:title.textContent}];
+        })""")
+        return bool(rows) and max(r['left'] for r in rows)-min(r['left'] for r in rows) <= 1 and max(r['height'] for r in rows)-min(r['height'] for r in rows) <= 1, rows
+    def button_style(locator):
+        return locator.evaluate("""el => { const s=getComputedStyle(el); return {pressed:el.getAttribute('aria-pressed'),
+          bg:s.backgroundColor, border:s.borderColor, color:s.color, shadow:s.boxShadow}; }""")
+    def selected_diff(a, b):
+        x, y = button_style(a), button_style(b)
+        return x['pressed'] == 'true' and y['pressed'] == 'false' and any(x[k] != y[k] for k in ['bg','border','color','shadow']), [x, y]
+    for width, theme in [(1440, 'light'), (360, 'dark')]:
+        tag = f'{width}-{theme}'
+        browser_errors = []
+        context = browser.new_context(viewport={'width': width, 'height': 900 if width > 360 else 800}, color_scheme=theme, reduced_motion='reduce', service_workers='block')
+        page = context.new_page(); page.set_default_timeout(8000); page.on('pageerror', lambda error: browser_errors.append(str(error)))
+        page.add_init_script(f"localStorage.setItem('soul-dashboard-theme','{theme}'); localStorage.setItem('ls.webglGlass','0');")
+        data = fixture(); requests = {'index': 0, 'external': []}
+        long_ref = 'srv-arbor-ovr-eias-linegames-hdr-authorization'
+        data['servers'][0]['node_overrides'][NODES[1]]['config']['headers']['Authorization'] = '{{secret:' + long_ref + '}}'
+        data['secrets'].append({'name': long_ref, 'updated_at': None, 'servers': ['arbor'], 'profiles': []})
+        long_server = copy.deepcopy(data['servers'][1]); long_server.update(id='fake-server-with-a-very-long-name-and-node-suffix', name='fake-server-with-a-very-long-name-and-node-suffix', icon=None)
+        data['servers'].append(long_server)
+        long_profile = copy.deepcopy(data['profiles'][0]); long_profile.update(id='fake-profile-with-a-very-long-name-and-node-suffix', name='fake-profile-with-a-very-long-name-and-node-suffix', mcp_servers=NAMES[:9])
+        data['profiles'].append(long_profile)
+        install(page, base, data, requests, theme=theme)
+        open_panel(page, base); expect(page.get_by_test_id('mcp-settings')).to_be_visible(); page.wait_for_timeout(300)
+        usage = page.locator('summary', has_text='사용 프로필')
+        usage.click()
+        profile_users = usage.locator('..').locator('p')
+        check(f'13 사용 프로필 선택 {tag}', lambda: ((value := profile_users.evaluate('el => getComputedStyle(el).userSelect')) == 'text', value))
+        usage.scroll_into_view_if_needed(); capture(page, out, f'r1-profile-users-{tag}')
+        page.get_by_role('button', name='+ 새 서버').click()
+        check(f'11 새 서버 사용 프로필 생략 {tag}', lambda: (page.locator('summary', has_text='사용 프로필').count() == 0, '저장 전 서버'))
+        page.get_by_test_id('mcp-settings').locator('aside button', has_text='arbor').first.click()
+        expect(page.locator('input[aria-label="참조 이름"][title="srv-arbor-hdr-example"]').first).to_be_visible()
+        check(f'1 기본 참조 {tag}', lambda: input_fits(page))
+        page.locator('.config-dialog input[aria-label="참조 이름"]').first.scroll_into_view_if_needed()
+        capture(page, out, f'r1-reference-{tag}')
+        page.locator('summary', has_text='노드별 덮어쓰기').click()
+        check(f'1 덮어쓰기 참조 {tag}', lambda: input_fits(page))
+        overflow_toggle = page.get_by_test_id('mcp-value-unit').filter(has=page.locator('input[aria-label="참조 이름"][title="' + long_ref + '"]')).get_by_test_id('mcp-reference-full-toggle')
+        if overflow_toggle.count():
+            overflow_toggle.click(); expect(page.get_by_text(long_ref, exact=True)).to_be_visible()
+        page.locator('.config-dialog input[aria-label="참조 이름"]').last.scroll_into_view_if_needed(); capture(page, out, f'r1-override-{tag}')
+        page.get_by_test_id('mcp-settings').locator('aside button', has_text='exa').first.click()
+        expect(page.locator('input[aria-label="참조 이름"][title="srv-exa-qry-first"]').first).to_be_visible()
+        check(f'1 환경 변수 참조 {tag}', lambda: input_fits(page))
+        page.locator('.config-dialog input[aria-label="참조 이름"]').last.scroll_into_view_if_needed(); capture(page, out, f'r1-env-reference-{tag}')
+        page.get_by_test_id('mcp-settings').locator('aside button', has_text='chrome-devtools').first.click()
+        expect(page.get_by_label('전송 방식').first).to_have_value('stdio')
+        check(f'8 stdio 단일 줄 종류 {tag}', lambda: (page.get_by_label('인증 방식').count() == 0 and page.get_by_role('button', name='줄 더하기').count() >= 1, '기본 정의와 덮어쓰기에서 env만 추가'))
+        previous_env_count = page.get_by_label('환경 변수 이름').count()
+        page.get_by_role('button', name='줄 더하기').first.click()
+        expect(page.get_by_label('환경 변수 이름')).to_have_count(previous_env_count + 1)
+        page.get_by_role('button', name='줄 더하기').first.scroll_into_view_if_needed(); capture(page, out, f'r1-stdio-{tag}')
+        page.get_by_role('tab', name='프로필', exact=True).click()
+        check(f'2 프로필 행 정렬 {tag}', lambda: row_alignment(page))
+        check(f'6 프로필 공용 체크박스 {tag}', lambda: ((slots := page.get_by_test_id('mcp-settings').get_by_role('checkbox').evaluate_all("items => items.map(el => el.getAttribute('data-slot'))")) and all(slot == 'checkbox' for slot in slots), slots))
+        page.get_by_test_id('mcp-settings').locator('aside').scroll_into_view_if_needed(); capture(page, out, f'r1-profiles-{tag}')
+        def selectable_profile():
+            values = page.locator('.config-detail').get_by_text('소속 노드:', exact=False).first.evaluate("el => getComputedStyle(el).userSelect")
+            return values == 'text', values
+        check(f'13 프로필 식별자 선택 {tag}', selectable_profile)
+        check(f'13 연결된 에이전트 선택 {tag}', lambda: ((value := page.locator('.config-detail').get_by_text('연결된 에이전트:', exact=False).first.evaluate('el => getComputedStyle(el).userSelect')) == 'text', value))
+        page.get_by_role('tab', name='서버', exact=True).click()
+        row = page.get_by_test_id('mcp-settings').locator('aside button', has_text='exa').first
+        row.scroll_into_view_if_needed(); row.click()
+        head = page.locator('.config-detail header.flex').first
+        check(f'4 선택한 상세 가시성 {tag}', lambda: visible_after_scroll(page, head))
+        capture(page, out, f'r1-row-{tag}')
+        def conflict(route):
+            if route.request.method == 'PUT': return route.fulfill(status=409, json={'code':'MCP_SERVER_VERSION_CONFLICT','message':'fake'})
+            return route.fallback()
+        page.route('**/api/mcp/servers/**', conflict)
+        page.get_by_role('button', name='저장', exact=True).scroll_into_view_if_needed()
+        page.get_by_role('button', name='저장', exact=True).click()
+        alert = page.get_by_role('alert').first; expect(alert).to_be_attached()
+        check(f'3 저장 오류 가시성 {tag}', lambda: ((r := in_view(alert))['visible'], r))
+        check(f'13 오류 선택 {tag}', lambda: ((value := alert.evaluate('el => getComputedStyle(el).userSelect')) == 'text', value))
+        capture(page, out, f'r1-conflict-{tag}')
+        context.close()
+        context = browser.new_context(viewport={'width': width, 'height': 900 if width > 360 else 800}, color_scheme=theme, reduced_motion='reduce', service_workers='block')
+        page = context.new_page(); page.set_default_timeout(8000); page.on('pageerror', lambda error: browser_errors.append(str(error)))
+        page.add_init_script(f"localStorage.setItem('soul-dashboard-theme','{theme}'); localStorage.setItem('ls.webglGlass','0');")
+        data = fixture(); install(page, base, data, {'index':0, 'external':[]}, theme=theme)
+        open_panel(page, base); expect(page.get_by_test_id('mcp-settings')).to_be_visible()
+        page.get_by_role('button', name='아이콘 고르기', exact=True).click()
+        page.get_by_label('브랜드 이름 검색').fill('git')
+        expect(page.get_by_role('button', name='GitHub', exact=True)).to_be_visible()
+        def picker_layout():
+            names = ['브랜드 검색', '기호 고르기', '이미지 올리기', '머리글자로 두기']
+            rects = [page.get_by_role('button', name=name, exact=True).bounding_box() for name in names]
+            tops = {round(r['y']) for r in rects}
+            return len(tops) <= 2 and all(sum(round(r['y']) == top for r in rects) >= 2 for top in tops), rects
+        check(f'5 꼴 선택 묶음 {tag}', picker_layout)
+        github = page.get_by_role('button', name='GitHub', exact=True)
+        other_brand = github.locator('xpath=following-sibling::button[1]')
+        if not other_brand.count(): other_brand = github.locator('xpath=preceding-sibling::button[1]')
+        check(f'5 브랜드 선택 표시 {tag}', lambda: selected_diff(github, other_brand))
+        capture(page, out, f'r1-brand-{tag}')
+        page.keyboard.press('Escape')
+        page.get_by_test_id('mcp-settings').locator('aside button', has_text='atom').first.click()
+        page.get_by_role('button', name='아이콘 고르기', exact=True).click()
+        check(f'5 저장된 꼴 선택 {tag}', lambda: ((pressed := page.get_by_role('button', name='기호 고르기').get_attribute('aria-pressed')) == 'true', pressed))
+        def selected_mode_focus():
+            expect(page.get_by_role('button', name='기호 고르기')).to_be_focused()
+            return True, '기호 고르기'
+        check(f'5 고른 꼴 첫 초점 {tag}', selected_mode_focus)
+        page.get_by_role('button', name='기호 고르기').click()
+        check(f'5 기호 선택 표시 {tag}', lambda: selected_diff(page.get_by_role('button', name='plug', exact=True), page.get_by_role('button', name='cloud', exact=True)))
+        page.get_by_role('button', name='plug', exact=True).scroll_into_view_if_needed(); capture(page, out, f'r1-symbol-{tag}')
+        page.get_by_role('button', name='이미지 올리기').click()
+        page.locator('input[type=file]').set_input_files({'name':'fake.gif', 'mimeType':'image/gif', 'buffer':b'GIF89a'})
+        expect(page.get_by_role('alert')).to_contain_text('이미지를 올리지 못했습니다')
+        page.get_by_role('alert').scroll_into_view_if_needed(); capture(page, out, f'r1-upload-error-{tag}')
+        page.keyboard.press('Escape')
+        def checkbox_style():
+            boxes = page.get_by_test_id('mcp-settings').get_by_role('checkbox')
+            slots = boxes.evaluate_all("items => items.map(el => el.getAttribute('data-slot'))")
+            return bool(slots) and all(slot == 'checkbox' for slot in slots), slots
+        check(f'6 공용 체크박스 {tag}', checkbox_style)
+        box = page.get_by_test_id('mcp-settings').get_by_role('checkbox').first
+        box.focus(); page.keyboard.press('Tab'); box.focus()
+        box.scroll_into_view_if_needed(); capture(page, out, f'r1-checkbox-{tag}')
+        summary = page.locator('summary', has_text='노드별 덮어쓰기')
+        check(f'7 접힌 덮어쓰기 상태 {tag}', lambda: ('eias-linegames' in summary.inner_text(), summary.inner_text()))
+        summary.focus(); page.keyboard.press('Tab'); summary.focus(); summary.scroll_into_view_if_needed(); capture(page, out, f'r1-summary-{tag}')
+        page.get_by_role('button', name='삭제', exact=True).first.click()
+        dialog = page.get_by_role('dialog', name='삭제')
+        dialog.get_by_role('button', name='삭제', exact=True).click()
+        def delete_error():
+            error = dialog.get_by_role('alert')
+            expect(error).to_be_visible()
+            return dialog.is_visible() and error.is_visible(), {'dialog':dialog.is_visible(), 'error':error.count()}
+        check(f'3 삭제 오류 대화상자 유지 {tag}', delete_error)
+        capture(page, out, f'r1-delete-error-{tag}')
+        page.keyboard.press('Escape')
+        page.get_by_role('button', name='저장', exact=True).scroll_into_view_if_needed(); page.get_by_role('button', name='저장', exact=True).click()
+        def save_success():
+            status = page.get_by_role('status').filter(has_text='저장했습니다')
+            expect(status).to_be_visible(); rect = in_view(status)
+            return rect['visible'], rect
+        check(f'3 저장 성공 가시성 {tag}', save_success)
+        capture(page, out, f'r1-save-success-{tag}')
+        page.get_by_role('tab', name='비밀값', exact=True).click()
+        def secret_selectable():
+            entries = page.locator('.config-detail').get_by_text('서버:', exact=False).first
+            value = entries.evaluate('el => getComputedStyle(el).userSelect')
+            return value == 'text', value
+        check(f'13 비밀 사용처 선택 {tag}', secret_selectable)
+        check(f'13 비밀 프로필 사용처 선택 {tag}', lambda: ((value := page.locator('.config-detail').get_by_text('프로필:', exact=False).first.evaluate('el => getComputedStyle(el).userSelect')) == 'text', value))
+        check(f'11 비밀 목록 사용처 {tag}', lambda: ('서버' not in page.get_by_test_id('mcp-settings').locator('aside button').first.inner_text() and 'arbor' in page.get_by_test_id('mcp-settings').locator('aside button').first.inner_text(), page.get_by_test_id('mcp-settings').locator('aside button').first.inner_text()))
+        capture(page, out, f'r1-secrets-{tag}')
+        secret_state = {'fail': True}
+        def secret_write(route):
+            if route.request.method != 'PUT': return route.fallback()
+            if secret_state['fail']: return route.fulfill(status=409, json={'code':'MCP_REVISION_CONFLICT','message':'fake'})
+            data['current_revision'] += 1; return route.fulfill(json={'current_revision':data['current_revision']})
+        page.route('**/api/mcp/secrets/**', secret_write)
+        page.get_by_role('button', name='값 교체').click(); page.get_by_label('새 값').fill('obviously-fake-value')
+        page.get_by_role('button', name='저장', exact=True).click()
+        secret_error = page.get_by_role('alert').first; expect(secret_error).to_be_visible()
+        check(f'3 값 교체 오류 가시성 {tag}', lambda: ((rect := in_view(secret_error))['visible'], rect))
+        capture(page, out, f'r1-secret-error-{tag}')
+        secret_state['fail'] = False; page.get_by_role('button', name='저장', exact=True).click()
+        secret_success = page.get_by_role('status').filter(has_text='값을 교체했습니다')
+        expect(secret_success).to_be_visible()
+        check(f'3 값 교체 성공과 입력 정리 {tag}', lambda: ((rect := in_view(secret_success))['visible'] and page.locator('input[type=password]').count() == 0, rect))
+        capture(page, out, f'r1-secret-success-{tag}')
+        page.get_by_role('button', name='삭제', exact=True).first.click()
+        secret_dialog = page.get_by_role('dialog', name='삭제'); secret_dialog.get_by_role('button', name='삭제', exact=True).click()
+        expect(secret_dialog.get_by_role('alert')).to_contain_text('서버 정의에서 이 비밀 참조를 제거')
+        capture(page, out, f'r1-secret-delete-error-{tag}'); page.keyboard.press('Escape')
+        page.get_by_role('tab', name='프로필', exact=True).click()
+        page.get_by_role('button', name='삭제', exact=True).first.click()
+        profile_dialog = page.get_by_role('dialog', name='삭제'); profile_dialog.get_by_role('button', name='삭제', exact=True).click()
+        expect(profile_dialog.get_by_role('alert')).to_contain_text('에이전트의 프로필 연결을 해제')
+        capture(page, out, f'r1-profile-delete-error-{tag}'); page.keyboard.press('Escape')
+        page.get_by_role('tab', name='서버', exact=True).click()
+        rollback_state = {'fail': True}
+        def rollback_write(route):
+            if rollback_state['fail']: return route.fulfill(status=409, json={'code':'MCP_REVISION_CONFLICT','message':'fake'})
+            data['current_revision'] += 1; return route.fulfill(json={'current_revision':data['current_revision']})
+        page.route('**/api/mcp/revisions/*/rollback', rollback_write)
+        page.get_by_role('button', name='되돌리기', exact=True).click()
+        history_dialog = page.get_by_role('dialog', name='되돌리기')
+        history_dialog.get_by_role('button', name='이 판으로 되돌리기').click()
+        expect(history_dialog.get_by_role('alert')).to_be_visible()
+        check(f'3 되돌리기 오류 대화상자 유지 {tag}', lambda: (history_dialog.is_visible(), history_dialog.get_by_role('alert').inner_text()))
+        capture(page, out, f'r1-rollback-error-{tag}')
+        rollback_state['fail'] = False; history_dialog.get_by_role('button', name='이 판으로 되돌리기').click()
+        rollback_success = page.get_by_role('status').filter(has_text='되돌렸습니다'); expect(rollback_success).to_be_visible()
+        check(f'3 되돌리기 성공 가시성 {tag}', lambda: ((rect := in_view(rollback_success))['visible'], rect))
+        capture(page, out, f'r1-rollback-success-{tag}')
+        delete_state = {'first': True, 'versions': []}
+        def delete_success(route):
+            if route.request.method != 'DELETE': return route.fallback()
+            parsed = urlsplit(route.request.url); server_id = unquote(parsed.path.rsplit('/', 1)[-1])
+            delete_state['versions'].append(parse_qs(parsed.query).get('expected_version', [''])[0])
+            if delete_state['first']:
+                delete_state['first'] = False
+                next(server for server in data['servers'] if server['id'] == server_id)['version'] += 1
+                return route.fulfill(status=409, json={'code':'MCP_SERVER_VERSION_CONFLICT','message':'fake'})
+            data['servers'] = [server for server in data['servers'] if server['id'] != server_id]
+            data['current_revision'] += 1; return route.fulfill(json={'current_revision':data['current_revision']})
+        page.route('**/api/mcp/servers/**', delete_success)
+        page.get_by_role('button', name='삭제', exact=True).first.click()
+        delete_dialog = page.get_by_role('dialog', name='삭제')
+        delete_dialog.get_by_role('button', name='삭제', exact=True).click()
+        expect(delete_dialog.get_by_role('alert')).to_be_visible()
+        delete_dialog.get_by_role('button', name='다시 읽기').click()
+        expect(delete_dialog.get_by_role('alert')).to_have_count(0)
+        delete_dialog.get_by_role('button', name='삭제', exact=True).click()
+        deleted = page.get_by_role('status').filter(has_text='삭제했습니다'); expect(deleted).to_be_visible()
+        check(f'3 삭제 충돌 재조회와 성공 {tag}', lambda: ((rect := in_view(deleted))['visible'] and len(delete_state['versions']) == 2 and int(delete_state['versions'][1]) == int(delete_state['versions'][0]) + 1, {'rect':rect, 'versions':delete_state['versions']}))
+        capture(page, out, f'r1-delete-success-{tag}')
+        context.close()
+        context = browser.new_context(viewport={'width': width, 'height': 900 if width > 360 else 800}, color_scheme=theme, reduced_motion='reduce', service_workers='block')
+        page = context.new_page(); page.set_default_timeout(8000); page.on('pageerror', lambda error: browser_errors.append(str(error))); data = fixture(); requests = {'index':0, 'external':[]}
+        page.add_init_script(f"localStorage.setItem('soul-dashboard-theme','{theme}'); localStorage.setItem('ls.webglGlass','0');")
+        install(page, base, data, requests, state='loading', theme=theme); open_panel(page, base)
+        expect(page.get_by_text('MCP 설정을 불러오는 중…')).to_be_attached()
+        check(f'12 로딩 표시 하나 {tag}', lambda: (page.get_by_text('불러오는 중', exact=False).count() == 1, page.get_by_text('불러오는 중', exact=False).count()))
+        page.wait_for_timeout(400)
+        status = page.locator('.mcp-tabs').locator('xpath=preceding-sibling::*[1]')
+        loading_height = status.bounding_box()['height']; capture(page, out, f'r1-loading-{tag}')
+        requests['held'].fulfill(json=data); expect(page.get_by_test_id('mcp-settings')).to_be_visible(); page.wait_for_timeout(300)
+        ready_height = status.bounding_box()['height']
+        check(f'12 로딩 높이 {tag}', lambda: (abs(loading_height-ready_height) <= 1, {'loading':loading_height,'ready':ready_height}))
+        context.close()
+        context = browser.new_context(viewport={'width': width, 'height': 900 if width > 360 else 800}, color_scheme=theme, reduced_motion='reduce', service_workers='block')
+        page = context.new_page(); page.set_default_timeout(8000); page.on('pageerror', lambda error: browser_errors.append(str(error)))
+        install(page, base, fixture(), {'index':0, 'external':[]}, theme=theme)
+        page.goto(base + '/dialogues?sample=settings', wait_until='domcontentloaded')
+        expect(page.get_by_role('navigation', name='설정 카테고리')).to_be_visible()
+        for label, test_id in [('반복 작업', 'recurring-jobs-tab'), ('영구 에이전트 세션', 'persistent-sessions-tab')]:
+            nav = page.get_by_role('navigation', name='설정 카테고리')
+            if not nav.is_visible(): page.get_by_role('button', name='모든 설정').click()
+            nav.get_by_role('button', name=label, exact=True).click()
+            frame = page.get_by_test_id(test_id); row = frame.locator('aside [data-settings-list-row]').last
+            row.scroll_into_view_if_needed(); row.click()
+            header = frame.locator('header').first
+            check(f'4 {label} 상세 가시성 {tag}', lambda: visible_after_scroll(page, header))
+            capture(page, out, f'r1-shared-{test_id}-{tag}')
+        context.close()
+        check(f'브라우저 실행 오류 {tag}', lambda: (not browser_errors, browser_errors))
+    out.joinpath('r1-checks.json').write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding='utf8')
+    for result in results: print(f"{'PASS' if result['ok'] else 'FAIL'} {result['check']}: {result['detail']}", flush=True)
+    failed = [result['check'] for result in results if not result['ok']]
+    if failed: raise AssertionError(f'1차 검수 항목 미충족: {failed}')
+    lines = ['## 1차 화면 검수 보완 조작', '', '| 항목과 화면 | 결과 |', '|---|---|']
+    lines.extend(f"| {result['check']} | 통과 |" for result in results)
+    lines.extend(['', '실측 좌표·상태와 선택 스타일: `r1-checks.json`.', '서버·참조·목록·충돌·각 성공/실패·공용 탭·로딩 캡처는 같은 폴더의 `r1-*.png`.', '긴 참조 이름은 입력의 실제 폭과 scrollWidth를 재고, 넘치면 전체 이름 보기로 확인했다.', ''])
+    out.joinpath('r1-operations.md').write_text('\n'.join(lines), encoding='utf8')
 
 def compare_existing(browser, baseline, current, out):
     measurements = {}
@@ -256,12 +550,17 @@ def compare_existing(browser, baseline, current, out):
         result.write(f"\n기존 반복 작업 머리 전후 좌표·글꼴·색 일치: {measurements['after']}\n")
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument('--output', default=os.environ.get('MCP_SHOTS_DIR', str(ROOT / '.local' / 'mcp-settings-shots'))); parser.add_argument('--baseline-dist', default=os.environ.get('MCP_BASELINE_DIST')); args = parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument('--output', default=os.environ.get('MCP_SHOTS_DIR', str(ROOT / '.local' / 'mcp-settings-shots'))); parser.add_argument('--baseline-dist', default=os.environ.get('MCP_BASELINE_DIST')); parser.add_argument('--r1-only', action='store_true'); args = parser.parse_args()
     out = Path(args.output); out.mkdir(parents=True, exist_ok=True)
     server, base = serve()
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(); run(browser, base, out)
+            browser = playwright.chromium.launch()
+            if args.r1_only: run_r1(browser, base, out)
+            else:
+                run(browser, base, out); run_r1(browser, base, out)
+                with out.joinpath('operations.md').open('a', encoding='utf8') as operations:
+                    operations.write('\n' + out.joinpath('r1-operations.md').read_text(encoding='utf8'))
             if args.baseline_dist:
                 baseline_server, baseline = serve(Path(args.baseline_dist))
                 try: compare_existing(browser, baseline, base, out)

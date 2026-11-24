@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@seosoyoung/soul-ui";
 import type { McpRevision } from "../../lib/mcp-api";
+import { SettingsAlert } from "../config/SettingsListDetail";
 
 export type DeleteTarget = {
   kind: "server" | "profile" | "secret";
@@ -27,6 +28,9 @@ export function McpDialogs({
   history,
   nodes,
   busy,
+  error,
+  profiles,
+  reload,
   closeDelete,
   closeHistory,
   remove,
@@ -36,6 +40,9 @@ export function McpDialogs({
   history: History | null;
   nodes: string[];
   busy: boolean;
+  error: string;
+  profiles: string[];
+  reload(): void;
   closeDelete(): void;
   closeHistory(): void;
   remove(target: DeleteTarget): void;
@@ -55,12 +62,30 @@ export function McpDialogs({
           <DialogHeader>
             <DialogTitle>삭제</DialogTitle>
             <DialogDescription>
-              “{deleting?.id}”을 삭제할까요? 사용 중이면 삭제할 수 없습니다.
+              “{deleting?.id}” 항목을 삭제할까요? 사용 중이면 삭제할 수 없습니다.
               {deleting?.kind === "profile" && nodes.length
                 ? ` 소속 노드: ${nodes.join(", ")}`
                 : ""}
             </DialogDescription>
           </DialogHeader>
+          {error ? (
+            <DialogPanel>
+              <SettingsAlert>
+                {error}
+                {error.includes("다시 읽은") ? (
+                  <Button type="button" variant="outline" onClick={reload}>
+                    다시 읽기
+                  </Button>
+                ) : null}
+                {profiles.length > 0 && error.includes("사용 중인 프로필") ? (
+                  <details className="config-advanced">
+                    <summary>사용 중인 프로필 전체 <span>{profiles.length}개</span></summary>
+                    <p>{profiles.join(", ")}</p>
+                  </details>
+                ) : null}
+              </SettingsAlert>
+            </DialogPanel>
+          ) : null}
           <DialogFooter>
             <Button
               ref={cancelButton}
@@ -72,6 +97,7 @@ export function McpDialogs({
             </Button>
             <Button
               type="button"
+              variant="destructive"
               disabled={busy}
               onClick={() => {
                 if (deleting) remove(deleting);
@@ -96,6 +122,16 @@ export function McpDialogs({
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
+            {error ? (
+              <SettingsAlert>
+                {error}
+                {error.includes("다시 읽은") ? (
+                  <Button type="button" variant="outline" onClick={reload}>
+                    다시 읽기
+                  </Button>
+                ) : null}
+              </SettingsAlert>
+            ) : null}
             {history?.revisions.length ? (
               history.revisions.map((revision) => (
                 <div

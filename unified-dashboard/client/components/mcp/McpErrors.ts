@@ -16,23 +16,22 @@ export function errorText(
     error.code === "MCP_REVISION_CONFLICT"
   )
     return "다른 곳에서 변경됐습니다. 다시 읽은 뒤 저장해 주세요.";
-  if (error.code === "MCP_SERVER_INUSE")
-    return `사용 중인 프로필: ${
-      config?.profiles
+  if (error.code === "MCP_SERVER_INUSE") {
+    const profiles = config?.profiles
         .filter((p) => p.mcp_servers.includes(target?.id ?? ""))
-        .map((p) => p.name || p.id)
-        .join(", ") || error.message
-    }`;
+        .map((p) => p.name || p.id) ?? [];
+    return `사용 중인 프로필: ${profiles.slice(0, 3).join(", ") || error.message}${profiles.length > 3 ? ` 외 ${profiles.length - 3}개` : ""}. 먼저 프로필에서 이 서버를 빼 주세요.`;
+  }
   if (error.code === "MCP_PROFILE_INUSE")
     return `연결된 에이전트: ${
       config?.bindings
         .filter((b) => b.mcp_profile_id === target?.id)
         .map((b) => `${b.agent_id} (${b.node_id})`)
         .join(", ") || error.message
-    }`;
+    }. 먼저 에이전트의 프로필 연결을 해제해 주세요.`;
   if (error.code === "MCP_SECRET_INUSE") {
     const secret = config?.secrets.find((s) => s.name === target?.id);
-    return `사용 중인 서버: ${secret?.servers.join(", ") || "없음"} / 프로필: ${secret?.profiles.join(", ") || "없음"}`;
+    return `사용 중인 서버: ${secret?.servers.join(", ") || "없음"} / 프로필: ${secret?.profiles.join(", ") || "없음"}. 먼저 서버 정의에서 이 비밀 참조를 제거해 주세요.`;
   }
   const messages: Record<string, string> = {
     MCP_DUPLICATE_SERVER_NAME:

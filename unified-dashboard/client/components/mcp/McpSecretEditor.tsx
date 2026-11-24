@@ -44,7 +44,7 @@ export function McpSecretEditor({
         actions={
           <Button
             type="button"
-            variant="outline"
+            variant="destructive-outline"
             onClick={() => remove(secret)}
           >
             삭제
@@ -53,7 +53,7 @@ export function McpSecretEditor({
       />
       <SettingsGroupBox title="사용처">
         <div className="space-y-2 text-sm">
-          <p>
+          <p data-v3-selectable-content="true">
             갱신:{" "}
             {secret.updated_at
               ? new Date(secret.updated_at).toLocaleString("ko-KR")
@@ -61,8 +61,8 @@ export function McpSecretEditor({
           </p>
           {secret.servers.length || secret.profiles.length ? (
             <>
-              <p>서버: {secret.servers.join(", ") || "없음"}</p>
-              <p>프로필: {secret.profiles.join(", ") || "없음"}</p>
+              <p data-v3-selectable-content="true">서버: {secret.servers.join(", ") || "없음"}</p>
+              <p data-v3-selectable-content="true">프로필: {secret.profiles.join(", ") || "없음"}</p>
             </>
           ) : (
             <p>사용처 없음</p>
