@@ -44,9 +44,9 @@ function seedTexts() {
 
 test('seed shape: schema, entry counts, exported keys, roots', () => {
   assert.equal(SEED.schema_version, 1);
-  assert.equal(SEED.entries.length, 176);
-  assert.equal(CARDS.length, 148);
-  assert.equal(SYMLINKS.length, 28);
+  assert.equal(SEED.entries.length, 189);
+  assert.equal(CARDS.length, 159);
+  assert.equal(SYMLINKS.length, 30);
   assert.equal(Object.keys(SEED.exported_keys).length, 20);
   const roots = SEED.entries.filter((entry) => (entry.parent ?? null) === null).map((entry) => entry.title);
   assert.deepEqual(roots, ['에이전트', '프로젝트', '실수 사례']);
@@ -89,7 +89,7 @@ test('titles are non-empty and at most 50 code points', () => {
   }
 });
 
-test('placeholders: 40 cards, 61 references, 52 distinct card keys, no card_id form', () => {
+test('placeholders: 42 cards, 71 references, 62 distinct card keys, no card_id form', () => {
   const cardKeys = new Set(CARDS.map((entry) => entry.key));
   const distinct = new Set();
   let references = 0;
@@ -100,19 +100,19 @@ test('placeholders: 40 cards, 61 references, 52 distinct card keys, no card_id f
       assert.ok(cardKeys.has(key), `placeholder points at a non-card key: ${key}`);
     }
   }
-  assert.equal(REPLACEMENTS.length, 40);
-  assert.equal(references, 61);
-  assert.equal(distinct.size, 52);
+  assert.equal(REPLACEMENTS.length, 42);
+  assert.equal(references, 71);
+  assert.equal(distinct.size, 62);
   for (const [, text] of seedTexts()) {
     assert.equal(text.includes('{{card_id:'), false, 'seed must not use the {{card_id: placeholder form');
   }
   assert.equal(SYMLINKS.some((entry) => entry.content !== undefined), false, 'symlink entries must not carry content');
 });
 
-test('buildCreatePayload: 148 creates, seed order, positions, body under the Fastify limit', () => {
+test('buildCreatePayload: 159 creates, seed order, positions, body under the Fastify limit', () => {
   const installId = '00000000-0000-4000-8000-000000000000';
   const payload = buildCreatePayload(SEED, installId);
-  assert.equal(payload.creates.length, 148);
+  assert.equal(payload.creates.length, 159);
   assert.deepEqual(payload.creates.map((item) => item.temp_id), CARDS.map((entry) => entry.key));
   const size = Buffer.byteLength(JSON.stringify(payload));
   assert.ok(size < 1_048_576, `batch body is ${size} bytes`);
