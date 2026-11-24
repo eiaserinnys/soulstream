@@ -724,11 +724,37 @@ describe("ProviderUsageService", () => {
     expect(limits.quotas.map(({ id, label }) => ({ id, label }))).toEqual([
       { id: "claude:five_hour", label: "5시간" },
       { id: "claude:seven_day", label: "7일" },
-      { id: "claude:seven_day_sonnet", label: "7일 (Sonnet)" },
-      { id: "claude:seven_day_opus", label: "7일 (Opus)" },
       { id: "claude:seven_day_fable", label: "7일 (Fable)" },
       { id: "claude:seven_day_nova", label: "7일 (Nova)" },
+      { id: "claude:seven_day_opus", label: "7일 (Opus)" },
+      { id: "claude:seven_day_sonnet", label: "7일 (Sonnet)" },
       { id: "claude:seven_day_unknown", label: "7일 (Unknown)" },
+    ]);
+  });
+
+  it("sorts shuffled Claude quota windows by their fixed group and model labels", () => {
+    const limits = claudeLimitsFromUsageResponse({
+      seven_day_cowork: { utilization: 10 },
+      seven_day_zeta: { display_name: "Same", utilization: 10 },
+      extra_usage: { monthly_limit: 100, used_credits: 10 },
+      seven_day_nova: { display_name: "Nova", utilization: 10 },
+      seven_day_oauth_apps: { utilization: 10 },
+      other: { utilization: 10 },
+      seven_day_alpha: { display_name: "same", utilization: 10 },
+      seven_day: { utilization: 10 },
+      five_hour: { utilization: 10 },
+    });
+
+    expect(limits.quotas.map(({ id }) => id)).toEqual([
+      "claude:five_hour",
+      "claude:seven_day",
+      "claude:seven_day_nova",
+      "claude:seven_day_alpha",
+      "claude:seven_day_zeta",
+      "claude:seven_day_oauth_apps",
+      "claude:seven_day_cowork",
+      "claude:monthly_extra",
+      "claude:other",
     ]);
   });
 
