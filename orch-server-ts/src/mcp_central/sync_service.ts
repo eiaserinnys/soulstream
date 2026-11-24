@@ -6,6 +6,7 @@ import { supportsCentralMcpConfig } from "../node/registry_helpers.js";
 import type { NodeRegistryEvent } from "../node/registry_types.js";
 import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
 import { MissingMcpSecretError } from "./node_snapshot.js";
+import { checkMcpSendGate } from "./send_gate.js";
 import type { McpManagedNodeAck } from "./types.js";
 
 type Snapshot = { revision: number; runtime: McpCentralSnapshot; display: McpCentralSnapshot };
@@ -84,10 +85,9 @@ export class McpCentralSyncService {
   }
   private async sendOnce(nodeId: string): Promise<boolean> {
     try {
-      const gate = await this.options.readGate(nodeId);
-      if (!gate.managed) return false;
-      const node = this.options.registry.getConnectedNode(nodeId);
-      if (!node || !supportsCentralMcpConfig(node.capabilities)) return false;
+      const gate = await checkMcpSendGate({ nodeId, registry: this.options.registry, readGate: this.options.readGate });
+      if (!gate.ok) return false;
+      const { node } = gate;
       if (gate.managed.activated_at === null && !gate.hasBindings) return false;
       const { revision, runtime, display } = await this.options.buildSnapshot(nodeId);
       const payload: Payload = { type: "mcp_central_sync", revision, runtime, display };

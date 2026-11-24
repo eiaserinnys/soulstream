@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryNodeRegistry, NodeCommandTransportHub, SessionCommandTransportBridge, loadContractFixtures, type NodeRegistrationPayload } from "../src/index.js";
 import { McpCentralSyncService } from "../src/mcp_central/sync_service.js";
+import { checkMcpSendGate } from "../src/mcp_central/send_gate.js";
 
 function harness() {
   const registry = new InMemoryNodeRegistry();
@@ -31,6 +32,20 @@ function harness() {
 }
 
 describe("central MCP sync", () => {
+  it("checks scope only after management, connection and capability", async () => {
+    const h = harness();
+    const scope = vi.fn(async () => false);
+    const unmanaged = vi.fn(async () => ({ managed: null, hasBindings: false }));
+    const managed = vi.fn(async () => ({ managed: {}, hasBindings: false }));
+    expect(await checkMcpSendGate({ nodeId: h.nodeId, registry: h.registry, readGate: unmanaged, inScope: scope })).toMatchObject({ reason: "unmanaged" });
+    expect(await checkMcpSendGate({ nodeId: "missing", registry: h.registry, readGate: managed, inScope: scope })).toMatchObject({ reason: "disconnected" });
+    const registration = loadContractFixtures().fakeNodeReconnect.registration as NodeRegistrationPayload;
+    h.registry.registerNode({ ...registration, node_id: "unsupported-gate", capabilities: {} });
+    expect(await checkMcpSendGate({ nodeId: "unsupported-gate", registry: h.registry, readGate: managed, inScope: scope })).toMatchObject({ reason: "unsupported" });
+    expect(scope).not.toHaveBeenCalled();
+    expect(await checkMcpSendGate({ nodeId: h.nodeId, registry: h.registry, readGate: managed, inScope: scope })).toMatchObject({ reason: "out_of_scope" });
+    expect(scope).toHaveBeenCalledTimes(1);
+  });
   it("gates snapshot and secrets by managed node, connection, capability and first binding", async () => {
     const h = harness();
     h.setManaged(false); expect(await h.service.sendManagedNodeMcpCommand(h.nodeId)).toBe(false);
