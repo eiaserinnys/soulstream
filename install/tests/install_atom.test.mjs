@@ -157,9 +157,10 @@ test('installer renders each backend and profile from the checked-out catalog', 
     const agents = t.read(t.root, 'config', 'agents.yaml');
     assert.equal((agents.match(/default_preset: test-claude/g) ?? []).length, 3);
     for (const value of ['test-codex', 'test-antigravity', 'test-orchestrator']) assert.ok(agents.includes(`default_preset: ${value}`));
-    const stage1 = await t.run('load_install_defaults "$ROOT/packages/model-catalog/data/model-catalog.yaml"\nstage1_managed_output agents "$HOME_DIR" claude,codex,antigravity\n');
+    const stage1 = await t.run('stage1_managed_output agents "$HOME_DIR" claude,codex,antigravity "$STAGE1_PRESETS"\n', { STAGE1_PRESETS: resolve('install/stage1-managed-presets.json') });
     assert.equal(stage1.status, 0, stage1.stderr);
-    for (const value of Object.values(defaults.backends)) assert.ok(stage1.stdout.includes(`default_preset: ${value}`));
+    const expectedStage1 = readFileSync(resolve('install/tests/fixtures/stage1/claude-codex-antigravity/agents.yaml'), 'utf8').replaceAll('/home/soulstream', t.home);
+    assert.equal(stage1.stdout, expectedStage1);
     writeFileSync(path, raw.replace(/^install_defaults: .*$/m, 'install_defaults: {"backends":{}}'));
     const missing = await t.run(renderBody('claude'));
     assert.notEqual(missing.status, 0);

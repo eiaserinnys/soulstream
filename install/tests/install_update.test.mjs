@@ -27,14 +27,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createFakeCommands, runBash } from './support/fake_commands.mjs';
-import { copyCatalog, installDefaults } from './support/catalog.mjs';
+import { copyCatalog } from './support/catalog.mjs';
 
 const script = resolve('install/install.sh');
 const fixtures = resolve('install/tests/fixtures/stage1');
+const stage1Presets = resolve('install/stage1-managed-presets.json');
 // Git ignores the host configuration, so no URL rewrite or credential helper applies.
 const GIT_ENV = {
   GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0',
@@ -437,6 +438,8 @@ function configSetup() {
   mkdirSync(join(root, 'config'), { recursive: true });
   mkdirSync(atomRoot);
   copyCatalog(root);
+  mkdirSync(join(root, 'install'));
+  copyFileSync(stage1Presets, join(root, 'install/stage1-managed-presets.json'));
   writeFileSync(join(root, 'config', '.atom-seed-map.json'), JSON.stringify(MAP));
   writeFileSync(join(root, '.atom-api-key'), `${API_KEY}\n`);
   const fake = createFakeCommands(dir);
@@ -445,7 +448,7 @@ function configSetup() {
     'mcp-profiles': join(root, 'config', 'mcp-profiles.yaml'), 'agents-md': join(home, 'workspace', 'AGENTS.md'),
   };
   const record = join(root, 'config', '.installer-managed.sha256');
-  const render = async (backends, tail = '') => {
+  const render = async (backends, tail = '', expectFailure = false) => {
     const result = await runBash(`set -Eeuo pipefail
 source "$INSTALL_SH"
 as_soul() { if [[ "$1" == git ]]; then printf abc; else "$@"; fi; }
@@ -456,6 +459,10 @@ render_config "$HOME_DIR" "$ROOT"
 printf 'WARNINGS<%s>\\n' "$MANAGED_CONFIG_WARNINGS"
 ${tail}`, [], { env: fake.env({ INSTALL_SH: script, HOME_DIR: home, ROOT: root, ATOM_ROOT: atomRoot }) });
     fake.assertNoProtectedRequests();
+    if (expectFailure) {
+      assert.notEqual(result.status, 0, result.stderr);
+      return result;
+    }
     assert.equal(result.status, 0, result.stderr);
     const start = result.stdout.indexOf('WARNINGS<') + 9;
     return { ...result, warnings: result.stdout.slice(start, result.stdout.indexOf('>\n', start)) };
@@ -551,6 +558,35 @@ test('the unedited first-stage files are replaced using the backends of the exis
   } finally { t.cleanup(); }
 });
 
+test('first-stage files are recognized after the current catalog defaults change', async () => {
+  const t = configSetup();
+  try {
+    t.placeStage1('claude,codex');
+    const catalog = join(t.root, 'packages/model-catalog/data/model-catalog.yaml');
+    const raw = readFileSync(catalog, 'utf8');
+    const defaults = { backends: { claude: 'new-claude', codex: 'new-codex', antigravity: 'new-antigravity' }, profiles: { 'card-orchestrator': 'new-orchestrator' } };
+    writeFileSync(catalog, raw.replace(/^install_defaults: .*$/m, `install_defaults: ${JSON.stringify(defaults)}`));
+    const result = await t.render('claude,codex');
+    assert.equal(result.warnings, '');
+    assert.ok(t.read('agents').includes('default_preset: new-claude'));
+    assert.ok(t.read('agents').includes('default_preset: new-codex'));
+    assert.ok(!existsSync(`${t.files.agents}.installer-new`));
+    t.verifyRecord();
+  } finally { t.cleanup(); }
+});
+
+test('a missing first-stage preset record stops configuration instead of treating it as an edit', async () => {
+  const t = configSetup();
+  try {
+    t.placeStage1('claude,codex');
+    const original = readFileSync(t.files.agents);
+    unlinkSync(join(t.root, 'install/stage1-managed-presets.json'));
+    await t.render('claude,codex', '', true);
+    assert.ok(readFileSync(t.files.agents).equals(original));
+    assert.ok(!existsSync(`${t.files.agents}.installer-new`));
+  } finally { t.cleanup(); }
+});
+
 test('an edited first-stage AGENTS.md is kept while the other three are replaced', async () => {
   const t = configSetup();
   try {
@@ -603,14 +639,8 @@ test('a regular CLAUDE.md file is kept', async () => {
 test('the first-stage output function matches the files the first-stage installer wrote', () => {
   for (const backends of ['claude,codex', 'codex', 'claude,codex,antigravity']) {
     for (const [kind, name] of Object.entries(KINDS)) {
-      const output = execFileSync('bash', ['-c', 'source "$1"; load_install_defaults "$4"; stage1_managed_output "$2" /home/soulstream "$3"', 'bash', script, kind, backends, resolve('packages/model-catalog/data/model-catalog.yaml')]);
-      let expected = readFileSync(join(fixtures, backends.replaceAll(',', '-'), name), 'utf8');
-      if (kind === 'agents') {
-        const defaults = installDefaults().backends;
-        expected = expected.replace(/(    backend: (claude|codex|antigravity)\n    default_preset:) [^\n]+/g,
-          (_match, prefix, backend) => `${prefix} ${defaults[backend]}`);
-      }
-      assert.equal(output.toString(), expected, `${backends} ${kind}`);
+      const output = execFileSync('bash', ['-c', 'source "$1"; stage1_managed_output "$2" /home/soulstream "$3" "$4"', 'bash', script, kind, backends, stage1Presets]);
+      assert.ok(output.equals(readFileSync(join(fixtures, backends.replaceAll(',', '-'), name))), `${backends} ${kind}`);
     }
   }
 });

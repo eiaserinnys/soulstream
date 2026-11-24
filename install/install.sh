@@ -492,7 +492,7 @@ MARKDOWN
 
 # The four managed files as the first-stage installer (d785f798, before atom support) wrote them, byte for byte.
 stage1_managed_output() {
-  local kind=$1 home=$2 backends=$3 backend name= preset= IFS=,
+  local kind=$1 home=$2 backends=$3 preset_file=$4 backend name= preset= IFS=,
   case "$kind" in
     agents)
       printf 'agents:\n'
@@ -502,7 +502,7 @@ stage1_managed_output() {
           codex) name=Codex ;;
           antigravity) name=Antigravity ;;
         esac
-        preset=$(backend_preset "$backend") || return 1
+        preset=$(jq -er --arg backend "$backend" '.[$backend] | select(type == "string" and length > 0)' "$preset_file") || return 1
         cat <<YAML
   - id: ${backend}-default
     name: ${name}
@@ -551,8 +551,11 @@ write_managed_configs() {
     kind=${item%%=*}; file=${item#*=}; recorded=; current=
     if [[ -f "$record" ]]; then recorded=$(awk -v path="$file" 'substr($0, 67) == path { print substr($0, 1, 64) }' "$record") || return 1; fi
     if [[ -e "$file" ]]; then current=$(sha256sum < "$file") || return 1; current=${current%% *}; fi
+    if [[ -e "$file" && -z "$recorded" ]] && ! cmp -s "$file" "$work/$kind"; then
+      stage1_managed_output "$kind" "$home" "$previous_backends" "$root/install/stage1-managed-presets.json" > "$work/stage1" || return 1
+    fi
     if [[ ! -e "$file" ]] || cmp -s "$file" "$work/$kind" || [[ -n "$recorded" && "$current" == "$recorded" ]] ||
-       { [[ -z "$recorded" ]] && stage1_managed_output "$kind" "$home" "$previous_backends" | cmp -s - "$file"; }; then
+       { [[ -z "$recorded" ]] && cmp -s "$work/stage1" "$file"; }; then
       if ! cmp -s "$file" "$work/$kind"; then cat "$work/$kind" > "$file" || return 1; fi
       lines+="$(sha256sum "$file")"$'\n' || return 1
     else
