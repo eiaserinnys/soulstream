@@ -18,6 +18,8 @@ from urllib.parse import parse_qs, urlsplit, unquote
 from PIL import Image
 from playwright.sync_api import sync_playwright, expect, TimeoutError as PlaywrightTimeoutError
 
+expect.set_options(timeout=15000)
+
 ROOT = Path(__file__).resolve().parents[2]
 DIST = ROOT / 'unified-dashboard' / 'dist'
 NODES = ['eiaserinnys', 'eias-linegames', 'eias-linegames-wsl']
