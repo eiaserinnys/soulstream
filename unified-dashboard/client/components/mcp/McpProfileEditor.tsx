@@ -137,7 +137,7 @@ export function McpProfileEditor({
                 ? profile.node_scope.join(", ")
                 : "소속 노드 없음"}
             </p>
-            <div className="flex flex-wrap items-center gap-2"><span>연결된 에이전트:</span>
+            <div className="flex flex-wrap items-center gap-2"><span data-v3-selectable-content="true">연결된 에이전트:</span>
               {bindings.length ? bindings.map(binding => <Button key={`${binding.agent_id}:${binding.node_id}`} type="button" variant="outline" onClick={() => onOpenAgent?.(binding.agent_id, binding.node_id)}>{binding.agent_id} ({binding.node_id})</Button>) : "없음"}
             </div>
           </div>

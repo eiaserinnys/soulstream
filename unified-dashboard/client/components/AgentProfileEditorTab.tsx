@@ -53,7 +53,7 @@ interface NodeAgent {
 const VERSION_CONFLICT_MESSAGE =
   "다른 사용자가 먼저 수정했습니다. 최신 프로필을 다시 불러온 뒤 변경을 다시 적용하세요.";
 
-export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEditMcpProfile }: { request?: typeof fetch; initialMcpTarget?: { agentId: string; nodeId: string }; onEditMcpProfile?: (profileId: string) => void } = {}) {
+export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEditMcpProfile }: { request?: typeof fetch; initialMcpTarget?: { agentId: string; nodeId: string }; onEditMcpProfile?: (profileId: string) => void }) {
   const nodes = useOrchestratorStore((state) => state.nodes);
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
   const [bundles, setBundles] = useState<ContextBundle[]>([]);
