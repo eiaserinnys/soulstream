@@ -109,8 +109,8 @@ export const LIST_RUNNER_INVENTORY_CONTROL_TIMEOUT_MS = 85_000;
 export function boundedResultTimeoutMs(commandType: string, fallbackMs: number): number {
   switch (commandType) {
     case "mcp_central_sync": return 10_000;
-    case "test_mcp_server": return 14_000;
-    case "preview_agent_mcp": return 10_000;
+    case "test_mcp_server": return 14_500;
+    case "preview_agent_mcp": return 5_000;
     case "workspace_snapshot": return 5_000;
     case "workspace_file_read":
     case "workspace_file_diff": return 30_000;

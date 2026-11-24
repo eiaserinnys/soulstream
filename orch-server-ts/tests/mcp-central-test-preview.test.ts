@@ -44,13 +44,14 @@ describe("MCP test and preview operations", () => {
     const sql = vi.fn(async () => [{ name: "key", value: "fake-secret-value" }]);
     const sync = { sendAux: async (_node: string, build: () => Promise<unknown>, gate?: () => Promise<boolean>) => {
       if (gate && !await gate()) throw new Error("out of scope");
-      sent.push(await build()); return { ok: false, error_message: "fake-secret-value" };
+      sent.push(await build()); return { ok: false, error_message: "https://example.test/mcp?key=fake-secret-value" };
     } };
     const actions = createMcpTestPreviewService({ service: { getConfig: async () => config } as never, sync: sync as never, resolveSql: async () => sql as never });
     const result = await actions.test({ node_id: "n", server_id: "atom" });
     expect(sent[0]).toMatchObject({ type: "test_mcp_server", server: { name: "override", type: "stdio", config: { env: { KEY: "fake-secret-value" } } } });
     expect(JSON.stringify(sent)).not.toContain("icon");
     expect(JSON.stringify(result)).not.toContain("fake-secret-value");
+    expect(JSON.stringify(result)).not.toContain("?key=");
     sql.mockClear();
     await expect(actions.test({ node_id: "n", server_id: "other" })).rejects.toThrow();
     expect(sql).not.toHaveBeenCalled();

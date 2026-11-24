@@ -144,6 +144,8 @@ describe("control command inventory", () => {
     }
     expect(boundedResultTimeoutMs("provider_usage_get", 900)).toBe(45_500);
     expect(boundedResultTimeoutMs("prepare_card_orchestration_decision", 900)).toBe(14_500);
+    expect(boundedResultTimeoutMs("test_mcp_server", 900)).toBe(14_500);
+    expect(boundedResultTimeoutMs("preview_agent_mcp", 900)).toBe(5_000);
     expect(boundedResultTimeoutMs("list_sessions", 900)).toBe(900);
   });
 

@@ -58,7 +58,7 @@ export function createMcpTestPreviewService(options: { service: McpCentralServic
       return server.node_scope.includes(nodeId);
     } : undefined);
     const scrub = (value: unknown): unknown => {
-      if (typeof value === "string") return sensitive.reduce((text, secret) => text.split(secret).join("[비공개]"), value);
+      if (typeof value === "string") return sensitive.reduce((text, secret) => text.split(secret).join("[비공개]"), value.replace(/(https?:\/\/[^\s?#]+)\?[^\s]*/g, "$1"));
       if (Array.isArray(value)) return value.map(scrub);
       if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrub(item)]));
       return value;
