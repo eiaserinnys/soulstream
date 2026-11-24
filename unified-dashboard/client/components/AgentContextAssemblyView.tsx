@@ -106,6 +106,8 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
         const json = await response.json().catch(() => ({}));
         if (controller.signal.aborted) return;
         if (!response.ok) throw new Error(typeof json.detail === "string" ? json.detail : "조립하지 못했습니다.");
+        // 미리보기가 아닌 응답(소스 목록이 없는 꼴)은 화면을 깨뜨리지 않고 실패로 다룬다.
+        if (!json.manifest || !Array.isArray(json.sections)) throw new Error("조립하지 못했습니다.");
         lastData.current = json as PreviewResponse;
         setState({ status: "ready", data: json as PreviewResponse });
       } catch (caught) {
