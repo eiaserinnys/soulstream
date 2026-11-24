@@ -59,9 +59,12 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
   const pending = agendas.filter((item) => item.status === "review" && !item.snoozedLabel);
   const pendingIndex = pending.findIndex((item) => item.id === agenda.id);
   const threadRef = useRef<HTMLDivElement>(null);
+  const timelineWrapRef = useRef<HTMLDivElement>(null);
   const panelTrigger = useRef<HTMLElement | null>(null);
   const railTrigger = useRef<HTMLButtonElement>(null);
   const undoButtonRef = useRef<HTMLButtonElement>(null);
+  const pendingFocusActiveRef = useRef(false);
+  const pendingUndoFocusRef = useRef(false);
   const [railOpen, setRailOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -83,12 +86,22 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
   };
   useLayoutEffect(() => {
     if (!open) return;
-    autoRef.current = true;
-    setAutoScroll(true);
-    setHasNew(false);
     lastEvents.current = { id: agenda.id, count: agenda.events.length };
-    const frame = requestAnimationFrame(jump);
+    jump();
+    const frame = requestAnimationFrame(() => {
+      if (autoRef.current) jump();
+    });
     return () => cancelAnimationFrame(frame);
+  }, [open, agenda.id]);
+  useEffect(() => {
+    const timeline = timelineWrapRef.current;
+    if (!open || !timeline) return;
+    const observer = new ResizeObserver(() => {
+      const scroll = threadRef.current;
+      if (scroll && autoRef.current) scroll.scrollTop = scroll.scrollHeight;
+    });
+    observer.observe(timeline);
+    return () => observer.disconnect();
   }, [open, agenda.id]);
   useLayoutEffect(() => {
     if (!open) return;
@@ -122,19 +135,41 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
   const openPanel = (trigger: HTMLElement | null) => { panelTrigger.current = trigger; setPanelOpen(true); };
   const closePanel = () => { setPanelOpen(false); requestAnimationFrame(() => panelTrigger.current?.focus({ preventScroll: true })); };
   const activeRailItem = () => document.querySelector<HTMLElement>('.pas-rt1707-rail-item[data-active="true"]');
-  const focusActive = () => requestAnimationFrame(() => activeRailItem()?.focus({ preventScroll: true }));
+  const focusActive = () => activeRailItem()?.focus({ preventScroll: true });
   const runWithUndoFocus = (action: () => void) => {
-    // A decision can remove or disable the pressed button.
+    // A decision can remove or disable the pressed button; the undo button gets focus once it is committed.
+    pendingFocusActiveRef.current = false;
+    pendingUndoFocusRef.current = true;
     threadRef.current?.focus({ preventScroll: true });
     action();
-    requestAnimationFrame(() => undoButtonRef.current?.focus({ preventScroll: true }));
   };
+  useEffect(() => {
+    if (!open || !undoLabel || !pendingUndoFocusRef.current) return;
+    pendingUndoFocusRef.current = false;
+    const focusUndo = () => undoButtonRef.current?.focus({ preventScroll: true });
+    focusUndo();
+    let secondFrame = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      focusUndo();
+      secondFrame = requestAnimationFrame(focusUndo);
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+    };
+  }, [open, undoLabel, agenda.id]);
   const snooze = (label: string) => {
     const focusAnchor = mobile ? railTrigger.current : threadRef.current;
     focusAnchor?.focus({ preventScroll: true });
+    if (!mobile) pendingFocusActiveRef.current = true;
     onSnooze(label);
-    if (!mobile) focusActive();
   };
+  useEffect(() => {
+    if (!open || mobile || !pendingFocusActiveRef.current) return;
+    pendingFocusActiveRef.current = false;
+    // The active row is committed and the focused anchor stays mounted, so a later frame would only steal newer focus.
+    focusActive();
+  }, [open, mobile, agenda.id, agenda.snoozedLabel]);
   useEffect(() => {
     if (mobile && railOpen) requestAnimationFrame(() => activeRailItem()?.focus({ preventScroll: true }));
   }, [mobile, railOpen]);
@@ -176,8 +211,11 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
           {railOpen ? <button type="button" tabIndex={-1} className="pas-rt1707-rail-scrim" aria-label="안건 목록 닫기" onClick={closeRail} /> : null}
           <PasThreadRail agendas={agendas} activeId={agenda.id} onSelect={(id) => {
             if (railOpen) closeRail();
+            if (!mobile) {
+              if (id === agenda.id) focusActive();
+              else pendingFocusActiveRef.current = true;
+            }
             onSelect(id);
-            if (!mobile) focusActive();
           }} />
           <div className="pas-rt1707-thread" inert={mobile && railOpen ? true : undefined}>
             <div className="pas-rt1707-thread-content">
@@ -186,8 +224,10 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
               const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight <= 24;
               autoRef.current = atBottom; setAutoScroll(atBottom); if (atBottom) setHasNew(false);
             }}>
-              <PasThreadTimeline agenda={agenda} checks={checks} questionAnswer={questionAnswers[agenda.id] ?? null}
-                onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument} onOpenCard={openPanel} />
+              <div ref={timelineWrapRef}>
+                <PasThreadTimeline agenda={agenda} checks={checks} questionAnswer={questionAnswers[agenda.id] ?? null}
+                  onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument} onOpenCard={openPanel} />
+              </div>
             </div>
             {!autoScroll ? <Button className="pas-rt1707-jump" data-testid="pas-rt1707-jump-latest" onClick={() => { jump(); threadRef.current?.focus({ preventScroll: true }); }}>{hasNew ? "새 경과 ↓" : "최신 경과로 ↓"}</Button> : null}
             </div>

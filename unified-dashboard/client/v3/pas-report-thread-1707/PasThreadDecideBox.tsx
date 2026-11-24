@@ -1,4 +1,4 @@
-import { useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Badge, Button } from "@seosoyoung/soul-ui";
 import { ChatInputEditor } from "@seosoyoung/soul-ui/components/chat/ChatInputEditor";
 import { X } from "lucide-react";
@@ -30,7 +30,23 @@ export function PasThreadDecideBox({ agenda, target, onClearTarget, text, onChan
   const [askBack, setAskBack] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const composerRef = useRef<HTMLDivElement>(null);
-  const focusComposer = () => requestAnimationFrame(() => requestAnimationFrame(() => composerRef.current?.querySelector("textarea")?.focus()));
+  const pendingComposerFocusRef = useRef<"ask" | "clear" | null>(null);
+  const focusComposerNow = () => composerRef.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
+  useEffect(() => {
+    if (pendingComposerFocusRef.current === null) return;
+    pendingComposerFocusRef.current = null;
+    // Focus moves to the textarea before the notice button unmounts, then holds through DialogPopup focus repair.
+    focusComposerNow();
+    let secondFrame = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      focusComposerNow();
+      secondFrame = requestAnimationFrame(focusComposerNow);
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+    };
+  }, [askBack]);
   const settled = agenda.status === "done" || agenda.status === "awaiting_verification";
   const choiceQuestion = agenda.question?.kind === "choice" ? agenda.question : null;
   const openQuestion = choiceQuestion && questionAnswer === null && agenda.status === "review" && !agenda.snoozedLabel;
@@ -44,7 +60,7 @@ export function PasThreadDecideBox({ agenda, target, onClearTarget, text, onChan
         <button type="button" className="pas-rt1707-target-clear" aria-label="대상 해제" onClick={onClearTarget}><X className="size-3.5" strokeWidth={1.6} aria-hidden="true" /></button>
       </span> : agenda.snoozedLabel ? <span className="pas-rt1707-decide-hint">미뤄 둠: {agenda.snoozedLabel}</span> : null}
     </div>
-    {openQuestion && askBack ? <CardQuestionNotice label="되묻기" onClear={() => { setAskBack(false); focusComposer(); }} /> : null}
+    {openQuestion && askBack ? <CardQuestionNotice label="되묻기" onClear={() => { focusComposerNow(); pendingComposerFocusRef.current = "clear"; setAskBack(false); }} /> : null}
     <div ref={composerRef} className="pas-rt1707-decide-input">
       <ChatInputEditor presentation="manuscript" inputLabel="결재 지시" text={text} onChangeText={onChangeText}
         onSend={() => { onSend(openQuestion && askBack ? "followup" : "answer"); setAskBack(false); }}
@@ -70,7 +86,7 @@ export function PasThreadDecideBox({ agenda, target, onClearTarget, text, onChan
         </div>
         <div className="pas-rt1707-stamps-secondary">
           {openQuestion ? <CardQuestionActions view={questionView(choiceQuestion, null, true)} composerVisible onAnswerFreely={() => {}}
-            onAskBack={() => { setAskBack(true); focusComposer(); }} /> : null}
+            onAskBack={() => { focusComposerNow(); pendingComposerFocusRef.current = "ask"; setAskBack(true); }} /> : null}
           {agenda.status === "review" && !agenda.snoozedLabel ? <Button variant="outline" size="sm" data-testid="pas-rt1707-snooze-trigger" aria-expanded={snoozeOpen}
             onClick={() => setSnoozeOpen((value) => !value)}>답변 미루기</Button> : null}
           <div className="pas-rt1707-undo-slot">
