@@ -19,5 +19,9 @@ describe("global persistent defaults MCP", () => {
     expect((await call("get_persistent_session_defaults", {}, "admin")).structuredContent).toEqual(result);
     expect((await call("update_persistent_session_defaults", { value, expectedVersion: 0 }, "admin")).structuredContent).toEqual(result);
     expect(service.put).toHaveBeenCalledWith({ value, expectedVersion: 0, updatedBy: "admin@example.com" });
+    service.put.mockRejectedValueOnce(new Error("model_preset: missing-id is not a known model preset"));
+    const invalid = await call("update_persistent_session_defaults", { value, expectedVersion: 0 }, "admin");
+    expect(invalid.isError).toBe(true);
+    expect(invalid.content[0]).toMatchObject({ text: expect.stringContaining("missing-id") });
   });
 });

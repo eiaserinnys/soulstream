@@ -15,6 +15,7 @@ export type PersistentDefaultsResult = {
 export type PersistentDefaultsUpdate = { value: unknown; expectedVersion: number; updatedBy: string };
 
 type Row = { value: unknown; version: number | string };
+type Catalog = ReturnType<ModelCatalogSource["snapshot"]>;
 const SettingsValueSchema = PersistentDefaultsSchema.extend({
   fallback_models: PersistentDefaultsSchema.shape.fallback_models.max(PERSISTENT_FALLBACK_MODELS_MAX),
 });
@@ -25,6 +26,7 @@ export class PersistentDefaultsError extends Error {
 /** One process-local cache, shared by all orchestrator catalogue consumers. */
 export class PersistentDefaultsSettings implements ModelCatalogSource {
   private cached: Row | null = null;
+  private memo?: { catalog: Catalog; row: Row; result: Catalog };
   private revision = 0;
   private timer?: ReturnType<typeof setInterval>;
 
@@ -46,7 +48,11 @@ export class PersistentDefaultsSettings implements ModelCatalogSource {
     try {
       const sql = await this.sql();
       const rows = await sql<Row[]>`SELECT value, version FROM system_settings WHERE setting_key='persistent_defaults'`;
-      if (revision === this.revision) this.cached = rows[0] ?? null;
+      if (revision === this.revision) {
+        const row = rows[0] ?? null;
+        if (row !== this.cached) this.memo = undefined;
+        this.cached = row;
+      }
     } catch (error) {
       this.warn(`Failed to refresh persistent defaults: ${String(error)}`);
     }
@@ -54,13 +60,19 @@ export class PersistentDefaultsSettings implements ModelCatalogSource {
 
   snapshot() {
     const catalog = this.catalog.snapshot();
-    if (!this.cached) return catalog;
-    const parsed = SettingsValueSchema.safeParse(this.cached.value);
+    const row = this.cached;
+    if (!row) return catalog;
+    if (this.memo?.catalog === catalog && this.memo.row === row) return this.memo.result;
+    const parsed = SettingsValueSchema.safeParse(row.value);
+    let result: Catalog;
     if (!parsed.success || persistentDefaultsIssues(parsed.data, catalog.presets).length) {
       this.warn("Stored persistent defaults do not match the current model catalogue; using catalogue defaults");
-      return catalog;
+      result = catalog;
+    } else {
+      result = { ...catalog, persistent_defaults: { ...catalog.persistent_defaults, ...parsed.data } };
     }
-    return { ...catalog, persistent_defaults: { ...catalog.persistent_defaults, ...parsed.data } };
+    this.memo = { catalog, row, result };
+    return result;
   }
 
   async get(): Promise<PersistentDefaultsResult> {
@@ -75,10 +87,18 @@ export class PersistentDefaultsSettings implements ModelCatalogSource {
 
   async put(input: PersistentDefaultsUpdate): Promise<PersistentDefaultsResult> {
     const parsed = SettingsValueSchema.safeParse(input.value);
-    if (!parsed.success || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0 ||
-        typeof input.updatedBy !== "string" || !input.updatedBy.trim() ||
-        (parsed.success && persistentDefaultsIssues(parsed.data, this.catalog.snapshot().presets).length > 0)) {
-      throw new PersistentDefaultsError(422, "PERSISTENT_DEFAULTS_INVALID", "Invalid persistent defaults or expected version");
+    const issues = parsed.success
+      ? persistentDefaultsIssues(parsed.data, this.catalog.snapshot().presets)
+      : parsed.error.issues;
+    const messages = issues.map(issue => `${issue.path.map(String).join(".") || "value"}: ${issue.message}`);
+    if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0) {
+      messages.push("expectedVersion: must be a non-negative safe integer");
+    }
+    if (typeof input.updatedBy !== "string" || !input.updatedBy.trim()) {
+      messages.push("updatedBy: must be a non-empty string");
+    }
+    if (!parsed.success || messages.length) {
+      throw new PersistentDefaultsError(422, "PERSISTENT_DEFAULTS_INVALID", messages.join("; "));
     }
     const sql = await this.sql();
     const value = sql.json(parsed.data);
@@ -94,6 +114,7 @@ export class PersistentDefaultsSettings implements ModelCatalogSource {
     }
     this.revision++;
     this.cached = rows[0];
+    this.memo = undefined;
     return { value: parsed.data, version: Number(rows[0].version), source: "settings" };
   }
 }
