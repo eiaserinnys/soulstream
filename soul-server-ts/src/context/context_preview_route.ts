@@ -15,6 +15,7 @@ import {
 import { formatAtomMarkdown, type AtomFetchConfig, type AtomContextSpec } from "./atom_context.js";
 import { extractAgentAtomContextSpecs, prioritizeAtomContextSpecs } from "./context_builder_helpers.js";
 import { fetchAtomNodeTitle } from "./compiler/render_modes.js";
+import { fetchAtomParentTitle } from "./compiler/parent_title.js";
 import { hostOsConditionValue } from "./host_os.js";
 import {
   compileContexts,
@@ -34,6 +35,8 @@ interface PreviewBody {
   atom_contexts?: unknown;
   agent_id?: unknown;
   session?: unknown;
+  ignore_conditions?: unknown;
+  summary_only?: unknown;
 }
 
 export function registerContextPreviewRoute(
@@ -53,19 +56,34 @@ export function registerContextPreviewRoute(
     const titles = new Map(await Promise.all(nodeIds.map(async (nodeId) => [
       nodeId, await fetchAtomNodeTitle(config.atom, nodeId, config.logger),
     ] as const)));
+    const parentTitles = new Map(await Promise.all(nodeIds.map(async (nodeId) => [
+      nodeId, await fetchAtomParentTitle(config.atom, nodeId, config.logger),
+    ] as const)));
     const compilation = await compileContexts(
       config.atom,
       selected,
       config.logger,
       parsed.value.parameters,
+      { ignoreConditions: parsed.value.ignoreConditions },
     );
+    const summaryOnly = parsed.value.summaryOnly;
     return reply.send({
-      manifest: compilation.manifest,
-      assembled: compilation.assembled,
+      manifest: {
+        ...compilation.manifest,
+        sources: compilation.manifest.sources.map((source, index) => ({
+          ...source,
+          title: titles.get(source.node_id) ?? null,
+          parent_title: parentTitles.get(source.node_id) ?? null,
+          documents: compilation.sections[index]?.documents ?? [],
+        })),
+      },
+      assembled: summaryOnly ? "" : compilation.assembled,
       sections: compilation.sections.map((section, index) => ({
         spec_index: specs.indexOf(selected[index]!),
         title: titles.get(section.source.nodeId) ?? null,
-        markdown: section.markdown === null ? null : formatAtomMarkdown(section.markdown),
+        markdown: summaryOnly
+          ? ""
+          : section.markdown === null ? null : formatAtomMarkdown(section.markdown),
       })),
       atom_base_url: config.atom.enabled && config.atom.serverUrl
         ? config.atom.serverUrl.replace(/\/+$/, "") : null,
@@ -74,12 +92,25 @@ export function registerContextPreviewRoute(
 }
 
 type PreviewParseResult =
-  | { ok: true; value: { specs: AtomContextSpec[]; parameters: ContextFilterParameters } }
+  | {
+    ok: true;
+    value: {
+      specs: AtomContextSpec[];
+      parameters: ContextFilterParameters;
+      ignoreConditions: boolean;
+      summaryOnly: boolean;
+    };
+  }
   | { ok: false; status: 404 | 422; error: string };
 
 async function parsePreviewBody(body: PreviewBody | undefined, config: ContextPreviewRouteConfig): Promise<PreviewParseResult> {
   if (!body || (body.atom_contexts !== undefined) === (body.agent_id !== undefined)) {
     return { ok: false, status: 422, error: "provide exactly one of atom_contexts or agent_id" };
+  }
+  for (const flag of ["ignore_conditions", "summary_only"] as const) {
+    if (body[flag] !== undefined && typeof body[flag] !== "boolean") {
+      return { ok: false, status: 422, error: `${flag} must be a boolean` };
+    }
   }
   const specs: AtomContextSpec[] = [];
   let profile: AgentProfile | undefined;
@@ -119,7 +150,15 @@ async function parsePreviewBody(body: PreviewBody | undefined, config: ContextPr
     ...(nonEmptyString(session.card_role) ? { card_role: session.card_role as string } : {}),
     os: hostOsConditionValue(getOsType()),
   };
-  return { ok: true, value: { specs, parameters } };
+  return {
+    ok: true,
+    value: {
+      specs,
+      parameters,
+      ignoreConditions: body.ignore_conditions === true,
+      summaryOnly: body.summary_only === true,
+    },
+  };
 }
 
 async function authorize(
