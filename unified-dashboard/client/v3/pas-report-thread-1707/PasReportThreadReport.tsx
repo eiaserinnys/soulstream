@@ -1,15 +1,19 @@
-import { useEffect, useRef, type RefObject } from "react";
-import { Badge, DashboardIconCap, Dialog, DialogPopup, DialogTitle } from "@seosoyoung/soul-ui";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { Badge, Button, DashboardIconCap, Dialog, DialogPopup, DialogTitle, useIsMobile } from "@seosoyoung/soul-ui";
+import { ChevronLeft, ChevronRight, ExternalLink, PanelLeft, X } from "lucide-react";
 import { DocumentReaderDialog } from "../DocumentReaderDialog";
+import { CardWorkspace } from "../CardWorkspace";
+import { reviewDetail } from "../components-review-fixtures";
+import { dialoguesFolders } from "../dialogues-api";
 import { StatusChip } from "../StatusChip";
 import { EvidenceArt } from "./EvidenceArt";
-import { PasThreadDecideBox, type DecisionTarget } from "./PasThreadDecideBox";
+import { PasThreadDecideBox, type DecisionTarget, type QuestionMode } from "./PasThreadDecideBox";
 import { PasThreadRail } from "./PasThreadRail";
 import { PasThreadTimeline } from "./PasThreadTimeline";
 import {
   agendaStatusLabel,
   agendaStatusTone,
+  taskCardsFor,
   type Agenda,
   type CheckItem,
   type DispositionId,
@@ -20,7 +24,7 @@ export type EvidenceView = { evidence: Evidence; trigger: HTMLElement | null } |
 
 export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClose, openTriggerRef, checks, questionAnswers,
   onToggleCheck, onInstruct, onChooseAnswer, target, onClearTarget, instruction, onChangeInstruction, onSendInstruction, onDispose, undoLabel, onUndo,
-  evidenceView, onOpenEvidence, onCloseEvidence, documentId, onOpenDocument, onCloseDocument }: {
+  evidenceView, onOpenEvidence, onCloseEvidence, documentId, onOpenDocument, onCloseDocument, onSnooze, onUnsnooze, onSimulate }: {
   agendas: readonly Agenda[];
   activeId: string;
   open: boolean;
@@ -36,7 +40,7 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
   onClearTarget(): void;
   instruction: string;
   onChangeInstruction(value: string): void;
-  onSendInstruction(): void;
+  onSendInstruction(mode: QuestionMode): void;
   onDispose(disposition: DispositionId): void;
   undoLabel: string | null;
   onUndo(): void;
@@ -46,36 +50,74 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
   documentId: string | null;
   onOpenDocument(documentId: string): void;
   onCloseDocument(): void;
+  onSnooze(label: string): void;
+  onUnsnooze(): void;
+  onSimulate(): void;
 }) {
   const activeIndex = agendas.findIndex((agenda) => agenda.id === activeId);
   const agenda = agendas[Math.max(0, activeIndex)];
-  const pending = agendas.filter((item) => item.status === "review");
+  const pending = agendas.filter((item) => item.status === "review" && !item.snoozedLabel);
   const pendingIndex = pending.findIndex((item) => item.id === agenda.id);
   const threadRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    threadRef.current?.scrollTo({ top: 0 });
-  }, [agenda.id]);
+  const panelTrigger = useRef<HTMLButtonElement>(null);
+  const railTrigger = useRef<HTMLButtonElement>(null);
+  const [railOpen, setRailOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [hasNew, setHasNew] = useState(false);
+  const autoRef = useRef(true);
+  const lastEvents = useRef({ id: agenda.id, count: agenda.events.length });
+  const mobile = useIsMobile();
+  const jump = () => {
+    const scroll = threadRef.current;
+    if (scroll) scroll.scrollTop = scroll.scrollHeight;
+    autoRef.current = true;
+    setAutoScroll(true);
+    setHasNew(false);
+  };
+  useLayoutEffect(() => {
+    if (!open) return;
+    autoRef.current = true;
+    setAutoScroll(true);
+    setHasNew(false);
+    lastEvents.current = { id: agenda.id, count: agenda.events.length };
+    const frame = requestAnimationFrame(jump);
+    return () => cancelAnimationFrame(frame);
+  }, [open, agenda.id]);
+  useLayoutEffect(() => {
+    if (!open) return;
+    if (lastEvents.current.id === agenda.id && agenda.events.length > lastEvents.current.count) {
+      if (autoRef.current) jump(); else setHasNew(true);
+    }
+    lastEvents.current = { id: agenda.id, count: agenda.events.length };
+  }, [open, agenda.id, agenda.events.length]);
   useEffect(() => {
     if (!open) return;
     // 안쪽 창(증거 확대, 문서 열람)이 떠 있으면 Escape는 그 창만 닫는다. 두 창이 함께
     // 닫히면 문서를 읽던 자리와 보고 창을 모두 잃는다.
     const closeInner = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      if (panelOpen) { event.preventDefault(); event.stopImmediatePropagation(); setPanelOpen(false); requestAnimationFrame(() => panelTrigger.current?.focus()); return; }
+      if (railOpen) { event.preventDefault(); event.stopImmediatePropagation(); setRailOpen(false); requestAnimationFrame(() => railTrigger.current?.focus()); return; }
       if (documentId) { event.preventDefault(); event.stopImmediatePropagation(); onCloseDocument(); return; }
       if (evidenceView) { event.preventDefault(); event.stopImmediatePropagation(); onCloseEvidence(); }
     };
     document.addEventListener("keydown", closeInner, true);
     return () => document.removeEventListener("keydown", closeInner, true);
-  }, [open, documentId, evidenceView, onCloseDocument, onCloseEvidence]);
+  }, [open, documentId, evidenceView, panelOpen, railOpen, onCloseDocument, onCloseEvidence]);
   const go = (delta: number) => {
     const next = agendas[Math.min(agendas.length - 1, Math.max(0, activeIndex + delta))];
     if (next && next.id !== agenda.id) onSelect(next.id);
-    threadRef.current?.scrollTo({ top: 0 });
   };
+  const card = taskCardsFor([agenda])[0];
+  const detail = { ...reviewDetail, card: { ...card, folderId: dialoguesFolders[0].id },
+    reports: [{ ...reviewDetail.reports[0], title: "결과 보고", body: agenda.kind === "ui"
+      ? `${agenda.summary}\n\n변경 파일: 슬라이드 편집 화면과 저장 처리` : agenda.summary }] };
+  const closePanel = () => { setPanelOpen(false); requestAnimationFrame(() => panelTrigger.current?.focus()); };
   return <>
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
       <DialogPopup className="v3-surface pas-rt1707-dialog" showCloseButton={false} data-testid="pas-report-thread-dialog"
-        initialFocus={() => document.querySelector<HTMLElement>('[data-testid="pas-report-thread-dialog"] .pas-rt1707-rail-item[data-active="true"]')}
+        initialFocus={() => mobile ? railTrigger.current : document.querySelector<HTMLElement>('[data-testid="pas-report-thread-dialog"] .pas-rt1707-rail-item[data-active="true"]')}
         finalFocus={() => openTriggerRef.current}
         onKeyDown={(event) => {
           const element = event.target as HTMLElement | null;
@@ -84,6 +126,8 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
           if (event.key === "ArrowRight") { event.preventDefault(); go(1); }
         }}>
         <header className="pas-rt1707-report-head">
+          <div className="pas-rt1707-rail-toggle"><DashboardIconCap ref={railTrigger} size="small" appearance="bare" label="안건 목록"
+            data-testid="pas-rt1707-rail-toggle" aria-expanded={railOpen} onClick={() => setRailOpen((value) => !value)}><PanelLeft className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap></div>
           <div className="pas-rt1707-report-heading">
             <span className="pas-rt1707-report-number">#{agenda.number}</span>
             <DialogTitle className="pas-rt1707-report-title">{agenda.title}</DialogTitle>
@@ -91,25 +135,38 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
             {agenda.keptAsReference ? <Badge variant="info" size="sm">참고</Badge> : null}
           </div>
           <div className="pas-rt1707-report-tools">
-            {agenda.status === "review" ? <span className="pas-rt1707-report-count" aria-label={`${pending.length}건 가운데 ${pendingIndex + 1}번째`}>{pendingIndex + 1} / {pending.length}</span> : null}
+            {pendingIndex >= 0 ? <span className="pas-rt1707-report-count" aria-label={`${pending.length}건 가운데 ${pendingIndex + 1}번째`}>{pendingIndex + 1} / {pending.length}</span> : null}
             <DashboardIconCap size="small" appearance="bare" label="이전 안건" disabled={activeIndex <= 0} onClick={() => go(-1)}><ChevronLeft className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap>
             <DashboardIconCap size="small" appearance="bare" label="다음 안건" disabled={activeIndex >= agendas.length - 1} onClick={() => go(1)}><ChevronRight className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap>
+            <DashboardIconCap ref={panelTrigger} size="small" appearance="bare" label="카드 패널 열기" data-testid="pas-rt1707-open-card-panel" onClick={() => setPanelOpen(true)}><ExternalLink className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap>
             <DashboardIconCap size="small" appearance="bare" label="보고 창 닫기" onClick={onClose}><X className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap>
           </div>
         </header>
-        <div className="pas-rt1707-report-main">
-          <PasThreadRail agendas={agendas} activeId={agenda.id} onSelect={onSelect} />
+        <div className="pas-rt1707-report-main" data-rail-open={railOpen || undefined}>
+          {railOpen ? <button type="button" className="pas-rt1707-rail-scrim" aria-label="안건 목록 닫기" onClick={() => { setRailOpen(false); railTrigger.current?.focus(); }} /> : null}
+          <PasThreadRail agendas={agendas} activeId={agenda.id} onSelect={(id) => { onSelect(id); setRailOpen(false); }} />
           <div className="pas-rt1707-thread">
-            <div ref={threadRef} className="pas-rt1707-thread-scroll">
+            <div className="pas-rt1707-thread-content">
+            <div ref={threadRef} className="pas-rt1707-thread-scroll" data-auto-scroll={autoScroll} onScroll={(event) => {
+              const node = event.currentTarget;
+              const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight <= 24;
+              autoRef.current = atBottom; setAutoScroll(atBottom); if (atBottom) setHasNew(false);
+            }}>
               <PasThreadTimeline agenda={agenda} checks={checks} questionAnswer={questionAnswers[agenda.id] ?? null}
-                onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument} />
+                onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument} onOpenCard={() => setPanelOpen(true)} />
             </div>
-            <PasThreadDecideBox agenda={agenda} target={target} onClearTarget={onClearTarget} text={instruction}
+            {!autoScroll ? <Button className="pas-rt1707-jump" data-testid="pas-rt1707-jump-latest" onClick={jump}>{hasNew ? "새 경과 ↓" : "최신 경과로 ↓"}</Button> : null}
+            </div>
+            <PasThreadDecideBox key={agenda.id} agenda={agenda} target={target} onClearTarget={onClearTarget} text={instruction}
               onChangeText={onChangeInstruction} onSend={onSendInstruction} onDispose={onDispose}
               questionAnswer={questionAnswers[agenda.id] ?? null} onChooseQuestion={(label) => onChooseAnswer(agenda, label)}
-              undoLabel={undoLabel} onUndo={onUndo} />
+              undoLabel={undoLabel} onUndo={onUndo} onSnooze={onSnooze} onUnsnooze={onUnsnooze} onSimulate={onSimulate} />
           </div>
         </div>
+        {panelOpen ? <CardWorkspace cardId={agenda.id} sampleDetail={detail} folders={dialoguesFolders}
+          onClose={closePanel} onOpenSession={() => undefined} mobileMode={mobile} mobileTab="today"
+          activeSession={undefined} chatInputDisabled historyEnabled={false} sessionStreamActive={false} sessionConnectionStatus="disconnected"
+          reconnectSession={() => undefined} onAcknowledgedReview={() => undefined} /> : null}
       </DialogPopup>
     </Dialog>
     <EvidenceDialog view={evidenceView} onClose={onCloseEvidence} />

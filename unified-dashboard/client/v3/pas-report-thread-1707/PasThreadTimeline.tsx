@@ -44,7 +44,7 @@ export function questionView(question: QuestionSeed, answer: string | null, open
   };
 }
 
-export function PasThreadTimeline({ agenda, checks, questionAnswer, onToggleCheck, onInstruct, onOpenEvidence, onOpenDocument }: {
+export function PasThreadTimeline({ agenda, checks, questionAnswer, onToggleCheck, onInstruct, onOpenEvidence, onOpenDocument, onOpenCard }: {
   agenda: Agenda;
   checks: Readonly<Record<string, boolean>>;
   questionAnswer: string | null;
@@ -52,6 +52,7 @@ export function PasThreadTimeline({ agenda, checks, questionAnswer, onToggleChec
   onInstruct(agenda: Agenda, check: CheckItem): void;
   onOpenEvidence(evidence: Evidence, trigger: HTMLElement | null): void;
   onOpenDocument(documentId: string): void;
+  onOpenCard(): void;
 }) {
   let sawComment = false;
   const hasComment = agenda.events.some((event) => event.kind === "comment");
@@ -78,7 +79,7 @@ export function PasThreadTimeline({ agenda, checks, questionAnswer, onToggleChec
           {event.kind === "session" ? <SessionEvent event={event} /> : null}
           {event.kind === "comment" ? <CommentEvent event={event} /> : null}
           {event.kind === "result" ? <ResultEvent agenda={agenda} event={event} checks={checks} questionAnswer={questionAnswer}
-            onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument} /> : null}
+            onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument} onOpenCard={onOpenCard} /> : null}
         </div>
         </section>
       </Fragment>;
@@ -116,7 +117,7 @@ function CommentEvent({ event }: { event: Extract<ThreadEvent, { kind: "comment"
   </div>;
 }
 
-function ResultEvent({ agenda, event, checks, questionAnswer, onToggleCheck, onInstruct, onOpenEvidence, onOpenDocument }: {
+function ResultEvent({ agenda, event, checks, questionAnswer, onToggleCheck, onInstruct, onOpenEvidence, onOpenDocument, onOpenCard }: {
   agenda: Agenda;
   event: Extract<ThreadEvent, { kind: "result" }>;
   checks: Readonly<Record<string, boolean>>;
@@ -125,8 +126,11 @@ function ResultEvent({ agenda, event, checks, questionAnswer, onToggleCheck, onI
   onInstruct(agenda: Agenda, check: CheckItem): void;
   onOpenEvidence(evidence: Evidence, trigger: HTMLElement | null): void;
   onOpenDocument(documentId: string): void;
+  onOpenCard(): void;
 }) {
   return <div className="pas-rt1707-result">
+    <div className="pas-rt1707-summary"><strong>결과 보고 요약</strong><p>{event.summaryReport}</p></div>
+    {agenda.kind === "ui" ? <div className="pas-rt1707-document-row"><Button variant="outline" size="sm" onClick={onOpenCard}>카드 패널에서 변경 파일 보기</Button></div> : null}
     <ul className="pas-rt1707-checks">
       {event.checks.map((check) => <li key={check.id} className="pas-rt1707-check">
         <Checkbox checked={checks[`${agenda.id}:${check.id}`] ?? check.done} onCheckedChange={() => onToggleCheck(agenda.id, check.id)}

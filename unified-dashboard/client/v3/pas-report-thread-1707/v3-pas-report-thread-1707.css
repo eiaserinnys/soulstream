@@ -39,14 +39,16 @@
 .pas-rt1707-report-title { min-width: 0; overflow: hidden; color: var(--foreground); font: var(--v3-type-card) var(--v3-font-family); text-overflow: ellipsis; white-space: nowrap; }
 .pas-rt1707-report-tools { display: flex; flex: none; align-items: center; gap: var(--v3-space-1); }
 .pas-rt1707-report-count { margin-right: var(--v3-space-1); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pas-rt1707-report-main { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.pas-rt1707-report-main { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; }
+.pas-rt1707-rail-toggle, .pas-rt1707-rail-scrim { display: none; }
 
 /* 좌측 결재 레일 */
 .pas-rt1707-rail { display: flex; flex: none; flex-direction: column; width: calc(var(--v3-action-size) * 5 + var(--v3-space-7)); min-height: 0; padding: var(--v3-space-3) var(--v3-space-2); border-right: 1px solid var(--persistent-session-line); }
 .pas-rt1707-rail-head { display: flex; flex: none; align-items: center; justify-content: space-between; gap: var(--v3-space-2); padding: var(--v3-space-1) var(--v3-space-2) var(--v3-space-2); }
 .pas-rt1707-rail-head h2 { font: var(--v3-type-body) var(--v3-font-family); }
 .pas-rt1707-rail-count { min-width: var(--v3-space-5); border-radius: var(--v3-space-8); background: var(--muted); padding: 0 var(--v3-space-2); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); text-align: center; font-variant-numeric: tabular-nums; }
-.pas-rt1707-rail-list { display: flex; flex: 1; flex-direction: column; gap: var(--v3-space-1); min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 0; }
+.pas-rt1707-rail-sections { flex: 1; min-height: 0; overflow-y: auto; }
+.pas-rt1707-rail-list { display: flex; flex-direction: column; gap: var(--v3-space-1); list-style: none; margin: 0; padding: 0; }
 .pas-rt1707-rail-item { display: grid; width: 100%; min-width: 0; grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-areas: "number kind status portrait" "title title title portrait"; align-items: center; gap: var(--v3-space-1) var(--v3-space-2); border: 1px solid transparent; border-radius: var(--v3-space-2); background: transparent; padding: var(--v3-space-2); color: var(--foreground); text-align: left; cursor: pointer; }
 .pas-rt1707-rail-item:hover { background: color-mix(in srgb, var(--muted) 60%, transparent); }
 .pas-rt1707-rail-item:focus-visible { outline: none; box-shadow: 0 0 0 var(--v3-space-1) var(--ring); }
@@ -54,7 +56,7 @@
 .pas-rt1707-rail-number { grid-area: number; color: var(--v3-accent); font: var(--v3-type-meta) var(--v3-font-family); font-variant-numeric: tabular-nums; }
 .pas-rt1707-rail-kind { grid-area: kind; border-radius: var(--v3-space-8); background: var(--muted); padding: 0 var(--v3-space-1); color: var(--v3-text-secondary); font: var(--v3-type-badge) var(--v3-font-family); white-space: nowrap; }
 .pas-rt1707-rail-status { display: flex; grid-area: status; align-items: center; gap: var(--v3-space-1); justify-self: start; min-width: 0; }
-.pas-rt1707-rail-title { grid-area: title; min-width: 0; overflow: hidden; color: var(--foreground); font: var(--v3-type-body) var(--v3-font-family); text-overflow: ellipsis; white-space: nowrap; }
+.pas-rt1707-rail-title { grid-area: title; min-width: 0; color: var(--foreground); font: var(--v3-type-body) var(--v3-font-family); overflow-wrap: anywhere; }
 .pas-rt1707-rail-portrait { grid-area: portrait; grid-row: 1 / 3; width: var(--v3-session-avatar-size); height: var(--v3-session-avatar-size); border-radius: 50%; object-fit: cover; }
 .pas-rt1707-rail-dot { display: none; }
 .pas-rt1707-rail-foot { flex: none; margin-top: var(--v3-space-2); border-top: 1px solid var(--persistent-session-line); padding-top: var(--v3-space-2); }
@@ -62,7 +64,12 @@
 
 /* 한 줄기 시간순 스레드 */
 .pas-rt1707-thread { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.pas-rt1707-thread-content { position: relative; display: flex; flex: 1; min-height: 0; }
 .pas-rt1707-thread-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--v3-space-5) var(--v3-space-6) var(--v3-space-4); }
+.pas-rt1707-jump { position: absolute; right: var(--v3-space-4); bottom: var(--v3-space-3); z-index: var(--v3-layer-panel); }
+.pas-rt1707-summary { font: var(--v3-type-body) var(--v3-font-family); }
+.pas-rt1707-summary strong { color: var(--v3-text-secondary); }
+.pas-rt1707-summary p { margin-top: var(--v3-space-1); }
 .pas-rt1707-timeline { display: flex; flex-direction: column; max-width: 1040px; margin: 0 auto; }
 .pas-rt1707-event { position: relative; display: grid; grid-template-columns: var(--v3-action-size) minmax(0, 1fr); gap: var(--v3-space-2); padding-bottom: var(--v3-space-5); }
 .pas-rt1707-event::before { content: ""; position: absolute; top: var(--v3-action-size); bottom: 0; left: calc(var(--v3-action-size) / 2 - 0.5px); width: 1px; background: var(--persistent-session-line); }
@@ -158,6 +165,10 @@
 .pas-rt1707-decide-hint { min-width: 0; overflow: hidden; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); text-overflow: ellipsis; white-space: nowrap; }
 .pas-rt1707-decide-input { display: flex; align-items: flex-end; gap: var(--v3-space-2); border: 1px solid var(--persistent-session-line); border-radius: var(--v3-space-3); background: var(--persistent-session-paper); padding: var(--v3-space-2) var(--v3-space-3); }
 .pas-rt1707-decide-input:focus-within { border-color: var(--ring); }
+.pas-rt1707-question-mode { display: flex; flex-wrap: wrap; gap: var(--v3-space-1) var(--v3-space-3); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
+.pas-rt1707-question-mode label { display: inline-flex; align-items: center; gap: var(--v3-space-1); }
+.pas-rt1707-snooze-options { display: flex; flex-wrap: wrap; gap: var(--v3-space-2); width: 100%; }
+.pas-rt1707-dialog > .v3-workspace-scrim { position: absolute; z-index: var(--v3-layer-modal); inset: 0; }
 .pas-rt1707-decide-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--v3-space-3); min-height: var(--v3-action-size); }
 .pas-rt1707-decide-actions [data-slot="button"] { width: auto; max-width: 100%; height: auto; min-height: var(--v3-action-size); justify-content: center; gap: var(--v3-space-1); padding: var(--v3-space-1) var(--v3-space-3); border-radius: var(--radius-lg); font: var(--v3-type-body) var(--v3-font-family); white-space: nowrap; }
 .pas-rt1707-stamps { display: flex; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--v3-space-2); }
@@ -188,17 +199,10 @@
   .pas-rt1707-report-title { font: var(--v3-type-side-title) var(--v3-font-family); }
   .pas-rt1707-report-tools { gap: 0; }
   .pas-rt1707-report-count { display: none; }
-  .pas-rt1707-report-main { flex-direction: column; }
-  .pas-rt1707-rail { width: auto; border-right: 0; border-bottom: 1px solid var(--persistent-session-line); padding: var(--v3-space-2) var(--v3-space-3); }
-  .pas-rt1707-rail-head, .pas-rt1707-rail-foot { display: none; }
-  .pas-rt1707-rail-list { display: grid; flex: none; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--v3-space-1); overflow: visible; }
-  .pas-rt1707-rail-item { display: flex; min-height: var(--v3-action-size); align-items: center; justify-content: center; gap: var(--v3-space-1); padding: var(--v3-space-1); }
-  .pas-rt1707-rail-kind, .pas-rt1707-rail-title, .pas-rt1707-rail-status, .pas-rt1707-rail-portrait { display: none; }
-  .pas-rt1707-rail-item[data-active] { box-shadow: inset 0 calc(var(--v3-space-1) * -1) var(--v3-accent); }
-  .pas-rt1707-rail-dot { display: block; width: var(--v3-space-1); height: var(--v3-space-1); border-radius: 50%; background: var(--v3-text-secondary); }
-  .pas-rt1707-rail-item[data-status="review"] .pas-rt1707-rail-dot { background: var(--v3-favorite); }
-  .pas-rt1707-rail-item[data-status="running"] .pas-rt1707-rail-dot { background: var(--v3-live); }
-  .pas-rt1707-rail-item[data-status="done"] .pas-rt1707-rail-dot { background: var(--v3-complete); }
+  .pas-rt1707-rail-toggle { display: block; flex: none; }
+  .pas-rt1707-rail { display: none; position: absolute; z-index: var(--v3-layer-panel); inset: 0 auto 0 0; width: min(calc(var(--v3-action-size) * 6), 85%); background: var(--persistent-session-paper); }
+  .pas-rt1707-report-main[data-rail-open] .pas-rt1707-rail { display: flex; }
+  .pas-rt1707-rail-scrim { display: block; position: absolute; z-index: var(--v3-layer-panel); inset: 0; border: 0; background: color-mix(in srgb, var(--background) 50%, transparent); }
   .pas-rt1707-thread-scroll { padding: var(--v3-space-3); }
   .pas-rt1707-event { grid-template-columns: var(--v3-space-6) minmax(0, 1fr); gap: var(--v3-space-2); }
   .pas-rt1707-event::before { left: calc(var(--v3-space-6) / 2 - 0.5px); top: var(--v3-space-6); }

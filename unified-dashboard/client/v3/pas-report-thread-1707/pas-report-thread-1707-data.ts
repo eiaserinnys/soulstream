@@ -13,7 +13,7 @@ export const AGENT_NAMES: Record<AgentId, string> = {
 
 export const agentPortraitUrl = (agent: AgentId) => `/api/nodes/eiaserinnys/agents/${agent}/portrait`;
 
-export type AgendaKind = "question" | "request" | "design" | "ui" | "observation";
+export type AgendaKind = "question" | "request" | "design" | "ui" | "observation" | "work";
 
 export const AGENDA_KIND_LABEL: Record<AgendaKind, string> = {
   question: "질문",
@@ -21,6 +21,7 @@ export const AGENDA_KIND_LABEL: Record<AgendaKind, string> = {
   design: "설계서",
   ui: "UI 구현",
   observation: "관찰",
+  work: "작업",
 };
 
 export type AgendaStatus = Extract<CardStatus, "review" | "running" | "awaiting_verification" | "done">;
@@ -43,7 +44,7 @@ export function agendaStatusTone(agenda: Agenda) {
   return agenda.status;
 }
 
-export type DispositionId = "approve" | "keep" | "recheck3" | "evening" | "done";
+export type DispositionId = "approve" | "keep" | "recheck3" | "done";
 
 export type CheckItem = { id: string; label: string; done: boolean };
 
@@ -57,7 +58,7 @@ export type ThreadEvent =
   | { id: string; kind: "request"; at: string; text: string }
   | { id: string; kind: "session"; at: string; agent: AgentId; summary: string; turns: SessionTurn[] }
   | { id: string; kind: "comment"; at: string; author: "user" | "agent"; agent?: AgentId; text: string }
-  | { id: string; kind: "result"; at: string; checks: CheckItem[]; evidence: Evidence; documentId?: string; caveat?: string };
+  | { id: string; kind: "result"; at: string; summaryReport: string; checks: CheckItem[]; evidence: Evidence; documentId?: string; caveat?: string };
 
 export type QuestionSeed = {
   id: string;
@@ -78,6 +79,7 @@ export type Agenda = {
   summary: string;
   agent: AgentId;
   status: AgendaStatus;
+  snoozedLabel?: string | null;
   events: ThreadEvent[];
   question?: QuestionSeed;
   primary: DecisionStamp | null;
@@ -125,7 +127,7 @@ export const AGENDA_FIXTURES: readonly Agenda[] = [
         ],
       },
       {
-        id: "1680-result", kind: "result", at: "11월 19일 09:10",
+        id: "1680-result", kind: "result", at: "11월 19일 09:10", summaryReport: "완료 기록을 기간별로 비교했습니다. 일주일 범위가 확인 주기에 맞아 현행 유지를 권합니다.",
         checks: [
           { id: "1680-check-1", label: "최근 30일 완료 142건을 기간별로 셌다", done: true },
           { id: "1680-check-2", label: "선택지마다 첫 화면의 변화를 적었다", done: true },
@@ -144,7 +146,7 @@ export const AGENDA_FIXTURES: readonly Agenda[] = [
     agent: "keke",
     status: "review",
     primary: { id: "done", label: "했어" },
-    secondary: { id: "evening", label: "저녁에 다시 보기" },
+    secondary: null,
     question: {
       id: "question-1512",
       title: "집 PC 앱 수동 업데이트",
@@ -163,7 +165,7 @@ export const AGENDA_FIXTURES: readonly Agenda[] = [
         ],
       },
       {
-        id: "1512-result", kind: "result", at: "11월 18일 19:35",
+        id: "1512-result", kind: "result", at: "11월 18일 19:35", summaryReport: "최신 설치 파일을 준비하고 사용량 동기화를 확인했습니다. 설치는 집 PC에서 직접 진행해야 합니다.",
         checks: [
           { id: "1512-check-1", label: "0.9.7 설치 파일의 서명과 용량을 확인했다", done: true },
           { id: "1512-check-2", label: "현재 사용량 동기화가 정상임을 확인했다", done: true },
@@ -196,7 +198,7 @@ export const AGENDA_FIXTURES: readonly Agenda[] = [
         ],
       },
       {
-        id: "1387-result", kind: "result", at: "11월 18일 18:10",
+        id: "1387-result", kind: "result", at: "11월 18일 18:10", summaryReport: "접수부터 실행까지 세 단계의 설계안을 정리했습니다. 기존 보고 창을 유지하면 변경 범위를 줄일 수 있습니다.",
         checks: [
           { id: "1387-check-1", label: "세 단계의 입구와 출구를 문서에 적었다", done: true },
           { id: "1387-check-2", label: "기존 PAS 보고와 겹치는 부분을 표시했다", done: true },
@@ -240,7 +242,7 @@ export const AGENDA_FIXTURES: readonly Agenda[] = [
       },
       { id: "1408-comment-2", kind: "comment", at: "11월 18일 17:25", author: "agent", agent: "selaphiel", text: "검수에서 통과했습니다. 장 순서, 장 사이 여백, 저장 왕복 세 가지를 다시 확인했습니다." },
       {
-        id: "1408-result", kind: "result", at: "11월 19일 08:50",
+        id: "1408-result", kind: "result", at: "11월 19일 08:50", summaryReport: "장 순서 변경과 저장을 연결하고 여백을 발행 화면과 맞췄습니다. 실제 화면과 저장 왕복을 검수했습니다.",
         checks: [
           { id: "1408-check-1", label: "장 순서를 바꾸면 저장 순서도 함께 바뀐다", done: true },
           { id: "1408-check-2", label: "장 사이 여백이 발행 화면과 같다", done: true },
@@ -273,7 +275,7 @@ export const AGENDA_FIXTURES: readonly Agenda[] = [
       },
       { id: "1112-comment-1", kind: "comment", at: "11월 19일 07:10", author: "agent", agent: "keke", text: "사흘째 아침 알림까지 도착했습니다. 세 날의 도착 시각을 결과에 붙였습니다." },
       {
-        id: "1112-result", kind: "result", at: "11월 19일 07:20",
+        id: "1112-result", kind: "result", at: "11월 19일 07:20", summaryReport: "이전한 할 일과 사흘간 아침 알림을 확인했습니다. 세 번 모두 예약 시각에 도착했습니다.",
         checks: [
           { id: "1112-check-1", label: "이전 뒤 할 일 12건이 그대로 보인다", done: true },
           { id: "1112-check-2", label: "사흘 아침 7시 알림이 모두 도착했다", done: true },
@@ -281,6 +283,19 @@ export const AGENDA_FIXTURES: readonly Agenda[] = [
         evidence: { kind: "days", label: "사흘 알림 기록표", caption: "11월 17일, 18일, 19일 아침 7시 알림 도착 기록." },
         caveat: "사흘 기록이 끝났습니다. 한 번 더 지켜볼지 지금 마무리할지 정해 주세요.",
       },
+    ],
+  },
+  {
+    id: "card-1730", number: 1730, kind: "work", title: "한 줄 클린 설치 스크립트 검증",
+    requestText: "새 환경에서 설치 명령을 실행하고 결과를 확인해 주세요.",
+    summary: "깨끗한 환경에서 설치를 검증하고 있습니다.", agent: "roselin", status: "running",
+    primary: null, secondary: null,
+    events: [
+      { id: "1730-request", kind: "request", at: "09:00", text: "깨끗한 환경에서 한 줄 설치를 실행하고 결과를 확인해 주세요." },
+      { id: "1730-session-1", kind: "session", at: "09:10", agent: "roselin", summary: "새 환경을 준비하고 설치 명령을 확인했습니다.", turns: [] },
+      { id: "1730-session-2", kind: "session", at: "09:20", agent: "roselin", summary: "설치를 실행 중입니다. 완료되면 실행 결과를 확인합니다.", turns: [] },
+      { id: "1730-session-3", kind: "session", at: "09:30", agent: "roselin", summary: "필요한 구성 요소를 내려받았습니다. 다음으로 설치 결과를 살펴봅니다.", turns: [] },
+      { id: "1730-session-4", kind: "session", at: "09:40", agent: "roselin", summary: "설치가 끝나 실행 명령을 확인하고 있습니다.", turns: [] },
     ],
   },
 ];
@@ -319,7 +334,6 @@ export function chatMessageText(agenda: Agenda, disposition: DispositionId) {
   const label = dispositionLabel(disposition);
   if (disposition === "keep") return `#${agenda.number} ${agenda.title}을 참고 문서로 남기고 완료했습니다. 보고 창의 설계 문서 열람에서 언제든 다시 읽을 수 있습니다.`;
   if (disposition === "recheck3") return `#${agenda.number} ${agenda.title}을 사흘 뒤 재확인으로 넘겼습니다. 보류함은 18개 그대로입니다.`;
-  if (disposition === "evening") return `#${agenda.number} ${agenda.title}을 오늘 저녁에 다시 보기로 넘겼습니다.`;
   return `#${agenda.number} ${agenda.title}을 ${label}로 처분했습니다.`;
 }
 
@@ -328,7 +342,6 @@ export function dispositionLabel(disposition: DispositionId) {
     approve: "승인 완료",
     keep: "참고 보관 후 완료",
     recheck3: "사흘 뒤 재확인",
-    evening: "저녁에 다시 보기",
     done: "했어",
   }[disposition];
 }
