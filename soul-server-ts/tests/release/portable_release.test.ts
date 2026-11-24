@@ -313,3 +313,11 @@ function metadataFor(files: Readonly<Record<string, string>>): PortableReleaseMe
 function envDocument(values: Readonly<Record<string, string>>): string {
   return `${Object.entries(values).map(([key, value]) => `${key}=${value}`).join("\n")}\n`;
 }
+
+it("classifies a real bound legacy portable release by its catalog path", async () => {
+  const { isPortableMcpNode } = await import("../../src/mcp_central/state.js");
+  const releaseDirectory = await createReleaseDirectory();
+  const envFile = await writeEnvDocument(releaseDirectory);
+  const { manifest } = await bindPortableRelease({ releaseDirectory, envFile, catalogPath: join(releaseDirectory, "catalog.yaml") });
+  expect(isPortableMcpNode({ PORTABLE_LOCAL_MCP_AUTHORIZATION: "fake" }, manifest)).toBe(true);
+});

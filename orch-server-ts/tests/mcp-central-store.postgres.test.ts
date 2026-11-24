@@ -471,3 +471,27 @@ describePostgres("node MCP snapshots", () => {
       .rejects.toThrow("prof-a-ht0-auth");
   });
 });
+
+describePostgres("encoded query secret references", () => {
+  let harness: FullSchemaPostgresHarness;
+  let service: ReturnType<typeof createMcpCentralService>;
+  beforeAll(async () => {
+    harness = await createFullSchemaPostgresHarness();
+    service = createMcpCentralService({ resolveSql: async () => harness.sql as unknown as LivePostgresSql });
+  }, 120_000);
+  afterAll(async () => { await harness?.cleanup(); });
+  it("blocks deleting server and hosted URL query secrets", async () => {
+    await service.addManagedNode("query-node");
+    await service.putServer("query-server", { type: "sse", config: { url: "https://example.com/?key=fake-value" }, node_scope: ["query-node"] });
+    await service.putProfile("query-profile", { hosted_tools: [{ type: "hosted_mcp", server_label: "remote", server_url: "https://example.com/?key=fake-value" }] });
+    await expect(service.deleteSecret("srv-query-server-qry-key")).rejects.toMatchObject({ code: "MCP_SECRET_INUSE" });
+    await expect(service.deleteSecret("prof-query-profile-ht0-qry-key")).rejects.toMatchObject({ code: "MCP_SECRET_INUSE" });
+  });
+  it("blocks rollback to a query reference whose secret is missing", async () => {
+    await service.addManagedNode("rollback-node");
+    await service.putServer("rollback-query", { type: "sse", config: { url: "https://example.com/?key=fake-value" }, node_scope: ["rollback-node"] });
+    const revision = (await service.listRevisions({ target: "server", target_id: "rollback-query" }))[0]!;
+    await harness.sql`DELETE FROM mcp_secrets WHERE name = ${"srv-rollback-query-qry-key"}`;
+    await expect(service.rollback(revision.id)).rejects.toMatchObject({ code: "MCP_ROLLBACK_BROKEN_REFERENCE" });
+  });
+});
