@@ -43,6 +43,8 @@ export type PersistentCreateDefaults = {
   settings: PersistentSettings;
   initial_instruction: string;
   unavailable_reason: string | null;
+  /** 설치기가 켠 서버만 true다. 없으면 false로 본다. */
+  bootstrap_enabled?: boolean;
 };
 
 export type PersistentSessionList = {
@@ -72,7 +74,8 @@ export type PersistentSessionWrite = {
 export type PersistentSessionCreate = {
   display_name: string;
   agent_id: string;
-  folder_id: string;
+  /** 서버가 기본 폴더를 정한다. 고르지 않으면 보내지 않는다. */
+  folder_id?: string;
   initial_instruction: string;
   settings: DefaultModelWrite;
 };
@@ -133,6 +136,8 @@ export function createPersistentSessionsApi(request: typeof fetch = fetch) {
       call<{ instruction: PersistentInstruction }>(`/${encodeURIComponent(sessionId)}/instructions`, "POST", { text }),
     updateInstruction: (sessionId: string, instructionId: string, input: PersistentInstructionUpdate) =>
       call<{ instruction: PersistentInstruction }>(`/${encodeURIComponent(sessionId)}/instructions/${encodeURIComponent(instructionId)}`, "PUT", input),
+    /** 이 사용자에게 보이는 영구 세션이 없을 때 서버가 기본 세션을 하나 만든다. 이미 있으면 만들지 않고 첫째를 돌려준다. */
+    bootstrap: () => call<{ created: boolean; session_id: string }>("/bootstrap", "POST"),
     create: (input: PersistentSessionCreate) =>
       call<{ session: PersistentSession; creation: "started"; warnings: unknown[] }>("", "POST", input),
   };

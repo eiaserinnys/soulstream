@@ -81,13 +81,17 @@ export interface ConfigModalApi {
 }
 interface ConfigModalProps {
   initialTab?: string;
+  /** persistent 탭을 열 때 처음 골라 둘 영구 세션. */
+  initialPersistentSessionId?: string | null;
+  /** 설정창에서 영구 세션을 저장한 뒤 저장값을 받는다(PAS 창이 새로 읽지 않고 반영한다). */
+  onPersistentSessionSaved?(session: import("../lib/persistent-sessions").PersistentSession): void;
   userEditor?: "create" | "edit";
   api?: ConfigModalApi;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }: ConfigModalProps) {
+export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, initialPersistentSessionId, onPersistentSessionSaved }: ConfigModalProps) {
   const { user } = useAuth();
 
   const {
@@ -245,7 +249,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
               ) : selectedTab === RECURRING_JOBS_TAB_NAME ? (
                 <RecurringJobsTab api={api?.recurring} assignment={api?.assignment} />
               ) : selectedTab === PERSISTENT_TAB_NAME ? (
-                <PersistentSessionsTab request={api?.request} assignment={api?.assignment} />
+                <PersistentSessionsTab request={api?.request} assignment={api?.assignment} initialPersistentSessionId={initialPersistentSessionId} onSessionSaved={onPersistentSessionSaved} />
               ) : selectedTab === USAGE_LOG_TAB_NAME ? (
                 <UsageLogTab request={api?.request} />
               ) : selectedTab === USAGE_STATS_TAB_NAME ? (

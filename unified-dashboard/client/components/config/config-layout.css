@@ -8,16 +8,11 @@
 .config-dialog .config-dialog-panel { padding:0; }
 .config-dialog [data-slot="dialog-panel-scroll"] { border-radius:0; }
 .config-dialog .config-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,3fr); min-height:0; }
-.config-dialog:not(.persistent-session-settings-popup) > [data-slot="dialog-panel-scroll"] { display:flex; }
-.config-dialog:not(.persistent-session-settings-popup) [data-slot="dialog-panel"] { display:flex; flex:1 1 auto; flex-direction:column; min-width:0; min-height:0; }
-.config-dialog .config-layout:not([data-layout="pas"]) { flex:1 1 auto; grid-template-rows:minmax(0,1fr); overflow:hidden; }
-.config-dialog .config-layout:not([data-layout="pas"]) > .config-category-nav,
-.config-dialog .config-layout:not([data-layout="pas"]) > .config-detail { min-height:0; overflow-y:auto; overscroll-behavior:contain; }
-.config-dialog.persistent-session-settings-popup > [data-slot="dialog-panel-scroll"] { display:flex; }
-.config-dialog.persistent-session-settings-popup [data-slot="dialog-panel"] { display:flex; flex:1 0 100%; flex-direction:column; min-width:0; min-height:100%; }
-.config-dialog.persistent-session-settings-popup .config-layout { flex:1 0 auto; }
-.config-dialog.persistent-session-settings-popup .config-layout > .config-category-nav,
-.config-dialog.persistent-session-settings-popup .config-layout > .config-detail { min-height:0; }
+.config-dialog > [data-slot="dialog-panel-scroll"] { display:flex; }
+.config-dialog [data-slot="dialog-panel"] { display:flex; flex:1 1 auto; flex-direction:column; min-width:0; min-height:0; }
+.config-dialog .config-layout { flex:1 1 auto; grid-template-rows:minmax(0,1fr); overflow:hidden; }
+.config-dialog .config-layout > .config-category-nav,
+.config-dialog .config-layout > .config-detail { min-height:0; overflow-y:auto; overscroll-behavior:contain; }
 .config-dialog .config-category-nav { padding:var(--v3-space-6) var(--v3-space-3); background:var(--control-surface); border-right:1px solid var(--border); }
 .config-dialog .config-category-nav section + section { margin-top:var(--v3-space-6); }
 .config-dialog .config-category-nav h3 { font:var(--v3-type-meta) var(--v3-font-family); color:var(--muted-foreground); margin:0 var(--v3-space-3) var(--v3-space-2); }
@@ -73,22 +68,6 @@
 .config-dialog .config-detail .persistent-session-quota-rows [data-testid="config-field-row"]:last-child { border-bottom:0; }
 .approved-dialog :is(.config-category-item,.config-back,.config-advanced > summary):focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); border-radius: var(--radius-floor); }
 
-.config-dialog.persistent-session-settings-popup > [data-slot="dialog-panel-scroll"] { overflow:hidden; }
-.config-dialog.persistent-session-settings-popup [data-slot="dialog-panel"] { flex:1 1 auto; min-height:0; min-width:0; }
-.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] { flex:1 1 auto; min-height:0; overflow:hidden; }
-.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] > .config-category-nav,
-.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] > .config-detail { min-height:0; }
-.config-dialog .config-category-nav[data-variant="pas"] { overflow:hidden; }
-.config-dialog .config-pas-category-list { min-width:0; }
-.config-dialog .config-category-nav[data-variant="pas"] .config-category-item { justify-content:flex-start; }
-.config-dialog .config-category-nav[data-variant="pas"] .config-category-chevron { display:none; }
-.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-detail { display:flex; flex-direction:column; overflow:hidden; }
-.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-detail-heading { flex:none; }
-.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-detail-scroll { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:0; }
-.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-detail-heading h2 { font:var(--v3-type-section) var(--v3-font-family); }
-.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-detail[aria-label="지속 지시"] .config-detail-heading { margin-bottom:0; padding-bottom:var(--v3-space-1); }
-.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-detail[aria-label="지속 지시"] .config-detail-heading h2 { margin:0; }
-.config-dialog .config-pas-category-list { display:flex; flex-direction:column; gap:var(--v3-space-2); }
 .config-dialog .session-story-settings-content { display:flex; flex-direction:column; gap:var(--v3-space-6); }
 .config-dialog .session-story-settings-groups { display:flex; flex-direction:column; gap:var(--v3-space-6); }
 .config-dialog .session-story-settings-section { display:flex; flex-direction:column; gap:var(--v3-space-2); }
@@ -100,7 +79,7 @@
 .config-dialog .session-story-settings-error > p { margin:0; color:var(--muted-foreground); font:var(--v3-type-body) var(--v3-font-family); }
 @media (max-width:40rem) {
  .config-dialog { height:calc(100dvh - var(--v3-space-8)); }
- .config-dialog .config-layout:not([data-layout="pas"]) { grid-template-columns:minmax(0,1fr); }
+ .config-dialog .config-layout { grid-template-columns:minmax(0,1fr); }
  .config-dialog .config-category-nav { border-right:0; background:transparent; padding:var(--v3-space-6); }
  .config-dialog .config-category-item { min-height:var(--v3-control-height); }
  .config-dialog .config-category-chevron { opacity:.65; }
@@ -111,11 +90,3 @@
  .config-dialog .config-detail:has(> [data-testid="agent-profile-settings"]) { padding-bottom:var(--v3-space-3); }
 }
 
-@media (max-width:40rem) {
- .config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
- .config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-category-nav { min-width:0; padding:var(--v3-space-3) var(--v3-space-6); border-right:0; border-bottom:1px solid var(--border); background:transparent; }
- .config-dialog.persistent-session-settings-popup .config-pas-category-list { flex-direction:row; width:100%; overflow-x:auto; scrollbar-width:none; }
- .config-dialog.persistent-session-settings-popup .config-pas-category-list::-webkit-scrollbar { display:none; }
- .config-dialog.persistent-session-settings-popup .config-category-nav[data-variant="pas"] .config-category-item { width:auto; min-width:max-content; min-height:var(--v3-control-height); }
- .config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-detail { padding:var(--v3-space-4) var(--v3-space-6); }
-}

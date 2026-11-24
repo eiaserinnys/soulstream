@@ -4,7 +4,6 @@ import { ArrowLeftRight } from 'lucide-react';
 import { navigateDashboard } from '../dashboard-navigation';
 import { createPersistentSessionsApi, type PersistentSession, type PersistentSessionList } from '../lib/persistent-sessions';
 import { readPersistentSessionDevicePreferences } from '../lib/persistent-session-device-preferences';
-import { ConfigModal } from '../components/ConfigModal';
 import { SettingsListRow } from '../components/config/SettingsListDetail';
 
 export function persistentSessionPortrait(nodeId: string | null | undefined, agentId: string | null | undefined) {
@@ -39,7 +38,6 @@ export function PersistentSessionEntry() {
   const api = useMemo(() => createPersistentSessionsApi(), []);
   const [listing, setListing] = useState<PersistentSessionList | null>(null);
   const [open, setOpen] = useState(false);
-  const [configOpen, setConfigOpen] = useState(false);
   const entering = useRef(false);
   useEffect(() => { let current = true; void api.list().then(result => { if (current) setListing(result); }).catch(() => { /* Manual entry owns the existing error/retry surface. */ }); return () => { current = false; }; }, [api]);
   const lastId = user?.email ? readPersistentSessionDevicePreferences(user.email).lastSessionId : null;
@@ -51,7 +49,8 @@ export function PersistentSessionEntry() {
     try {
       const current = await api.list();
       setListing(current);
-      if (!current.sessions.length) setConfigOpen(true);
+      // 0개면 PAS 창이 빈 상태를 그린다.
+      if (!current.sessions.length) navigateDashboard('/persistent');
       else if (current.sessions.length === 1) navigateDashboard(`/persistent/${encodeURIComponent(current.sessions[0]!.session_id)}`);
       else setOpen(!open);
     } catch {
@@ -65,6 +64,5 @@ export function PersistentSessionEntry() {
       <PopoverTrigger render={<DashboardIconCap ref={triggerRef} label="영구 세션 열기" data-testid="persistent-session-entry" onClick={enter}/> }><ProfileAvatar role="assistant" shape="circle" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji="🤖"/></PopoverTrigger>
       <PopoverPopup align="end" anchor={isMobile ? triggerRef.current?.closest<HTMLElement>('.dashboard-toolbar-actions') ?? undefined : undefined} className="v3-popup-chrome"><div className="v3-surface">{listing?.sessions.map(session => <PersistentSessionChoiceRow key={session.session_id} session={session} selected={lastId === session.session_id} onSelect={() => { setOpen(false); navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`); }}/>)}</div></PopoverPopup>
     </Popover>
-    <ConfigModal open={configOpen} onOpenChange={setConfigOpen} initialTab="persistent"/>
   </>;
 }

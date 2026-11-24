@@ -24,7 +24,7 @@ export function usePersistentSessionStartup(pathname: string) {
     void request.current.then(({ sessions }) => {
       if (!current || consumed.current) return;
       consumed.current = true;
-      if (!sessions.length) return;
+      // 0개여도 /persistent로 보낸다. 빈 상태는 그 화면이 그린다.
       const target = sessions.length === 1 ? sessions[0] : sessions.find(session => session.session_id === preferences.lastSessionId);
       navigateDashboard(target ? `/persistent/${encodeURIComponent(target.session_id)}` : '/persistent', true);
     }).catch(error => {

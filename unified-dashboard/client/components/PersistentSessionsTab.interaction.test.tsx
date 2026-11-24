@@ -9,7 +9,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@seosoyoung/soul-ui", async () => {
   const React = await import("react");
+  const actual = await vi.importActual<typeof import("@seosoyoung/soul-ui")>("@seosoyoung/soul-ui");
   return {
+    ...actual,
     cn: (...parts: unknown[]) => parts.filter(Boolean).join(" "),
     Button: ({ children, variant: _variant, size: _size, ...props }: any) => React.createElement("button", props, children),
     Input: ({ nativeInput: _native, ...props }: any) => React.createElement("input", props),
@@ -83,7 +85,7 @@ describe("PersistentSessionsTab", () => {
     await waitFor(() => expect(buttonContaining("리뷰 관제")).toBeDefined());
     flushSync(() => buttonContaining("리뷰 관제")?.click());
     await waitFor(() => expect(nameInput().value).toBe("리뷰 관제"));
-    expect(inputValues()).toContain("대기 변경 없음");
+    expect(document.body.textContent).toContain("대기 변경 없음");
 
     setInput(nameInput(), "리뷰 관제 수정");
     clickButton("변경 저장");
@@ -102,7 +104,7 @@ describe("PersistentSessionsTab", () => {
       display_name: "리뷰 관제 수정",
       settings: { default_model: { model_preset: "preset-b", reasoning_effort: null }, show_work_details: false },
     });
-    await waitFor(() => expect(inputValues()).toContain("다음 실행부터 preset-b"));
+    await waitFor(() => expect(document.body.textContent).toContain("다음 실행부터 preset-b"));
 
     clickButton("새로고침");
     await waitFor(() => expect(calls.filter((call) => call.method === "GET").length).toBeGreaterThan(1));
@@ -123,7 +125,7 @@ describe("PersistentSessionsTab", () => {
     expect(nameInput().value).toBe("리뷰 관제");
   });
 
-  it("saves both chat display flags with the existing editor and preserves a draft name", async () => {
+  it("saves each chat display flag at once and preserves a draft name through the account save", async () => {
     const { request, calls } = server();
     await renderTab(request);
     await waitFor(() => expect(buttonContaining("리뷰 관제")).toBeDefined());
@@ -138,18 +140,24 @@ describe("PersistentSessionsTab", () => {
     const candidateToggle = candidateRow?.querySelector<HTMLButtonElement>("[role=switch]");
     if (!candidateToggle) throw new Error("Jev 후보 토글을 찾지 못했습니다.");
     setInput(nameInput(), "토글 중에도 남는 이름");
+    // 표시 항목은 누르는 즉시 그 항목만 저장하고, 이름 초안은 그대로 남는다.
     flushSync(() => toggle.click());
-    flushSync(() => candidateToggle.click());
-    expect(calls.filter((call) => call.method === "PUT")).toHaveLength(0);
-    expect(nameInput().value).toBe("토글 중에도 남는 이름");
-    clickButton("변경 저장");
     await waitFor(() => expect(calls.filter((call) => call.method === "PUT")).toHaveLength(1));
-    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
+    flushSync(() => candidateToggle.click());
+    await waitFor(() => expect(calls.filter((call) => call.method === "PUT")).toHaveLength(2));
+    expect(calls.filter((call) => call.method === "PUT").map((call) => call.body)).toEqual([
+      { settings: { show_generation_separator: false } },
+      { settings: { show_jev_candidates: false } },
+    ]);
+    expect(nameInput().value).toBe("토글 중에도 남는 이름");
+    await waitFor(() => expect(candidateToggle.getAttribute("aria-checked")).toBe("false"));
+    clickButton("변경 저장");
+    await waitFor(() => expect(calls.filter((call) => call.method === "PUT")).toHaveLength(3));
+    expect(calls.filter((call) => call.method === "PUT")[2]?.body).toEqual({
       display_name: "토글 중에도 남는 이름",
       settings: {
         default_model: { model_preset: "preset-a", reasoning_effort: "high" },
-        show_generation_separator: false,
-        show_jev_candidates: false,
         show_work_details: false,
       },
     });
@@ -159,7 +167,7 @@ describe("PersistentSessionsTab", () => {
     expect(document.body.textContent).not.toContain("화면에서만 숨기고 기록은 남습니다");
   });
 
-  it("saves the usage mode with the account draft and retains the canonical setting", async () => {
+  it("saves the usage mode and the other display flags at once while the name draft stays", async () => {
     const { request, calls } = server();
     await renderTab(request);
     await waitFor(() => expect(buttonContaining("리뷰 관제")).toBeDefined());
@@ -183,21 +191,20 @@ describe("PersistentSessionsTab", () => {
 
     setInput(nameInput(), "토글 중에도 남는 이름");
     flushSync(() => character?.click());
-    flushSync(() => motion?.click());
-    flushSync(() => modeButtons[2]?.click());
-    expect(calls.filter((call) => call.method === "PUT")).toHaveLength(0);
-    clickButton("변경 저장");
     await waitFor(() => expect(calls.filter((call) => call.method === "PUT")).toHaveLength(1));
-    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
-      display_name: "토글 중에도 남는 이름",
-      settings: {
-        default_model: { model_preset: "preset-a", reasoning_effort: "high" },
-        show_character: false,
-        animate_character: false,
-        turn_usage_mode: "hidden",
-        show_work_details: false,
-      },
-    });
+    await waitFor(() => expect(character?.getAttribute("aria-checked")).toBe("false"));
+    flushSync(() => motion?.click());
+    await waitFor(() => expect(calls.filter((call) => call.method === "PUT")).toHaveLength(2));
+    await waitFor(() => expect(motion?.getAttribute("aria-checked")).toBe("false"));
+    flushSync(() => modeButtons[2]?.click());
+    await waitFor(() => expect(calls.filter((call) => call.method === "PUT")).toHaveLength(3));
+    expect(calls.filter((call) => call.method === "PUT").map((call) => call.body)).toEqual([
+      { settings: { show_character: false } },
+      { settings: { animate_character: false } },
+      { settings: { turn_usage_mode: "hidden" } },
+    ]);
+    await waitFor(() => expect(modeButtons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "false", "true"]));
+    expect(nameInput().value).toBe("토글 중에도 남는 이름");
   });
 
   it("blocks buttons while saving and keeps the input after a failure so it can be saved again", async () => {
@@ -349,7 +356,7 @@ describe("PersistentSessionsTab", () => {
     expect(buttonContaining("옛 세션")?.textContent).not.toContain("null");
     flushSync(() => buttonContaining("옛 세션")?.click());
     await waitFor(() => expect(document.body.textContent).toContain("이 세션의 노드를 알 수 없어 편집할 수 없습니다."));
-    expect(inputValues()).toContain("에이전트 정보 없음");
+    expect(document.body.textContent).toContain("에이전트 정보 없음");
     expect(button("변경 저장")?.disabled).toBe(true);
     expect(button("영구 세션 해제")?.disabled).toBe(true);
     expect((document.body.querySelector('[aria-label="기본 모델"]') as HTMLSelectElement).disabled).toBe(true);
@@ -455,6 +462,11 @@ function server(options: ServerOptions = {}) {
     const method = init?.method ?? "GET";
     const body = typeof init?.body === "string" ? JSON.parse(init.body) as Record<string, any> : undefined;
     if (path === "/api/nodes/node-a/agents") return json({ agents: [{ id: "agent-a", name: "에이전트 A" }] });
+    // 선택한 세션의 상세가 함께 읽는 지속 지시, 기록, 줄거리, 모델 목록. 이 시험들의 관심사가 아니라 빈 응답으로 둔다.
+    if (method === "GET" && /^\/api\/persistent-sessions\/[^/]+\/instructions$/.test(path)) return json({ instructions: [] });
+    if (method === "GET" && /^\/api\/sessions\/[^/]+\/timeline/.test(path)) return json({ messages: [], next_cursor: null });
+    if (method === "GET" && /^\/api\/sessions\/[^/]+\/story$/.test(path)) return json({ highlight: null, narrative: null, unfolded_turn_summaries: [], narrative_through_event_id: null, fold_count: 0, updated_at: null });
+    if (method === "GET" && path === "/api/nodes/node-a/model-presets") return json({ model_presets: [] });
     calls.push({ path, method, body });
     if (path === "/api/persistent-sessions" && method === "GET") {
       const early = options.onList?.();
@@ -523,11 +535,6 @@ function json(body: unknown, status = 200): Response {
 
 function failure(status: number, code: string, message: string, extra: Record<string, unknown> = {}): Response {
   return json({ error: { code, message }, ...extra }, status);
-}
-
-/** 읽기 전용 값은 입력 칸의 value로 보인다. */
-function inputValues(): string[] {
-  return Array.from(document.body.querySelectorAll("input")).map((input) => input.value);
 }
 
 function nameInput(): HTMLInputElement {

@@ -111,3 +111,6 @@
 @media (max-width: 760px) {
   .persistent-session-screen .v3-workspace-scrim { inset-block-end: 0; }
 }
+.persistent-empty-state { display: flex; flex-direction: column; align-items: center; gap: var(--v3-space-3); max-width: 100%; text-align: center; word-break: keep-all; overflow-wrap: anywhere; }
+.persistent-empty-state p { margin: 0; }
+.persistent-empty-reason { color: var(--muted-foreground); font: var(--v3-type-meta) var(--v3-font-family); }

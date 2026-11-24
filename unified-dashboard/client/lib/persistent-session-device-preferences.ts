@@ -13,7 +13,7 @@ export type PersistentSessionWeeklyUsageNodeSelection = {
 type PreferenceStorage = Pick<Storage, "getItem" | "setItem">;
 
 const defaults: PersistentSessionDevicePreferences = {
-  openOnStart: false,
+  openOnStart: true,
   lastSessionId: null,
   showWeeklyUsage: false,
   weeklyUsageNodeSelection: null,
