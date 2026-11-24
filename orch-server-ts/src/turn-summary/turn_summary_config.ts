@@ -160,10 +160,10 @@ export class TurnSummaryConfigService {
         : {};
       const catalog = this.modelCatalog.snapshot();
       const provider = overlay.provider ?? base.provider;
-      const resolveTaskModel = (presetId: string): string => {
+      const resolveTaskModel = (presetId: string, expectedBackend: typeof provider): string => {
         const preset = resolveModelPreset(catalog, presetId);
-        if (preset.backend !== provider) {
-          throw new Error(`Task model preset backend ${preset.backend} does not match provider ${provider}`);
+        if (preset.backend !== expectedBackend) {
+          throw new Error(`Task model preset backend ${preset.backend} does not match provider ${expectedBackend}`);
         }
         return preset.model;
       };
@@ -171,11 +171,11 @@ export class TurnSummaryConfigService {
       const merged = { ...base, ...overlay };
       const config = TurnSummaryConfigSchema.parse({
         ...merged,
-        model: merged.model ?? resolveTaskModel(defaults.turn_summary.model_preset),
+        model: merged.model ?? resolveTaskModel(defaults.turn_summary.model_preset, provider),
         story_model: merged.story_model ?? (base.model === undefined
-          ? resolveTaskModel(defaults.turn_story.model_preset) : merged.model),
+          ? resolveTaskModel(defaults.turn_story.model_preset, "codex") : merged.model),
         instruction_extraction_model: merged.instruction_extraction_model
-          ?? resolveTaskModel(defaults.instruction_extraction.model_preset),
+          ?? resolveTaskModel(defaults.instruction_extraction.model_preset, "codex"),
       });
       this.lastSuccessful = config;
       return config;

@@ -18,6 +18,7 @@ import {
   parseCodexJsonl,
 } from "../src/turn-summary/codex_exec_turn_summarizer.js";
 import { resolveCodexCliPath } from "@soulstream/executable-path";
+import { resolveModelPreset } from "@soulstream/model-catalog";
 import {
   OpenAiApiTurnSummarizer,
 } from "../src/turn-summary/openai_api_turn_summarizer.js";
@@ -256,6 +257,24 @@ describe("turn summary prompt", () => {
 });
 
 describe("TurnSummaryConfigService", () => {
+  it("loads a legacy openai-api overlay with catalog defaults for story and extraction", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-api-legacy-"));
+    const path = join(dir, "turn-summary.yaml");
+    const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8");
+    writeFileSync(path, source, "utf8");
+    writeFileSync(join(dir, "turn-summary.local.yaml"), "provider: openai-api\nmodel: summary-model\n", "utf8");
+    const catalog = repositoryModelCatalog();
+    const snapshot = catalog.snapshot();
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, catalog);
+
+    expect(service.read()).toMatchObject({
+      provider: "openai-api",
+      model: "summary-model",
+      storyModel: resolveModelPreset(snapshot, snapshot.task_defaults.turn_story.model_preset).model,
+      instructionExtractionModel: resolveModelPreset(snapshot, snapshot.task_defaults.instruction_extraction.model_preset).model,
+    });
+  });
+
   it("accepts an openai-api overlay providing all three models", () => {
     const dir = trackTempDir(join(tmpdir(), "turn-summary-api-overlay-"));
     const path = join(dir, "turn-summary.yaml");
