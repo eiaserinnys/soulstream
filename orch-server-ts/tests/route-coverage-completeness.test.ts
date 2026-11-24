@@ -205,6 +205,8 @@ function createAllOptInRouteApp() {
         listForNode: () => [],
       },
     },
+    agentContextOverviewRoutes: inert,
+    skillGuidesRoutes: { ...inert, skills: inert, store: inert, recurringJobs: inert, resolveActor: async () => undefined } as never,
     nodeClaudeAuthRoutes: inert,
     nodeSnapshotRoutes: inert,
     nodePairRoutes: { service: inert },

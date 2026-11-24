@@ -7050,6 +7050,32 @@
     "name": "put_report_entry"
   },
   {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": false
+    },
+    "description": "skill_lint.py --json-out <파일> 로 만든 린트 보고 파일(JSON, 900KB 이하)을 읽어 orch에 마지막 한 건으로 간직한다. 설정 창의 「스킬과 카탈로그」 탭이 이 보고를 읽는다. report_file은 이 세션의 작업 폴더 안 경로여야 한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "report_file": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "report_file"
+      ],
+      "type": "object"
+    },
+    "name": "put_skill_lint_report"
+  },
+  {
     "description": "아웃바운드 구독의 전달 기록 하나를 지금 다시 보내고 그 결과(outcome)를 돌려준다. 꺼진 구독은 다시 보내지 않는다. 소유자는 호출 세션의 소유자이고, 그 사람의 설정 화면 웹훅 탭에 같은 목록으로 보인다.",
     "execution": {
       "taskSupport": "forbidden"

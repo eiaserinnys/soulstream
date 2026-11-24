@@ -29,6 +29,8 @@ import { cogitoRouteAuthRequirements } from "../cogito/cogito_routes.js";
 import { executeProxyRouteAuthRequirements } from "../execute/execute_proxy_routes.js";
 import { ephemeralLlmRouteAuthRequirements } from "../llm/ephemeral_llm_routes.js";
 import { folderRouteAuthRequirements } from "../folders/folder_routes.js";
+import { agentContextOverviewRouteAuthRequirements } from "../node/agent_context_overview_routes.js";
+import { skillGuidesRouteAuthRequirements } from "../skills/skill_guides_routes.js";
 import { nodeAgentProfileRouteAuthRequirements } from "../node/node_agent_profile_routes.js";
 import { nodeClaudeAuthRouteAuthRequirements } from "../node/node_claude_auth_routes.js";
 import { nodeSnapshotRouteAuthRequirements } from "../node/node_snapshot_routes.js";
@@ -96,6 +98,8 @@ export const routeCoverageOwners = [
   { owner: "agent.profiles", authRequirements: agentProfileRouteAuthRequirements },
   { owner: "context.bundles", authRequirements: contextBundleRouteAuthRequirements },
   { owner: "node.agent-profiles", authRequirements: nodeAgentProfileRouteAuthRequirements },
+  { owner: "node.agent-context-overview", authRequirements: agentContextOverviewRouteAuthRequirements },
+  { owner: "skill.guides", authRequirements: skillGuidesRouteAuthRequirements },
   { owner: "node.claude-auth", authRequirements: nodeClaudeAuthRouteAuthRequirements },
   { owner: "node.snapshot", authRequirements: nodeSnapshotRouteAuthRequirements },
   { owner: "node.pairing", authRequirements: nodePairingRouteAuthRequirements },
@@ -187,6 +191,10 @@ export const tsOnlyRouteKeys = [
   "GET /api/node/releases/current",
   "GET /api/node/releases/{source_commit}",
   "GET /api/nodes/{node_id}/model-presets",
+  "GET /api/nodes/{node_id}/agents/context-overview",
+  "GET /api/skill-guides",
+  "GET /api/skill-guides/{name}/body",
+  "POST /api/skill-guides/verify",
   "GET /api/nodes/{node_id}/claude-auth/accounts",
   "PATCH /api/nodes/{node_id}/claude-auth/accounts/{id}",
   "DELETE /api/nodes/{node_id}/claude-auth/accounts/{id}",

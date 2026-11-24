@@ -1,3 +1,5 @@
+import { registerAgentContextOverviewRoutes, type AgentContextOverviewRouteOptions } from "./node/agent_context_overview_routes.js";
+import { registerSkillGuidesRoutes, type SkillGuidesRouteOptions } from "./skills/skill_guides_routes.js";
 import { registerPersistentDefaultsRoutes, type PersistentDefaultsRoutes } from "./admin/persistent_defaults_routes.js";
 import { registerMcpCentralRoutes, type McpCentralRouteOptions } from "./mcp_central/routes.js";
 import { registerConversationRoutes, type ConversationRouteOptions } from "./conversation/conversation_routes.js";
@@ -239,6 +241,8 @@ export type CreateAppOptions = {
   claudeCentralRoutes?: ClaudeCentralRouteOptions;
   mcpCentralRoutes?: McpCentralRouteOptions;
   nodeAgentProfileRoutes?: NodeAgentProfileRouteOptions;
+  agentContextOverviewRoutes?: AgentContextOverviewRouteOptions;
+  skillGuidesRoutes?: SkillGuidesRouteOptions;
   agentProfileRoutes?: AgentProfileRouteOptions;
   contextBundleRoutes?: ContextBundleRouteOptions;
   nodeWsRoute?: NodeWsRouteOptions;
@@ -324,6 +328,12 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.nodeAgentProfileRoutes !== undefined) {
     registerNodeAgentProfileRoutes(app, options.nodeAgentProfileRoutes);
   }
+  if (options.agentContextOverviewRoutes !== undefined) {
+    registerAgentContextOverviewRoutes(app, options.agentContextOverviewRoutes);
+  }
+  if (options.skillGuidesRoutes !== undefined) {
+    registerSkillGuidesRoutes(app, options.skillGuidesRoutes);
+  }
   if (options.agentProfileRoutes !== undefined) {
     registerAgentProfileRoutes(app, options.agentProfileRoutes);
   }
@@ -379,6 +389,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     recurringJobs: options.recurringJobHostRoutes ?? options.mcpHostRoutes.recurringJobs!,
     cardOrchestration: options.cardOrchestrationRoutes ?? options.mcpHostRoutes.cardOrchestration!,
     ...(options.pageYjsRoutes ? { pages: { service: options.pageYjsRoutes.createService(app.log), logger: app.log } } : {}),
+    ...(options.skillGuidesRoutes ? { skillLintReport: options.skillGuidesRoutes.store } : {}),
     ...(options.mcpHostRoutes.skills ? { skills: { ...options.mcpHostRoutes.skills, logger: app.log } } : {}),
     };
     registerMcpHostRoutes(app, mcpOptions);

@@ -159,6 +159,30 @@ export const skillHandlers = {
       return errorResult("Skill catalog matching failed");
     }
   },
+  put_skill_lint_report: async (options, { report }, context) => {
+    const store = options.skillLintReport;
+    if (!store) return errorResult("skill lint report storage is not configured");
+    const body = report as Record<string, unknown>;
+    if (typeof body.generated_at !== "string" || !Array.isArray(body.skills)) {
+      return errorResult("린트 보고는 generated_at 문자열과 skills 배열을 가진 객체여야 합니다.");
+    }
+    // 반복 예약 실행이 올린 보고만 verify_job_id를 새로 잇고, 그 밖에는 store가 이전 값을 유지한다.
+    const run = context.callerSessionId
+      ? await options.recurringJobs.service.getRunBySessionId(context.callerSessionId)
+      : null;
+    await store.put({
+      report: body,
+      sessionId: context.callerSessionId,
+      nodeId: context.nodeId,
+      verifyJobId: run?.jobId ?? null,
+    });
+    return jsonResult({
+      ok: true,
+      generated_at: body.generated_at,
+      skill_count: body.skills.length,
+      catalog_count: Array.isArray(body.catalogs) ? body.catalogs.length : 0,
+    });
+  },
   load_skill: async (options, { name, intent, pins }) => {
     const skills = options.skills;
     if (!skills?.logger) return errorResult("skill loading is not configured");

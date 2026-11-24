@@ -247,14 +247,29 @@ function projectRuntimeProfile(
   return projected;
 }
 
+/** 펼친 소스가 어디서 왔는가. 번들 이름은 번들 ID다. */
+export type AtomContextOrigin =
+  | { readonly kind: "bundle"; readonly bundle_id: string; readonly bundle_name: string }
+  | { readonly kind: "profile" };
+
+/** 번들 몫 다음 프로필 자체 몫 차례 그대로, 각 칸이 어디서 왔는지 함께 남긴다. */
+export function expandAtomContextsWithOrigin(
+  profile: Pick<AgentProfileRecord, "contextBundles" | "atomContexts">,
+  bundlesById: ReadonlyMap<string, ContextBundleRecord>,
+): readonly { readonly context: AgentAtomContext; readonly origin: AtomContextOrigin }[] {
+  return [
+    ...profile.contextBundles.flatMap((bundleId) => bundlesById.get(bundleId)!.atomContexts.map((context) => ({
+      context, origin: { kind: "bundle", bundle_id: bundleId, bundle_name: bundleId } as const,
+    }))),
+    ...profile.atomContexts.map((context) => ({ context, origin: { kind: "profile" } as const })),
+  ];
+}
+
 export function expandAtomContexts(
   profile: Pick<AgentProfileRecord, "contextBundles" | "atomContexts">,
   bundlesById: ReadonlyMap<string, ContextBundleRecord>,
 ): readonly AgentAtomContext[] {
-  return [
-    ...profile.contextBundles.flatMap((bundleId) => bundlesById.get(bundleId)!.atomContexts),
-    ...profile.atomContexts,
-  ];
+  return expandAtomContextsWithOrigin(profile, bundlesById).map(({ context }) => context);
 }
 
 export async function loadContextBundlesById(
