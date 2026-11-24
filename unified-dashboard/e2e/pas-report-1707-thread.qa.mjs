@@ -22,6 +22,9 @@ import { fileURLToPath } from "node:url";
 const dashboardDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = resolve(dashboardDir, "dist-mockups/pas-report-1707-thread");
 const captureDir = process.env.PAS_RT1707_CAPTURE_DIR ?? resolve(dashboardDir, ".local/artifacts/pas-report-1707-thread");
+const scope = process.env.PAS_RT1707_SCOPE ?? "all";
+const allowedScopes = new Set(["all", "flows", "1440x900", "820x1180", "390x844", "360x780"]);
+if (!allowedScopes.has(scope)) throw new Error(`알 수 없는 QA 범위: ${scope}`);
 const textExtensions = new Set([".ts", ".tsx", ".css", ".html", ".mjs", ".md", ".json"]);
 
 const { runPlaywrightLifecycle } = await import("./playwright-lifecycle-harness.mjs");
@@ -218,7 +221,7 @@ try {
       { id: "390x844", width: 390, height: 844 },
       { id: "360x780", width: 360, height: 780 },
     ];
-    for (const viewport of viewports) {
+    for (const viewport of viewports.filter((item) => scope === "all" || scope === item.id)) {
       for (const theme of ["dark", "light"]) {
         const page = await newPage(browser, viewport, theme);
         await check(`${viewport.id} ${theme} 메인 화면`, async () => {
@@ -394,6 +397,7 @@ try {
       }
     }
 
+    if (scope === "all" || scope === "flows") {
     const viewport = { width: 1440, height: 900 };
     const page = await newPage(browser, viewport, "dark");
     await gotoPas(page, "dark");
@@ -808,6 +812,7 @@ try {
     });
 
     await page.close();
+    }
   });
 
   await check("금지 문장 부호와 어휘 없음", () => {
