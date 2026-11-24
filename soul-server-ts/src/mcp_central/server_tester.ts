@@ -10,7 +10,8 @@ type Stage = "config" | "connect" | "initialize" | "list_tools" | "timeout";
 
 export async function testMcpServer(server: Server, env: Record<string, string | undefined>, timeoutMs = 10_000) {
   const start = Date.now();
-  let stage: Stage = "config";
+  const state: { stage: Stage } = { stage: "config" };
+  const currentStage = (): Stage => state.stage;
   let transport: Transport | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const sensitive = new Set<string>();
@@ -50,19 +51,19 @@ export async function testMcpServer(server: Server, env: Record<string, string |
       transport = server.type === "sse" ? new SSEClientTransport(url, options) : new StreamableHTTPClientTransport(url, options);
     }
     const run = async () => {
-      stage = "connect";
+      state.stage = "connect";
       const startTransport = transport!.start.bind(transport);
       transport!.start = async () => {
         await startTransport();
-        if (server.type !== "streamable_http") stage = "initialize";
+        if (server.type !== "streamable_http") state.stage = "initialize";
         const onmessage = transport!.onmessage;
         transport!.onmessage = (message, extra) => {
-          if (stage === "connect") stage = "initialize";
+          if (state.stage === "connect") state.stage = "initialize";
           onmessage?.(message, extra);
         };
       };
       await client.connect(transport!);
-      stage = "list_tools";
+      state.stage = "list_tools";
       let cursor: string | undefined;
       let count = 0;
       const tools: string[] = [];
@@ -79,13 +80,14 @@ export async function testMcpServer(server: Server, env: Record<string, string |
         tool_count: count, tools: tools.map(scrub) };
     };
     return await Promise.race([run(), new Promise<never>((_, reject) => {
-      timer = setTimeout(() => { stage = "timeout"; reject(new Error("timeout")); }, Math.min(timeoutMs, 13_000));
+      timer = setTimeout(() => { state.stage = "timeout"; reject(new Error("timeout")); }, Math.min(timeoutMs, 13_000));
     })]);
   } catch {
-    return { ok: false as const, latency_ms: Date.now() - start, error_stage: stage, error_message: `MCP ${stage} failed` };
+    const errorStage = currentStage();
+    return { ok: false as const, latency_ms: Date.now() - start, error_stage: errorStage, error_message: `MCP ${errorStage} failed` };
   } finally {
     if (timer) clearTimeout(timer);
-    if (stage === "timeout" && transport instanceof StdioClientTransport && transport.pid !== null) {
+    if (currentStage() === "timeout" && transport instanceof StdioClientTransport && transport.pid !== null) {
       try { process.kill(transport.pid, "SIGKILL"); } catch { /* process already exited */ }
     }
     await transport?.close().catch(() => {});
