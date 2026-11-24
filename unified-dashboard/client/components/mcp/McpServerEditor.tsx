@@ -6,6 +6,8 @@ import type {
   McpIcon,
   McpProfile,
   McpServer,
+  McpTestInput,
+  McpTestResult,
 } from "../../lib/mcp-api";
 import {
   SettingsAlert,
@@ -45,6 +47,7 @@ type Props = {
   addToProfiles(serverId: string, profiles: McpProfile[]): Promise<boolean>;
   justCreated: boolean;
   dismissCreated(): void;
+  test?(input: McpTestInput): Promise<McpTestResult>;
 };
 const empty = (): DefinitionDraft =>
   readDefinition({ type: "streamable_http", config: { url: "" } });
@@ -61,6 +64,7 @@ export function McpServerEditor({
   addToProfiles,
   justCreated,
   dismissCreated,
+  test,
 }: Props) {
   const [id, setId] = useState(server?.id ?? "");
   const [draft, setDraft] = useState<DefinitionDraft>(() =>
@@ -85,6 +89,11 @@ export function McpServerEditor({
     Record<string, { name: string; value: string }>
   >({});
   const [formError, setFormError] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [testNode, setTestNode] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<McpTestResult | null>(null);
+  const [testError, setTestError] = useState("");
   const [picker, setPicker] = useState(false);
   const [selectedProfiles, setSelectedProfiles] = useState<string[]>([]);
   const createdPrompt = useRef<HTMLDivElement>(null);
@@ -113,6 +122,9 @@ export function McpServerEditor({
     setIcon(server?.icon ?? null);
     setSecrets({});
     setFormError("");
+    setDirty(false);
+    setTestResult(null);
+    setTestError("");
     setPicker(false);
     setSelectedProfiles([]);
   }, [
@@ -120,8 +132,13 @@ export function McpServerEditor({
     server?.version,
     config.managed_nodes.map((node) => node.node_id).join("\u0000"),
   ]);
+  const testNodes = config.managed_nodes.filter(node => !server || scope.includes(node.node_id));
+  useEffect(() => {
+    if (!testNodes.some(node => node.node_id === testNode)) setTestNode(testNodes[0]?.node_id ?? "");
+  }, [testNodes.map(node => node.node_id).join("|"), testNode]);
+  const markEdit = () => { setDirty(true); setTestResult(null); setTestError(""); onEdit(); };
   const setSecret = (unitId: string, name: string, value: string | null) => {
-    onEdit();
+    markEdit();
     setSecrets((current) => {
       const next = { ...current };
       if (value === null) delete next[unitId];
@@ -133,6 +150,24 @@ export function McpServerEditor({
     profile.mcp_servers.includes(server?.id ?? ""),
   );
   const secretNames = config.secrets.map((secret) => secret.name);
+  const runTest = async () => {
+    if (!test || !testNode) return;
+    const pending = pendingSecrets([draft, ...Object.values(overrides)], secrets);
+    const clean = (value: string) => Object.values(pending).filter(Boolean).reduce((text, secret) => text.split(secret).join("[비공개]"), value);
+    const issue = validateUnits([draft, ...Object.values(overrides)], secretNames, pending);
+    if (issue) { setTestError(issue); return; }
+    setTesting(true); setTestError(""); setTestResult(null);
+    try {
+      const result = await test(server && !dirty ? { node_id: testNode, server_id: server.id } : {
+        node_id: testNode, draft_server: { id: id.trim() || "draft", ...writeDefinition(draft), node_scope: scope,
+          node_overrides: Object.fromEntries(Object.entries(overrides).map(([node, value]) => [node, writeDefinition(value)])) },
+        ...(Object.keys(pending).length ? { inline_secrets: pending } : {}),
+      });
+      setTestResult(result.ok ? { ...result, tools: result.tools.map(clean), ...(result.server_info ? { server_info: { name: clean(result.server_info.name), version: clean(result.server_info.version) } } : {}) }
+        : { ...result, error_message: clean(result.error_message) });
+    } catch (caught) { setTestError(clean(caught instanceof Error ? caught.message : "연결 시험에 실패했습니다.")); }
+    finally { setTesting(false); }
+  };
   return (
     <div className="space-y-4">
       <SettingsDetailHeader
@@ -140,7 +175,9 @@ export function McpServerEditor({
         subtitle={server ? `${server.type} / 판 ${server.version}` : undefined}
         leadingIcon={<McpIconTile id={id || "M"} icon={icon} />}
         actions={
-          server ? (
+          <>
+          {test ? <><label className="flex items-center gap-2 text-sm">시험 노드<select aria-label="시험 노드" className="rounded-floor border border-border bg-background p-2" value={testNode} onChange={event => { setTestNode(event.target.value); setTestResult(null); }}><option value="" disabled>노드 선택</option>{testNodes.map(node => <option key={node.node_id} value={node.node_id}>{node.node_id}</option>)}</select></label><Button type="button" variant="outline" disabled={busy || testing || !testNode} onClick={() => void runTest()}>{testing ? "시험 중…" : "연결 시험"}</Button></> : null}
+          {server ? (
             <>
               <Button
                 type="button"
@@ -157,9 +194,13 @@ export function McpServerEditor({
                 삭제
               </Button>
             </>
-          ) : null
+          ) : null}
+          </>
         }
       />
+      {testing ? <p role="status" className="text-sm text-muted-foreground">연결을 시험하는 중…</p> : null}
+      {testError ? <SettingsAlert>{testError}</SettingsAlert> : null}
+      {testResult ? <SettingsGroupBox title="연결 시험 결과">{testResult.ok ? <div className="space-y-2 text-sm"><p>성공 · {testResult.latency_ms}ms{testResult.server_info ? ` · ${testResult.server_info.name} ${testResult.server_info.version}` : ""}</p><p>도구 {testResult.tool_count}개{testResult.tool_count > testResult.tools.length ? ` · 외 ${testResult.tool_count - testResult.tools.length}개` : ""}</p>{testResult.tools.length > 10 ? <details className="config-advanced"><summary>도구 이름 보기</summary><p className="break-words">{testResult.tools.join(", ")}</p></details> : <p className="break-words">{testResult.tools.join(", ")}</p>}</div> : <p className="text-sm">{{ config: "설정", connect: "연결", initialize: "초기화", list_tools: "도구 목록", timeout: "시간 초과" }[testResult.error_stage]}: {testResult.error_message}</p>}</SettingsGroupBox> : null}
       {justCreated && server ? (
         <div
           ref={createdPrompt}
@@ -233,13 +274,13 @@ export function McpServerEditor({
               <Input
                 value={id}
                 disabled={Boolean(server)}
-                onChange={(event) => { setId(event.target.value); onEdit(); }}
+                onChange={(event) => { setId(event.target.value); markEdit(); }}
               />
             </SettingsField>
             <SettingsField label="전송 이름">
               <Input
                 value={draft.name}
-                onChange={(event) => { setDraft({ ...draft, name: event.target.value }); onEdit(); }}
+                onChange={(event) => { setDraft({ ...draft, name: event.target.value }); markEdit(); }}
               />
             </SettingsField>
           </div>
@@ -267,7 +308,7 @@ export function McpServerEditor({
                 name={draft.name}
                 url={draft.url}
                 value={icon}
-                onChange={(value) => { setIcon(value); onEdit(); }}
+                onChange={(value) => { setIcon(value); markEdit(); }}
                 upload={upload}
               />
             </div>
@@ -277,7 +318,7 @@ export function McpServerEditor({
       <DefinitionEditor
         value={draft}
         secretNames={secretNames}
-        onChange={(value) => { setDraft(value); onEdit(); }}
+        onChange={(value) => { setDraft(value); markEdit(); }}
         onSecretValue={setSecret}
       />
       <SettingsGroupBox title="적용 노드 및 덮어쓰기">
@@ -291,7 +332,7 @@ export function McpServerEditor({
                 <Checkbox
                   checked={scope.includes(node.node_id)}
                   onCheckedChange={(checked) => {
-                    onEdit();
+                    markEdit();
                     setScope((current) =>
                       checked
                         ? [...current, node.node_id]
@@ -318,7 +359,7 @@ export function McpServerEditor({
                     <Checkbox
                       checked={Boolean(overrides[node])}
                       onCheckedChange={(checked) => {
-                        onEdit();
+                        markEdit();
                         setOverrides((current) => {
                           const next = { ...current };
                           if (checked)
@@ -336,7 +377,7 @@ export function McpServerEditor({
                       secretNames={secretNames}
                       isolateValue
                       onChange={(value) => {
-                        onEdit();
+                        markEdit();
                         setOverrides((current) => ({
                           ...current,
                           [node]: value,

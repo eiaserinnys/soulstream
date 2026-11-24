@@ -347,6 +347,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
               server={currentServer}
               config={config}
               busy={busy}
+              test={api.testMcpServer}
               onEdit={() => setSuccess("")}
               justCreated={justCreated}
               dismissCreated={() => setJustCreated(false)}

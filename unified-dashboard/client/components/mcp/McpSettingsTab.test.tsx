@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { McpSettingsTab } from "./McpSettingsTab";
 import { McpServerEditor } from "./McpServerEditor";
-import type { McpConfig } from "../../lib/mcp-api";
+import type { McpConfig, McpTestInput } from "../../lib/mcp-api";
 
 const sample = (): McpConfig => ({
   current_revision: 12,
@@ -33,6 +33,44 @@ it("프로필에서 연결된 에이전트와 노드를 선택해 이동한다",
     await act(async () => { root.render(<McpSettingsTab request={request as typeof fetch} initialProfileId="profile-a" onOpenAgent={open} />); await new Promise(resolve => setTimeout(resolve, 0)); });
     await click(button(host, "agent-a (example-node)"));
     expect(open).toHaveBeenCalledWith("agent-a", "example-node");
+  } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
+});
+
+it("저장된 서버와 편집 중인 초안을 각각 선택 노드에서 시험한다", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const config = sample(), test = vi.fn().mockResolvedValue({ ok: true, latency_ms: 23, tool_count: 2, tools: ["one", "two"], server_info: { name: "example", version: "1" } });
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  try {
+    await act(async () => root.render(<McpServerEditor server={config.servers[0]} config={config} busy={false} onEdit={() => {}} save={vi.fn()} remove={() => {}} rollback={() => {}} upload={vi.fn()} addToProfiles={vi.fn()} justCreated={false} dismissCreated={() => {}} test={test} />));
+    await click(button(host, "연결 시험"));
+    expect(test).toHaveBeenCalledWith({ node_id: "example-node", server_id: "example" });
+    expect(host.textContent).toContain("23");
+    expect(host.textContent).toContain("one");
+    const name = [...host.querySelectorAll("label")].find(label => label.textContent?.includes("전송 이름"))!.querySelector("input")!;
+    await setInput(name, "수정한 서버");
+    await click(button(host, "연결 시험"));
+    expect(test).toHaveBeenLastCalledWith(expect.objectContaining({ node_id: "example-node", draft_server: expect.objectContaining({ id: "example", name: "수정한 서버" }) }));
+  } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
+});
+
+it("편집한 값은 시험 요청의 inline_secrets로만 보내고 결과에서는 감춘다", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const config = sample();
+  let finish: (value: { ok: false; latency_ms: number; error_stage: "connect"; error_message: string }) => void = () => {};
+  const test = vi.fn((_input: McpTestInput) => new Promise<{ ok: false; latency_ms: number; error_stage: "connect"; error_message: string }>(resolve => { finish = resolve; }));
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  try {
+    await act(async () => root.render(<McpServerEditor server={config.servers[0]} config={config} busy={false} onEdit={() => {}} save={vi.fn()} remove={() => {}} rollback={() => {}} upload={vi.fn()} addToProfiles={vi.fn()} justCreated={false} dismissCreated={() => {}} test={test} />));
+    await click(button(host, "값 교체"));
+    await setInput(host.querySelector('input[type="password"]')!, "placeholder-value");
+    await click(button(host, "연결 시험"));
+    expect(button(host, "시험 중…")?.disabled).toBe(true);
+    const sent = test.mock.calls[0][0] as { draft_server: unknown; inline_secrets: Record<string, string> };
+    expect(Object.values(sent.inline_secrets)).toContain("placeholder-value");
+    expect(JSON.stringify(sent.draft_server)).not.toContain("placeholder-value");
+    await act(async () => finish({ ok: false, latency_ms: 1, error_stage: "connect", error_message: "오류 placeholder-value" }));
+    expect(host.textContent).toContain("연결: 오류 [비공개]");
+    expect(host.textContent).not.toContain("placeholder-value");
   } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
 });
 
