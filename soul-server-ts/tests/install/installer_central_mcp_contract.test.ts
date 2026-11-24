@@ -14,7 +14,7 @@ describe("portable central MCP contract", () => {
     const portable = isPortableMcpNode(env, manifest);
     expect(portable).toBe(expected);
     const msg = buildRegistrationMsg({ nodeId: "test", host: "localhost", port: 1, userName: "", agentRegistry: new AgentRegistry([]), isPortableNode: portable });
-    expect(Boolean(msg.capabilities.central_mcp_config_v1)).toBe(!expected);
+    expect(Boolean(msg.capabilities?.central_mcp_config_v1)).toBe(!expected);
     const commands = new McpConfigCommands(undefined, undefined, portable);
     await expect(commands.sync({})).rejects.toMatchObject({ code: expected ? "MCP_PORTABLE_NODE" : "INVALID_MCP_CENTRAL_SYNC" });
   });
@@ -50,7 +50,7 @@ it("uses the installer-rendered environment and actual catalog-free manifest", a
     const portable = isPortableMcpNode(env, manifest);
     expect(portable).toBe(false);
     const msg = buildRegistrationMsg({ nodeId: "test", host: "localhost", port: 1, userName: "", agentRegistry: new AgentRegistry([]), isPortableNode: portable });
-    expect(msg.capabilities.central_mcp_config_v1).toBe(true);
+    expect(msg.capabilities?.central_mcp_config_v1).toBe(true);
     const { McpConfigService } = await import("../../src/mcp_config_service.js");
     const service = new McpConfigService({ agentsConfigPath: join(root, "config/agents.yaml"), processEnv: env, isPortableNode: portable });
     const snapshot = { registry: { servers: [] }, profiles: { profiles: [] }, agent_bindings: {} };
