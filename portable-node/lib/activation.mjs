@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { writeConfigGeneration } from "./config.mjs";
-import { prepareRelease } from "./environment.mjs";
+import { modelCatalogPathForRepoRoot, prepareRelease } from "./environment.mjs";
 import { ensureRuntime, installRelease, releaseMarkerPath, runtimeInstallDir } from "./release.mjs";
 import { ChildSupervisor } from "./supervisor.mjs";
 import { writeStateFile } from "./state.mjs";
@@ -60,6 +60,7 @@ export async function prepareCandidate({
     stateRoot,
     configRoot: join(stateRoot, "config"),
     hostPort: ports.mcp,
+    catalogPath: modelCatalogPathForRepoRoot(repoRoot),
   });
   const installed = await installRelease({
     stateRoot,
@@ -125,6 +126,7 @@ export async function rollbackToPrevious({
       stateRoot,
       configRoot: join(stateRoot, "config"),
       hostPort: ports.mcp,
+      catalogPath: modelCatalogPathForRepoRoot(repoRoot),
     });
     const prepared = await prepareRelease({
       stateRoot,

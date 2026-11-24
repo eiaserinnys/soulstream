@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseEnv } from "node:util";
@@ -22,6 +22,9 @@ function renderOrchEnv(prefix: string, backends: string, map: Record<string, str
   const dir = mkdtempSync(join(tmpdir(), prefix));
   const home = join(dir, "home"), root = join(home, "soulstream");
   mkdirSync(join(root, "config"), { recursive: true });
+  const catalogDir = join(root, "packages/model-catalog/data");
+  mkdirSync(catalogDir, { recursive: true });
+  copyFileSync(resolve("../packages/model-catalog/data/model-catalog.yaml"), join(catalogDir, "model-catalog.yaml"));
   writeFileSync(join(root, "config", ".atom-seed-map.json"), JSON.stringify(map));
   writeFileSync(join(root, ".atom-api-key"), `${API_KEY}\n`);
   try {

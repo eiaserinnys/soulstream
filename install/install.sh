@@ -151,13 +151,20 @@ read_atom_api_key() {
   printf '%s' "$key"
 }
 
-backend_preset() {
-  case "$1" in
-    claude) printf 'claude-opus' ;;
-    codex) printf 'codex-6.2-sol' ;;
-    antigravity) printf 'gemini-4-carbon' ;;
-  esac
+# install_defaults is a JSON flow mapping in the YAML catalog; jq is installed
+# before configuration and does not require the project's node_modules.
+load_install_defaults() {
+  local catalog=$1 defaults
+  defaults=$(awk '/^install_defaults: / { sub(/^install_defaults: /, ""); print; found=1; exit } END { if (!found) exit 1 }' "$catalog") || {
+    printf 'Cannot read install_defaults from model-catalog: %s\n' "$catalog" >&2; return 1;
+  }
+  if ! jq -e '(.backends | [.claude, .codex, .antigravity]) + [.profiles["card-orchestrator"]] | all(.[]; type == "string" and length > 0)' <<< "$defaults" >/dev/null; then
+    printf 'Invalid install_defaults in model-catalog: %s\n' "$catalog" >&2; return 1
+  fi
+  INSTALL_DEFAULTS=$defaults
 }
+
+backend_preset() { jq -er --arg backend "$1" '.backends[$backend]' <<< "$INSTALL_DEFAULTS"; }
 
 # Backend rules attached to profiles that run on the given backend.
 backend_rules_context() {
@@ -336,7 +343,7 @@ YAML
   - id: card-orchestrator
     name: 카드 오케스트레이터
     backend: claude
-    default_preset: claude-sonnet
+    default_preset: $(jq -er '.profiles["card-orchestrator"]' <<< "$INSTALL_DEFAULTS")
     workspace_dir: ${home}/workspace
     context_scope: minimal
 YAML
@@ -364,6 +371,7 @@ YAML
 render_config() {
   local home=$1 root=$2 fresh_orch fresh_worker atom_api_key previous_backends work claude
   local -A ATOM_NODES=()
+  load_install_defaults "$root/packages/model-catalog/data/model-catalog.yaml" || return 1
   # The backends of the installation being updated, read before the env files are rewritten.
   previous_backends=$(read_env_value "$root/.env.soul-server-ts" SOULSTREAM_BACKENDS)
   [[ -n "$previous_backends" ]] || previous_backends=$BACKENDS
@@ -484,16 +492,17 @@ MARKDOWN
 
 # The four managed files as the first-stage installer (d785f798, before atom support) wrote them, byte for byte.
 stage1_managed_output() {
-  local kind=$1 home=$2 backends=$3 backend name= preset= IFS=,
+  local kind=$1 home=$2 backends=$3 preset_file=$4 backend name= preset= IFS=,
   case "$kind" in
     agents)
       printf 'agents:\n'
       for backend in $backends; do
         case "$backend" in
-          claude) name=Claude; preset=claude-opus ;;
-          codex) name=Codex; preset=codex-6.2-sol ;;
-          antigravity) name=Antigravity; preset=gemini-4-carbon ;;
+          claude) name=Claude ;;
+          codex) name=Codex ;;
+          antigravity) name=Antigravity ;;
         esac
+        preset=$(jq -er --arg backend "$backend" '.[$backend] | select(type == "string" and length > 0)' "$preset_file") || return 1
         cat <<YAML
   - id: ${backend}-default
     name: ${name}
@@ -542,8 +551,11 @@ write_managed_configs() {
     kind=${item%%=*}; file=${item#*=}; recorded=; current=
     if [[ -f "$record" ]]; then recorded=$(awk -v path="$file" 'substr($0, 67) == path { print substr($0, 1, 64) }' "$record") || return 1; fi
     if [[ -e "$file" ]]; then current=$(sha256sum < "$file") || return 1; current=${current%% *}; fi
+    if [[ -e "$file" && -z "$recorded" ]] && ! cmp -s "$file" "$work/$kind"; then
+      stage1_managed_output "$kind" "$home" "$previous_backends" "$root/install/stage1-managed-presets.json" > "$work/stage1" || return 1
+    fi
     if [[ ! -e "$file" ]] || cmp -s "$file" "$work/$kind" || [[ -n "$recorded" && "$current" == "$recorded" ]] ||
-       { [[ -z "$recorded" ]] && stage1_managed_output "$kind" "$home" "$previous_backends" | cmp -s - "$file"; }; then
+       { [[ -z "$recorded" ]] && cmp -s "$work/stage1" "$file"; }; then
       if ! cmp -s "$file" "$work/$kind"; then cat "$work/$kind" > "$file" || return 1; fi
       lines+="$(sha256sum "$file")"$'\n' || return 1
     else
@@ -915,7 +927,7 @@ load_atom_instructions() {
 }
 write_configuration() {
   local home=$1 root=$2
-  render_config "$home" "$root"
+  render_config "$home" "$root" || return 1
   chown -R soulstream:soulstream "$root/config" "$root/.env.orch" "$root/.env.soul-server-ts" "$root/.local" "$home/workspace"
 }
 build_project() {

@@ -18,7 +18,7 @@ import {
   runtimeInstallDir,
   runtimePlan,
 } from "./lib/release.mjs";
-import { ensureCodexLogin, ensurePorts, ensurePythonWrapper, prepareRelease } from "./lib/environment.mjs";
+import { ensureCodexLogin, ensurePorts, ensurePythonWrapper, modelCatalogPathForRepoRoot, prepareRelease } from "./lib/environment.mjs";
 import { installRuntimes, prepareCandidate, rollbackToPrevious, startCandidate } from "./lib/activation.mjs";
 import { assertRunnerStatePathCompatible } from "./lib/paths.mjs";
 import { isRepeatedReentry } from "./lib/reentry.mjs";
@@ -187,6 +187,7 @@ async function stageSwitch({ context, release }) {
     stateRoot: context.stateRoot,
     configRoot: join(context.stateRoot, "config"),
     hostPort: context.ports.mcp,
+    catalogPath: modelCatalogPathForRepoRoot(context.repoRoot),
   });
   const installed = await installRelease({
     stateRoot: context.stateRoot,

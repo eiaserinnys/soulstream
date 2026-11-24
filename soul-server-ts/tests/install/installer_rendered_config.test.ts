@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse } from "dotenv";
@@ -33,6 +33,9 @@ describe("installer configuration", () => {
     const dir = mkdtempSync(join(tmpdir(), "installer-worker-"));
     const home = join(dir, "home"), root = join(home, "soulstream");
     mkdirSync(join(root, "config"), { recursive: true });
+    const catalogDir = join(root, "packages/model-catalog/data");
+    mkdirSync(catalogDir, { recursive: true });
+    copyFileSync(resolve("../packages/model-catalog/data/model-catalog.yaml"), join(catalogDir, "model-catalog.yaml"));
     writeFileSync(join(root, "config", ".atom-seed-map.json"), JSON.stringify(SEED_MAP));
     writeFileSync(join(root, ".atom-api-key"), `${API_KEY}\n`);
     try {

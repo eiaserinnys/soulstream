@@ -74,6 +74,9 @@ export async function makeSourceRepo(root) {
     recursive: true,
     filter: (source) => !source.includes(`${join(PORTABLE_SOURCE, ".state")}`),
   });
+  const catalogDir = join(repo, "packages/model-catalog/data");
+  await mkdir(catalogDir, { recursive: true });
+  await cp(join(PORTABLE_SOURCE, "../packages/model-catalog/data/model-catalog.yaml"), join(catalogDir, "model-catalog.yaml"));
   await writeFile(join(repo, ".gitignore"), "portable-node/.state/\n");
   await writeFile(join(repo, "README.md"), "source checkout\n");
   await git(repo, ["add", "-A"]);

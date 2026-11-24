@@ -689,6 +689,23 @@ describe("repository model catalogue data", () => {
 });
 
 describe("model catalogue schema validation", () => {
+  it("validates installer defaults against preset ids and backends", () => {
+    const good = REPOSITORY_CATALOG_YAML;
+    const defaults = catalog.install_defaults!;
+    expect(Object.keys(defaults.backends).sort()).toEqual(["antigravity", "claude", "codex"]);
+    for (const [backend, id] of Object.entries(defaults.backends)) {
+      expect(catalog.presets.find((preset) => preset.id === id)?.backend).toBe(backend);
+    }
+    expect(catalog.presets.find((preset) => preset.id === defaults.profiles["card-orchestrator"])?.backend).toBe("claude");
+    const line = good.match(/^install_defaults: .*$/m)?.[0];
+    expect(line).toBeDefined();
+    const changed = (value: unknown) => good.replace(line!, `install_defaults: ${JSON.stringify(value)}`);
+    expect(() => parseModelCatalogYaml(changed({ ...defaults, backends: { ...defaults.backends, codex: "missing" } }))).toThrow();
+    expect(() => parseModelCatalogYaml(changed({ ...defaults, backends: { ...defaults.backends, codex: defaults.backends.claude } }))).toThrow();
+    expect(() => parseModelCatalogYaml(changed({ ...defaults, profiles: { "card-orchestrator": defaults.backends.codex } }))).toThrow();
+    expect(() => parseModelCatalogYaml(changed({ ...defaults, profiles: {} }))).toThrow();
+  });
+
   it("rejects duplicate preset ids", () => {
     expect(() => parseModelCatalogYaml(BASE_CATALOG_YAML.replace("  - id: p2", "  - id: p1")))
       .toThrow(/Duplicate model preset id/);
