@@ -4,6 +4,7 @@ import { composeAgentLoginService } from "../agent_login/index.js";
 import { AgentConfigService } from "../agent_config_service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ProviderUsageService } from "../auth/provider_usage.js";
+import { AntigravityUsageChildren } from "../auth/antigravity_usage.js";
 import { CatalogService } from "../catalog/catalog_service.js";
 import { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "../context/cogito_context.js";
@@ -91,6 +92,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       environment: antigravityEnvironment(process.env),
       // In-process workers still need a writable directory for the CLI log.
       stateDirectory: env.SOUL_RUNNER_STATE_DIR ?? env.EVENT_OUTBOX_DIR, loginActivity: agentLoginService.activity,
+      children: new AntigravityUsageChildren(),
     },
   });
   const eventOutbox = await EventOutbox.open(env.EVENT_OUTBOX_DIR);
@@ -477,6 +479,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     ...(claudeAccounts ? { claudeAccounts } : {}),
     ...(claudeLoginService ? { claudeLoginService } : {}),
     agentLoginService,
+    providerUsage,
     realtimeBroker,
     agentConfigService,
     mcpRuntime,

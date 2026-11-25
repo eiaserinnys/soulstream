@@ -163,6 +163,11 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     this.codexRuntimeLimitsImpl = config.codexRuntimeLimitsImpl ?? codexRuntimeLimits;
   }
 
+  /** 서버 종료 때 진행 중인 agy 사용량 조회 자식을 거둔다. */
+  async shutdown(): Promise<void> {
+    await this.config.antigravity?.children?.shutdown();
+  }
+
   async fetchUsage(
     requestId: string,
     responseType: string,
