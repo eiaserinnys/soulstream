@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { findNodeHandle, Image, Platform, Pressable, Text, View } from 'react-native';
+import { findNodeHandle, Platform, Pressable, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
@@ -13,6 +13,9 @@ import { useCardTransition } from '../../hooks/useCardTransition';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
+import { useAgentPortraitResolver } from '../../store/agentPortraitStore';
+import { resolveRemoteImageSource } from '../../lib/remote-image';
+import { RemoteImage } from '../RemoteImage';
 import { AppGlassCard } from '../AppGlassCard';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { GlassButton } from '../GlassSurface';
@@ -89,12 +92,12 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
   const pendingItemConfirmations = useCardStore((state) => state.pendingItemConfirmations[card.id] ?? EMPTY_PENDING_ITEM_CONFIRMATIONS);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const jwt = useAuthStore((state) => state.jwt);
+  const portraits = useAgentPortraitResolver();
   const identity = {
     agentSessionId: card.assigneeSessionId ?? card.id,
     agentId: assigned?.agentId ?? card.assigneeAgentId,
     agentName: assigned?.agentName,
-    agentPortraitUrl: assigned?.agentPortraitUrl ?? (card.nodeId && card.assigneeAgentId
-      ? `/api/nodes/${card.nodeId}/agents/${card.assigneeAgentId}/portrait` : null),
+    agentPortraitUrl: portraits.forSession(assigned?.agentPortraitUrl, assigned?.agentId ?? card.assigneeAgentId) || null,
   };
   const avatar = resolveSessionCardAvatar(identity, serverUrl);
   const name = card.assigneeKind === 'human' ? card.assigneeUserId ?? '사용자'
@@ -199,7 +202,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
             <Pressable accessibilityRole="button" accessibilityLabel={`${card.title} 담당 상세`} onPress={open}
               {...directHoldProps}
               style={{ flex: 1, minWidth: 0, minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
-              {avatar.uri ? <Image source={{ uri: avatar.uri, ...(jwt && avatar.uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }}
+              {avatar.uri ? <RemoteImage source={resolveRemoteImageSource(avatar.uri, serverUrl, jwt)}
                 style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.capsule }} />
                 : <Text style={roles.label}>{card.assigneeKind === 'human' ? '👤' : card.assigneeKind ? '🤖' : '·'}</Text>}
               <Text style={{ ...roles.label, flex: 1, minWidth: 0 }} numberOfLines={1}>{name}</Text>

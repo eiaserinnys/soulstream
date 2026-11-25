@@ -1,8 +1,12 @@
 import { useMemo, useRef } from 'react';
-import { Image, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardAssignment } from '../../api/cardTypes';
 import { useSettingsStore } from '../../store/settingsStore';
+import { useAuthStore } from '../../store/authStore';
+import { useAgentPortraitResolver } from '../../store/agentPortraitStore';
+import { resolveRemoteImageSource } from '../../lib/remote-image';
+import { RemoteImage } from '../RemoteImage';
 import { useSessionStore } from '../../store/sessionStore';
 import { useNewSessionSelection } from '../sheets/useNewSessionSelection';
 import { formatModelPresetUnavailableReason } from '../sheets/newSessionSelection';
@@ -20,6 +24,8 @@ export function ExecutionSelectionSheet({ api, value, onSave, onClose }: {
   const t = useTokens();
   const styles = useMemo(() => cardStyles(t), [t]);
   const settings = useSettingsStore();
+  const jwt = useAuthStore((state) => state.jwt);
+  const portraits = useAgentPortraitResolver();
   const folders = useSessionStore((state) => state.catalog.folders);
   const selection = useNewSessionSelection({ visible: true, api, folders, settingsNodeId: settings.nodeId,
     defaultFolderId: value.folderId, defaultNodeId: value.nodeId, defaultAgentId: value.agentId,
@@ -30,7 +36,7 @@ export function ExecutionSelectionSheet({ api, value, onSave, onClose }: {
       <View testID="execution-agents" style={styles.section}><PlannerSectionHeader title="에이전트" />
         <GroupedGlassSheet>{selection.agents.map((agent) => <GroupedGlassRow compact testID={`execution-agent-${agent.id}`} key={agent.id} accessibilityLabel={`에이전트 ${agent.name ?? agent.id}`} selected={selection.agentId === agent.id}
           style={styles.padded} onPress={() => { selection.setAgentId(agent.id); selection.setSelectedModelPresetId(agent.default_preset ?? null); }}>
-          <View style={styles.actions}>{agent.portraitUrl ? <Image source={{ uri: agent.portraitUrl.startsWith('/') ? `${settings.serverUrl}${agent.portraitUrl}` : agent.portraitUrl }}
+          <View style={styles.actions}>{portraits.normalize(agent.portraitUrl) ? <RemoteImage source={resolveRemoteImageSource(portraits.normalize(agent.portraitUrl), settings.serverUrl, jwt)}
             style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.capsule }} /> : null}<Text style={styles.body}>{agent.name ?? agent.id}</Text></View>
         </GroupedGlassRow>)}</GroupedGlassSheet>
       </View>

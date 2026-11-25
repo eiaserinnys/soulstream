@@ -2,9 +2,11 @@
 // 선택지는 앱의 AskUserQuestion(ChatInputRequest) 선택지 묶음(옅은 선으로 나눈 행)을 그대로 쓰되,
 // 누르면 바로 가므로 동그라미 표시는 두지 않는다.
 import React, { useMemo, useSyncExternalStore } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuthStore } from '../../store/authStore';
+import { resolveRemoteImageSource } from '../../lib/remote-image';
+import { RemoteImage } from '../RemoteImage';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useTokens, type DesignTokens } from '../../theme';
 import { capsuleRadius } from '../../theme/tokens';
@@ -94,8 +96,7 @@ export function CardQuestionBody({ view, cardId, portraitUri, userInitial = '나
     scopedAttachmentUrl(item.previewUrl ?? item.originalUrl ?? item.url, serverUrl, { type: 'card', id: cardId }),
     serverUrl, jwt));
   const avatar = (author: 'user' | 'agent') => author === 'agent' && portraitUri
-    ? <Image source={{ uri: portraitUri, ...(jwt && serverUrl && portraitUri.startsWith(serverUrl)
-      ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={styles.avatar} accessibilityIgnoresInvertColors />
+    ? <RemoteImage source={resolveRemoteImageSource(portraitUri, serverUrl, jwt)} style={styles.avatar} accessibilityIgnoresInvertColors />
     : <View style={[styles.avatar, styles.avatarFallback]}><Text style={styles.avatarFallbackText}>{author === 'user' ? userInitial : '담'}</Text></View>;
   return <View testID={`card-question-${view.id}`} style={styles.body}>
     <PlannerMarkdownText markdown={view.background} readContext={{ type: 'card', id: cardId }} />

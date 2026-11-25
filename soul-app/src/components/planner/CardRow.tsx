@@ -1,6 +1,6 @@
 import {cardExecutionState,subscribeCardWrites} from '../../lib/card-transition';
 import { useMemo, useSyncExternalStore } from 'react';
-import { Image, Text, Pressable, View, StyleSheet } from 'react-native';
+import { Text, Pressable, View, StyleSheet } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
 import type { CardDto } from '../../api/cardTypes';
@@ -9,6 +9,9 @@ import { useCardTransition } from '../../hooks/useCardTransition';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
+import { useAgentPortraitResolver } from '../../store/agentPortraitStore';
+import { resolveRemoteImageSource } from '../../lib/remote-image';
+import { RemoteImage } from '../RemoteImage';
 import { decodeAuthJwt } from '../../auth/jwt-payload';
 import { createPlannerVisualRoles, useTokens } from '../../theme';
 import type { ColorScheme } from '../../theme/colors';
@@ -77,11 +80,11 @@ function SummaryCardRow({ card, onOpen, summaryNumberTemplate }: CardRowSharedPr
   const assigned = useSessionStore((state) => card.assigneeSessionId ? state.sessions[card.assigneeSessionId] : undefined);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const jwt = useAuthStore((state) => state.jwt);
+  const portraits = useAgentPortraitResolver();
   const profile = useMemo(() => decodeAuthJwt(jwt), [jwt]);
   const agentId = assigned?.agentId ?? card.assigneeAgentId;
-  const nodeId = assigned?.nodeId ?? card.nodeId;
   const identity = { agentSessionId: card.assigneeSessionId ?? card.id, agentId, agentName: assigned?.agentName,
-    agentPortraitUrl: assigned?.agentPortraitUrl ?? (agentId && nodeId ? `/api/nodes/${nodeId}/agents/${agentId}/portrait` : null) };
+    agentPortraitUrl: portraits.forSession(assigned?.agentPortraitUrl, agentId) || null };
   const avatar = resolveSessionCardAvatar(identity, serverUrl);
   const human = card.assigneeKind === 'human';
   const uri = human ? profile?.picture : avatar.uri;
@@ -113,7 +116,7 @@ function SummaryCardRow({ card, onOpen, summaryNumberTemplate }: CardRowSharedPr
       {card.title}
     </Text>
     {hasAssignee ? uri
-      ? <Image testID={`card-${card.id}-avatar`} source={{ uri, ...(jwt && uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }}
+      ? <RemoteImage testID={`card-${card.id}-avatar`} source={resolveRemoteImageSource(uri, serverUrl, jwt)}
         style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.capsule, flexShrink: 0 }} />
       : <View testID={`card-${card.id}-avatar`} style={{ width: t.avatarSize.compact, height: t.avatarSize.compact,
         borderRadius: t.foundation.radius.capsule, flexShrink: 0, alignItems: 'center', justifyContent: 'center',
@@ -132,13 +135,14 @@ function StandardCardRow({ api, card, onOpen, today, queueIndex, board = false }
   const assigned = useSessionStore((state) => card.assigneeSessionId ? state.sessions[card.assigneeSessionId] : undefined);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const jwt = useAuthStore((state) => state.jwt);
+  const portraits = useAgentPortraitResolver();
   const profile = useMemo(() => decodeAuthJwt(jwt), [jwt]);
   const itemSummary = useMemo(() => summarizeCardItems(card.items, pendingItemConfirmations), [card.items, pendingItemConfirmations]);
   const askPreview = cardAskPreview(itemSummary.needsReview, card.now?.ask);
   const agentId = assigned?.agentId ?? card.assigneeAgentId;
   const nodeId = assigned?.nodeId ?? card.nodeId;
   const identity = { agentSessionId: card.assigneeSessionId ?? card.id, agentId, agentName: assigned?.agentName,
-    agentPortraitUrl: assigned?.agentPortraitUrl ?? (agentId && nodeId ? `/api/nodes/${nodeId}/agents/${agentId}/portrait` : null) };
+    agentPortraitUrl: portraits.forSession(assigned?.agentPortraitUrl, agentId) || null };
   const avatar = resolveSessionCardAvatar(identity, serverUrl);
   const human = card.assigneeKind === 'human';
   const uri = human ? profile?.picture : avatar.uri;
@@ -156,7 +160,7 @@ function StandardCardRow({ api, card, onOpen, today, queueIndex, board = false }
       void transition(card, 'done');
     }}><Ionicons name="checkmark" size={t.iconSize.standard} color={t.colors.textSecondary} /></GlassButton> : null;
   const identityContent = <>
-      {uri ? <Image testID={`card-${card.id}-avatar`} source={{ uri, ...(jwt && uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={styles.avatar} />
+      {uri ? <RemoteImage testID={`card-${card.id}-avatar`} source={resolveRemoteImageSource(uri, serverUrl, jwt)} style={styles.avatar} />
         : <View testID={`card-${card.id}-avatar`} style={[styles.avatar, styles.avatarFallback]}><Text style={styles.avatarFallbackText}>{human ? assignee[0] : avatar.fallbackChar}</Text></View>}
       <View style={styles.content}>
         <View style={styles.primaryColumn}>

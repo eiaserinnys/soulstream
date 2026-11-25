@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,6 +14,7 @@ import {
 import { isSvgImageMimeType, isSvgImageName, isSvgImageUri, type AttachmentView } from '../lib/attachment-view';
 import { useTokens } from '../theme';
 import { AttachmentSvg } from './AttachmentSvg';
+import { RemoteImage } from './RemoteImage';
 
 export function ImageViewerPages({
   sources,
@@ -137,7 +137,7 @@ function ViewerImagePage({ source, index, name, caption, svg = false, viewport, 
               <AttachmentSvg source={imageSource} label={name || `이미지 ${index + 1}`}
                 radius={0} testID={imageTestID ?? `image-viewer-svg-${index}`} onError={onError} />
             </View>
-            : <Image testID={imageTestID ?? `image-viewer-image-${index}`} source={source} style={imageArea} resizeMode="contain"
+            : <RemoteImage testID={imageTestID ?? `image-viewer-image-${index}`} source={source} style={imageArea} contentFit="contain"
               accessible accessibilityLabel={name || `이미지 ${index + 1}`} onError={onError} />}
       </ScrollView>
     </View>

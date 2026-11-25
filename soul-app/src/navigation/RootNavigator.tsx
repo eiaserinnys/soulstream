@@ -3,7 +3,6 @@ import {
   Alert,
   View,
   ActivityIndicator,
-  ImageBackground,
   StyleSheet,
   AppState,
   Linking,
@@ -12,6 +11,8 @@ import {
 import * as Notifications from 'expo-notifications';
 import { useSettingsStore } from '../store/settingsStore';
 import { useAuthStore } from '../store/authStore';
+import { useAgentPortraitSync } from '../store/agentPortraitStore';
+import { RemoteImage } from '../components/RemoteImage';
 import { createApiClient } from '../api/client';
 import { FirstConnectionSettingsScreen } from '../screens/SettingsScreen';
 import { LoginScreen } from '../screens/LoginScreen';
@@ -102,6 +103,7 @@ export function RootNavigator({
     serverUrl && authChecked && (authDone || (!authRequired && !authRejected)),
   );
   useUsageWidgetDeepLink(device, usageDestinationReady);
+  useAgentPortraitSync();
 
   useEffect(() => {
     const refresh = () => setUiStoreHydrated(
@@ -429,7 +431,7 @@ export function RootNavigator({
   );
 }
 
-function AppWallpaperBackground({
+export function AppWallpaperBackground({
   serverUrl,
   wallpaper,
   jwt,
@@ -449,14 +451,17 @@ function AppWallpaperBackground({
   const backgroundColor = resolveWallpaperColor(wallpaper.mode, tokens);
   if (wallpaper.mode === 'photo' && source) {
     return (
-      <ImageBackground
-        source={source}
-        resizeMode="cover"
-        style={[styles.wallpaperRoot, { backgroundColor }]}
-        imageStyle={styles.wallpaperImage}
-      >
+      <View style={[styles.wallpaperRoot, { backgroundColor }]}>
+        <RemoteImage
+          testID="app-wallpaper-image"
+          source={source}
+          contentFit="cover"
+          accessible={false}
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, styles.wallpaperImage]}
+        />
         {children}
-      </ImageBackground>
+      </View>
     );
   }
   return <View style={[styles.wallpaperRoot, { backgroundColor }]}>{children}</View>;

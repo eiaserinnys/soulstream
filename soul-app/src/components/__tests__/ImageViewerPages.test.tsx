@@ -1,4 +1,5 @@
-import { Image } from 'react-native';
+
+import { Image } from 'expo-image';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { AttachmentView } from '../../lib/attachment-view';
 import { ImageViewerPages } from '../ImageViewerPages';

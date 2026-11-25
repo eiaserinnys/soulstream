@@ -1,8 +1,11 @@
 import { useMemo } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import type { Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
+import { useAgentPortraitResolver } from '../../store/agentPortraitStore';
+import { resolveRemoteImageSource } from '../../lib/remote-image';
+import { RemoteImage } from '../RemoteImage';
 import { useTokens, type DesignTokens } from '../../theme';
 import { capsuleRadius } from '../../theme/tokens';
 import { ThinkingOrb } from './ThinkingOrb';
@@ -28,11 +31,13 @@ export function TypingIndicator({ session, presentation = 'default' }: Props) {
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const jwt = useAuthStore((s) => s.jwt);
 
+  const portraits = useAgentPortraitResolver();
   const avatarUri = (() => {
-    if (!session?.agentPortraitUrl || !serverUrl) return null;
-    return session.agentPortraitUrl.startsWith('http')
-      ? session.agentPortraitUrl
-      : `${serverUrl.replace(/\/$/, '')}${session.agentPortraitUrl}`;
+    const portraitUrl = portraits.normalize(session?.agentPortraitUrl);
+    if (!portraitUrl || !serverUrl) return null;
+    return portraitUrl.startsWith('http')
+      ? portraitUrl
+      : `${serverUrl.replace(/\/$/, '')}${portraitUrl}`;
   })();
   const fallbackChar =
     session?.agentName?.[0] ?? session?.displayName?.[0] ?? '·';
@@ -40,11 +45,8 @@ export function TypingIndicator({ session, presentation = 'default' }: Props) {
   return (
     <View style={styles.row}>
       {presentation === 'manuscript' ? null : avatarUri ? (
-        <Image
-          source={{
-            uri: avatarUri,
-            ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}),
-          }}
+        <RemoteImage
+          source={resolveRemoteImageSource(avatarUri, serverUrl, jwt)}
           style={styles.avatar}
         />
       ) : (

@@ -108,7 +108,7 @@ export interface Session {
   agentId?: string | null;
   // /api/sessions sessionList의 추가 필드. 피드/세션 카드 좌측 아바타 렌더링에 사용된다.
   agentName?: string | null;
-  // 서버 발급 상대 경로 (`/api/nodes/{nodeId}/agents/{agentId}/portrait`).
+  // 서버 발급 상대 경로. 중앙 버전 주소(`/api/agent-portraits/{agentId}?v={sha256}`)이며, 옛 노드 주소가 올 수 있어 앱은 사전으로 바꿔 쓴다.
   // 클라이언트는 serverUrl을 prepend하고 JWT를 Authorization 헤더에 실어 Image로 로드.
   agentPortraitUrl?: string | null;
   // agent backend ("claude" | "codex" | ...). 검색 필터·음성 제어와

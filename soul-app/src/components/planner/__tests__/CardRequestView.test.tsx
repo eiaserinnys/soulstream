@@ -1,6 +1,7 @@
 import { act, fireEvent, render, within } from '@testing-library/react-native';
 import * as WebBrowser from 'expo-web-browser';
-import { Image, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { Image } from 'expo-image';
 import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { EnrichedMarkdownText } from 'react-native-enriched-markdown';
@@ -53,7 +54,7 @@ test('표시 전용 옵션은 빈 문단만 접고 썸네일을 유지하며, �
   const defaults = render(<CardRequestView request={request} />);
   expect(defaults.UNSAFE_getByType(EnrichedMarkdownText).props.markdown).toContain(`첫 문단\n\n\n둘째 문단`);
   expect(StyleSheet.flatten(defaults.getByTestId('card-request-image-0').props.style)).toMatchObject({ width: 200, height: 200 });
-  expect(defaults.getByTestId('card-request-image-0').props.resizeMode).toBe('cover');
+  expect(defaults.getByTestId('card-request-image-0').props.contentFit).toBe('cover');
   defaults.unmount();
 
   const summary = render(<ContentLinkProvider><AttachmentReadContextProvider context={{ type: 'card', id: 'card-1' }}>
@@ -61,7 +62,7 @@ test('표시 전용 옵션은 빈 문단만 접고 썸네일을 유지하며, �
   </AttachmentReadContextProvider></ContentLinkProvider>);
   expect(summary.UNSAFE_getByType(EnrichedMarkdownText).props.markdown).toContain('첫 문단\n둘째 문단');
   expect(StyleSheet.flatten(summary.getByTestId('card-request-image-0').props.style)).toMatchObject({ width: 104, height: 60 });
-  expect(summary.getByTestId('card-request-image-0').props.resizeMode).toBe('cover');
+  expect(summary.getByTestId('card-request-image-0').props.contentFit).toBe('cover');
   fireEvent.press(summary.getByTestId('card-request-image-0'));
   expect(summary.getByTestId('attachment-preview-modal')).toBeTruthy();
   summary.unmount();

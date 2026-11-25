@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Image, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import type { SessionEvent, Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
+import { useAgentPortraitResolver } from '../../store/agentPortraitStore';
+import { resolveRemoteImageSource } from '../../lib/remote-image';
+import { RemoteImage } from '../RemoteImage';
 import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { capsuleRadius } from '../../theme/tokens';
 import {
@@ -85,6 +88,7 @@ export function AssistantMessage({
   );
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const jwt = useAuthStore((s) => s.jwt);
+  const portraits = useAgentPortraitResolver();
   const openContentLink = useOpenContentLink();
   const [previewAttachment, setPreviewAttachment] = useState<AttachmentView | null>(null);
 
@@ -114,11 +118,12 @@ export function AssistantMessage({
   }, [renderAsPlainStreamingText]);
   if (!renderedText && !children && !notice && !truncation) return null;
 
-  const { uri: avatarUri, useBearer } = pickUserAvatarUri(
+  const { uri: avatarUri } = pickUserAvatarUri(
     caller,
     null,
     session?.agentPortraitUrl,
     serverUrl,
+    portraits.normalize,
   );
   const fallbackChar = pickFallbackChar(
     caller,
@@ -134,13 +139,8 @@ export function AssistantMessage({
       {presentation === 'manuscript' ? null : attachmentsOnly ? (
         <View style={[styles.avatar, { opacity: 0 }]} />
       ) : avatarUri ? (
-        <Image
-          source={{
-            uri: avatarUri,
-            ...(useBearer && jwt
-              ? { headers: { Authorization: `Bearer ${jwt}` } }
-              : {}),
-          }}
+        <RemoteImage
+          source={resolveRemoteImageSource(avatarUri, serverUrl, jwt)}
           style={styles.avatar}
         />
       ) : (

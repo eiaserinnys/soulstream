@@ -1,5 +1,6 @@
 import React from 'react';
-import { Image, Modal, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Modal, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Image } from 'expo-image';
 import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 import { useTokens } from '../../theme';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -165,7 +166,7 @@ test('캡션은 해당 이미지 페이지 아래에만 나타나고 기본 첨�
 test('썸네일은 측정 전후 정사각 프레임을 유지하고 실패는 작은 오류로 접는다', async () => {
   let resolveSize!: (size: { width: number; height: number }) => void;
   const source = { uri: 'https://chat.test/one.png', headers: { Authorization: 'Bearer image-test-token' } };
-  const getSizeWithHeaders = jest.spyOn(Image, 'getSizeWithHeaders');
+  const getSizeWithHeaders = (jest.spyOn(Image, 'loadAsync') as jest.Mock);
   getSizeWithHeaders.mockImplementation(() => new Promise((resolve) => { resolveSize = resolve; }));
   const t = renderHook(() => useTokens()).result.current;
   const screen = render(<SafeAreaProvider><AttachmentImage
@@ -187,7 +188,7 @@ test('썸네일은 측정 전후 정사각 프레임을 유지하고 실패는 �
   });
   expect(StyleSheet.flatten(screen.getByTestId('loading-chat-image').props.style).aspectRatio).toBe(1);
   expect(screen.UNSAFE_getByType(Image).props.source).toBe(source);
-  expect(screen.UNSAFE_getByType(Image).props.resizeMode).toBe('contain');
+  expect(screen.UNSAFE_getByType(Image).props.contentFit).toBe('contain');
 
   getSizeWithHeaders.mockImplementation(() => Promise.reject(new Error('unauthorized')));
   const failed = render(<SafeAreaProvider><AttachmentImage
@@ -208,7 +209,7 @@ test('원고형 썸네일은 200 정사각 상한을 쓰고 같은 메시지의 
     { uri: 'https://chat.test/one.png', headers: { Authorization: 'Bearer image-test-token' } },
     { uri: 'https://chat.test/two.png', headers: { Authorization: 'Bearer image-test-token' } },
   ];
-  const getSizeWithHeaders = jest.spyOn(Image, 'getSizeWithHeaders');
+  const getSizeWithHeaders = (jest.spyOn(Image, 'loadAsync') as jest.Mock);
   getSizeWithHeaders.mockImplementation(() => Promise.resolve({ width: 390, height: 844 }));
   global.fetch = jest.fn().mockResolvedValue({ ok: false, headers: { get: () => null } }) as unknown as typeof fetch;
   const screen = render(<SafeAreaProvider initialMetrics={{
@@ -229,7 +230,7 @@ test('원고형 썸네일은 200 정사각 상한을 쓰고 같은 메시지의 
     await Promise.resolve();
   });
 
-  await waitFor(() => expect(getSizeWithHeaders).toHaveBeenCalledWith(sources[0].uri, sources[0].headers));
+  await waitFor(() => expect(getSizeWithHeaders).toHaveBeenCalledWith({ uri: sources[0].uri, headers: sources[0].headers }));
   expect(StyleSheet.flatten(screen.getByTestId('chat-image-thumb').props.style)).toMatchObject({
     width: '100%',
     maxWidth: 200,
@@ -245,7 +246,7 @@ test('원고형 썸네일은 200 정사각 상한을 쓰고 같은 메시지의 
   expect(modalChildren[1].props.variant).toBe('chatRefined');
   expect(screen.UNSAFE_getByType(SafeAreaView).props.edges).toEqual(['top', 'bottom', 'left', 'right']);
   expect(screen.getByTestId('chat-image-viewer-image').props.source).toBe(sources[0]);
-  expect(screen.getByTestId('chat-image-viewer-image').props.resizeMode).toBe('contain');
+  expect(screen.getByTestId('chat-image-viewer-image').props.contentFit).toBe('contain');
   expect(screen.getByTestId('chat-image-viewer-previous').props.accessibilityState.disabled).toBe(true);
   expect(screen.getByTestId('chat-image-viewer-next').props.accessibilityState.disabled).toBe(false);
   fireEvent.press(screen.getByTestId('chat-image-viewer-next'));

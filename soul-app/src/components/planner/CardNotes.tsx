@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import type { CardComment } from '../../api/cardTypes';
 import type { Session } from '../../api/types';
 import { formatCardTime } from '../../lib/card-check-item-summary';
 import { useAuthStore } from '../../store/authStore';
+import { useAgentPortraitResolver } from '../../store/agentPortraitStore';
+import { resolveRemoteImageSource } from '../../lib/remote-image';
+import { RemoteImage } from '../RemoteImage';
 import { useSettingsStore } from '../../store/settingsStore';
 import { resolveSessionCardAvatar, resolveSessionAgentLabel } from '../sessionCardDisplay';
 import { useTokens, type DesignTokens } from '../../theme';
@@ -57,10 +60,11 @@ function NoteMessage({ note, sessions, assigneeSessionId }: { note: CardComment;
     ?? { agentSessionId: note.sessionId ?? note.authorId ?? note.cardId, agentId: note.authorId };
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const jwt = useAuthStore((state) => state.jwt);
-  const avatar = resolveSessionCardAvatar(author, serverUrl);
+  const portraits = useAgentPortraitResolver();
+  const avatar = resolveSessionCardAvatar({ ...author, agentPortraitUrl: portraits.normalize((author as Session).agentPortraitUrl) }, serverUrl);
   return <View testID={`card-note-${note.id}`} style={styles.record}>
     <View style={styles.recordRow}>
-      {avatar.uri ? <Image source={{ uri: avatar.uri, ...(jwt && avatar.uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={styles.avatar} />
+      {avatar.uri ? <RemoteImage source={resolveRemoteImageSource(avatar.uri, serverUrl, jwt)} style={styles.avatar} />
         : <View style={[styles.avatar, styles.avatarFallback]}><Text style={styles.avatarFallbackText}>{avatar.fallbackChar}</Text></View>}
       <View style={styles.content}>
         <View style={styles.header}>
