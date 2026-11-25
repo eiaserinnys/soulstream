@@ -149,8 +149,8 @@ const geometry = locator => locator.evaluate(el => { const b = el.getBoundingCli
 /** 결함 2: 네 입력창 모두 알림줄과 「해제」가 같은 모양으로 서고, 해제는 입력창만 닫고 초점을 연 단추로 돌린다. */
 async function composerNotices(browser, base) {
   const cases = [
-    { name: '지시 적기', state: 'review', trigger: 'pas-report-open-composer', notice: 'pas-report-composer-notice', text: '커멘트' },
-    { name: '다르게 답하기', state: 'question', trigger: 'pas-report-answer-freely', notice: 'pas-report-composer-notice', text: '다르게 답하기' },
+    { name: '지시 적기', state: 'review', trigger: 'pas-report-open-composer', notice: 'pas-report-composer-notice', text: '커멘트', release: '해제' },
+    { name: '다르게 답하기', state: 'question', trigger: 'pas-report-answer-freely', notice: 'pas-report-composer-notice', text: '다르게 답하기', release: '해제' },
     { name: '되묻기', state: 'question', trigger: 'pas-report-ask-back', notice: 'card-question-target', text: '되묻기' },
     { name: '항목 지시', state: 'review', trigger: 'card-check-item-1-fix', notice: 'card-comment-target', text: '1' },
   ];
@@ -168,7 +168,7 @@ async function composerNotices(browser, base) {
         await notice.waitFor();
         const line = await geometry(notice);
         assert.ok((await notice.innerText()).includes(item.text), `${label} ${item.name}: 알림줄 글 「${await notice.innerText()}」`);
-        const release = notice.getByLabel('대상 해제');
+        const release = notice.getByLabel(item.release ?? '대상 해제', { exact: true });
         assert.equal(await release.count(), 1, `${label} ${item.name}: 「해제」가 있어야 함`);
         // 단추가 두 줄로 감겨도 알림줄은 마지막 단추 줄 아래에 선다.
         const above = (await visibleButtons(page, 'pas-report-decide')).filter(button => button.bottom <= line.top + 1);
@@ -285,7 +285,8 @@ async function optionNotes(browser, base) {
       const probe = { x: barBox.left + barBox.width / 2, y: barBox.top + barBox.height / 2 };
       const around = { x: barBox.left - 6, y: probe.y };
       const contrast = await pixelContrast(page, probe, around);
-      assert.ok(contrast >= 2, `${label}: 선택지 막대 대비 ${round(contrast)}:1 < 2:1`);
+      // 2:1 이상(구분 표시로 보임), 4.5:1 미만(이름보다 먼저 읽히는 굵은 인용 막대가 되지 않음).
+      assert.ok(contrast >= 2 && contrast < 4.5, `${label}: 선택지 막대 대비 ${round(contrast)}:1 (2:1 이상 4.5:1 미만이어야 함)`);
       const recommended = await list.getByText('권함').first().evaluate(el => { const parent = el.parentElement; return { own: getComputedStyle(el).color, parent: getComputedStyle(parent).color, text: el.textContent }; });
       assert.notEqual(recommended.own, recommended.parent, `${label}: 권함이 이름과 같은 색이면 한 이름처럼 읽힘`);
       const selectable = await list.getByText('파일로 옮기기').first().evaluate(el => getComputedStyle(el).userSelect);

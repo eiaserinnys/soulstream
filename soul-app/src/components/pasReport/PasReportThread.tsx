@@ -6,6 +6,7 @@ import type { CardComment, CardDetail, CardQuestion } from '../../api/cardTypes'
 import { cardItemTargetText, formatCardTime } from '../../lib/card-check-item-summary';
 import { buildThread, summarizeTechnicalNotes, type ThreadItem } from '../../lib/pas-report-thread-model';
 import { useAgentPortraitResolver } from '../../store/agentPortraitStore';
+import { withAlpha } from '../../theme/surfaceRoles';
 import { useTokens, type DesignTokens } from '../../theme';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { DisclosureIcon } from '../DisclosureIcon';
@@ -195,7 +196,7 @@ function makeStyles(t: DesignTokens) {
     dotDelegate: { backgroundColor: t.colors.link },
     milestoneText: { ...type.meta, flex: 1, minWidth: 0, color: t.colors.textSecondary },
     optionNotes: { gap: t.uiSpacing.sm },
-    optionNote: { gap: t.uiSpacing.xxs, borderLeftWidth: t.uiSpacing.xs, borderLeftColor: t.colors.textMuted, paddingLeft: t.uiSpacing.md },
+    optionNote: { gap: t.uiSpacing.xxs, borderLeftWidth: t.uiSpacing.xs, borderLeftColor: withAlpha(t.colors.textSecondary, 0.55), paddingLeft: t.uiSpacing.md },
     recommended: { ...type.label, color: t.colors.accent },
     optionLabel: { ...type.body, fontWeight: '600', color: t.colors.textPrimary },
     optionDescription: { ...type.body, color: t.colors.textSecondary },

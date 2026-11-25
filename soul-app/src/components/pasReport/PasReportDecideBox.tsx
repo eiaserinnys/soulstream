@@ -151,8 +151,8 @@ export function PasReportDecideBox({ controller, ui }: { controller: PasReportWi
     {undoRow}
     {controller.actionError ? <Text testID="pas-report-action-error" accessibilityRole="alert" selectable style={styles.error}>{controller.actionError}</Text> : null}
     {composerOpen && agenda && card ? <View testID="pas-report-composer" style={styles.composer}>
-      {composerMode === 'comment' && !targetItem ? <CardComposerNotice testID="pas-report-composer-notice" text="커멘트" onRelease={ui.closeComposer} /> : null}
-      {composerMode === 'answer' ? <CardComposerNotice testID="pas-report-composer-notice" text="다르게 답하기" onRelease={ui.closeComposer} /> : null}
+      {composerMode === 'comment' && !targetItem ? <CardComposerNotice testID="pas-report-composer-notice" text="커멘트" releaseLabel="해제" onRelease={ui.closeComposer} /> : null}
+      {composerMode === 'answer' ? <CardComposerNotice testID="pas-report-composer-notice" text="다르게 답하기" releaseLabel="해제" onRelease={ui.closeComposer} /> : null}
       <CardCommentComposer key={`${card.id}:${composerMode}`} ref={composerRef} api={controller.api} cardId={card.id}
         sessionId={card.assigneeSessionId} nodeId={nodeId} question={composerMode === 'answer' ? question ?? undefined : undefined}
         cardLoaded locked={busy} sending={controller.commentsPending || busy} onBusyChange={() => {}}

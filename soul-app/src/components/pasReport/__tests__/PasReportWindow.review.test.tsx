@@ -13,7 +13,9 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 const mockRestoreFocus = jest.fn();
 jest.mock('../../../lib/attachment-focus', () => ({ restoreAttachmentFocus: (target: unknown) => mockRestoreFocus(target) }));
 
-import { act, fireEvent, waitFor, within } from '@testing-library/react-native';
+import { act, fireEvent, renderHook, waitFor, within } from '@testing-library/react-native';
+import { useTokens } from '../../../theme';
+import { withAlpha } from '../../../theme/surfaceRoles';
 import { StyleSheet } from 'react-native';
 import type { CardDto } from '../../../api/cardTypes';
 import { cardFixture } from '../../../test-support/cards';
@@ -71,7 +73,7 @@ describe('결함 2: 입력창 알림줄, 해제, 닫은 뒤 초점', () => {
     const notice = screen.getByTestId('pas-report-composer-notice');
     expect(within(notice).getByText('커멘트')).toBeTruthy();
     fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '적다 만 글');
-    fireEvent.press(within(notice).getByLabelText('대상 해제'));
+    fireEvent.press(within(notice).getByLabelText('해제'));
     expect(screen.queryByTestId('pas-report-composer')).toBeNull();
     expect(triggerId()).toBe('pas-report-open-composer');
     fireEvent.press(screen.getByTestId('pas-report-open-composer'));
@@ -84,7 +86,8 @@ describe('결함 2: 입력창 알림줄, 해제, 닫은 뒤 초점', () => {
     await waitFor(() => expect(screen.getByTestId('pas-report-answer-freely')).toBeTruthy());
     fireEvent.press(screen.getByTestId('pas-report-answer-freely'));
     expect(within(screen.getByTestId('pas-report-composer-notice')).getByText('다르게 답하기')).toBeTruthy();
-    fireEvent.press(within(screen.getByTestId('pas-report-composer-notice')).getByLabelText('대상 해제'));
+    fireEvent.press(within(screen.getByTestId('pas-report-composer-notice')).getByLabelText('해제'));
+    expect(screen.queryByLabelText('대상 해제')).toBeNull();
     expect(screen.queryByTestId('pas-report-composer')).toBeNull();
     expect(triggerId()).toBe('pas-report-answer-freely');
     mockRestoreFocus.mockClear();
@@ -229,7 +232,7 @@ describe('결함 5, 6, 7: 모양', () => {
     expect(outline('pas-report-snooze-hour')).toBeCloseTo(filled, 5);
   });
 
-  it('6: 선택지 목록의 왼쪽 막대는 이정표 점과 같은 색이고, 권함은 이름과 갈린 글이다', async () => {
+  it('6: 선택지 목록의 왼쪽 막대는 보조 글색 55%(웹 --pas-rt-mark와 같은 꼴)이고, 권함은 이름과 갈린 글이다', async () => {
     const card = cardFixture({ id: 'q', number: 7, status: 'blocked', blockedKind: 'question', title: '7번 질문', assigneeKind: 'session', assigneeSessionId: 's-main' });
     const { screen } = mount({ cards: [card], details: { q: { questions: [openQuestion({ id: 'q1', cardId: 'q' })] } }, entries: [questionEntry('q', 7)], startCardId: 'q' });
     const list = await screen.findByTestId('pas-report-question-options-q1');
@@ -239,7 +242,10 @@ describe('결함 5, 6, 7: 모양', () => {
     expect(recommended.props.children).toBe('  권함');
     const label = within(list).getAllByText(/^가/)[0];
     expect(flat(recommended).color).not.toBe(flat(label).color);
-    // 막대 색이 구분선 색(바탕과 거의 같음)으로 돌아가면 대비가 다시 1.5:1 아래로 떨어진다.
+    // 구분선 색(바탕과 거의 같음)으로 돌아가면 2:1 아래로, 진한 글색(textMuted)으로 돌아가면 4.5:1 위로 떨어진다. 둘 다 이 값과 달라진다.
+    const tokens = renderHook(() => useTokens()).result.current;
+    expect(bar.borderLeftColor).toBe(withAlpha(tokens.colors.textSecondary, 0.55));
+    expect(bar.borderLeftColor).not.toBe(tokens.colors.textMuted);
     expect(bar.borderLeftColor).not.toBe(flat(screen.getByTestId('pas-report-decide')).borderTopColor);
   });
 
