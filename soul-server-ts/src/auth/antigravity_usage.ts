@@ -1,7 +1,9 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentLoginActivity } from "../agent_login/activity.js";
+import { terminateProcessTree } from "../agent_login/process_control.js";
+import { waitForChildExit, type ChildExit } from "../claude_accounts/login_cli_helpers.js";
 import { emptyLimits, type ProviderLimits, type ProviderQuota } from "./provider_limits.js";
 import { readProviderUsageObservation } from "./provider_usage_observation.js";
 
@@ -11,6 +13,43 @@ export interface AntigravityUsageConfig {
   stateDirectory: string;
   /** agy 로그인 흐름이 진행 중이면 사용량 확인이 agy를 띄우지 않는다. */
   loginActivity?: Pick<AgentLoginActivity, "isLive">;
+  /** 진행 중인 조회 자식을 모아 서버 종료 때 거둔다. 없으면 조회마다 따로 거두기만 한다. */
+  children?: AntigravityUsageChildren;
+}
+
+const REAP_GRACE_MS = 2_000;
+const REAP_POST_KILL_WAIT_MS = 1_000;
+
+/**
+ * 조회가 띄운 agy(와 언어 서버 같은 자손)를 끝까지 거두는 곳이다.
+ * agy는 서버 프로세스 그룹에 두므로(하니엘의 그룹 신호가 닿게) 서버가 직접 SIGTERM, SIGKILL로 거둔다.
+ */
+export class AntigravityUsageChildren {
+  private readonly live = new Map<ChildProcess, Promise<ChildExit>>();
+  private readonly reaping = new Map<ChildProcess, Promise<void>>();
+
+  track(child: ChildProcess): void {
+    const exit = waitForChildExit(child);
+    this.live.set(child, exit);
+    void exit.then(() => this.live.delete(child));
+  }
+
+  /** 이미 거두는 중이면 같은 약속을 돌려준다. 실패는 밖으로 새지 않는다. */
+  reap(child: ChildProcess): Promise<void> {
+    const running = this.reaping.get(child);
+    if (running) return running;
+    const exit = this.live.get(child) ?? waitForChildExit(child);
+    const done = terminateProcessTree(child, exit, REAP_GRACE_MS, REAP_POST_KILL_WAIT_MS)
+      .catch(() => {})
+      .finally(() => { this.reaping.delete(child); });
+    this.reaping.set(child, done);
+    return done;
+  }
+
+  /** 진행 중인 조회 자식을 모두 거두고 끝난 뒤 돌아온다. */
+  async shutdown(): Promise<void> {
+    await Promise.all([...new Set([...this.live.keys(), ...this.reaping.keys()])].map((child) => this.reap(child)));
+  }
 }
 
 // 파이프 입력이면 "authentication required"를, stdin이 /dev/null이면(지금 띄우는 방식) "Waiting for authentication"과
@@ -33,22 +72,25 @@ export async function collectAntigravityUsage(
     await mkdir(config.stateDirectory, { recursive: true });
     await writeFile(logPath, "", { mode: 0o600 });
     if (signal.aborted) throw new Error("Antigravity usage aborted");
+    const children = config.children ?? new AntigravityUsageChildren();
     const output = await new Promise<string>((resolve, reject) => {
       const child = spawn(config.cliPath!, [
         "--output-format", "stream-json", "--log-file", logPath, "--print=/usage",
       ], { cwd: config.stateDirectory, env: config.environment, stdio: ["ignore", "pipe", "pipe"] });
+      children.track(child);
       let stdout = "";
       let settled = false;
-      const abort = () => { child.kill("SIGTERM"); };
-      signal.addEventListener("abort", abort, { once: true });
-      // 로그인 안 된 서버에서는 agy가 인증 안내를 찍고 기다린다. 안내가 보이면 45초를 기다리지 않고 끝낸다.
+      // 결과는 바로 내고, 자식은 뒤에서 SIGTERM, 유예, SIGKILL로 끝까지 거둔다.
       const failEarly = (error: Error) => {
         if (settled) return;
         settled = true;
         signal.removeEventListener("abort", abort);
-        child.kill("SIGTERM");
+        void children.reap(child);
         reject(error);
       };
+      const abort = () => failEarly(new Error("Antigravity usage aborted"));
+      signal.addEventListener("abort", abort, { once: true });
+      // 로그인 안 된 서버에서는 agy가 인증 안내를 찍고 기다린다. 안내가 보이면 45초를 기다리지 않고 끝낸다.
       child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
       child.stderr.on("data", (chunk: Buffer) => {
         if (AUTH_REQUIRED_PATTERN.test(chunk.toString("utf8"))) failEarly(new Error("Antigravity authentication required"));

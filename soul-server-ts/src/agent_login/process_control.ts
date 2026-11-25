@@ -74,7 +74,8 @@ function signalTree(rootPid: number | undefined, descendants: number[], signal: 
     }
     return;
   }
-  for (const target of [-rootPid, ...descendants]) {
+  // 그룹 리더가 아닌 자식은 -rootPid가 ESRCH라 본체에 따로 보내야 한다.
+  for (const target of [-rootPid, rootPid, ...descendants]) {
     try {
       process.kill(target, signal);
     } catch {

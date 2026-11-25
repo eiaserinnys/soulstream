@@ -1373,6 +1373,8 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 UNIT
+  # 워커 유닛의 KillMode=process: 서버를 재시작해도 detached 세션 러너와 그 agy가 살아 새 서버가 이어받게 하려는 것이다.
+  # 서버가 직접 띄운 자식(사용량 조회 agy, 로그인 CLI)은 서버가 종료 때 거둔다.
   cat > "$SYSTEMD_DIR/soulstream-worker.service" <<UNIT
 [Unit]
 Description=Soulstream worker

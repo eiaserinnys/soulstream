@@ -476,7 +476,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     claudeAuth,
     ...(claudeAccounts ? { claudeAccounts } : {}),
     ...(claudeLoginService ? { claudeLoginService } : {}),
-    agentLoginService,
+    agentLoginService, providerUsage,
     realtimeBroker,
     agentConfigService,
     mcpRuntime,

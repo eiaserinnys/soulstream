@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { ANTHROPIC_USAGE_URL } from "@soulstream/wire-schema/claude-oauth";
 import type { ClaudeAuthCommandHandler } from "./claude_auth.js";
-import { collectAntigravityUsage, type AntigravityUsageConfig } from "./antigravity_usage.js";
+import { AntigravityUsageChildren, collectAntigravityUsage, type AntigravityUsageConfig } from "./antigravity_usage.js";
 import {
   collectOpencodeGoUsage,
   OPENCODE_GO_USAGE_URL,
@@ -134,6 +134,7 @@ function isRefreshableCodexAuthError(error: unknown): boolean {
 
 export class ProviderUsageService implements ProviderUsageCommandHandler {
   private antigravitySucceeded = false;
+  private readonly antigravityChildren = new AntigravityUsageChildren();
   private readonly homeDir: string;
   private readonly fetchImpl: typeof fetch;
   private readonly requestTimeoutMs: number;
@@ -161,6 +162,11 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
       Math.max(1, Math.floor(this.requestTimeoutMs / 10)),
     );
     this.codexRuntimeLimitsImpl = config.codexRuntimeLimitsImpl ?? codexRuntimeLimits;
+  }
+
+  /** 서버 종료 때 진행 중인 agy 사용량 조회 자식을 거둔다. */
+  async shutdown(): Promise<void> {
+    await this.antigravityChildren.shutdown();
   }
 
   async fetchUsage(
@@ -289,7 +295,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
       case "codex":
         return this.fetchCodexLimits(signal, deadlineAtMs, attempts);
       case "antigravity":
-        return collectAntigravityUsage(this.config.antigravity, signal);
+        return collectAntigravityUsage(this.config.antigravity && { ...this.config.antigravity, children: this.antigravityChildren }, signal);
       case "opencode_go":
         return collectOpencodeGoUsage(
           { ...this.config.opencodeGo, fetchImpl: this.config.fetchImpl ?? this.config.opencodeGo?.fetchImpl },

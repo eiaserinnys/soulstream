@@ -4,6 +4,7 @@ import type { AgentRegistry } from "../agent_registry.js";
 import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 import type { FileAttachmentStore } from "../attachments/file_manager.js";
 import type { ClaudeAuthService } from "../auth/claude_auth.js";
+import type { ProviderUsageService } from "../auth/provider_usage.js";
 import type { ClaudeAccountService } from "../claude_accounts/index.js";
 import type { ClaudeLoginService } from "../claude_accounts/login_service.js";
 import type { Env } from "../config.js";
@@ -66,6 +67,7 @@ export interface WorkerComposition extends TaskRuntimeComposition {
   claudeAccounts?: ClaudeAccountService;
   claudeLoginService?: ClaudeLoginService;
   agentLoginService?: AgentLoginService;
+  providerUsage: ProviderUsageService;
   realtimeBroker: RealtimeBroker;
   agentConfigService: AgentConfigService;
   mcpRuntime: McpRuntime;

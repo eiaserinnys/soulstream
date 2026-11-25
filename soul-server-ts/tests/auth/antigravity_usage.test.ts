@@ -1,11 +1,13 @@
+import { readFileSync } from "node:fs";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { collectAntigravityUsage } from "../../src/auth/antigravity_usage.js";
+import { AntigravityUsageChildren, collectAntigravityUsage } from "../../src/auth/antigravity_usage.js";
 import { ProviderUsageCommands } from "../../src/upstream/provider_usage_commands.js";
 import { ProviderUsageService } from "../../src/auth/provider_usage.js";
 import { resetProviderUsageObservationMemo } from "../../src/auth/provider_usage_observation.js";
+import { isAlive, waitFor } from "../agent_login/fake_clis.js";
 
 const fixture = await readFile(new URL("./fixtures/antigravity_usage.jsonl", import.meta.url), "utf8");
 const directories: string[] = [];
@@ -121,4 +123,58 @@ describe("Antigravity usage on a node that is not logged in", () => {
     expect(await service.fetchProvider("antigravity")).toMatchObject({ status: "not_configured" });
     await expect(readFile(join(config.stateDirectory, "started.flag"), "utf8")).rejects.toThrow();
   });
+});
+
+describe("Antigravity usage child cleanup", () => {
+  beforeEach(() => resetProviderUsageObservationMemo());
+  // SIGTERM을 무시하는 agy가 SIGTERM을 무시하는 자손을 띄운다. 자손이 준비된 뒤에야 agy가 다음 동작(onReady)을 한다.
+  const stubbornCli = (onReady: string) => `
+    const { spawn } = require('node:child_process');
+    const fs = require('node:fs');
+    process.on('SIGTERM', () => {});
+    spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); require('node:fs').writeFileSync('gc.pid', String(process.pid)); setInterval(() => {}, 1000);"], { stdio: 'ignore' });
+    fs.writeFileSync('agy.pid', String(process.pid));
+    const ready = setInterval(() => { if (fs.existsSync('gc.pid') && fs.readFileSync('gc.pid', 'utf8')) { clearInterval(ready); ${onReady} } }, 20);
+    setInterval(() => {}, 1000);
+  `;
+  const readPids = (directory: string) => {
+    try {
+      const agy = Number(readFileSync(join(directory, "agy.pid"), "utf8"));
+      const grandchild = Number(readFileSync(join(directory, "gc.pid"), "utf8"));
+      return agy > 0 && grandchild > 0 ? { agy, grandchild } : null;
+    } catch { return null; }
+  };
+  const pidsReady = (directory: string) => waitFor(() => readPids(directory), (value) => value !== null, 5_000) as Promise<{ agy: number; grandchild: number }>;
+  const expectGone = async (pids: { agy: number; grandchild: number }) => {
+    await waitFor(() => [isAlive(pids.agy), isAlive(pids.grandchild)], (alive) => !alive[0] && !alive[1], 6_000);
+  };
+
+  it("reaps agy and its descendant after failEarly while returning the result right away", async () => {
+    const config = await fakeCli(stubbornCli("process.stderr.write('Error: Authentication required.\\n');"));
+    const started = Date.now();
+    const limits = await collectAntigravityUsage(config, new AbortController().signal);
+    expect(Date.now() - started).toBeLessThan(1_500);
+    expect(limits).toMatchObject({ status: "error", error: "Antigravity authentication required" });
+    await expectGone((await pidsReady(config.stateDirectory)));
+  }, 15_000);
+
+  it("reaps agy and its descendant after the abort deadline", async () => {
+    const config = await fakeCli(stubbornCli("process.stdout.write('ready\\n');"));
+    const controller = new AbortController();
+    const pending = collectAntigravityUsage(config, controller.signal);
+    const pids = await pidsReady(config.stateDirectory);
+    controller.abort();
+    expect(await pending).toMatchObject({ status: "error", error: "Antigravity usage aborted" });
+    await expectGone(pids);
+  }, 15_000);
+
+  it("shutdown reaps in-flight lookups and resolves only after they are gone", async () => {
+    const children = new AntigravityUsageChildren();
+    const config = { ...(await fakeCli(stubbornCli("process.stdout.write('ready\\n');"))), children };
+    const pending = collectAntigravityUsage(config, new AbortController().signal);
+    const pids = await pidsReady(config.stateDirectory);
+    await children.shutdown();
+    await expectGone(pids);
+    expect(await pending).toMatchObject({ status: "error" });
+  }, 15_000);
 });
