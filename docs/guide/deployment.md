@@ -33,3 +33,92 @@ node packages/db-schema/scripts/migrate.mjs fresh-install
 4. **Post-start verification and backups**: after migrations succeed and services start, Haniel runs the manifest's post-start readiness checks (including orchestrator `/api/health` and worker `/health` and internal MCP checks). Database backups (such as scheduled `pg_dump` jobs) are operated independently from code deployments.
 
 For full details on migration IDs, writer provenance checks (`deploy/generate_haniel_writer_projection.py` and `deploy/update_database_release_writer_sources.py`), and stored procedure tests, see [`packages/db-schema/README.md`](../../packages/db-schema/README.md).
+
+## Promoting the verified `beta` channel
+
+The one-line Linux installer installs the `beta` branch of both the Soulstream and atom repositories unless `--ref` and `--atom-ref` are given. Move `beta` forward only to a pair of commits that passed the checks below on disposable Debian 13 (`x86_64`) VMs of at least 2 vCPU, 4 GB RAM, and 40 GB disk. Run the VMs one at a time.
+
+1. **Pick the candidate.** Choose one commit from `origin/main` in each repository (`SOULSTREAM_SHA` and `ATOM_SHA`, full 40-character SHAs) and confirm that CI passed on both.
+2. **Check a new installation.** On a new VM, as `root`, download `install.sh` from the candidate commit and run it with both candidate SHAs:
+   ```bash
+   curl -fsSL "https://raw.githubusercontent.com/eiaserinnys/soulstream/${SOULSTREAM_SHA}/install/install.sh" -o /tmp/install.sh
+   bash /tmp/install.sh --backends claude,codex --ref "$SOULSTREAM_SHA" --atom-ref "$ATOM_SHA" --admin-password-file /root/.ss-pass
+   ```
+   Confirm all of the following:
+   - exit code `0`
+   - `/home/soulstream/soulstream/.local/install-state.json` has `status` `completed` and both `current_sha` values equal the candidate SHAs
+   - `soulstream-atom`, `soulstream-orch`, and `soulstream-worker` are `active`
+   - HTTP `200` from `/api/health` on `:5200` and `:4200`, and from `/health` on `:4205`
+   - the `local` node is `connected`
+   - administrator password login works on both `:5200` and `:4200`
+   - `/persistent` renders in a browser
+
+   Save the result as a record file by copying `install-state.json` to a place outside the VM (for example `fresh-install-state.json`). Step 5 asserts this file. If step 4 requires a person, do it on this VM before deleting it.
+3. **Check an update.** If `beta` already exists, repeat on a second new VM: install first with `--ref` and `--atom-ref` set to the two SHAs that `beta` points to now, then run the command from step 2 again with the candidate SHAs. Confirm exit code `0`, `status` `completed`, `previous_sha` equal to the previous `beta` for both repositories, both `current_sha` values equal to the candidate, the three services `active`, and administrator login. Copy `install-state.json` to a record file (for example `update-install-state.json`); its `previous_sha` values are the previous `beta` SHAs you used.
+4. **Check the first request by hand when the first-use path changed.** Connect one coding agent in **Settings > Coding agents**, send a first request in `/persistent`, and confirm that it reaches review and completes. This is required the first time, when `beta` does not exist yet. After that, decide by running this in each repository with the previous `beta` SHA; a person checks only when it prints something:
+   ```bash
+   # Soulstream
+   git -C "$SOULSTREAM_DIR" diff --name-only "$PREVIOUS_BETA..$SOULSTREAM_SHA" -- \
+     install/ \
+     orch-server-ts/src/session/persistent_session_bootstrap.ts \
+     orch-server-ts/src/session/persistent_session_settings_service.ts \
+     orch-server-ts/src/session/persistent_session_settings_routes.ts \
+     orch-server-ts/src/node/agent_login_routes.ts \
+     orch-server-ts/src/node/claude_account_pool_routes.ts \
+     orch-server-ts/src/node/node_claude_auth_routes.ts \
+     orch-server-ts/src/node/node_claude_auth_helpers.ts \
+     soul-server-ts/src/agent_login/ \
+     soul-server-ts/src/claude_accounts/ \
+     unified-dashboard/client/components/CodingAgentsTab.tsx \
+     unified-dashboard/client/components/claude-accounts/ \
+     unified-dashboard/client/lib/agent-login-api.ts \
+     unified-dashboard/client/v3/PersistentSessionEmptyState.tsx
+
+   # atom
+   git -C "$ATOM_DIR" diff --name-only "$PREVIOUS_BETA..$ATOM_SHA" -- \
+     src/mcp/ \
+     src/api/middleware/auth.ts \
+     src/api/agent-key-auth.ts \
+     src/api/auth-mode.ts \
+     src/api/routes/auth.ts \
+     src/api/routes/auth_callback_handlers.ts \
+     src/api/routes/auth_helpers.ts \
+     src/api/routes/mcp.ts
+   ```
+   `install/` includes the starter seed and the installer. Use each repository's own previous `beta` SHA as `PREVIOUS_BETA`.
+5. **Move `beta` with one script.** Fill in the values and run the script. It fetches both repositories and makes every assertion first, and pushes only after all of them pass. It never forces a push.
+   ```bash
+   #!/usr/bin/env bash
+   set -euo pipefail
+   SOULSTREAM_DIR=/path/to/soulstream
+   ATOM_DIR=/path/to/atom
+   SOULSTREAM_SHA=<40-character SHA>
+   ATOM_SHA=<40-character SHA>
+   FRESH_RECORD=/path/to/fresh-install-state.json
+   UPDATE_RECORD=/path/to/update-install-state.json   # leave empty only when beta does not exist yet
+
+   has_beta() { git -C "$1" rev-parse --verify --quiet refs/remotes/origin/beta >/dev/null; }
+   check() { # name dir sha
+     local name=$1 dir=$2 sha=$3 old
+     git -C "$dir" merge-base --is-ancestor "$sha" origin/main
+     jq -e --arg n "$name" --arg sha "$sha" '.status == "completed" and .repositories[$n].current_sha == $sha' "$FRESH_RECORD" >/dev/null
+     if has_beta "$dir"; then
+       old=$(git -C "$dir" rev-parse origin/beta)
+       if [ "$old" != "$sha" ]; then
+         git -C "$dir" merge-base --is-ancestor "$old" "$sha"
+         jq -e --arg n "$name" --arg sha "$sha" --arg old "$old" \
+           '.status == "completed" and .repositories[$n].current_sha == $sha and .repositories[$n].previous_sha == $old' "$UPDATE_RECORD" >/dev/null
+       fi
+     fi
+   }
+
+   git -C "$ATOM_DIR" fetch --prune origin
+   git -C "$SOULSTREAM_DIR" fetch --prune origin
+   check atom "$ATOM_DIR" "$ATOM_SHA"
+   check soulstream "$SOULSTREAM_DIR" "$SOULSTREAM_SHA"
+
+   git -C "$ATOM_DIR" push origin "$ATOM_SHA:refs/heads/beta" && git -C "$SOULSTREAM_DIR" push origin "$SOULSTREAM_SHA:refs/heads/beta"
+   ```
+   The assertions are: each candidate is an ancestor of `origin/main`; an existing `origin/beta` is an ancestor of the candidate and equals the previous `beta` used in step 3; and the record files show the candidate as `current_sha`. The VMs are already deleted at this point, so the script reads the records, not a server. `origin/beta` already equal to the candidate means an earlier run of this script already moved that repository, so its update assertions are skipped. If the second push fails, run the same script again. The first push is then a no-op and the second one completes the move. Do not use `--force` or a `+` refspec.
+6. **Fix forward.** `beta` never moves backward, and the repository rules block deleting it or rewriting it. To fix a bad `beta`, put the fix on `main`, run steps 1 to 5 again, and move `beta` forward to the fixed commit.
+7. **Delete each VM as soon as its check ends.** Delete the instance; do not just shut it down.

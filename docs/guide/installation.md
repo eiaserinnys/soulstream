@@ -7,10 +7,10 @@ This guide covers the Linux one-line installer (including updates, Tailscale Ser
 Run the installer as `root` on a fresh Debian 13 (`x86_64`) server. Recommended specs are at least 2 vCPU, 4 GB RAM, and 40 GB disk. The installer checks for at least 3.5 GiB RAM and 20 GB free space on `/`.
 
 ```bash
-bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl/certs/ca-certificates.crt) || (apt-get update && apt-get install -y curl ca-certificates); tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex'
+bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl/certs/ca-certificates.crt) || (apt-get update && apt-get install -y curl ca-certificates); tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/beta/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex'
 ```
 
-`--backends` takes a comma-separated list of `claude`, `codex`, and `antigravity` (default: `claude,codex`). The first backend becomes the backend for the default `seosoyoung` and `seosoyoung-pas` profiles. Pin a revision with `--ref <ref>` for Soulstream or `--atom-ref <ref>` for atom (branch, tag, or commit).
+`--backends` takes a comma-separated list of `claude`, `codex`, and `antigravity` (default: `claude,codex`). The first backend becomes the backend for the default `seosoyoung` and `seosoyoung-pas` profiles. Without `--ref` or `--atom-ref`, both Soulstream and atom install from the verified `origin/beta` branch. For the latest development commits, download `install.sh` from `main` instead of `beta` and pass `--ref main --atom-ref main` together. You can also pin a revision with `--ref <ref>` for Soulstream or `--atom-ref <ref>` for atom (branch, tag, or commit).
 
 Administrator password options (shared by the Soulstream dashboard and atom):
 
@@ -60,9 +60,9 @@ In a new browser, the dashboard opens the persistent assistant session view (`/p
 
 ### Updating
 
-Re-run the same one-line command to update. Without `--ref` or `--atom-ref`, both repositories move to the latest `origin/main`. Pass the same `--backends` value you installed with (omitting it defaults to `claude,codex`). An installation without atom also gains atom with the same command.
+Re-run the same one-line command to update. Without `--ref` or `--atom-ref`, both repositories move to the latest `origin/beta` commit of the verified channel. Pass the same `--backends` value you installed with (omitting it defaults to `claude,codex`). An installation without atom also gains atom with the same command.
 
-Before it stops any service, the installer checks both repositories. If it finds uncommitted changes, a non-git directory, an unresolvable revision, local commits not on `origin`, or a Soulstream revision predating atom support, it aborts without touching running services. Untracked installer files (config and `.env`) do not block updates.
+Before it stops any service, the installer checks both repositories. If it finds uncommitted changes, a non-git directory, an unresolvable revision, local commits not on `origin`, a Soulstream revision predating atom support, a current `HEAD` that is not an ancestor of the target revision (this includes a server installed from `main` that is ahead of `beta`), or a running installer that differs from `install/install.sh` at the target revision, it aborts without stopping any service. For an existing installation the two ancestor checks and the installer comparison run before the installer changes packages, Node.js, or the CLIs. Servers installed from `main` should keep using the installer from `main` and `--ref main --atom-ref main` until `beta` catches up. These two checks apply only when you do not pass `--ref` or `--atom-ref`. Untracked installer files (config and `.env`) do not block updates.
 
 Updates preserve secrets, the existing administrator password (without prompting, reading `/home/soulstream/soulstream/.admin-password` first), both databases (`soulstream` and `atom`), the existing workspace, unmanaged `.env` lines, and edited config files. Edited managed files stay untouched; new defaults go beside them as `<file>.installer-new` and appear under `Configuration:` ([managed config files](configuration.md#files-the-linux-installer-manages)).
 
@@ -73,24 +73,26 @@ After the checks pass, the installer stops `soulstream-worker`, `soulstream-orch
 Re-run the same one-line install command with `--set-admin-password` on an interactive SSH session, or pass `--admin-password-file <path>` for non-interactive rotation (keep the same `--backends`, and include `--tailscale` if your server uses Tailscale mode):
 
 ```bash
-bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex --set-admin-password'
+bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/beta/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex --set-admin-password'
 ```
 
 Non-interactive rotation from a root-owned `0600` file:
 
 ```bash
-bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex --admin-password-file /root/.soulstream-pass'
+bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/beta/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex --admin-password-file /root/.soulstream-pass'
 ```
 
-The command also updates the server to the latest version, and the new password applies to both the dashboard and atom right away. The installer validates the new password before stopping services. Once services stop, it writes `/home/soulstream/soulstream/.admin-password` first, then updates `/home/soulstream/atom/.env` and restarts `soulstream-atom`, verifies atom seed access, and in password mode updates `/home/soulstream/soulstream/.env.orch`, restarts `soulstream-orch`, and verifies dashboard login. If a later step fails, re-running the installer picks up the new password from `.admin-password` and finishes updating the remaining files. Do not edit only one `.env` file by hand.
+The command also updates the server to the latest verified version on the `beta` channel (unless `--ref` and `--atom-ref` are set), and the new password applies to both the dashboard and atom right away. The installer validates the new password before stopping services. Once services stop, it writes `/home/soulstream/soulstream/.admin-password` first, then updates `/home/soulstream/atom/.env` and restarts `soulstream-atom`, verifies atom seed access, and in password mode updates `/home/soulstream/soulstream/.env.orch`, restarts `soulstream-orch`, and verifies dashboard login. If a later step fails, re-running the installer picks up the new password from `.admin-password` and finishes updating the remaining files. Do not edit only one `.env` file by hand.
 
 ### Tailscale Serve
 
 Add `--tailscale` to the install command for passwordless Soulstream access with an allowed Tailscale account. Enable MagicDNS and HTTPS in your tailnet. Approve any login URL within 10 minutes (already-connected devices skip approval).
 
 ```bash
-bash install/install.sh --tailscale --tailscale-user owner@example.com
+bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/beta/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex --tailscale --tailscale-user owner@example.com'
 ```
+
+If you run a local copy such as `bash install/install.sh` instead, pass `--ref` and `--atom-ref` as well; without them the installer stops when the local file differs from `install/install.sh` at `origin/beta`.
 
 Personal devices default to their own account when you omit `--tailscale-user`; tagged devices require it. To use an auth key, store it in a file and pass `--tailscale-auth-key-file <path>` so it never enters process arguments. After installation, open the printed HTTPS URL from a tailnet device signed in as that account. Local processes on the server can forge identity headers, so run only trusted processes on the host.
 
@@ -103,13 +105,13 @@ Re-run without `--tailscale` to return to password mode. To remove Serve access 
 Run the uninstaller as `root` on the dedicated server where you installed Soulstream:
 
 ```bash
-bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall.sh -o "$tmp"; bash "$tmp"'
+bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/beta/install/uninstall.sh -o "$tmp"; bash "$tmp"'
 ```
 
 For non-interactive runs, pass `--yes` inside the inner command:
 
 ```bash
-bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall.sh -o "$tmp"; bash "$tmp" --yes'
+bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/beta/install/uninstall.sh -o "$tmp"; bash "$tmp" --yes'
 ```
 
 Before changing anything, the uninstaller scans the server, prints what it found, and prompts once on `/dev/tty`. If no interactive terminal is available and you omit `--yes`, it exits without making changes. If you run the command again after a clean removal, it prints `Nothing to uninstall.` and exits `0`.
