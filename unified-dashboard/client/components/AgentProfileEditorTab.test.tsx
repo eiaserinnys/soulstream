@@ -364,7 +364,7 @@ describe("AgentProfileEditorTab", () => {
     clickButtonByLabel("human-facing 제거");
     setSelect("추가할 번들", "windows-host");
     clickButton("번들 추가");
-    clickButton("조립");
+    clickButton("구성");
     await settle();
     const assembly = document.body.querySelector('[data-testid="agent-context-assembly"]')!;
     const rows = Array.from(assembly.querySelectorAll("button")).filter(button => button.textContent?.includes("깊이"));
@@ -542,11 +542,17 @@ describe("AgentProfileEditorTab", () => {
       atom_contexts: profile.atom_contexts, session: { source: "browser", backend: "claude", agent: "seosoyoung" },
     } });
     await vi.waitFor(() => expect(document.body.textContent).toContain("운영 지침"));
-    expect(document.body.textContent).toContain("87");
+    // 목록의 수는 글자 수 하나로 적고, 토큰은 소스 상세 머리의 「예상 N 토큰」에만 남는다.
+    const assembly = document.body.querySelector('[data-testid="agent-context-assembly"]')!;
+    expect(assembly.textContent).toContain("345자");
+    expect(assembly.textContent).not.toContain("87");
     const row = Array.from(document.body.querySelectorAll("button")).find(button => button.textContent?.includes("운영 지침"));
     expect(row).toBeDefined();
+    // 실린 문서를 주지 않은 옛 응답은 펼치지 않고 줄을 누르면 본문으로 들어간다.
+    expect(row!.hasAttribute("aria-expanded")).toBe(false);
     flushSync(() => row!.click());
     expect(document.body.textContent).toContain("345자");
+    expect(document.body.textContent).toContain("예상 87 토큰");
   });
 
   it("opens the MCP tab for a node-only YAML agent and keeps its edit tab for the portrait", async () => {

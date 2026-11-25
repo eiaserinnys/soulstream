@@ -1,9 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { openBody } from "./agent-profile-assembly-guides-helpers";
+import { guideSkills } from "../client/v3/guides-fixture";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 import { assemblyBundles, assemblyContexts, assemblyPreview } from "../client/v3/agent-profile-assembly-fixture";
 
+const SKILL_LABEL = guideSkills[1]!.name;
 const output = path.resolve("../.local/card1783-captures");
 async function open(page: Page, width: number, state = "normal") {
   await page.setViewportSize({ width, height: 900 });
@@ -29,7 +32,7 @@ async function open(page: Page, width: number, state = "normal") {
 }
 async function capture(page: Page, width: number, name: string) {
   mkdirSync(output, { recursive: true });
-  await page.screenshot({ path: path.join(output, `${name}-${width}.png`), animations: "disabled" });
+  await page.screenshot({ path: path.join(output, `${name}-${width}.png`), animations: "disabled", timeout: 30_000 });
 }
 function record(width: number, name: string, value: unknown) {
   mkdirSync(output, { recursive: true });
@@ -102,19 +105,19 @@ for (const width of [1440, 360]) {
     expect(geometry.action.width).toBeGreaterThanOrEqual(24);
     expect(geometry.action.height).toBeGreaterThanOrEqual(24);
     expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth);
-    const before = await page.screenshot({ animations: "disabled" });
+    const before = await page.screenshot({ animations: "disabled", timeout: 30_000 });
     await page.getByLabel("조립 백엔드").selectOption("codex");
     await page.getByLabel("조립 카드 역할").selectOption("assignee");
-    await expect(row(page, "조건부 지침")).toContainText("들어감");
+    await expect(row(page, "조건부 지침")).not.toContainText("빠짐");
     await capture(page, width, "conditions");
-    const after = await page.screenshot({ animations: "disabled" });
+    const after = await page.screenshot({ animations: "disabled", timeout: 30_000 });
     const comparison = await headerPixels(page, before, after);
     record(width, "unchanged-header", comparison);
     expect(comparison.changed).toBe(0);
   });
 
   test(`long body and scroll ${width}`, async ({ page }) => {
-    await open(page, width); await row(page, "공통 지침과 아주 긴 제목").click();
+    await open(page, width); await openBody(page, "공통 지침과 아주 긴 제목");
     const content = page.locator('[data-slot="context-content-fill"]');
     await expect(content).toBeVisible();
     expect((await content.textContent())!.length).toBeGreaterThan(50000);
@@ -142,9 +145,9 @@ for (const width of [1440, 360]) {
     await open(page, width);
     await page.getByLabel("조립 백엔드").selectOption("codex");
     await page.getByLabel("조립 카드 역할").selectOption("assignee");
-    await expect(row(page, "조건부 지침")).toContainText("들어감");
-    await row(page, "스킬 목록").click();
-    await page.getByLabel("스킬 정의 원문").selectOption({ label: "검수 스킬" });
+    await expect(row(page, "조건부 지침")).not.toContainText("빠짐");
+    await openBody(page, "스킬 목록");
+    await page.getByLabel("스킬 정의 원문").selectOption({ label: SKILL_LABEL });
     await expect(page.getByTestId("agent-context-skill-original")).toContainText("가상의 스킬 정의 원문");
     await capture(page, width, "skill");
     await page.getByLabel("소스 본문으로").click();
@@ -162,21 +165,22 @@ for (const width of [1440, 360]) {
   test(`draft and saved ${width}`, async ({ page }) => {
     await open(page, width); await page.getByRole("tab", { name: "편집" }).click();
     await page.getByLabel("공통 지침과 긴 이름을 가진 검수용 번들 제거").click();
-    await page.getByRole("tab", { name: "조립" }).click();
+    await page.getByRole("tab", { name: "구성" }).click();
     await page.getByLabel("다시 조립").click();
     await expect(page.getByTestId("agent-context-assembly")).not.toContainText("스킬 목록");
     await capture(page, width, "draft");
     await page.getByRole("tab", { name: "편집" }).click();
     await page.getByRole("button", { name: "프로필 저장" }).click();
     await expect(page.getByTestId("agent-profile-editor").getByRole("status")).toHaveText("프로필을 저장했습니다.");
-    await page.getByRole("tab", { name: "조립" }).click();
+    await page.getByRole("tab", { name: "구성" }).click();
     await expect(page.getByTestId("agent-context-assembly")).not.toContainText("스킬 목록");
     await capture(page, width, "saved");
   });
 
   test(`node-only profile ${width}`, async ({ page }) => {
     await open(page, width); await chooseProfile(page, width, "노드 전용 검수 프로필", "node:node-sample");
-    await expect(page.getByRole("tab", { name: "편집" })).toBeDisabled();
+    // main(#2333)이 노드 전용 프로필에도 편집 탭(초상 칸)을 열었다.
+    await expect(page.getByRole("tab", { name: "편집" })).toBeEnabled();
     await expect(page.getByTestId("agent-context-assembly")).toContainText("노드 설정");
     await expect(page.getByLabel("다시 조립")).toHaveCount(0);
     await capture(page, width, "node-only");

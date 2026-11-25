@@ -2,10 +2,19 @@
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentContextAssemblyView } from "./AgentContextAssemblyView";
 import { resetAtomPublicUrlForTests } from "../../../packages/soul-ui/src/hooks/useAtomPublicUrl";
 import { assemblyBundles, assemblyContexts, assemblyPreview } from "../v3/agent-profile-assembly-fixture";
+import { assemblyPreviewDocuments } from "../v3/guides-api";
+import { guideReport, guideSkills } from "../v3/guides-fixture";
+
+/** 스킬 목록(/api/skill-guides)은 따로 답하고 나머지는 시험이 센 요청으로 보낸다. guides를 안 주면 목록은 실패한다. */
+function routed(request: typeof fetch | ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>), guides?: unknown): typeof fetch {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => String(input).startsWith("/api/skill-guides")
+    ? guides === undefined ? new Response("{}", { status: 503 }) : Response.json(guides)
+    : request(input, init)) as typeof fetch;
+}
 
 it("keeps the newer assembly when an aborted response finishes reading later", async () => {
   const context = assemblyContexts[0]!;
@@ -25,7 +34,7 @@ it("keeps the newer assembly when an aborted response finishes reading later", a
   try {
     flushSync(() => root.render(createElement(AgentContextAssemblyView, {
       target: { kind: "central", agentId: "agent", specs: [{ context, source: "프로필" }] },
-      nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request,
+      nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request: routed(request),
     })));
     await vi.waitFor(() => expect(readOld).toHaveBeenCalledOnce());
     flushSync(() => host.querySelector<HTMLButtonElement>('button[aria-label="다시 조립"]')!.click());
@@ -54,7 +63,7 @@ it("keeps the source detail and condition focus while reassembling", async () =>
   try {
     flushSync(() => root.render(createElement(AgentContextAssemblyView, {
       target: { kind: "central", agentId: "agent", specs: [{ context, source: "프로필" }] },
-      nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request,
+      nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request: routed(request),
     })));
     await vi.waitFor(() => expect(host.textContent).toContain("프로필 지침"));
     const row = Array.from(host.querySelectorAll("button")).find(button => button.textContent?.includes("프로필 지침"))!;
@@ -81,9 +90,10 @@ it("retries a failed assembly and refreshes only on demand", async () => {
   const container = document.createElement("div"); document.body.appendChild(container);
   const root = createRoot(container);
   const context = assemblyContexts[0]!;
+  const guided = routed(request);
   const render = (nodeId: string) => flushSync(() => root.render(createElement(AgentContextAssemblyView, {
     target: { kind: "central", agentId: "agent", specs: [{ context: { ...context, node_id: nodeId }, source: "프로필" }] },
-    nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request,
+    nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request: guided,
   })));
   try {
     render(context.node_id);
@@ -116,7 +126,7 @@ it("assembles a node-only profile with its agent context and labels the origin",
   document.body.appendChild(container);
   const root = createRoot(container);
   flushSync(() => root.render(createElement(AgentContextAssemblyView, {
-    target: { kind: "node", agentId: "node-agent" }, nodeId: "node-a", initialBackend: "codex", presentOnNode: true, request,
+    target: { kind: "node", agentId: "node-agent" }, nodeId: "node-a", initialBackend: "codex", presentOnNode: true, request: routed(request),
   })));
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -137,7 +147,7 @@ it("reassembles for conditions, shows source failures and copies the exact resul
   const root = createRoot(container);
   flushSync(() => root.render(createElement(AgentContextAssemblyView, {
     target: { kind: "central", agentId: "agent", specs: specs.map(context => ({ context, source: "번들" })) },
-    nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request,
+    nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request: routed(request),
   })));
   await vi.waitFor(() => expect(container.textContent).toContain("실패"));
   expect(container.textContent).toContain("빠짐");
@@ -164,7 +174,7 @@ it("omits token estimates in non-included source details", async () => {
   const root = createRoot(container);
   flushSync(() => root.render(createElement(AgentContextAssemblyView, {
     target: { kind: "central", agentId: "agent", specs: specs.map(context => ({ context, source: "번들" })) },
-    nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request,
+    nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request: routed(request),
   })));
   await vi.waitFor(() => expect(container.textContent).toContain("실패 소스"));
   for (const status of ["filtered", "error", "empty", "duplicate"]) {
@@ -192,7 +202,7 @@ async function renderAtomLinkCase(options: { publicUrl: string | null; baseUrl: 
   const root = createRoot(host);
   flushSync(() => root.render(createElement(AgentContextAssemblyView, {
     target: { kind: "central", agentId: "agent", specs: [{ context, source: "프로필" }] },
-    nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request,
+    nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request: routed(request),
   })));
   await vi.waitFor(() => expect(host.textContent).toContain("프로필 지침"));
   await vi.waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/status"));
@@ -224,4 +234,193 @@ it("draws no atom button when neither address exists", async () => {
   try {
     expect(atomButtons()).toHaveLength(0);
   } finally { flushSync(() => root.unmount()); host.remove(); }
+});
+
+describe("documents가 있는 새 응답과 없는 옛 응답", () => {
+  const specs = [...assemblyBundles.flatMap(bundle => bundle.atom_contexts), ...assemblyContexts].slice(0, 2);
+  async function mountView(preview: (body: Parameters<typeof assemblyPreview>[0]) => unknown) {
+    const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(preview(JSON.parse(String(init?.body)))));
+    const guides = { skills: guideSkills, catalogs: [], report: guideReport };
+    const host = document.createElement("div"); document.body.append(host);
+    const root = createRoot(host);
+    flushSync(() => root.render(createElement(AgentContextAssemblyView, {
+      target: { kind: "central", agentId: "agent", specs: specs.map(context => ({ context, source: "공통 규칙" })) },
+      nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request: routed(request, guides),
+    })));
+    await vi.waitFor(() => expect(host.textContent).toContain("스킬 목록"));
+    return { host, unmount: () => { flushSync(() => root.unmount()); host.remove(); } };
+  }
+  const sourceRows = (host: HTMLElement) => Array.from(host.querySelectorAll<HTMLButtonElement>("button[data-status]"));
+
+  it("소스 줄을 누르면 실린 문서 트리(글자 수, 실린 방식)가 펴지고 본문은 「본문 보기」로 연다", async () => {
+    const { host, unmount } = await mountView(assemblyPreviewDocuments);
+    const [first] = sourceRows(host);
+    expect(first!.getAttribute("aria-expanded")).toBe("false");
+    expect(host.querySelector('[data-testid="agent-context-documents"]')).toBeNull();
+    // 같은 이름의 소스를 부모 문서 제목으로 가른다.
+    expect(first!.textContent).toContain("공통 / ");
+    flushSync(() => first!.click());
+    const tree = host.querySelector('[data-testid="agent-context-documents"]')!;
+    expect(first!.getAttribute("aria-expanded")).toBe("true");
+    expect(tree.querySelectorAll("li").length).toBe(5);
+    // 실린 방식이 모두 같으면 문서 줄마다 되풀이하지 않고 트리 머리에 한 번만 적는다.
+    const how = host.querySelector('[data-testid="agent-context-documents-how"]')!;
+    expect(how.textContent).toBe("본문까지");
+    expect(tree.textContent).not.toContain("본문까지");
+    expect(tree.textContent).toMatch(/\d{1,3}(,\d{3})*자/);
+    // 트리는 소스 줄과 같은 묶음 안에서 줄 바로 밑에 붙는다.
+    const item = first!.closest('[data-testid="agent-context-source"]')!;
+    expect(item.contains(tree)).toBe(true);
+    expect(item.querySelectorAll("button[data-status]").length).toBe(1);
+    expect(tree.textContent).not.toContain("토큰");
+    expect(host.querySelector('[data-testid="agent-context-assembly-detail"]')).toBeNull();
+    flushSync(() => host.querySelector<HTMLButtonElement>('button[aria-label$="본문 보기"]')!.click());
+    expect(host.querySelector('[data-testid="agent-context-assembly-detail"]')).not.toBeNull();
+    unmount();
+  });
+
+  it("정상 소스 줄에는 「들어감」 배지를 달지 않고, 빠짐은 배지로 보이며, 제목은 툴팁에 전체가 실린다", async () => {
+    const { host, unmount } = await mountView(assemblyPreviewDocuments);
+    const rowsNow = sourceRows(host);
+    const ok = rowsNow.filter(item => item.dataset.status === "ok");
+    expect(ok.length).toBeGreaterThan(0);
+    for (const row of ok) expect(row.textContent).not.toContain("들어감");
+    const full = ok[0]!.querySelector<HTMLElement>('[data-assembly-title="true"]')!;
+    expect(full.getAttribute("title")).toBe(full.textContent!.trim());
+    unmount();
+  });
+
+  it("실린 방식이 섞인 소스는 문서 줄마다 방식을 적고 머리에는 적지 않는다", async () => {
+    const mixed = (body: Parameters<typeof assemblyPreview>[0]) => {
+      const preview = assemblyPreviewDocuments(body);
+      const [first, ...rest] = preview.manifest.sources;
+      const skill = guideSkills.find(item => item.entry_card_id && item.entry_node_id)!;
+      const documents = [...first!.documents, { node_id: skill.entry_node_id!, card_id: skill.entry_card_id, title: skill.name, depth: 1, chars: 280 }];
+      return { ...preview, manifest: { ...preview.manifest, sources: [{ ...first!, documents }, ...rest] } };
+    };
+    const { host, unmount } = await mountView(mixed);
+    flushSync(() => sourceRows(host)[0]!.click());
+    const tree = host.querySelector('[data-testid="agent-context-documents"]')!;
+    expect(host.querySelector('[data-testid="agent-context-documents-how"]')).toBeNull();
+    expect(tree.textContent).toContain("본문까지");
+    expect(tree.textContent).toContain("이름과 설명만");
+    unmount();
+  });
+
+  it("좁은 칸(목록 폭 432 미만)에서는 글자 수가 메타 줄로 가고 본문 보기와 atom 열기 단추가 펼친 트리 머리로 옮겨 간다", async () => {
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(private readonly callback: (entries: Array<{ contentRect: { width: number } }>) => void) {}
+      observe() { this.callback([{ contentRect: { width: 300 } }]); }
+      unobserve() {}
+      disconnect() {}
+    });
+    try {
+      const { host, unmount } = await mountView(assemblyPreviewDocuments);
+      const [first] = sourceRows(host);
+      // 접힌 줄에는 단추가 없고, 오른쪽 글자 수 칸도 없다(글자 수는 메타 줄 앞에 있다).
+      expect(host.querySelectorAll('button[aria-label$="본문 보기"]')).toHaveLength(0);
+      expect(first!.querySelector(":scope > span.shrink-0.tabular-nums")).toBeNull();
+      expect(first!.textContent).toMatch(/\d{1,3}(,\d{3})*자 · /);
+      flushSync(() => first!.click());
+      const item = first!.closest('[data-testid="agent-context-source"]')!;
+      const inTree = item.querySelectorAll('button[aria-label$="본문 보기"]');
+      expect(inTree).toHaveLength(1);
+      expect(item.querySelector('[data-testid="agent-context-documents"]')!.parentElement!.contains(inTree[0]!)).toBe(true);
+      flushSync(() => (inTree[0] as HTMLButtonElement).click());
+      expect(host.querySelector('[data-testid="agent-context-assembly-detail"]')).not.toBeNull();
+      unmount();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("줄 오른쪽의 수는 글자 수 하나로 적고 토큰은 「전체」 줄에만 남는다", async () => {
+    const { host, unmount } = await mountView(assemblyPreviewDocuments);
+    for (const row of sourceRows(host).filter(item => item.dataset.status === "ok")) {
+      expect(row.textContent).toMatch(/자$/);
+      expect(row.textContent).not.toContain("토큰");
+    }
+    const all = Array.from(host.querySelectorAll("button")).find(button => button.textContent?.startsWith("전체"))!;
+    expect(all.textContent).toContain("토큰");
+    unmount();
+  });
+
+  it("스킬 구역은 스킬마다 설명, 진단 배지, 나가는 연결을 보이고 실린 방식이 모두 같으면 머리에 한 번만 적는다", async () => {
+    const { host, unmount } = await mountView(assemblyPreviewDocuments);
+    const section = host.querySelector('[data-testid="agent-context-skills"]')!;
+    const buttons = Array.from(section.querySelectorAll("button"));
+    expect(buttons.length).toBe(8);
+    expect(section.querySelector("h4")!.parentElement!.textContent).toContain("본문까지");
+    expect(buttons.some(button => button.textContent?.includes("본문까지"))).toBe(false);
+    const first = buttons[0]!;
+    expect(first.textContent).toContain(guideSkills[1]!.name);
+    expect(first.textContent).toContain(guideSkills[1]!.description.slice(0, 12));
+    expect(section.textContent).toContain("11월 25일 14:30 검증");
+    expect(Array.from(section.querySelectorAll("[data-slot='badge']")).length).toBeGreaterThan(0);
+    flushSync(() => first.click());
+    expect(host.querySelector('[data-testid="agent-context-skill-original"]')).not.toBeNull();
+    unmount();
+  });
+
+  it("documents가 없는 옛 응답은 펼침 없이 줄을 누르면 본문이 열리고 스킬 구역도 없다", async () => {
+    const { host, unmount } = await mountView(assemblyPreview);
+    const [first] = sourceRows(host);
+    expect(first!.hasAttribute("aria-expanded")).toBe(false);
+    expect(host.querySelector('button[aria-label$="본문 보기"]')).toBeNull();
+    expect(host.querySelector('[data-testid="agent-context-skills"]')).toBeNull();
+    flushSync(() => first!.click());
+    expect(host.querySelector('[data-testid="agent-context-assembly-detail"]')).not.toBeNull();
+    unmount();
+  });
+
+  it("실서버 꼴: 제목, 부모 제목, 실린 문서는 manifest.sources에만 있고 sections에는 칸이 없다", async () => {
+    const entry = guideSkills.find(item => item.entry_card_id && item.entry_node_id)!;
+    const serverShape = () => ({
+      manifest: {
+        sources: [
+          { node_id: "11111111-aaaa", mode: "full", depth: 3, status: "ok", chars: 900, token_estimate: 225, title: "규칙", parent_title: "공통",
+            documents: [{ node_id: "11111111-aaaa", card_id: "card-root", title: "규칙", depth: 0, chars: 300 }, { node_id: "11111111-bbbb", card_id: null, title: "카드 없는 절", depth: 1, chars: 600 }] },
+          { node_id: "22222222-aaaa", mode: "full", depth: 3, status: "ok", chars: 400, token_estimate: 100, title: "스킬 목록", parent_title: "공통",
+            documents: [{ node_id: "22222222-aaaa", card_id: "card-skills", title: "스킬 목록", depth: 0, chars: 0 }, { node_id: entry.entry_node_id, card_id: entry.entry_card_id, title: entry.name, depth: 1, chars: 280 }] },
+        ],
+        total_chars: 1300, total_token_estimate: 325,
+      },
+      assembled: "# 규칙\n\n본문",
+      sections: [{ spec_index: 0, title: "규칙", markdown: "# 규칙" }, { spec_index: 1, title: "스킬 목록", markdown: "# 스킬 목록" }],
+      atom_base_url: null,
+    });
+    const request = vi.fn(async () => Response.json(serverShape()));
+    const guides = { skills: guideSkills, catalogs: [], report: guideReport };
+    const host = document.createElement("div"); document.body.append(host);
+    const root = createRoot(host);
+    flushSync(() => root.render(createElement(AgentContextAssemblyView, {
+      target: { kind: "central", agentId: "agent", specs: specs.map(context => ({ context, source: "공통 규칙" })) },
+      nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request: routed(request, guides),
+    })));
+    await vi.waitFor(() => expect(sourceRows(host).length).toBe(2));
+    const [first] = sourceRows(host);
+    // 「공통 / 규칙」 가르기와 펼침이 manifest.sources에서 온다.
+    expect(first!.textContent).toContain("공통 / ");
+    expect(first!.getAttribute("aria-expanded")).toBe("false");
+    flushSync(() => first!.click());
+    const tree = host.querySelector('[data-testid="agent-context-documents"]')!;
+    expect(tree.querySelectorAll("li").length).toBe(2);
+    expect(tree.textContent).toContain("카드 없는 절");
+    expect(host.querySelector('[data-testid="agent-context-skills"]')?.textContent).toContain(entry.name);
+    flushSync(() => root.unmount()); host.remove();
+  });
+
+  it("스킬 목록(/api/skill-guides)을 못 받아도 구성 화면은 그대로 서고 스킬 구역만 빠진다", async () => {
+    const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(assemblyPreviewDocuments(JSON.parse(String(init?.body)))));
+    const host = document.createElement("div"); document.body.append(host);
+    const root = createRoot(host);
+    flushSync(() => root.render(createElement(AgentContextAssemblyView, {
+      target: { kind: "central", agentId: "agent", specs: specs.map(context => ({ context, source: "공통 규칙" })) },
+      nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request: routed(request),
+    })));
+    await vi.waitFor(() => expect(host.textContent).toContain("스킬 목록"));
+    expect(host.querySelector('[data-testid="agent-context-skills"]')).toBeNull();
+    expect(sourceRows(host).length).toBeGreaterThan(0);
+    flushSync(() => root.unmount()); host.remove();
+  });
 });

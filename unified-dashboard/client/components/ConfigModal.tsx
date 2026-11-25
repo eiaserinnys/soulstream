@@ -41,6 +41,8 @@ import { AccessLinksTab } from "./AccessLinksTab";
 import { WebhooksTab } from "./WebhooksTab";
 import { McpSettingsTab } from "./mcp/McpSettingsTab";
 import { AgentProfileEditorTab } from "./AgentProfileEditorTab";
+import { SkillCatalogTab } from "./guides/SkillCatalogTab";
+import { resetGuideSession } from "../lib/skill-guides";
 import { SettingFieldWidget } from "./config/SettingFieldWidget";
 import { ConfigCategoryNav } from "./config/ConfigCategoryNav";
 import { ConfigResultMessage } from "./config/ConfigResultMessage";
@@ -63,6 +65,7 @@ const CHAT_TAB_NAME = "chat";
 const NODES_TAB_NAME = "nodes";
 const USERS_TAB_NAME = "users";
 const AGENTS_TAB_NAME = "agents";
+const SKILLS_TAB_NAME = "skills";
 const OWNED_AGENTS_TAB_NAME = "owned_agents";
 const ACCESS_LINKS_TAB_NAME = "access_links";
 const WEBHOOKS_TAB_NAME = "webhooks";
@@ -145,6 +148,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
         { name: "persistent_defaults", label: "영구 세션 기본 모델" },
         { name: "mcp", label: "MCP" },
         { name: AGENTS_TAB_NAME, label: "에이전트" },
+        { name: SKILLS_TAB_NAME, label: "스킬과 카탈로그" },
         { name: USERS_TAB_NAME, label: "사용자" },
       ] : []),
     ];
@@ -158,7 +162,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
     }
   }, [categories, extraTabs, selectedTab]);
   useEffect(() => {
-    if (!open) { setSelectedTab(initialTab ?? "appearance"); setMobileIndex(!initialTab); setDiscardPrompt(false); }
+    if (!open) { setSelectedTab(initialTab ?? "appearance"); setMobileIndex(!initialTab); setDiscardPrompt(false); resetGuideSession(); }
   }, [open]);
   useEffect(() => {
     if (open && userEmail) setPasDevicePreferences(readPersistentSessionDevicePreferences(userEmail));
@@ -179,6 +183,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
     selectedTab === SESSION_REVIEW_TAB_NAME ||
     selectedTab === USAGE_LOG_TAB_NAME ||
     selectedTab === AGENTS_TAB_NAME ||
+    selectedTab === SKILLS_TAB_NAME ||
     selectedTab === OWNED_AGENTS_TAB_NAME ||
     selectedTab === ACCESS_LINKS_TAB_NAME ||
     selectedTab === WEBHOOKS_TAB_NAME ||
@@ -201,6 +206,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
     file_storage: "첨부 파일을 보관할 저장소를 연결합니다.", usage_log: "사용 기록을 확인하고 필요한 범위로 좁힙니다.",
     usage_stats: "기간별 토큰과 정가 환산을 봅니다.",
     mcp: "중앙 MCP 서버와 프로필, 인증 키를 관리합니다.",
+    skills: "스킬과 카탈로그의 연결, 쓰이는 곳, 검증 결과를 봅니다.",
   };
   const close = () => { if (saving || saveInFlight.current) return; if (hasChanges) setDiscardPrompt(true); else onOpenChange(false); };
   return (
@@ -275,6 +281,8 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
                 open && !mobileIndex ? <McpSettingsTab request={api?.request} initialProfileId={mcpProfileTarget} onOpenAgent={(agentId, nodeId) => { setAgentMcpTarget({ agentId, nodeId }); setSelectedTab(AGENTS_TAB_NAME); setMobileIndex(false); }} /> : null
               ) : selectedTab === AGENTS_TAB_NAME ? (
                 <AgentProfileEditorTab request={api?.request} initialMcpTarget={agentMcpTarget} onEditMcpProfile={profileId => { setMcpProfileTarget(profileId); setSelectedTab("mcp"); setMobileIndex(false); }} />
+              ) : selectedTab === SKILLS_TAB_NAME && (api || user?.isAdmin) ? (
+                open && !mobileIndex ? <SkillCatalogTab request={api?.request} /> : null
               ) : selectedTab === OWNED_AGENTS_TAB_NAME ? (
                 open && !mobileIndex ? <OwnedAgentsTab request={api?.request} /> : null
               ) : selectedTab === ACCESS_LINKS_TAB_NAME ? (

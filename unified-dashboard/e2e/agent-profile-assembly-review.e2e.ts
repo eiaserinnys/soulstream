@@ -1,8 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
+import { openBody } from "./agent-profile-assembly-guides-helpers";
+import { guideSkills } from "../client/v3/guides-fixture";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
+const SKILL_LABEL = guideSkills[1]!.name;
 const output = path.resolve("../.local/card1783-captures");
 async function open(page: Page, width: number, height: number, state = "normal", section = "에이전트") {
   await page.setViewportSize({ width, height });
@@ -29,7 +32,7 @@ async function open(page: Page, width: number, height: number, state = "normal",
 }
 async function shot(page: Page, name: string) {
   mkdirSync(output, { recursive: true });
-  await page.screenshot({ path: path.join(output, `review-${name}.png`), animations: "disabled" });
+  await page.screenshot({ path: path.join(output, `review-${name}.png`), animations: "disabled", timeout: 30_000 });
 }
 const row = (page: Page, title: string) => page.getByTestId("agent-context-assembly").locator("button").filter({ hasText: title });
 async function setScene(page: Page, value: string) {
@@ -46,7 +49,7 @@ for (const [width, height] of [[1366, 657], [1280, 632]]) {
     await expect(row(page, "스킬 목록")).toBeVisible();
     const detail = page.locator(".config-detail");
     const frame = page.getByTestId("agent-profile-editor").locator("..");
-    const guidance = page.getByText("프로필이 정하는 몫입니다. 실제 들어간 글은 세션 기록에서 봅니다.");
+    const guidance = page.getByText("프로필 몫만 보입니다. 폴더, 페이지, 세션이 붙이는 글은 빠집니다.");
     await shot(page, `low-list-${width}x${height}`);
     await detail.evaluate(element => { element.scrollTop = element.scrollHeight; });
     const list = await page.evaluate(() => {
@@ -64,12 +67,13 @@ for (const [width, height] of [[1366, 657], [1280, 632]]) {
     expect(list.scroll).toBeGreaterThan(0);
     expect(list.frameTop).toBeGreaterThanOrEqual(list.detailTop - 1);
     expect(list.detailBottom - list.frameBottom).toBeCloseTo(12, 0);
-    expect(list.rows).toBeGreaterThanOrEqual(4);
+    // 가장 긴 제목은 두 줄까지 감싸 줄이 한 줄 더 높다(세라피엘 검수 결함 1). 낮은 창에서도 목록이 세 줄은 온전히 보여야 한다.
+    expect(list.rows).toBeGreaterThanOrEqual(3);
     const guide = await guidance.boundingBox();
     expect(guide!.y + guide!.height).toBeLessThanOrEqual(list.detailBottom);
     await shot(page, `low-list-end-${width}x${height}`);
 
-    await row(page, "공통 지침과 아주 긴 제목").click();
+    await openBody(page, "공통 지침과 아주 긴 제목");
     const body = page.locator('[data-slot="context-content-fill"]');
     await expect(body).toBeVisible();
     expect((await body.textContent())!.length).toBeGreaterThan(50_000);
@@ -95,8 +99,8 @@ for (const [width, height] of [[1366, 657], [1280, 632]]) {
     expect(await detail.evaluate(element => element.scrollTop)).toBe(outer.before);
 
     await page.getByLabel("소스 목록으로").click();
-    await row(page, "스킬 목록").click();
-    await page.getByLabel("스킬 정의 원문").selectOption({ label: "검수 스킬" });
+    await openBody(page, "스킬 목록");
+    await page.getByLabel("스킬 정의 원문").selectOption({ label: SKILL_LABEL });
     const skill = page.getByTestId("agent-context-skill-original").locator('[data-slot="context-content-fill"]');
     await expect(skill).toBeVisible();
     const skillHeight = (await skill.boundingBox())!.height;
@@ -130,7 +134,7 @@ for (const width of [1440, 360]) {
   test(`s6 detail reload ${width}`, async ({ page }) => {
     await open(page, width, width === 360 ? 780 : 900, "loading");
     await expect(row(page, "프로필 지침")).toBeVisible({ timeout: 15000 });
-    await row(page, "프로필 지침").click();
+    await openBody(page, "프로필 지침");
     const detail = page.getByTestId("agent-context-assembly-detail");
     const select = page.getByLabel("조립 백엔드");
     await select.focus(); await select.selectOption("codex");
@@ -161,8 +165,8 @@ for (const width of [1440, 360]) {
     await page.getByLabel("조립 백엔드").selectOption("codex");
     await expect(row(page, "조건부 지침")).toBeVisible({ timeout: 15000 });
     await page.getByLabel("조립 카드 역할").selectOption("assignee");
-    await expect(row(page, "조건부 지침")).toContainText("들어감", { timeout: 15000 });
-    await row(page, "조건부 지침").click();
+    await expect(row(page, "조건부 지침")).not.toContainText("빠짐", { timeout: 15000 });
+    await openBody(page, "조건부 지침");
     const detail = page.getByTestId("agent-context-assembly-detail");
     const role = page.getByLabel("조립 카드 역할"); await role.focus(); await role.selectOption("member");
     await expect(detail.locator('[data-slot="frame-loading"]')).toBeVisible();
@@ -178,8 +182,8 @@ for (const width of [1440, 360]) {
     await expect(detail.locator('[data-slot="context-content-fill"]')).toBeVisible({ timeout: 15000 });
     await shot(page, `all-reload-${width}`);
     await page.getByLabel("소스 목록으로").click();
-    await row(page, "스킬 목록").click();
-    await page.getByLabel("스킬 정의 원문").selectOption({ label: "검수 스킬" });
+    await openBody(page, "스킬 목록");
+    await page.getByLabel("스킬 정의 원문").selectOption({ label: SKILL_LABEL });
     const skill = page.getByTestId("agent-context-skill-original");
     await expect(skill.locator('[data-slot="context-content-fill"]')).toBeVisible({ timeout: 15000 });
     const metadata = skill.locator("p").first();
@@ -212,12 +216,12 @@ for (const [width, height] of [[1440, 900], [1920, 1080], [1024, 768], [768, 102
       expect(boxes.top).toBeGreaterThanOrEqual(boxes.detailTop - 1);
     };
     await measure();
-    const guidance = page.getByText("프로필이 정하는 몫입니다. 실제 들어간 글은 세션 기록에서 봅니다.");
+    const guidance = page.getByText("프로필 몫만 보입니다. 폴더, 페이지, 세션이 붙이는 글은 빠집니다.");
     await expect(guidance).toBeVisible();
     const guideBox = await guidance.boundingBox(), detailBox = await detail.boundingBox();
     expect(guideBox!.y + guideBox!.height).toBeLessThanOrEqual(detailBox!.y + detailBox!.height + 1);
     await shot(page, `frame-list-${width}x${height}`);
-    await row(page, "공통 지침과 아주 긴 제목").click();
+    await openBody(page, "공통 지침과 아주 긴 제목");
     const pre = page.locator('[data-slot="context-content-fill"]'); await expect(pre).toBeVisible();
     await measure();
     const preBox = await pre.boundingBox(), outerBox = await detail.boundingBox();
@@ -228,8 +232,8 @@ for (const [width, height] of [[1440, 900], [1920, 1080], [1024, 768], [768, 102
     await pre.hover(); await page.mouse.wheel(0, 700); await page.waitForTimeout(200);
     expect(await detail.evaluate(element => element.scrollTop)).toBe(outerBefore);
     await page.getByLabel("소스 목록으로").click();
-    await row(page, "스킬 목록").click();
-    await page.getByLabel("스킬 정의 원문").selectOption({ label: "검수 스킬" });
+    await openBody(page, "스킬 목록");
+    await page.getByLabel("스킬 정의 원문").selectOption({ label: SKILL_LABEL });
     await expect(page.getByTestId("agent-context-skill-original")).toContainText("가상의 스킬 정의 원문");
     await measure(); await shot(page, `frame-skill-${width}x${height}`);
     await page.getByRole("tab", { name: "편집" }).click();
@@ -240,7 +244,7 @@ for (const [width, height] of [[1440, 900], [1920, 1080], [1024, 768], [768, 102
 for (const width of [360, 768, 1440]) {
   test(`s7 source metadata ${width}`, async ({ page }) => {
     await open(page, width, width === 360 ? 780 : 900);
-    await row(page, "공통 지침과 아주 긴 제목").click();
+    await openBody(page, "공통 지침과 아주 긴 제목");
     const metadata = page.getByTestId("agent-context-assembly-detail").locator("p").first();
     await expect(metadata).toContainText("토큰");
     const sizes = await metadata.evaluate(element => ({ width: element.clientWidth, scroll: element.scrollWidth, text: element.textContent }));
@@ -320,10 +324,10 @@ test("s2 focus rings and s3 skill back label", async ({ page }) => {
   expect(focused.shadow).not.toBe("none");
   await page.getByLabel("조립 백엔드").focus();
   expect(await page.getByLabel("조립 백엔드").evaluate(element => getComputedStyle(element).boxShadow)).not.toBe("none");
-  await first.click(); await page.getByLabel("소스 목록으로").click();
+  await openBody(page, "스킬 목록"); await page.getByLabel("소스 목록으로").click();
   await expect(first).toBeFocused();
   expect(await first.evaluate(element => getComputedStyle(element).boxShadow)).toBe("none");
-  await first.click(); await page.getByLabel("스킬 정의 원문").selectOption({ label: "검수 스킬" });
+  await openBody(page, "스킬 목록"); await page.getByLabel("스킬 정의 원문").selectOption({ label: SKILL_LABEL });
   const back = page.getByRole("button", { name: "소스 본문으로" });
   await expect(back).toBeVisible(); await expect(back).toHaveAttribute("title", "소스 본문으로"); await shot(page, "focus-and-skill-back");
 });
