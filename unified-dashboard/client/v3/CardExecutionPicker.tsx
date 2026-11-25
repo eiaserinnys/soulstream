@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { errorText } from "./v3-dashboard-utils";
-import { Button, FrameLoading, ProfileAvatar, type AgentInfo } from "@seosoyoung/soul-ui";
+import { Button, FrameLoading, ProfileAvatar, useAgentPortraitUrlResolver, type AgentInfo } from "@seosoyoung/soul-ui";
 import type { CardAssignment } from "@seosoyoung/soul-ui/cards/card-types";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { useNodeModelPresetCatalog, type NodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
@@ -75,10 +75,11 @@ export function CardExecutionPickerView({selection,onChange,onCancel,onConfirm,c
  connected:readonly {nodeId:string}[];agents:readonly {agent:AgentInfo;nodeId:string}[];
  byNode:Record<string,AgentInfo[]>;catalog:NodeModelPresetCatalog;
 }) {
+ const resolvePortrait=useAgentPortraitUrlResolver();
  return <div className="v3-card-execution-body">
   <div className="v3-card-execution-columns">
    <section aria-label="에이전트"><h3>에이전트</h3>{agents.map(({agent,nodeId})=><button type="button" key={agent.id} aria-pressed={selection.agentId===agent.id} disabled={disabled} onClick={()=>onChange({...selection,agentId:agent.id,nodeId,modelPreset:agent.default_preset??""})}>
-    <span className="v3-card-picker-avatar"><ProfileAvatar role="assistant" hasPortrait portraitUrl={agent.portraitUrl??`/api/nodes/${encodeURIComponent(nodeId)}/agents/${encodeURIComponent(agent.id)}/portrait`} fallbackEmoji="🤖"/></span><span>{agent.name}</span></button>)}</section>
+    <span className="v3-card-picker-avatar"><ProfileAvatar role="assistant" hasPortrait portraitUrl={agent.portraitUrl||resolvePortrait(agent.id)} fallbackEmoji="🤖"/></span><span>{agent.name}</span></button>)}</section>
    <section aria-label="노드"><h3>노드</h3>{connected.map(node=><button type="button" key={node.nodeId} aria-pressed={selection.nodeId===node.nodeId} disabled={disabled||Boolean(selection.agentId&&!byNode[node.nodeId]?.some(agent=>agent.id===selection.agentId))} onClick={()=>onChange({...selection,nodeId:node.nodeId,modelPreset:""})}>{node.nodeId}</button>)}</section>
    <section aria-label="모델"><h3>모델</h3>{catalog.nodeId===selection.nodeId ? catalog.presets.map(preset=>{
     const reason=modelPresetUnavailableReason(preset);

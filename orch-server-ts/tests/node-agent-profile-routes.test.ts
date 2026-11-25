@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { createFakeAgentPortraits } from "./fake_agent_portraits.js";
 import {
   NodeAgentProfileRouteError,
   createApp,
@@ -18,7 +19,6 @@ const config = parseOrchServerConfig({
 
 type ProviderCall =
   | ["listAgents", string]
-  | ["agentPortrait", string, string]
   | ["userPortrait", string]
   | ["plan", string, unknown]
   | ["preview", string, unknown]
@@ -50,24 +50,6 @@ function createProvider(overrides: Partial<NodeAgentProfileProvider> = {}) {
           backend: "codex",
         },
       };
-    },
-    async getAgentPortrait(nodeId, agentId) {
-      calls.push(["agentPortrait", nodeId, agentId]);
-      if (nodeId === "missing-node" || agentId === "missing") {
-        return { status: "missing" };
-      }
-      if (agentId === "upstream-502") {
-        return { status: "upstream", statusCode: 502 };
-      }
-      if (agentId === "upstream-ok") {
-        return {
-          status: "upstream",
-          statusCode: 200,
-          body: "upstream-body",
-          contentType: "image/png",
-        };
-      }
-      return { status: "cached", body: "GIF89a-agent" };
     },
     async getUserPortrait(nodeId) {
       calls.push(["userPortrait", nodeId]);
@@ -148,7 +130,6 @@ describe("node agent/profile route harness", () => {
     expect(nodeAgentProfileRouteAuthRequirements).toEqual({
       "GET /api/nodes/:node_id/agents": true,
       "GET /api/nodes/:node_id/model-presets": true,
-      "GET /api/nodes/:node_id/agents/:agent_id/portrait": true,
       "POST /api/nodes/:node_id/agents/config/plan-profile-update": true,
       "POST /api/nodes/:node_id/agents/config/apply-profile-update": true,
       "POST /api/nodes/:node_id/agents/context-preview": true,
@@ -191,7 +172,13 @@ describe("node agent/profile route harness", () => {
 
   it("projects Python agent list shape and maps missing nodes to 404", async () => {
     const { provider, calls } = createProvider();
-    const app = createApp({ config, nodeAgentProfileRoutes: { provider } });
+    const portraits = createFakeAgentPortraits([{
+      agentId: "agent-a",
+      body: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+      mime: "image/png",
+      sha256: "a".repeat(64),
+    }]);
+    const app = createApp({ config, nodeAgentProfileRoutes: { provider, portraits } });
 
     const response = await app.inject({
       method: "GET",
@@ -203,7 +190,7 @@ describe("node agent/profile route harness", () => {
         {
           id: "agent-a",
           name: "Alpha",
-          portraitUrl: "/api/nodes/node-a/agents/agent-a/portrait",
+          portraitUrl: `/api/agent-portraits/agent-a?v=${"a".repeat(64)}`,
           max_turns: 8,
           backend: "claude",
           default_preset: "claude-opus",
@@ -305,18 +292,9 @@ describe("node agent/profile route harness", () => {
     await app.close();
   });
 
-  it("applies Python portrait response policy", async () => {
+  it("applies Python user portrait response policy", async () => {
     const { provider } = createProvider();
     const app = createApp({ config, nodeAgentProfileRoutes: { provider } });
-
-    const cachedGif = await app.inject({
-      method: "GET",
-      url: "/api/nodes/node-a/agents/agent-a/portrait",
-    });
-    expect(cachedGif.statusCode).toBe(200);
-    expect(cachedGif.headers["content-type"]).toContain("image/gif");
-    expect(cachedGif.headers["cache-control"]).toBe("public, max-age=3600");
-    expect(cachedGif.body).toBe("GIF89a-agent");
 
     const cachedWebp = await app.inject({
       method: "GET",
@@ -331,45 +309,16 @@ describe("node agent/profile route harness", () => {
       (
         await app.inject({
           method: "GET",
-          url: "/api/nodes/missing-node/agents/agent-a/portrait",
+          url: "/api/nodes/missing-node/user/portrait",
         })
       ).statusCode,
     ).toBe(204);
-    expect(
-      (
-        await app.inject({
-          method: "GET",
-          url: "/api/nodes/node-a/agents/missing/portrait",
-        })
-      ).statusCode,
-    ).toBe(204);
-    expect(
-      (
-        await app.inject({
-          method: "GET",
-          url: "/api/nodes/node-a/agents/upstream-502/portrait",
-        })
-      ).statusCode,
-    ).toBe(502);
-
-    const upstreamOk = await app.inject({
-      method: "GET",
-      url: "/api/nodes/node-a/agents/upstream-ok/portrait",
-    });
-    expect(upstreamOk.statusCode).toBe(200);
-    expect(upstreamOk.headers["content-type"]).toContain("image/png");
-    expect(upstreamOk.headers["cache-control"]).toBe("public, max-age=3600");
-    expect(upstreamOk.body).toBe("upstream-body");
 
     await app.close();
   });
 
   it("normalizes config command aliases and keeps config routes before portrait routes", async () => {
-    const { provider, calls } = createProvider({
-      async getAgentPortrait() {
-        throw new Error("config route was consumed as portrait route");
-      },
-    });
+    const { provider, calls } = createProvider();
     const app = createApp({ config, nodeAgentProfileRoutes: { provider } });
 
     expect(

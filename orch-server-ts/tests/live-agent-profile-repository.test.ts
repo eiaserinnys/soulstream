@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { createFakeAgentPortraits } from "./fake_agent_portraits.js";
 import {
   AgentProfileVersionConflictError,
   createLiveAgentProfileRepository,
@@ -7,7 +8,15 @@ import {
   type LivePostgresSql,
 } from "../src/index.js";
 
-function harness(responses: Array<readonly Record<string, unknown>[]>) {
+const portraitBody = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+
+function centralPortraits() {
+  return createFakeAgentPortraits([
+    { agentId: "roselin", body: portraitBody, mime: "image/png", sha256: "a".repeat(64) },
+  ]);
+}
+
+function harness(responses: Array<readonly Record<string, unknown>[]>, portraits = centralPortraits()) {
   const queries: string[] = [];
   const sql = ((strings: TemplateStringsArray, ..._values: unknown[]) => {
     queries.push(strings.join("?"));
@@ -18,7 +27,7 @@ function harness(responses: Array<readonly Record<string, unknown>[]>) {
     resolveSql: async () => sql,
     close: async () => undefined,
   };
-  return { repository: createLiveAgentProfileRepository(resolver), queries };
+  return { repository: createLiveAgentProfileRepository(resolver, portraits), queries, portraits };
 }
 
 const row = {
@@ -28,10 +37,6 @@ const row = {
   atom_contexts: [{ node_id: "11111111-2222-3333-4444-555555555555" }],
   default_preset: "codex-sol",
   aliases: [{ id: "roselin_codex" }],
-  has_portrait: true,
-  portrait_mime: "image/png",
-  portrait_size: 4,
-  portrait_sha256: "a".repeat(64),
   version: 2,
   created_at: new Date("2026-08-07T00:00:00.000Z"),
   updated_at: new Date("2026-08-07T01:00:00.000Z"),
@@ -120,16 +125,21 @@ describe("live agent profile repository", () => {
     expect(conflict.queries[0]).toContain("AND version =");
   });
 
-  it("returns portrait bytes only from the portrait read boundary", async () => {
-    const body = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
-    const { repository } = harness([[{ portrait_blob: body, portrait_mime: "image/png", portrait_sha256: "b".repeat(64), version: 3 }]]);
+  it("takes portrait presence from the central store and ignores the retired profile columns", async () => {
+    const withLegacyColumns = { ...row, portrait_blob: portraitBody, portrait_mime: "image/gif", portrait_sha256: "c".repeat(64) };
+    const { repository, portraits } = harness([[withLegacyColumns], [{ ...row, agent_id: "keke", name: "keke" }]]);
 
-    await expect(repository.getPortrait("roselin")).resolves.toEqual({
-      body,
-      mime: "image/png",
-      sha256: "b".repeat(64),
-      version: 3,
-    });
+    await expect(repository.list()).resolves.toEqual([
+      expect.objectContaining({
+        hasPortrait: true,
+        portrait: { mime: "image/png", size: 4, sha256: "a".repeat(64) },
+      }),
+    ]);
+    await portraits.remove("roselin");
+    expect(repository.snapshot()).toEqual([
+      expect.objectContaining({ agentId: "roselin", hasPortrait: false, portrait: null }),
+    ]);
+    await expect(repository.get("keke")).resolves.toMatchObject({ hasPortrait: false, portrait: null });
   });
 
   it("treats the pre-migration undefined table as an empty dual-read source", async () => {
@@ -139,10 +149,9 @@ describe("live agent profile repository", () => {
     const repository = createLiveAgentProfileRepository({
       resolveSql: async () => sql,
       close: async () => undefined,
-    });
+    }, createFakeAgentPortraits());
 
     await expect(repository.list()).resolves.toEqual([]);
     await expect(repository.get("roselin")).resolves.toBeNull();
-    await expect(repository.getPortrait("roselin")).resolves.toBeNull();
   });
 });

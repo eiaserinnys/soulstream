@@ -1,6 +1,7 @@
 export { useTheme, useAppearancePreference, initTheme, setTheme, setAppearancePreference } from "./useTheme";
 export type { Theme } from "./useTheme";
 export { useUserPreferencesSync } from "./useUserPreferencesSync";
+export { useAgentPortraitSync } from "./useAgentPortraitSync";
 
 export { ChatAttachmentLoaderProvider, useChatAttachmentLoader } from "./ChatAttachmentLoader";
 export type { ChatAttachmentLoader, ChatAttachmentLoaderInput } from "./ChatAttachmentLoader";

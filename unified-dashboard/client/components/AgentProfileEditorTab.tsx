@@ -2,7 +2,7 @@
 // and preview workflows stay together in one tab. Bundle rows and CRUD live
 // in separate components; another split would change the planned boundary.
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { Button, FrameLoading, FrameNotice } from "@seosoyoung/soul-ui";
+import { Button, FrameLoading, FrameNotice, useAgentPortraitDictionary, useAgentPortraitStore, useAgentPortraitUrlResolver } from "@seosoyoung/soul-ui";
 
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { DetailTabs } from "../v3/DetailTabs";
@@ -74,6 +74,11 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
   const [nodeProfileId, setNodeProfileId] = useState<string | null>(initialMcpTarget?.agentId ?? null);
   const [pane, setPane] = useState<"edit" | "assembly" | "mcp">(initialMcpTarget ? "mcp" : "assembly");
   const [focusMcpTarget, setFocusMcpTarget] = useState(Boolean(initialMcpTarget));
+  // 초상 주소는 중앙 목록(버전 주소)에서만 만든다. 목록을 받기 전에는 저장돼 있다고 알려 준 에이전트만 보인다.
+  const portraitDictionary = useAgentPortraitDictionary();
+  const resolvePortrait = useAgentPortraitUrlResolver();
+  const savedPortraitUrl = (agentId: string, hinted: boolean) =>
+    portraitDictionary === null && !hinted ? "" : resolvePortrait(agentId);
 
   const connectedNodeIds = useMemo(
     () => Array.from(nodes.values())
@@ -133,7 +138,6 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
   }, [nodeOnlyProfiles, nodeProfileId, loadedNodeId, selectedNodeId, initialMcpTarget]);
   const selectedNodeProfile: NodeAgent | null = nodeOnlyProfiles.find((agent) => agent.id === nodeProfileId)
     ?? (nodeProfileId && nodeProfileId === initialMcpTarget?.agentId && selectedNodeId === initialMcpTarget.nodeId ? { id: nodeProfileId, name: nodeProfileId, source: "yaml" as const } : null);
-  useEffect(() => { if (selectedNodeProfile && pane === "edit") setPane("assembly"); }, [selectedNodeProfile, pane]);
   const assemblyAgentId = selectedNodeProfile?.id ?? draft?.agent_id ?? "";
   const nodeAgent = nodeAgents.find((agent) => agent.id === assemblyAgentId) ?? null;
 
@@ -172,6 +176,14 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
   useEffect(() => {
     void loadProfiles(initialMcpTarget?.agentId);
   }, []);
+
+  const selectNodeProfile = (agentId: string) => {
+    setNodeProfileId(agentId);
+    setMessage(null);
+    setError(null);
+    setPortraitFile(null);
+    setRemovePortrait(false);
+  };
 
   const selectProfile = (profile: AgentProfile) => {
     setDraft(profileDraft(profile));
@@ -221,12 +233,12 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
       setDraft(profileDraft(current));
 
       if (portraitFile) {
-        if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(portraitFile.type)) {
-          throw new Error("초상화는 PNG, JPEG, WebP, GIF만 지원합니다.");
-        }
-        current = await putPortrait(current, portraitFile, request);
-      } else if (removePortrait && current.has_portrait) {
-        current = await deletePortrait(current, request);
+        current = withPortrait(current, await putPortrait(current.agent_id, portraitFile, request));
+        await useAgentPortraitStore.getState().refresh();
+      } else if (removePortrait && savedPortraitUrl(current.agent_id, current.has_portrait)) {
+        await deletePortrait(current.agent_id, request);
+        current = withPortrait(current, null);
+        await useAgentPortraitStore.getState().refresh();
       }
 
       setProfiles((previous) => upsertProfile(previous, current));
@@ -243,6 +255,25 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
       } else {
         setError(errorMessage(caught));
       }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 노드 설정에만 있는 에이전트는 프로필 행이 없다. 초상만 중앙 저장소에 올리거나 지운다.
+  const saveNodePortrait = async (agentId: string) => {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      if (portraitFile) await putPortrait(agentId, portraitFile, request);
+      else if (removePortrait) await deletePortrait(agentId, request);
+      await useAgentPortraitStore.getState().refresh();
+      setPortraitFile(null);
+      setRemovePortrait(false);
+      setMessage("초상화를 저장했습니다.");
+    } catch (caught) {
+      setError(errorMessage(caught));
     } finally {
       setSaving(false);
     }
@@ -278,7 +309,7 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
               value={selectedNodeProfile ? `node:${selectedNodeProfile.id}` : draft?.version ? `central:${draft.agent_id}` : ""}
               onChange={(event) => {
                 const [kind, id] = event.target.value.split(/:(.*)/s);
-                if (kind === "node") setNodeProfileId(id!);
+                if (kind === "node") selectNodeProfile(id!);
                 const profile = profiles.find((candidate) => candidate.agent_id === id);
                 if (kind === "central" && profile) selectProfile(profile);
               }}
@@ -311,15 +342,17 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
         <Button type="button" size="sm" variant="outline" className="mb-2 w-full" onClick={startProfile}>
           새 프로필
         </Button>
-        {profiles.map((profile) => (
+        {profiles.map((profile) => {
+          const listPortraitUrl = savedPortraitUrl(profile.agent_id, profile.has_portrait);
+          return (
           <button
             key={profile.agent_id}
             type="button"
             className={`mb-1 flex w-full items-center gap-2 rounded-floor px-3 py-2 text-left text-sm ${!selectedNodeProfile && draft?.agent_id === profile.agent_id ? "bg-accent-blue/15 text-foreground" : "text-muted-foreground hover:bg-muted"}`}
             onClick={() => selectProfile(profile)}
           >
-            {profile.has_portrait ? (
-              <img src={profilePortraitUrl(profile)} alt={profile.name} className="h-8 w-8 shrink-0 rounded-full object-cover" />
+            {listPortraitUrl ? (
+              <img src={listPortraitUrl} alt={profile.name} className="h-8 w-8 shrink-0 rounded-full object-cover" />
             ) : (
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground" aria-hidden="true">
                 {profile.name.charAt(0)}
@@ -330,17 +363,20 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
               <span className="block truncate text-xs">{profile.agent_id} · v{profile.version}</span>
             </span>
           </button>
-        ))}
+          );
+        })}
         {nodeOnlyProfiles.length > 0 && <p className="mb-1 mt-3 px-3 text-xs text-muted-foreground">노드 설정</p>}
-        {nodeOnlyProfiles.map((agent) => (
+        {nodeOnlyProfiles.map((agent) => {
+          const listPortraitUrl = savedPortraitUrl(agent.id, Boolean(agent.portraitUrl));
+          return (
           <button
             key={agent.id}
             type="button"
             className={`mb-1 flex w-full items-center gap-2 rounded-floor px-3 py-2 text-left text-sm ${selectedNodeProfile?.id === agent.id ? "bg-accent-blue/15 text-foreground" : "text-muted-foreground hover:bg-muted"}`}
-            onClick={() => setNodeProfileId(agent.id)}
+            onClick={() => selectNodeProfile(agent.id)}
           >
-            {agent.portraitUrl ? (
-              <img src={agent.portraitUrl} alt={agent.name} className="h-8 w-8 shrink-0 rounded-full object-cover" />
+            {listPortraitUrl ? (
+              <img src={listPortraitUrl} alt={agent.name} className="h-8 w-8 shrink-0 rounded-full object-cover" />
             ) : (
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground" aria-hidden="true">
                 {agent.name.charAt(0)}
@@ -351,23 +387,45 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
               <span className="block truncate text-xs">{agent.id}</span>
             </span>
           </button>
-        ))}
+          );
+        })}
       </aside>
 
       <div className="flex min-h-0 flex-col p-4" data-testid="agent-profile-editor">
         {selectedNodeProfile && loadedNodeId !== selectedNodeId ? <FrameLoading label="노드 에이전트를 불러오는 중…" /> : selectedNodeProfile ? (
           <>
-          {/* 노드 설정 전용 프로필은 여기서 고치지 않는다. 편집 탭을 끈 채로 두어 자리와 읽기 전용임을 함께 보인다. */}
+          {/* 노드 설정 전용 프로필은 프로필 항목을 여기서 고치지 않는다. 편집 탭은 열어 초상 칸만 보인다. */}
           <div className="mcp-tabs"><DetailTabs<"assembly" | "edit" | "mcp">
             id="agent-profile-pane"
             label="프로필 보기"
             panelId="agent-profile-pane-panel"
-            tabs={[["assembly", "조립"], ["edit", "편집", true], ["mcp", "MCP"]]}
-            value={pane === "edit" ? "assembly" : pane}
+            tabs={[["assembly", "조립"], ["edit", "편집"], ["mcp", "MCP"]]}
+            value={pane}
             onChange={setPane}
           /></div>
           <div id="agent-profile-pane-panel" role="tabpanel" className="mt-3 flex min-h-0 flex-1 flex-col">
-            {pane === "mcp" ? !selectedNodeId ? <FrameNotice>연결된 노드가 없습니다.</FrameNotice> : <AgentMcpConnectionPane key={`${selectedNodeProfile.id}:${selectedNodeId}`} agentId={selectedNodeProfile.id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} focusOnMount={focusMcpTarget} onFocusHandled={() => setFocusMcpTarget(false)} /> : <AgentContextAssemblyView
+            {pane === "edit" ? (
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
+                <section>
+                  <PortraitField
+                    name={selectedNodeProfile.name}
+                    previewUrl={portraitPreviewUrl}
+                    savedUrl={savedPortraitUrl(selectedNodeProfile.id, Boolean(selectedNodeProfile.portraitUrl))}
+                    removePortrait={removePortrait}
+                    onFile={(event) => choosePortrait(event, setPortraitFile, setRemovePortrait)}
+                    onRemoveChange={(remove) => {
+                      setRemovePortrait(remove);
+                      if (remove) setPortraitFile(null);
+                    }}
+                  />
+                </section>
+                {error && <p role="alert" className="rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{error}</p>}
+                {message && <p role="status" className="rounded-floor bg-accent-blue/10 px-3 py-2 text-sm">{message}</p>}
+                <div className="flex justify-end gap-2">
+                  <Button type="button" size="sm" disabled={saving || (!portraitFile && !removePortrait)} onClick={() => void saveNodePortrait(selectedNodeProfile.id)}>{saving ? "저장 중..." : "초상화 저장"}</Button>
+                </div>
+              </div>
+            ) : pane === "mcp" ? !selectedNodeId ? <FrameNotice>연결된 노드가 없습니다.</FrameNotice> : <AgentMcpConnectionPane key={`${selectedNodeProfile.id}:${selectedNodeId}`} agentId={selectedNodeProfile.id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} focusOnMount={focusMcpTarget} onFocusHandled={() => setFocusMcpTarget(false)} /> : <AgentContextAssemblyView
               key={`node:${selectedNodeProfile.id}`}
               target={{ kind: "node", agentId: selectedNodeProfile.id }}
               nodeId={selectedNodeId}
@@ -419,44 +477,17 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
                 placeholder="미지정"
                 onChange={(value) => setDraft({ ...draft, default_preset: value || null })}
               />
-              <div>
-                <label className="mb-1 block text-xs font-medium">초상화</label>
-                <div className="flex items-start gap-3">
-                  {!removePortrait && (portraitPreviewUrl || draft.has_portrait) ? (
-                    <img
-                      src={portraitPreviewUrl ?? profilePortraitUrl(draft)}
-                      alt={draft.name}
-                      className="h-24 w-24 shrink-0 rounded-full object-cover"
-                    />
-                  ) : (
-                    <span data-testid="profile-portrait-placeholder" className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-muted text-2xl font-medium text-muted-foreground" aria-hidden="true">
-                      {draft.name.charAt(0) || "?"}
-                    </span>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <input
-                      aria-label="초상화"
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp,image/gif"
-                      className="block w-full text-xs"
-                      onChange={(event) => choosePortrait(event, setPortraitFile, setRemovePortrait)}
-                    />
-                    {draft.has_portrait && (
-                      <label className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                        <input
-                          type="checkbox"
-                          checked={removePortrait}
-                          onChange={(event) => {
-                            setRemovePortrait(event.target.checked);
-                            if (event.target.checked) setPortraitFile(null);
-                          }}
-                        />
-                        기존 초상화 삭제
-                      </label>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <PortraitField
+                name={draft.name}
+                previewUrl={portraitPreviewUrl}
+                savedUrl={savedPortraitUrl(draft.agent_id, draft.has_portrait)}
+                removePortrait={removePortrait}
+                onFile={(event) => choosePortrait(event, setPortraitFile, setRemovePortrait)}
+                onRemoveChange={(remove) => {
+                  setRemovePortrait(remove);
+                  if (remove) setPortraitFile(null);
+                }}
+              />
             </section>
 
             <section>
@@ -563,6 +594,53 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
   );
 }
 
+function PortraitField({ name, previewUrl, savedUrl, removePortrait, onFile, onRemoveChange }: {
+  name: string;
+  previewUrl: string | null;
+  savedUrl: string;
+  removePortrait: boolean;
+  onFile(event: ChangeEvent<HTMLInputElement>): void;
+  onRemoveChange(remove: boolean): void;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium">초상화</label>
+      <div className="flex items-start gap-3">
+        {!removePortrait && (previewUrl || savedUrl) ? (
+          <img
+            src={previewUrl ?? savedUrl}
+            alt={name}
+            className="h-24 w-24 shrink-0 rounded-full object-cover"
+          />
+        ) : (
+          <span data-testid="profile-portrait-placeholder" className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-muted text-2xl font-medium text-muted-foreground" aria-hidden="true">
+            {name.charAt(0) || "?"}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <input
+            aria-label="초상화"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="block w-full text-xs"
+            onChange={onFile}
+          />
+          {savedUrl && (
+            <label className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={removePortrait}
+                onChange={(event) => onRemoveChange(event.target.checked)}
+              />
+              기존 초상화 삭제
+            </label>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SectionHeading({ title, actionLabel, onAction }: { title: string; actionLabel?: string; onAction?: () => void }) {
   return (
     <div className="mb-2 flex items-center justify-between">
@@ -579,11 +657,6 @@ function profileDraft(profile: AgentProfile): ProfileDraft {
       ? { id: alias, default_preset: "" }
       : { id: alias.id, default_preset: alias.default_preset ?? "" }),
   };
-}
-
-function profilePortraitUrl(profile: AgentProfile): string {
-  const path = `/api/agent-profiles/${encodeURIComponent(profile.agent_id)}/portrait`;
-  return profile.portrait?.sha256 ? `${path}?v=${encodeURIComponent(profile.portrait.sha256)}` : path;
 }
 
 function updateContext(draft: ProfileDraft, setDraft: (draft: ProfileDraft) => void, index: number, context: AgentAtomContext) {
@@ -626,24 +699,42 @@ async function putProfile(draft: ProfileDraft, request: typeof fetch): Promise<A
   return profileResponse(response, "프로필 저장에 실패했습니다.");
 }
 
-async function putPortrait(profile: AgentProfile, file: File, request: typeof fetch): Promise<AgentProfile> {
-  const response = await request(`/api/agent-profiles/${encodeURIComponent(profile.agent_id)}/portrait`, {
+const PORTRAIT_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+interface PortraitItem {
+  mime: string;
+  byte_size: number;
+  sha256: string;
+}
+
+/** 중앙 초상 저장소에 올린다. 중앙 프로필 행이 없는 에이전트도 같은 길이다. */
+async function putPortrait(agentId: string, file: File, request: typeof fetch): Promise<PortraitItem> {
+  if (!PORTRAIT_MIMES.includes(file.type)) throw new Error("초상화는 PNG, JPEG, WebP, GIF만 지원합니다.");
+  const response = await request(`/api/agent-portraits/${encodeURIComponent(agentId)}`, {
     method: "PUT",
     credentials: "same-origin",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ data_base64: await fileBase64(file), mime: file.type, expected_version: profile.version }),
+    body: JSON.stringify({ data_base64: await fileBase64(file), mime: file.type }),
   });
-  return profileResponse(response, "초상화 저장에 실패했습니다.");
+  const body = await responseJson(response);
+  if (!response.ok) throw new Error(responseMessage(body, "초상화 저장에 실패했습니다."));
+  return body as unknown as PortraitItem;
 }
 
-async function deletePortrait(profile: AgentProfile, request: typeof fetch): Promise<AgentProfile> {
-  const response = await request(`/api/agent-profiles/${encodeURIComponent(profile.agent_id)}/portrait`, {
+async function deletePortrait(agentId: string, request: typeof fetch): Promise<void> {
+  const response = await request(`/api/agent-portraits/${encodeURIComponent(agentId)}`, {
     method: "DELETE",
     credentials: "same-origin",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ expected_version: profile.version }),
   });
-  return profileResponse(response, "초상화 삭제에 실패했습니다.");
+  if (!response.ok) throw new Error(responseMessage(await responseJson(response), "초상화 삭제에 실패했습니다."));
+}
+
+function withPortrait(profile: AgentProfile, item: PortraitItem | null): AgentProfile {
+  return {
+    ...profile,
+    has_portrait: item !== null,
+    portrait: item === null ? null : { mime: item.mime, size: item.byte_size, sha256: item.sha256 },
+  };
 }
 
 async function profileResponse(response: Response, fallback: string): Promise<AgentProfile> {

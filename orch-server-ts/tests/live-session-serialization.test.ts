@@ -109,10 +109,13 @@ describe("serializeSessionRow predecessor contract", () => {
       agent_id: "seosoyoung-opus",
       created_at: new Date("2026-07-14T00:00:00.000Z"),
       updated_at: new Date("2026-07-14T00:00:00.000Z"),
-    }, { registry })).toMatchObject({
+    }, {
+      registry,
+      agentPortraitUrl: (agentId) => agentId === "seosoyoung" ? `/api/agent-portraits/seosoyoung?v=${"b".repeat(64)}` : "",
+    })).toMatchObject({
       agentId: "seosoyoung",
       agentName: "서소영",
-      agentPortraitUrl: "/api/nodes/node-a/agents/seosoyoung/portrait",
+      agentPortraitUrl: `/api/agent-portraits/seosoyoung?v=${"b".repeat(64)}`,
       backend: "codex",
     });
   });
@@ -146,12 +149,42 @@ describe("serializeSessionRow predecessor contract", () => {
         aliases: ["db-alias"],
         hasPortrait: true,
       }],
+      agentPortraitUrl: (agentId) => `/api/agent-portraits/${agentId}?v=${"c".repeat(64)}`,
     })).toMatchObject({
       agentId: "agent-a",
       agentName: "DB Agent",
-      agentPortraitUrl: "/api/nodes/node-a/agents/agent-a/portrait",
+      agentPortraitUrl: `/api/agent-portraits/agent-a?v=${"c".repeat(64)}`,
       backend: "codex",
     });
+  });
+
+  it("builds the portrait address from the central list, not from the node that runs the session", () => {
+    const registry = new InMemoryNodeRegistry();
+    for (const nodeId of ["node-a", "node-b"]) {
+      registry.registerNode({
+        type: "node_register",
+        node_id: nodeId,
+        agents: [{ id: "blossom", name: "Blossom", backend: "claude" }],
+        supported_backends: ["claude"],
+      });
+    }
+    const agentPortraitUrl = (agentId: string) => agentId === "blossom" ? `/api/agent-portraits/blossom?v=${"d".repeat(64)}` : "";
+    const row = (nodeId: string, agentId: string) => serializeSessionRow({
+      session_id: `s-${nodeId}-${agentId}`,
+      node_id: nodeId,
+      agent_id: agentId,
+      agent_portrait_url: "/api/nodes/x/agents/y/portrait",
+      created_at: new Date("2026-11-25T00:00:00.000Z"),
+      updated_at: new Date("2026-11-25T00:00:00.000Z"),
+    }, { registry, agentPortraitUrl });
+
+    expect(row("node-a", "blossom").agentPortraitUrl).toBe(`/api/agent-portraits/blossom?v=${"d".repeat(64)}`);
+    expect(row("node-b", "blossom").agentPortraitUrl).toBe(`/api/agent-portraits/blossom?v=${"d".repeat(64)}`);
+    // 중앙에 초상이 없는 에이전트는 행이 가진 값을 그대로 둔다.
+    expect(serializeSessionRow({
+      session_id: "s-none", node_id: "node-a", agent_id: "nobody",
+      created_at: new Date("2026-11-25T00:00:00.000Z"), updated_at: new Date("2026-11-25T00:00:00.000Z"),
+    }, { registry, agentPortraitUrl }).agentPortraitUrl).toBeNull();
   });
 
   it("matches the shared caller identity selection fixture at the serialized boundary", () => {

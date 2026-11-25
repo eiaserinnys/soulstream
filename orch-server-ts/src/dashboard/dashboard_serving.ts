@@ -4,6 +4,8 @@ import { basename, extname, resolve, sep } from "node:path";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { ifNoneMatchHit } from "../http/conditional_cache.js";
+
 export const DASHBOARD_INDEX_CACHE_CONTROL = "no-cache";
 export const DASHBOARD_MUTABLE_ROOT_CACHE_CONTROL = "no-cache";
 export const DASHBOARD_ASSET_CACHE_CONTROL =
@@ -68,11 +70,9 @@ export async function registerDashboardServing(
 
     const rootFile = safeFilePath(dashboardRoot, requestPath.replace(/^\/+/, ""));
     if (rootFile !== undefined && await isFile(rootFile)) {
-      return sendFile(
-        reply,
-        rootFile,
-        dashboardRootCacheControl(rootFile, indexPath),
-      );
+      const cacheControl = dashboardRootCacheControl(rootFile, indexPath);
+      if (cacheControl === undefined) return sendRevalidatedFile(request, reply, rootFile);
+      return sendFile(reply, rootFile, cacheControl);
     }
     return sendFile(reply, indexPath, DASHBOARD_INDEX_CACHE_CONTROL);
   });
@@ -101,6 +101,24 @@ async function sendFile(
   if (contentType !== undefined) reply.type(contentType);
   if (cacheControl !== undefined) reply.header("cache-control", cacheControl);
   return reply.send(createReadStream(filePath));
+}
+
+/** 해시 없는 정적 파일(/characters/... 등)은 크기와 mtime으로 매번 검증한다. */
+async function sendRevalidatedFile(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  filePath: string,
+): Promise<FastifyReply> {
+  const info = await stat(filePath);
+  const etag = `"${info.size.toString(16)}-${Math.floor(info.mtimeMs).toString(16)}"`;
+  const lastModified = info.mtime.toUTCString();
+  reply.header("etag", etag).header("last-modified", lastModified);
+  const since = request.headers["if-modified-since"];
+  const notModified = request.headers["if-none-match"] !== undefined
+    ? ifNoneMatchHit(request.headers["if-none-match"], etag)
+    : typeof since === "string" && Date.parse(since) >= Math.floor(info.mtimeMs / 1000) * 1000;
+  if (notModified) return reply.header("cache-control", "public, no-cache").code(304).send();
+  return sendFile(reply, filePath, "public, no-cache");
 }
 
 function sendNotFound(reply: FastifyReply): FastifyReply {

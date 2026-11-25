@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Button, DashboardIconCap, FrameLoading, FrameNotice, LiquidGlassProvider, PersistentSessionPortraitIcon, PersistentSessionPortraitOffIcon, SwayCharacter, createChatSessionStore, initTheme, nextUsageSummaryNodeId, useAuth, useDashboardStore, useInitialCatalogLoad, useIsMobile, useSessionProvider, useUserPreferencesSync, type SessionReviewAcknowledgeResult, type SessionSummary } from '@seosoyoung/soul-ui';
+import { Button, DashboardIconCap, FrameLoading, FrameNotice, LiquidGlassProvider, PersistentSessionPortraitIcon, PersistentSessionPortraitOffIcon, SwayCharacter, createChatSessionStore, initTheme, nextUsageSummaryNodeId, useAgentPortraitSync, useAuth, useDashboardStore, useInitialCatalogLoad, useIsMobile, useSessionProvider, useUserPreferencesSync, type SessionReviewAcknowledgeResult, type SessionSummary } from '@seosoyoung/soul-ui';
 import { ArrowLeft, FolderOpen, ListTodo, X } from 'lucide-react';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import { usePersistentSessionDetailsController } from '../components/PersistentSessionDetails';
@@ -50,6 +50,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   const onConnectionError = useCallback(() => { void refreshAuthStatus().catch(() => undefined); }, [refreshAuthStatus]);
   useEffect(() => { initTheme(); }, []);
   useUserPreferencesSync(user?.email ?? null);
+  useAgentPortraitSync();
   useInitialCatalogLoad(true);
   useNodes(onConnectionError);
   const { nodes } = useSessionNodeConnectivity();

@@ -220,6 +220,9 @@ describe("OAuth resource scopes", () => {
       ["GET", "/api/nodes/node-1/agents"],
       ["GET", "/api/nodes/node-1/model-presets"],
       ["GET", "/api/nodes/node-1/agents/roselin/portrait"],
+      ["GET", "/api/agent-portraits"],
+      ["GET", "/api/agent-portraits/roselin"],
+      ["GET", "/api/agents/roselin/portrait"],
     ]) expect(oauthScopeForRoute(method!, path!)).toBe("agents:read");
     expect(oauthScopeForRoute("GET", "/api/planner/starred-folders")).toBe("folders:read");
   });

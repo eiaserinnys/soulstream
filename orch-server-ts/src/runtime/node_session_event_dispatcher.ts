@@ -8,6 +8,7 @@ import type {
   SessionStreamEvent,
 } from "../sse/replay_broadcaster.js";
 import { serializeSessionRow } from "./live_session_serialization.js";
+import type { AgentPortraitUrlResolver } from "../node/agent_portrait_model.js";
 import type { AgentProfileIdentityOverlay } from "../node/agent_profile_lookup.js";
 import { stripUncommittedSessionFeedFields } from
   "../node/session_message_events.js";
@@ -28,6 +29,7 @@ export function createNodeSessionEventBroadcasterSink(
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
   registry?: InMemoryNodeRegistry,
   agentProfiles: () => readonly AgentProfileIdentityOverlay[] = () => [],
+  agentPortraitUrl?: AgentPortraitUrlResolver,
 ): NodeRegistryEventSink {
   return (events) => {
     dispatchNodeRegistryEventsToSessionBroadcaster(
@@ -35,6 +37,7 @@ export function createNodeSessionEventBroadcasterSink(
       broadcaster,
       registry,
       agentProfiles(),
+      agentPortraitUrl,
     );
   };
 }
@@ -44,6 +47,7 @@ export function dispatchNodeRegistryEventsToSessionBroadcaster(
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
   registry?: InMemoryNodeRegistry,
   agentProfiles: readonly AgentProfileIdentityOverlay[] = [],
+  agentPortraitUrl?: AgentPortraitUrlResolver,
 ): NodeSessionEventDispatchResult {
   const result: NodeSessionEventDispatchResult = {
     appended: 0,
@@ -56,6 +60,7 @@ export function dispatchNodeRegistryEventsToSessionBroadcaster(
       event,
       registry,
       agentProfiles,
+      agentPortraitUrl,
     );
     if (streamEvent === undefined) {
       result.skipped += 1;
@@ -76,6 +81,7 @@ function sessionStreamEventFromNodeRegistryEvent(
   event: NodeRegistryEvent,
   registry: InMemoryNodeRegistry | undefined,
   agentProfiles: readonly AgentProfileIdentityOverlay[],
+  agentPortraitUrl: AgentPortraitUrlResolver | undefined,
 ): SessionStreamEvent | undefined {
   if (event.type === "node_session_session_created") {
     return sessionCreatedStreamEvent(
@@ -83,6 +89,7 @@ function sessionStreamEventFromNodeRegistryEvent(
       event.data,
       registry,
       agentProfiles,
+      agentPortraitUrl,
     );
   }
   if (event.type === "node_session_session_updated") {
@@ -110,6 +117,7 @@ function sessionCreatedStreamEvent(
   data: Record<string, unknown>,
   registry: InMemoryNodeRegistry | undefined,
   agentProfiles: readonly AgentProfileIdentityOverlay[],
+  agentPortraitUrl: AgentPortraitUrlResolver | undefined,
 ): SessionStreamEvent {
   const trustedData = stripUncommittedSessionFeedFields(data);
   const folderKeyPresent = "folder_id" in trustedData || "folderId" in trustedData;
@@ -126,6 +134,7 @@ function sessionCreatedStreamEvent(
       rawSession,
       registry,
       agentProfiles,
+      agentPortraitUrl,
     ),
   };
   if (folderKeyPresent) {
@@ -151,6 +160,7 @@ function serializeCachedSession(
   fallback: Record<string, unknown>,
   registry: InMemoryNodeRegistry | undefined,
   agentProfiles: readonly AgentProfileIdentityOverlay[],
+  agentPortraitUrl: AgentPortraitUrlResolver | undefined,
 ): Record<string, unknown> {
   const cached = agentSessionId === undefined
     ? undefined
@@ -163,7 +173,7 @@ function serializeCachedSession(
       status: cached?.status ?? fallback.status,
       last_event_id: cached?.lastEventId ?? fallback.last_event_id,
     },
-    { registry, agentProfiles },
+    { registry, agentProfiles, agentPortraitUrl },
   );
 }
 

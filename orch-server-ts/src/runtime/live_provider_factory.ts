@@ -62,6 +62,8 @@ import {
 } from "../model/model_preset_availability.js";
 import type { NodeAgentProfileRouteOptions } from "../node/node_agent_profile_routes.js";
 import type { AgentProfileRouteOptions } from "../node/agent_profile_routes.js";
+import { agentPortraitUrlFor } from "../node/agent_portrait_model.js";
+import type { AgentPortraitRouteOptions } from "../node/agent_portrait_routes.js";
 import type { ContextBundleRouteOptions } from "../node/context_bundle_routes.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
 import { sessionDeleteTransportFromRouteOptions } from "../session/session_delete.js";
@@ -188,6 +190,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly executeProxyRoutes: ExecuteProxyRouteOptions;
   readonly nodeAgentProfileRoutes: NodeAgentProfileRouteOptions;
   readonly agentProfileRoutes: AgentProfileRouteOptions;
+  readonly agentPortraitRoutes: AgentPortraitRouteOptions;
   readonly contextBundleRoutes: ContextBundleRouteOptions;
   readonly nodeClaudeAuthRoutes: LiveNodeClaudeAuthRouteProviderBundle["nodeClaudeAuthRoutes"];
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
@@ -462,9 +465,11 @@ export function createLiveOrchestratorProviderBundle(
         },
         serializeSessions: (rows) => {
           const agentProfiles = options.dependencies.dbCatalogRepository.agentProfileRepository.snapshot();
+          const portraits = options.dependencies.dbCatalogRepository.agentPortraitRepository;
           return rows.map((row) => serializeSessionRow(row, {
             registry: options.runtimeServices.registry,
             agentProfiles,
+            agentPortraitUrl: (agentId) => agentPortraitUrlFor(portraits, agentId),
           }));
         },
       });
@@ -473,6 +478,10 @@ export function createLiveOrchestratorProviderBundle(
     agentProfileRoutes: {
       repository: options.dependencies.dbCatalogRepository.agentProfileRepository,
       bundleRepository: options.dependencies.dbCatalogRepository.contextBundleRepository,
+      portraits: options.dependencies.dbCatalogRepository.agentPortraitRepository,
+    },
+    agentPortraitRoutes: {
+      repository: options.dependencies.dbCatalogRepository.agentPortraitRepository,
     },
     contextBundleRoutes: {
       repository: options.dependencies.dbCatalogRepository.contextBundleRepository,
@@ -676,6 +685,7 @@ export function createLiveOrchestratorProviderBundle(
     },
     nodeAgentProfileRoutes: {
       ...nodeAgentProfileProviders.nodeAgentProfileRoutes,
+      portraits: options.dependencies.dbCatalogRepository.agentPortraitRepository,
       modelPresetProvider: modelPresetAvailability,
     },
     nodeClaudeAuthRoutes: nodeClaudeAuthProviders.nodeClaudeAuthRoutes,

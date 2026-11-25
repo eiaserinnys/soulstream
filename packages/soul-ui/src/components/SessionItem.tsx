@@ -9,6 +9,8 @@ import { memo, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { isSessionUnread } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
+import { normalizeAgentPortraitUrl } from "../lib/agent-portrait";
+import { useAgentPortraitDictionary } from "../stores/agent-portrait-store";
 import { Badge } from "./ui/badge";
 import { NodeBadge } from "./NodeBadge";
 import { BackendBadge } from "./BackendBadge";
@@ -44,9 +46,12 @@ function getInitials(name: string | null | undefined): string {
   return source.slice(0, 2).toUpperCase();
 }
 
-function SessionPortrait({ url, name }: { url?: string | null; name?: string | null }) {
-  const [error, setError] = useState(false);
-  if (!url || error) {
+function SessionPortrait({ url: rawUrl, name }: { url?: string | null; name?: string | null }) {
+  const dictionary = useAgentPortraitDictionary();
+  const url = dictionary === null ? rawUrl : normalizeAgentPortraitUrl(rawUrl, dictionary);
+  // 오류는 그 주소에만 붙는다. 주소가 바뀌면 다시 시도한다.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (!url || failedUrl === url) {
     return (
       <span className="flex h-[25px] w-[25px] shrink-0 items-center justify-center rounded-full border border-white/20 bg-muted text-xs font-semibold text-muted-foreground">
         {getInitials(name)}
@@ -59,7 +64,7 @@ function SessionPortrait({ url, name }: { url?: string | null; name?: string | n
         src={url}
         alt={name ?? ""}
         className="w-full h-full object-cover"
-        onError={() => setError(true)}
+        onError={() => setFailedUrl(url)}
       />
     </div>
   );

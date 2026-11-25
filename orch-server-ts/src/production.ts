@@ -61,6 +61,8 @@ import { resolveAntigravityCliPath } from "./llm/antigravity_cli_path.js";
 import type { EphemeralLlmRouteOptions } from "./llm/ephemeral_llm_routes.js";
 import { InMemoryNodeRegistry, type NodeRegistryEvent } from "./node/registry.js";
 import { resolveRegisteredAgentId } from "./node/agent_profile_lookup.js";
+import { agentPortraitUrlFor } from "./node/agent_portrait_model.js";
+import { createAgentPortraitSeedSink } from "./node/agent_portrait_seed.js";
 import {
   EventIngressRepository,
   LiveEventIngressSqlProvider,
@@ -442,6 +444,7 @@ export async function createLiveProductionApplication(
     configProvider,
     registry,
     typesafeApiKey: config.typesafe_api_key,
+    warn: context.warn,
     onSearchCancelError: reportSearchCancelError,
     onSearchTiming: (timing) => {
       if (timing.status !== "partial" && timing.totalMs <= SESSION_SEARCH_SLOW_WARN_MS) return;
@@ -584,6 +587,7 @@ export async function createLiveProductionApplication(
     findRescuableSessionOwnerNodeId:
       dbCatalogRepository.findRescuableSessionOwnerNodeId,
     agentProfiles: dbCatalogRepository.agentProfileRepository.snapshot,
+    agentPortraitUrl: (agentId) => agentPortraitUrlFor(dbCatalogRepository.agentPortraitRepository, agentId),
     enableSessionActionCommandRoutes: true,
     enableSessionBackgroundScheduleRoutes: true,
     loadSessionSnapshot: async () => dbCatalogRepository.loadSessionSnapshot(),
@@ -605,6 +609,11 @@ export async function createLiveProductionApplication(
       (events) => { if (backgroundActive) outboundWebhookService?.accept(events); },
       (events) => { if (backgroundActive) claudeCentralService?.acceptNodeEvents(events); },
       (events) => { if (backgroundActive) mcpCentralSync?.acceptNodeEvents(events); },
+      createAgentPortraitSeedSink({
+        portraits: dbCatalogRepository.agentPortraitRepository,
+        registry,
+        warn: context.warn,
+      }),
     ],
     flatFolderContentRoutes: { host: flatFolderContentHost, authBearerToken: config.auth_bearer_token, environment: config.environment, nodeCredentials: nodeCredentialStore },
     pageYjsRoutes: {
@@ -1365,6 +1374,8 @@ export async function createLiveProductionApplication(
     deadLetterStore.resumeWrites();
     cardDispatchRuntime.dispatcher.resume();
     backgroundActive = true;
+    await dbCatalogRepository.agentPortraitRepository.ready().catch((error) =>
+      context.warn(`agent portrait store load failed: ${String(error)}`));
     outboundWebhookService?.start();
     await sessionReconciliation.start();
     const startRemaining = async () => {
@@ -1917,6 +1928,7 @@ export function buildProductionRouteOptions(
     },
     nodeAgentProfileRoutes: providers.nodeAgentProfileRoutes,
     agentProfileRoutes: providers.agentProfileRoutes,
+    agentPortraitRoutes: providers.agentPortraitRoutes,
     contextBundleRoutes: providers.contextBundleRoutes,
     nodeClaudeAuthRoutes: {
       ...providers.nodeClaudeAuthRoutes,

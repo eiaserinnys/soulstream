@@ -163,6 +163,7 @@ function createAllOptInRouteApp() {
     config,
     oauthRoutes: { issuer: "https://dashboard.example.test", sql: inert as never },
     agentProfileRoutes: inert,
+    agentPortraitRoutes: inert,
     ownedAgentRoutes: inert,
     accessLinkRoutes: inert,
     outboundWebhookRoutes: inert,

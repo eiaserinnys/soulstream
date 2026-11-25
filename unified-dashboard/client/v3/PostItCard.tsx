@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState, type HTMLAttributes, type Ref } from "react";
-import { ProfileAvatar, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
+import { ProfileAvatar, useAgentPortraitUrlResolver, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardStatus } from "../../../packages/wire-schema/generated/typescript/index";
 import { cardActivityPreview } from "@seosoyoung/soul-ui/cards/card-activity-preview";
@@ -54,9 +54,9 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
   useEffect(()=>{if(contextTarget)return layer?.claim();},[contextTarget,layer]);
   const fontSize = useDashboardStore(state => state.chatFontSize);
   const assigned = Boolean(card.assigneeKind);
-  const nodeId = assignee?.nodeId ?? card.nodeId, agentId = assignee?.agentId ?? card.assigneeAgentId;
-  const portrait = assigned ? assignee?.agentPortraitUrl ?? (nodeId && agentId
-    ? `/api/nodes/${encodeURIComponent(nodeId)}/agents/${encodeURIComponent(agentId)}/portrait` : null) : null;
+  const agentId = assignee?.agentId ?? card.assigneeAgentId;
+  const resolvePortrait = useAgentPortraitUrlResolver();
+  const portrait = assigned ? assignee?.agentPortraitUrl ?? (resolvePortrait(agentId) || null) : null;
   const name = assigned ? assignee?.agentName ?? agentId ?? card.assigneeUserId ?? "담당 세션" : "담당 없음";
   const tone = card.status === "blocked" && card.blockedKind === "question" ? "question" : card.status;
   const displayTitle = card.number == null ? card.title : `#${card.number} ${card.title}`;

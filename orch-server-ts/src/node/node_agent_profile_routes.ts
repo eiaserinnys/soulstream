@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type {
   ModelPresetAvailabilityService,
 } from "../model/model_preset_availability.js";
+import { agentPortraitUrlFor, type AgentPortraitRepository } from "./agent_portrait_model.js";
 import { hasOwn, parseObjectBody, type Validation } from "../http/route_validation.js";
 
 export type RawNodeAgentProfile = {
@@ -63,11 +64,6 @@ export type AgentContextPreviewInput = (
 
 export type NodeAgentProfileProvider = {
   listAgentProfiles: (nodeId: string) => Promise<NodeAgentProfiles | undefined>;
-  getAgentPortrait: (
-    nodeId: string,
-    agentId: string,
-    options?: NodePortraitRequestOptions,
-  ) => Promise<NodePortraitResult>;
   getUserPortrait: (
     nodeId: string,
     options?: NodePortraitRequestOptions,
@@ -94,6 +90,8 @@ export type NodeAgentProfileProvider = {
 
 export type NodeAgentProfileRouteOptions = {
   provider: NodeAgentProfileProvider;
+  /** 에이전트 목록의 portraitUrl을 중앙 초상 저장소의 버전 주소로 만든다. */
+  portraits?: Pick<AgentPortraitRepository, "ready" | "summary">;
   modelPresetProvider?: Pick<ModelPresetAvailabilityService, "listForNode">;
 };
 
@@ -120,14 +118,9 @@ type NodeParams = {
   node_id: string;
 };
 
-type AgentParams = NodeParams & {
-  agent_id: string;
-};
-
 export const nodeAgentProfileRouteAuthRequirements = {
   "GET /api/nodes/:node_id/agents": true,
   "GET /api/nodes/:node_id/model-presets": true,
-  "GET /api/nodes/:node_id/agents/:agent_id/portrait": true,
   "POST /api/nodes/:node_id/agents/config/plan-profile-update": true,
   "POST /api/nodes/:node_id/agents/config/apply-profile-update": true,
   "GET /api/nodes/:node_id/agents/config/snapshots": true,
@@ -226,23 +219,6 @@ export function registerNodeAgentProfileRoutes(
       }
     },
   );
-
-  app.get<{ Params: AgentParams }>(
-    "/api/nodes/:node_id/agents/:agent_id/portrait",
-    async (request, reply) => {
-      const params = agentParams(request);
-      try {
-        return sendPortraitResult(
-          reply,
-          await options.provider.getAgentPortrait(params.node_id, params.agent_id, {
-            headers: request.headers,
-          }),
-        );
-      } catch {
-        return reply.code(204).send();
-      }
-    },
-  );
 }
 
 export async function executeNodeAgentProfileRoute(
@@ -253,8 +229,9 @@ export async function executeNodeAgentProfileRoute(
 ): Promise<{ status: number; body: unknown }> {
   if (operation === "agents") {
     const profiles = await options.provider.listAgentProfiles(nodeId);
-    return profiles === undefined ? { status: 404, body: { detail: `Node ${nodeId} not connected` } }
-      : { status: 200, body: { agents: Object.entries(profiles).map(([id, profile]) => projectAgentProfile(nodeId, id, profile)) } };
+    if (profiles === undefined) return { status: 404, body: { detail: `Node ${nodeId} not connected` } };
+    await options.portraits?.ready();
+    return { status: 200, body: { agents: Object.entries(profiles).map(([id, profile]) => projectAgentProfile(options.portraits, id, profile)) } };
   }
   if (operation === "model-presets") {
     const presets = options.modelPresetProvider?.listForNode(nodeId);
@@ -281,16 +258,14 @@ export async function executeNodeAgentProfileRoute(
 }
 
 function projectAgentProfile(
-  nodeId: string,
+  portraits: Pick<AgentPortraitRepository, "summary"> | undefined,
   agentId: string,
   profile: RawNodeAgentProfile,
 ): Record<string, unknown> {
   return {
     id: agentId,
     name: profile.name ?? null,
-    portraitUrl: profile.portrait_url
-      ? `/api/nodes/${nodeId}/agents/${agentId}/portrait`
-      : "",
+    portraitUrl: portraits === undefined ? "" : agentPortraitUrlFor(portraits, agentId),
     max_turns: profile.max_turns ?? null,
     backend: profile.backend ?? "claude",
     ...(typeof profile.default_preset === "string"
@@ -547,8 +522,4 @@ function deprecatedOauthProfiles(reply: FastifyReply, nodeId: string): FastifyRe
 
 function nodeParams(request: FastifyRequest): NodeParams {
   return request.params as NodeParams;
-}
-
-function agentParams(request: FastifyRequest): AgentParams {
-  return request.params as AgentParams;
 }

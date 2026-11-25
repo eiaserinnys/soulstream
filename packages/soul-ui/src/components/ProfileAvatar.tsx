@@ -13,6 +13,8 @@
 
 import { useState } from "react";
 import { Link, Webhook } from "lucide-react";
+import { normalizeAgentPortraitUrl } from "../lib/agent-portrait";
+import { useAgentPortraitDictionary } from "../stores/agent-portrait-store";
 
 interface ProfileAvatarProps {
   role: "user" | "assistant";
@@ -25,7 +27,11 @@ interface ProfileAvatarProps {
 }
 
 export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl, external, shape = 'rounded' }: ProfileAvatarProps) {
-  const [imgError, setImgError] = useState(false);
+  const dictionary = useAgentPortraitDictionary();
+  // 오류는 그 주소에만 붙는다. 주소가 바뀌면(초상을 새로 올렸거나 목록을 다시 받은 뒤) 다시 시도한다.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const src = dictionary === null ? (portraitUrl ?? '') : normalizeAgentPortraitUrl(portraitUrl, dictionary);
+  const imgError = failedSrc === src;
 
   if (external) {
     const Icon = external.icon === "webhook" ? Webhook : Link;
@@ -34,7 +40,7 @@ export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl, e
       <Icon size={16} aria-hidden="true" />
     </span>;
   }
-  const showPortrait = !!portraitUrl;
+  const showPortrait = !!src;
   if (!showPortrait || imgError) {
     return (
       <span className={`w-8 h-8 flex items-center justify-center text-sm shrink-0 ${shape === 'circle' ? 'rounded-full' : 'rounded-floor'}`}>
@@ -43,19 +49,17 @@ export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl, e
     );
   }
 
-  const src = portraitUrl;
-
   return (
     <img
       src={src}
       alt={role === "user" ? "사용자" : "어시스턴트"}
       className={`w-8 h-8 ${shape === 'circle' ? 'rounded-full' : 'rounded-floor'} shrink-0 object-cover`}
-      onError={() => setImgError(true)}
+      onError={() => setFailedSrc(src)}
       onLoad={(e) => {
         // 204 No Content 또는 이미지 디코딩 실패 시 naturalWidth === 0
         // 일부 브라우저는 이런 경우 onError 대신 onLoad를 발생시키므로 같이 가드
         if (e.currentTarget.naturalWidth === 0) {
-          setImgError(true);
+          setFailedSrc(src);
         }
       }}
     />

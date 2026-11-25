@@ -3,7 +3,7 @@ import {dialoguesAssignment} from "./dialogues-api";
 import {CardExecutionSettings} from "./CardExecutionSettings";
 import {useLocalDialogueUpload} from "./use-local-dialogue-upload";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-import { DashboardIconCap, FrameLoading, useAuth, useDashboardStore, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, FrameLoading, useAuth, useAgentPortraitUrlResolver, useDashboardStore, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { ArrowLeft, Check, Play, LoaderCircle, RotateCw } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { cardMutationKey, cardQuestionChoiceAnswer, cardQuestionTextAnswer } from "@seosoyoung/soul-ui/cards/card-api";
@@ -71,7 +71,8 @@ export function CardDetailPane(props:CardDetailPaneProps) {
  const assignee=catalog?.sessionList?.find(session=>session.agentSessionId===card?.assigneeSessionId) ?? detail?.sessions.find(session=>session.sessionId===card?.assigneeSessionId);
  const nodeId=assignee?.nodeId ?? card?.nodeId;
  const agentId=assignee?.agentId ?? card?.assigneeAgentId;
- const portrait=nodeId&&agentId ? `/api/nodes/${encodeURIComponent(nodeId)}/agents/${encodeURIComponent(agentId)}/portrait`:"";
+ const resolvePortrait=useAgentPortraitUrlResolver();
+ const portrait=resolvePortrait(agentId);
  useEffect(()=>{if(!sampleDetail)void useCardStore.getState().loadCard(cardId).catch(()=>undefined);},[cardId,sampleDetail]);
  // 되묻기·덧붙이기 대상은 이 카드 상세가 살아 있는 동안만 산다.
  useEffect(()=>()=>clearCardQuestionTarget(questionScope),[questionScope]);

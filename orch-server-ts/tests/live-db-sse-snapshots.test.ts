@@ -114,6 +114,16 @@ describe("live DB SSE replay snapshots", () => {
       ],
     });
     const harness = createSqlHarness((text) => {
+      if (text.includes("FROM agent_portraits")) {
+        return [{
+          agent_id: "agent-a",
+          portrait_mime: "image/png",
+          portrait_sha256: "f".repeat(64),
+          byte_size: 4,
+          updated_at: new Date("2026-11-25T00:00:00.000Z"),
+          deleted: false,
+        }];
+      }
       if (text.includes("session_count")) return [{ count: 1 }];
       if (text.includes("session_get_all")) {
         return [
@@ -199,7 +209,7 @@ describe("live DB SSE replay snapshots", () => {
           modelLabel: null,
           model: null,
           agentName: "Agent A",
-          agentPortraitUrl: "/api/nodes/node-a/agents/agent-a/portrait",
+          agentPortraitUrl: `/api/agent-portraits/agent-a?v=${"f".repeat(64)}`,
           backend: "codex",
           userName: "서소영",
           userPortraitUrl: "/avatar.png",
@@ -217,6 +227,8 @@ describe("live DB SSE replay snapshots", () => {
     expect(harness.normalizedCalls()).toEqual([
       "SELECT session_count(?::jsonb) AS count",
       "SELECT * FROM session_get_all(?::jsonb, ?, ?)",
+      expect.stringContaining("INSERT INTO agent_portraits"),
+      expect.stringContaining("FROM agent_portraits"),
       "SELECT session_id, page_state, legacy_state FROM session_page_bindings WHERE session_id = ANY(?::text[])",
       "SELECT session_id, attention_revision, notification_watermark, feed_last_event_id, notification_count FROM session_feed_state WHERE session_id = ANY(?::text[])",
       "SELECT session_id, projection FROM session_pending_attentions WHERE session_id = ANY(?::text[]) ORDER BY session_id, source_event_id ASC, attention_id ASC",

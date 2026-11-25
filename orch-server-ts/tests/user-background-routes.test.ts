@@ -269,6 +269,40 @@ describe("user background route harness", () => {
     await app.close();
   });
 
+  it("validates the stored background with an updated_at ETag and caches it forever only for the current v", async () => {
+    const { app } = createHarness({
+      getRow: {
+        email: "user@example.com",
+        backgroundBlob: Buffer.from("WEBP bytes"),
+        backgroundMime: "image/webp",
+        updatedAt: "2026-07-09T03:05:06+00:00",
+      },
+    });
+    const version = String(Math.floor(Date.parse("2026-07-09T03:05:06+00:00") / 1000));
+
+    const current = await app.inject({ method: "GET", url: `/api/user/background?v=${version}` });
+    expect(current.statusCode).toBe(200);
+    expect(current.headers["cache-control"]).toBe("private, max-age=31536000, immutable");
+    const etag = String(current.headers.etag);
+    expect(etag).toMatch(/^"[0-9]+-10"$/);
+
+    for (const url of ["/api/user/background", "/api/user/background?v=1"]) {
+      const other = await app.inject({ method: "GET", url });
+      expect(other.statusCode).toBe(200);
+      expect(other.headers["cache-control"]).toBe("private, no-cache");
+      expect(other.headers.etag).toBe(etag);
+    }
+    const conditional = await app.inject({
+      method: "GET",
+      url: `/api/user/background?v=${version}`,
+      headers: { "if-none-match": etag },
+    });
+    expect(conditional.statusCode).toBe(304);
+    expect(conditional.body).toBe("");
+
+    await app.close();
+  });
+
   it("returns 404 when no background is stored", async () => {
     const { app, calls } = createHarness({
       getRow: {

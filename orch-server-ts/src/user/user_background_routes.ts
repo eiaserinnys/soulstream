@@ -2,11 +2,14 @@ import { Buffer } from "node:buffer";
 
 import type { FastifyInstance, FastifyReply } from "fastify";
 
+import { IMMUTABLE_CACHE_CONTROL, PRIVATE_NO_CACHE, sendWithEtag } from "../http/conditional_cache.js";
 import { parseMultipartForm, registerMultipartFormParser } from "../http/multipart_form.js";
 import {
   normalizeUserPreferences,
   requestUserPreferencesEmail,
   serializePreferences,
+  timestampSeconds,
+  updatedAtValue,
   userPreferencesWriteError,
   type NormalizedUserPreferences,
   type UserPreferencesEmailResolver,
@@ -95,7 +98,17 @@ export function registerUserBackgroundRoutes(
     if (background === null) {
       return reply.code(404).send({ detail: "No background image is stored" });
     }
-    return reply.type(background.mime).send(background.blob);
+    const seconds = timestampSeconds(updatedAtValue(row!));
+    if (seconds === null) return reply.header("Cache-Control", PRIVATE_NO_CACHE).type(background.mime).send(background.blob);
+    // 같은 초 안에 바꿔도 크기가 다르면 다른 값이 되도록 길이를 섞는다.
+    const version = `${seconds}`;
+    const queryVersion = (request.query as { v?: unknown } | undefined)?.v;
+    return sendWithEtag(request, reply, {
+      etag: `"${version}-${background.blob.length}"`,
+      cacheControl: queryVersion === version ? IMMUTABLE_CACHE_CONTROL : PRIVATE_NO_CACHE,
+      contentType: background.mime,
+      body: background.blob,
+    });
   });
 
   app.delete("/api/user/background", async (request, reply) => {

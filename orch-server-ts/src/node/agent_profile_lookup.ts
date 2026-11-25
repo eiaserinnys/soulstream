@@ -4,11 +4,12 @@ import type {
   NodeConnectionSnapshot,
 } from "./registry.js";
 import type { AgentProfileRecord } from "./agent_profile_routes.js";
+import { agentPortraitUrl } from "./agent_portrait_model.js";
 
 export type AgentProfileIdentityOverlay = Pick<
   AgentProfileRecord,
   "agentId" | "name" | "defaultPreset" | "aliases" | "hasPortrait"
->;
+> & Partial<Pick<AgentProfileRecord, "portrait">>;
 
 export type RegisteredAgentProfile = {
   readonly nodeId: string;
@@ -108,7 +109,9 @@ function resolvedProfile(
         name: overlay.name,
         aliases: overlay.aliases,
         default_preset: overlay.defaultPreset ?? undefined,
-        ...(overlay.hasPortrait ? { portrait_url: "db" } : {}),
+        ...(overlay.hasPortrait && overlay.portrait
+          ? { portrait_url: agentPortraitUrl({ agentId: overlay.agentId, sha256: overlay.portrait.sha256 }) }
+          : {}),
       };
   return {
     nodeId,

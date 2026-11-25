@@ -2,6 +2,7 @@ import { cn } from "../../lib/cn";
 import { memo, type ReactNode } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { useChatStore } from "../../stores/chat-store-scope";
+import { useAgentPortraitUrlResolver } from "../../stores/agent-portrait-store";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { ExternalSenderCaption, ExternalSenderHeading } from "./externalSender";
 import { ContextBlock } from "./ContextBlock";
@@ -27,7 +28,8 @@ export const InterventionMessage = memo(function InterventionMessage({ msg, pres
     extractCallerAvatarUrl(s.activeSessionSummary?.metadata),
   );
 
-  const display = computeInterventionDisplay(msg, callerAvatarUrl);
+  const resolvePortraitUrl = useAgentPortraitUrlResolver();
+  const display = computeInterventionDisplay(msg, callerAvatarUrl, resolvePortraitUrl);
   const manuscript = presentation === "manuscript";
 
   return (

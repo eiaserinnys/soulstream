@@ -1,5 +1,5 @@
 import { memo, type ReactElement, type ReactNode, type RefObject, useRef } from "react";
-import { ProfileAvatar, useDashboardStore, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { ProfileAvatar, useAgentPortraitUrlResolver, useDashboardStore, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow as Card, CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 import { useCardCompletion, cardStatusLabel } from "./CardActions";
@@ -35,7 +35,8 @@ export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,comp
 }) {
  const summaryTitleRef=useRef<HTMLSpanElement>(null);
  const nodeId=assignee?.nodeId??card.nodeId,agentId=assignee?.agentId??card.assigneeAgentId;
- const portrait=assignee?.agentPortraitUrl??(nodeId&&agentId?`/api/nodes/${encodeURIComponent(nodeId)}/agents/${encodeURIComponent(agentId)}/portrait`:null);
+ const resolvePortrait=useAgentPortraitUrlResolver();
+ const portrait=assignee?.agentPortraitUrl??(resolvePortrait(agentId)||null);
  const name=resolveCardAssigneeName(card,assignee)??"담당 미지정";
  if(variant==="summary") {
   const hasNumber=card.number!==undefined&&card.number!==null;
