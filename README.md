@@ -96,6 +96,22 @@ Updates preserve generated secrets, the administrator password, both databases, 
 
 For backups, failure recovery, and managed-file details, see [Installation](docs/guide/installation.md) and [Configuration](docs/guide/configuration.md).
 
+### Uninstalling
+
+To remove Soulstream and atom from a dedicated Linux server, run the uninstaller as `root`:
+
+```bash
+bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall.sh -o "$tmp"; bash "$tmp"'
+```
+
+For non-interactive runs, pass `--yes` inside the inner command:
+
+```bash
+bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall.sh -o "$tmp"; bash "$tmp" --yes'
+```
+
+Before changing anything, the script lists what it found and prompts once on `/dev/tty` (if no terminal is available and you omit `--yes`, it exits without changes). It deletes the dedicated systemd services, the `soulstream` and `atom` PostgreSQL databases (sessions, cards, and atom documents), the `soulstream` user and `/home/soulstream` (workspace files, backups, administrator password, and coding-agent logins), the Tailscale Serve `/` routes for Soulstream and atom, and installer-recorded `/usr/local` tools. OS `apt` packages and your Tailscale device login stay in place; for the full removal list, backup commands, and failure handling, see [Uninstalling](docs/guide/installation.md#uninstalling).
+
 ## Other installation options
 
 ### Windows worker installer
@@ -131,7 +147,7 @@ See [Installation](docs/guide/installation.md) and [Configuration](docs/guide/co
 
 - [Concepts](docs/guide/concepts.md): folders, cards, sessions, persistent assistant sessions, agents, model presets, and nodes.
 - [Architecture](docs/guide/architecture.md): system diagram, control plane and worker roles, multi-node routing, backends, and repository layout.
-- [Installation](docs/guide/installation.md): Linux one-line installer, updates, Tailscale Serve, Windows worker installer, source build, database initialization, and local dev servers.
+- [Installation](docs/guide/installation.md): Linux one-line installer, updates, Tailscale Serve, uninstalling, Windows worker installer, source build, database initialization, and local dev servers.
 - [Configuration](docs/guide/configuration.md): orchestrator and worker environment variables, `agents.yaml`, installer-managed files, atom settings, the model catalog data file, and secret handling.
 - [Agents and tools](docs/guide/agents-and-tools.md): skill catalog (`load_skill`), MCP tool groups, worktrees, pages, recurring jobs, custom views, attachments, and usage stats.
 - [Development](docs/guide/development.md): package typecheck and test scripts, Playwright suites, screenshot regeneration, and internal architecture references.

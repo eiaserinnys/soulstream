@@ -1,3 +1,4 @@
+// 기존 설정 탭의 목록·상세와 이동 상태를 함께 유지해 500줄을 넘는다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, FrameLoading } from "@seosoyoung/soul-ui";
 import {
@@ -22,12 +23,12 @@ import { errorText, PartialProfileSaveError } from "./McpErrors";
 import { McpDialogs, type DeleteTarget, type History } from "./McpDialogs";
 
 type Tab = "server" | "profile" | "secret";
-function SuccessMessage({ children }: { children: string }) {
+export function SuccessMessage({ children }: { children: string }) {
   const ref = useRef<HTMLParagraphElement>(null);
   useEffect(() => { ref.current?.scrollIntoView?.({ block: "nearest", behavior: "instant" }); }, [children]);
   return <p ref={ref} role="status" data-v3-selectable-content="true" className="text-sm text-success-foreground" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>{children}</p>;
 }
-export function McpSettingsTab({ request }: { request?: typeof fetch }) {
+export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { request?: typeof fetch; initialProfileId?: string; onOpenAgent?: (agentId: string, nodeId: string) => void }) {
   const api = useMemo(() => createMcpApi(request), [request]);
   const [config, setConfig] = useState<McpConfig | null>(null);
   const [liveRevision, setLiveRevision] = useState<number | null>(null);
@@ -36,12 +37,14 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [messagePlace, setMessagePlace] = useState<"header" | "footer">("footer");
-  const [tab, setTab] = useState<Tab>("server");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>(initialProfileId ? "profile" : "server");
+  const [selected, setSelected] = useState<string | null>(initialProfileId ?? null);
   const [creating, setCreating] = useState(false);
   const [justCreated, setJustCreated] = useState(false);
   const [deleting, setDeleting] = useState<DeleteTarget | null>(null);
   const [history, setHistory] = useState<History | null>(null);
+  const profileDetail = useRef<HTMLDivElement>(null);
+  const focusedInitialProfile = useRef(false);
   const refresh = useCallback(async () => {
     try {
       const next = await api.config();
@@ -57,6 +60,23 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
   useEffect(() => {
     void refresh().catch(() => undefined);
   }, [refresh]);
+  useEffect(() => {
+    if (!config || !initialProfileId || focusedInitialProfile.current) return;
+    const id = requestAnimationFrame(() => {
+      const header = profileDetail.current?.querySelector("header");
+      if (!header) return;
+      focusedInitialProfile.current = true;
+      header.tabIndex = -1;
+      header.style.outline = "none";
+      let scrollParent = header.parentElement;
+      while (scrollParent && !/(auto|scroll)/.test(getComputedStyle(scrollParent).overflowY)) scrollParent = scrollParent.parentElement;
+      const bounds = scrollParent?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+      const position = header.getBoundingClientRect();
+      if (position.top < bounds.top || position.bottom > bounds.bottom) header.scrollIntoView?.({ block: "start" });
+      header.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [config, initialProfileId]);
   useEffect(() => {
     if (!config) return;
     const timer = setTimeout(() => {
@@ -347,6 +367,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
               server={currentServer}
               config={config}
               busy={busy}
+              test={api.testMcpServer}
               onEdit={() => setSuccess("")}
               justCreated={justCreated}
               dismissCreated={() => setJustCreated(false)}
@@ -406,10 +427,11 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
             />
           ) : null}
           {tab === "profile" && (currentProfile || creating) ? (
-            <McpProfileEditor
+            <div ref={profileDetail}><McpProfileEditor
               profile={currentProfile}
               config={config}
               busy={busy}
+              onOpenAgent={onOpenAgent}
               onEdit={() => setSuccess("")}
               remove={(profile) =>
                 openDelete({
@@ -427,7 +449,7 @@ export function McpSettingsTab({ request }: { request?: typeof fetch }) {
                   setCreating(false);
                 }, null, "저장했습니다.")
               }
-            />
+            /></div>
           ) : null}
           {tab === "secret" && currentSecret ? (
             <McpSecretEditor

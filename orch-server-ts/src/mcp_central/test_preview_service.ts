@@ -48,7 +48,7 @@ export function createMcpTestPreviewService(options: { service: McpCentralServic
         if (typeof resolved.config.url === "string") { try { for (const value of new URL(resolved.config.url).searchParams.values()) if (value) values.push(value); } catch { /* node reports invalid URL */ } }
         if (typeof resolved.config.full_command === "string") values.push(resolved.config.full_command);
       }
-      sensitive = values.filter(Boolean).sort((a, b) => b.length - a.length);
+      sensitive = values.filter(value => value.length >= 4).sort((a, b) => b.length - a.length);
       const command = { type: "test_mcp_server" as const, server: { id, name: definition.name ?? id, type: definition.type, config: resolved.config } };
       return command;
     }, serverId ? async () => {

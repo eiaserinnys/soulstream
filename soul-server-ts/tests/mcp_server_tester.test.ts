@@ -8,16 +8,16 @@ import { testMcpServer } from "../src/mcp_central/server_tester.js";
 const cleanup: Array<() => Promise<void> | void> = [];
 afterEach(async () => { for (const close of cleanup.splice(0)) await close(); });
 
-function reply(message: { id?: number; method?: string; params?: { cursor?: string } }, paginated = false) {
+function reply(message: { id?: number; method?: string; params?: { cursor?: string } }, paginated: boolean | "endless" = false) {
   if (message.id === undefined) return undefined;
   const result = message.method === "initialize"
     ? { protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" } }
     : { tools: [{ name: message.params?.cursor ? "next" : "example", inputSchema: { type: "object" } }],
-      ...(paginated && !message.params?.cursor ? { nextCursor: "page-2" } : {}) };
+      ...(paginated === "endless" || (paginated && !message.params?.cursor) ? { nextCursor: "page-2" } : {}) };
   return { jsonrpc: "2.0", id: message.id, result };
 }
 
-async function startServer(mode: "http" | "sse" | "unauthorized" | "hang" | "init-error", paginated = false, echo?: string) {
+async function startServer(mode: "http" | "sse" | "unauthorized" | "hang" | "init-error", paginated: boolean | "endless" = false, echo?: string) {
   let stream: ServerResponse | undefined;
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     if (mode === "unauthorized") { res.writeHead(401).end(); return; }
@@ -62,6 +62,30 @@ describe("MCP server tester", () => {
     expect(result).toMatchObject({ ok: true, tool_count: 2, tools: ["example", "next"] });
   });
 
+  it("stops after twenty tool pages even if the cursor continues", async () => {
+    const url = await startServer("http", "endless");
+    const result = await testMcpServer({ id: "test", name: "test", type: "streamable_http", config: { url } }, {});
+    expect(result).toMatchObject({ ok: true, tool_count: 20 });
+    if (result.ok) expect(result.tools).toHaveLength(20);
+  });
+
+  it("preserves short environment values in tool names while hiding longer values", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-values-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const script = join(dir, "server.cjs");
+    writeFileSync(script, `const readline = require('node:readline');
+readline.createInterface({input: process.stdin}).on('line', line => {
+  const msg = JSON.parse(line); if (msg.id === undefined) return;
+  const result = msg.method === 'initialize' ? {protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'fixture',version:'1'}} : {tools:[{name:'tool1-true-fake-long-value',inputSchema:{type:'object'}}]};
+  process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:msg.id,result}) + '\\n');
+});`);
+    const result = await testMcpServer({ id: "s", name: "s", type: "stdio", config: {
+      command: process.execPath, args: [script], env: { A: "1", B: "true", C: "fake-long-value" },
+    } }, {});
+    expect(result).toMatchObject({ ok: true, tools: ["tool1-[비공개]-[비공개]"] });
+    if (result.ok) expect(result.server_info?.version).toBe("1");
+  });
+
   it("does not echo header or URL query values returned by a server", async () => {
     const url = await startServer("http", false, "fake-query-value-fake-header-value");
     const result = await testMcpServer({ id: "s", name: "s", type: "streamable_http", config: {
@@ -70,6 +94,12 @@ describe("MCP server tester", () => {
     expect(result.ok).toBe(true);
     expect(JSON.stringify(result)).not.toContain("fake-query-value");
     expect(JSON.stringify(result)).not.toContain("fake-header-value");
+  });
+
+  it("removes URL queries even when their values are shorter than four characters", async () => {
+    const url = await startServer("http", false, "https://example.test/path?q=1");
+    const result = await testMcpServer({ id: "s", name: "s", type: "streamable_http", config: { url: `${url}?q=1` } }, {});
+    expect(result).toMatchObject({ ok: true, tools: ["https://example.test/path"] });
   });
 
   it("cleans up stdio processes after success and timeout", async () => {

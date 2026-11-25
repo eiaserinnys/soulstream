@@ -119,9 +119,11 @@ export function brandColors(hex: string) {
 export function McpIconTile({
   id,
   icon,
+  small = false,
 }: {
   id: string;
   icon: McpIcon | null;
+  small?: boolean;
 }) {
   const [ready, setReady] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -183,7 +185,7 @@ export function McpIconTile({
   return (
     <span
       ref={tile}
-      className={`mcp-icon${brand ? " mcp-icon-brand" : ""}`}
+      className={`mcp-icon${small ? " mcp-icon-small" : ""}${brand ? " mcp-icon-brand" : ""}`}
       style={style}
       aria-hidden="true"
     >

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Fake psql over files in $FAKE_DIR: pg-dbs (one name per line) and pg-role (exists or not).
+# FAKE_PSQL_DOWN=1 fails every call; FAKE_DROP_DB_FAIL=1 fails DROP DATABASE;
+# FAKE_DROP_ROLE=dependent|other fails DROP ROLE with SQLSTATE 2BP01 or 42501.
+printf '%s\n' "psql $*" >> "$FAKE_ARGV_LOG"
+sql= prev=
+for arg in "$@"; do
+  if [[ "$prev" == -c ]]; then sql=$arg; fi
+  prev=$arg
+done
+if [[ -n "${FAKE_PSQL_DOWN:-}" ]]; then printf 'psql: connection failed\n' >&2; exit 2; fi
+case "$sql" in
+  'SELECT 1') printf '1\n' ;;
+  *'FROM pg_database WHERE datname IN'*) cat "$FAKE_DIR/pg-dbs" 2>/dev/null || true ;;
+  *"FROM pg_database WHERE datname = '"*)
+    name=${sql#*datname = \'}; name=${name%\'*}
+    grep -x "$name" "$FAKE_DIR/pg-dbs" 2>/dev/null || true ;;
+  *'FROM pg_roles'*) if [[ -e "$FAKE_DIR/pg-role" ]]; then printf 'soulstream\n'; fi ;;
+  'DROP DATABASE '*)
+    name=${sql#*\"}; name=${name%%\"*}
+    if [[ -n "${FAKE_DROP_DB_FAIL:-}" ]]; then printf 'ERROR: cannot drop\n' >&2; exit 3; fi
+    { grep -vx "$name" "$FAKE_DIR/pg-dbs" || true; } > "$FAKE_DIR/pg-dbs.new"
+    mv "$FAKE_DIR/pg-dbs.new" "$FAKE_DIR/pg-dbs" ;;
+  'DROP ROLE '*)
+    case "${FAKE_DROP_ROLE:-ok}" in
+      dependent) printf 'ERROR:  2BP01\n' >&2; exit 3 ;;
+      other) printf 'ERROR:  42501\n' >&2; exit 3 ;;
+      *) rm -f "$FAKE_DIR/pg-role" ;;
+    esac ;;
+  *) printf 'fake psql: unexpected statement: %s\n' "$sql" >&2; exit 99 ;;
+esac

@@ -9,6 +9,17 @@ import {
 } from "../components/mcp/McpIcons";
 import { McpValueUnit } from "../components/mcp/DefinitionEditor";
 import { newUnit, type Unit } from "../components/mcp/definition";
+import { AgentMcpConnectionPane } from "../components/mcp/AgentMcpConnectionPane";
+
+const sampleRequest: typeof fetch = async (input) => {
+  if (String(input).includes("/preview?")) return Response.json({ applied_mode: "central", applied_revision: 3, current_revision: 3, effective_backend: "sample", default_preset: null, isolation_enabled: true,
+    normal: { runnable: true, servers: [{ server_id: "example", name: "예시 서버", type: "streamable_http", included: true, node_override: true }] },
+    restricted: { runnable: true, servers: [{ server_id: "soulstream", name: "soulstream", type: "streamable_http", included: true }] } });
+  return Response.json({ current_revision: 3, managed_nodes: [{ node_id: "example-node", connected: true, central_sync_supported: true, applied_revision: 3, ack: null }],
+    servers: [{ id: "example", name: "예시 서버", type: "streamable_http", config: {}, node_scope: ["example-node"], node_overrides: {}, icon: null, version: 1 }],
+    profiles: [{ id: "example-profile", name: "예시 프로필", description: null, mcp_servers: ["example"], hosted_tools: [], node_scope: ["example-node"], version: 1 }],
+    bindings: [{ agent_id: "example-agent", node_id: "example-node", mcp_profile_id: "example-profile", version: 1 }], secrets: [] });
+};
 
 export function McpReviewSample() {
   const [open, setOpen] = useState(false);
@@ -70,6 +81,7 @@ export function McpReviewSample() {
         }
         onSecretValue={() => undefined}
       />
+      <AgentMcpConnectionPane agentId="example-agent" nodeId="example-node" request={sampleRequest} onEditProfile={() => undefined} />
     </div>
   );
 }

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Records what /usr/local looked like when it ran, then removes the fake user and its temporary home.
+printf '%s\n' "userdel $*" >> "$FAKE_ARGV_LOG"
+node=absent codex=absent
+[[ -e "$FAKE_USRLOCAL/bin/node" ]] && node=present
+[[ -e "$FAKE_USRLOCAL/bin/codex" ]] && codex=present
+printf '%s\n' "userdel-saw node=$node codex=$codex" >> "$FAKE_ARGV_LOG"
+if [[ -n "${FAKE_USERDEL_FAIL:-}" ]]; then exit 1; fi
+rm -f "$FAKE_DIR/user"
+if [[ -z "${FAKE_USERDEL_KEEP_HOME:-}" && "$FAKE_HOME" == "$FAKE_DIR"/* ]]; then rm -rf -- "$FAKE_HOME"; fi
+exit 0

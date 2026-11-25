@@ -17,6 +17,10 @@
   height: 100%;
   object-fit: cover;
 }
+.mcp-icon-small {
+  width: var(--v3-space-6);
+  height: var(--v3-space-6);
+}
 .mcp-icon-brand {
   background: var(--mcp-bg);
   color: var(--mcp-fg);

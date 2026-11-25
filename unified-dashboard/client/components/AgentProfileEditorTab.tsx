@@ -1,7 +1,7 @@
 // This file remains over 500 lines because the requested profile, portrait,
 // and preview workflows stay together in one tab. Bundle rows and CRUD live
 // in separate components; another split would change the planned boundary.
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState, type ChangeEvent } from "react";
 import { Button, FrameLoading, FrameNotice } from "@seosoyoung/soul-ui";
 
 import { useOrchestratorStore } from "../store/orchestrator-store";
@@ -16,6 +16,7 @@ import { AgentContextAssemblyView } from "./AgentContextAssemblyView";
 import { ContextBundleEditor, type ContextBundle } from "./ContextBundleEditor";
 import { ProfileOverviewMatrix } from "./guides/ProfileOverviewMatrix";
 import { useExecNode } from "../lib/skill-guides";
+import { AgentMcpConnectionPane } from "./mcp/AgentMcpConnectionPane";
 
 type AgentAlias = string | { id: string; default_preset?: string };
 
@@ -54,7 +55,7 @@ interface NodeAgent {
 const VERSION_CONFLICT_MESSAGE =
   "다른 사용자가 먼저 수정했습니다. 최신 프로필을 다시 불러온 뒤 변경을 다시 적용하세요.";
 
-export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fetch } = {}) {
+export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEditMcpProfile }: { request?: typeof fetch; initialMcpTarget?: { agentId: string; nodeId: string }; onEditMcpProfile?: (profileId: string) => void }) {
   const nodes = useOrchestratorStore((state) => state.nodes);
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
   const [bundles, setBundles] = useState<ContextBundle[]>([]);
@@ -72,11 +73,13 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
   const [removePortrait, setRemovePortrait] = useState(false);
   // 스킬 탭이 같은 노드로 쓰이는 곳을 보이도록 고른 노드는 설정 창이 열린 동안 공유한다.
   const [selectedNodeId, setSelectedNodeId] = useExecNode();
+  useLayoutEffect(() => { if (initialMcpTarget?.nodeId) setSelectedNodeId(initialMcpTarget.nodeId); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [nodeAgents, setNodeAgents] = useState<NodeAgent[]>([]);
   const [loadedNodeId, setLoadedNodeId] = useState("");
   // 노드 설정에만 있는 프로필을 고르면 draft 대신 이 ID가 선택이다(읽기 전용).
-  const [nodeProfileId, setNodeProfileId] = useState<string | null>(null);
-  const [pane, setPane] = useState<"edit" | "assembly">("assembly");
+  const [nodeProfileId, setNodeProfileId] = useState<string | null>(initialMcpTarget?.agentId ?? null);
+  const [pane, setPane] = useState<"edit" | "assembly" | "mcp">(initialMcpTarget ? "mcp" : "assembly");
+  const [focusMcpTarget, setFocusMcpTarget] = useState(Boolean(initialMcpTarget));
 
   const connectedNodeIds = useMemo(
     () => Array.from(nodes.values())
@@ -106,10 +109,10 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
   }, [portraitFile]);
 
   useEffect(() => {
-    if (!selectedNodeId || !connectedNodeIds.includes(selectedNodeId)) {
+    if (!selectedNodeId || (!connectedNodeIds.includes(selectedNodeId) && selectedNodeId !== initialMcpTarget?.nodeId)) {
       setSelectedNodeId(connectedNodeIds[0] ?? "");
     }
-  }, [connectedNodeIds, selectedNodeId]);
+  }, [connectedNodeIds, selectedNodeId, initialMcpTarget?.nodeId]);
 
   useEffect(() => {
     if (!selectedNodeId) { setNodeAgents([]); setLoadedNodeId(""); return; }
@@ -132,9 +135,11 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
     [nodeAgents, loadedNodeId, selectedNodeId],
   );
   useEffect(() => {
-    if (loadedNodeId === selectedNodeId && nodeProfileId && !nodeOnlyProfiles.some((agent) => agent.id === nodeProfileId)) setNodeProfileId(null);
-  }, [nodeOnlyProfiles, nodeProfileId, loadedNodeId, selectedNodeId]);
-  const selectedNodeProfile = nodeOnlyProfiles.find((agent) => agent.id === nodeProfileId) ?? null;
+    if (loadedNodeId === selectedNodeId && nodeProfileId && !nodeOnlyProfiles.some((agent) => agent.id === nodeProfileId) && !(nodeProfileId === initialMcpTarget?.agentId && selectedNodeId === initialMcpTarget.nodeId)) setNodeProfileId(null);
+  }, [nodeOnlyProfiles, nodeProfileId, loadedNodeId, selectedNodeId, initialMcpTarget]);
+  const selectedNodeProfile: NodeAgent | null = nodeOnlyProfiles.find((agent) => agent.id === nodeProfileId)
+    ?? (nodeProfileId && nodeProfileId === initialMcpTarget?.agentId && selectedNodeId === initialMcpTarget.nodeId ? { id: nodeProfileId, name: nodeProfileId, source: "yaml" as const } : null);
+  useEffect(() => { if (selectedNodeProfile && pane === "edit") setPane("assembly"); }, [selectedNodeProfile, pane]);
   const assemblyAgentId = selectedNodeProfile?.id ?? draft?.agent_id ?? "";
   const nodeAgent = nodeAgents.find((agent) => agent.id === assemblyAgentId) ?? null;
 
@@ -151,10 +156,10 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
       const nextProfiles = Array.isArray(body.profiles) ? body.profiles as AgentProfile[] : [];
       setProfiles(nextProfiles);
       setBundles(nextBundles);
-      const selected = nextProfiles.find((profile) => profile.agent_id === preferredAgentId)
-        ?? nextProfiles[0]
-        ?? null;
+      const preferred = nextProfiles.find((profile) => profile.agent_id === preferredAgentId);
+      const selected = preferred ?? (initialMcpTarget && preferredAgentId === initialMcpTarget.agentId ? null : nextProfiles[0] ?? null);
       setDraft(selected ? profileDraft(selected) : null);
+      if (initialMcpTarget && preferredAgentId === initialMcpTarget.agentId) setNodeProfileId(preferred ? null : initialMcpTarget.agentId);
       setSelectedBundleToAdd("");
       setPortraitFile(null);
       setRemovePortrait(false);
@@ -171,7 +176,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
   };
 
   useEffect(() => {
-    void loadProfiles();
+    void loadProfiles(initialMcpTarget?.agentId);
   }, []);
 
   const selectProfile = (profile: AgentProfile) => {
@@ -265,6 +270,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
             실행 노드
             <select aria-label="실행 노드" className={inputClassName} value={selectedNodeId} onChange={(event) => setSelectedNodeId(event.target.value)}>
               {connectedNodeIds.length === 0 && <option value="">연결된 노드 없음</option>}
+              {selectedNodeId && !connectedNodeIds.includes(selectedNodeId) && <option value={selectedNodeId}>{selectedNodeId}</option>}
               {connectedNodeIds.map((nodeId) => <option key={nodeId} value={nodeId}>{nodeId}</option>)}
             </select>
           </label>
@@ -285,6 +291,9 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
             >
               {!draft?.version && !selectedNodeProfile && <option value="">새 프로필</option>}
               {profiles.map((profile) => <option key={profile.agent_id} value={`central:${profile.agent_id}`}>{profile.name}</option>)}
+              {selectedNodeProfile && !nodeOnlyProfiles.some((agent) => agent.id === selectedNodeProfile.id) && (
+                <option value={`node:${selectedNodeProfile.id}`}>{selectedNodeProfile.name}</option>
+              )}
               {nodeOnlyProfiles.length > 0 && (
                 <optgroup label="노드 설정">
                   {nodeOnlyProfiles.map((agent) => <option key={agent.id} value={`node:${agent.id}`}>{agent.name}</option>)}
@@ -357,42 +366,42 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
       </aside>
 
       <div className="flex min-h-0 flex-col p-4" data-testid="agent-profile-editor">
-        {selectedNodeProfile ? (
+        {selectedNodeProfile && loadedNodeId !== selectedNodeId ? <FrameLoading label="노드 에이전트를 불러오는 중…" /> : selectedNodeProfile ? (
           <>
           {/* 노드 설정 전용 프로필은 여기서 고치지 않는다. 편집 탭을 끈 채로 두어 자리와 읽기 전용임을 함께 보인다. */}
-          <DetailTabs<"assembly" | "edit">
+          <div className="mcp-tabs"><DetailTabs<"assembly" | "edit" | "mcp">
             id="agent-profile-pane"
             label="프로필 보기"
             panelId="agent-profile-pane-panel"
-            tabs={[["assembly", "구성"], ["edit", "편집", true]]}
-            value="assembly"
-            onChange={() => undefined}
-          />
+            tabs={[["assembly", "구성"], ["edit", "편집", true], ["mcp", "MCP"]]}
+            value={pane === "edit" ? "assembly" : pane}
+            onChange={setPane}
+          /></div>
           <div id="agent-profile-pane-panel" role="tabpanel" className="mt-3 flex min-h-0 flex-1 flex-col">
-            <AgentContextAssemblyView
+            {pane === "mcp" ? !selectedNodeId ? <FrameNotice>연결된 노드가 없습니다.</FrameNotice> : <AgentMcpConnectionPane key={`${selectedNodeProfile.id}:${selectedNodeId}`} agentId={selectedNodeProfile.id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} focusOnMount={focusMcpTarget} onFocusHandled={() => setFocusMcpTarget(false)} /> : <AgentContextAssemblyView
               key={`node:${selectedNodeProfile.id}`}
               target={{ kind: "node", agentId: selectedNodeProfile.id }}
               nodeId={selectedNodeId}
               initialBackend={selectedNodeProfile.backend ?? "claude"}
               presentOnNode
               request={request}
-            />
+            />}
           </div>
           </>
         ) : !draft ? (
           <div className="py-10 text-center text-sm text-muted-foreground">편집할 프로필을 선택하거나 새로 만드세요.</div>
         ) : (
           <>
-          <DetailTabs<"assembly" | "edit">
+          <div className="mcp-tabs"><DetailTabs<"assembly" | "edit" | "mcp">
             id="agent-profile-pane"
             label="프로필 보기"
             panelId="agent-profile-pane-panel"
-            tabs={[["assembly", "구성"], ["edit", "편집"]]}
+            tabs={[["assembly", "구성"], ["edit", "편집"], ["mcp", "MCP", !draft.version]]}
             value={pane}
             onChange={setPane}
-          />
+          /></div>
           <div id="agent-profile-pane-panel" role="tabpanel" className="mt-3 flex min-h-0 flex-1 flex-col">
-          {pane === "assembly" ? !selectedNodeId ? (
+          {pane === "mcp" ? !selectedNodeId ? <FrameNotice>연결된 노드가 없습니다.</FrameNotice> : <AgentMcpConnectionPane key={`${draft.agent_id}:${selectedNodeId}`} agentId={draft.agent_id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} focusOnMount={focusMcpTarget} onFocusHandled={() => setFocusMcpTarget(false)} /> : pane === "assembly" ? !selectedNodeId ? (
             <FrameNotice>연결된 노드가 없습니다.</FrameNotice>
           ) : loadedNodeId !== selectedNodeId ? (
             <FrameLoading label="노드 에이전트를 불러오는 중..." />

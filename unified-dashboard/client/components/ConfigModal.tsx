@@ -115,6 +115,8 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
   const [localChat, setLocalChat] = useState<import("@seosoyoung/soul-ui").ChatFontSize>(14);
   const [localGlass, setLocalGlass] = useState(DEFAULT_LIQUID_GLASS_SETTINGS);
   const [selectedTab, setSelectedTab] = useState<string>(initialTab ?? "appearance");
+  const [mcpProfileTarget, setMcpProfileTarget] = useState<string | undefined>();
+  const [agentMcpTarget, setAgentMcpTarget] = useState<{ agentId: string; nodeId: string } | undefined>();
   const userEmail = typeof user?.email === "string" ? user.email : null;
   const [pasDevicePreferences, setPasDevicePreferences] = useState(() => userEmail
     ? readPersistentSessionDevicePreferences(userEmail)
@@ -230,7 +232,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
                 categories={categories}
                 extraTabs={extraTabs}
                 activeCategory={selectedTab}
-                onSelect={name => { setSelectedTab(name); setMobileIndex(false); }}
+                onSelect={name => { setSelectedTab(name); setMobileIndex(false); setMcpProfileTarget(undefined); setAgentMcpTarget(undefined); }}
               />
               <section className="config-detail" aria-label={activeLabel}>
               <button type="button" className="config-back" onClick={() => setMobileIndex(true)}><ArrowLeft className="size-4" aria-hidden="true"/>모든 설정</button>
@@ -276,9 +278,9 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
               ) : selectedTab === "persistent_defaults" && (api || user?.isAdmin) ? (
                 <PersistentDefaultsSettingsForm />
               ) : selectedTab === "mcp" && (api || user?.isAdmin) ? (
-                open && !mobileIndex ? <McpSettingsTab request={api?.request} /> : null
+                open && !mobileIndex ? <McpSettingsTab request={api?.request} initialProfileId={mcpProfileTarget} onOpenAgent={(agentId, nodeId) => { setAgentMcpTarget({ agentId, nodeId }); setSelectedTab(AGENTS_TAB_NAME); setMobileIndex(false); }} /> : null
               ) : selectedTab === AGENTS_TAB_NAME ? (
-                <AgentProfileEditorTab request={api?.request} />
+                <AgentProfileEditorTab request={api?.request} initialMcpTarget={agentMcpTarget} onEditMcpProfile={profileId => { setMcpProfileTarget(profileId); setSelectedTab("mcp"); setMobileIndex(false); }} />
               ) : selectedTab === SKILLS_TAB_NAME && (api || user?.isAdmin) ? (
                 open && !mobileIndex ? <SkillCatalogTab request={api?.request} /> : null
               ) : selectedTab === OWNED_AGENTS_TAB_NAME ? (
