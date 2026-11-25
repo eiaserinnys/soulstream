@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { CardDependency } from '../../../../packages/wire-schema/src/card_dependency_display';
-import { cardDependencyStopReason } from '../../../../packages/wire-schema/src/card_dependency_display';
+import { cardDependencyStopReason, type CardDependency } from '../../../../packages/wire-schema/src/card_dependency_display';
 import { cardDependencyStatus } from '../../lib/card-transition';
 import { useTokens, type DesignTokens } from '../../theme';
 import { CompactTouchTarget } from '../CompactTouchTarget';
