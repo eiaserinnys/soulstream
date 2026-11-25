@@ -17,6 +17,22 @@ async function render(load=vi.fn().mockResolvedValue(detail()),change=vi.fn().mo
  await act(()=>root.render(<CardStatusPicker card={reviewCard} control={{load,change,pending:false,...(changeColor?{changeColor}:{})}} onOpen={onOpen} trigger={trigger}/>));
  return {load,change,onOpen,changeColor};
 }
+it("미충족 선행이 있으면 실행 전 확인하고 취소 또는 시작한다",async()=>{
+ const d=detail();d.card={...d.card,assigneeSessionId:"session",dependsOn:[{id:"dep",number:12,title:"선행",status:"running",archived:false,met:false}]};
+ const c=await render(vi.fn().mockResolvedValue(d));
+ await click("카드 상태 변경");await click("실행 중");
+ expect(document.body.textContent).toContain("선행 카드가 끝나지 않았습니다");expect(c.change).not.toHaveBeenCalled();
+ expect(document.querySelector('[data-card-status-picker]')).toBeNull();
+ await act(async()=>{[...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(x=>x.textContent==="취소")!.click();await new Promise(done=>setTimeout(done,20));});expect(c.change).not.toHaveBeenCalled();
+ await click("카드 상태 변경");await click("실행 중");await click("지금 시작");
+ expect(c.change).toHaveBeenCalledWith(d.card,"running",undefined);
+});
+it("선행이 모두 충족되면 확인 없이 시작한다",async()=>{
+ const d=detail();d.card={...d.card,assigneeSessionId:"session",dependsOn:[{id:"dep",number:12,title:"선행",status:"done",archived:false,met:true}]};
+ const c=await render(vi.fn().mockResolvedValue(d));
+ await click("카드 상태 변경");await click("실행 중");expect(c.change).toHaveBeenCalledWith(d.card,"running",undefined);
+ expect(document.body.textContent).not.toContain("선행 카드가 끝나지 않았습니다");
+});
 it("loads only on explicit opens and allows reportless review",async()=>{
  const d=detail();d.reports=[];const c=await render(vi.fn().mockResolvedValue(d));
  expect(c.load).not.toHaveBeenCalled();await click("카드 상태 변경");expect(c.load).toHaveBeenCalledTimes(1);

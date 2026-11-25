@@ -28,6 +28,7 @@ import { ProjectNavigationTree } from "./ProjectNavigationTree";
 import { reviewCard, reviewCardItems, reviewDeliveryFailureMessages, reviewDetail, reviewFolder, reviewFolders, reviewNow, reviewSession, reviewSessionFiles, reviewTitle } from "./components-review-fixtures";
 import "./components-review.css";
 import { PostItCardSamples } from "./PostItCardSamples";
+import { CardDependencySamples } from "./CardDependencySamples";
 import { ReadOnlyCardListSample } from "./ReadOnlyCardListSample";
 import { CardOrchestrationSettingsSample } from "./CardOrchestrationSettingsSample";
 import { PersistentDefaultsSettingsReviewSample } from "./PersistentDefaultsSettingsReviewSample";
@@ -280,6 +281,7 @@ export function ComponentsReviewPage() {
               <Sample name="PostItCardView / PostItGrid" state="채팅 글자 비율 · 상태/색상 메뉴 표면 · 사유 입력 · 질문 · 로컬 샘플">
                 <PostItCardSamples onOpen={open}/>
               </Sample>
+              <Sample name="선행 카드" state="대기·취소·상세·시작 확인"><CardDependencySamples/></Sample>
               <Sample name="PostItCardView / PostItGrid readonly" state="승인된 iframe 5그룹 · 태그 없음 · 비대화형 카드 · 필터와 새로고침">
                 <ReadOnlyCardListSample/>
               </Sample>

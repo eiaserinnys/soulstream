@@ -25,6 +25,7 @@
     "./attachment-path-notes": "./src/attachment_path_notes.ts",
     "./card-colors": "./src/card_colors.ts",
     "./card-item-display": "./src/card_item_display.ts",
+    "./card-dependency-display": "./src/card_dependency_display.ts",
     "./card-status-labels": "./src/card_status_labels.ts",
     "./persistent-session-settings": "./src/persistent_session_settings.ts",
     "./persistent-session-instructions": "./src/persistent_session_instructions.ts",

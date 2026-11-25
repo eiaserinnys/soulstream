@@ -75,6 +75,7 @@
 !/packages/wire-schema/src/attachment_path_notes.ts
 !/packages/wire-schema/src/card_attachments.ts
 !/packages/wire-schema/src/card_item_display.ts
+!/packages/wire-schema/src/card_dependency_display.ts
 !/packages/wire-schema/src/card_questions.ts
 !/packages/wire-schema/src/catalog.ts
 !/packages/wire-schema/src/card_colors.ts

@@ -19,6 +19,7 @@ import {PostItCardView as Paper, PostItGrid as PaperGrid, type PostItVariant} fr
 import { summarizeCardItems } from "./card-item-summary";
 import { CardProgressSummary } from "./CardProgressSummary";
 import { cardAssignee } from "./card-assignee";
+import { cardDependencyDisplay } from "../../../packages/wire-schema/src/card_dependency_display";
 export {postItRotation} from "./PostItCardPresentation";
 export type {PostItVariant} from "./PostItCardPresentation";
 const NO_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
@@ -64,6 +65,7 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
   const hasItems=Boolean(card.items?.length);
   const nowText=card.now?.text;
   const turnText=card.now?.turn==="user"?card.now.ask??undefined:undefined;
+  const dependency=cardDependencyDisplay(card.status,card.dependsOn);
   const statusActions=statusControl?cardStatusChoices.map(status=>({
     label:cardStatusLabel({...card,status,blockedKind:null,blockedDetail:null}),
     onSelect:()=>statusHandle.current?.request(status as CardStatus),
@@ -71,7 +73,7 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
   return <>
     <Paper id={card.id} title={displayTitle} status={card.status} color={card.color} fontSize={fontSize} variant={variant}
       activity={activity?{kind:activity.kind,text:cardActivityPreview(activity)}:null}
-      summary={hasItems?<span className="v3-postit-summary"><CardProgressSummary summary={itemSummary} showReviewCount/></span>:undefined} nowText={nowText} turnText={turnText} turnLabel={card.now?.turn==="user"&&itemSummary.toReviewCount>0?`볼 것 ${itemSummary.toReviewCount}`:undefined}
+      summary={hasItems?<span className="v3-postit-summary"><CardProgressSummary summary={itemSummary} showReviewCount/></span>:undefined} nowText={nowText} turnText={dependency?.text??turnText} turnTone={dependency?.tone} turnLabel={!dependency&&card.now?.turn==="user"&&itemSummary.toReviewCount>0?`볼 것 ${itemSummary.toReviewCount}`:undefined}
       assigneeName={name} onOpen={onOpen} error={error}
       avatar={<ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait}
         fallbackEmoji={assigned ? card.assigneeKind === "human" ? "👤" : "🤖" : "·"}/>}
