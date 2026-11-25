@@ -405,6 +405,7 @@ test('/usr/local: a damaged receipt touches nothing there, is reported, and stay
     ['shim name outside the four', JSON.stringify({ schema: 1, node_tarball_installed: true, node_version: 'v22.23.5', corepack_shims_created: ['../../etc/passwd'], codex_npm_global_installed: true })],
     ['node flag without version', JSON.stringify({ schema: 1, node_tarball_installed: true, node_version: null, corepack_shims_created: [], codex_npm_global_installed: true })],
     ['empty file', ''],
+    ['whitespace only', '  \n\n'],
   ];
   for (const [label, body] of damaged) {
     await withServer({}, async (s) => {
