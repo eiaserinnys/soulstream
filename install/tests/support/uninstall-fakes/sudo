@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+printf '%s\n' "sudo $*" >> "$FAKE_ARGV_LOG"
+[[ "$1" == -u && "$2" == postgres ]] || { printf 'fake sudo: only -u postgres is allowed\n' >&2; exit 97; }
+shift 2
+exec "$@"

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Fake tailscale over $FAKE_DIR/serve.json. Only serve status --json and
+# serve --https=<port> --set-path=/ off exist; anything else (reset, status, up) fails with 98.
+# FAKE_SERVE_STATUS_FAIL_CALLS="1 3" fails the 1st and 3rd status call; FAKE_SERVE_STATUS_GARBAGE=1 prints non-JSON;
+# FAKE_SERVE_OFF_FAIL=1 fails the off command; FAKE_SERVE_OFF_NOOP=1 succeeds without changing anything.
+printf '%s\n' "tailscale $*" >> "$FAKE_ARGV_LOG"
+serve=$FAKE_DIR/serve.json
+case "$1 $2 $3" in
+  'serve status --json')
+    count=0
+    if [[ -e "$FAKE_DIR/serve-status-calls" ]]; then read -r count < "$FAKE_DIR/serve-status-calls"; fi
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$FAKE_DIR/serve-status-calls"
+    for call in ${FAKE_SERVE_STATUS_FAIL_CALLS:-}; do
+      if [[ "$call" == "$count" ]]; then printf 'serve status failed\n' >&2; exit 1; fi
+    done
+    if [[ -n "${FAKE_SERVE_STATUS_GARBAGE:-}" ]]; then printf 'not json\n'; exit 0; fi
+    if [[ -e "$serve" ]]; then cat "$serve"; else printf '{}\n'; fi ;;
+  'serve --https='*)
+    [[ "$3 $4" == '--set-path=/ off' ]] || { printf 'fake tailscale: unsupported: %s\n' "$*" >&2; exit 98; }
+    port=${2#--https=}
+    if [[ -n "${FAKE_SERVE_OFF_FAIL:-}" ]]; then exit 1; fi
+    if [[ -n "${FAKE_SERVE_OFF_NOOP:-}" ]]; then exit 0; fi
+    jq --arg suffix ":$port" '.Web |= with_entries(if (.key | endswith($suffix)) then .value.Handlers |= del(.["/"]) else . end)' "$serve" > "$serve.new"
+    mv "$serve.new" "$serve" ;;
+  *) printf 'fake tailscale: unsupported: %s\n' "$*" >&2; exit 98 ;;
+esac

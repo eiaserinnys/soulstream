@@ -10,6 +10,10 @@ ATOM_SEED_NAMES='skill_catalog domain_catalog common_rules common_rules_extra co
 SOULSTREAM_REPO_URL=https://github.com/eiaserinnys/soulstream.git
 ATOM_REPO_URL=https://github.com/eiaserinnys/atom.git
 SYSTEMD_DIR=/etc/systemd/system
+# Records what this installer added under /usr/local so uninstall.sh removes only that. Tests reassign these after sourcing.
+RECEIPT_FILE=/etc/soulstream/install-receipt.json
+USR_LOCAL=/usr/local
+NODE_VERSION=v22.23.5
 # Stopped in this order when maintenance starts and after a failure during it.
 SERVICE_UNITS='soulstream-worker.service soulstream-orch.service soulstream-atom.service'
 MAINTENANCE_ENTERED=false
@@ -636,27 +640,71 @@ setup_account() {
     install -m 600 -o soulstream -g soulstream /root/.ssh/authorized_keys /home/soulstream/.ssh/authorized_keys
   fi
 }
+# The receipt lists the /usr/local items this installer created. Fields only ever turn on (or grow); a
+# rerun never forgets something an earlier run added. A failed write stops the install.
+receipt_write() {
+  local dir=${RECEIPT_FILE%/*} temp
+  mkdir -p "$dir" && chmod 700 "$dir" || return 1
+  temp=$(mktemp "$dir/.install-receipt.XXXXXX") || return 1
+  if ! { cat > "$temp" && chmod 600 "$temp" && mv "$temp" "$RECEIPT_FILE"; }; then rm -f "$temp"; return 1; fi
+}
+receipt_init() {
+  [[ -e "$RECEIPT_FILE" ]] && return 0
+  printf '%s\n' '{"schema":1,"node_tarball_installed":false,"node_version":null,"corepack_shims_created":[],"codex_npm_global_installed":false}' | receipt_write
+}
+# receipt_update <jq filter> [jq options]
+receipt_update() {
+  local filter=$1 updated
+  shift
+  receipt_init || return 1
+  updated=$(jq -c "$@" "$filter" "$RECEIPT_FILE") || return 1
+  printf '%s\n' "$updated" | receipt_write
+}
 install_node() {
-  local version=v22.23.5 archive="node-v22.23.5-linux-x64.tar.gz" dir
-  if [[ "$(/usr/local/bin/node --version 2>/dev/null || true)" != "$version" ]]; then
+  local version=$NODE_VERSION archive="node-$NODE_VERSION-linux-x64.tar.gz" dir name node_absent=false node_recorded shims=()
+  receipt_init || return 1
+  [[ -e "$USR_LOCAL/bin/node" || -L "$USR_LOCAL/bin/node" ]] || node_absent=true
+  node_recorded=$(jq -r '.node_tarball_installed' "$RECEIPT_FILE") || return 1
+  if [[ "$("$USR_LOCAL/bin/node" --version 2>/dev/null || true)" != "$version" ]]; then
     dir=$(mktemp -d)
     curl -fsSL "https://nodejs.org/dist/$version/$archive" -o "$dir/$archive"
     curl -fsSL "https://nodejs.org/dist/$version/SHASUMS256.txt" -o "$dir/SHASUMS256.txt"
     (cd "$dir" && grep "  $archive$" SHASUMS256.txt | sha256sum -c -)
-    tar -xzf "$dir/$archive" -C /usr/local --strip-components=1
+    tar -xzf "$dir/$archive" -C "$USR_LOCAL" --strip-components=1
     rm -rf "$dir"
+    # A node that was already there stays out of the receipt; one this installer put there follows later versions.
+    if [[ "$node_absent" == true || "$node_recorded" == true ]]; then
+      receipt_update '.node_tarball_installed = true | .node_version = $version' --arg version "$version" || return 1
+    fi
   fi
   export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+  for name in pnpm pnpx yarn yarnpkg; do
+    [[ -e "$USR_LOCAL/bin/$name" || -L "$USR_LOCAL/bin/$name" ]] || shims+=("$name")
+  done
   corepack enable
+  local created=()
+  for name in "${shims[@]}"; do
+    if [[ -L "$USR_LOCAL/bin/$name" ]]; then created+=("$name"); fi
+  done
+  if ((${#created[@]})); then
+    receipt_update '.corepack_shims_created = ((.corepack_shims_created + $names) | unique)' --argjson names "$(printf '%s\n' "${created[@]}" | jq -R . | jq -sc .)" || return 1
+  fi
 }
 as_soul() { sudo -H -u soulstream env HOME=/home/soulstream PATH=/home/soulstream/.local/bin:/usr/local/bin:/usr/bin:/bin COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$@"; }
+# Only a codex this run installs goes into the receipt; one already on the server stays out of it.
+install_codex_global() {
+  if ! as_soul bash -c 'command -v codex >/dev/null'; then
+    npm install -g @openai/codex
+    receipt_update '.codex_npm_global_installed = true' || return 1
+  fi
+}
 install_clis() {
   if has_backend claude; then
     if ! as_soul bash -c 'command -v claude >/dev/null'; then as_soul bash -o pipefail -c 'curl -fsSL https://claude.ai/install.sh | bash'; fi
     as_soul claude --version
   fi
   if has_backend codex; then
-    if ! as_soul bash -c 'command -v codex >/dev/null'; then npm install -g @openai/codex; fi
+    install_codex_global || return 1
     as_soul codex --version
     as_soul mkdir -p /home/soulstream/.codex
     as_soul touch /home/soulstream/.codex/config.toml

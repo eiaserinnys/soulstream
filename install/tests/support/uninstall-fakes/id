@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# The soulstream user exists while $FAKE_DIR/user exists. Its uid is FAKE_UID, a number this host does not use.
+printf '%s\n' "id $*" >> "$FAKE_ARGV_LOG"
+if [[ "$1 $2" == '-u soulstream' && -e "$FAKE_DIR/user" ]]; then printf '%s\n' "${FAKE_UID:-4242424}"; exit 0; fi
+exit 1

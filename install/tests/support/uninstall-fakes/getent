@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+printf '%s\n' "getent $*" >> "$FAKE_ARGV_LOG"
+if [[ "$1 $2" == 'passwd soulstream' && -e "$FAKE_DIR/user" ]]; then
+  printf 'soulstream:x:%s:%s::%s:/bin/bash\n' "${FAKE_GETENT_UID:-${FAKE_UID:-4242424}}" "${FAKE_UID:-4242424}" "${FAKE_GETENT_HOME:-$FAKE_HOME}"
+  exit 0
+fi
+exit 2
