@@ -4,7 +4,9 @@ import { CardDispatchSettingsError, type CardDispatchSettings } from "./card_dis
 export type CardDispatchSettingsRouteOptions = AdminAccessProvider & {
     get(): Promise<CardDispatchSettings>;
     put(input: {
-        nodeConcurrency: unknown;
+        nodeConcurrency?: unknown;
+        reviewMeetsDependency?: unknown;
+        startReleasedDependents?: unknown;
         expectedVersion: number;
         updatedBy: string;
     }): Promise<CardDispatchSettings>;
@@ -24,7 +26,8 @@ export function registerCardDispatchSettingsRoutes(app: FastifyInstance, options
                     const body = request.body as Record<string, unknown> | null;
                     if (!body || typeof body !== "object" || Array.isArray(body))
                         throw new CardDispatchSettingsError(422, "CARD_DISPATCH_INVALID", "Request body must be a JSON object");
-                    return { settings: await options.put({ nodeConcurrency: body.nodeConcurrency, expectedVersion: body.expectedVersion as number, updatedBy: email }) };
+                    return { settings: await options.put({ nodeConcurrency: body.nodeConcurrency, reviewMeetsDependency: body.reviewMeetsDependency,
+                        startReleasedDependents: body.startReleasedDependents, expectedVersion: body.expectedVersion as number, updatedBy: email }) };
                 }
                 catch (error) {
                     if (!(error instanceof CardDispatchSettingsError))

@@ -58,11 +58,12 @@ export async function listCardRouteBody(options: CardRouteBodyOptions, input: un
     return { cards: page.cards.map(serializeCardRow), nextCursor: page.nextCursor };
   }
   const cards = await service.listCards({ ...query, allowedFolderIds });
-  return { cards: (await service.projectCards(cards)).map(serializeCardRow) };
+  return { cards: (await service.projectCards(cards,allowedFolderIds)).map(serializeCardRow) };
 }
 
 export async function readCardRouteBody(options: CardRouteBodyOptions, cardId: string, resolveAccess: ResolveAccess, reports = false) {
-  const detail = await (await options.cardServiceProvider!()).getCard(cardId);
+  const allowedFolderIds = await cardAllowedFolderIds(options,resolveAccess);
+  const detail = await (await options.cardServiceProvider!()).getCard(cardId,allowedFolderIds);
   if (!detail) throw new CardNotFoundError();
   await allowed(options, resolveAccess, detail.card.folder_id);
   return reports ? { reports: detail.reports.map(serializeCardRow) } : serializeCardDetail(detail);
@@ -90,7 +91,7 @@ export async function mutateCardRouteBody(options: CardRouteBodyOptions, operati
     : operation === "confirm_card_item" ? { ...body, itemId: Number(itemIdPath) } : body;
   if (operation === "add_card_comment" && detail !== null)
     operationBody = await commentOperationBody(operationBody, detail, cardId!, uploadCommentAttachment);
-  const result = await executeCardOperation(service, operation, operationBody, cardId, actor, userFields);
+  const result = await executeCardOperation(service, operation, operationBody, cardId, actor, userFields, await cardAllowedFolderIds(options,resolveAccess));
   return { status: operation === "create_card" || operation === "add_card_report" || operation === "add_card_comment" || operation === "ask_card_question" ? 201 : 200, body: result };
 }
 
@@ -136,6 +137,11 @@ export function cardRouteErrorResponse(error: unknown) {
   return { status: failure.status, body: { detail: { error: { code: failure.code, message: failure.message } } } };
 }
 
+export async function cardAllowedFolderIds(options: CardRouteBodyOptions, resolveAccess: ResolveAccess): Promise<readonly string[] | null> {
+  const [access, folders] = await Promise.all([resolveAccess(),options.provider.listFolders()]);
+  const normalized = normalizeBoardAccess(access);
+  return normalized.restricted ? filterFolders(normalized,folders).map(folder => folder.id) : null;
+}
 export async function allowed(options: CardRouteBodyOptions, resolveAccess: ResolveAccess, folderId: string) {
   const [access, folders] = await Promise.all([resolveAccess(), options.provider.listFolders()]);
   if (!isBoardFolderAllowed(normalizeBoardAccess(access), folders, folderId))

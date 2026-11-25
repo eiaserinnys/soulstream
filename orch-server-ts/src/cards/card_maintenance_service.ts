@@ -25,6 +25,7 @@ import type {
   SqlClient,
 } from "./control_plane/card_types.js";
 import type { CardStatus } from "@soulstream/wire-schema";
+import { mergeCardDependencies, replaceCardDependencies } from "./card_dependencies.js";
 
 export type AuthorizeFolder = (folderId: string) => Promise<void>;
 
@@ -35,10 +36,12 @@ export type UpdateUnstartedFields = {
   agentId?: string;
   modelPreset?: string;
   nodeId?: string;
+  dependsOn?: string[];
 };
 
 export type UpdateUnstartedInput = FolderActorParams & UpdateUnstartedFields & {
   cardId: string;
+  allowedFolderIds?: readonly string[] | null;
   expectedVersion?: number;
   idempotencyKey: string;
 };
@@ -85,7 +88,7 @@ export type CardMaintenancePorts = {
   patchTx: (sql: RepositorySql, card: CardRow, fields: Record<string, unknown>, actor: FolderActorParams, eventId: number | null) => Promise<void>;
   statusTx: (sql: RepositorySql, card: CardRow, eventId: number | null,
     params: FolderActorParams & { cardId: string; status: CardStatus; expectedVersion?: number; reason?: string | null }, payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
-  afterCommit: (changes: CardMaintenanceChange[]) => Promise<void>;
+  afterCommit: (changes: CardMaintenanceChange[], dependencyCards?: string[]) => Promise<void>;
 };
 
 const maintenanceStorageKey = (tool: string, actorSessionId: string, key: string) =>
@@ -115,6 +118,7 @@ function updateChangedFields(params: UpdateUnstartedFields): string[] {
     params.agentId !== undefined ? "agent_id" : null,
     params.modelPreset !== undefined ? "model_preset" : null,
     params.nodeId !== undefined ? "node_id" : null,
+    params.dependsOn !== undefined ? "depends_on" : null,
   ].filter((field): field is string => field !== null);
   if (fields.length === 0) throw invalidMaintenance("변경할 필드를 하나 이상 지정하세요.");
   return fields;
@@ -150,7 +154,7 @@ export class CardMaintenanceService {
     const input: Record<string, unknown> = { card_id: params.cardId };
     for (const [key, value] of [["title", params.title], ["request", params.request], ["brief", params.brief],
       ["agent_id", params.agentId], ["model_preset", params.modelPreset], ["node_id", params.nodeId],
-      ["expected_version", params.expectedVersion]] as const)
+      ["expected_version", params.expectedVersion], ["depends_on", params.dependsOn]] as const)
       if (value !== undefined) input[key] = value;
 
     const current = await readCardOrFail(this.sql, params.cardId);
@@ -181,6 +185,7 @@ export class CardMaintenanceService {
         folderId: locked.folder_id, targetKind: "card", targetId: locked.id,
         operationType: "update_unstarted_card", actor: params, idempotencyKey: storageKey, payload,
         apply: async (tx, eventId) => {
+          if (params.dependsOn !== undefined) await replaceCardDependencies(tx,locked.id,params.dependsOn,params.allowedFolderIds);
           const fields = await this.updateFieldsTx(tx, locked, params);
           await this.patchTx(tx, locked, this.fields(decision,locked,command,params,eventId,fields), params, eventId);
           committed = await readCardOrFail(tx, locked.id);
@@ -226,7 +231,7 @@ export class CardMaintenanceService {
     const participantIds = [params.targetCardId, ...sourceCardIds];
     for (const cardId of participantIds) await authorizeFolder((await readCardOrFail(this.sql, cardId)).folder_id);
 
-    const outcome = await this.sql.begin(async (sql): Promise<{ result: MergeCardsResult; changes: CardMaintenanceChange[] }> => {
+    const outcome = await this.sql.begin(async (sql): Promise<{ result: MergeCardsResult; changes: CardMaintenanceChange[]; dependencyCards?: string[] }> => {
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${storageKey},0))`;
       const prior = await readOperationTx(sql, storageKey);
       if (prior) {
@@ -244,6 +249,7 @@ export class CardMaintenanceService {
       const targetDecision=await this.decide(sql,target,targetCommand,params);
       const sourceDecisions=new Map<string,CardDecision>();
       for (const source of sources) sourceDecisions.set(source.id,await this.decide(sql,source,{type:'MERGE_SOURCE'},params));
+      const dependencyCards = await mergeCardDependencies(sql,target.id,sourceCardIds);
 
       const comments = await readMergeCommentsTx(sql, sourceCardIds);
       const commentsByCard = new Map<string, CardCommentRow[]>();
@@ -345,9 +351,9 @@ export class CardMaintenanceService {
         result: targetApplied, previousStatus: target.status,
         previousAssigneeSessionId: target.assignee_session_id, committedCard: targetCommitted, cardChanged: true,
       });
-      return { result: merged, changes };
+      return { result: merged, changes, dependencyCards };
     });
-    await this.afterCommitCards(outcome.changes);
+    await this.afterCommitCards(outcome.changes,outcome.dependencyCards);
     return outcome.result;
   }
 

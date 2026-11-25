@@ -468,6 +468,7 @@ export class CardOrchestrationCoordinator {
             createdAt: c.created_at as Date | string,
             body: String(c.body),
           })),
+          dependsOn: detail.card.dependsOn,
           running: await this.options.dispatch.running(),
         }),
       };

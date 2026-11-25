@@ -55,9 +55,11 @@ const childCompletionObservation = (
   };
 };
 
-function createStack(options: { allowFolder?: (folderId: string) => boolean; launch?: (input: unknown) => Promise<unknown> } = {}) {
+function createStack(options: { allowFolder?: (folderId: string) => boolean; launch?: (input: unknown) => Promise<unknown>;
+  broadcast?: (cardId: string, folderId: string) => Promise<void> } = {}) {
   const sql = createFolderContentSqlAdapter(h.liveSql);
-  const cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx });
+  const cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx }, options.broadcast
+    ? { emitCardUpdated: options.broadcast, emitFolderUpdated: async () => {} } : undefined);
   const launch = vi.fn(options.launch ?? (async () => undefined));
   const execution = new CardExecutionService({
     sql,
@@ -482,6 +484,22 @@ describe("card work dispatch transaction contracts", () => {
     expect((await stack.cards.getCard(cardId))!.card).toMatchObject({status:"running",blocked_kind:null});
     expect(sync).toHaveBeenCalledOnce();
     expect(sync).toHaveBeenCalledWith(cardId,expect.objectContaining({previousStatus:"blocked",questionChanged:true}));
+  },60000);
+
+  it("broadcasts a dependent when followup resumes its blocked predecessor", async () => {
+    const broadcast = vi.fn(async (_cardId: string, _folderId: string) => {});
+    const stack = createStack({ broadcast });
+    const first = (await stack.cards.createCard({ actorKind:"user", actorSessionId:null, folderId:"work", title:"선행", request:"",
+      assignee:{kind:"agent",agentId:"owner-agent"} })).operation.target_id;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,folder_id,model_preset)
+      VALUES ('dependency-followup-owner','node-a','owner-agent','completed',${first},'work','owner-model')`;
+    await stack.cards.patchCard({ actorKind:"user", actorSessionId:null, cardId:first,
+      assignee:{kind:"session",sessionId:"dependency-followup-owner"} });
+    await stack.cards.askQuestion({ actorKind:"agent",actorSessionId:"dependency-followup-owner",cardId:first,text:"결정",options:["진행"] });
+    const follower = (await stack.cards.createCard({ actorKind:"user",actorSessionId:null,folderId:"work",title:"뒤",request:"",dependsOn:[first] })).operation.target_id;
+    broadcast.mockClear();
+    await stack.service.accept({kind:"followup",cardId:first,request:"계속",idempotencyKey:"dependency-followup"},actor);
+    expect(broadcast).toHaveBeenCalledWith(follower,"work");
   },60000);
 
   it("reopens a verification-wait followup card and clears its wait fields", async () => {

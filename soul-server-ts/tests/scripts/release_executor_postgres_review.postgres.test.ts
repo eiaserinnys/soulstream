@@ -339,7 +339,7 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
       ));
       await expect(upgrade.phase("preflight")).resolves.toMatchObject({
         operation: "upgrade",
-        pending_count: 4,
+        pending_count: 5,
         pending_additive_only: false,
         status: "preflight_complete",
       });

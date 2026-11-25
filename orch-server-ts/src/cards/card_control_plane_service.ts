@@ -41,6 +41,7 @@ import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
 import { CardMaintenanceService, type BulkSetCardStatusInput, type CardMaintenanceChange, type MergeCardsInput, type MergeCardsResult, type UpdateUnstartedFields, type UpdateUnstartedResult, type AuthorizeFolder } from "./card_maintenance_service.js";
+import { dependentCards, replaceCardDependencies } from "./card_dependencies.js";
 import type {
   CardRow,
   CardMutationResult,
@@ -81,6 +82,8 @@ export type CardMutationChange = {result:CardMutationResult;previousStatus?:Card
 type CreateCardParams = FolderActorParams & {
   folderId: string; title: string; request: string; attachments?: CardAttachment[]; queue?: boolean; assignee?: CardAssigneeInput | null;
   nodeId?: string | null; modelPreset?: string | null; idempotencyKey?: string | null; brief?: string;
+  dependsOn?: string[];
+  allowedFolderIds?: readonly string[] | null;
 };
 type AddCommentParams = CardMutationParams & { body:string; kind?:"comment" | "spoken"; mode?:"spoken" | "reply"; itemId?:number; questionId?:string };
 /** Path attachments already turned into R2 assets before the create transaction ran. */
@@ -117,7 +120,7 @@ export class CardControlPlaneService {
       sql:repoSql,repo:this.repo,core:this.core,
       patchTx:(sql,card,fields,actor,eventId)=>this.patch(sql,card,fields,actor,eventId),
       statusTx:(sql,card,eventId,params,payload)=>this.applyStatusTx(sql,card,eventId,params,payload),
-      afterCommit:changes=>this.afterCommitMaintenance(changes),
+      afterCommit:(changes,dependencyCards)=>this.afterCommitMaintenance(changes,dependencyCards),
     });
   }
   getAssignedCardContext(sessionId: string) { return readAssignedCardContext(this.repoSql,sessionId); }
@@ -143,15 +146,15 @@ export class CardControlPlaneService {
         : { ref, error: `카드 #${card.number}에 붙은 세션은 ${total}개입니다. ${ref}는 없습니다.` };
     }));
   }
-  getFolder(folderId: string, includeCompleted = true) { return this.repo.getSnapshot(folderId, includeCompleted); }
+  getFolder(folderId: string, includeCompleted = true, allowedFolderIds: readonly string[] | null = null) { return this.repo.getSnapshot(folderId, includeCompleted, allowedFolderIds); }
   getFolderRow(folderId: string) { return this.repo.getFolder(folderId); }
   listFolders(params: Parameters<CardRepository["listFolders"]>[0]) { return this.repo.listFolders(params); }
   listOperations(folderId: string,limit?: number,offset?: number) { return this.repo.listOperations(folderId,limit,offset); }
   listCards(params: Parameters<CardRepository["listCards"]>[0]={}) { return this.repo.listCards(params); }
   listCompletedCards(params: Parameters<CardRepository["listCompletedCards"]>[0]) { return this.repo.listCompletedCards(params); }
   listPagedCards(params: Parameters<CardRepository["listPagedCards"]>[0]) { return this.repo.listPagedCards(params); }
-  projectCards(cards: readonly CardRow[]) { return this.repo.projectCards(cards); }
-  async getCard(cardId: string) {
+  projectCards(cards: readonly CardRow[], allowedFolderIds: readonly string[] | null = null) { return this.repo.projectCards(cards, allowedFolderIds); }
+  async getCard(cardId: string, allowedFolderIds: readonly string[] | null = null) {
     const card=await this.repo.getCard(cardId);
     if (!card) return null;
     const [reports,questions,comments,sessions,notes,nowHistory,statusHistory]=await Promise.all([
@@ -159,7 +162,7 @@ export class CardControlPlaneService {
       this.repo.listAllCardNotes(cardId),this.repo.listCardNowHistory(cardId),
       this.repo.listCardStatusHistory(cardId),
     ]);
-    return { card:(await this.repo.projectCards([card]))[0]!,reports,questions,comments,sessions,notes,nowHistory,statusHistory };
+    return { card:(await this.repo.projectCards([card],allowedFolderIds))[0]!,reports,questions,comments,sessions,notes,nowHistory,statusHistory };
   }
   async getCardSessionMessages(cardId: string, query?: CardSessionMessagesQuery) {
     const detail=await this.getCard(cardId);
@@ -254,7 +257,7 @@ export class CardControlPlaneService {
   private createCardMutation(params:CreateCardParams,id:string,prepared:PreparedCardAttachments | null):FolderMutateParams {
     const assignee=assigneeToFields(params.assignee);
     return { folderId:params.folderId,targetKind:"card",targetId:id,operationType:"create_card",actor:params,
-      idempotencyKey:params.idempotencyKey,payload:{ title:params.title,request:params.request,brief:params.brief ?? "",attachments:params.attachments ?? [],queue:params.queue ?? false,assignee:params.assignee ?? null,nodeId:params.nodeId ?? null,modelPreset:params.modelPreset ?? null },
+      idempotencyKey:params.idempotencyKey,payload:{ title:params.title,request:params.request,brief:params.brief ?? "",attachments:params.attachments ?? [],queue:params.queue ?? false,assignee:params.assignee ?? null,nodeId:params.nodeId ?? null,modelPreset:params.modelPreset ?? null,...(params.dependsOn === undefined ? {} : {dependsOn:params.dependsOn}) },
       apply:async (sql,eventId) => {
         await this.lockFolder(sql,params.folderId);
         const position=await this.position(sql,params.folderId,null);
@@ -276,9 +279,10 @@ export class CardControlPlaneService {
           VALUES(${id},${params.folderId},${position},${queuePosition},${params.title},${params.request},${params.brief ?? ""},${sql.json(params.attachments ?? [])},${sql.json(refs)},${initial.status},
           ${initial.assignee_kind},${initial.assignee_agent_id},${initial.assignee_session_id},${initial.assignee_user_id},${params.nodeId ?? null},${params.modelPreset ?? null},
           ${params.actorSessionId},${eventId},${params.actorSessionId},${eventId})`;
+        if (params.dependsOn !== undefined) await replaceCardDependencies(sql,id,params.dependsOn,params.allowedFolderIds);
       } };
   }
-  updateUnstartedCard(params:CardMutationParams & UpdateUnstartedFields & {idempotencyKey:string}, authorizeFolder:AuthorizeFolder):Promise<UpdateUnstartedResult> {
+  updateUnstartedCard(params:CardMutationParams & UpdateUnstartedFields & {idempotencyKey:string;allowedFolderIds?:readonly string[] | null}, authorizeFolder:AuthorizeFolder):Promise<UpdateUnstartedResult> {
     return this.maintenance.updateUnstartedCard(params, authorizeFolder);
   }
   mergeCards(params:FolderActorParams & MergeCardsInput, authorizeFolder:AuthorizeFolder):Promise<MergeCardsResult> {
@@ -756,12 +760,14 @@ export class CardControlPlaneService {
         const cardChanged = previousStatus !== committedCard?.status || previousCard?.title !== committedCard?.title
           || previousCard?.archived !== committedCard?.archived || JSON.stringify(previousCard?.now) !== JSON.stringify(committedCard?.now);
         await this.syncReportsAfterCommit(card.id,{previousStatus,previousCard,committedCard,questionChanged,cardChanged});
+        if (previousCard?.archived !== committedCard?.archived)
+          await this.broadcastDependents(card.id);
       } }).catch(error=>translateAssigneeConflict(this.repoSql,error,
         typeof clean.assignee_session_id === "string" ? clean.assignee_session_id : params.actorSessionId ?? card.assignee_session_id));
     if (!result.idempotent && notifyMutation) this.onMutation?.({result,previousStatus,previousAssigneeSessionId,committedCard});
     return result;
   }
-  private async afterCommitMaintenance(changes:CardMaintenanceChange[]):Promise<void> {
+  private async afterCommitMaintenance(changes:CardMaintenanceChange[],dependencyCards: string[] = []):Promise<void> {
     for (const change of changes) {
       const cardId=change.result.operation.target_id;
       const folderId=change.result.operation.folder_id;
@@ -776,9 +782,21 @@ export class CardControlPlaneService {
         }
       } catch (error) { this.warn(`카드 ${cardId} 정비 후처리 실패: ${String(error)}`); }
     }
+    for (const id of dependencyCards) {
+      if (changes.some(change => change.committedCard.id === id)) continue;
+      const card = await this.repo.getCard(id);
+      if (card) await this.broadcaster?.emitCardUpdated?.(card.id,card.folder_id);
+    }
+  }
+  private async broadcastDependents(cardId:string):Promise<void> {
+    if (!this.broadcaster?.emitCardUpdated) return;
+    for (const dependent of await dependentCards(this.repoSql,cardId))
+      await this.broadcaster.emitCardUpdated(dependent.id,dependent.folder_id);
   }
   async syncReportsAfterCommit(cardId:string,change:CardReportSyncParams):Promise<void> {
     const {previousStatus,committedCard}=change;
+    if (previousStatus != null && committedCard && previousStatus !== committedCard.status)
+      await this.broadcastDependents(cardId);
     if (!this.reports || !committedCard) return;
     try {
       await this.reports.syncCard(cardId);

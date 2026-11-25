@@ -114,7 +114,8 @@ async function dispatchWorkspace(options: FolderControlPlaneHostRouteOptions, op
     body.card_id as string | undefined,
     body.view as string | undefined,
     true,
-    { includeArchived: body.include_archived, limit: body.limit, cursor: body.cursor },
+    { includeArchived: body.include_archived, limit: body.limit, cursor: body.cursor,
+      allowedFolderIds: body.allowed_folder_ids == null ? null : stringArray(body, "allowed_folder_ids") },
   );
   if (operation === "list_child_folders" || operation === "list_folder_operations") {
     const limit = z.number().int().min(1).max(200).parse(body.limit ?? 50);

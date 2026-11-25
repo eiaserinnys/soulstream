@@ -578,6 +578,7 @@ CREATE UNIQUE INDEX uq_folder_ops_idem ON folder_operations(idempotency_key) WHE
   `);
   await sql.unsafe(await readFile(new URL("../../../packages/db-schema/sql/migrations/116_card_execution_requests.sql",import.meta.url),"utf8"));
   await sql.unsafe(await readFile(new URL("../../../packages/db-schema/sql/migrations/122_attachment_storage_contract.sql",import.meta.url),"utf8"));
+  await sql.unsafe(await readFile(new URL("../../../packages/db-schema/sql/migrations/176_card_dependencies.sql",import.meta.url),"utf8"));
 }
 
 async function assertSafeExternalDatabase(url: string): Promise<void> {

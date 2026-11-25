@@ -708,6 +708,10 @@
     {
       "id": "175_card_snoozed_until.sql",
       "sha256": "692f3106e5c1d3aa5beb392abf08a1d5407f987c7c8f4b33f4e8ee83f456ea28"
+    },
+    {
+      "id": "176_card_dependencies.sql",
+      "sha256": "3a1f44f713f312af5856a2d28232c8e6f3e07d4b8100c8c8177364589eaf8f7d"
     }
   ]
 }

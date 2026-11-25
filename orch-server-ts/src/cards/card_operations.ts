@@ -39,7 +39,7 @@ export function parseSnoozedUntil(value:unknown,now:Date=new Date()):string | nu
   return new Date(at).toISOString();
 }
 export const cardOperationSchemas={
-  create_card:z.object({ folderId:id,title:id,request:z.string(),brief:z.string().optional(),attachments,queue:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),idempotencyKey:id }),
+  create_card:z.object({ folderId:id,title:id,request:z.string(),brief:z.string().optional(),attachments,queue:z.boolean().optional(),dependsOn:z.array(id).max(10).optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),idempotencyKey:id }),
   update_card:updateCardSchema(),
   start_card_work:mutation.extend({execution:z.object({registrationId:id,executionCommandId:id}).strict()}),
   set_card_status:mutation.extend({ status:z.enum(CARD_STATUSES),blockedKind:z.enum(["limit","question","no_report"]).nullable().optional(),blockedDetail:z.string().nullable().optional(),
@@ -102,7 +102,7 @@ function assertVerificationWaitBoundary(operation:CardOperation,input:unknown) {
 }
 function boundaryError(message:string) { return Object.assign(new Error(message),{ statusCode:400,code:"INVALID_CARD_REQUEST" }); }
 /** userFields는 웹 HTTP 경로만 켠다. MCP 경로는 켜지 않아 사용자 전용 칸을 받지 않는다. */
-export async function executeCardOperation(service:CardControlPlaneService,operation:CardOperation,body:unknown,cardId:string | undefined,actor:FolderActorParams,userFields=false) {
+export async function executeCardOperation(service:CardControlPlaneService,operation:CardOperation,body:unknown,cardId:string | undefined,actor:FolderActorParams,userFields=false,allowedFolderIds:readonly string[] | null = null) {
   assertVerificationWaitBoundary(operation,body);
   const userPatch=userFields && operation === "update_card";
   if (userPatch && typeof body === "object" && body !== null && Object.hasOwn(body,"snoozedUntil"))
@@ -119,7 +119,7 @@ export async function executeCardOperation(service:CardControlPlaneService,opera
     return serializeCardRow(note);
   }
   const result=await (async () => {
-    if (operation === "create_card") return service.createCard({ ...actor,...cardOperationSchemas.create_card.parse(parsed) });
+    if (operation === "create_card") return service.createCard({ ...actor,...cardOperationSchemas.create_card.parse(parsed),allowedFolderIds });
     const common={ ...actor,cardId:id.parse(cardId) };
     switch(operation) {
       case "update_card":return service.patchCard({ ...common,...(userPatch ? updateCardUserSchema : cardOperationSchemas.update_card).parse(parsed) });
@@ -143,6 +143,8 @@ export async function executeCardOperation(service:CardControlPlaneService,opera
       case "request_card_review":return service.requestCardReview({ ...common,...cardOperationSchemas.request_card_review.parse(parsed) });
     }
   })();
+  if (result.snapshot.card && allowedFolderIds !== null)
+    result.snapshot.card = (await service.projectCards([result.snapshot.card],allowedFolderIds))[0]!;
   return serializeCardMutation(result);
 }
 export type CardDetail = NonNullable<Awaited<ReturnType<CardControlPlaneService["getCard"]>>>;

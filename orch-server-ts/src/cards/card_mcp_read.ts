@@ -277,6 +277,7 @@ export class CardMcpReadService {
       id: row.id, number: row.number, title: row.title, status: row.status,
       assignee_kind: row.assignee_kind, assignee_agent_id: row.assignee_agent_id,
       assignee_session_id: row.assignee_session_id, assignee_user_id: row.assignee_user_id, updated_at: row.updated_at,
+      ...(row.dependsOn !== undefined ? { dependsOn: row.dependsOn } : {}),
     }) as CardMcpListCard);
     const last = result.rows.at(-1);
     return {
@@ -303,6 +304,7 @@ export class CardMcpReadService {
         id: row.id, number: row.number, folder_id: row.folder_id, title: row.title, status: row.status, now: row.now,
         assignee_kind: row.assignee_kind, assignee_agent_id: row.assignee_agent_id,
         assignee_session_id: row.assignee_session_id, assignee_user_id: row.assignee_user_id, updated_at: row.updated_at,
+        ...(row.dependsOn !== undefined ? { dependsOn: row.dependsOn } : {}),
       }) as CardMcpSearchResult,
       matchSource: row.match_source as CardMcpSearchMatchSource,
       snippet: buildCardSearchSnippet(row.snippet_text, tokens),

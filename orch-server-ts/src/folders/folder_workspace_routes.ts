@@ -3,6 +3,7 @@ import { z, ZodError } from "zod";
 import type { FolderActorParams } from "../cards/control_plane/card_types.js";
 import { CardVersionConflict } from "../cards/control_plane/card_models.js";
 import type { FolderRouteOptions } from "./folder_routes.js";
+import { filterFolders, type FolderRecord } from "./folder_route_access.js";
 import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
 import { executeFolderOperation, readFolderSnapshot, type FolderOperation } from "./folder_operations.js";
 import { serializeCardRow, serializeFolder } from "./folder_contracts.js";
@@ -62,7 +63,8 @@ export function registerFolderWorkspaceRoutes(app: FastifyInstance, options: Fol
         if (kind === "snapshot") {
           const body = await readFolderSnapshot(
             service, folderId, request.query.cardId, request.query.view, request.query.includeCompleted !== "false",
-            { includeArchived: request.query.includeArchived, limit: request.query.limit, cursor: request.query.cursor },
+            { includeArchived: request.query.includeArchived, limit: request.query.limit, cursor: request.query.cursor,
+              allowedFolderIds: await requesterFolderIds(request, options, folders) },
           );
           const record = folders.find((folder) => folder.id === folderId) ?? null;
           const pageStates = await loadProjectPageStates(
@@ -88,6 +90,11 @@ export function registerFolderWorkspaceRoutes(app: FastifyInstance, options: Fol
       } catch (error) { return folderOperationError(reply, error); }
     });
   }
+}
+
+async function requesterFolderIds(request: FastifyRequest, options: FolderRouteOptions, folders: readonly FolderRecord[]) {
+  const access = normalizeBoardAccess(await options.accessProvider.resolveAccess(request));
+  return access.restricted ? filterFolders(access, folders).map((folder) => folder.id) : null;
 }
 
 async function allowed(request: FastifyRequest, options: FolderRouteOptions, folderId: string | null) {

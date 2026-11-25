@@ -5,6 +5,7 @@ import type { CardRow, SqlClient } from "./control_plane/card_types.js";
 import { readCardDispatchSettings } from "./card_dispatch_settings.js";
 import { readCardReminderFacts } from "./card_status_reminder_repository.js";
 import { readCardBoardSessions } from "../session/persistent_report_service.js";
+import { dependentCards, readCardDependencies } from "./card_dependencies.js";
 export type DispatchCard = CardRow & {
     folder_name: string;
 };
@@ -27,9 +28,13 @@ export class CardDispatchRepository {
     async settings() { return readCardDispatchSettings(await this.resolveSql()); }
     async queued(): Promise<DispatchCard[]> {
         const sql = await this.resolveSql();
-        return sql<DispatchCard[]> `SELECT c.*,f.name AS folder_name FROM cards c JOIN folders f ON f.id=c.folder_id
+        const cards = await sql<DispatchCard[]> `SELECT c.*,f.name AS folder_name FROM cards c JOIN folders f ON f.id=c.folder_id
       WHERE c.status='queued' AND NOT c.archived AND NOT f.archived ORDER BY c.queue_position_key COLLATE "C",c.id`;
+        const dependencies = await readCardDependencies(sql,cards.map(card => card.id));
+        return cards.filter(card => (dependencies.get(card.id) ?? []).every(dependency => dependency.met));
     }
+    async dependencies(cardId: string) { return (await readCardDependencies(await this.resolveSql(),[cardId])).get(cardId) ?? []; }
+    async dependents(cardId: string) { return dependentCards(await this.resolveSql(),cardId); }
     async limited(): Promise<DispatchCard[]> {
         const sql = await this.resolveSql();
         return sql<DispatchCard[]> `SELECT c.*,f.name AS folder_name FROM cards c JOIN folders f ON f.id=c.folder_id
