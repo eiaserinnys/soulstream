@@ -1,8 +1,11 @@
-// 세라피엘 화면 검수(카드 #1854)의 결함 여섯과 권함 둘, 못 본 것 둘의 완료 조건을 재고 판정한다.
+// 세라피엘 화면 검수(카드 #1854)의 완료 조건을 재고 판정한다. 1차의 결함 여섯과 권함 둘, 못 본 것 둘, 2차의 결함 A(한눈에 세로 스크롤)와 B(검증 줄).
 // 잰 값 한 줄씩을 돌려주면 operations.md의 「검수 지적 완료 조건」 표로 들어간다.
 import { expect, type Locator, type Page } from "@playwright/test";
 import { NARROW, WIDE, openSettings, shot, type Theme } from "./agent-profile-assembly-guides-helpers";
-import { listPitch, meanDifference, pressableAlignment, stickyGeometry, titleVisibility, treeGeometry } from "./agent-profile-assembly-guides-measure";
+import {
+  listPitch, meanDifference, overviewCenter, pressableAlignment, reportRow, settleScroll, stickyGeometry, summarizeWheel, titleVisibility, treeGeometry, wheelOverview,
+  type WheelSummary,
+} from "./agent-profile-assembly-guides-measure";
 
 const assembly = (page: Page) => page.getByTestId("agent-context-assembly");
 const f1 = (value: number) => value.toFixed(1);
@@ -14,7 +17,7 @@ async function openProfile(page: Page, width: number, height: number, extra: { a
 }
 async function openSkills(page: Page, width: number, height: number, guidesState = "normal", theme: Theme = "light") {
   await openSettings(page, { width, height, category: "스킬과 카탈로그", guidesState, theme });
-  if (guidesState === "normal" || guidesState === "verifyfail") {
+  if (guidesState === "normal" || guidesState === "verifyfail" || guidesState === "conflict") {
     await expect(page.getByTestId("skill-catalog-skeleton")).toHaveCount(0, { timeout: 15_000 });
     await expect(page.locator("button[data-settings-list-row]").first()).toBeVisible();
   }
@@ -48,38 +51,76 @@ async function sourceRows(page: Page): Promise<string[]> {
   return lines;
 }
 
-/** 결함 2: 한눈에 열 머리가 세로 스크롤에도 붙어 있고 모서리 칸 위로 뒤 칸이 비치지 않는다. */
-async function overviewChecks(page: Page): Promise<string[]> {
-  const lines: string[] = [];
-  await openProfile(page, WIDE.width, 700);
+async function openOverviewAt(page: Page, width: number, height: number, theme: Theme) {
+  await openProfile(page, width, height, { theme });
   await page.getByRole("button", { name: "한눈에", exact: true }).click();
   const frame = page.getByTestId("agent-context-overview");
   await expect(frame.locator("table")).toBeVisible({ timeout: 15_000 });
-  const rows = await frame.locator("tbody tr").count();
-  expect(rows - 2).toBeGreaterThan(20);
-  const tall = await stickyGeometry(frame, { left: 0, top: "end" });
-  expect(tall.scrollable).toBe(true);
-  expect(Math.abs(tall.headTop)).toBeLessThanOrEqual(1);
-  expect(Math.abs(tall.cornerTop)).toBeLessThanOrEqual(1);
-  await shot(page, "states/overview-scrolled-700.png");
-  lines.push(`한눈에 1440x700(공유 소스 ${rows - 2}줄 + 따로 둔 두 줄): 세로 끝까지 스크롤한 채 열 머리와 틀 위 가장자리 차이 ${f1(tall.headTop)}px, 모서리 칸 ${f1(tall.cornerTop)}px`);
+  return frame;
+}
 
-  await page.setViewportSize({ width: NARROW.width, height: NARROW.height });
-  const corner = frame.locator("thead th.guides-matrix-corner");
-  await stickyGeometry(frame, { left: 0, top: 0 });
-  const rest = await corner.screenshot();
-  const narrow = await stickyGeometry(frame, { left: 240, top: 300 });
-  const moved = await corner.screenshot();
-  const diff = await meanDifference(page, rest, moved);
-  expect(Math.abs(narrow.nameLeft)).toBeLessThanOrEqual(1);
-  expect(Math.abs(narrow.cornerLeft)).toBeLessThanOrEqual(1);
-  expect(Math.abs(narrow.headTop)).toBeLessThanOrEqual(1);
-  expect(Math.abs(narrow.cornerTop)).toBeLessThanOrEqual(1);
-  expect(diff, "모서리 칸 위로 스크롤한 칸이 비침").toBeLessThan(12);
-  await shot(page, "states/overview-scrolled-360.png");
-  lines.push(`한눈에 360: 가로 240, 세로 300 스크롤 뒤 줄 이름 칸 ${f1(narrow.nameLeft)}px, 모서리 칸 왼쪽 ${f1(narrow.cornerLeft)}px 위쪽 ${f1(narrow.cornerTop)}px, 열 머리 위쪽 ${f1(narrow.headTop)}px 차이. 모서리 칸 캡처를 스크롤 전후로 견준 평균 채널 차이 ${f2(diff)}/255(뒤 칸이 비치면 커진다)`);
-  // 실행 노드 전환: 한눈에 칸이 그 노드의 설정 전용 프로필로 바뀐다.
-  await page.setViewportSize({ width: WIDE.width, height: WIDE.height });
+/** 휠 측정 요약 한 줄: 무엇이 얼마나 움직였고, 열 머리와 마지막 줄이 보이는 자리 안에 있었는가. */
+const wheelLine = (summary: WheelSummary) => {
+  const end = summary.end;
+  return `상세 칸 ${f1(summary.detailMoved)}px, 표 틀 ${f1(summary.frameMoved)}px 움직임. 열 머리와 모서리 칸이 보이는 자리 밖에 나간 단계 ${summary.headHidden.length}번(열 머리 위끝과 보이는 위끝 차이 최소 ${f1(summary.minHeadGap)}px), 끝에 「스킬 목록」 줄 아래끝 ${f1(end.lastBottom)}(보이는 아래끝, 곧 하단 막대 위끝 ${f1(end.viewBottom)}, 표 틀 안쪽 아래끝 ${f1(end.frameInnerBottom)}), 열 머리 위끝 ${f1(end.headTop)}(보이는 위끝, 곧 설정 머리 아래끝 ${f1(end.viewTop)}). 표 위에서 굴렸는데 아무것도 못 움직이고 가려진 단계 ${summary.stuck.length}번`;
+};
+
+/** 휠 측정의 판정: 먼저 무언가 움직였는가, 그다음 열 머리, 막힘, 끝 줄. */
+function expectWheel(summary: WheelSummary, label: string, { mustMove }: { mustMove: boolean }) {
+  if (mustMove) expect(summary.moved, `${label}: 휠이 아무것도 움직이지 못함`).toBeGreaterThan(0);
+  expect(summary.headHidden, `${label}: 열 머리나 모서리 칸이 보이는 자리 밖으로 나간 단계`).toEqual([]);
+  expect(summary.stuck, `${label}: 표가 가려졌는데 휠이 아무것도 움직이지 못한 단계`).toEqual([]);
+  expect(summary.lastShown, `${label}: 끝까지 굴린 뒤에도 마지막 줄이 가려짐`).toBe(true);
+}
+
+const OVERVIEW_SIZES = [[360, 800, "light"], [360, 800, "dark"], [390, 844, "light"], [1366, 768, "light"], [1440, 700, "light"], [1440, 900, "light"]] as const;
+
+/**
+ * 2차 결함 A(검수 시나리오 B overview): 한눈에 표 가운데에 포인터를 두고 휠을 250씩 12번 굴리는 동안
+ * 열 머리와 모서리 칸이 상세 칸의 보이는 자리 안에 있고, 끝에 마지막 줄이 하단 막대 위에 다 보인다. scrollTop은 넣지 않는다.
+ */
+async function overviewChecks(page: Page): Promise<string[]> {
+  const lines: string[] = [];
+  for (const [width, height, theme] of OVERVIEW_SIZES) {
+    const frame = await openOverviewAt(page, width, height, theme);
+    const rows = await frame.locator("tbody tr").count();
+    expect(rows - 2).toBeGreaterThan(20);
+    const label = `한눈에 ${width}x${height} ${theme === "light" ? "밝음" : "어두움"}`;
+    const before = await frame.boundingBox();
+    const corner = frame.locator("thead th.guides-matrix-corner");
+    const sideways = width === NARROW.width && theme === "light";
+    const rest = sideways ? await corner.screenshot() : null;
+    const point = await overviewCenter(page);
+    const summary = summarizeWheel(await wheelOverview(page, point));
+    console.log(`${label}: ${wheelLine(summary)}`);
+    expectWheel(summary, label, { mustMove: true });
+    lines.push(`${label}(공유 소스 ${rows - 2}줄 + 따로 둔 두 줄, 표 틀 ${Math.round(before!.y)}~${Math.round(before!.y + before!.height)}): 표 가운데(${point.x}, ${point.y})에서 휠 250×12. ${wheelLine(summary)}`);
+    if (width === 1440 && height === 700) await shot(page, "states/overview-scrolled-700.png");
+    if (sideways) {
+      await shot(page, "states/overview-scrolled-360.png");
+      // 끝까지 내린 채 가로로도 굴려 줄 이름 칸과 모서리 칸이 붙어 있고 뒤 칸이 비치지 않는지 본다.
+      await page.mouse.wheel(240, 0);
+      await settleScroll(page);
+      const left = await frame.evaluate(element => element.scrollLeft);
+      expect(left, "가로 휠이 표를 움직이지 못함").toBeGreaterThan(0);
+      const sticky = await stickyGeometry(frame);
+      const diff = await meanDifference(page, rest!, await corner.screenshot());
+      expect(Math.abs(sticky.nameLeft)).toBeLessThanOrEqual(1);
+      expect(Math.abs(sticky.cornerLeft)).toBeLessThanOrEqual(1);
+      expect(Math.abs(sticky.headTop)).toBeLessThanOrEqual(1);
+      expect(Math.abs(sticky.cornerTop)).toBeLessThanOrEqual(1);
+      expect(diff, "모서리 칸 위로 스크롤한 칸이 비침").toBeLessThan(12);
+      await shot(page, "states/overview-scrolled-360-left.png");
+      lines.push(`한눈에 360 가로: 끝까지 내린 채 가로 휠 240으로 표가 ${f1(left)}px 움직인 뒤 줄 이름 칸 ${f1(sticky.nameLeft)}px, 모서리 칸 왼쪽 ${f1(sticky.cornerLeft)}px 위쪽 ${f1(sticky.cornerTop)}px, 열 머리 위쪽 ${f1(sticky.headTop)}px(틀 안쪽 가장자리와의 차이). 모서리 칸 캡처를 스크롤 전후로 견준 평균 채널 차이 ${f2(diff)}/255(뒤 칸이 비치면 커진다)`);
+    }
+    if (width === WIDE.width && height === WIDE.height) lines.push(...await nodeSwitch(page));
+  }
+  return lines;
+}
+
+/** 실행 노드 전환: 한눈에 칸이 그 노드의 설정 전용 프로필로 바뀐다. 한눈에가 1440x900으로 열려 있을 때 부른다. */
+async function nodeSwitch(page: Page): Promise<string[]> {
+  const frame = page.getByTestId("agent-context-overview");
   const heads = () => frame.locator("thead th.guides-matrix-profile").evaluateAll(items => items.map(item => ({ name: item.getAttribute("title") ?? "", node: item.getAttribute("data-first-node") === "true" })));
   await expect(frame.locator("table")).toBeVisible({ timeout: 15_000 });
   const first = await heads();
@@ -96,7 +137,30 @@ async function overviewChecks(page: Page): Promise<string[]> {
   await shot(page, "states/overview-node-switched.png");
   await select.selectOption("sample-node");
   await expect.poll(async () => (await heads()).length, { timeout: 15_000 }).toBe(first.length);
-  lines.push(`실행 노드 전환(한눈에, 1440): sample-node 열 ${first.length}개(중앙 11 + 설정 전용 7)에서 sample-usage-node로 바꾸면 열 ${second.length}개(중앙 11 + 설정 전용 가온, 나비, 하늬)로 바뀌고 이전 노드의 열(누리)은 사라진다. 다시 sample-node로 돌리면 ${first.length}개로 돌아온다. 중앙 프로필 열 수는 두 노드에서 같다`);
+  return [`실행 노드 전환(한눈에, 1440): sample-node 열 ${first.length}개(중앙 11 + 설정 전용 7)에서 sample-usage-node로 바꾸면 열 ${second.length}개(중앙 11 + 설정 전용 가온, 나비, 하늬)로 바뀌고 이전 노드의 열(누리)은 사라진다. 다시 sample-node로 돌리면 ${first.length}개로 돌아온다. 중앙 프로필 열 수는 두 노드에서 같다`];
+}
+
+/**
+ * 2차 결함 A(검수 시나리오 B2 wheel chaining control): 표 밖(「에이전트」 제목)에서 먼저 굴려 표가 포인터 밑에 와도 멈추지 않고,
+ * 이어서 표 가운데에서 굴리면 끝 줄까지 보인다.
+ */
+async function overviewChaining(page: Page): Promise<string[]> {
+  const lines: string[] = [];
+  for (const [width, height] of [[1440, 700], [360, 800]] as const) {
+    await openOverviewAt(page, width, height, "light");
+    const heading = (await page.getByRole("heading", { name: "에이전트", exact: true }).boundingBox())!;
+    const outsidePoint = { x: Math.round(heading.x + 10), y: Math.round(heading.y + heading.height / 2) };
+    const outside = summarizeWheel(await wheelOverview(page, outsidePoint));
+    console.log(`연쇄 ${width}x${height} 표 밖: ${wheelLine(outside)}`);
+    expect(outside.moved, `${width}x${height}: 표 밖 휠이 아무것도 움직이지 못함`).toBeGreaterThan(0);
+    expect(outside.headHidden, `${width}x${height}: 표 밖 휠 동안 열 머리가 보이는 자리 밖으로 나감`).toEqual([]);
+    expect(outside.stuck, `${width}x${height}: 표가 포인터 밑에 온 뒤 휠이 멈춤`).toEqual([]);
+    const over = summarizeWheel(await wheelOverview(page, await overviewCenter(page)));
+    console.log(`연쇄 ${width}x${height} 표 위: ${wheelLine(over)}`);
+    expectWheel(over, `${width}x${height} 표 밖 다음 표 위`, { mustMove: false });
+    await shot(page, `states/overview-chaining-${width}x${height}.png`);
+    lines.push(`한눈에 연쇄 ${width}x${height}: 「에이전트」 제목(${outsidePoint.x}, ${outsidePoint.y})에서 먼저 휠 250×12로 상세 칸 ${f1(outside.detailMoved)}px, 표 틀 ${f1(outside.frameMoved)}px 움직이고 막힌 단계 ${outside.stuck.length}번. 이어서 표 가운데에서 250×12: ${wheelLine(over)}`);
+  }
   return lines;
 }
 
@@ -244,22 +308,65 @@ async function skillScreens(page: Page, longName: string): Promise<string[]> {
   return lines;
 }
 
-/** 못 본 것: 다시 검증이 202도 409도 아닌 실패(500)일 때. */
+/**
+ * 1차 못 본 것과 2차 결함 B(검수 시나리오 G report row states on phones): 다시 검증이 202도 409도 아닌 실패(500)일 때
+ * 날짜와 「검증」은 한 줄이고, 단추는 그 줄 오른쪽 끝에 초점을 지닌 채 남고, 안내는 다 보이며 단추와 겹치지 않는다.
+ */
 async function verifyFailed(page: Page): Promise<string[]> {
-  await openSkills(page, WIDE.width, WIDE.height, "verifyfail");
-  const verify = page.getByRole("button", { name: "다시 검증" });
-  await verify.click();
-  const head = page.getByTestId("skill-catalog-report");
-  await expect(head.getByRole("alert")).toContainText("요청하지 못했습니다");
-  await expect(verify).toBeVisible();
-  await expect(verify).toBeFocused();
-  await expect(head).not.toContainText("검증 중");
-  await shot(page, "states/verify-failed.png");
-  return ["다시 검증 실패(견본 500): 같은 단추 자리에서 「요청하지 못했습니다」 안내(role=alert)가 단추 왼쪽에 서고, 「다시 검증」 단추는 그대로 남아 있어 다시 누를 수 있으며, 초점이 단추에 그대로 남음(「검증 중」으로 바뀌지 않음)"];
+  const lines: string[] = [];
+  for (const [width, height] of [[1440, 900], [390, 844], [360, 800]] as const) {
+    await openSkills(page, width, height, "verifyfail");
+    const verify = page.getByRole("button", { name: "다시 검증" });
+    await verify.click();
+    const head = page.getByTestId("skill-catalog-report");
+    await expect(head.getByRole("alert")).toContainText("요청하지 못했습니다");
+    await expect(verify).toBeVisible();
+    await expect(verify).toBeFocused();
+    await expect(head).not.toContainText("검증 중");
+    const row = await reportRow(page);
+    console.log(`다시 검증 실패 ${width}: ${JSON.stringify(row)}`);
+    const button = row.button!;
+    const notice = row.notice!;
+    const buttonMid = (button.top + button.bottom) / 2;
+    const dateMid = (row.date.top + row.date.bottom) / 2;
+    const noticeMid = (notice.top + notice.bottom) / 2;
+    const label = `${width}px`;
+    expect(row.dateText, label).toMatch(/\d+월 \d+일 \d{2}:\d{2} 검증$/);
+    expect(row.dateLines, `${label}: 날짜와 「검증」이 줄 중간에서 쪼개짐`).toBe(1);
+    expect(Math.abs(button.right - row.rowRight), `${label}: 단추가 줄 오른쪽 끝에 없음`).toBeLessThanOrEqual(1);
+    expect(Math.abs(buttonMid - dateMid), `${label}: 단추가 날짜 줄에 없음`).toBeLessThanOrEqual(2);
+    expect(row.buttonFocused, `${label}: 초점이 단추에 없음`).toBe(true);
+    expect(notice.lines, `${label}: 안내가 쪼개짐`).toBe(1);
+    expect(notice.clipped || !notice.inRow, `${label}: 안내가 잘림`).toBe(false);
+    const overlaps = notice.left < button.right && notice.right > button.left && notice.top < button.bottom && notice.bottom > button.top;
+    expect(overlaps, `${label}: 안내가 단추와 겹침`).toBe(false);
+    // 넓은 폭은 안내가 단추 왼쪽 같은 줄에 선다(모양 그대로). 한 칸 폭은 다음 줄 끝으로 내려간다.
+    if (width === WIDE.width) {
+      expect(Math.abs(noticeMid - buttonMid)).toBeLessThanOrEqual(2);
+      expect(notice.right).toBeLessThanOrEqual(button.left);
+    } else {
+      expect(notice.top).toBeGreaterThanOrEqual(button.bottom - 1);
+      expect(Math.abs(notice.right - row.rowRight)).toBeLessThanOrEqual(1);
+    }
+    if (width !== 390) await shot(page, `states/verify-failed-${width}.png`);
+    const where = width === WIDE.width ? `단추 왼쪽 같은 줄(안내 가운데 ${f1(noticeMid)}, 단추 가운데 ${f1(buttonMid)})` : `다음 줄 끝(안내 위끝 ${f1(notice.top)} ≥ 단추 아래끝 ${f1(button.bottom)}, 오른쪽 끝 차이 ${f1(Math.abs(notice.right - row.rowRight))}px)`;
+    lines.push(`다시 검증 실패 ${label}(견본 500): 「${row.dateText}」 ${row.dateLines}줄, 줄 높이 ${Math.round(row.rowHeight)}px. 단추 x ${f1(button.left)}~${f1(button.right)}(줄 오른쪽 끝 ${f1(row.rowRight)}), 날짜 줄과 세로 가운데 차이 ${f1(Math.abs(buttonMid - dateMid))}px, 초점은 단추에 남음. 「요청하지 못했습니다」 ${notice.lines}줄, 잘림 없음, 단추와 겹치지 않고 ${where}`);
+  }
+  // 같은 줄의 다른 상태(409 안내, 검증 중)도 가장 좁은 폭에서 날짜가 한 줄이다.
+  for (const [state, text] of [["conflict", "검증 작업이 없습니다"], ["normal", "검증 중"]] as const) {
+    await openSkills(page, NARROW.width, NARROW.height, state);
+    await page.getByRole("button", { name: "다시 검증" }).click();
+    await expect(page.getByTestId("skill-catalog-report").getByText(text).first()).toBeVisible({ timeout: 15_000 });
+    const row = await reportRow(page);
+    expect(row.dateLines, `360 ${state}: 날짜가 쪼개짐`).toBe(1);
+    if (row.notice) expect(row.notice.clipped || !row.notice.inRow, `360 ${state}: 안내가 잘림`).toBe(false);
+    lines.push(`360 ${state === "conflict" ? "409(검증 작업 없음)" : "검증 중"}: 「${row.dateText}」 ${row.dateLines}줄, 줄 높이 ${Math.round(row.rowHeight)}px${row.notice ? `, 안내 ${row.notice.lines}줄 잘림 없음` : ""}`);
+  }
+  return lines;
 }
 
 const PARTS: Array<[string, (page: Page, longName: string) => Promise<string[]>]> = [
-  ["sourceRows", page => sourceRows(page)], ["overviewChecks", page => overviewChecks(page)], ["skillScreens", skillScreens],
+  ["sourceRows", page => sourceRows(page)], ["overviewChecks", page => overviewChecks(page)], ["overviewChaining", page => overviewChaining(page)], ["skillScreens", skillScreens],
   ["emptyOnce", page => emptyOnce(page)], ["verifyFailed", page => verifyFailed(page)],
 ];
 

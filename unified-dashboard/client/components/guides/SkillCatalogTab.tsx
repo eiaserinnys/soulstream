@@ -63,6 +63,7 @@ function useExecNodeId(): string {
 /**
  * 머리: 보고 시각은 늘 적고, 「다시 검증」은 보고에 검증 작업이 있을 때만 보인다.
  * 누르면 같은 단추가 검증 중 표시로 바뀌어(초점이 그대로 남는다) 끝나면 되돌아온다.
+ * 날짜는 줄지 않고 한 줄로 남는 폭을 채우며, 한 칸 폭에서는 실패 안내가 다음 줄 끝으로 내려가 단추가 날짜 줄 오른쪽 끝에 남는다.
  */
 function ReportHead({ report, verify }: { report: GuideReport | null; verify: ReturnType<typeof useVerify> }) {
   const time = reportTime(report);
@@ -71,12 +72,12 @@ function ReportHead({ report, verify }: { report: GuideReport | null; verify: Re
   const waiting = verify.phase === "waiting";
   return (
     <div className="flex min-h-[var(--v3-action-size)] flex-wrap items-center gap-x-3 gap-y-1" data-testid="skill-catalog-report">
-      <p className="min-w-0 flex-1 text-sm" data-v3-selectable-content="true">{time ? <><strong className="font-semibold">{time}</strong> 검증</> : "검증 보고 없음"}</p>
+      <p className="grow shrink-0 whitespace-nowrap text-sm" data-v3-selectable-content="true">{time ? <><strong className="font-semibold">{time}</strong> 검증</> : "검증 보고 없음"}</p>
       {verify.phase === "conflict" ? (
         <p ref={noticeRef} tabIndex={-1} role="status" className="shrink-0 text-xs text-muted-foreground">검증 작업이 없습니다</p>
       ) : report?.verify_job_id ? (
         <>
-          {verify.phase === "failed" && <p role="alert" className="shrink-0 text-xs text-destructive-foreground">요청하지 못했습니다</p>}
+          {verify.phase === "failed" && <p role="alert" className="shrink-0 text-xs text-destructive-foreground max-sm:order-3 max-sm:basis-full max-sm:text-end">요청하지 못했습니다</p>}
           <Button type="button" size="sm" variant="outline" className="shrink-0" aria-disabled={waiting || undefined} aria-busy={waiting || undefined} onClick={() => { if (!waiting) void verify.start(); }}>
             {waiting ? <Loader2 className="animate-spin" aria-hidden="true" /> : <RotateCw aria-hidden="true" />}{waiting ? "검증 중" : "다시 검증"}
           </Button>

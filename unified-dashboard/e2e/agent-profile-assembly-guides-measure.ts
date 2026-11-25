@@ -43,19 +43,167 @@ export async function treeGeometry(page: Page, itemIndex: number): Promise<TreeG
   }, itemIndex);
 }
 
-export interface StickyGeometry { headTop: number; cornerTop: number; cornerLeft: number; nameLeft: number; scrollable: boolean }
+export interface StickyGeometry { headTop: number; cornerTop: number; cornerLeft: number; nameLeft: number }
 
-/** 한눈에 표를 끝까지 스크롤한 채 열 머리, 모서리 칸, 줄 이름 칸이 틀 가장자리에 붙어 있는가(틀 가장자리와의 차이). */
-export async function stickyGeometry(frame: Locator, scroll: { left: number; top: number | "end" }): Promise<StickyGeometry> {
-  return frame.evaluate((element, target) => {
-    element.scrollLeft = target.left;
-    element.scrollTop = target.top === "end" ? element.scrollHeight : target.top;
+/** 한눈에 표의 지금 스크롤 그대로, 열 머리, 모서리 칸, 줄 이름 칸이 틀 가장자리에 붙어 있는가(틀 안쪽 가장자리와의 차이). 스크롤은 바꾸지 않는다. */
+export async function stickyGeometry(frame: Locator): Promise<StickyGeometry> {
+  return frame.evaluate((element) => {
     const box = element.getBoundingClientRect();
     const head = element.querySelector<HTMLElement>("thead th.guides-matrix-profile")!.getBoundingClientRect();
     const corner = element.querySelector<HTMLElement>("thead th.guides-matrix-corner")!.getBoundingClientRect();
     const name = element.querySelector<HTMLElement>("tbody th")!.getBoundingClientRect();
-    return { headTop: head.top - box.top - element.clientTop, cornerTop: corner.top - box.top - element.clientTop, cornerLeft: corner.left - box.left - element.clientLeft, nameLeft: name.left - box.left - element.clientLeft, scrollable: element.scrollHeight > element.clientHeight };
-  }, scroll);
+    return { headTop: head.top - box.top - element.clientTop, cornerTop: corner.top - box.top - element.clientTop, cornerLeft: corner.left - box.left - element.clientLeft, nameLeft: name.left - box.left - element.clientLeft };
+  });
+}
+
+const OVERVIEW = '[data-testid="agent-context-overview"]';
+const DETAIL = "section.config-detail";
+
+export interface OverviewView {
+  detailScroll: number; frameScroll: number; frameLeft: number;
+  /** 상세 칸(설정 머리 아래, 하단 막대 위)의 보이는 위끝과 아래끝. */
+  viewTop: number; viewBottom: number;
+  frameTop: number; frameInnerBottom: number;
+  headTop: number; headBottom: number; cornerTop: number; cornerBottom: number;
+  lastTop: number; lastBottom: number;
+  /** 휠을 굴리는 자리 밑에 표 틀이 있는가. */
+  pointerOverFrame: boolean;
+}
+
+/** 한눈에 표와 상세 칸의 지금 자리: 열 머리, 모서리 칸, 마지막 줄을 상세 칸의 보이는 사각형과 견줄 값. */
+export async function overviewView(page: Page, point: { x: number; y: number }): Promise<OverviewView> {
+  return page.evaluate(({ x, y, overview, detailSelector }) => {
+    const detail = document.querySelector<HTMLElement>(detailSelector)!;
+    const frame = document.querySelector<HTMLElement>(overview)!;
+    const rect = (element: Element) => element.getBoundingClientRect();
+    const d = rect(detail);
+    const f = rect(frame);
+    const head = rect(frame.querySelector("thead th.guides-matrix-profile")!);
+    const corner = rect(frame.querySelector("thead th.guides-matrix-corner")!);
+    const last = rect(frame.querySelector("tbody tr:last-child")!);
+    const hit = document.elementFromPoint(x, y);
+    const viewTop = d.top + detail.clientTop;
+    return {
+      detailScroll: detail.scrollTop, frameScroll: frame.scrollTop, frameLeft: frame.scrollLeft,
+      viewTop, viewBottom: viewTop + detail.clientHeight,
+      frameTop: f.top, frameInnerBottom: f.top + frame.clientTop + frame.clientHeight,
+      headTop: head.top, headBottom: head.bottom, cornerTop: corner.top, cornerBottom: corner.bottom,
+      lastTop: last.top, lastBottom: last.bottom,
+      pointerOverFrame: hit !== null && frame.contains(hit),
+    };
+  }, { ...point, overview: OVERVIEW, detailSelector: DETAIL });
+}
+
+/** 표 틀이 상세 칸 안에서 보이는 부분의 가운데. 휠을 굴릴 자리다. */
+export async function overviewCenter(page: Page): Promise<{ x: number; y: number }> {
+  return page.evaluate(({ overview, detailSelector }) => {
+    const d = document.querySelector<HTMLElement>(detailSelector)!.getBoundingClientRect();
+    const f = document.querySelector<HTMLElement>(overview)!.getBoundingClientRect();
+    const top = Math.max(d.top, f.top);
+    const bottom = Math.min(d.bottom, f.bottom);
+    return { x: Math.round((f.left + f.right) / 2), y: Math.round((top + bottom) / 2) };
+  }, { overview: OVERVIEW, detailSelector: DETAIL });
+}
+
+/** 휠 한 번 뒤 상세 칸과 표 틀의 스크롤이 멈출 때까지 기다린다(부드러운 스크롤과 휠 묶음이 끝나게 200ms 이상). */
+export async function settleScroll(page: Page) {
+  await page.evaluate(({ overview, detailSelector }) => new Promise<void>((resolve) => {
+    const detail = document.querySelector<HTMLElement>(detailSelector)!;
+    const frame = document.querySelector<HTMLElement>(overview)!;
+    const start = performance.now();
+    let last = "";
+    let same = 0;
+    const tick = () => {
+      const now = `${detail.scrollTop},${frame.scrollTop},${frame.scrollLeft}`;
+      same = now === last ? same + 1 : 0;
+      last = now;
+      const elapsed = performance.now() - start;
+      if ((same >= 6 && elapsed >= 200) || elapsed > 2000) resolve(); else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }), { overview: OVERVIEW, detailSelector: DETAIL });
+}
+
+/** 한 자리에서 세로 휠을 count번 굴리며 매번 자리를 잰다. 첫 값은 굴리기 전이다. scrollTop은 넣지 않는다. */
+export async function wheelOverview(page: Page, point: { x: number; y: number }, count = 12, delta = 250): Promise<OverviewView[]> {
+  await page.mouse.move(point.x, point.y);
+  const views = [await overviewView(page, point)];
+  for (let index = 0; index < count; index += 1) {
+    await page.mouse.wheel(0, delta);
+    await settleScroll(page);
+    views.push(await overviewView(page, point));
+  }
+  return views;
+}
+
+export const headVisible = (view: OverviewView) => view.headTop >= view.viewTop - 1 && view.headBottom <= view.viewBottom + 1
+  && view.cornerTop >= view.viewTop - 1 && view.cornerBottom <= view.viewBottom + 1;
+export const lastVisible = (view: OverviewView) => view.lastBottom <= Math.min(view.viewBottom, view.frameInnerBottom) + 1
+  && view.lastTop >= Math.max(view.viewTop, view.headBottom) - 1;
+
+export interface WheelSummary {
+  /** 상세 칸과 표 틀이 움직인 세로 거리의 합. */
+  moved: number; detailMoved: number; frameMoved: number;
+  /** 열 머리나 모서리 칸이 보이는 자리 밖으로 나간 단계(0은 굴리기 전). */
+  headHidden: number[];
+  /** 표 위에서 굴렸는데 아무것도 움직이지 않았고 마지막 줄이 아직 가려진 단계. */
+  stuck: number[];
+  minHeadGap: number; end: OverviewView; lastShown: boolean;
+}
+
+export function summarizeWheel(views: OverviewView[]): WheelSummary {
+  const first = views[0]!;
+  const end = views[views.length - 1]!;
+  const stuck: number[] = [];
+  for (let index = 1; index < views.length; index += 1) {
+    const before = views[index - 1]!;
+    const after = views[index]!;
+    const still = Math.abs(after.detailScroll - before.detailScroll) < 0.5 && Math.abs(after.frameScroll - before.frameScroll) < 0.5;
+    if (before.pointerOverFrame && still && !lastVisible(after)) stuck.push(index);
+  }
+  const detailMoved = end.detailScroll - first.detailScroll;
+  const frameMoved = end.frameScroll - first.frameScroll;
+  return {
+    moved: detailMoved + frameMoved, detailMoved, frameMoved,
+    headHidden: views.flatMap((view, index) => headVisible(view) ? [] : [index]),
+    stuck, minHeadGap: Math.min(...views.map(view => view.headTop - view.viewTop)), end, lastShown: lastVisible(end),
+  };
+}
+
+export interface ReportRowGeometry {
+  dateText: string; dateLines: number; rowHeight: number; rowRight: number;
+  date: { top: number; bottom: number };
+  button: { left: number; right: number; top: number; bottom: number } | null;
+  /** 안내 글(role=alert 또는 status)의 글자 범위. 없으면 null. */
+  notice: { left: number; right: number; top: number; bottom: number; lines: number; clipped: boolean; inRow: boolean } | null;
+  buttonFocused: boolean;
+}
+
+/** 「스킬과 카탈로그」 머리 줄(보고 시각, 안내, 다시 검증): 날짜 글의 줄 수, 단추와 안내의 자리. */
+export async function reportRow(page: Page): Promise<ReportRowGeometry> {
+  return page.getByTestId("skill-catalog-report").evaluate((row) => {
+    const textRects = (element: Element) => { const range = document.createRange(); range.selectNodeContents(element); return Array.from(range.getClientRects()).filter(r => r.width > 0); };
+    const box = (rects: DOMRect[]) => ({ left: Math.min(...rects.map(r => r.left)), right: Math.max(...rects.map(r => r.right)), top: Math.min(...rects.map(r => r.top)), bottom: Math.max(...rects.map(r => r.bottom)) });
+    const rowRect = row.getBoundingClientRect();
+    const date = row.querySelector<HTMLElement>(":scope > p:first-child")!;
+    const dateRects = textRects(date);
+    const button = row.querySelector<HTMLElement>("button");
+    const notice = row.querySelector<HTMLElement>(':scope > [role="alert"], :scope > [role="status"]');
+    const noticeRects = notice ? textRects(notice) : [];
+    const noticeBox = noticeRects.length > 0 ? box(noticeRects) : null;
+    return {
+      dateText: (date.textContent ?? "").trim(),
+      dateLines: new Set(dateRects.map(r => Math.round(r.top))).size,
+      rowHeight: rowRect.height, rowRight: rowRect.right,
+      date: { top: box(dateRects).top, bottom: box(dateRects).bottom },
+      button: button ? (({ left, right, top, bottom }) => ({ left, right, top, bottom }))(button.getBoundingClientRect()) : null,
+      notice: notice && noticeBox ? {
+        ...noticeBox, lines: new Set(noticeRects.map(r => Math.round(r.top))).size, clipped: notice.scrollWidth > notice.clientWidth + 0.5,
+        inRow: noticeBox.left >= rowRect.left - 0.5 && noticeBox.right <= rowRect.right + 0.5 && noticeBox.top >= rowRect.top - 0.5 && noticeBox.bottom <= rowRect.bottom + 0.5,
+      } : null,
+      buttonFocused: button !== null && document.activeElement === button,
+    };
+  });
 }
 
 /** 두 캡처(PNG)의 평균 채널 차이(0~255). 모서리 칸 위로 뒤 칸이 비치는지 가린다. */

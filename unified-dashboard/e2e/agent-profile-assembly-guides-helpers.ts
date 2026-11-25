@@ -190,9 +190,9 @@ export function writeOperations(out: OperationResults) {
 
 ${table(out.dialogs, ["대상", "여는 법", "첫 초점", "Enter", "Esc", "닫은 뒤 초점"])}
 
-## 검수 지적 완료 조건(세라피엘 화면 검수 b2552487, 결함 여섯과 권함 둘, 못 본 것 둘)
+## 검수 지적 완료 조건(세라피엘 1차 화면 검수 b2552487의 결함 여섯과 권함 둘, 못 본 것 둘, 2차 재검수 f344b493의 결함 A와 B)
 
-시각 검수 스크립트의 fixes 시험이 아래를 재고 판정했다(조건을 못 채우면 시험이 실패한다).
+시각 검수 스크립트의 fixes 시험(\`e2e/agent-profile-assembly-guides-fixcheck.ts\`)이 아래를 재고 판정했다(조건을 못 채우면 시험이 실패한다). 한눈에의 세로 스크롤은 표 위에 포인터를 두고 실제 휠(\`page.mouse.wheel\`)로 굴려 재고, scrollTop은 넣지 않는다. 보이는 자리는 상세 칸(\`section.config-detail\`, 설정 머리 아래와 하단 막대 위)의 사각형이다.
 
 ${FIXES_MARK}
 
