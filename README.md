@@ -37,7 +37,7 @@ bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl
 
 `--backends` takes a comma-separated list of `claude`, `codex`, and `antigravity`. The default is `claude,codex`, and the first backend becomes the backend for the default `seosoyoung` and `seosoyoung-pas` profiles. For `--ref`, `--atom-ref`, `--tailscale`, and the other options, see [Installation](docs/guide/installation.md).
 
-On an interactive terminal, a fresh install prompts for the shared Soulstream and atom administrator password before installing packages (press Enter to generate one and display it once at the end). For non-interactive runs, pass `--admin-password-file <path>`; to change an existing password later, re-run with `--set-admin-password` or `--admin-password-file <path>`.
+On an interactive terminal, a fresh install prompts for the shared Soulstream and atom administrator password before installing packages (press Enter to generate one and display it once at the end). For non-interactive runs, pass `--admin-password-file <path>`; to change an existing password later, re-run with `--set-admin-password` or `--admin-password-file <path>` ([how to change it](docs/guide/installation.md#changing-the-administrator-password)).
 
 ### What gets installed
 
@@ -68,7 +68,13 @@ Open Soulstream at `http://127.0.0.1:5200` and atom at `http://127.0.0.1:4200`. 
 sudo cat /home/soulstream/soulstream/.admin-password
 ```
 
-To change the administrator password later, re-run the install command with `--set-admin-password` (interactive prompt) or `--admin-password-file <path>`.
+To change the administrator password later, run this command as `root` on the server in an interactive SSH session. It asks for the new password on the terminal:
+
+```bash
+bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex --set-admin-password'
+```
+
+The command also updates the server to the latest version, and the new password applies to both the dashboard and atom right away. To change it without a terminal, pass `--admin-password-file <path>` instead of `--set-admin-password`; see [Changing the administrator password](docs/guide/installation.md#changing-the-administrator-password) for details.
 
 #### Connect coding agents
 
