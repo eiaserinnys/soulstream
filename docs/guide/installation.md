@@ -66,7 +66,7 @@ Before it stops any service, the installer checks both repositories. If it finds
 
 Updates preserve secrets, the existing administrator password (without prompting, reading `/home/soulstream/soulstream/.admin-password` first), both databases (`soulstream` and `atom`), the existing workspace, unmanaged `.env` lines, and edited config files. Edited managed files stay untouched; new defaults go beside them as `<file>.installer-new` and appear under `Configuration:` ([managed config files](configuration.md#files-the-linux-installer-manages)).
 
-After the checks pass, the installer stops `soulstream-worker`, `soulstream-orch`, and `soulstream-atom`, then checks out, builds, migrates, and restarts them. The finish output shows previous and new revisions for both repositories. If a step fails after stopping services, all three stay stopped and `/home/soulstream/soulstream/.local/install-state.json` records the failed step and revisions; fix the cause and re-run to recover. Databases do not roll back automatically. Instead, the installer dumps `soulstream` before non-additive schema changes and any non-empty `atom` database before every migration to `/home/soulstream/soulstream/.local/backups/` (mode `0600`, latest 3 per database). While you re-run a failed update, the installer keeps that update's first `atom` backup and takes no new one. Failure output and `install-state.json` (`backups`) list backup paths and restore commands. Restore only when discarding the new revision: keep services stopped, check out a compatible revision, and restore into an empty database from a `root` shell.
+After the checks pass, the installer stops `soulstream-worker`, `soulstream-orch`, and `soulstream-atom`, then checks out, builds, migrates, and restarts them. The finish output shows previous and new revisions for both repositories. If a step fails after stopping services, all three stay stopped and `/home/soulstream/soulstream/.local/install-state.json` records the failed step and revisions; fix the cause and re-run to recover. The installer does not roll anything back automatically, neither the checked-out revisions nor the databases. It dumps `soulstream` before non-additive schema changes and any non-empty `atom` database before every migration to `/home/soulstream/soulstream/.local/backups/` (mode `0600`, latest 3 per database). While you re-run a failed update, the installer keeps that update's first `atom` backup and takes no new one. Failure output and `install-state.json` (`backups`) list backup paths and restore commands. Restore only when discarding the new revision: keep services stopped, check out a compatible revision, and restore into an empty database from a `root` shell.
 
 ### Changing the administrator password
 
@@ -134,6 +134,36 @@ For global tools under `/usr/local`, the uninstaller removes `@openai/codex`, Co
 The uninstaller keeps OS `apt` packages (such as `postgresql-17`, `git`, and `tmux`), tools that existed before installation or have no install receipt, and the Tailscale package and device login. If you also want to disconnect the server from your tailnet, run `tailscale logout`.
 
 If any Soulstream service fails to stop, or if the script cannot confirm it stopped, it skips removing processes, databases, `/usr/local` tools, the `soulstream` user, and `/home/soulstream`, and reports the failure. If remaining `soulstream` processes do not exit, it skips removing the user and `/home/soulstream`. When a step fails, independent steps still run. At the end, the uninstaller lists the failed items, keeps `/etc/soulstream/install-receipt.json` (and `/usr/local/bin/node` if an earlier `/usr/local` removal failed), and exits with code `1`. Fix the underlying cause and run the command again to finish cleaning up.
+
+## Security and permissions
+
+The Linux installer sets up a personal automation environment: coding agents that edit files and run commands on the server without asking you first. Read this section before you install.
+
+### Accounts and network access
+
+- The three services run as the `soulstream` user, not `root`.
+- The orchestrator (port `5200`), the worker (`4205`), and atom (`4200`) listen on `127.0.0.1` only. The installer does not configure a firewall, so anything else on the server follows your own network rules.
+- In the default password mode, the dashboard and atom ask for the shared administrator password. The worker's MCP endpoint requires an `Authorization: Bearer` token (`MCP_REQUIRE_AUTH=true`).
+- The `soulstream` user is created with `useradd -m -d /home/soulstream -s /bin/bash soulstream` and no group options. The installer does not add it to the `sudo` group or write a sudoers entry.
+- If `/root/.ssh/authorized_keys` exists and the `soulstream` user has no `authorized_keys` yet, the installer copies the file to `/home/soulstream/.ssh/authorized_keys`. Every key that can log in as `root` can then log in as `soulstream` too.
+
+### What agents can do
+
+The installed worker configuration sets `SESSION_ISOLATION_MODE=off` in `/home/soulstream/soulstream/.env.soul-server-ts`, so sessions run without isolation. This guide does not describe how to turn isolation on. Each backend runs without approval prompts:
+
+- **Claude**: the permission mode defaults to `bypassPermissions` (the SDK option `allowDangerouslySkipPermissions` is set). An agent profile can change it with `claude_permission_mode`, and the installed profiles do not.
+- **Codex**: the installer sets `CODEX_ADAPTER_MODE=app-server` when you select `codex`. Threads start with `approvalPolicy: "never"` and `sandbox: "danger-full-access"`, and turns use `sandboxPolicy: { type: "dangerFullAccess" }`. The SDK transport uses `approvalPolicy: "never"` and `sandboxMode: "danger-full-access"`.
+- **Antigravity**: `agy` starts with `--dangerously-skip-permissions`.
+
+Agents therefore edit files and run commands as `soulstream`, anywhere that account has access. They can read the files the installer creates for the services, because the `soulstream` user owns them. Mode `0600` keeps other users out, not these agents:
+
+- `/home/soulstream/soulstream/.env.orch` and `.env.soul-server-ts` (`0600`): the database password, the bearer token, the JWT secret, and the atom API key between them. `.env.orch` also holds the administrator password in password mode.
+- `/home/soulstream/atom/.env` (`0600`): the atom database URL and JWT secret, and the administrator password.
+- `/home/soulstream/soulstream/.admin-password` and `.atom-api-key` (`0600`).
+- `/home/soulstream/soulstream/.local/backups/` (directory `0700`, dumps `0600`): database dumps from updates, which contain your session history, cards, and atom documents.
+- The saved Claude, Codex, and Antigravity logins under `/home/soulstream`.
+
+Install on a dedicated server or VM that holds no other data, and do not put credentials there that you would not give to the agents.
 
 ## Requirements
 
@@ -275,3 +305,7 @@ npm --prefix soul-app run ios
 npm --prefix soul-app run android
 npm --prefix soul-app run web
 ```
+
+## If an install or update fails
+
+Read the failure message, then check the logs of the failed service with `journalctl -u soulstream-orch`, `journalctl -u soulstream-worker`, or `journalctl -u soulstream-atom`. The installer log is `/var/log/soulstream-install.log`. Fix the cause, then run the same command again.
