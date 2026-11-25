@@ -128,7 +128,7 @@ export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOpt
             ? undefined : input => options.uploadCardCommentAttachment!(request, input);
         const result = await mutateCardRouteBody(options, operation, request.params.id,
           body, () => options.accessProvider.resolveAccess(request), () => cardActor(request, options), request.params.qid, itemId,
-          uploadCommentAttachment);
+          uploadCommentAttachment, true);
         return reply.code(result.status).send(result.body);
       } catch (error) { const failure = cardRouteErrorResponse(error); return reply.code(failure.status).send(failure.body); }
     } });

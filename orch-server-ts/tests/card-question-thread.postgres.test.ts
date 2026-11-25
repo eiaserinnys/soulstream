@@ -307,7 +307,7 @@ describe("card question threads keep the question open while user and assignee e
       await reply(cardId, "j3-worker", firstQuestion, "첫째 두 번째 답").then(
         () => { throw new Error("a second reply in the same thread must be rejected"); },
         error => expect(error).toMatchObject({ statusCode: 422, code: "INVALID_CARD_REQUEST" }));
-      await expect(reply(cardId, "j3-worker", secondQuestion, "가".repeat(301)))
+      await expect(reply(cardId, "j3-worker", secondQuestion, "가".repeat(1201)))
         .rejects.toMatchObject({ statusCode: 422, code: "INVALID_CARD_REQUEST" });
       expect(messages).not.toHaveBeenCalled();
 

@@ -19,9 +19,28 @@ const nonBlank=(message:string)=>z.string().min(1).superRefine((value,ctx)=>{
 });
 const choiceAnswer=append.extend({ questionId:id,mode:z.literal("choice"),option:nonBlank("선택지를 입력하세요"),answer:nonBlank("답 내용이 필요합니다").optional() });
 const textAnswer=append.extend({ questionId:id,mode:z.literal("text"),answer:nonBlank("답 내용이 필요합니다") });
+const updateCardFields={ title:id.optional(),brief:z.string().optional(),archived:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),color:z.enum(CARD_COLOR_KEYS).optional() };
+/** snoozedUntil은 사용자(웹, 앱) 전용이라 HTTP 경로의 update_card만 받는다. 에이전트용 MCP 입력에는 드러내지 않는다. */
+function updateCardSchema(userFields=false) {
+  const fields=userFields ? { ...updateCardFields,snoozedUntil:z.string().nullable().optional() } : updateCardFields;
+  return mutation.extend(fields).refine(v=>Object.keys(v).some(k=>!["expectedVersion","idempotencyKey","reason"].includes(k)),"Patch requires a field");
+}
+const updateCardUserSchema=updateCardSchema(true);
+export const SNOOZE_MAX_DAYS=30;
+const ISO_8601=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+/** 미루는 시각은 지금보다 뒤이고 30일 안이어야 한다. null은 해제다. 어긋나면 400. */
+export function parseSnoozedUntil(value:unknown,now:Date=new Date()):string | null {
+  if (value === null) return null;
+  if (typeof value !== "string" || !ISO_8601.test(value) || Number.isNaN(Date.parse(value)))
+    throw boundaryError("snoozedUntil은 ISO 8601 시각 문자열이거나 null이어야 합니다");
+  const at=Date.parse(value);
+  if (at <= now.getTime()) throw boundaryError("snoozedUntil은 지금보다 뒤여야 합니다");
+  if (at > now.getTime()+SNOOZE_MAX_DAYS*24*60*60*1000) throw boundaryError(`snoozedUntil은 ${SNOOZE_MAX_DAYS}일 안이어야 합니다`);
+  return new Date(at).toISOString();
+}
 export const cardOperationSchemas={
   create_card:z.object({ folderId:id,title:id,request:z.string(),brief:z.string().optional(),attachments,queue:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),idempotencyKey:id }),
-  update_card:mutation.extend({ title:id.optional(),brief:z.string().optional(),archived:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),color:z.enum(CARD_COLOR_KEYS).optional() }).refine(v=>Object.keys(v).some(k=>!["expectedVersion","idempotencyKey","reason"].includes(k)),"Patch requires a field"),
+  update_card:updateCardSchema(),
   start_card_work:mutation.extend({execution:z.object({registrationId:id,executionCommandId:id}).strict()}),
   set_card_status:mutation.extend({ status:z.enum(CARD_STATUSES),blockedKind:z.enum(["limit","question","no_report"]).nullable().optional(),blockedDetail:z.string().nullable().optional(),
     wakeAt:cardVerificationWakeAtSchema.optional(),waitingFor:cardVerificationWaitingForSchema.optional(),report:z.string().optional() })
@@ -82,9 +101,13 @@ function assertVerificationWaitBoundary(operation:CardOperation,input:unknown) {
     throw boundaryError("검증 대기가 아니면 wakeAt과 waitingFor를 주지 않습니다");
 }
 function boundaryError(message:string) { return Object.assign(new Error(message),{ statusCode:400,code:"INVALID_CARD_REQUEST" }); }
-export async function executeCardOperation(service:CardControlPlaneService,operation:CardOperation,body:unknown,cardId:string | undefined,actor:FolderActorParams) {
+/** userFields는 웹 HTTP 경로만 켠다. MCP 경로는 켜지 않아 사용자 전용 칸을 받지 않는다. */
+export async function executeCardOperation(service:CardControlPlaneService,operation:CardOperation,body:unknown,cardId:string | undefined,actor:FolderActorParams,userFields=false) {
   assertVerificationWaitBoundary(operation,body);
-  const parsed=operation === "answer_card_question" ? parseCardQuestionAnswer(body) : cardOperationSchemas[operation].strict().parse(body);
+  const userPatch=userFields && operation === "update_card";
+  if (userPatch && typeof body === "object" && body !== null && Object.hasOwn(body,"snoozedUntil"))
+    body={ ...body,snoozedUntil:parseSnoozedUntil((body as Record<string,unknown>).snoozedUntil) };
+  const parsed=operation === "answer_card_question" ? parseCardQuestionAnswer(body) : (userPatch ? updateCardUserSchema : cardOperationSchemas[operation]).strict().parse(body);
   if (operation === "add_card_comment") {
     const common={ ...actor,cardId:id.parse(cardId) };
     const comment=await service.addComment({ ...common,...cardOperationSchemas.add_card_comment.parse(parsed) });
@@ -99,7 +122,7 @@ export async function executeCardOperation(service:CardControlPlaneService,opera
     if (operation === "create_card") return service.createCard({ ...actor,...cardOperationSchemas.create_card.parse(parsed) });
     const common={ ...actor,cardId:id.parse(cardId) };
     switch(operation) {
-      case "update_card":return service.patchCard({ ...common,...cardOperationSchemas.update_card.parse(parsed) });
+      case "update_card":return service.patchCard({ ...common,...(userPatch ? updateCardUserSchema : cardOperationSchemas.update_card).parse(parsed) });
       case "start_card_work":return service.startCardWork({ ...common,...cardOperationSchemas.start_card_work.parse(parsed) });
       case "set_card_status":return service.setCardStatus({ ...common,...cardOperationSchemas.set_card_status.parse(parsed) });
       case "move_card":return service.moveCard({ ...common,...cardOperationSchemas.move_card.parse(parsed) });
@@ -132,5 +155,5 @@ export class CardOperationError extends Error {
 }
 export function serializeCardDetail(detail:CardDetail) {
   return { card:serializeCardRow(detail.card),reports:detail.reports.map(serializeCardRow),questions:detail.questions.map(serializeCardRow),
-    comments:detail.comments.map(serializeCardRow),sessions:detail.sessions.map(serializeCardRow),notes:detail.notes.map(serializeCardRow),nowHistory:detail.nowHistory };
+    comments:detail.comments.map(serializeCardRow),sessions:detail.sessions.map(serializeCardRow),notes:detail.notes.map(serializeCardRow),nowHistory:detail.nowHistory,statusHistory:detail.statusHistory };
 }

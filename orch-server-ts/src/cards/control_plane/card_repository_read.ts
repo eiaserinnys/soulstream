@@ -141,6 +141,13 @@ export class CardRepositoryRead {
       at:created_at.toISOString(),
     }));
   }
+  /** 상태가 바뀐 기록만, nowHistory와 같은 정렬과 개수로 돌려준다. */
+  async listCardStatusHistory(cardId:string) {
+    const rows=await this.sql<StatusHistorySourceRow[]>`SELECT payload_json,actor_kind,actor_session_id,created_at FROM folder_operations
+      WHERE target_kind='card' AND target_id=${cardId} AND jsonb_typeof(payload_json->'status')='string'
+      ORDER BY created_at DESC,id DESC LIMIT 20`;
+    return buildStatusHistory(rows);
+  }
   async listConfirmedItemsSinceLastCommentDelivery(cardId:string, throughAt:Date) {
     const rows=await this.sql<{item_id:number}[]>`SELECT DISTINCT (o.payload_json->>'item_id')::integer AS item_id
       FROM folder_operations o
@@ -180,4 +187,15 @@ export class CardRepositoryRead {
   private async projectSourceRows(cardId: string, rows: Record<string, unknown>[]) {
     return projectCardAttachmentRows(this.sql, rows, cardId, this.corsAllowedOrigins);
   }
+}
+
+export type StatusHistorySourceRow = { payload_json:Record<string,unknown>;actor_kind:string;actor_session_id:string | null;created_at:Date };
+/** 최신순으로 읽은 행을 오래된 순으로 뒤집고, 상태가 적힌 행만 남긴다. */
+export function buildStatusHistory(rows:readonly StatusHistorySourceRow[]) {
+  return rows.filter(row=>typeof row.payload_json.status==="string").slice().reverse().map(row=>({
+    status:row.payload_json.status as string,
+    at:row.created_at.toISOString(),
+    actorKind:row.actor_kind,
+    sessionId:row.actor_session_id,
+  }));
 }

@@ -26,7 +26,7 @@ export const CARD_FAILURES:Record<string,{statusCode:number|null;code:string|nul
  commentTrustedSpoken:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Only trusted session actors may add spoken comments'},
  commentMode:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'mode를 spoken 또는 reply로 지정하세요'},
  replyOwner:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Only the current assignee session may reply to a card comment. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.'},
- replyLength:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'reply은 300자까지입니다. 지금 {length}자입니다'},
+ replyLength:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'reply은 1200자까지입니다. 지금 {length}자입니다'},
  replyUserInput:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'이미 답했습니다. 진행은 노트에 적으세요(add_card_note)'},
  itemMissing:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'항목을 찾을 수 없습니다'},
  questionMissing:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'질문을 이 카드에서 찾을 수 없습니다'},
