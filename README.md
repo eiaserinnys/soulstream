@@ -88,6 +88,20 @@ If you cannot use the dashboard, [Installation](docs/guide/installation.md) desc
 
 The dashboard opens the persistent assistant session view by default. When you connect your first coding agent, Soulstream creates the default persistent assistant session and opens it. Ask for your first piece of work there.
 
+To see the whole flow once, paste this request. The assistant's first greeting suggests the same request in Korean.
+
+```text
+Make a card in the 작업실 folder and start it right away: write a one-page introduction to a sample project (its goal, three core features, and a first milestone). Track those three parts as check items, link each one to the document, and send it to me for review.
+```
+
+The assistant creates a card in the `작업실` (workroom) folder, and an agent session starts the work. Within a few minutes, the card appears beside the chat for your review. Each check item links to the document, which opens in the dashboard. Choose Complete (`완료`) to close the card.
+
+![The assistant turned the first request into a card that waits for review](docs/screenshots/first-run-review.png)
+
+![The document from the first request, opened from a check item link](docs/screenshots/first-run-document.png)
+
+These screenshots are from a fresh install.
+
 ### Update and uninstall
 
 Run the same install command again to [update](docs/guide/installation.md#updating). If it finds local changes, it aborts before it stops any service. To remove Soulstream and atom from a dedicated server, see [Uninstalling](docs/guide/installation.md#uninstalling).
