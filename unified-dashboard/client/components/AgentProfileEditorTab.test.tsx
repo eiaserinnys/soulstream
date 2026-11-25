@@ -518,7 +518,7 @@ describe("AgentProfileEditorTab", () => {
     expect(preview[0]).toMatchObject({ url: "/api/nodes/node-a/agents/context-preview", body: {
       atom_contexts: profile.atom_contexts, session: { source: "browser", backend: "claude", agent: "seosoyoung" },
     } });
-    expect(document.body.textContent).toContain("운영 지침");
+    await vi.waitFor(() => expect(document.body.textContent).toContain("운영 지침"));
     expect(document.body.textContent).toContain("87");
     const row = Array.from(document.body.querySelectorAll("button")).find(button => button.textContent?.includes("운영 지침"));
     expect(row).toBeDefined();
