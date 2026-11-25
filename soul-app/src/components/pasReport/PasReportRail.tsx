@@ -2,7 +2,8 @@
 import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { CardDto } from '../../api/cardTypes';
-import { AGENDA_KIND_LABEL, formatReturnTime, type Agenda } from '../../lib/pas-report-thread-model';
+import { AGENDA_KIND_LABEL } from '../../../../packages/soul-ui/src/lib/pas-report-thread-core';
+import { formatReturnTime, type Agenda } from '../../lib/pas-report-thread-model';
 import { useTokens, type DesignTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
 import { CardStatusChip } from '../planner/CardRow';

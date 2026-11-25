@@ -1,6 +1,7 @@
 import { Badge, Button, useAgentPortraitUrlResolver } from "@seosoyoung/soul-ui";
 import { StatusChip } from "../StatusChip";
-import { AGENDA_KIND_LABEL, formatReturnTime, type Agenda, type AgendaKind } from "./pas-report-thread-model";
+import { AGENDA_KIND_LABEL, type AgendaKind } from "@seosoyoung/soul-ui/lib/pas-report-thread-core";
+import { formatReturnTime, type Agenda } from "./pas-report-thread-model";
 import type { PasReportThreadController } from "./use-pas-report-thread";
 
 const KIND_TONE: Record<AgendaKind, string> = {

@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CardComment, CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import {
-  buildThread, cardAgenda, entryAgenda, formatReturnTime, groupAgendas, itemInstructionBody, nextSnoozeReturn, openQuestionOf,
-  snoozeOptions, type ReportEntry,
+  buildThread, cardAgenda, entryAgenda, formatReturnTime, groupAgendas, openQuestionOf, type ReportEntry,
 } from "./pas-report-thread-model";
 
 const card = (patch: Partial<CardRow> & { id: string }): CardRow => ({
@@ -61,33 +60,8 @@ describe("groupAgendas", () => {
   it("보류함 개수는 on_hold 카드 수다", () => {
     expect(groups.holdCount).toBe(2);
   });
-  it("다음에 돌아올 시각을 알려 준다", () => {
-    expect(nextSnoozeReturn(board, now)).toBe(Date.parse("2026-11-25T15:00:00.000Z"));
-    expect(nextSnoozeReturn(board, Date.parse("2026-11-25T16:00:00.000Z"))).toBeNull();
-  });
   it("진행 중이 아닌 카드는 안건이 되지 않는다", () => {
     expect(cardAgenda(card({ id: "q", status: "queued" }))).toBeNull();
-  });
-});
-
-describe("snoozeOptions", () => {
-  it("지금이 18시 전이면 네 선택지를 브라우저 지역 시각으로 낸다", () => {
-    const now = new Date(2026, 10, 25, 10, 30);
-    const options = snoozeOptions(now);
-    expect(options.map(option => option.label)).toEqual(["1시간 뒤", "오늘 저녁", "내일 아침", "사흘 뒤"]);
-    expect(options.map(option => new Date(option.at))).toEqual([new Date(2026, 10, 25, 11, 30), new Date(2026, 10, 25, 19, 0), new Date(2026, 10, 26, 9, 0), new Date(2026, 10, 28, 9, 0)]);
-  });
-  it("지금이 18시 뒤면 오늘 저녁을 뺀다", () => {
-    const labels = snoozeOptions(new Date(2026, 10, 25, 18, 5)).map(option => option.label);
-    expect(labels).toEqual(["1시간 뒤", "내일 아침", "사흘 뒤"]);
-    expect(snoozeOptions(new Date(2026, 10, 25, 17, 59)).map(option => option.label)).toContain("오늘 저녁");
-  });
-  it("모든 선택지가 지금보다 뒤이고 30일 안이다", () => {
-    const now = new Date(2026, 10, 25, 23, 50);
-    for (const option of snoozeOptions(now)) {
-      expect(option.at).toBeGreaterThan(now.getTime());
-      expect(option.at - now.getTime()).toBeLessThan(30 * 86_400_000);
-    }
   });
 });
 
@@ -149,8 +123,5 @@ describe("질문과 항목 지시", () => {
     const detail = { card: card({ id: "c1" }), reports: [], questions: [answered, open], sessions: [] } as CardDetail;
     expect(openQuestionOf(detail, null)?.id).toBe("q1");
     expect(openQuestionOf(undefined, null)).toBeNull();
-  });
-  it("질문이 열려 있을 때 항목 지시는 글 앞에 번호를 적는다", () => {
-    expect(itemInstructionBody(3, "다시 확인해줘")).toBe("3번 항목: 다시 확인해줘");
   });
 });

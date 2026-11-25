@@ -7,10 +7,10 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { CardComment, CardDetail, CardDto, CardQuestion } from '../api/cardTypes';
 import { CARD_QUESTION_KEY_PREFIX, type PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import { getFolderWorkspaceOverlayWidth } from '../lib/folder-workspace-layout';
-import { entryAgenda } from '../lib/pas-report-thread-model';
+import { entryAgenda, type Agenda } from '../lib/pas-report-thread-model';
+import type { ProcessedAgenda } from '../../../packages/soul-ui/src/lib/pas-report-thread-core';
 import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
 import { PasReportWindow } from '../components/pasReport/PasReportWindow';
-import type { ProcessedAgenda } from '../components/pasReport/usePasReportWindow';
 import { usePersistentCardCompletion } from '../components/persistent/usePersistentCardCompletion';
 import { usePersistentReport } from '../components/persistent/usePersistentReport';
 import { CardPanelOverlayFrame } from '../components/planner/FolderWorkspaceReadOverlay';
@@ -140,7 +140,7 @@ export function ReviewPasReportWindow() {
   const [serverEntries, setServerEntries] = useState<PersistentReportEntry[]>(() => state === 'empty' ? [] : sample.entries);
   const completion = usePersistentCardCompletion(sample.server.api);
   const report = usePersistentReport('review-pas-report', true, sample.server.api, serverEntries, undefined, completion.filterEntries);
-  const initialProcessed = useMemo<ProcessedAgenda[] | undefined>(() => {
+  const initialProcessed = useMemo<ProcessedAgenda<Agenda>[] | undefined>(() => {
     if (state !== 'processed') return undefined;
     const done = sample.cards.find(card => card.id === 'card-1865');
     const agenda = done ? entryAgenda(sample.questionEntry, done) : null;

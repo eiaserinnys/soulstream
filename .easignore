@@ -55,6 +55,7 @@
 !/packages/soul-ui/src/lib/reasoning-effort.ts
 !/packages/soul-ui/src/lib/custom-view-binding.ts
 !/packages/soul-ui/src/lib/input-request-countdown.ts
+!/packages/soul-ui/src/lib/pas-report-thread-core.ts
 !/packages/soul-ui/src/lib/user-preferences-envelope.ts
 !/packages/soul-ui/src/page
 /packages/soul-ui/src/page/*

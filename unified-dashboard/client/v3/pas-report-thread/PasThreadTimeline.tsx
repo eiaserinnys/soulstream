@@ -7,7 +7,8 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { CardCheckItems } from "../CardCheckItems";
 import { CardQuestionAnswered, CardQuestionBody, cardQuestionDetailView } from "../CardQuestionBlock";
 import { CardTimeline } from "../CardTimeline";
-import { buildThread, type Agenda, type ThreadItem } from "./pas-report-thread-model";
+import type { ThreadItem } from "@seosoyoung/soul-ui/lib/pas-report-thread-core";
+import { buildThread, type Agenda } from "./pas-report-thread-model";
 import type { PasReportThreadController } from "./use-pas-report-thread";
 
 const EMPTY_PENDING: Readonly<Record<number, boolean>> = {};
@@ -60,7 +61,7 @@ function PasThreadTimeline({ controller, agenda, detail }: { controller: PasRepo
   </div>;
 }
 
-function Milestone({ item, now }: { item: Extract<ThreadItem, { kind: "milestone" }>; now: number }) {
+function Milestone({ item, now }: { item: Extract<ThreadItem<CardComment, CardQuestion>, { kind: "milestone" }>; now: number }) {
   return <p className="pas-rt-milestone" data-tone={item.tone}>
     <span className="pas-rt-milestone-dot" aria-hidden="true" />
     <span className="pas-rt-milestone-text" data-v3-selectable-content="true">{item.text}</span>

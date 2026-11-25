@@ -2,12 +2,7 @@ import type { CardComment, CardDetail, CardQuestion, CardRow } from "@seosoyoung
 import { CARD_BOARD_STATUS_LABELS } from "@seosoyoung/soul-ui/lib/card-board-status-labels";
 import { CARD_QUESTION_KEY_PREFIX, type PersistentReportEntry } from "../../../../packages/wire-schema/src/persistent_report";
 import { isOpenCardQuestion } from "../CardQuestionBlock";
-
-/** 보고 창이 다루는 안건의 종류. 데이터로 가른다. */
-export type AgendaKind = "question" | "request" | "review" | "blocked" | "running" | "verifying";
-export const AGENDA_KIND_LABEL: Readonly<Record<AgendaKind, string>> = {
-  question: "질문", request: "부탁", review: "검수", blocked: "막힘", running: "진행", verifying: "검증 대기",
-};
+import type { AgendaKind, RailGroups, ThreadItem } from "@seosoyoung/soul-ui/lib/pas-report-thread-core";
 
 export type ReportEntry = PersistentReportEntry & { card_id?: string; card_status?: string };
 
@@ -69,18 +64,11 @@ export function cardAgenda(card: CardRow): Agenda | null {
   return kind ? { ...agendaBase(card, null, card.id), kind } : null;
 }
 
-export interface RailGroups {
-  pending: Agenda[];
-  running: Agenda[];
-  snoozed: Agenda[];
-  holdCount: number;
-}
-
 /**
  * 결재 대기는 판 순서, 미뤄 둠은 되돌아올 시각 순, 진행 중은 최근 갱신 순이다.
  * 진행 중은 결재 대기와 미뤄 둠에 없는 카드만 담는다.
  */
-export function groupAgendas(boardAgendas: readonly Agenda[], cards: readonly CardRow[], now: number): RailGroups {
+export function groupAgendas(boardAgendas: readonly Agenda[], cards: readonly CardRow[], now: number): RailGroups<Agenda> {
   const seen = new Set<string>();
   const board = boardAgendas.filter(agenda => !seen.has(agenda.cardId) && seen.add(agenda.cardId));
   const snoozed = board.filter(agenda => agenda.snoozedUntil !== null && agenda.snoozedUntil > now)
@@ -90,31 +78,6 @@ export function groupAgendas(boardAgendas: readonly Agenda[], cards: readonly Ca
   const running = cards.flatMap(card => seen.has(card.id) ? [] : cardAgenda(card) ?? [])
     .sort((a, b) => b.updatedAt - a.updatedAt);
   return { pending, running, snoozed, holdCount: cards.filter(card => card.status === "on_hold").length };
-}
-
-/** 미루기 시각이 지나 결재 대기로 돌아올 다음 순간(ms). 없으면 null. */
-export function nextSnoozeReturn(agendas: readonly Agenda[], now: number): number | null {
-  const later = agendas.flatMap(agenda => agenda.snoozedUntil !== null && agenda.snoozedUntil > now ? [agenda.snoozedUntil] : []);
-  return later.length ? Math.min(...later) : null;
-}
-
-export type SnoozeOptionId = "hour" | "evening" | "tomorrow" | "three-days";
-export interface SnoozeOption { id: SnoozeOptionId; label: string; at: number }
-
-/** 브라우저 지역 시각 기준 미루기 선택지. 지금이 18시 뒤면 「오늘 저녁」은 뺀다. */
-export function snoozeOptions(now: Date): SnoozeOption[] {
-  const at = (days: number, hour: number) => {
-    const target = new Date(now);
-    target.setDate(target.getDate() + days);
-    target.setHours(hour, 0, 0, 0);
-    return target.getTime();
-  };
-  return [
-    { id: "hour" as const, label: "1시간 뒤", at: now.getTime() + 60 * 60 * 1000 },
-    ...(now.getHours() < 18 ? [{ id: "evening" as const, label: "오늘 저녁", at: at(0, 19) }] : []),
-    { id: "tomorrow" as const, label: "내일 아침", at: at(1, 9) },
-    { id: "three-days" as const, label: "사흘 뒤", at: at(3, 9) },
-  ];
 }
 
 const clock = (date: Date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
@@ -129,24 +92,16 @@ export function formatReturnTime(at: number, now: number): string {
   return `${target.getMonth() + 1}/${target.getDate()} ${clock(target)}`;
 }
 
-export type MilestoneTone = "now" | "status" | "delegate";
-export type ThreadItem =
-  | { id: string; at: number; kind: "request" }
-  | { id: string; at: number; kind: "milestone"; tone: MilestoneTone; text: string }
-  | { id: string; at: number; kind: "comments"; comments: CardComment[] }
-  | { id: string; at: number; kind: "question"; question: CardQuestion }
-  | { id: string; at: number; kind: "notes"; notes: CardComment[] };
-
-const ORDER: Record<ThreadItem["kind"], number> = { request: 0, milestone: 1, question: 2, comments: 3, notes: 4 };
+const ORDER: Record<ThreadItem<unknown, unknown>["kind"], number> = { request: 0, milestone: 1, question: 2, comments: 3, notes: 4 };
 
 /**
  * 카드 상세를 한 줄기 시간순 스레드로 합친다.
  * 이정표는 상황판 문구, 상태 전환, 담당이 아닌 세션의 위임이다. statusHistory가 아직 없는 응답은 그 이정표만 뺀다.
  * 질문 글타래의 커멘트는 질문 블록이 그리므로 따로 두지 않는다. 노트는 이어진 것끼리 한 덩이로 묶는다.
  */
-export function buildThread(detail: CardDetail): ThreadItem[] {
+export function buildThread(detail: CardDetail): ThreadItem<CardComment, CardQuestion>[] {
   const card = detail.card;
-  const flat: ThreadItem[] = [];
+  const flat: ThreadItem<CardComment, CardQuestion>[] = [];
   if (card.request.trim()) flat.push({ id: "request", at: parseTime(card.createdAt) ?? 0, kind: "request" });
   const nowEntries = detail.nowHistory?.length ? detail.nowHistory
     : card.now ? [{ text: card.now.text, at: card.now.updatedAt }] : [];
@@ -171,13 +126,13 @@ export function buildThread(detail: CardDetail): ThreadItem[] {
   const all = new Map<string, CardComment>();
   for (const comment of [...(detail.comments ?? []), ...(detail.notes ?? [])]) all.set(comment.id, comment);
   const lines = [...all.values()].filter(comment => !(comment.questionId && questionIds.has(comment.questionId)));
-  type Entry = { at: number; order: number; id: string; item?: ThreadItem; comment?: CardComment };
+  type Entry = { at: number; order: number; id: string; item?: ThreadItem<CardComment, CardQuestion>; comment?: CardComment };
   const entries: Entry[] = [
     ...flat.map(item => ({ at: item.at, order: ORDER[item.kind], id: item.id, item })),
     ...lines.map(comment => ({ at: parseTime(comment.createdAt) ?? 0, order: comment.kind === "note" ? ORDER.notes : ORDER.comments, id: comment.id, comment })),
   ].sort((a, b) => a.at - b.at || a.order - b.order || a.id.localeCompare(b.id));
   // 커멘트와 노트는 서로 이어진 것끼리 묶고, 사이에 이정표나 질문이 끼면 새 덩이로 시작한다.
-  const thread: ThreadItem[] = [];
+  const thread: ThreadItem<CardComment, CardQuestion>[] = [];
   for (const { item, comment } of entries) {
     if (item) { thread.push(item); continue; }
     const last = thread[thread.length - 1];
@@ -194,9 +149,4 @@ export function buildThread(detail: CardDetail): ThreadItem[] {
 export function openQuestionOf(detail: CardDetail | undefined, entry: ReportEntry | null): CardQuestion | null {
   const open = (detail?.questions ?? []).filter(isOpenCardQuestion);
   return (entry?.question_id ? open.find(question => question.id === entry.question_id) : undefined) ?? open[0] ?? null;
-}
-
-/** 항목 지시 글 머리. 서버가 질문 글타래와 항목을 함께 받지 않으므로 질문이 열려 있으면 글에 번호를 적는다. */
-export function itemInstructionBody(itemId: number, text: string): string {
-  return `${itemId}번 항목: ${text}`;
 }

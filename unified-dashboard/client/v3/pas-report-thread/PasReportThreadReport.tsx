@@ -7,7 +7,8 @@ import { PasCardPanelBoundary } from "./PasCardPanelBoundary";
 import { PasThreadDecideBox } from "./PasThreadDecideBox";
 import { PasThreadRail } from "./PasThreadRail";
 import { PasThreadBody } from "./PasThreadTimeline";
-import { AGENDA_KIND_LABEL, type ReportEntry } from "./pas-report-thread-model";
+import { AGENDA_KIND_LABEL } from "@seosoyoung/soul-ui/lib/pas-report-thread-core";
+import type { ReportEntry } from "./pas-report-thread-model";
 import { usePasReportThread, type PasReportThreadInput } from "./use-pas-report-thread";
 import "./v3-pas-report-thread.css";
 

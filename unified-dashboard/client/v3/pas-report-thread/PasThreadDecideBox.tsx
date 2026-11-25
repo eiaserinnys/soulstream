@@ -4,8 +4,9 @@ import { CARD_COMPLETION_UNDO_MS } from "../../../../packages/wire-schema/src/pe
 import { CardCommentInput } from "../CardCommentInput";
 import { CardQuestionActions, CardQuestionNotice, cardQuestionDetailView } from "../CardQuestionBlock";
 import { UndoCountdownRing } from "../UndoCountdownRing";
-import { formatReturnTime, snoozeOptions, type Agenda } from "./pas-report-thread-model";
-import type { PasReportThreadController, SendMode } from "./use-pas-report-thread";
+import { snoozeOptions, type SendMode } from "@seosoyoung/soul-ui/lib/pas-report-thread-core";
+import { formatReturnTime, type Agenda } from "./pas-report-thread-model";
+import type { PasReportThreadController } from "./use-pas-report-thread";
 
 type ComposerMode = "closed" | SendMode;
 
@@ -91,14 +92,27 @@ export function PasThreadDecideBox({ controller, agenda, undoButtonRef, onLayout
 
   const canSnooze = agenda !== null && agenda.kind !== "running" && agenda.kind !== "verifying";
   // 미뤄 둔 안건은 그 종류의 단추 그대로, 답변 미루기 자리만 미루기 해제로 바뀐다.
-  // 해제하면 누른 단추가 사라진다. 초점이 body로 떨어지지 않게 그 자리에 남는 단추(답변 미루기, 없으면 지시 적기)로 준다.
+  // 해제하면 누른 단추가 사라진다. 초점이 body로 떨어지지 않게, 화면이 해제된 모양으로 바뀐 직후 그 자리에 남는 단추
+  // (답변 미루기, 없으면 지시 적기)로 준다. 서버 응답, 화면 갱신, 처리 끝의 앞뒤가 정해져 있지 않아 갱신을 지켜보는 쪽에서 옮긴다.
+  const refocusAfterUnsnooze = useRef(false);
+  useLayoutEffect(() => {
+    // 처리 중에는 단추가 모두 비활성이라 초점을 받지 못한다. 끝난 뒤에 옮긴다.
+    if (snoozed || busy || !refocusAfterUnsnooze.current) return;
+    refocusAfterUnsnooze.current = false;
+    const current = document.activeElement;
+    if (current && current !== document.body && current.isConnected) return;
+    (snoozeTriggerRef.current ?? commentButtonRef.current)?.focus({ preventScroll: true });
+  }, [snoozed, busy]);
   const unsnoozeAndRefocus = async (target: Agenda) => {
+    refocusAfterUnsnooze.current = true;
     const done = await controller.unsnooze(target);
+    if (done) return;
+    // 실패하면 해제 단추가 그대로 남아 있으니 거기로 돌려준다.
+    refocusAfterUnsnooze.current = false;
     requestAnimationFrame(() => {
       const current = document.activeElement;
       if (current && current !== document.body && current.isConnected) return;
-      // 실패하면 해제 단추가 그대로 남아 있으니 거기로 돌려준다.
-      (done ? snoozeTriggerRef.current ?? commentButtonRef.current : document.querySelector<HTMLElement>('.pas-rt-decide [data-testid="pas-rt-unsnooze"]'))?.focus({ preventScroll: true });
+      document.querySelector<HTMLElement>('.pas-rt-decide [data-testid="pas-rt-unsnooze"]')?.focus({ preventScroll: true });
     });
   };
   const snoozeSlot = !agenda || (!canSnooze && !snoozed) ? null : snoozed

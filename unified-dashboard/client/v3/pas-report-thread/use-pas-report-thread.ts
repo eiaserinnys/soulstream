@@ -6,16 +6,12 @@ import { CARD_COMPLETION_UNDO_MS } from "../../../../packages/wire-schema/src/pe
 import type { CardCompletionTarget, usePersistentCardCompletion } from "../usePersistentCardCompletion";
 import { useCardMembership } from "../use-card-membership";
 import {
-  entryAgenda, groupAgendas, itemInstructionBody, nextSnoozeReturn, openQuestionOf,
-  type Agenda, type ReportEntry, type RailGroups, type SnoozeOption,
-} from "./pas-report-thread-model";
+  itemInstructionBody, nextSnoozeReturn,
+  type ProcessedAgenda, type RailGroups, type SendMode, type SnoozeOption, type SnoozeUndo, type ThreadLoad,
+} from "@seosoyoung/soul-ui/lib/pas-report-thread-core";
+import { entryAgenda, groupAgendas, openQuestionOf, type Agenda, type ReportEntry } from "./pas-report-thread-model";
 
-export interface ProcessedAgenda { agenda: Agenda; label: string }
-/** 되돌리기 줄에 쓰는 기록. 완료와 보류는 기존 5초 되돌리기 훅이, 답변 미루기는 여기서 맡는다. */
-export interface SnoozeUndo { cardId: string; number: number | null; expiresAt: number }
 export interface ItemTarget { itemId: number; trigger: HTMLElement | null }
-export type ThreadLoad = "loading" | "ready" | "error";
-export type SendMode = "comment" | "ask" | "answer";
 
 export interface PasReportThreadInput {
   entries: readonly ReportEntry[];
@@ -44,7 +40,7 @@ export function usePasReportThread({ entries, completion, dismissReport, startCa
   const live = useCardMembership(undefined, [], cardSource === undefined);
   const cards = cardSource ?? live.cards;
   const { loading: cardsLoading, error: cardsError, retry: retryCards } = live;
-  const [processed, setProcessed] = useState<ProcessedAgenda[]>([]);
+  const [processed, setProcessed] = useState<ProcessedAgenda<Agenda>[]>([]);
   // 처분한 안건은 판이 따라잡기 전에도 결재 대기에 남지 않는다. 판의 장이 바뀌면(다시 열림) 돌아온다.
   const boardAgendas = useMemo(() => {
     const settled = new Map(processed.map(item => [item.agenda.cardId, item.agenda.updatedAt]));
@@ -56,7 +52,7 @@ export function usePasReportThread({ entries, completion, dismissReport, startCa
   const [deadline, setDeadline] = useState<number | null>(null);
   const now = useNow(deadline);
   useEffect(() => { setDeadline(nextSnoozeReturn(boardAgendas, now)); }, [boardAgendas, now]);
-  const groups: RailGroups = useMemo(() => groupAgendas(boardAgendas, cards, now), [boardAgendas, cards, now]);
+  const groups: RailGroups<Agenda> = useMemo(() => groupAgendas(boardAgendas, cards, now), [boardAgendas, cards, now]);
 
   const [activeId, setActiveId] = useState<string | null>(startCardId);
   const [snoozeUndo, setSnoozeUndo] = useState<SnoozeUndo | null>(null);
