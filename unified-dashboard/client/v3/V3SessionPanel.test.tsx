@@ -9,6 +9,7 @@ const acknowledgeSessionReview = vi.hoisted(() => vi.fn());
 
 vi.mock("@seosoyoung/soul-ui", () => ({
   acknowledgeSessionReview,
+  useAgentPortraitUrlResolver: () => (agentId?: string | null) => agentId ? `/api/agent-portraits/${agentId}` : "",
   STATUS_CONFIG: {
     running: { label: "실행 중" },
     completed: { label: "완료" },

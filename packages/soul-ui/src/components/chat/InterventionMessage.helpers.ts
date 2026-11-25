@@ -6,7 +6,7 @@
  *
  * 분기 우선순위 (높→낮):
  *   1. system  — caller_info.source === "system" → 정적 자산 + 고정 이름
- *   2. agent   — agentInfo 있고 system 아님 → 노드 프록시 portrait + agent 이름
+ *   2. agent   — agentInfo 있고 system 아님 → 중앙 초상 주소 + agent 이름
  *   3. user    — 그 외 → caller_info / 세션 metadata
  *
  * F-11 (2026-05-09, atom F-11): system 분기 신설.
@@ -37,6 +37,8 @@ const FALLBACK_USER = "\u{270B}"; // ✋ raised hand — intervention
 export function computeInterventionDisplay(
   msg: ChatMessage,
   callerAvatarUrl: string | null | undefined,
+  /** 에이전트 id → 중앙 초상 주소(없으면 빈 문자열). 노드 id로 주소를 만들지 않는다. */
+  resolvePortraitUrl: (agentId: string) => string = () => "",
 ): InterventionDisplay {
   const isSystem = msg.callerInfo?.source === "system";
   const isAgent = !!msg.agentInfo && !isSystem;
@@ -79,9 +81,7 @@ export function computeInterventionDisplay(
     const agentInfo = msg.agentInfo!;
     const agentName = agentInfo.agent_name ?? agentInfo.agent_id ?? "에이전트";
     const displayId = `${agentName}@${agentInfo.agent_node}`;
-    const portraitUrl = agentInfo.agent_id
-      ? `/api/nodes/${agentInfo.agent_node}/agents/${agentInfo.agent_id}/portrait`
-      : null;
+    const portraitUrl = (agentInfo.agent_id ? resolvePortraitUrl(agentInfo.agent_id) : "") || null;
     return {
       isSystem: false,
       isAgent: true,

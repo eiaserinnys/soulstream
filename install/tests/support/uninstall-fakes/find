@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Fake find for the one question install.sh asks: `find <path> ( ! -user root -o ! -group root ) -print -quit`.
+# It prints the first entry at or under <path> that $FAKE_DIR/owners lists with an owner other than root:root.
+# FAKE_FIND_FAIL=1 fails the call. Any other arguments are rejected with 98.
+printf '%s\n' "find $*" >> "$FAKE_ARGV_LOG"
+path=$1
+if [[ "$*" != "$path ( ! -user root -o ! -group root ) -print -quit" ]]; then printf 'fake find: unsupported: %s\n' "$*" >&2; exit 98; fi
+if [[ -n "${FAKE_FIND_FAIL:-}" ]]; then printf 'fake find: failed\n' >&2; exit 1; fi
+if [[ -r "$FAKE_DIR/owners" ]]; then
+  while IFS=' ' read -r entry entry_owner; do
+    if [[ "$entry_owner" != root:root && ( "$entry" == "$path" || "$entry" == "$path"/* ) ]]; then printf '%s\n' "$entry"; exit 0; fi
+  done < "$FAKE_DIR/owners"
+fi
+exit 0

@@ -13,6 +13,12 @@ SYSTEMD_DIR=/etc/systemd/system
 # Records what this installer added under /usr/local so uninstall.sh removes only that. Tests reassign these after sourcing.
 RECEIPT_FILE=/etc/soulstream/install-receipt.json
 USR_LOCAL=/usr/local
+# Debian's base-files makes the shared /usr/local directories root:staff when this file exists, root:root otherwise. Tests reassign it.
+STAFF_MARKER=/etc/staff-group-for-usr-local
+# Shared /usr/local directories (relative to USR_LOCAL, . is USR_LOCAL itself) whose owner install_node corrects. uninstall.sh keeps the same list.
+USR_LOCAL_DIRS='. bin lib include share share/man share/man/man1 share/doc lib/node_modules'
+# What the Node.js tarball puts in /usr/local, the same set as NODE_BUNDLE in uninstall.sh plus bin/node.
+NODE_TARBALL_PATHS='bin/node bin/npm bin/npx bin/corepack lib/node_modules/npm lib/node_modules/corepack include/node share/doc/node share/man/man1/node.1 CHANGELOG.md LICENSE README.md'
 NODE_VERSION=v22.23.5
 # Stopped in this order when maintenance starts and after a failure during it.
 SERVICE_UNITS='soulstream-worker.service soulstream-orch.service soulstream-atom.service'
@@ -670,7 +676,8 @@ install_node() {
     curl -fsSL "https://nodejs.org/dist/$version/$archive" -o "$dir/$archive"
     curl -fsSL "https://nodejs.org/dist/$version/SHASUMS256.txt" -o "$dir/SHASUMS256.txt"
     (cd "$dir" && grep "  $archive$" SHASUMS256.txt | sha256sum -c -)
-    tar -xzf "$dir/$archive" -C "$USR_LOCAL" --strip-components=1
+    # As root, GNU tar would otherwise give the files the owner recorded in the archive and rewrite the owner of directories that already exist.
+    tar -xzf "$dir/$archive" -C "$USR_LOCAL" --strip-components=1 --no-same-owner --no-overwrite-dir
     rm -rf "$dir"
     # A node that was already there stays out of the receipt; one this installer put there follows later versions.
     if [[ "$node_absent" == true || "$node_recorded" == true ]]; then
@@ -689,6 +696,37 @@ install_node() {
   if ((${#created[@]})); then
     receipt_update '.corepack_shims_created = ((.corepack_shims_created + $names) | unique)' --argjson names "$(printf '%s\n' "${created[@]}" | jq -R . | jq -sc .)" || return 1
   fi
+  fix_usr_local_owners || return 1
+}
+# Gives the shared /usr/local directories, and the Node.js files this installer put there, back to root. Earlier
+# installers left them owned by the owner recorded in the Node.js archive (uid 1000, the soulstream account on a fresh
+# server), which let that account replace the node, npm and corepack that root runs. Runs on every install and update,
+# and prints only what it changed.
+fix_usr_local_owners() {
+  local expected=root:root rel path owner fixed=() node_installed
+  [[ -e "$STAFF_MARKER" ]] && expected=root:staff
+  for rel in $USR_LOCAL_DIRS; do
+    path=$USR_LOCAL
+    [[ "$rel" == . ]] || path=$USR_LOCAL/$rel
+    [[ -d "$path" && ! -L "$path" ]] || continue
+    owner=$(stat -c '%U:%G' -- "$path") || return 1
+    [[ "$owner" == "$expected" ]] && continue
+    chown -h "$expected" -- "$path" || return 1
+    fixed+=("$path")
+  done
+  # Only a Node.js this installer unpacked; one that was already there is not ours to change.
+  node_installed=$(jq -r '.node_tarball_installed' "$RECEIPT_FILE") || return 1
+  if [[ "$node_installed" == true ]]; then
+    for rel in $NODE_TARBALL_PATHS; do
+      path=$USR_LOCAL/$rel
+      [[ -e "$path" || -L "$path" ]] || continue
+      owner=$(find "$path" \( ! -user root -o ! -group root \) -print -quit) || return 1
+      [[ -n "$owner" ]] || continue
+      chown -hR root:root -- "$path" || return 1
+      fixed+=("$path")
+    done
+  fi
+  if ((${#fixed[@]})); then printf 'Ownership under %s reset on: %s\n' "$USR_LOCAL" "${fixed[*]}"; fi
 }
 as_soul() { sudo -H -u soulstream env HOME=/home/soulstream PATH=/home/soulstream/.local/bin:/usr/local/bin:/usr/bin:/bin COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$@"; }
 # Only a codex this run installs goes into the receipt; one already on the server stays out of it.

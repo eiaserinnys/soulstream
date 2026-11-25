@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -116,8 +117,16 @@ describe("system portrait/config route harness", () => {
     });
     expect(system.statusCode).toBe(200);
     expect(system.headers["content-type"]).toContain("image/png");
-    expect(system.headers["cache-control"]).toBe("public, max-age=3600");
+    expect(system.headers["cache-control"]).toBe("public, no-cache");
+    expect(system.headers.etag).toBe(`"${createHash("sha256").update("png-system").digest("hex")}"`);
     expect(system.body).toBe("png-system");
+    const revalidated = await app.inject({
+      method: "GET",
+      url: "/api/system/portraits/system",
+      headers: { "if-none-match": String(system.headers.etag) },
+    });
+    expect(revalidated.statusCode).toBe(304);
+    expect(revalidated.body).toBe("");
 
     const base64 = await app.inject({
       method: "GET",
@@ -143,6 +152,7 @@ describe("system portrait/config route harness", () => {
       ).statusCode,
     ).toBe(404);
     expect(calls).toEqual([
+      ["portrait", "system"],
       ["portrait", "system"],
       ["portrait", "channel_observer"],
       ["portrait", "trello_watcher"],

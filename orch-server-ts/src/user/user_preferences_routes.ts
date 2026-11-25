@@ -270,11 +270,11 @@ function hasBackground(row: UserPreferencesRecord): boolean {
   );
 }
 
-function updatedAtValue(row: UserPreferencesRecord): unknown {
+export function updatedAtValue(row: UserPreferencesRecord): unknown {
   return row.updatedAt ?? row.updated_at ?? null;
 }
 
-function timestampSeconds(value: unknown): number | null {
+export function timestampSeconds(value: unknown): number | null {
   if (value instanceof Date) {
     const timestamp = value.getTime();
     return Number.isFinite(timestamp) ? Math.floor(timestamp / 1000) : null;

@@ -115,6 +115,8 @@ export type AttachmentReadService = {
       readonly range?: string;
       readonly signal?: AbortSignal;
       readonly download?: boolean;
+      /** 커밋된 바이트가 바뀌지 않으므로 같은 ETag면 본문 없이 304를 준다. */
+      readonly ifNoneMatch?: string;
     },
   ) => Promise<Response>;
   readonly legacy: (
@@ -127,9 +129,16 @@ export type AttachmentReadService = {
       readonly range?: string;
       readonly signal?: AbortSignal;
       readonly download?: boolean;
+      readonly ifNoneMatch?: string;
     },
   ) => Promise<{ readonly kind: "unresolved" } | { readonly kind: "response"; readonly response: Response }>;
 };
+
+function etagMatches(header: string | undefined, etag: string): boolean {
+  if (header === undefined) return false;
+  const bare = (value: string) => value.trim().replace(/^W\//, "");
+  return header.split(",").some((candidate) => candidate.trim() === "*" || bare(candidate) === etag);
+}
 
 export class AttachmentReadError extends Error {
   readonly code: string;
@@ -174,6 +183,11 @@ export function createAttachmentReadService(
       await authorize(options, actor, asset, context);
       if (asset.uploadStatus !== "committed") throw notCommittedError();
 
+      const checksumEtag = asset.checksumSha256 === null ? null : `"${asset.checksumSha256}"`;
+      const conditional = input.range === undefined && input.download !== true;
+      if (conditional && checksumEtag !== null && etagMatches(input.ifNoneMatch, checksumEtag)) {
+        return new Response(null, { status: 304, headers: { ETag: checksumEtag } });
+      }
       const range = input.method === "GET" && input.range !== undefined
         ? parseSingleRange(input.range, asset.byteSize)
         : undefined;
@@ -221,7 +235,7 @@ export function createAttachmentReadService(
           status: 200,
           headers: responseHeaders(asset, input.download === true, {
             contentLength: asset.byteSize,
-            etag: safeHeader(upstream.headers.get("etag")),
+            etag: checksumEtag ?? safeHeader(upstream.headers.get("etag")),
             lastModified: safeHeader(upstream.headers.get("last-modified")),
           }),
         });
@@ -259,11 +273,17 @@ export function createAttachmentReadService(
         await cancelBody(upstream);
         throw storageReadError();
       }
+      const storageEtag = safeHeader(upstream.headers.get("etag"));
+      const fullEtag = checksumEtag ?? storageEtag;
+      if (conditional && checksumEtag === null && storageEtag !== null && etagMatches(input.ifNoneMatch, storageEtag)) {
+        await cancelBody(upstream);
+        return new Response(null, { status: 304, headers: { ETag: storageEtag } });
+      }
       return new Response(upstream.body, {
         status: 200,
         headers: responseHeaders(asset, input.download === true, {
           contentLength: asset.byteSize,
-          etag: safeHeader(upstream.headers.get("etag")),
+          etag: fullEtag,
           lastModified: safeHeader(upstream.headers.get("last-modified")),
         }),
       });

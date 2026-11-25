@@ -110,6 +110,36 @@ describe("dashboard static serving", () => {
     await app.close();
   });
 
+  it("revalidates hashless static files such as /characters with ETag, Last-Modified and 304", async () => {
+    const dashboardDir = await createDashboardDirectory();
+    await mkdir(join(dashboardDir, "characters", "seosoyoung"), { recursive: true });
+    await writeFile(join(dashboardDir, "characters", "seosoyoung", "still.png"), "png-bytes");
+    const app = Fastify();
+    await registerDashboardServing(app, { dashboardDir });
+
+    const first = await app.inject("/characters/seosoyoung/still.png");
+    expect(first.statusCode).toBe(200);
+    expect(first.body).toBe("png-bytes");
+    expect(first.headers["cache-control"]).toBe("public, no-cache");
+    const etag = String(first.headers.etag);
+    const lastModified = String(first.headers["last-modified"]);
+    expect(etag).not.toBe("");
+    expect(lastModified).not.toBe("");
+
+    const byEtag = await app.inject({ method: "GET", url: "/characters/seosoyoung/still.png", headers: { "if-none-match": etag } });
+    expect(byEtag.statusCode).toBe(304);
+    expect(byEtag.body).toBe("");
+    const bySince = await app.inject({ method: "GET", url: "/characters/seosoyoung/still.png", headers: { "if-modified-since": lastModified } });
+    expect(bySince.statusCode).toBe(304);
+    const stale = await app.inject({ method: "GET", url: "/characters/seosoyoung/still.png", headers: { "if-none-match": '"other"' } });
+    expect(stale.statusCode).toBe(200);
+
+    const index = await app.inject("/index.html");
+    expect(index.headers["cache-control"]).toBe("no-cache");
+    expect(index.headers.etag).toBeUndefined();
+    await app.close();
+  });
+
   it("warns and leaves static routes unmounted when the dashboard is unset or absent", async () => {
     const warn = vi.fn();
     const app = Fastify();

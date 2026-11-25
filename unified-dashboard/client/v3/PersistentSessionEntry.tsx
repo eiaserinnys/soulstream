@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DashboardIconCap, Popover, PopoverPopup, PopoverTrigger, ProfileAvatar, useAuth, useIsMobile } from '@seosoyoung/soul-ui';
+import { DashboardIconCap, Popover, PopoverPopup, PopoverTrigger, ProfileAvatar, useAgentPortraitUrlResolver, useAuth, useIsMobile } from '@seosoyoung/soul-ui';
 import { ArrowLeftRight } from 'lucide-react';
 import { navigateDashboard } from '../dashboard-navigation';
 import { createPersistentSessionsApi, type PersistentSession, type PersistentSessionList } from '../lib/persistent-sessions';
 import { readPersistentSessionDevicePreferences } from '../lib/persistent-session-device-preferences';
 import { SettingsListRow } from '../components/config/SettingsListDetail';
 
-export function persistentSessionPortrait(nodeId: string | null | undefined, agentId: string | null | undefined) {
-  return nodeId && agentId ? `/api/nodes/${encodeURIComponent(nodeId)}/agents/${encodeURIComponent(agentId)}/portrait` : null;
+export function persistentSessionPortrait(agentId: string | null | undefined, resolvePortrait: (agentId: string | null | undefined) => string) {
+  return resolvePortrait(agentId) || null;
 }
 
 export function PersistentSessionChoiceRow({ session, selected, onSelect }: { session: PersistentSession; selected: boolean; onSelect(): void }) {
-  return <SettingsListRow title={session.display_name ?? '영구 세션'} meta={session.agent_name ?? ''} selected={selected} portrait={<ProfileAvatar role="assistant" shape="circle" hasPortrait portraitUrl={persistentSessionPortrait(session.node_id, session.agent_id)} fallbackEmoji="🤖"/>} onSelect={onSelect}/>;
+  const resolvePortrait = useAgentPortraitUrlResolver();
+  return <SettingsListRow title={session.display_name ?? '영구 세션'} meta={session.agent_name ?? ''} selected={selected} portrait={<ProfileAvatar role="assistant" shape="circle" hasPortrait portraitUrl={persistentSessionPortrait(session.agent_id, resolvePortrait)} fallbackEmoji="🤖"/>} onSelect={onSelect}/>;
 }
 
 export function PersistentSessionSwitch({ sessions, currentSessionId }: { sessions: PersistentSession[]; currentSessionId?: string }) {
@@ -42,7 +43,8 @@ export function PersistentSessionEntry() {
   useEffect(() => { let current = true; void api.list().then(result => { if (current) setListing(result); }).catch(() => { /* Manual entry owns the existing error/retry surface. */ }); return () => { current = false; }; }, [api]);
   const lastId = user?.email ? readPersistentSessionDevicePreferences(user.email).lastSessionId : null;
   const portraitSession = listing?.sessions.find(session => session.session_id === lastId) ?? listing?.sessions[0];
-  const portrait = persistentSessionPortrait(portraitSession?.node_id ?? listing?.create_defaults.node_id, portraitSession?.agent_id ?? listing?.create_defaults.preferred_agent_id);
+  const resolvePortrait = useAgentPortraitUrlResolver();
+  const portrait = persistentSessionPortrait(portraitSession?.agent_id ?? listing?.create_defaults.preferred_agent_id, resolvePortrait);
   const enter = async () => {
     if (entering.current) return;
     entering.current = true;

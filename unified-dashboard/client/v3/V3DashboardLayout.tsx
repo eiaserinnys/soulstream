@@ -7,7 +7,7 @@ import { CardWorkspace } from "./CardWorkspace";
 import type { CardSessionSelection } from "./CardSessionHistory";
 import { useCardNavigation } from "./card-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AskQuestionBanner, DragHandle, FrameLoading, FrameNotice, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type CatalogFolder, type InternalLinkTarget, type SessionSummary } from "@seosoyoung/soul-ui";
+import { AskQuestionBanner, DragHandle, FrameLoading, FrameNotice, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useAgentPortraitSync, useGlassSurface, useUserPreferencesSync, type CatalogFolder, type InternalLinkTarget, type SessionSummary } from "@seosoyoung/soul-ui";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { V3_CARD_GAP_PX, V3_CONTENT_MAX_WIDTH_PX, V3_OUTER_INSET_PX, V3_PANEL_GAP_PX } from "./v3-layout-metrics";
@@ -120,6 +120,7 @@ function V3DashboardContent() {
   const { toast, notify, notifyWriteFailure } = useV3Notifications(refreshAuthStatus);
   const { openTarget: openDashboardLink } = useDashboardInternalLinks();
   useUserPreferencesSync(user?.email ?? null);
+  useAgentPortraitSync();
   const catalogLoadState = useInitialCatalogLoad(true);
   const catalogLoadError = catalogLoadState.status === "authentication"
     || catalogLoadState.status === "forbidden"

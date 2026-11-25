@@ -31,6 +31,7 @@ const realPath = (name) => {
 };
 const REAL_BASH = realPath('bash');
 const REAL_RM = realPath('rm');
+const REAL_STAT = realPath('stat');
 const REAL_SCRIPT = (() => { try { return realPath('script'); } catch { return ''; } })();
 
 export const scriptPath = () => REAL_SCRIPT;
@@ -59,6 +60,8 @@ export function createSandbox(prefix = 'uninstall-') {
     usrLocal: join(dir, 'usr', 'local'),
     log: join(dir, 'var', 'log', 'soulstream-install.log'),
     argvLog: join(dir, 'fake-argv.log'),
+    staffMarker: join(dir, 'etc', 'staff-group-for-usr-local'),
+    owners: join(dir, 'owners'),
   };
   const env = (extra = {}) => ({
     PATH: `${bin}:${tools}`,
@@ -70,6 +73,7 @@ export function createSandbox(prefix = 'uninstall-') {
     FAKE_HOME: home,
     FAKE_USRLOCAL: paths.usrLocal,
     FAKE_REAL_RM: REAL_RM,
+    FAKE_REAL_STAT: REAL_STAT,
     UNINSTALL_SH: uninstallScript,
     INSTALL_SH: installScript,
     UN_HOME: home,
@@ -77,6 +81,8 @@ export function createSandbox(prefix = 'uninstall-') {
     UN_SYSTEMD: paths.systemd,
     UN_USRLOCAL: paths.usrLocal,
     UN_LOG: paths.log,
+    // Never the host's own /etc/staff-group-for-usr-local; a test creates this file to get root:staff.
+    STAFF_MARKER_FILE: paths.staffMarker,
     ...extra,
   });
   const calls = () => (existsSync(paths.argvLog) ? readFileSync(paths.argvLog, 'utf8').split('\n').filter(Boolean) : []);
@@ -101,6 +107,7 @@ export function runBash(sandbox, script, args = [], { extra = {}, timeout = 6000
 
 const RUN_UNINSTALL = `set -uo pipefail
 source "$UNINSTALL_SH"
+STAFF_MARKER=$STAFF_MARKER_FILE
 parse_args "$@"
 run_uninstall "$UN_HOME" "$UN_RECEIPT" "$UN_SYSTEMD" "$UN_USRLOCAL" "$UN_LOG"
 `;
@@ -184,6 +191,17 @@ export const serveConfig = ({ extra443 = {}, extra8443 = {}, host = 'node.tailne
     [`${host}:8443`]: { Handlers: { '/': { Proxy: 'http://127.0.0.1:4200' }, ...extra8443 } },
   },
 });
+
+// Sets who owns a path in the fake owner table that the fake stat, find and chown share ("user:group").
+export function setOwner(sandbox, path, owner) {
+  const lines = existsSync(sandbox.owners) ? readFileSync(sandbox.owners, 'utf8').split('\n').filter((line) => line && !line.startsWith(`${path} `)) : [];
+  writeFileSync(sandbox.owners, `${[...lines, `${path} ${owner}`].join('\n')}\n`);
+}
+// What the fake owner table says now: { path: 'user:group' } for every path that is not root:root.
+export function ownerTable(sandbox) {
+  if (!existsSync(sandbox.owners)) return {};
+  return Object.fromEntries(readFileSync(sandbox.owners, 'utf8').split('\n').filter(Boolean).map((line) => [line.slice(0, line.lastIndexOf(' ')), line.slice(line.lastIndexOf(' ') + 1)]));
+}
 
 // Everything under a directory, as relative paths, with symbolic links listed too.
 export function listTree(root) {

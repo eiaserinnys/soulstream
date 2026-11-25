@@ -46,7 +46,7 @@ const CLIENT_SESSION_FIELDS = {
   nodeId: "node-a",
   agentId: "seosoyoung",
   agentName: "서소영",
-  agentPortraitUrl: "/api/nodes/node-a/agents/seosoyoung/portrait",
+  agentPortraitUrl: `/api/agent-portraits/seosoyoung?v=${"9".repeat(64)}`,
   backend: "codex",
   modelPreset: "codex-5.6-sol",
   modelLabel: SESSION_CONTRACT_CASE.expectedOrchResponse.modelLabel,
@@ -182,6 +182,16 @@ function sessionRow(): Record<string, unknown> {
 function createFakeSql(row: Record<string, unknown>): { sql: LivePostgresSql } {
   const query = vi.fn(async (strings: TemplateStringsArray) => {
     const text = strings.join("?");
+    if (text.includes("FROM agent_portraits")) {
+      return [{
+        agent_id: "seosoyoung",
+        portrait_mime: "image/png",
+        portrait_sha256: "9".repeat(64),
+        byte_size: 4,
+        updated_at: new Date("2026-11-25T00:00:00.000Z"),
+        deleted: false,
+      }];
+    }
     if (text.includes("session_count")) return [{ count: 1 }];
     if (text.includes("session_get_all")) return [row];
     return [];

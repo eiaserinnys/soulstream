@@ -100,6 +100,10 @@ import {
   type NodeAgentProfileRouteOptions,
 } from "./node/node_agent_profile_routes.js";
 import {
+  registerAgentPortraitRoutes,
+  type AgentPortraitRouteOptions,
+} from "./node/agent_portrait_routes.js";
+import {
   registerAgentProfileRoutes,
   type AgentProfileRouteOptions,
 } from "./node/agent_profile_routes.js";
@@ -244,6 +248,7 @@ export type CreateAppOptions = {
   agentContextOverviewRoutes?: AgentContextOverviewRouteOptions;
   skillGuidesRoutes?: SkillGuidesRouteOptions;
   agentProfileRoutes?: AgentProfileRouteOptions;
+  agentPortraitRoutes?: AgentPortraitRouteOptions;
   contextBundleRoutes?: ContextBundleRouteOptions;
   nodeWsRoute?: NodeWsRouteOptions;
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
@@ -336,6 +341,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.agentProfileRoutes !== undefined) {
     registerAgentProfileRoutes(app, options.agentProfileRoutes);
+  }
+  if (options.agentPortraitRoutes !== undefined) {
+    registerAgentPortraitRoutes(app, options.agentPortraitRoutes);
   }
   if (options.contextBundleRoutes !== undefined) {
     registerContextBundleRoutes(app, options.contextBundleRoutes);

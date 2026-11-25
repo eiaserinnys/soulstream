@@ -359,6 +359,47 @@ describe("attachment read service", () => {
     expect(await response.text()).toBe("cde");
   });
 
+  it("answers a matching If-None-Match with 304 before opening the object when a checksum exists", async () => {
+    const { service, openObject } = makeService();
+    const actor = { kind: "user", email: "owner@example.com" } as const;
+
+    const hit = await service.content(actor, committedAsset.id, { type: "owner" }, {
+      method: "GET",
+      ifNoneMatch: `"${committedAsset.checksumSha256}"`,
+    });
+    expect(hit.status).toBe(304);
+    expect(hit.headers.get("etag")).toBe(`"${committedAsset.checksumSha256}"`);
+    expect(openObject).not.toHaveBeenCalled();
+
+    const miss = await service.content(actor, committedAsset.id, { type: "owner" }, {
+      method: "GET",
+      ifNoneMatch: '"other"',
+    });
+    expect(miss.status).toBe(200);
+    expect(miss.headers.get("etag")).toBe(`"${committedAsset.checksumSha256}"`);
+    await miss.text();
+  });
+
+  it("falls back to the storage etag when no checksum exists, and ignores If-None-Match for ranges and downloads", async () => {
+    const openObject = vi.fn(async () => new Response("12345678", { headers: { etag: '"stored"' } }));
+    const { service } = makeService({ asset: { ...committedAsset, checksumSha256: null }, read: openObject });
+    const actor = { kind: "user", email: "owner@example.com" } as const;
+
+    const hit = await service.content(actor, committedAsset.id, { type: "owner" }, { method: "GET", ifNoneMatch: '"stored"' });
+    expect(hit.status).toBe(304);
+    expect(hit.headers.get("etag")).toBe('"stored"');
+
+    const full = await service.content(actor, committedAsset.id, { type: "owner" }, { method: "GET" });
+    expect(full.headers.get("etag")).toBe('"stored"');
+    await full.text();
+
+    const download = await service.content(actor, committedAsset.id, { type: "owner" }, {
+      method: "GET", download: true, ifNoneMatch: '"stored"',
+    });
+    expect(download.status).toBe(200);
+    await download.text();
+  });
+
   it("uses a bodyless upstream HEAD and cancels any returned body", async () => {
     const cancel = vi.fn();
     const openObject = vi.fn(async () => new Response(new ReadableStream({ cancel }), {
@@ -381,7 +422,7 @@ describe("attachment read service", () => {
     expect(response.status).toBe(200);
     expect(response.body).toBeNull();
     expect(response.headers.get("content-length")).toBe("8");
-    expect(response.headers.get("etag")).toBe('"stored-etag"');
+    expect(response.headers.get("etag")).toBe('"sha256"');
     expect(cancel).toHaveBeenCalledOnce();
   });
 

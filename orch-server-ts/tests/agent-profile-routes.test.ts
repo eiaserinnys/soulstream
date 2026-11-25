@@ -13,6 +13,8 @@ import {
   type AgentProfileRecord,
   type AgentProfileRepository,
 } from "../src/index.js";
+import type { AgentPortraitRepository } from "../src/node/agent_portrait_model.js";
+import { createFakeAgentPortraits } from "./fake_agent_portraits.js";
 
 const EXPECTED_PORTRAIT_MAX_BYTES = 5 * 1024 * 1024;
 const ROSELIN_PORTRAIT_BYTES = 2_186_900;
@@ -53,9 +55,6 @@ function repository(overrides: Partial<AgentProfileRepository> = {}): AgentProfi
     get: vi.fn(async () => profile),
     put: vi.fn(async () => profile),
     delete: vi.fn(async () => true),
-    getPortrait: vi.fn(async () => null),
-    putPortrait: vi.fn(async () => ({ ...profile, hasPortrait: true, version: 2 })),
-    deletePortrait: vi.fn(async () => profile),
     ...overrides,
   };
 }
@@ -81,8 +80,9 @@ function registerRoutes(
   app: ReturnType<typeof Fastify>,
   profiles = repository(),
   contextBundles = bundles(),
+  portraits: AgentPortraitRepository = createFakeAgentPortraits(),
 ): void {
-  registerAgentProfileRoutes(app, { repository: profiles, bundleRepository: contextBundles });
+  registerAgentProfileRoutes(app, { repository: profiles, bundleRepository: contextBundles, portraits });
 }
 
 describe("agent profile DB routes", () => {
@@ -265,9 +265,10 @@ describe("agent profile DB routes", () => {
   });
 
   it("accepts the observed 2,916,002-byte portrait import payload", async () => {
-    const putPortrait = vi.fn(async () => ({ ...profile, hasPortrait: true, version: 2 }));
+    const portraits = createFakeAgentPortraits();
+    const putPortrait = vi.spyOn(portraits, "put");
     const app = Fastify();
-    registerRoutes(app, repository({ putPortrait }));
+    registerRoutes(app, repository(), bundles(), portraits);
     const payload = portraitPayload(syntheticPng(ROSELIN_PORTRAIT_BYTES));
 
     expect(Buffer.byteLength(JSON.stringify(payload), "utf8")).toBe(2_916_002);

@@ -3,6 +3,7 @@ import {
   getSessionActivityTimestamp,
   ProfileAvatar,
   STATUS_CONFIG,
+  useAgentPortraitUrlResolver,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { RunRowFrame, type RunRowAction } from "./RunRowFrame";
@@ -44,7 +45,8 @@ export function RichSessionRow({
       : (STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown).label;
   const presentationStatus = failed ? "failed" : nodeOffline ? "offline" : session.status;
   const modelLabel = failed ? null : sessionModelLabel(session);
-  const portraitUrl = failed ? null : sessionPortraitUrl(session);
+  const resolvePortrait = useAgentPortraitUrlResolver();
+  const portraitUrl = failed ? null : sessionPortraitUrl(session, resolvePortrait);
   const visiblePreview = failed
     ? "세션 정보를 불러오지 못했습니다."
     : preview ?? singleLinePreview(
@@ -83,10 +85,12 @@ export function sessionModelLabel(
     .join(" ");
 }
 
-function sessionPortraitUrl(session: SessionSummary): string | null {
+function sessionPortraitUrl(
+  session: SessionSummary,
+  resolvePortrait: (agentId: string | null | undefined) => string,
+): string | null {
   if (session.agentPortraitUrl) return session.agentPortraitUrl;
-  if (!session.nodeId || !session.agentId) return null;
-  return `/api/nodes/${encodeURIComponent(session.nodeId)}/agents/${encodeURIComponent(session.agentId)}/portrait`;
+  return resolvePortrait(session.agentId) || null;
 }
 
 function runNumberLabel(runNumber: number | null): string {

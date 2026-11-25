@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { PRIVATE_NO_CACHE, ifNoneMatchHit } from "../http/conditional_cache.js";
 import {
   AGENT_PROFILE_PORTRAIT_MAX_BYTES,
   AGENT_PROFILE_PORTRAIT_UPLOAD_BODY_LIMIT_BYTES,
@@ -8,6 +9,7 @@ import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import type { ContextBundleRecord, ContextBundleRepository } from "./context_bundle_routes.js";
+import { projectAgentPortrait, type AgentPortraitRepository } from "./agent_portrait_model.js";
 import { parseAtomContexts, type AgentAtomContext, type AtomContextsParse } from "./atom_contexts.js";
 
 export type { AgentAtomContext } from "./atom_contexts.js";
@@ -35,13 +37,6 @@ export type AgentProfileRecord = {
   readonly updatedAt: string;
 };
 
-export type AgentPortraitRecord = {
-  readonly body: Buffer;
-  readonly mime: SupportedPortraitMime;
-  readonly sha256: string;
-  readonly version: number;
-};
-
 export type AgentProfileWrite = {
   readonly agentId: string;
   readonly name: string;
@@ -62,26 +57,12 @@ export type AgentProfilePatch = {
   readonly expectedVersion: number | null;
 };
 
-export type AgentPortraitWrite = {
-  readonly agentId: string;
-  readonly body: Buffer;
-  readonly mime: SupportedPortraitMime;
-  readonly sha256: string;
-  readonly expectedVersion: number;
-};
-
 export type AgentProfileRepository = {
   readonly snapshot: () => readonly AgentProfileRecord[];
   readonly list: () => Promise<readonly AgentProfileRecord[]>;
   readonly get: (agentId: string) => Promise<AgentProfileRecord | null>;
   readonly put: (input: AgentProfileWrite) => Promise<AgentProfileRecord>;
   readonly delete: (agentId: string, expectedVersion: number) => Promise<boolean>;
-  readonly getPortrait: (agentId: string) => Promise<AgentPortraitRecord | null>;
-  readonly putPortrait: (input: AgentPortraitWrite) => Promise<AgentProfileRecord>;
-  readonly deletePortrait: (
-    agentId: string,
-    expectedVersion: number,
-  ) => Promise<AgentProfileRecord | null>;
 };
 
 export class AgentProfileVersionConflictError extends Error {
@@ -94,6 +75,8 @@ export class AgentProfileVersionConflictError extends Error {
 export type AgentProfileRouteOptions = {
   readonly repository: AgentProfileRepository;
   readonly bundleRepository: ContextBundleRepository;
+  /** 초상의 정본. 프로필 행의 portrait_* 칸은 읽지도 쓰지도 않는다. */
+  readonly portraits: AgentPortraitRepository;
 };
 
 export const supportedPortraitMimes = [
@@ -174,40 +157,34 @@ export function registerAgentProfileRoutes(
   });
 
   app.get<{ Params: AgentParams }>("/api/agent-profiles/:agent_id/portrait", async (request, reply) => {
-    const portrait = await options.repository.getPortrait(agentId(request));
-    if (portrait === null) return reply.code(204).send();
-    return reply
-      .header("Cache-Control", "public, max-age=3600")
-      .header("ETag", `\"${portrait.sha256}\"`)
-      .type(portrait.mime)
-      .send(portrait.body);
+    await options.portraits.ready();
+    const summary = options.portraits.summary(agentId(request));
+    const portrait = summary === null ? null : await options.portraits.get(summary.agentId);
+    if (summary === null || portrait === null) return reply.code(204).send();
+    const etag = `"${summary.sha256}"`;
+    reply.header("ETag", etag).header("Cache-Control", PRIVATE_NO_CACHE);
+    if (ifNoneMatchHit(request.headers["if-none-match"], etag)) return reply.code(304).send();
+    return reply.type(summary.mime).send(portrait.body);
   });
 
   app.put<{ Params: AgentParams }>(
     "/api/agent-profiles/:agent_id/portrait",
     { bodyLimit: AGENT_PROFILE_PORTRAIT_UPLOAD_BODY_LIMIT_BYTES },
     async (request, reply) => {
-      const parsed = parsePortraitWrite(agentId(request), request.body);
+      const parsed = parsePortraitBytes(request.body);
       if (!parsed.ok) return reply.code(422).send({ detail: parsed.error });
-      try {
-        const profile = await options.repository.putPortrait(parsed.value);
-        return reply.send(projectProfile(profile, await loadBundlesById()));
-      } catch (error) {
-        return sendRepositoryError(reply, error);
-      }
+      await options.portraits.ready();
+      const summary = await options.portraits.put({ agentId: agentId(request), ...parsed.value });
+      const profile = await options.repository.get(summary.agentId);
+      return reply.send(profile === null ? projectAgentPortrait(summary) : projectProfile(profile, await loadBundlesById()));
     },
   );
 
   app.delete<{ Params: AgentParams }>("/api/agent-profiles/:agent_id/portrait", async (request, reply) => {
-    const version = expectedVersion(request.body);
-    if (!version.ok) return reply.code(422).send({ detail: version.error });
-    try {
-      const profile = await options.repository.deletePortrait(agentId(request), version.value);
-      if (profile === null) return reply.code(404).send({ detail: "Agent profile not found" });
-      return reply.send(projectProfile(profile, await loadBundlesById()));
-    } catch (error) {
-      return sendRepositoryError(reply, error);
-    }
+    await options.portraits.ready();
+    await options.portraits.remove(agentId(request));
+    const profile = await options.repository.get(agentId(request));
+    return profile === null ? reply.code(204).send() : reply.send(projectProfile(profile, await loadBundlesById()));
   });
 }
 
@@ -342,12 +319,13 @@ function parseProfileWrite(agentIdValue: string, body: unknown): AtomContextsPar
   return resolveAgentProfileWrite(agentIdValue, patch.value, null);
 }
 
-function parsePortraitWrite(agentIdValue: string, body: unknown): AtomContextsParse<AgentPortraitWrite> {
+export type PortraitBytes = { readonly body: Buffer; readonly mime: SupportedPortraitMime; readonly sha256: string };
+
+/** 초상 PUT 본문의 검사. 중앙 초상 저장소와 옛 프로필 초상 주소가 같이 쓴다. expected_version은 받아도 무시한다. */
+export function parsePortraitBytes(body: unknown): AtomContextsParse<PortraitBytes> {
   if (!isRecord(body)) return invalid("Request body must be an object");
   if (typeof body.data_base64 !== "string" || body.data_base64.length === 0) return invalid("data_base64 is required");
   if (!supportedPortraitMimes.includes(body.mime as SupportedPortraitMime)) return invalid("mime is not supported");
-  const version = positiveInteger(body.expected_version, "expected_version");
-  if (!version.ok) return version;
   const decoded = Buffer.from(body.data_base64, "base64");
   if (decoded.length === 0 || decoded.toString("base64").replace(/=+$/, "") !== body.data_base64.replace(/=+$/, "")) {
     return invalid("data_base64 is invalid");
@@ -359,7 +337,7 @@ function parsePortraitWrite(agentIdValue: string, body: unknown): AtomContextsPa
   if (detectPortraitMime(decoded) !== mime) return invalid("mime does not match portrait bytes");
   const sha256 = createHash("sha256").update(decoded).digest("hex");
   if (body.sha256 !== undefined && body.sha256 !== sha256) return invalid("sha256 does not match portrait bytes");
-  return { ok: true, value: { agentId: agentIdValue, body: decoded, mime, sha256, expectedVersion: version.value } };
+  return { ok: true, value: { body: decoded, mime, sha256 } };
 }
 
 function parseContextBundleIds(value: unknown): AtomContextsParse<string[]> {
@@ -408,7 +386,7 @@ function parseAliases(value: unknown): AtomContextsParse<AgentAlias[]> {
   return { ok: true, value: aliases };
 }
 
-function detectPortraitMime(data: Buffer): SupportedPortraitMime | null {
+export function detectPortraitMime(data: Buffer): SupportedPortraitMime | null {
   if (data.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))) return "image/png";
   if (data.subarray(0, 2).equals(Buffer.from([0xff, 0xd8]))) return "image/jpeg";
   if (data.subarray(0, 4).toString() === "RIFF" && data.subarray(8, 12).toString() === "WEBP") return "image/webp";

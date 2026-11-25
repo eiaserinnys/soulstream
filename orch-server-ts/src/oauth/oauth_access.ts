@@ -125,6 +125,9 @@ export function oauthScopeForRoute(method: string, pathname: string): OAuthScope
   if (upper === "GET" && (path === "/api/nodes"
     || /^\/api\/nodes\/[^/]+\/agents$/.test(path)
     || /^\/api\/nodes\/[^/]+\/model-presets$/.test(path)
+    || path === "/api/agent-portraits"
+    || /^\/api\/agent-portraits\/[^/]+$/.test(path)
+    || /^\/api\/agents\/[^/]+\/portrait$/.test(path)
     || /^\/api\/nodes\/[^/]+\/agents\/[^/]+\/portrait$/.test(path))) return "agents:read";
   if (upper !== "GET") return null;
   if (path === "/api/usage/summary" || path === "/api/usage/stream") return "usage:read";
