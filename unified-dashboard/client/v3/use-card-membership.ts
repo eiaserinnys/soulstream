@@ -9,7 +9,7 @@ const immediateSources=["folder","catalog","replay"] as const;
 const currentImmediateRevision=()=>selectV3InvalidationKey(getV3InvalidationSnapshot(),immediateSources);
 
 /** Authorized list membership is local to the web scope, independent of cached details. */
-export function useCardMembership(folderId?:string,createdIds:readonly string[]=[]) {
+export function useCardMembership(folderId?:string,createdIds:readonly string[]=[],enabled=true) {
   const cardRevision=useV3InvalidationKey(["card"]);
   const immediateRevision=useV3InvalidationKey(immediateSources);
   const localRevision=useCardStore(state=>state.localRevision);
@@ -20,6 +20,8 @@ export function useCardMembership(folderId?:string,createdIds:readonly string[]=
   useEffect(()=>{
     let active=true,running=false,dirty=false;
     let timer:ReturnType<typeof setTimeout>|undefined;
+    // 견본처럼 목록을 따로 받는 호출은 서버에 묻지 않는다.
+    if(!enabled){setMembership(null);setError(null);refresh.current=()=>{};schedule.current=()=>{};return;}
     const unregister=folderId ? undefined : useCardStore.getState().registerGlobalList();
     setMembership(null);setError(null);
     const scheduleLoad=()=>{
@@ -77,7 +79,7 @@ export function useCardMembership(folderId?:string,createdIds:readonly string[]=
     schedule.current=scheduleLoad;
     void load();
     return ()=>{active=false;if(timer!==undefined)clearTimeout(timer);unregister?.();};
-  },[folderId]);
+  },[folderId,enabled]);
   const previousRevision=useRef({cardRevision,immediateRevision,localRevision});
   useEffect(()=>{
     const previous=previousRevision.current;

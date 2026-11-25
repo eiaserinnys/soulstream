@@ -10,7 +10,7 @@ import { usePersistentReportSend } from './usePersistentReportSend';
 import { useReportDeckHeight } from './useReportDeckHeight';
 import { usePersistentCardCompletion, type CardTransition } from './usePersistentCardCompletion';
 import { UndoCountdownRing } from './UndoCountdownRing';
-import { ChevronLeft, ChevronRight, Link, Maximize2, Minimize2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Link, Maximize2, Minimize2, PanelRightOpen } from 'lucide-react';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import { cardRequest } from '@seosoyoung/soul-ui/cards/card-api';
 import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';
@@ -20,13 +20,17 @@ import './persistent-report.css';
 export type ReportBubbleSeat = { target: HTMLElement | null; layout: PersistentSessionReportBubbleLayout | null; body: PersistentSessionRect | null; ready?: boolean; inlineWidth?: number; inlineMaxHeight?: number };
 /** 카드 #1197: 질문 장은 본문과 동작 줄을 질문 부품이 그린다. */
 export type ReportQuestionView = { body: React.ReactNode; actions: React.ReactNode; meta?: React.ReactNode };
+/** 말풍선 머리줄의 「보고 창 열기」가 여는 결재형 보고 창. 창은 판의 장과 완료 훅을 그대로 넘겨받는다. */
+export type ReportWindowProps = { open: boolean; onClose(): void; openTriggerRef: React.RefObject<HTMLElement | null>; entries: PersistentReportEntry[]; startCardId: string | null; completion: ReturnType<typeof usePersistentCardCompletion>; dismissReport: (key: string) => Promise<void> };
 export type ReportQuestionControls = { expanded: boolean; expand(): void; reply(option: string): Promise<boolean>; hold(option: string): void; confirm(): void; release(): void; answer?: string; pending: boolean };
-type Props = { renderQuestion?(entry: PersistentReportEntry, controls: ReportQuestionControls): ReportQuestionView | null; renderCardDetails?(entry: PersistentReportEntry, lookupCards: () => Promise<void>): React.ReactNode; renderCardStatus?(entry: PersistentReportEntry): React.ReactNode; sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention; cardTransition?: CardTransition; completion?: ReturnType<typeof usePersistentCardCompletion> };
+type Props = { renderQuestion?(entry: PersistentReportEntry, controls: ReportQuestionControls): ReportQuestionView | null; renderCardDetails?(entry: PersistentReportEntry, lookupCards: () => Promise<void>): React.ReactNode; renderCardStatus?(entry: PersistentReportEntry): React.ReactNode; renderReportWindow?(props: ReportWindowProps): React.ReactNode; sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention; cardTransition?: CardTransition; completion?: ReturnType<typeof usePersistentCardCompletion> };
 type ReportCardEntry = PersistentReportEntry & { card_id?: string; card_status?: string };
 const LINK_FOCUS = 'rounded-floor outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
 
-export function PersistentReportDeck({ sessionId, focusInput, dismissReport, notify, disabled = false, seat, transport, renderQuestion, renderCardDetails, renderCardStatus, cardTransition, completion: providedCompletion }: Props) {
+export function PersistentReportDeck({ sessionId, focusInput, dismissReport, notify, disabled = false, seat, transport, renderQuestion, renderCardDetails, renderCardStatus, renderReportWindow, cardTransition, completion: providedCompletion }: Props) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [windowStart, setWindowStart] = useState<{ cardId: string | null } | null>(null);
+  const windowTrigger = useRef<HTMLElement | null>(null);
   const [localVisibleKey, setLocalVisibleKey] = useState<string | null>(null);
   const report = usePersistentReport()!;
   const { entries: rawEntries, visibleKey } = report;
@@ -138,7 +142,8 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
     if (sheet) sheet.focus({ preventScroll: true });
   }, [effectiveVisibleKey, entries.length, focusInput]);
 
-  if (!ready || (!entries.length && !completion.recent)) return null;
+  const windowNode = renderReportWindow?.({ open: windowStart !== null, onClose: () => setWindowStart(null), openTriggerRef: windowTrigger, entries, startCardId: windowStart?.cardId ?? null, completion, dismissReport }) ?? null;
+  if (!ready || (!entries.length && !completion.recent)) return windowNode;
   // The global reduced-motion duration must not interpolate the initial font
   // gate's opacity or measured height for a frame.
   const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} data-inline-max-height={inlineMaxHeight !== undefined || undefined} data-overflow={sizing.overflowing} data-undo={Boolean(completion.recent) || undefined} style={{ transitionProperty: 'none', opacity: sizing.waitingForFont ? 0 : undefined, height: sizing.height, maxHeight: bubble?.maxHeight, ...(inlineMaxHeight !== undefined ? { '--pas-report-inline-max-height': `${inlineMaxHeight}px` } : {}), ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}
@@ -193,13 +198,15 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
             node.dataset.more = String(node.scrollHeight - node.scrollTop - node.clientHeight > 1);
           }} ref={node => { if (node) node.dataset.more = String(node.scrollHeight - node.scrollTop - node.clientHeight > 1); }}>
             <div className="pas-report-content">
-              <div className="pas-report-heading" data-window={expandable || undefined}>
+              <div className="pas-report-heading" data-window={expandable || Boolean(renderReportWindow) || undefined}>
                 <div className="pas-report-heading-main">
                   <h2 className="pas-report-title">{expandable ? <button type="button" className="pas-report-expand" aria-expanded={expanded} onClick={toggle}>{entry.title}</button> : entry.title}</h2>
                   {entry.card_numbers.map(number => <ReportCardLink key={number} number={number} pending={pendingCardNumbers} lookupCards={lookupCards} />)}
                   {renderCardStatus?.(entry)}
                   {question?.meta}
                 </div>
+                {renderReportWindow && <DashboardIconCap size="small" className="pas-report-window" label="보고 창 열기" data-testid="pas-report-open-window"
+                  onClick={event => { windowTrigger.current = event.currentTarget; setWindowStart({ cardId: cardEntry.card_id ?? null }); }}><PanelRightOpen className="h-4 w-4" aria-hidden="true" /></DashboardIconCap>}
                 {expandable && <DashboardIconCap size="small" className="pas-report-window" label={expanded ? '축소' : '확대'} aria-expanded={expanded} onClick={toggle}>
                   {expanded ? <Minimize2 className="h-4 w-4" aria-hidden="true" /> : <Maximize2 className="h-4 w-4" aria-hidden="true" />}
                 </DashboardIconCap>}
@@ -242,7 +249,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
     </div>}
     {bubble && <i aria-hidden="true" className="pas-report-tail" data-direction={bubble.tailDirection} />}
   </section>;
-  return bubble && seat?.target ? createPortal(deck, seat.target) : deck;
+  return <>{bubble && seat?.target ? createPortal(deck, seat.target) : deck}{windowNode}</>;
 }
 
 function ReportCardLink({ number, pending, lookupCards }: { number: number; pending: Set<number>; lookupCards: () => Promise<void> }) {
