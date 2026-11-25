@@ -2,7 +2,7 @@
 
 **Soulstream is a personal workspace for your coding agents.** Hand work to Claude Code, Codex, and other agents, follow the progress and results of many tasks in one place, and pick up where you left off in the next conversation.
 
-> **Public beta.** Soulstream runs on your own server: a fresh Debian 13 (`x86_64`) machine with root access. The dashboard is in Korean for now.
+> **Public beta.** Soulstream runs on your own server: a fresh Debian 13 (`x86_64`) machine with root access. The dashboard is in Korean for now. Read [Before you install](#before-you-install) first.
 
 ![Soulstream dashboard](docs/screenshots/dashboard.png)
 
@@ -27,6 +27,12 @@ flowchart LR
 ![Card detail in review with check items, recorded results, and the linked review session](docs/screenshots/card-detail.png)
 
 ## Install
+
+### Before you install
+
+- **Who it is for.** You should be comfortable running a Linux server: preparing it, connecting over SSH, and reading service logs with `journalctl`. You also recover from a failed update yourself.
+- **Agents have broad access.** With the installed settings, Claude, Codex, and Antigravity run as the `soulstream` user with no approval prompts. They can edit any file that account can reach and run commands. Session isolation is off by default. Install on a dedicated server or VM that holds no other data.
+- **Updates can leave services stopped.** If an update fails after it stops the services, they stay stopped until you fix the cause and run the same command again. Databases do not roll back automatically. For details, see [Security and permissions](docs/guide/installation.md#security-and-permissions).
 
 Run the one-line installer as `root` on a fresh Debian 13 (`x86_64`) server. The recommended size is at least 2 vCPU, 4 GB RAM, and 40 GB disk.
 
