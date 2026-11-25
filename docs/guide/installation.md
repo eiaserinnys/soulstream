@@ -23,14 +23,15 @@ Administrator password options (shared by the Soulstream dashboard and atom):
 On one server, the installer sets up:
 
 - Soulstream (dashboard, orchestrator, and worker).
-- atom, a knowledge tree for instructions and skills (`/home/soulstream/atom`, loopback port `4200`).
+- atom, a knowledge tree for instructions and skills (`/home/soulstream/atom`, loopback port `4200`), with its own PostgreSQL database and API key.
 - Starter instructions and skills in atom.
 - Default agent profiles `seosoyoung` and `seosoyoung-pas`.
 - One default profile per selected backend (`claude-default`, `codex-default`, `antigravity-default`), plus `card-orchestrator` when you select `claude`.
+- Three systemd services, enabled and started: `soulstream-atom.service`, `soulstream-orch.service`, and `soulstream-worker.service`.
 
 The installer installs required packages, creates the `soulstream` user, sets up Node.js, the selected CLIs, and PostgreSQL, and clones Soulstream and atom. It builds and starts atom, issues an API key, loads starter instructions, then configures Soulstream, builds it, initializes the schema, and starts it under systemd. It creates the local workspace folder and checks service connectivity and authentication. The log is `/var/log/soulstream-install.log`.
 
-Starter instructions load once, on a fresh install; reruns and updates never change existing atom instructions. Warnings under `Atom instructions:` mean:
+Starter instructions load once, on a fresh install, when the atom tree is empty. Reruns and updates never overwrite instructions you edited in atom, and new starter items are not added to existing installations. Warnings under `Atom instructions:` mean:
 
 - The atom tree already existed, so starter instructions were not loaded.
 - A seed card changed after creation, so it was kept unchanged.
@@ -47,15 +48,15 @@ After installation, open **Settings > Coding agents** (`설정 > 코딩 에이�
 
 If you cannot use the dashboard, sign in over SSH: run `sudo -Hu soulstream /usr/local/bin/codex login --device-auth` for Codex, or run `~/.local/bin/agy` as `soulstream` for Antigravity and exit with `/exit`. Presets update within five minutes after SSH login, and the finish output prints a manual refresh command. Claude has no SSH login flow.
 
-Forward both ports over SSH to open the dashboard and atom locally:
+In the default password mode, both services listen on `127.0.0.1` only. Forward both ports over SSH to open the dashboard and atom locally:
 
 ```bash
 ssh -L 127.0.0.1:5200:127.0.0.1:5200 -L 127.0.0.1:4200:127.0.0.1:4200 <user>@<server>
 ```
 
-Open Soulstream at `http://127.0.0.1:5200` and atom at `http://127.0.0.1:4200` with the same administrator password. Use the password you entered during installation (or the generated one shown once on your terminal); if you installed non-interactively or need to look it up later, read it on the server with `sudo cat /home/soulstream/soulstream/.admin-password`. The atom button (`atom 열기`) in the dashboard toolbar also opens atom (`ATOM_PUBLIC_URL`) in a new tab.
+Open Soulstream at `http://127.0.0.1:5200` and atom at `http://127.0.0.1:4200` with the same administrator password. Use the password you entered during installation (or the generated one shown once on your terminal); if you installed non-interactively or need to look it up later, read it on the server with `sudo cat /home/soulstream/soulstream/.admin-password`. The atom button (`atom 열기`) in the global dashboard toolbar also opens atom (`ATOM_PUBLIC_URL`) in a new browser tab.
 
-In a new browser, the dashboard opens the persistent assistant session view (`/persistent`) by default; turn this off in **Settings > Appearance** (`설정 > 화면과 읽기`). The installer sets `PERSISTENT_SESSION_BOOTSTRAP=true`, so the dashboard creates one default persistent session (`seosoyoung-pas`) when you connect the first coding agent.
+In a new browser, the dashboard opens the persistent assistant session view (`/persistent`) by default. You can change this in **Settings > Appearance** (`설정 > 화면과 읽기`). The installer sets `PERSISTENT_SESSION_BOOTSTRAP=true`, so when you connect the first coding agent, the dashboard creates one default persistent session (`seosoyoung-pas`) and opens it.
 
 ### Updating
 
@@ -81,7 +82,7 @@ Non-interactive rotation from a root-owned `0600` file:
 bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex --admin-password-file /root/.soulstream-pass'
 ```
 
-The installer validates the new password before stopping services. Once services stop, it writes `/home/soulstream/soulstream/.admin-password` first, then updates `/home/soulstream/atom/.env` and restarts `soulstream-atom`, verifies atom seed access, and in password mode updates `/home/soulstream/soulstream/.env.orch`, restarts `soulstream-orch`, and verifies dashboard login. If a later step fails, re-running the installer picks up the new password from `.admin-password` and finishes updating the remaining files. Do not edit only one `.env` file by hand.
+The command also updates the server to the latest version, and the new password applies to both the dashboard and atom right away. The installer validates the new password before stopping services. Once services stop, it writes `/home/soulstream/soulstream/.admin-password` first, then updates `/home/soulstream/atom/.env` and restarts `soulstream-atom`, verifies atom seed access, and in password mode updates `/home/soulstream/soulstream/.env.orch`, restarts `soulstream-orch`, and verifies dashboard login. If a later step fails, re-running the installer picks up the new password from `.admin-password` and finishes updating the remaining files. Do not edit only one `.env` file by hand.
 
 ### Tailscale Serve
 

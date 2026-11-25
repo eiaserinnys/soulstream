@@ -56,7 +56,7 @@ pnpm --dir unified-dashboard test:e2e:chat-ui
 pnpm --dir unified-dashboard test:e2e:pas-report
 ```
 
-To regenerate the synthetic demo screenshots in `docs/screenshots/` used by the root `README.md`:
+The screenshots in `docs/screenshots/` (used by the root `README.md` and [Concepts](concepts.md)) show demo data served by a Playwright fixture, not a real installation. Regenerate them with:
 
 ```bash
 pnpm --dir unified-dashboard capture:readme

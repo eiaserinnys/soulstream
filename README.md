@@ -1,33 +1,32 @@
 # Soulstream
 
+**Soulstream is a personal workspace for your coding agents.** Hand work to Claude Code, Codex, and other agents, follow the progress and results of many tasks in one place, and pick up where you left off in the next conversation.
+
+> **Public beta.** Soulstream runs on your own server: a fresh Debian 13 (`x86_64`) machine with root access. The dashboard is in Korean for now.
+
 ![Soulstream dashboard](docs/screenshots/dashboard.png)
 
-**Soulstream is a self-hosted control plane for running coding agents as an ongoing service.** It combines a live operations dashboard, durable work cards and sessions, multi-node execution, and agent-facing MCP tools in one system.
+The screenshots use demo data.
 
-Instead of treating an agent as a terminal process that disappears after one prompt, Soulstream gives it a durable workspace. Sessions stream in real time, folders and cards carry context across turns, workers run across multiple machines, and the central control plane keeps canonical history in PostgreSQL.
+## How it works
 
-## What Soulstream does
+```mermaid
+flowchart LR
+  Ask["You ask for work in a conversation"] --> Card["A card holds the request and check items"]
+  Card --> Session["An agent session (Claude Code, Codex, and others) does the work"]
+  Session --> Results["Progress, results, and evidence collect on the card"]
+  Results --> Review["You review: complete the card or ask for fixes"]
+  Review --> Next["The next conversation continues from the same context"]
+```
 
-- **Long-lived agent sessions** with live streaming output, follow-up messages, mid-turn intervention, file attachments, and resumable history.
-- **Structured work cards** inside hierarchical folders, tracking the request, check items with evidence, a one-line status (`now`), user questions, and review completion.
-- **Persistent assistant sessions** with a live report board, active task lists, session monitoring, and weekly quota headroom.
-- **Five execution backends** configured through node-local agent profiles and model presets: Claude, Codex, OpenAI Agents, Antigravity, and OpenCode.
-- **Multi-node routing** where the TypeScript orchestrator (`orch-server-ts`) dispatches authenticated WebSocket commands to TypeScript workers (`soul-server-ts`).
-- **Built-in MCP tools** for service reflection, session search, git worktrees, on-demand skill loading (`load_skill`), recurring jobs, and card or folder management.
-- **Release-safe operations** with [Haniel](https://github.com/eiaserinnys/haniel) manifests that keep PostgreSQL migration authority on the central orchestrator while remote workers stay database-free.
-
-## Interface previews
+- **Hand off work.** What you ask for becomes a card with check items, and an agent session does the work.
+- **See it all in one place.** The report board lists active and recently completed cards next to the assistant chat, and session output streams live.
+- **Review with evidence.** Each check item carries its result and evidence. You complete the card, or send a comment or follow-up message to ask for fixes.
+- **Keep going later.** Cards, session history, and the instructions stored in atom stay in place, so the next conversation picks up with the same context.
 
 ![Card detail in review with check items, recorded results, and the linked review session](docs/screenshots/card-detail.png)
 
-<p>
-  <img src="docs/screenshots/persistent-session.png" alt="Persistent assistant session with the report board and chat" width="74.5%">
-  <img src="docs/screenshots/mobile.png" alt="The same persistent session on a phone-sized screen" width="21.5%">
-</p>
-
-The screenshots use demo data served by a Playwright fixture. Regenerate them with `pnpm --dir unified-dashboard capture:readme`.
-
-## Quick install on a fresh Linux server
+## Install
 
 Run the one-line installer as `root` on a fresh Debian 13 (`x86_64`) server. The recommended size is at least 2 vCPU, 4 GB RAM, and 40 GB disk.
 
@@ -35,24 +34,15 @@ Run the one-line installer as `root` on a fresh Debian 13 (`x86_64`) server. The
 bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl/certs/ca-certificates.crt) || (apt-get update && apt-get install -y curl ca-certificates); tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex'
 ```
 
-`--backends` takes a comma-separated list of `claude`, `codex`, and `antigravity`. The default is `claude,codex`, and the first backend becomes the backend for the default `seosoyoung` and `seosoyoung-pas` profiles. For `--ref`, `--atom-ref`, `--tailscale`, and the other options, see [Installation](docs/guide/installation.md).
+`--backends` takes a comma-separated list of `claude`, `codex`, and `antigravity` (default: `claude,codex`). The first one is the backend for the default profiles. For `--ref`, `--atom-ref`, `--tailscale`, and the other options, see [Installation](docs/guide/installation.md).
 
-On an interactive terminal, a fresh install prompts for the shared Soulstream and atom administrator password before installing packages (press Enter to generate one and display it once at the end). For non-interactive runs, pass `--admin-password-file <path>`; to change an existing password later, re-run with `--set-admin-password` or `--admin-password-file <path>` ([how to change it](docs/guide/installation.md#changing-the-administrator-password)).
+On an interactive terminal, the installer asks for the administrator password that Soulstream and atom share (press Enter to generate one and see it once at the end). For non-interactive runs, pass `--admin-password-file <path>`. To change the password later, see [how to change it](docs/guide/installation.md#changing-the-administrator-password).
 
-### What gets installed
-
-On one server, the installer sets up:
-
-- The Soulstream web dashboard and orchestrator (`orch-server-ts`).
-- An execution worker (`soul-server-ts`).
-- atom, a knowledge tree that holds instructions and skills, with its own PostgreSQL database and API key.
-- Starter instructions and skills, loaded into atom.
-- Default agent profiles: `seosoyoung`, `seosoyoung-pas`, one `<backend>-default` profile per selected backend, and `card-orchestrator` when you select `claude`.
-- Three systemd services, enabled and started: `soulstream-atom.service`, `soulstream-orch.service`, and `soulstream-worker.service`.
-
-Ports, paths, logs, and generated files are covered in [Installation](docs/guide/installation.md) and [Configuration](docs/guide/configuration.md).
+The installer sets up the dashboard and orchestrator, an execution worker, atom (a knowledge tree for instructions and skills), PostgreSQL, and three systemd services. [Installation](docs/guide/installation.md#linux-one-line-installer) lists everything it installs.
 
 ### After installing
+
+Three steps, in order.
 
 #### Open the dashboard and atom
 
@@ -86,76 +76,21 @@ Sign in as the administrator, then open **Settings > Coding agents** (`설정 > 
 
 If you cannot use the dashboard, [Installation](docs/guide/installation.md) describes SSH login for Codex and Antigravity.
 
-#### First screen and persistent assistant session (PAS)
+#### Start working
 
-In a new browser, the dashboard opens the persistent assistant session view (`/persistent`) by default. You can change this in **Settings > Appearance** (`설정 > 화면과 읽기`).
+The dashboard opens the persistent assistant session view by default. When you connect your first coding agent, Soulstream creates the default persistent assistant session and opens it. Ask for your first piece of work there.
 
-The installer sets `PERSISTENT_SESSION_BOOTSTRAP=true`. When you connect the first coding agent, the dashboard creates one default persistent session (`seosoyoung-pas`) and opens it.
+### Update and uninstall
 
-#### Open atom from the toolbar
+Run the same install command again to [update](docs/guide/installation.md#updating). If it finds local changes, it aborts before it stops any service. To remove Soulstream and atom from a dedicated server, see [Uninstalling](docs/guide/installation.md#uninstalling).
 
-The global dashboard toolbar has an atom button (`atom 열기`) that opens atom in a new browser tab.
+### Other options
 
-### Updating
-
-To update, run the same one-line install command again with the same `--backends` value. Without `--backends`, it falls back to `claude,codex`. Without `--ref` or `--atom-ref`, the Soulstream and atom repositories both move to the latest `origin/main`.
-
-Before it stops any service, the installer checks both repositories. If it finds a problem, such as uncommitted changes or local commits that are not on `origin`, it aborts and leaves the running services alone.
-
-Updates preserve generated secrets, the administrator password (without prompting again unless you add `--set-admin-password` or `--admin-password-file <path>`), both databases, workspace files, and configuration files you edited. Starter instructions are loaded into atom only on the first installation, when the atom tree is empty. Updates never overwrite instructions you edited in atom, and new starter items are not added to existing installations.
-
-For backups, failure recovery, and managed-file details, see [Installation](docs/guide/installation.md) and [Configuration](docs/guide/configuration.md).
-
-### Uninstalling
-
-To remove Soulstream and atom from a dedicated Linux server, run the uninstaller as `root`:
-
-```bash
-bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall.sh -o "$tmp"; bash "$tmp"'
-```
-
-For non-interactive runs, pass `--yes` inside the inner command:
-
-```bash
-bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall.sh -o "$tmp"; bash "$tmp" --yes'
-```
-
-Before changing anything, the script lists what it found and prompts once on `/dev/tty` (if no terminal is available and you omit `--yes`, it exits without changes). It deletes the dedicated systemd services, the `soulstream` and `atom` PostgreSQL databases (sessions, cards, and atom documents), the `soulstream` user and `/home/soulstream` (workspace files, backups, administrator password, and coding-agent logins), the Tailscale Serve `/` routes for Soulstream and atom, and installer-recorded `/usr/local` tools. OS `apt` packages and your Tailscale device login stay in place; for the full removal list, backup commands, and failure handling, see [Uninstalling](docs/guide/installation.md#uninstalling).
-
-## Other installation options
-
-### Windows worker installer
-
-Register a `soul-server-ts` worker on Windows (requires Python 3.11+ and Node.js 22.5+) against an existing `orch-server-ts` control plane:
-
-```powershell
-irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.ps1 | iex
-```
-
-See [Installation](docs/guide/installation.md) for non-interactive parameters and Haniel service defaults.
-
-### Run from source
-
-Running the full stack locally requires Node.js 22.5 or newer, pnpm 10.32.1, and PostgreSQL:
-
-```bash
-corepack enable
-pnpm install --frozen-lockfile
-pnpm --dir unified-dashboard build
-pnpm --dir orch-server-ts build
-pnpm --dir soul-server-ts build
-
-cp soul-server-ts/config/agents.yaml.example soul-server-ts/config/agents.yaml
-
-export DATABASE_URL=postgresql://user:password@127.0.0.1:5432/soulstream
-node packages/db-schema/scripts/migrate.mjs fresh-install
-```
-
-See [Installation](docs/guide/installation.md) and [Configuration](docs/guide/configuration.md) for the `.env.soul-server-ts` worker file and orchestrator startup commands.
+To add a worker on Windows, see the [Windows worker installer](docs/guide/installation.md#windows-worker-installer). To run from source (Node.js 22.5 or newer, pnpm 10.32.1, and PostgreSQL), see [Running from source](docs/guide/installation.md#running-from-source).
 
 ## Documentation
 
-- [Concepts](docs/guide/concepts.md): folders, cards, sessions, persistent assistant sessions, agents, model presets, and nodes.
+- [Concepts](docs/guide/concepts.md): folders, cards, sessions, persistent assistant sessions, agents, model presets, and nodes. Start with the [feature overview](docs/guide/concepts.md#feature-overview).
 - [Architecture](docs/guide/architecture.md): system diagram, control plane and worker roles, multi-node routing, backends, and repository layout.
 - [Installation](docs/guide/installation.md): Linux one-line installer, updates, Tailscale Serve, uninstalling, Windows worker installer, source build, database initialization, and local dev servers.
 - [Configuration](docs/guide/configuration.md): orchestrator and worker environment variables, `agents.yaml`, installer-managed files, atom settings, the model catalog data file, and secret handling.

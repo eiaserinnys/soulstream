@@ -2,6 +2,16 @@
 
 Soulstream organizes ongoing agent work around folders, cards, sessions, and nodes. The web dashboard (`unified-dashboard`) and mobile client (`soul-app`) present the same core entities backed by the central `orch-server-ts` control plane.
 
+## Feature overview
+
+- **Long-lived agent sessions** with live streaming output, follow-up messages, mid-turn intervention, file attachments, and resumable history.
+- **Structured work cards** inside hierarchical folders, tracking the request, check items with evidence, a one-line status (`now`), user questions, and review completion.
+- **Persistent assistant sessions** with a live report board, active task lists, session monitoring, and weekly quota headroom.
+- **Five execution backends** configured through node-local agent profiles and model presets: Claude, Codex, OpenAI Agents, Antigravity, and OpenCode.
+- **Multi-node routing** where the TypeScript orchestrator (`orch-server-ts`) dispatches authenticated WebSocket commands to TypeScript workers (`soul-server-ts`).
+- **Built-in MCP tools** for service reflection, session search, git worktrees, on-demand skill loading (`load_skill`), recurring jobs, and card or folder management. See [Agents and tools](agents-and-tools.md).
+- **Release-safe operations** with [Haniel](https://github.com/eiaserinnys/haniel) manifests that keep PostgreSQL migration authority on the central orchestrator while remote workers stay database-free. See [Deployment](deployment.md).
+
 ## Folders
 
 Folders are hierarchical containers that group related work by project, domain, or team.
@@ -43,6 +53,13 @@ Key surfaces inside the persistent assistant view include:
 - **Task list and session controls**: `PersistentSessionTaskList` and task configuration controls track ongoing background work and session settings.
 - **Session monitoring**: `PersistentSessionMonitoring` displays the turn timeline and per-turn token usage.
 - **Weekly usage widget**: `PersistentSessionWeeklyUsage` displays remaining weekly provider quota percentages and reset countdowns for the session's node.
+
+<p>
+  <img src="../screenshots/persistent-session.png" alt="Persistent assistant session with the report board and chat" width="74.5%">
+  <img src="../screenshots/mobile.png" alt="The same persistent session on a phone-sized screen" width="21.5%">
+</p>
+
+The screenshots use demo data served by a Playwright fixture.
 
 ## Agents and model presets
 
