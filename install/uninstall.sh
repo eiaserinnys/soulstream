@@ -17,6 +17,10 @@ DB_ROLE=soulstream
 # Tailscale Serve roots this product creates: HTTPS port and the proxy it points to.
 SERVE_ROUTES=('443|http://127.0.0.1:5200' '8443|http://127.0.0.1:4200')
 COREPACK_SHIMS='pnpm pnpx yarn yarnpkg'
+# Debian's base-files makes the shared /usr/local directories root:staff when this file exists, root:root otherwise. Tests reassign it.
+STAFF_MARKER=/etc/staff-group-for-usr-local
+# Shared /usr/local directories (relative to the /usr/local dir, . is the dir itself) whose owner is reset; install.sh keeps the same list.
+USR_LOCAL_DIRS='. bin lib include share share/man share/man/man1 share/doc lib/node_modules'
 NODE_BUNDLE='bin/npm bin/npx bin/corepack lib/node_modules/npm lib/node_modules/corepack include/node share/doc/node share/man/man1/node.1 CHANGELOG.md LICENSE README.md'
 
 usage() {
@@ -378,10 +382,32 @@ remove_node() {
   note_removed "Node.js $version and Corepack shims in $UN_USRLOCAL"
 }
 
-# Step 5: /usr/local tools, by the receipt only.
+# Puts the shared /usr/local directories back to the OS owner (root, group root or staff). Earlier installers left
+# some of them owned by uid 1000, which the next ordinary account would inherit. This is not part of what is removed,
+# so it ignores the receipt. Directories only, not recursive, and the mode is left alone.
+reset_usr_local_owners() {
+  local expected=root:root rel path owner reset=()
+  [[ -e "$STAFF_MARKER" ]] && expected=root:staff
+  for rel in $USR_LOCAL_DIRS; do
+    path=$UN_USRLOCAL
+    [[ "$rel" == . ]] || path=$UN_USRLOCAL/$rel
+    [[ -d "$path" && ! -L "$path" ]] || continue
+    if ! owner=$(stat -c '%U:%G' -- "$path" 2>/dev/null); then note_failed "/usr/local: could not read the owner of $path"; continue; fi
+    [[ "$owner" == "$expected" ]] && continue
+    if chown -h "$expected" -- "$path" >/dev/null 2>&1; then reset+=("$path"); else note_failed "/usr/local: could not change the owner of $path to $expected"; fi
+  done
+  if ((${#reset[@]})); then note_removed "Non-root ownership reset to $expected on: $(join_by ', ' "${reset[@]}")"; fi
+}
+
+# Step 5: /usr/local tools by the receipt only, then the owners of the shared directories.
 step_usr_local() {
-  local tool paths=() codex_ok=true
   [[ "$SERVICES_STOPPED" == true ]] || return 0
+  remove_usr_local_tools
+  reset_usr_local_owners
+}
+
+remove_usr_local_tools() {
+  local tool paths=() codex_ok=true
   read_receipt
   case "$RECEIPT_STATE" in
     absent)

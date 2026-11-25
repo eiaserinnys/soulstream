@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Fake chown. It never changes a real owner: it records the call and updates $FAKE_DIR/owners, a list of
+# "<path> <user:group>" lines read by the fake stat and find. A path without a line is owned by root:root.
+# FAKE_CHOWN_FAIL=1 fails every call; FAKE_CHOWN_FAIL=<text> fails the calls whose path ends with <text>.
+# Only `chown -h <owner> -- <path>` and `chown -hR <owner> -- <path>` exist.
+printf '%s\n' "chown $*" >> "$FAKE_ARGV_LOG"
+flags=$1 owner=$2 path=$4
+if [[ "$3" != -- || $# -ne 4 || ( "$flags" != -h && "$flags" != -hR ) ]]; then printf 'fake chown: unsupported: %s\n' "$*" >&2; exit 98; fi
+if [[ -n "${FAKE_CHOWN_FAIL:-}" && ( "$FAKE_CHOWN_FAIL" == 1 || "$path" == *"$FAKE_CHOWN_FAIL" ) ]]; then printf 'fake chown: cannot change %s\n' "$path" >&2; exit 1; fi
+owners=$FAKE_DIR/owners
+touch "$owners"
+: > "$owners.new"
+while IFS=' ' read -r entry entry_owner; do
+  [[ -n "$entry" ]] || continue
+  if [[ "$entry" == "$path" ]] || { [[ "$flags" == -hR ]] && [[ "$entry" == "$path"/* ]]; }; then continue; fi
+  printf '%s %s\n' "$entry" "$entry_owner" >> "$owners.new"
+done < "$owners"
+if [[ "$owner" != root:root ]]; then printf '%s %s\n' "$path" "$owner" >> "$owners.new"; fi
+mv "$owners.new" "$owners"
+exit 0

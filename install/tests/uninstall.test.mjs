@@ -8,11 +8,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
-  FAKE_UID, SECRET, UNITS, createSandbox, installedServer, indexOfCall, installScript, listTree, ptyUninstall, runBash,
-  runUninstall, scriptPath, serveConfig, uninstallScript, writeFile,
+  FAKE_UID, SECRET, UNITS, createSandbox, installedServer, indexOfCall, installScript, listTree, ownerTable, ptyUninstall, runBash,
+  runUninstall, scriptPath, serveConfig, setOwner, uninstallScript, writeFile,
 } from './support/uninstall_env.mjs';
 import { assertHostUntouched, snapshotHost } from './support/host_guard.mjs';
 
@@ -626,6 +626,138 @@ test('on a terminal, --yes does not ask', async () => {
   });
 });
 
+// The shared /usr/local directories, in the order uninstall.sh walks them (. is /usr/local itself).
+const SHARED_DIRS = ['.', 'bin', 'lib', 'include', 'share', 'share/man', 'share/man/man1', 'share/doc', 'lib/node_modules'];
+const sharedDir = (s, rel) => (rel === '.' ? s.usrLocal : join(s.usrLocal, rel));
+const chownCalls = (s) => s.calls().filter((line) => line.startsWith('chown '));
+const OWNED_BY_SOULSTREAM = 'soulstream:soulstream';
+
+test('/usr/local owners: a shared directory that is not root:root is reset, only that one, not recursively, and the Removed list says so', async () => {
+  await withServer({}, async (s) => {
+    const wrong = [s.usrLocal, join(s.usrLocal, 'bin'), join(s.usrLocal, 'share', 'man', 'man1')];
+    for (const path of wrong) setOwner(s, path, OWNED_BY_SOULSTREAM);
+    // Someone else's files inside those directories are not ours to change, whoever owns them.
+    const neighbourFiles = [join(s.usrLocal, 'bin', 'other-tool'), join(s.usrLocal, 'lib', 'python3')];
+    for (const path of neighbourFiles) setOwner(s, path, OWNED_BY_SOULSTREAM);
+    const result = await runUninstall(s);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.deepEqual(chownCalls(s), wrong.map((path) => `chown -h root:root -- ${path}`));
+    assert.ok(result.stdout.includes(`  - Non-root ownership reset to root:root on: ${wrong.join(', ')}\n`), result.stdout);
+    assert.deepEqual(ownerTable(s), Object.fromEntries(neighbourFiles.map((path) => [path, OWNED_BY_SOULSTREAM])));
+    // The step runs after the services are confirmed stopped and before the account goes.
+    const calls = s.calls();
+    assert.ok(indexOfCall(calls, 'systemctl is-active soulstream-atom.service') < indexOfCall(calls, 'chown '));
+    assert.ok(indexOfCall(calls, 'chown ') < indexOfCall(calls, 'userdel -r soulstream'));
+  });
+});
+
+test('/usr/local owners: every shared directory in the list is checked, and each wrong one gets its own chown', async () => {
+  await withServer({}, async (s) => {
+    for (const rel of SHARED_DIRS) mkdirSync(sharedDir(s, rel), { recursive: true });
+    for (const rel of SHARED_DIRS) setOwner(s, sharedDir(s, rel), 'root:nogroup');
+    // A node that stays (version differs) keeps lib/node_modules in place.
+    writeFile(join(s.usrLocal, 'lib', 'node_modules', 'pm2', 'package.json'), 'pm2');
+    const result = await runUninstall(s);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.deepEqual(chownCalls(s), SHARED_DIRS.map((rel) => `chown -h root:root -- ${sharedDir(s, rel)}`));
+    assert.deepEqual(ownerTable(s), {});
+  });
+});
+
+test('/usr/local owners: directories that already have the expected owner are not touched and nothing is said about them', async () => {
+  await withServer({}, async (s) => {
+    const result = await runUninstall(s);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.deepEqual(chownCalls(s), []);
+    assert.doesNotMatch(result.stdout, /ownership/i);
+  });
+  // The group alone being wrong is enough, and the expected pair root:staff is not a difference without the marker file.
+  await withServer({}, async (s) => {
+    setOwner(s, join(s.usrLocal, 'lib'), 'root:staff');
+    const result = await runUninstall(s);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.deepEqual(chownCalls(s), [`chown -h root:root -- ${join(s.usrLocal, 'lib')}`]);
+  });
+});
+
+test('/usr/local owners: with the base-files marker file the expected owner is root:staff', async () => {
+  await withServer({}, async (s) => {
+    writeFile(s.staffMarker, '');
+    setOwner(s, join(s.usrLocal, 'lib'), 'root:staff');
+    setOwner(s, join(s.usrLocal, 'include'), OWNED_BY_SOULSTREAM);
+    const result = await runUninstall(s);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    // bin and the others are root:root here, which differs from root:staff; lib already is root:staff.
+    const expected = SHARED_DIRS.filter((rel) => rel !== 'lib' && existsSync(sharedDir(s, rel)));
+    assert.ok(chownCalls(s).every((line) => line.startsWith('chown -h root:staff -- ')), chownCalls(s).join('\n'));
+    assert.equal(chownCalls(s).some((line) => line.endsWith(` -- ${join(s.usrLocal, 'lib')}`)), false);
+    assert.equal(chownCalls(s).length, expected.length);
+    assert.match(result.stdout, /Non-root ownership reset to root:staff on: /);
+  });
+});
+
+test('/usr/local owners: a failed chown is reported under Failed, the run exits 1 and the receipt stays', async () => {
+  await withServer({}, async (s) => {
+    setOwner(s, join(s.usrLocal, 'bin'), OWNED_BY_SOULSTREAM);
+    setOwner(s, join(s.usrLocal, 'lib'), OWNED_BY_SOULSTREAM);
+    const result = await runUninstall(s, ['--yes'], { extra: { FAKE_CHOWN_FAIL: `${join(s.usrLocal, 'bin')}` } });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(failedSection(result.stdout), /could not change the owner of .*\/usr\/local\/bin to root:root/);
+    // The directory that could be fixed was, and says so.
+    assert.ok(result.stdout.includes(`Non-root ownership reset to root:root on: ${join(s.usrLocal, 'lib')}\n`), result.stdout);
+    assert.equal(present(s.receipt), true);
+    assert.deepEqual(ownerTable(s), { [join(s.usrLocal, 'bin')]: OWNED_BY_SOULSTREAM });
+  });
+});
+
+test('/usr/local owners: a missing or damaged receipt does not stop the reset', async () => {
+  await withServer({ receipt: false }, async (s) => {
+    setOwner(s, join(s.usrLocal, 'share'), OWNED_BY_SOULSTREAM);
+    const result = await runUninstall(s);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.deepEqual(chownCalls(s), [`chown -h root:root -- ${join(s.usrLocal, 'share')}`]);
+    assert.match(result.stdout, /Non-root ownership reset to root:root on: /);
+  });
+  await withServer({}, async (s) => {
+    writeFileSync(s.receipt, 'not json');
+    setOwner(s, join(s.usrLocal, 'share'), OWNED_BY_SOULSTREAM);
+    const result = await runUninstall(s);
+    assert.equal(result.status, 1);
+    assert.deepEqual(chownCalls(s), [`chown -h root:root -- ${join(s.usrLocal, 'share')}`]);
+    assert.match(failedSection(result.stdout), /receipt .* is unreadable or invalid/);
+  });
+});
+
+test('/usr/local owners: nothing is changed while the services are not confirmed stopped', async () => {
+  await withServer({}, async (s) => {
+    setOwner(s, join(s.usrLocal, 'bin'), OWNED_BY_SOULSTREAM);
+    const result = await runUninstall(s, ['--yes'], { extra: { FAKE_IS_ACTIVE: 'soulstream-orch.service=active' } });
+    assert.equal(result.status, 1);
+    assert.deepEqual(chownCalls(s), []);
+    assert.deepEqual(ownerTable(s), { [join(s.usrLocal, 'bin')]: OWNED_BY_SOULSTREAM });
+    assert.doesNotMatch(result.stdout, /Non-root ownership/);
+  });
+});
+
+test('/usr/local owners: a Node.js that is kept keeps its own files\' owners, and a link as a directory is not followed', async () => {
+  await withServer({ nodeVersion: 'v22.99.0' }, async (s) => {
+    writeFileSync(s.receipt, readFileSync(s.receipt, 'utf8').replace('v22.99.0', 'v22.23.5'));
+    const bundle = [join(s.usrLocal, 'bin', 'node'), join(s.usrLocal, 'lib', 'node_modules', 'npm'), join(s.usrLocal, 'include', 'node')];
+    for (const path of bundle) setOwner(s, path, OWNED_BY_SOULSTREAM);
+    setOwner(s, join(s.usrLocal, 'include'), OWNED_BY_SOULSTREAM);
+    // share/doc is a link to a directory somewhere else: left alone whoever owns the target.
+    rmSync(join(s.usrLocal, 'share', 'doc'), { recursive: true });
+    mkdirSync(join(s.dir, 'elsewhere'));
+    symlinkSync(join(s.dir, 'elsewhere'), join(s.usrLocal, 'share', 'doc'));
+    setOwner(s, join(s.usrLocal, 'share', 'doc'), OWNED_BY_SOULSTREAM);
+    const result = await runUninstall(s);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /Node\.js and Corepack shims in .*: its version is v22\.99\.0/);
+    assert.deepEqual(chownCalls(s), [`chown -h root:root -- ${join(s.usrLocal, 'include')}`]);
+    assert.deepEqual(ownerTable(s), { ...Object.fromEntries(bundle.map((path) => [path, OWNED_BY_SOULSTREAM])), [join(s.usrLocal, 'share', 'doc')]: OWNED_BY_SOULSTREAM });
+  });
+});
+
 test('install.sh sources quietly and names the receipt and /usr/local locations as plain constants', async () => {
   const sandbox = createSandbox();
   try {
@@ -639,10 +771,10 @@ test('install.sh sources quietly and names the receipt and /usr/local locations 
 test('the temporary servers hold no leftover of the real host: the fake PATH hides the real system commands', async () => {
   const sandbox = createSandbox();
   try {
-    const result = await runBash(sandbox, 'for name in systemctl psql sudo userdel pkill pgrep crontab tailscale npm corepack; do printf "%s=%s\\n" "$name" "$(type -P "$name")"; done');
+    const result = await runBash(sandbox, 'for name in systemctl psql sudo userdel pkill pgrep crontab tailscale chown find npm corepack; do printf "%s=%s\\n" "$name" "$(type -P "$name")"; done');
     assert.equal(result.status, 0);
     const found = Object.fromEntries(result.stdout.trim().split('\n').map((line) => line.split('=')));
-    for (const name of ['systemctl', 'psql', 'sudo', 'userdel', 'pkill', 'pgrep', 'crontab', 'tailscale']) assert.equal(found[name], join(sandbox.bin, name), name);
+    for (const name of ['systemctl', 'psql', 'sudo', 'userdel', 'pkill', 'pgrep', 'crontab', 'tailscale', 'chown', 'find']) assert.equal(found[name], join(sandbox.bin, name), name);
     for (const name of ['npm', 'corepack']) assert.equal(found[name], '', name);
     assert.deepEqual(listTree(sandbox.dir).filter((path) => !/^(fake-bin|tools)/.test(path)), []);
   } finally { sandbox.cleanup(); }
