@@ -64,9 +64,9 @@ export async function openComponents(page: Page, theme: Theme) {
 export async function shotSample(page: Page, componentPrefix: string, relative: string) {
   const sample = page.locator(`[data-component^="${componentPrefix}"]`);
   // 검수 창은 구역을 이어서 그린다. 표본이 DOM에 설 때까지 기다린 뒤 화면에 올린다.
-  await expect(sample).toBeAttached({ timeout: 30_000 });
-  await sample.scrollIntoViewIfNeeded();
-  await expect(sample).toBeVisible();
+  // 검수 창이 무겁게 다시 그리는 동안 요소가 잠깐 떨어졌다 붙으니 기다림을 넉넉히 둔다.
+  await sample.scrollIntoViewIfNeeded({ timeout: 30_000 });
+  await expect(sample).toBeVisible({ timeout: 30_000 });
   await page.evaluate(() => document.fonts.ready);
   const file = path.join(shots, relative);
   mkdirSync(path.dirname(file), { recursive: true });
