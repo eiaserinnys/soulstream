@@ -7,9 +7,9 @@ import { Check, MoreHorizontal } from "lucide-react";
 import { CARD_COLORS, CARD_COLOR_KEYS, type CardColor } from "../../../packages/wire-schema/src/card_colors";
 import type { CardStatus } from "../../../packages/wire-schema/generated/typescript/index";
 import { type CardRow } from "@seosoyoung/soul-ui/cards/card-types";
-import { Button, DashboardIconCap, FrameLoading, useDashboardStore, Popover, PopoverPopup, PopoverTrigger } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, FrameLoading, useDashboardStore, Popover, PopoverPopup, PopoverTrigger, AlertDialog, AlertDialogPopup, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter } from "@seosoyoung/soul-ui";
 import type { CardQueueStatusActivator } from "@seosoyoung/soul-ui/cards/CardQueue";
-import { cardStatusLabel } from "./CardActions";
+import { cardDependencyStatus, cardStatusLabel } from "./CardActions";
 import { StatusChip } from "./StatusChip";
 import "./v3-card-status-picker.css";
 
@@ -27,11 +27,16 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
   const catalogFolders=useDashboardStore(s=>s.catalog?.folders);
   const folders=control.folders??catalogFolders??[];
   const [settingsCard,setSettingsCard]=useState<CardRow|null>(null);
+  const [confirmation,setConfirmation]=useState<{card:CardRow;resolve:(value:boolean)=>void}|null>(null);
   const colorButtonRefs=useRef(new Map<CardColor,HTMLButtonElement>());
   const colorButtonRefCallbacks=useRef(new Map<CardColor,(node:HTMLButtonElement|null)=>void>());
   const pendingColorFocus=useRef(false);
   const previousView=useRef<"status"|"color">("status");
   const state=useCardStatusCoordinator(card,{...control,change:async(latest,status,reason)=>{
+    if(status==='running' && latest.dependsOn?.some(dependency=>!dependency.met)) {
+      const accepted=await new Promise<boolean>(resolve=>setConfirmation({card:latest,resolve}));
+      if(!accepted)return;
+    }
     if(status==='running'&&!latest.assigneeSessionId&&(!latest.nodeId||!latest.assigneeAgentId||!latest.modelPreset)){
       setSettingsCard(latest);return;
     }
@@ -68,7 +73,13 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
   useImperativeHandle(ref,()=>({request:status=>{void state.request(status);},requestColor:()=>{void state.requestColor();}}));
   useEffect(()=>{activator?.onPopupOpenChange(open);},[activator?.onPopupOpenChange,open]);
   const tone = card.status === "blocked" && card.blockedKind === "question" ? "question" : card.status;
-  return <>{settingsCard?<CardExecutionSettingsDialog card={settingsCard} folders={folders} startAfterSave assignment={control.assignment} onSave={control.saveSettings} onStart={saved=>control.change(saved,"running")} onClose={()=>setSettingsCard(null)}/>:null}<Popover open={open} onOpenChange={(next,details)=>{
+  const answerConfirmation=(value:boolean)=>{confirmation?.resolve(value);setConfirmation(null);};
+  return <>{settingsCard?<CardExecutionSettingsDialog card={settingsCard} folders={folders} startAfterSave assignment={control.assignment} onSave={control.saveSettings} onStart={saved=>control.change(saved,"running")} onClose={()=>setSettingsCard(null)}/>:null}
+  <AlertDialog open={Boolean(confirmation)} onOpenChange={next=>{if(!next)answerConfirmation(false);}}><AlertDialogPopup>
+    <AlertDialogHeader><AlertDialogTitle>선행 카드가 끝나지 않았습니다</AlertDialogTitle><AlertDialogDescription className="v3-card-start-confirm-description">
+      {confirmation?.card.dependsOn?.filter(dep=>!dep.met).map(dep=>`${dep.number==null?dep.title:`#${dep.number}`}(${cardDependencyStatus(dep).label})`).join(", ")}이 아직 충족되지 않았습니다. 기다리지 않고 지금 시작할까요?
+    </AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><Button variant="outline" onClick={()=>answerConfirmation(false)}>취소</Button><Button onClick={()=>answerConfirmation(true)}>지금 시작</Button></AlertDialogFooter>
+  </AlertDialogPopup></AlertDialog><Popover open={open&&!confirmation} onOpenChange={(next,details)=>{
     if(details.reason==="escape-key")details.event.preventDefault();
     changeOpen(next);
   }}>

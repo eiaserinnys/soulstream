@@ -62,6 +62,17 @@ afterEach(async () => {
 });
 
 describe("persistent session task list", () => {
+  it("선행 대기 문구를 툴팁에 보이고 멈춘 카드 행에 경고를 표시한다", async () => {
+    const card: CardRow = {...baseCard("dependency", "queued"), dependsOn:[{id:"ahead",number:12,title:"선행",status:"cancelled",archived:false,met:false}]};
+    expect(persistentTaskTooltipContent(card, false)).toEqual({dependency:"선행 취소됨 #12"});
+    await act(() => root.render(<CardRowView card={card} variant="summary" onOpen={()=>{}}/>));
+    const alert = container.querySelector('[aria-label="선행 취소됨 #12"]');
+    expect(alert).not.toBeNull();
+    expect(container.querySelector(".v3-card-summary-title")?.contains(alert)).toBe(false);
+    expect(alert?.parentElement?.className).toBe("v3-card-summary-heading");
+    await act(() => root.render(<CardRowView card={card} onOpen={()=>{}}/>));
+    expect(container.querySelector(".v3-run-card-turn")?.textContent).toContain("선행 취소됨 #12");
+  });
   it("identifies blocked question cards for an isolated tooltip provider", () => {
     expect(isQuestionTooltipCard({ ...baseCard("question", "blocked"), blockedKind: "question" })).toBe(true);
     expect(isQuestionTooltipCard({ ...baseCard("blocked", "blocked"), blockedKind: "limit" })).toBe(false);

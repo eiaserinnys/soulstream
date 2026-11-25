@@ -4,6 +4,7 @@ import type { CardQuestionAttachment, CardQuestionKind, CardQuestionOption } fro
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
 import type { CardStatus } from "@soulstream/wire-schema";
 import type { CardItemDisplay } from "@soulstream/wire-schema/card-item-display";
+import type { CardDependency } from "@soulstream/wire-schema/card-dependency-display";
 export interface CardActivity { kind: "instruction" | "report"; body: string; createdAt: string; format: "markdown" | "html" }
 export interface CardItemEvidence {
   type: "image" | "link";
@@ -45,6 +46,7 @@ export interface CardRow {
   latestActivity?: CardActivity | null;
   items?: CardCheckItem[];
   now?: CardNow | null;
+  dependsOn?: CardDependency[];
 }
 export interface CardReport { id: string; title: string; format: "markdown" | "html"; body: string; createdAt: string; sessionId: string | null }
 export interface CardQuestion {

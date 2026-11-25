@@ -10,6 +10,7 @@ export function PersistentTaskTooltipPanel({ content, options, sending, error, o
 }) {
   return <>
     {content.title ? <p data-tooltip-field="title">{content.title}</p> : null}
+    {content.dependency ? <p data-tooltip-field="dependency">{content.dependency}</p> : null}
     {content.now ? <p data-tooltip-field="now">{content.now}</p> : null}
     {content.ask ? <p data-tooltip-field="ask">{content.ask}</p> : null}
     {error ? <p role="alert" className="v3-card-error">답을 보내지 못했습니다</p> : null}

@@ -12,6 +12,8 @@ import { cardActivityPreview } from "@seosoyoung/soul-ui/cards/card-activity-pre
 import { summarizeCardItems } from "./card-item-summary";
 import { CardProgressSummary } from "./CardProgressSummary";
 import { cardAssignee } from "./card-assignee";
+import { cardDependencyDisplay } from "../../../packages/wire-schema/src/card_dependency_display";
+import { TriangleAlert } from "lucide-react";
 const NO_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
 type SummaryRowWrapper = (row: ReactElement, titleRef: RefObject<HTMLSpanElement | null>) => ReactNode;
 export const CardRow = memo(function CardRow({card,folderLabel,handle,variant="default",onOpenCard,summaryNumberTemplate,summaryRowWrapper}:{card:Card;folders?:readonly CatalogFolder[];placement?:"inline"|"overlay";handle?:ReactNode;showQueueAction?:boolean;folderLabel?:string;variant?:"default"|"summary";onOpenCard?(cardId:string):void;summaryNumberTemplate?:string;summaryRowWrapper?:SummaryRowWrapper}) {
@@ -38,13 +40,14 @@ export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,comp
  const resolvePortrait=useAgentPortraitUrlResolver();
  const portrait=assignee?.agentPortraitUrl??(resolvePortrait(agentId)||null);
  const name=resolveCardAssigneeName(card,assignee)??"담당 미지정";
+ const dependency=cardDependencyDisplay(card.status,card.dependsOn);
  if(variant==="summary") {
   const hasNumber=card.number!==undefined&&card.number!==null;
   const hasAssignee=card.assigneeKind!==null&&Boolean(agentId||card.assigneeUserId);
   const row=<button type="button" className="v3-card-summary-row" data-card-id={card.id} data-has-number={hasNumber||undefined}
    data-has-assignee={hasAssignee||undefined} aria-label={`카드 ${card.title} 열기`} onClick={onOpen}>
    {hasNumber?<span className="v3-card-summary-number-slot"><span className="v3-card-summary-number-reserve" aria-hidden="true">{summaryNumberTemplate??`#${card.number}`}</span><span className="v3-card-summary-number">#{card.number}</span></span>:null}
-   <span ref={summaryTitleRef} className="v3-card-summary-title">{card.title}</span>
+   <span className="v3-card-summary-heading"><span ref={summaryTitleRef} className="v3-card-summary-title">{card.title}</span>{dependency?.tone==="error"?<TriangleAlert className="v3-card-summary-alert h-4 w-4 text-destructive" aria-label={dependency.text}/>:null}</span>
    {hasAssignee?<span className="v3-card-summary-avatar"><ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={card.assigneeKind==="human"?"👤":"🤖"}/></span>:null}
   </button>;
   return summaryRowWrapper ? summaryRowWrapper(row,summaryTitleRef) : row;
@@ -64,7 +67,7 @@ export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,comp
   preview={preview??""}
   status={{label:`카드 ${card.status==="running"?"진행 중":cardStatusLabel(card)}`,tone:card.status==="blocked"&&card.blockedKind==="question"?"question":card.status}}
   timestamp={{display:cardElapsed(card.updatedAt),raw:card.updatedAt}}
-  cardSummary={hasItems?<CardProgressSummary summary={itemSummary}/>:undefined} cardTurn={cardTurn}
+  cardSummary={hasItems?<CardProgressSummary summary={itemSummary}/>:undefined} cardTurn={dependency?<span className={dependency.tone==="error"?"v3-card-error":undefined}>{dependency.text}</span>:cardTurn}
   actions={card.status==="review" ? completion?[{kind:"complete",label:"완료",pending:completion.pending,onAction:completion.onComplete}]:undefined : [{kind:"open",label:"카드 열기",onAction:onOpen}]}
  />;
 }

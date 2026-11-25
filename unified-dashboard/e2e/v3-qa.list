@@ -10,6 +10,7 @@ e2e/v3-pr-cn-planner-polish.qa.ts
 e2e/v3-pr-co-search-session-select.qa.ts
 e2e/v3-pr-cs-document-context.qa.ts
 # 진입과 함께 사라진 단언을 고친 QA
+e2e/card-dependencies.qa.ts
 e2e/v3-agent-model-settings-density.qa.ts
 e2e/v3-daily-surface.qa.ts
 e2e/v3-icon-action-caps.qa.ts

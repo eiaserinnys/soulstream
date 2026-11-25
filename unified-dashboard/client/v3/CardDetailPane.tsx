@@ -3,8 +3,8 @@ import {dialoguesAssignment} from "./dialogues-api";
 import {CardExecutionSettings} from "./CardExecutionSettings";
 import {useLocalDialogueUpload} from "./use-local-dialogue-upload";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-import { DashboardIconCap, FrameLoading, useAuth, useAgentPortraitUrlResolver, useDashboardStore, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
-import { ArrowLeft, Check, Play, LoaderCircle, RotateCw } from "lucide-react";
+import { Button, DashboardIconCap, FrameLoading, useAuth, useAgentPortraitUrlResolver, useDashboardStore, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { ArrowLeft, Check, Play, LoaderCircle, RotateCw, ChevronRight } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { cardMutationKey, cardQuestionChoiceAnswer, cardQuestionTextAnswer } from "@seosoyoung/soul-ui/cards/card-api";
 import {cardExecutionState,subscribeCardExecution} from "@seosoyoung/soul-ui/cards/card-execution";
@@ -23,11 +23,16 @@ import { CardCheckItems } from "./CardCheckItems";
 import { CardNowPanel } from "./CardNowPanel";
 import { CardNotes } from "./CardNotes";
 import { summarizeCardItems } from "./card-item-summary";
+import { useCardNavigation } from "./card-navigation";
+import { StatusChip } from "./StatusChip";
+import { cardDependencyStatus } from "./CardActions";
+import { cardDependencyStopReason } from "../../../packages/wire-schema/src/card_dependency_display";
 const EMPTY_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
 export { cardRequestMarkdown } from "./card-request-markdown";
 export type CardDetailPaneProps={cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary,selection?:CardSessionSelection):void;focus?:string|null;initialSessionId?:string|null;sampleDetail?:CardDetail;sampleExecution?:CardExecutionState;onSampleChange?(update:(current:CardDetail)=>CardDetail):void};
 export function CardDetailPane(props:CardDetailPaneProps) {
  const {cardId,folders,onClose,onOpenSession,initialSessionId,sampleDetail,sampleExecution,onSampleChange}=props;
+ const openCard=useCardNavigation(s=>s.open);
  const storedCard=useCardStore(s=>s.byId[cardId]);const storedDetail=useCardStore(s=>s.details[cardId]);const error=useCardStore(s=>s.errors[cardId]);
  const pendingConfirmations=useCardStore(s=>s.pendingItemConfirmations[cardId]??EMPTY_PENDING_CONFIRMATIONS);
  const [localSample,setLocalSample]=useState(sampleDetail);
@@ -185,6 +190,11 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   {!card.assigneeSessionId?<div className="v3-detail-gutter v3-task-detail-content v3-card-context">
    <section className="v3-detail-section"><CardExecutionSettings assignment={sampleDetail?dialoguesAssignment:undefined} card={card} folders={folders} onSave={sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};updateSample(current=>({...current,card:saved}));return saved;}:undefined}/></section>
   </div>:null}
+  {card.dependsOn?.length?<div className="v3-detail-gutter v3-task-detail-content v3-card-dependencies"><section className="v3-detail-section">
+   <div className="v3-detail-section-head"><h3>선행 카드</h3><span>{card.dependsOn.filter(dep=>dep.met).length}/{card.dependsOn.length}</span></div>
+   <div className="v3-card-dependency-list">{card.dependsOn.map(dep=><Button key={dep.id} variant="outline" className="v3-card-dependency-row" data-stopped={cardDependencyStopReason(dep)!==null||undefined} onClick={()=>openCard(dep.id,"overlay")}>
+    <span className="v3-card-dependency-number">{dep.number==null?"":`#${dep.number}`}</span><span className="v3-card-dependency-title">{dep.title}</span><StatusChip tone={cardDependencyStatus(dep).tone} label={cardDependencyStatus(dep).label}/><ChevronRight className="h-4 w-4" aria-hidden="true"/>
+   </Button>)}</div></section></div>:null}
   {card.now?<div key={cardId} className="v3-detail-gutter v3-card-now-slot"><CardNowPanel now={card.now} nowHistory={detail?.nowHistory} itemsCount={card.items?.length??0} activeCount={itemSummary.activeCount} onComplete={()=>void complete()} pending={pending||execution?.phase==='pending'}/></div>:null}
   <div className="v3-detail-gutter v3-card-tabs"><DetailTabs id={tabId} label="카드 보기" panelId={`${tabId}-panel`} variant="card" tabs={tabs} value={tab} onChange={changeTab}/></div>
   {execution && execution.phase!=="pending"?<p role={execution.phase==="error"?"alert":"status"} className="v3-card-error">{execution.message}</p>:null}
