@@ -440,6 +440,7 @@ CREATE TABLE cards (
     waiting_for          TEXT,
     limit_resume_session_id TEXT,
     limit_resume_at       TIMESTAMPTZ,
+    snoozed_until         TIMESTAMPTZ,
     node_id              TEXT,
     model_preset         TEXT,
     assignee_kind        TEXT CHECK (assignee_kind IN ('agent','human','session')),
