@@ -15,6 +15,7 @@ import {
   ClaudeLoginService,
   type ClaudeLoginAccountPort,
 } from "../../src/claude_accounts/login_service.js";
+import { scanStdoutForAuthUrl } from "../../src/claude_accounts/login_cli_helpers.js";
 import { composeClaudeLoginService } from "../../src/runtime/claude_login_runtime_composition.js";
 
 // 자식이 실제로 끝나지 않는 상황을 만들기 위해 spawn만 갈아 끼운다. 기본값은 실제 spawn이다.
@@ -1629,5 +1630,115 @@ setInterval(() => {}, 1000);
 
     expect((await service.status({ login_id: started.login_id })).state).toBe("cancelled");
     expect(state.retiredLogins).toContain(started.login_id);
+  });
+});
+
+const SHORT_AUTH_QUERY = "Xk3_Zq-9aB.c~D4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wY";
+const SHORT_AUTH_URL = `https://claude.ai/oauth/authorize?${SHORT_AUTH_QUERY}`;
+
+describe("Claude CLI 짧은 인증 주소", () => {
+  async function runShortUrlFlow(splitAt: number | null) {
+    const rootDir = await makeTempDir();
+    const state = createFakePort(rootDir);
+    const { logger } = createCapturingLogger();
+    const lines = [
+      "Opening browser to sign in…",
+      "If the browser didn't open, visit:",
+      SHORT_AUTH_URL,
+      "Paste code here if prompted >",
+    ];
+    // 넷째 줄 뒤에는 줄바꿈이 없다. CLI 는 입력을 기다린다.
+    const output = lines.slice(0, 3).join("\n") + "\n" + lines[3];
+    const chunks = splitAt === null
+      ? [output]
+      : [output.slice(0, splitAt), output.slice(splitAt)];
+
+    const cliPath = await createFakeClaudeCli(
+      rootDir,
+      `
+import { appendFileSync } from "node:fs";
+import { join } from "node:path";
+
+const args = process.argv.slice(2);
+const configDir = process.env.CLAUDE_CONFIG_DIR;
+if (args[0] === "auth" && args[1] === "login") {
+  const chunks = ${JSON.stringify(chunks)};
+  process.stdout.write(chunks[0]);
+  chunks.slice(1).forEach((chunk, index) => {
+    setTimeout(() => process.stdout.write(chunk), 30 * (index + 1));
+  });
+  process.stdin.setEncoding("utf8");
+  let received = "";
+  process.stdin.on("data", (chunk) => {
+    received += chunk;
+    appendFileSync(join(configDir, "stdin-chunks.log"), chunk);
+    if (received.includes("\\n")) setTimeout(() => process.exit(0), 20);
+  });
+} else if (args[0] === "auth" && args[1] === "status") {
+  process.stdout.write(JSON.stringify({
+    loggedIn: true,
+    email: "short@example.com",
+    accountUuid: "22222222-2222-4222-8222-222222222222",
+  }));
+  process.exit(0);
+} else {
+  process.exit(1);
+}
+      `,
+    );
+    const service = new ClaudeLoginService({
+      port: state.port,
+      logger,
+      executablePath: cliPath,
+      baseEnv: { ...process.env },
+    });
+    const initial = await service.start();
+    const ready = await waitFor(
+      () => service.status({ login_id: initial.login_id }),
+      (flow) => flow.state === "url_ready",
+    );
+    return { service, state, initial, ready };
+  }
+
+  it("네 줄 출력(마지막 줄 뒤 줄바꿈 없음)에서 url_ready 가 되고 코드는 stdin 에 코드와 줄바꿈으로 쓰인다", async () => {
+    const { service, state, initial, ready } = await runShortUrlFlow(null);
+    expect(ready.auth_url).toBe(SHORT_AUTH_URL);
+
+    const submitted = await service.submit_code({ login_id: initial.login_id, code: "short-paste-code" });
+    expect(submitted.state).toBe("code_submitted");
+
+    await waitFor(
+      () => service.status({ login_id: initial.login_id }),
+      (flow) => flow.state === "done",
+    );
+    const pendingDir = state.pendingDirs.get(initial.login_id)!;
+    expect(await readFile(join(pendingDir, "stdin-chunks.log"), "utf8")).toBe("short-paste-code\n");
+  });
+
+  it("주소 줄이 두 덩어리로 나뉘어 들어와도 url_ready 가 된다", async () => {
+    const urlStart = "Opening browser to sign in…\nIf the browser didn't open, visit:\n".length;
+    const { ready } = await runShortUrlFlow(urlStart + "https://claude.ai/oauth/auth".length);
+    expect(ready.auth_url).toBe(SHORT_AUTH_URL);
+  });
+});
+
+describe("Claude 인증 주소 판정", () => {
+  const longUrl = makeAuthUrl("legacy-form");
+
+  it("새 짧은 꼴과 옛 긴 꼴은 받는다", () => {
+    expect(scanStdoutForAuthUrl(`visit:\n${SHORT_AUTH_URL}\nPaste code here if prompted >`)).toBe(SHORT_AUTH_URL);
+    expect(scanStdoutForAuthUrl(`visit:\n${longUrl}\n`)).toBe(longUrl);
+  });
+
+  it.each([
+    ["다른 host", `https://example.com/oauth/authorize?${SHORT_AUTH_QUERY}`],
+    ["하위 도메인 속임", `https://claude.ai.example.com/oauth/authorize?${SHORT_AUTH_QUERY}`],
+    ["http", `http://claude.ai/oauth/authorize?${SHORT_AUTH_QUERY}`],
+    ["다른 path", `https://claude.ai/oauth/token?${SHORT_AUTH_QUERY}`],
+    ["빈 쿼리", "https://claude.ai/oauth/authorize?"],
+    ["쿼리 없음", "https://claude.ai/oauth/authorize"],
+    ["포트가 붙은 주소", `https://claude.ai:8443/oauth/authorize?${SHORT_AUTH_QUERY}`],
+  ])("%s 는 거부한다", (_label, url) => {
+    expect(scanStdoutForAuthUrl(`visit:\n${url}\n`)).toBeNull();
   });
 });
