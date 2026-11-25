@@ -47,7 +47,7 @@ export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,comp
   const row=<button type="button" className="v3-card-summary-row" data-card-id={card.id} data-has-number={hasNumber||undefined}
    data-has-assignee={hasAssignee||undefined} aria-label={`카드 ${card.title} 열기`} onClick={onOpen}>
    {hasNumber?<span className="v3-card-summary-number-slot"><span className="v3-card-summary-number-reserve" aria-hidden="true">{summaryNumberTemplate??`#${card.number}`}</span><span className="v3-card-summary-number">#{card.number}</span></span>:null}
-   <span ref={summaryTitleRef} className="v3-card-summary-title">{card.title}{dependency?.tone==="error"?<TriangleAlert className="inline h-4 w-4 text-destructive" aria-label={dependency.text}/>:null}</span>
+   <span className="v3-card-summary-heading"><span ref={summaryTitleRef} className="v3-card-summary-title">{card.title}</span>{dependency?.tone==="error"?<TriangleAlert className="v3-card-summary-alert h-4 w-4 text-destructive" aria-label={dependency.text}/>:null}</span>
    {hasAssignee?<span className="v3-card-summary-avatar"><ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={card.assigneeKind==="human"?"👤":"🤖"}/></span>:null}
   </button>;
   return summaryRowWrapper ? summaryRowWrapper(row,summaryTitleRef) : row;

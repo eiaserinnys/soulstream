@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { cardDependencyDisplay } from "../../../packages/wire-schema/src/card_dependency_display";
+import { cardDependencyDisplay, cardDependencyStopReason } from "../../../packages/wire-schema/src/card_dependency_display";
+import { cardDependencyStatus } from "./CardActions";
 
 const dep = (number: number, extra: Record<string, unknown> = {}) => ({ id: String(number), number, title: `카드 ${number}`, status: "running" as const, archived: false, met: false, ...extra });
 describe("선행 카드 대기 문구", () => {
@@ -13,5 +14,18 @@ describe("선행 카드 대기 문구", () => {
   expect(cardDependencyDisplay("queued", [dep(12, {met: true})])).toBeNull();
   expect(cardDependencyDisplay("todo", [dep(12)])).toBeNull();
   expect(cardDependencyDisplay("on_hold", [dep(12)])).toBeNull();
+ });
+ it("취소와 미충족 보관만 멈춘 선행으로 본다", () => {
+  expect(cardDependencyStopReason(dep(1, {status: "cancelled"}))).toBe("cancelled");
+  expect(cardDependencyStopReason(dep(1, {status: "cancelled", archived: true}))).toBe("cancelled");
+  expect(cardDependencyStopReason(dep(1, {archived: true}))).toBe("archived");
+  expect(cardDependencyStopReason(dep(1, {archived: true, met: true, status: "done"}))).toBeNull();
+  expect(cardDependencyStopReason(dep(1))).toBeNull();
+ });
+ it("상세 상태 칩은 충족되지 않은 보관 선행을 오류 톤 「보관됨」으로, 취소는 「취소」로 보인다", () => {
+  expect(cardDependencyStatus(dep(1, {archived: true, status: "queued"}))).toEqual({label: "보관됨", tone: "error"});
+  expect(cardDependencyStatus(dep(1, {status: "cancelled"}))).toEqual({label: "취소", tone: "cancelled"});
+  expect(cardDependencyStatus(dep(1, {status: "queued"}))).toEqual({label: "대기", tone: "queued"});
+  expect(cardDependencyStatus(dep(1, {status: "done", met: true, archived: true}))).toEqual({label: "완료", tone: "done"});
  });
 });

@@ -9,7 +9,7 @@ import type { CardStatus } from "../../../packages/wire-schema/generated/typescr
 import { type CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { Button, DashboardIconCap, FrameLoading, useDashboardStore, Popover, PopoverPopup, PopoverTrigger, AlertDialog, AlertDialogPopup, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter } from "@seosoyoung/soul-ui";
 import type { CardQueueStatusActivator } from "@seosoyoung/soul-ui/cards/CardQueue";
-import { cardStatusLabel } from "./CardActions";
+import { cardDependencyStatus, cardStatusLabel } from "./CardActions";
 import { StatusChip } from "./StatusChip";
 import "./v3-card-status-picker.css";
 
@@ -76,8 +76,8 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
   const answerConfirmation=(value:boolean)=>{confirmation?.resolve(value);setConfirmation(null);};
   return <>{settingsCard?<CardExecutionSettingsDialog card={settingsCard} folders={folders} startAfterSave assignment={control.assignment} onSave={control.saveSettings} onStart={saved=>control.change(saved,"running")} onClose={()=>setSettingsCard(null)}/>:null}
   <AlertDialog open={Boolean(confirmation)} onOpenChange={next=>{if(!next)answerConfirmation(false);}}><AlertDialogPopup>
-    <AlertDialogHeader><AlertDialogTitle>선행 카드가 끝나지 않았습니다</AlertDialogTitle><AlertDialogDescription>
-      {confirmation?.card.dependsOn?.filter(dep=>!dep.met).map(dep=>`${dep.number==null?dep.title:`#${dep.number}`}(${cardStatusLabel({status:dep.status,blockedKind:null})})`).join(", ")}이 아직 충족되지 않았습니다. 기다리지 않고 지금 시작할까요?
+    <AlertDialogHeader><AlertDialogTitle>선행 카드가 끝나지 않았습니다</AlertDialogTitle><AlertDialogDescription className="v3-card-start-confirm-description">
+      {confirmation?.card.dependsOn?.filter(dep=>!dep.met).map(dep=>`${dep.number==null?dep.title:`#${dep.number}`}(${cardDependencyStatus(dep).label})`).join(", ")}이 아직 충족되지 않았습니다. 기다리지 않고 지금 시작할까요?
     </AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><Button variant="outline" onClick={()=>answerConfirmation(false)}>취소</Button><Button onClick={()=>answerConfirmation(true)}>지금 시작</Button></AlertDialogFooter>
   </AlertDialogPopup></AlertDialog><Popover open={open&&!confirmation} onOpenChange={(next,details)=>{
     if(details.reason==="escape-key")details.event.preventDefault();

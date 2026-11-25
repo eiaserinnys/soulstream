@@ -27,6 +27,21 @@ it("미충족 선행이 있으면 실행 전 확인하고 취소 또는 시작�
  await click("카드 상태 변경");await click("실행 중");await click("지금 시작");
  expect(c.change).toHaveBeenCalledWith(d.card,"running",undefined);
 });
+it("확인 창은 충족되지 않은 보관 선행을 대기가 아니라 보관됨으로 적고 어절을 지킨다",async()=>{
+ const d=detail();d.card={...d.card,assigneeSessionId:"session",dependsOn:[
+  {id:"a",number:1864,title:"실행 선행",status:"running",archived:false,met:false},
+  {id:"b",number:1861,title:"취소 선행",status:"cancelled",archived:false,met:false},
+  {id:"c",number:1860,title:"보관 선행",status:"queued",archived:true,met:false},
+  {id:"d",number:1863,title:"충족 선행",status:"done",archived:false,met:true},
+ ]};
+ const c=await render(vi.fn().mockResolvedValue(d));
+ await click("카드 상태 변경");await click("실행 중");
+ const description=document.querySelector<HTMLElement>('[role="alertdialog"] [data-slot="alert-dialog-description"]')!;
+ expect(description.textContent).toContain("#1864(실행 중), #1861(취소), #1860(보관됨)이 아직 충족되지 않았습니다");
+ expect(description.textContent).not.toContain("#1860(대기)");expect(description.textContent).not.toContain("#1863");
+ expect(description.className).toContain("v3-card-start-confirm-description");
+ expect(c.change).not.toHaveBeenCalled();
+});
 it("선행이 모두 충족되면 확인 없이 시작한다",async()=>{
  const d=detail();d.card={...d.card,assigneeSessionId:"session",dependsOn:[{id:"dep",number:12,title:"선행",status:"done",archived:false,met:true}]};
  const c=await render(vi.fn().mockResolvedValue(d));

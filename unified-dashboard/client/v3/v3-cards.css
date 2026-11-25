@@ -150,6 +150,7 @@
 .v3-card-dependency-number { flex: none; color: var(--v3-text-secondary); }
 .v3-card-dependency-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .v3-card-dependency-row > [data-slot="status-chip"], .v3-card-dependency-row > svg { flex: none; }
+.v3-card-start-confirm-description { word-break: keep-all; overflow-wrap: anywhere; }
 .v3-card-composer-slot > .v3-card-comment-dock {
  box-sizing: border-box; min-width: 0; padding-inline: var(--v3-detail-inline-inset);
  padding-bottom: var(--v3-space-4);

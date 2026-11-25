@@ -66,7 +66,10 @@ describe("persistent session task list", () => {
     const card: CardRow = {...baseCard("dependency", "queued"), dependsOn:[{id:"ahead",number:12,title:"선행",status:"cancelled",archived:false,met:false}]};
     expect(persistentTaskTooltipContent(card, false)).toEqual({dependency:"선행 취소됨 #12"});
     await act(() => root.render(<CardRowView card={card} variant="summary" onOpen={()=>{}}/>));
-    expect(container.querySelector('[aria-label="선행 취소됨 #12"]')).not.toBeNull();
+    const alert = container.querySelector('[aria-label="선행 취소됨 #12"]');
+    expect(alert).not.toBeNull();
+    expect(container.querySelector(".v3-card-summary-title")?.contains(alert)).toBe(false);
+    expect(alert?.parentElement?.className).toBe("v3-card-summary-heading");
     await act(() => root.render(<CardRowView card={card} onOpen={()=>{}}/>));
     expect(container.querySelector(".v3-run-card-turn")?.textContent).toContain("선행 취소됨 #12");
   });

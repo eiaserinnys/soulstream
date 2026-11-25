@@ -71,6 +71,9 @@
 .v3-card-summary-number-reserve { visibility: hidden; }
 .v3-card-summary-number { min-width: 0; }
 .v3-card-summary-title { display: block; min-width: 0; overflow: hidden; font: var(--v3-type-body) var(--v3-font-family); text-overflow: ellipsis; white-space: nowrap; }
+.v3-card-summary-heading { display: flex; min-width: 0; align-items: center; gap: var(--v3-space-1); }
+.v3-card-summary-heading > .v3-card-summary-title { flex: 0 1 auto; }
+.v3-card-summary-alert { flex: none; }
 .v3-card-summary-avatar { display: block; width: var(--v3-space-5); height: var(--v3-space-5); flex: none; overflow: hidden; border-radius: var(--radius-pill); background: var(--muted); }
 .v3-card-summary-avatar > * { width: 100%; height: 100%; }
 .v3-persistent-task-list-error { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--v3-space-2); }

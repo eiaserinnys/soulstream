@@ -25,7 +25,8 @@ import { CardNotes } from "./CardNotes";
 import { summarizeCardItems } from "./card-item-summary";
 import { useCardNavigation } from "./card-navigation";
 import { StatusChip } from "./StatusChip";
-import { cardStatusLabel } from "./CardActions";
+import { cardDependencyStatus } from "./CardActions";
+import { cardDependencyStopReason } from "../../../packages/wire-schema/src/card_dependency_display";
 const EMPTY_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
 export { cardRequestMarkdown } from "./card-request-markdown";
 export type CardDetailPaneProps={cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary,selection?:CardSessionSelection):void;focus?:string|null;initialSessionId?:string|null;sampleDetail?:CardDetail;sampleExecution?:CardExecutionState;onSampleChange?(update:(current:CardDetail)=>CardDetail):void};
@@ -191,8 +192,8 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   </div>:null}
   {card.dependsOn?.length?<div className="v3-detail-gutter v3-task-detail-content v3-card-dependencies"><section className="v3-detail-section">
    <div className="v3-detail-section-head"><h3>선행 카드</h3><span>{card.dependsOn.filter(dep=>dep.met).length}/{card.dependsOn.length}</span></div>
-   <div className="v3-card-dependency-list">{card.dependsOn.map(dep=><Button key={dep.id} variant="outline" className="v3-card-dependency-row" data-stopped={dep.status==="cancelled"||(!dep.met&&dep.archived)||undefined} onClick={()=>openCard(dep.id,"overlay")}>
-    <span className="v3-card-dependency-number">{dep.number==null?"":`#${dep.number}`}</span><span className="v3-card-dependency-title">{dep.title}</span><StatusChip tone={dep.status} label={cardStatusLabel({status:dep.status,blockedKind:null})}/><ChevronRight className="h-4 w-4" aria-hidden="true"/>
+   <div className="v3-card-dependency-list">{card.dependsOn.map(dep=><Button key={dep.id} variant="outline" className="v3-card-dependency-row" data-stopped={cardDependencyStopReason(dep)!==null||undefined} onClick={()=>openCard(dep.id,"overlay")}>
+    <span className="v3-card-dependency-number">{dep.number==null?"":`#${dep.number}`}</span><span className="v3-card-dependency-title">{dep.title}</span><StatusChip tone={cardDependencyStatus(dep).tone} label={cardDependencyStatus(dep).label}/><ChevronRight className="h-4 w-4" aria-hidden="true"/>
    </Button>)}</div></section></div>:null}
   {card.now?<div key={cardId} className="v3-detail-gutter v3-card-now-slot"><CardNowPanel now={card.now} nowHistory={detail?.nowHistory} itemsCount={card.items?.length??0} activeCount={itemSummary.activeCount} onComplete={()=>void complete()} pending={pending||execution?.phase==='pending'}/></div>:null}
   <div className="v3-detail-gutter v3-card-tabs"><DetailTabs id={tabId} label="카드 보기" panelId={`${tabId}-panel`} variant="card" tabs={tabs} value={tab} onChange={changeTab}/></div>
