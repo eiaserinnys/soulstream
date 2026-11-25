@@ -1,18 +1,16 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Button, DashboardIconCap, Dialog, DialogPopup, DialogTitle, useDashboardStore, useIsMobile } from "@seosoyoung/soul-ui";
 import { ExternalLink, PanelLeft, X } from "lucide-react";
-import type { MobilePlannerTab } from "../mobile-planner-state";
 import { StatusChip } from "../StatusChip";
 import { PasThreadDecideBox } from "./PasThreadDecideBox";
 import { PasThreadRail } from "./PasThreadRail";
 import { PasThreadBody } from "./PasThreadTimeline";
 import { AGENDA_KIND_LABEL, type ReportEntry } from "./pas-report-thread-model";
-import { useCardSessionPanel } from "./use-card-session-panel";
 import { usePasReportThread, type PasReportThreadInput } from "./use-pas-report-thread";
 import "./v3-pas-report-thread.css";
 
-// 카드 패널은 대화 화면을 거쳐 이 창으로 되돌아오는 고리가 있어, 처음 열 때 불러온다.
-const CardWorkspace = lazy(() => import("../CardWorkspace").then(module => ({ default: module.CardWorkspace })));
+// 카드 패널(과 세션 칸 훅)은 대화 화면을 거쳐 이 창으로 되돌아오는 고리가 있어, 처음 열 때 불러온다.
+const PasCardPanel = lazy(() => import("./PasCardPanel").then(module => ({ default: module.PasCardPanel })));
 const DRAWER_QUERY = "(max-width: 819px)";
 const KIND_TONE = { question: "question", request: "question", review: "review", blocked: "blocked", running: "running", verifying: "awaiting_verification" } as const;
 
@@ -68,11 +66,9 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
   const autoRef = useRef(true);
   const [railOpen, setRailOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelTab, setPanelTab] = useState<MobilePlannerTab>("today");
   const [autoScroll, setAutoScroll] = useState(true);
   const [hasNew, setHasNew] = useState(false);
   const drawerOpen = drawerMode && railOpen;
-  const sessionPanel = useCardSessionPanel({ cardId: panelOpen ? active?.cardId ?? null : null, ownSessionId, enabled: liveSessions });
 
   const jump = useCallback(() => {
     const scroll = threadRef.current;
@@ -118,13 +114,10 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
     railTrigger.current?.focus({ preventScroll: true });
     setRailOpen(false);
   }, []);
-  const resetSessionPanel = sessionPanel.reset;
   const closePanel = useCallback(() => {
     setPanelOpen(false);
-    setPanelTab("today");
-    resetSessionPanel();
     requestAnimationFrame(() => panelTrigger.current?.focus({ preventScroll: true }));
-  }, [resetSessionPanel]);
+  }, []);
   useEffect(() => { if (!drawerMode) setRailOpen(false); }, [drawerMode]);
   useEffect(() => {
     if (drawerOpen) requestAnimationFrame(() => activeRailItem()?.focus({ preventScroll: true }));
@@ -152,8 +145,7 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
     return () => cancelAnimationFrame(frame);
   }, [focusKey, drawerMode]);
 
-  const openPanel = (trigger: HTMLElement | null) => { panelTrigger.current = trigger; setPanelTab("today"); setPanelOpen(true); };
-  const openSession = sessionPanel.workspaceProps.onOpenSession;
+  const openPanel = (trigger: HTMLElement | null) => { panelTrigger.current = trigger; setPanelOpen(true); };
   return <>
     <header className="pas-rt-head">
       {drawerMode ? <div className="pas-rt-rail-toggle"><DashboardIconCap ref={railTrigger} size="small" appearance="bare" label="안건 목록"
@@ -190,8 +182,7 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
         <PasThreadDecideBox controller={controller} agenda={active} undoButtonRef={undoButtonRef} onLayoutChange={keepLatest} />
       </div>
     </div>
-    {panelOpen && active ? <Suspense fallback={null}><CardWorkspace cardId={active.cardId} folders={folders ?? []} onClose={closePanel}
-      mobileMode={mobile} mobileTab={panelTab} onCloseChat={() => setPanelTab("today")} {...sessionPanel.workspaceProps}
-      onOpenSession={(summary, selection) => { openSession(summary, selection); if (selection?.source !== "automatic" && mobile) setPanelTab("chat"); }} /></Suspense> : null}
+    {panelOpen && active ? <Suspense fallback={null}><PasCardPanel cardId={active.cardId} folders={folders ?? []} ownSessionId={ownSessionId}
+      liveSessions={liveSessions} mobile={mobile} onClose={closePanel} /></Suspense> : null}
   </>;
 }
