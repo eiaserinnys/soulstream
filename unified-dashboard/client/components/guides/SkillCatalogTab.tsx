@@ -171,10 +171,14 @@ export function SkillCatalogTab({ request = fetch }: { request?: typeof fetch })
   useEffect(() => { if (detailOpen) backRef.current?.focus(); }, [detailOpen]);
   useKeepScroll(listRef);
   const openDetail = (name: string) => { setSelected(name); setDetailOpen(true); };
-  const closeDetail = () => {
-    setDetailOpen(false);
-    requestAnimationFrame(() => listRef.current?.querySelector<HTMLElement>('[data-settings-list-row][class*="bg-accent-blue/15"]')?.focus());
-  };
+  // 상세를 닫으면 목록이 다시 보인 뒤(효과는 그린 뒤에 돈다) 고른 줄로 초점이 돌아간다.
+  const restoreFocus = useRef(false);
+  const closeDetail = () => { restoreFocus.current = true; setDetailOpen(false); };
+  useEffect(() => {
+    if (detailOpen || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    listRef.current?.querySelector<HTMLElement>('[data-settings-list-row][class*="bg-accent-blue/15"]')?.focus();
+  }, [detailOpen]);
 
   if (state.status === "error") {
     return (

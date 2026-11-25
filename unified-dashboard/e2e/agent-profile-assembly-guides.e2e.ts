@@ -35,10 +35,19 @@ async function overviewLoaded(page: Page) {
   await expect(page.getByTestId("agent-context-overview").locator("table")).toBeVisible({ timeout: 15_000 });
 }
 
+/** 설정 창 안에서 다른 항목으로 옮긴다(좁은 폭에서는 먼저 「모든 설정」으로 돌아간다). 페이지를 다시 열지 않아 시험이 빠르다. */
+async function switchCategory(page: Page, label: "에이전트" | "스킬과 카탈로그") {
+  const back = page.getByRole("button", { name: "모든 설정" });
+  if (await back.isVisible()) await back.click();
+  await page.getByRole("button", { name: label, exact: true }).click();
+}
+
 for (const theme of ["light", "dark"] as const) {
   const dir = theme === "dark" ? "dark/" : "";
   for (const size of ["wide", "narrow"] as const) {
-    test(`profile ${theme} ${size}`, async ({ page }) => {
+    test(`three screens ${theme} ${size}`, async ({ page }) => {
+      test.setTimeout(150_000);
+      // 구성
       await openProfile(page, size, theme);
       await profileScene(page);
       await shot(page, `${dir}profile-${size}.png`);
@@ -48,9 +57,14 @@ for (const theme of ["light", "dark"] as const) {
         await page.locator('[data-testid="agent-context-skills"] > button').last().scrollIntoViewIfNeeded();
         await shot(page, `states/profile-skills-${size}.png`);
       }
-    });
-    test(`skills ${theme} ${size}`, async ({ page }) => {
-      await openSkills(page, size, theme);
+      // 한눈에
+      await page.getByRole("button", { name: "한눈에", exact: true }).click();
+      await overviewLoaded(page);
+      await shot(page, `${dir}overview-${size}.png`);
+      if (theme === "light" && size === "wide") await shot(page, "states/error-column.png");
+      // 스킬과 카탈로그
+      await switchCategory(page, "스킬과 카탈로그");
+      await expect(page.getByTestId("skill-catalog-settings")).toBeVisible();
       await skillsLoaded(page);
       if (size === "wide") {
         // 본문 탭(기본)은 states에 남기고, 대표 장면은 쓰이는 곳 탭으로 찍는다.
@@ -72,12 +86,6 @@ for (const theme of ["light", "dark"] as const) {
         await expect(page.getByRole("button", { name: "목록으로" })).toBeFocused();
         await shot(page, "states/skills-narrow-detail.png");
       }
-    });
-    test(`overview ${theme} ${size}`, async ({ page }) => {
-      await openOverview(page, size, theme);
-      await overviewLoaded(page);
-      await shot(page, `${dir}overview-${size}.png`);
-      if (theme === "light" && size === "wide") await shot(page, "states/error-column.png");
     });
   }
 }
@@ -232,21 +240,6 @@ test("operations: ui-design §0 14번부터 18번을 재서 operations.md를 쓴
   await expect(page.getByTestId("agent-profile-editor")).toBeVisible();
   out.dialogs.push(["한눈에(같은 자리 전환)", "「한눈에」 단추", "같은 단추(글이 「프로필 편집으로」로 바뀜)", "단추를 다시 실행하면 프로필 편집으로 돌아감", "해당 없음", "같은 단추"]);
 
-  // ---- 14번: 다시 검증은 눌러도 초점이 사라지지 않고 끝나면 단추로 돌아온다
-  await page.clock.install({ time: new Date("2026-11-25T06:00:00Z") });
-  await openSkills(page, "wide", "light");
-  await skillsLoaded(page);
-  const verify = page.getByRole("button", { name: "다시 검증" });
-  await verify.click();
-  const status = page.getByRole("button", { name: "검증 중" });
-  await expect(status).toBeFocused();
-  out.focus.push(["다시 검증", "단추를 누름(202)", `같은 단추가 「검증 중」 표시로 바뀌고 초점이 그대로 남음: ${await active()}`]);
-  await page.clock.fastForward(15_000);
-  await expect(verify).toBeVisible();
-  await expect(verify).toBeFocused();
-  out.focus.push(["검증이 끝남", "15초 뒤 목록을 다시 읽어 새 보고가 옴", `「다시 검증」 글로 돌아오고 초점이 그대로 남음: ${await active()}`]);
-  out.dialogs.push(["다시 검증(같은 자리 전환)", "「다시 검증」 단추", "같은 단추(글이 「검증 중」으로 바뀌고 초점이 그대로 남음)", "해당 없음", "해당 없음(대화상자가 아님)", "끝나면 「다시 검증」 단추"]);
-
   // ---- 17번 오류 상태
   const alertIn = (selector: string) => page.locator(selector).getByRole("alert").first();
   const cases: Array<[string, () => Promise<void>]> = [
@@ -308,6 +301,21 @@ test("operations: ui-design §0 14번부터 18번을 재서 operations.md를 쓴
   await openOverview(page, "narrow", "light");
   await overviewLoaded(page);
   await narrowMeasure("한눈에 360");
+
+  // ---- 14번: 다시 검증은 눌러도 초점이 사라지지 않고 끝나면 단추로 돌아온다. 가짜 시계를 쓰므로 맨 끝에 둔다(이 뒤로 다른 화면을 열지 않는다).
+  await page.clock.install({ time: new Date("2026-11-25T06:00:00Z") });
+  await openSkills(page, "wide", "light");
+  await skillsLoaded(page);
+  const verify = page.getByRole("button", { name: "다시 검증" });
+  await verify.click();
+  const status = page.getByRole("button", { name: "검증 중" });
+  await expect(status).toBeFocused();
+  out.focus.push(["다시 검증", "단추를 누름(202)", `같은 단추가 「검증 중」 표시로 바뀌고 초점이 그대로 남음: ${await active()}`]);
+  await page.clock.fastForward(15_000);
+  await expect(verify).toBeVisible();
+  await expect(verify).toBeFocused();
+  out.focus.push(["검증이 끝남", "15초 뒤 목록을 다시 읽어 새 보고가 옴", `「다시 검증」 글로 돌아오고 초점이 그대로 남음: ${await active()}`]);
+  out.dialogs.push(["다시 검증(같은 자리 전환)", "「다시 검증」 단추", "같은 단추(글이 「검증 중」으로 바뀌고 초점이 그대로 남음)", "해당 없음", "해당 없음(대화상자가 아님)", "끝나면 「다시 검증」 단추"]);
 
   writeOperations(out);
 });
