@@ -162,6 +162,7 @@ def write_operations_locked(out):
                     'local': '로컬 설정', 'mismatch': '판 불일치', 'blocked': '실행 불가', 'no-isolation': '격리 토글 없음',
                     'unmanaged': '관리 목록 밖 노드', 'unavailable': '미리보기 503', 'loading': '미리보기 로딩',
                     'shared': '공유 프로필 분리 확인', 'save': '연결 저장 성공 안내', 'fork-result': '프로필 분리 성공 안내',
+                    'nav-keyboard': '키보드로 이동한 프로필 상세', 'nav-mouse': '마우스로 이동한 프로필 상세',
                     'long': '긴 서버·에이전트·노드 이름',
                     'no-node': '연결된 노드 없음', 'disconnect': '저장 전 연결 안 함', 'success': '서버 시험 성공',
                     'config': '설정 단계 실패', 'connect': '연결 단계 실패', 'initialize': '초기화 단계 실패',
@@ -386,10 +387,25 @@ def assert_fork(page, out, suffix, scenario, seen):
     assert page.evaluate("() => document.activeElement !== document.body && !!document.activeElement.closest('.config-dialog') && document.activeElement.textContent.trim() !== '닫기'")
 
 
-def assert_navigation(page):
+def assert_navigation(page, method='keyboard'):
     pane = page.locator('[data-testid=agent-profile-editor]')
     profile_id = pane.get_by_label('MCP 프로필').input_value()
-    pane.get_by_role('button', name='이 프로필 편집').focus(); page.keyboard.press('Enter')
+    page.evaluate("""() => {
+      if (!window.__mcpNavCapture) {
+        const scroll = Element.prototype.scrollIntoView;
+        Element.prototype.scrollIntoView = function(...args) {
+          if (this.matches('.config-detail header')) window.__mcpNavScrolls.push(args[0]);
+          return scroll.apply(this, args);
+        };
+        window.__mcpNavCapture = true;
+      }
+      window.__mcpNavScrolls = [];
+    }""")
+    button = pane.get_by_role('button', name='이 프로필 편집')
+    if method == 'keyboard':
+        button.focus(); page.keyboard.press('Enter')
+    else:
+        button.click()
     expect(page.get_by_role('tab', name='프로필', exact=True)).to_have_attribute('aria-selected', 'true')
     header = page.locator('.config-detail header').last
     expect(header).to_be_visible()
@@ -397,10 +413,35 @@ def assert_navigation(page):
     expect(header).to_be_focused()
     assert header.evaluate("el => getComputedStyle(el).outlineStyle !== 'auto'")
     assert header.evaluate('el => { const y = el.getBoundingClientRect().top; return y >= 0 && y < innerHeight; }')
+    if page.viewport_size['width'] < 640:
+        geometry = header.evaluate("""el => {
+          let parent = el.parentElement;
+          while (parent && !/(auto|scroll)/.test(getComputedStyle(parent).overflowY)) parent = parent.parentElement;
+          const clip = parent.getBoundingClientRect(), head = el.getBoundingClientRect();
+          const field = [...document.querySelectorAll('label')].find(label => label.textContent.trim().startsWith('프로필 ID')).querySelector('input').getBoundingClientRect();
+          return {gap: head.top - clip.top, headBottom: head.bottom, fieldTop: field.top, fieldBottom: field.bottom,
+                  fieldLeft: field.left, fieldRight: field.right, clipTop: clip.top, clipBottom: clip.bottom, clipLeft: clip.left, clipRight: clip.right};
+        }""")
+        assert -1 <= geometry['gap'] <= 32, f"머리 간격 {geometry['gap']:.1f}px (최대 32px), 입력: {geometry['fieldTop']:.1f}~{geometry['fieldBottom']:.1f}, 영역: {geometry['clipTop']:.1f}~{geometry['clipBottom']:.1f}"
+        assert geometry['headBottom'] <= geometry['clipBottom'], geometry
+        assert geometry['fieldTop'] >= geometry['clipTop'] and geometry['fieldBottom'] <= geometry['clipBottom'], geometry
+        assert geometry['fieldLeft'] >= geometry['clipLeft'] and geometry['fieldRight'] <= geometry['clipRight'], geometry
     if page.viewport_size['width'] == 1440:
+        assert page.evaluate('() => window.__mcpNavScrolls.length') == 0
         tab = page.get_by_role('tab', name='프로필', exact=True)
         assert tab.evaluate("""el => { let p = el.parentElement; while (p && !/(auto|scroll|hidden)/.test(getComputedStyle(p).overflowY)) p = p.parentElement;
-          return !p || el.getBoundingClientRect().top >= p.getBoundingClientRect().top - 1; }""")
+          const r = el.getBoundingClientRect(), b = p?.getBoundingClientRect();
+          return !b || (r.top >= b.top - 1 && r.bottom <= b.bottom + 1); }""")
+
+
+def assert_navigation_both(page, out, suffix):
+    assert_navigation(page, 'keyboard')
+    shot(page, out, f'agent-nav-keyboard-{suffix}')
+    page.get_by_role('button', name=f'example-agent ({base.NODES[0]})', exact=True).click()
+    expect(page.get_by_role('tab', name='MCP', exact=True)).to_have_attribute('aria-selected', 'true')
+    expect(page.locator('[data-testid=agent-profile-editor]').get_by_label('MCP 프로필')).to_be_focused()
+    assert_navigation(page, 'mouse')
+    shot(page, out, f'agent-nav-mouse-{suffix}')
 
 
 def assert_wrong_agents(browser, width, theme, origin):
@@ -476,7 +517,7 @@ def agent_states(browser, width, theme, origin, out, checks):
                 checks.run('stale', lambda: assert_stale(page, scenario, seen))
                 checks.run('save', lambda: assert_save(page, seen, out, suffix))
                 checks.run('fork', lambda: assert_fork(page, out, suffix, scenario, seen))
-                checks.run('navigation', lambda: assert_navigation(page))
+                checks.run('navigation', lambda: assert_navigation_both(page, out, suffix))
             elif state == 'unavailable':
                 notice = pane.get_by_text('노드에 연결할 수 없거나 노드가 이 기능을 받지 않습니다.')
                 expect(notice).to_be_visible(); notice.scroll_into_view_if_needed()

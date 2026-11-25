@@ -1,3 +1,4 @@
+// 기존 설정 탭의 목록·상세와 이동 상태를 함께 유지해 500줄을 넘는다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, FrameLoading } from "@seosoyoung/soul-ui";
 import {
@@ -67,7 +68,11 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
       focusedInitialProfile.current = true;
       header.tabIndex = -1;
       header.style.outline = "none";
-      header.scrollIntoView?.({ block: "nearest" });
+      let scrollParent = header.parentElement;
+      while (scrollParent && !/(auto|scroll)/.test(getComputedStyle(scrollParent).overflowY)) scrollParent = scrollParent.parentElement;
+      const bounds = scrollParent?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+      const position = header.getBoundingClientRect();
+      if (position.top < bounds.top || position.bottom > bounds.bottom) header.scrollIntoView?.({ block: "start" });
       header.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(id);
