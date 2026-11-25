@@ -1,4 +1,4 @@
-import { Badge, useAgentPortraitUrlResolver } from "@seosoyoung/soul-ui";
+import { Badge, Button, useAgentPortraitUrlResolver } from "@seosoyoung/soul-ui";
 import { StatusChip } from "../StatusChip";
 import { AGENDA_KIND_LABEL, formatReturnTime, type Agenda, type AgendaKind } from "./pas-report-thread-model";
 import type { PasReportThreadController } from "./use-pas-report-thread";
@@ -8,7 +8,9 @@ const KIND_TONE: Record<AgendaKind, string> = {
 };
 
 export function PasThreadRail({ controller }: { controller: PasReportThreadController }) {
-  const { groups, processed, activeCardId, now } = controller;
+  const { groups, processed, activeCardId, now, cardsError } = controller;
+  // 카드 목록을 못 읽었으면 진행 중과 보류함은 0이 아니라 알 수 없는 것이다.
+  const unknownCount = Boolean(cardsError);
   const sections = [
     { title: "결재 대기", items: groups.pending.map(agenda => ({ agenda, note: null as string | null })), always: true },
     { title: "진행 중", items: groups.running.map(agenda => ({ agenda, note: null as string | null })), always: true },
@@ -19,14 +21,21 @@ export function PasThreadRail({ controller }: { controller: PasReportThreadContr
     <div className="pas-rt-rail-sections">
       {sections.filter(section => section.items.length || section.always).map(section =>
         <section key={section.title} aria-label={section.title}>
-          <div className="pas-rt-rail-head"><h2>{section.title}</h2><span className="pas-rt-rail-count">{section.items.length}</span></div>
+          <div className="pas-rt-rail-head"><h2>{section.title}</h2><span className="pas-rt-rail-count">{unknownCount && section.title === "진행 중" ? "–" : section.items.length}</span></div>
           <ul className="pas-rt-rail-list">
             {section.items.map(({ agenda, note }) => <RailRow key={agenda.cardId} agenda={agenda} note={note}
               section={section.title} active={agenda.cardId === activeCardId} onSelect={() => controller.select(agenda.cardId)} />)}
           </ul>
         </section>)}
     </div>
-    <div className="pas-rt-rail-foot"><p className="pas-rt-hold-note">보류함 {groups.holdCount}개</p></div>
+    <div className="pas-rt-rail-foot">
+      {unknownCount
+        ? <div className="pas-rt-rail-error" role="alert" data-testid="pas-rt-rail-error">
+          <span>카드 목록을 불러오지 못해 진행 중과 보류함을 알 수 없습니다.</span>
+          <Button variant="outline" size="xs" onClick={controller.retryCards}>다시 시도</Button>
+        </div>
+        : <p className="pas-rt-hold-note">보류함 {groups.holdCount}개</p>}
+    </div>
   </aside>;
 }
 

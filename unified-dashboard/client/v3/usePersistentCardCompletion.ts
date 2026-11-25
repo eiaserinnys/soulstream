@@ -41,7 +41,8 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
     else await transitionCard(cardId, status, expectedStatus);
   }, [cardTransition]);
 
-  const complete = useCallback(async (entry: CompletionEntry, currentEntries?: PersistentReportEntry[], target: CardCompletionTarget = 'done') => {
+  /** `onFailure`는 실패 문구를 말풍선 알림 대신 받는다. 말풍선 위로 모달이 떠 있는 보고 창이 자기 안에 보이려고 쓴다. */
+  const complete = useCallback(async (entry: CompletionEntry, currentEntries?: PersistentReportEntry[], target: CardCompletionTarget = 'done', onFailure?: (text: string) => void) => {
     if (busyRef.current) return false;
     busyRef.current = true;
     setBusy(true);
@@ -86,7 +87,7 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
           setRecent(null);
         }
       }
-      notify(error instanceof CardStatusChangedError ? '카드 상태가 바뀌었어.' : target === 'on_hold' ? '카드를 보류하지 못했어.' : '카드를 완료하지 못했어.');
+      (onFailure ?? notify)(error instanceof CardStatusChangedError ? '카드 상태가 바뀌었어.' : target === 'on_hold' ? '카드를 보류하지 못했어.' : '카드를 완료하지 못했어.');
       return false;
     } finally {
       busyRef.current = false;
@@ -94,9 +95,10 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
     }
   }, [clearTimer, notify, runTransition]);
 
-  const undo = useCallback(async () => {
+  /** 되돌렸으면 true. 실패하거나 되돌릴 것이 없으면 false다. */
+  const undo = useCallback(async (onFailure?: (text: string) => void): Promise<boolean> => {
     const current = recentRef.current;
-    if (!current || busyRef.current) return;
+    if (!current || busyRef.current) return false;
     busyRef.current = true;
     setBusy(true);
     clearTimer();
@@ -109,6 +111,7 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
       recentRef.current = null;
       setRecent(null);
       bump(value => value + 1);
+      return true;
     } catch (error) {
       const remaining = current.expiresAt - Date.now();
       if (remaining > 0) {
@@ -121,7 +124,8 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
         recentRef.current = null;
         setRecent(null);
       }
-      notify(error instanceof CardStatusChangedError ? '카드 상태가 바뀌었어.' : '되돌리지 못했어.');
+      (onFailure ?? notify)(error instanceof CardStatusChangedError ? '카드 상태가 바뀌었어.' : '되돌리지 못했어.');
+      return false;
     } finally {
       busyRef.current = false;
       setBusy(false);

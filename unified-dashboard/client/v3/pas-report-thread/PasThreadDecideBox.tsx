@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { Badge, Button } from "@seosoyoung/soul-ui";
+import { Badge, Button, useDashboardStore } from "@seosoyoung/soul-ui";
 import { CARD_COMPLETION_UNDO_MS } from "../../../../packages/wire-schema/src/persistent_report";
 import { CardCommentInput } from "../CardCommentInput";
 import { CardQuestionActions, CardQuestionNotice, cardQuestionDetailView } from "../CardQuestionBlock";
@@ -36,11 +36,16 @@ export function PasThreadDecideBox({ controller, agenda, undoButtonRef, onLayout
     // 스레드의 「항목 지시」가 대상을 만들면 입력창을 열고, 누른 단추를 돌아갈 자리로 둔다.
     if (!target) return;
     triggerRef.current = target.trigger;
+    // 되묻기나 다르게 답하기가 열려 있었다면 항목 지시가 입력창을 이어받는다. 알림줄과 보내는 곳이 같아야 한다.
+    setMode("comment");
+    setSnoozeOpen(false);
     setFocusRequest(value => value + 1);
   }, [target]);
   useEffect(() => { setMode("closed"); setSnoozeOpen(false); }, [agenda?.cardId]);
 
   const open = (next: SendMode, trigger: HTMLElement | null) => {
+    // 항목 대상이 잡힌 채 되묻기나 다르게 답하기를 열면 대상은 풀린다. 그 글은 항목 지시가 아니다.
+    if (next !== "comment" && target) controller.setTarget(null);
     triggerRef.current = trigger;
     setSnoozeOpen(false);
     setMode(next);
@@ -66,6 +71,12 @@ export function PasThreadDecideBox({ controller, agenda, undoButtonRef, onLayout
     }
     return sent;
   };
+  // 카드 패널의 커멘트 입력과 같은 규칙으로 담당 세션이 있는 카드에서 파일 첨부가 붙는다.
+  const card = detail?.card;
+  const assigneeSessionId = card?.assigneeSessionId ?? null;
+  const assigneeNodeId = useDashboardStore(state => assigneeSessionId
+    ? state.catalog?.sessionList?.find(session => session.agentSessionId === assigneeSessionId)?.nodeId : undefined);
+  const attachNodeId = assigneeNodeId ?? detail?.sessions.find(session => session.sessionId === assigneeSessionId)?.nodeId ?? card?.nodeId ?? null;
   const view = question ? cardQuestionDetailView(question, detail?.comments ?? [], "") : null;
   const label = composerMode === "ask" ? "되묻기" : composerMode === "answer" ? "다르게 답하기" : "커멘트";
   const placeholder = composerMode === "ask" ? "물어볼 것" : composerMode === "answer" ? "다르게 답하기" : "커멘트";
@@ -79,7 +90,7 @@ export function PasThreadDecideBox({ controller, agenda, undoButtonRef, onLayout
 
   const canSnooze = agenda !== null && agenda.kind !== "running" && agenda.kind !== "verifying";
   // 미뤄 둔 안건은 그 종류의 단추 그대로, 답변 미루기 자리만 미루기 해제로 바뀐다.
-  const snoozeSlot = !agenda || !canSnooze ? null : snoozed
+  const snoozeSlot = !agenda || (!canSnooze && !snoozed) ? null : snoozed
     ? <Button variant="outline" disabled={busy} data-testid="pas-rt-unsnooze" onClick={() => void controller.unsnooze(agenda)}>미루기 해제</Button>
     : <Button ref={snoozeTriggerRef} variant="outline" disabled={busy} aria-expanded={snoozeOpen} data-testid="pas-rt-snooze-trigger"
       onClick={() => setSnoozeOpen(value => !value)}>답변 미루기</Button>;
@@ -95,14 +106,16 @@ export function PasThreadDecideBox({ controller, agenda, undoButtonRef, onLayout
     primary = <span className="pas-rt-settled">{settled.label}</span>;
   } else if (questionOpen && view && question) {
     const isRequest = view.kind === "request";
-    primary = <>{hint}{isRequest ? null : view.options.map(option => <Button key={option.label} variant="outline" className="pas-rt-choice" disabled={busy}
-      onClick={() => void controller.choose(agenda, option.label)}><span>{option.label}</span>
-      {option.recommended ? <Badge variant="info" size="sm">권함</Badge> : null}</Button>)}</>;
+    // 채운 주 단추(부탁의 「했어」)나 선택지 알약이 왼쪽 묶음 첫 자리다. 되묻기와 미루기는 오른쪽 묶음이다.
+    primary = <>{isRequest
+      ? <Button variant="default" disabled={busy} data-testid="pas-rt-done" onClick={() => void controller.choose(agenda, "했어")}>했어</Button>
+      : view.options.map(option => <Button key={option.label} variant="outline" className="pas-rt-choice" disabled={busy}
+        onClick={() => void controller.choose(agenda, option.label)}><span>{option.label}</span>
+        {option.recommended ? <Badge variant="info" size="sm">권함</Badge> : null}</Button>)}{hint}</>;
     secondary = <>
-      <CardQuestionActions view={view} pending={busy} composerVisible={isRequest}
+      <CardQuestionActions view={{ ...view, kind: "choice" }} pending={busy} composerVisible={isRequest}
         onAnswerFreely={() => open("answer", document.activeElement as HTMLElement | null)}
-        onAskBack={() => open("ask", document.activeElement as HTMLElement | null)}
-        onDone={() => void controller.choose(agenda, "했어")} />
+        onAskBack={() => open("ask", document.activeElement as HTMLElement | null)} />
       {snoozeSlot}
     </>;
   } else if ((agenda.kind === "question" || agenda.kind === "request") && !detail) {
@@ -110,18 +123,21 @@ export function PasThreadDecideBox({ controller, agenda, undoButtonRef, onLayout
     primary = hint;
     secondary = snoozeSlot;
   } else if (agenda.kind === "review") {
-    primary = <>{hint}
+    primary = <>
       <Button variant="default" disabled={busy || controller.completionBusy || !agenda.entry} onClick={() => void controller.complete(agenda, "done")}>완료</Button>
       <Button variant="outline" disabled={busy || controller.completionBusy || !agenda.entry} onClick={() => void controller.complete(agenda, "on_hold")}>보류</Button>
+      {hint}
     </>;
     secondary = <>{commentButton}{snoozeSlot}</>;
   } else if (agenda.kind === "blocked") {
-    primary = <>{hint}<Button variant="default" disabled={busy || !agenda.entry} onClick={() => void controller.acknowledge(agenda)}>확인했어</Button></>;
+    primary = <><Button variant="default" disabled={busy || !agenda.entry} onClick={() => void controller.acknowledge(agenda)}>확인했어</Button>{hint}</>;
     secondary = <>{commentButton}{snoozeSlot}</>;
   } else {
     secondary = <>{commentButton}{snoozeSlot}</>;
   }
   const options = snoozeOpen ? snoozeOptions(new Date()) : [];
+  // 안건이 없으면 결재 상자 자리도 없다. 되돌리기 줄이나 실패 안내가 남아 있을 때만 서 있는다.
+  if (!agenda && !undoRow && !controller.actionError) return null;
   return <footer className="pas-rt-decide" aria-label="결재 상자" data-testid="pas-rt-decide" onKeyDown={event => {
     if (event.key !== "Escape") return;
     if (snoozeOpen) { event.preventDefault(); event.stopPropagation(); setSnoozeOpen(false); snoozeTriggerRef.current?.focus({ preventScroll: true }); return; }
@@ -140,7 +156,7 @@ export function PasThreadDecideBox({ controller, agenda, undoButtonRef, onLayout
     {composerOpen && agenda ? <div className="pas-rt-composer-drawer">
       {target ? <CardQuestionNotice label={`대상: ${target.itemId}번 항목`} onClear={closeComposer} />
         : <CardQuestionNotice label={label} onClear={closeComposer} />}
-      <CardCommentInput cardId={`pas-thread:${agenda.cardId}:${composerMode}`} nodeId={null} sessionId={null} pending={busy}
+      <CardCommentInput cardId={`pas-thread:${agenda.cardId}:${composerMode}`} nodeId={attachNodeId} sessionId={assigneeSessionId} pending={busy}
         focusRequest={focusRequest} placeholder={placeholder} onSend={submit} />
     </div> : null}
   </footer>;

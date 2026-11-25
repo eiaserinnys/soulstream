@@ -1,6 +1,6 @@
 import type { CardComment, CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { CARD_BOARD_STATUS_LABELS } from "@seosoyoung/soul-ui/lib/card-board-status-labels";
-import type { PersistentReportEntry } from "../../../../packages/wire-schema/src/persistent_report";
+import { CARD_QUESTION_KEY_PREFIX, type PersistentReportEntry } from "../../../../packages/wire-schema/src/persistent_report";
 import { isOpenCardQuestion } from "../CardQuestionBlock";
 
 /** 보고 창이 다루는 안건의 종류. 데이터로 가른다. */
@@ -55,7 +55,7 @@ function kindOfStatus(status: string | undefined): AgendaKind | null {
 /** 판의 한 장을 안건으로 바꾼다. card_id가 없는 PAS 자체 장과 닫힌 질문 장은 안건이 아니다. */
 export function entryAgenda(entry: ReportEntry, card: CardRow | undefined): Agenda | null {
   if (!entry.card_id) return null;
-  if (entry.key.startsWith("cq_")) {
+  if (entry.key.startsWith(CARD_QUESTION_KEY_PREFIX)) {
     if ((entry.state ?? "open") !== "open") return null;
     return { ...agendaBase(card, entry, entry.card_id), kind: entry.question_kind === "request" ? "request" : "question" };
   }

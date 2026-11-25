@@ -72,6 +72,14 @@ async function installThreadScreen(page: Page, options: { fixture?: PasThreadFix
   });
   const emit = (type: string, payload: object) => { queue.push(sse(type, payload, ++eventId)); for (const wake of waiters.splice(0)) wake(); };
 
+  // 카드 패널이 세션을 오른쪽 칸에 열 때 묻는 세션 조회. 카드 상세의 연결 세션을 세션 요약 모양으로 돌려준다.
+  await page.route(url => url.pathname === "/api/sessions", route => {
+    const wanted = new URL(route.request().url()).searchParams.getAll("session_id");
+    const rows = Object.values(fixture.details).flatMap(detail => detail.sessions).filter(session => wanted.includes(session.sessionId))
+      .map(session => ({ agentSessionId: session.sessionId, folderId: "pas-rt-folder", status: session.status, sessionType: "claude", createdAt: session.createdAt, updatedAt: session.updatedAt,
+        nodeId: session.nodeId, agentId: session.agentId, agentName: session.agentName, displayName: session.displayName ?? session.agentName }));
+    return route.fulfill({ json: { sessions: rows, total: rows.length } });
+  });
   const touch = (card: CardRow) => { card.version += 1; card.updatedAt = new Date().toISOString(); };
   const syncCard = (detail: CardDetail) => { fixture.cards[detail.card.id] = detail.card; const index = fixture.list.findIndex(card => card.id === detail.card.id); if (index >= 0) fixture.list[index] = detail.card; };
   const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, json: body });
@@ -173,6 +181,12 @@ const decideOf = (page: Page) => dialogOf(page).getByTestId("pas-rt-decide");
 const scrollOf = (page: Page) => dialogOf(page).getByTestId("pas-rt-thread-scroll");
 const openCap = (page: Page) => page.getByTestId("report-deck").locator('[data-current="true"]').getByTestId("pas-report-open-window");
 const button = (scope: Locator, name: string) => scope.getByRole("button", { name, exact: true });
+/** 채운 주 단추가 이름 붙은 다른 단추보다 앞(같은 줄이면 왼쪽, 줄바꿈이면 위)이다. */
+const primaryFirst = (scope: Locator, primary: string, others: string[]) => scope.evaluate((root, args) => {
+  const find = (name: string) => [...root.querySelectorAll("button")].find(node => node.textContent?.trim() === name)!.getBoundingClientRect();
+  const first = find(args.primary);
+  return args.others.every(name => { const box = find(name); return first.top < box.top - 1 || (Math.abs(first.top - box.top) <= 1 && first.left < box.left); });
+}, { primary, others });
 const atBottom = (scroll: Locator) => scroll.evaluate(node => node.scrollHeight - node.scrollTop - node.clientHeight <= 24);
 const shot = (page: Page, name: string) => page.screenshot({ path: path.join(shots, `${name}.png`) });
 const focusedInside = (page: Page) => page.evaluate(() => {
@@ -180,9 +194,10 @@ const focusedInside = (page: Page) => page.evaluate(() => {
   return Boolean(active && active !== document.body && active.closest('[data-testid="pas-report-thread-dialog"]'));
 });
 
-async function openScreen(page: Page, width: number, theme: Theme, options: { height?: number; fixture?: PasThreadFixture } = {}) {
+async function openScreen(page: Page, width: number, theme: Theme, options: { height?: number; fixture?: PasThreadFixture; beforeGoto?: (page: Page) => Promise<void> } = {}) {
   await page.setViewportSize({ width, height: options.height ?? 900 });
   const harness = await installThreadScreen(page, { theme, fixture: options.fixture });
+  await options.beforeGoto?.(page);
   await page.goto(`/persistent/${chatUiSession}`);
   await expect(page.getByTestId("report-deck")).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
@@ -227,6 +242,7 @@ for (const theme of ["light", "dark"] as const) {
     const decide = decideOf(page);
     await expect(button(decide, "완료")).toBeVisible();
     await expect(button(decide, "보류")).toBeVisible();
+    await expect.poll(() => primaryFirst(decide, "완료", ["보류", "지시 적기", "답변 미루기"])).toBe(true);
     await expect(button(decide, "지시 적기")).toBeVisible();
     await expect(button(decide, "답변 미루기")).toBeVisible();
     // 질문: 선택지, 다르게 답하기, 되묻기, 답변 미루기. 질문이 열려 있으면 일반 지시 적기는 없다.
@@ -234,6 +250,14 @@ for (const theme of ["light", "dark"] as const) {
     await expect(dialog.getByTestId("pas-rt-timeline")).toContainText("의존 관계 표시");
     for (const name of ["카드 안에 줄로 보여 주기", "별도 그래프로 보여 주기"]) await expect(decide.locator(".pas-rt-choice").filter({ hasText: name })).toBeVisible();
     await expect(decide.locator(".pas-rt-choice").first()).toContainText("권함");
+    // 열린 선택 질문의 선택지는 결재 상자 알약 한 곳에서만 눌린다. 스레드에는 설명만 읽기 전용으로 있다.
+    const timeline = dialog.getByTestId("pas-rt-timeline");
+    await expect(timeline.getByTestId("pas-rt-question-options")).toContainText("카드 행 아래에 기다리는 카드 번호를 한 줄로 적는다");
+    await expect(timeline.getByTestId("pas-rt-question-options")).toContainText("보드 위에 화살표 그래프를 그린다");
+    for (const name of ["카드 안에 줄로 보여 주기", "별도 그래프로 보여 주기"]) await expect(timeline.getByRole("button", { name: new RegExp(name) })).toHaveCount(0);
+    await expect(timeline.locator('.pas-rt-question[data-open] [data-slot="button"]')).toHaveCount(0);
+    // 답한 질문의 모양은 그대로(고른 선택지 표시)다.
+    await expect(timeline.locator('.pas-rt-question:not([data-open]) [aria-pressed="true"]')).toContainText("계속");
     for (const name of ["다르게 답하기", "되묻기", "답변 미루기"]) await expect(button(decide, name)).toBeVisible();
     await expect(button(decide, "지시 적기")).toHaveCount(0);
     await expect.poll(() => atBottom(scrollOf(page))).toBe(true);
@@ -241,11 +265,14 @@ for (const theme of ["light", "dark"] as const) {
     // 부탁: 했어, 되묻기, 답변 미루기.
     await pick(page, ID.request);
     for (const name of ["했어", "되묻기", "답변 미루기"]) await expect(button(decide, name)).toBeVisible();
+    // 채운 주 단추 「했어」가 왼쪽 묶음 첫 자리, 되묻기와 답변 미루기는 오른쪽 묶음이다.
+    await expect.poll(() => primaryFirst(decide, "했어", ["되묻기", "답변 미루기"])).toBe(true);
     await expect(button(decide, "다르게 답하기")).toHaveCount(0);
     await expect(button(decide, "지시 적기")).toHaveCount(0);
     // 막힘: 확인했어, 지시 적기, 답변 미루기.
     await pick(page, ID.blocked);
     for (const name of ["확인했어", "지시 적기", "답변 미루기"]) await expect(button(decide, name)).toBeVisible();
+    await expect.poll(() => primaryFirst(decide, "확인했어", ["지시 적기", "답변 미루기"])).toBe(true);
     await shot(page, `w1440-${theme}-blocked`);
     // 진행 중, 검증 대기: 지시 적기만.
     for (const id of [ID.running, ID.verifying]) {
@@ -320,7 +347,8 @@ test("자동 스크롤: 위로 올리면 꺼지고 알약이 겹쳐 뜨며, 알�
   await shot(page, "w1440-light-scrolled-up-jump-pill");
   // 읽던 줄은 새 경과가 와도 밀리지 않고, 알약은 새 경과를 알린다.
   await harness.touchCard(ID.review, detail => detail.comments!.push({ id: "live-2", cardId: ID.review, authorKind: "agent", authorId: "roselin", sessionId: null, kind: "comment", body: "위에서 읽는 동안 온 경과", createdAt: new Date().toISOString() }));
-  await expect(jump).toHaveText("새 경과 ↓");
+  await expect(jump).toHaveText("최신 경과로 ↓");
+  await expect(jump).toHaveAttribute("data-new", "true");
   expect(await scroll.evaluate(node => node.scrollTop)).toBeLessThan(8);
   await jump.click();
   await expect(jump).toHaveCount(0);
@@ -387,6 +415,8 @@ test("질문 안건: 선택지로 답하면 처리됨으로 옮기고 다음 결
   await expect(dialogOf(page).locator('section[aria-label="처리됨"] .pas-rt-rail-item')).toHaveAttribute("data-card-id", ID.question);
   // 다음 결재 대기 안건(부탁)으로 넘어가 있고, 처리된 안건은 결재 대기에 남지 않는다.
   await expect(railRow(page, ID.request)).toHaveAttribute("aria-current", "true");
+  // 선택지는 결재 상자 알약에서 골랐고, 초점은 다음 안건 행에 선다.
+  await expect(railRow(page, ID.request)).toBeFocused();
   await expect(dialogOf(page).locator('section[aria-label="결재 대기"] .pas-rt-rail-item')).toHaveCount(3);
   await expect(dialogOf(page).locator('section[aria-label="결재 대기"] .pas-rt-rail-item[data-card-id="' + ID.question + '"]')).toHaveCount(0);
   await shot(page, "w1440-light-processed");
@@ -782,6 +812,10 @@ test("빈 판: 결재할 안건이 없으면 빈 안내와 레일만 남는다",
   await expect(dialogOf(page).locator('section[aria-label="결재 대기"] .pas-rt-rail-item')).toHaveCount(0);
   await expect(dialogOf(page).locator('section[aria-label="미뤄 둠"]')).toHaveCount(0);
   await expect(dialogOf(page).getByTestId("pas-rt-empty")).toBeVisible();
+  // 안건이 없으면 결재 상자 자리도 없다. 내용 없는 띠가 스레드 칸 바닥에 남지 않는다.
+  await expect(dialogOf(page).getByTestId("pas-rt-decide")).toHaveCount(0);
+  const gap = await dialogOf(page).evaluate(root => root.querySelector(".pas-rt-thread")!.getBoundingClientRect().bottom - root.querySelector(".pas-rt-thread-scroll")!.getBoundingClientRect().bottom);
+  expect(Math.abs(gap)).toBeLessThanOrEqual(1);
   await shot(page, "w1440-light-empty");
 });
 
@@ -814,3 +848,354 @@ for (const theme of ["light", "dark"] as const) {
     });
   }
 }
+
+/* 세라피엘 1차 검수와 코드 감수 반영(#1871): 고친 결함마다 다시 깨지면 잡히는 단언 */
+
+async function pixel(page: Page, x: number, y: number): Promise<[number, number, number]> {
+  const png = await page.screenshot({ clip: { x: Math.floor(x), y: Math.floor(y), width: 1, height: 1 } });
+  return page.evaluate(async encoded => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${encoded}`;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = 1; canvas.height = 1;
+    const context = canvas.getContext("2d")!;
+    context.drawImage(image, 0, 0);
+    const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+    return [r, g, b] as [number, number, number];
+  }, png.toString("base64"));
+}
+const luminance = ([r, g, b]: number[]) => {
+  const channel = (value: number) => { const unit = value / 255; return unit <= 0.03928 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+};
+const contrast = (a: number[], b: number[]) => { const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (high + 0.05) / (low + 0.05); };
+
+for (const theme of ["light", "dark"] as const) {
+  test(`결함 5 ${theme}: 이정표 점과 확인 항목 위 괘선이 바탕과 2:1 이상으로 보인다`, async ({ page }) => {
+    await openScreen(page, 1440, theme);
+    await openWindow(page);
+    const timeline = dialogOf(page).getByTestId("pas-rt-timeline");
+    await expect.poll(() => atBottom(scrollOf(page))).toBe(true);
+    await scrollOf(page).evaluate(node => { node.scrollTop = Math.max(0, node.scrollHeight / 3); });
+    const dots = timeline.locator(".pas-rt-milestone-dot");
+    expect(await dots.count()).toBeGreaterThan(2);
+    for (const tone of ["now", "status"]) {
+      const dot = timeline.locator(`.pas-rt-milestone[data-tone="${tone}"] .pas-rt-milestone-dot`).first();
+      await dot.scrollIntoViewIfNeeded();
+      const box = (await dot.boundingBox())!;
+      const dotPixel = await pixel(page, box.x + box.width / 2, box.y + box.height / 2);
+      const ground = await pixel(page, box.x + box.width + 4, box.y + box.height / 2);
+      expect(contrast(dotPixel, ground), `${theme} ${tone} 점`).toBeGreaterThanOrEqual(2);
+    }
+    // 확인 항목 위 괘선: 위쪽 테두리 줄 화소와 그 위 여백 화소를 비교한다.
+    const items = timeline.locator(".pas-rt-items");
+    await items.scrollIntoViewIfNeeded();
+    const rect = (await items.boundingBox())!;
+    const ground = await pixel(page, rect.x + 60, rect.y - 6);
+    const rule = [await pixel(page, rect.x + 60, rect.y), await pixel(page, rect.x + 60, rect.y + 1)];
+    expect(Math.max(...rule.map(value => contrast(value, ground))), `${theme} 확인 항목 위 괘선`).toBeGreaterThanOrEqual(2);
+  });
+}
+
+test("결함 5: 여러 줄로 감긴 이정표의 점과 시각은 첫 줄에 맞는다", async ({ page }) => {
+  const harness = await openScreen(page, 360, "light", { height: 800 });
+  await harness.touchCard(ID.review, detail => detail.nowHistory!.push({ text: "여러 줄로 감기는 아주 긴 상황판 문구입니다. 긴 경로와 설명이 이어져 좁은 폭에서는 네 줄 넘게 내려갑니다. ".repeat(3), turn: "agent", ask: null, at: new Date(Date.now() - 60_000).toISOString() }));
+  await openWindow(page);
+  const milestone = dialogOf(page).locator('.pas-rt-milestone[data-tone="now"]').last();
+  await milestone.scrollIntoViewIfNeeded();
+  const geometry = await milestone.evaluate(node => {
+    const box = (selector: string) => node.querySelector(selector)!.getBoundingClientRect();
+    const own = node.getBoundingClientRect();
+    return { height: own.height, top: own.top, dotCenter: box(".pas-rt-milestone-dot").top + box(".pas-rt-milestone-dot").height / 2, timeTop: box("time").top, line: parseFloat(getComputedStyle(node).lineHeight) };
+  });
+  expect(geometry.height).toBeGreaterThan(geometry.line * 2.5);
+  expect(Math.abs(geometry.dotCenter - (geometry.top + geometry.line / 2))).toBeLessThanOrEqual(2);
+  expect(Math.abs(geometry.timeTop - geometry.top)).toBeLessThanOrEqual(1);
+});
+
+test("결함 8: 이정표 글은 끌어서와 더블클릭으로 선택되고, 누르는 요소는 선택되지 않는다", async ({ page }) => {
+  await openScreen(page, 1440, "light");
+  await openWindow(page);
+  const text = dialogOf(page).locator(".pas-rt-milestone-text").filter({ hasText: "레일과 결재 상자를 연결했습니다." });
+  await text.scrollIntoViewIfNeeded();
+  expect(await text.evaluate(node => getComputedStyle(node).userSelect)).not.toBe("none");
+  // 글자가 있는 자리(첫 낱말)를 더블클릭한다. 줄 끝 빈자리가 아니다.
+  await text.dblclick({ position: { x: 6, y: 6 } });
+  expect(await page.evaluate(() => window.getSelection()?.toString().trim() ?? "")).toContain("레일");
+  const box = (await text.boundingBox())!;
+  await page.evaluate(() => window.getSelection()?.removeAllRanges());
+  await page.mouse.move(box.x + 1, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 6 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.getSelection()?.toString().trim() ?? "")).toContain("결재 상자를 연결했습니다.");
+  // 누르는 요소(레일 행, 결재 단추, 기술 기록 토글)는 지금처럼 글자를 선택하지 않는다.
+  for (const target of [railRow(page, ID.review), button(decideOf(page), "완료"), dialogOf(page).getByRole("button", { name: /기술 기록/ })]) {
+    expect(await target.evaluate(node => getComputedStyle(node).userSelect), "누르는 요소").toBe("none");
+  }
+});
+
+for (const width of [1440, 820, 390] as const) {
+  test(`결함 7 ${width}: 확인 항목 상자와 결재 상자의 오른쪽 끝이 1px 안이다`, async ({ page }) => {
+    await openScreen(page, width, "light", { height: width <= 390 ? 800 : 900 });
+    await openWindow(page);
+    const scroll = scrollOf(page);
+    expect(await scroll.evaluate(node => node.scrollHeight > node.clientHeight), "스크롤바가 있는 상태").toBe(true);
+    await scroll.evaluate(node => { node.scrollTop = node.scrollHeight; });
+    const rightEdges = () => page.evaluate(() => {
+      const right = (selector: string) => document.querySelector(selector)?.getBoundingClientRect().right ?? null;
+      return { items: right('[data-testid="card-check-items"]'), stamps: right(".pas-rt-stamps"), dock: right(".pas-rt-decide .v3-card-comment-dock"),
+        lastButton: [...document.querySelectorAll<HTMLElement>(".pas-rt-stamps-secondary [data-slot=button]")].at(-1)?.getBoundingClientRect().right ?? null };
+    });
+    let edges = await rightEdges();
+    expect(Math.abs(edges.items! - edges.stamps!)).toBeLessThanOrEqual(1);
+    if (width >= 820) expect(Math.abs(edges.items! - edges.lastButton!)).toBeLessThanOrEqual(1);
+    await button(decideOf(page), "지시 적기").click();
+    edges = await rightEdges();
+    expect(Math.abs(edges.items! - edges.dock!)).toBeLessThanOrEqual(1);
+    // 왼쪽 시작선은 그대로 같다.
+    const left = await page.evaluate(() => ({ items: document.querySelector('[data-testid="card-check-items"]')!.getBoundingClientRect().left, dock: document.querySelector(".pas-rt-decide .v3-card-comment-dock")!.getBoundingClientRect().left }));
+    expect(Math.abs(left.items - left.dock)).toBeLessThanOrEqual(1);
+  });
+}
+
+test("결함 1: 열린 선택 질문은 결재 상자에서만 고르고, 어디서 고르든 초점은 다음 안건 행에 선다", async ({ page }) => {
+  const harness = await openScreen(page, 1440, "light");
+  await openWindow(page);
+  await pick(page, ID.question);
+  const timeline = dialogOf(page).getByTestId("pas-rt-timeline");
+  // 스레드 쪽에는 눌리는 선택지가 없다. 눌러도 아무 일도 없는 죽은 단추를 두지 않는다.
+  await expect(timeline.locator(".pas-rt-question[data-open] .v3-card-question-choices")).toHaveCount(0);
+  await expect(timeline.getByTestId("pas-rt-question-options").locator("button, [role=button]")).toHaveCount(0);
+  await timeline.getByTestId("pas-rt-question-options").getByText("카드 안에 줄로 보여 주기").click();
+  expect(harness.callsOf("POST", /answer$/)).toHaveLength(0);
+  // 눌리는 선택지 묶음은 결재 상자 한 곳뿐이다.
+  const pressable = await dialogOf(page).locator(".pas-rt-thread").getByRole("button", { name: /카드 안에 줄로 보여 주기|별도 그래프로 보여 주기/ }).count();
+  expect(pressable, "결재 상자 알약 두 개만").toBe(2);
+  await decideOf(page).getByRole("button", { name: /별도 그래프로 보여 주기/ }).click();
+  await expect.poll(() => harness.callsOf("POST", /answer$/).length).toBe(1);
+  expect(harness.callsOf("POST", /answer$/)[0].body).toMatchObject({ mode: "choice", option: "별도 그래프로 보여 주기" });
+  await expect(railRow(page, ID.request)).toBeFocused();
+  gate("14 누른 뒤 초점", "통과", "열린 선택 질문은 결재 상자 알약에서만 고르고 초점은 다음 안건 행에 선다(스레드에는 눌리는 선택지가 없다)");
+});
+
+for (const width of [390, 360] as const) {
+  test(`결함 1 ${width}: 좁은 폭에서 선택지로 답하면 초점이 「안건 목록」 단추에 선다`, async ({ page }) => {
+    const harness = await openScreen(page, width, "light", { height: 800 });
+    await openWindow(page);
+    await pick(page, ID.question);
+    const dialog = dialogOf(page);
+    await expect(dialog.locator(".pas-rt-question[data-open] .v3-card-question-choices")).toHaveCount(0);
+    // 알약 묶음은 결재 상자에서 줄바꿈하되 넘치지 않는다.
+    await noHorizontalOverflow(page);
+    await decideOf(page).locator(".pas-rt-choice").first().click();
+    await expect.poll(() => harness.callsOf("POST", /answer$/).length).toBe(1);
+    await expect(dialog.getByTestId("pas-rt-rail-toggle")).toBeFocused();
+  });
+}
+
+test("결함 2: 담당 세션이 있는 카드의 결재 상자 입력창은 파일 첨부가 붙고, 담당 세션이 없는 카드만 안내가 뜬다", async ({ page }) => {
+  const harness = await openScreen(page, 1440, "light");
+  await harness.touchCard(ID.blocked, detail => { detail.card.assigneeSessionId = null; detail.card.assigneeKind = "agent"; });
+  await openWindow(page);
+  const decide = decideOf(page);
+  // 담당 세션이 있는 검수 카드: 파일 선택창이 열린다.
+  await button(decide, "지시 적기").click();
+  const chooser = page.waitForEvent("filechooser");
+  await button(decide, "파일 첨부").click();
+  await chooser;
+  await expect(decide.getByText("첨부는 곧 지원합니다")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  // 질문이 열린 안건의 되묻기 입력창도 같다.
+  await pick(page, ID.question);
+  await button(decide, "되묻기").click();
+  const questionChooser = page.waitForEvent("filechooser");
+  await button(decide, "파일 첨부").click();
+  await questionChooser;
+  await page.keyboard.press("Escape");
+  // 담당 세션이 없는 카드에서만 지금 안내가 뜬다.
+  await pick(page, ID.blocked);
+  await button(decide, "지시 적기").click();
+  await button(decide, "파일 첨부").click();
+  await expect(decide.getByText("첨부는 곧 지원합니다")).toBeVisible();
+});
+
+test("결함 3: 카드 패널에서 세션을 누르면 새 탭이 아니라 오른쪽 칸에 세션이 열리고, Esc로 같은 안건과 스크롤로 돌아온다", async ({ page }) => {
+  await openScreen(page, 1440, "light");
+  await openWindow(page);
+  const popups: string[] = [];
+  page.context().on("page", opened => popups.push(opened.url()));
+  const scroll = scrollOf(page);
+  await scroll.evaluate(node => { node.scrollTop = Math.max(0, node.scrollHeight / 3); });
+  const top = await scroll.evaluate(node => node.scrollTop);
+  const opener = dialogOf(page).getByTestId("pas-rt-open-card-panel");
+  await opener.click();
+  const workspace = page.getByTestId("v3-card-workspace");
+  const chat = workspace.getByTestId("v3-card-session-chat");
+  await expect(workspace).toBeVisible();
+  // 담당 세션은 PAS 화면 카드 패널처럼 자동으로 오른쪽 칸에 열린다. 안내 문구가 남지 않는다.
+  await expect(chat).toBeVisible();
+  await expect(chat).not.toContainText("위임 관계에서 세션을 선택하세요");
+  // 세션 행을 눌러도 같다.
+  await workspace.getByRole("tab", { name: /^세션/ }).click();
+  const reviewer = workspace.getByTestId("card-session-virtual").getByText("세라피엘").first();
+  await reviewer.click();
+  await expect(chat).not.toContainText("위임 관계에서 세션을 선택하세요");
+  expect(popups, "새 탭이 열리지 않는다").toEqual([]);
+  await shot(page, "w1440-light-card-panel-session");
+  await page.keyboard.press("Escape");
+  await expect(workspace).toHaveCount(0);
+  await expect(dialogOf(page)).toBeVisible();
+  await expect(railRow(page, ID.review)).toHaveAttribute("aria-current", "true");
+  expect(Math.abs((await scroll.evaluate(node => node.scrollTop)) - top)).toBeLessThanOrEqual(2);
+  await expect(opener).toBeFocused();
+  // 다시 열면 이전 선택이 남지 않고 담당 세션에서 시작한다.
+  await opener.click();
+  await expect(workspace.getByTestId("v3-card-session-chat")).not.toContainText("위임 관계에서 세션을 선택하세요");
+  gate("15 Tab과 Esc", "통과", "카드 패널의 세션 열기는 오른쪽 칸에 열리고(새 탭 없음) Esc로 닫으면 같은 안건, 스크롤, 연 단추로 돌아온다");
+});
+
+test("카드 패널 안 팝업의 Esc는 팝업만 닫고 패널과 보고 창은 그대로다", async ({ page }) => {
+  await openScreen(page, 1440, "light");
+  await openWindow(page);
+  await dialogOf(page).getByTestId("pas-rt-open-card-panel").click();
+  const workspace = page.getByTestId("v3-card-workspace");
+  await expect(workspace).toBeVisible();
+  const evidence = workspace.locator(".v3-card-check-item-evidence img").first();
+  await evidence.scrollIntoViewIfNeeded();
+  await evidence.click();
+  await expect(page.locator('[data-slot="dialog-popup"]')).toHaveCount(2);
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-slot="dialog-popup"]')).toHaveCount(1);
+  await expect(workspace).toBeVisible();
+  await expect(dialogOf(page)).toBeVisible();
+  // 팝업이 닫힌 뒤의 Esc는 패널을 닫는다.
+  await page.keyboard.press("Escape");
+  await expect(workspace).toHaveCount(0);
+  await expect(dialogOf(page)).toBeVisible();
+  gate("15 Tab과 Esc", "통과", "카드 패널 안 증거 확대의 Esc는 확대만 닫고 패널과 보고 창은 그대로다");
+});
+
+test("마지막 안건을 처분해 판이 비어도 보고 창은 다시 마운트되지 않고 처리됨이 남는다", async ({ page }) => {
+  const fixture = buildPasThreadFixture();
+  fixture.entries = fixture.entries.filter(entry => entry.card_id === ID.blocked);
+  const harness = await openScreen(page, 1440, "light", { fixture });
+  await openWindow(page);
+  const dialog = dialogOf(page);
+  await expect(railRow(page, ID.blocked)).toHaveAttribute("aria-current", "true");
+  await dialog.evaluate(node => { node.setAttribute("data-mounted-once", "yes"); });
+  await button(decideOf(page), "확인했어").click();
+  await expect.poll(() => harness.callsOf("DELETE", /persistent-sessions/).length).toBe(1);
+  // 판이 비었는데도 같은 창 노드, 처리됨 목록, 활성 안건, 초점이 그대로다.
+  await expect(dialog).toHaveAttribute("data-mounted-once", "yes");
+  await expect(dialog.locator('section[aria-label="처리됨"] .pas-rt-rail-item')).toHaveAttribute("data-card-id", ID.blocked);
+  await expect(railRow(page, ID.blocked)).toHaveAttribute("aria-current", "true");
+  expect(await focusedInside(page)).toBe(true);
+  await expect(page.getByTestId("report-deck")).toHaveCount(0);
+});
+
+test("완료 실패는 모달 뒤 알림이 아니라 결재 상자 안에 보이고, 안건과 단추는 그대로다", async ({ page }) => {
+  const harness = await openScreen(page, 1440, "light");
+  await openWindow(page);
+  await page.route("**/api/cards/*/status", route => route.fulfill({ status: 500, json: { detail: { error: { code: "SERVER", message: "서버가 응답하지 않습니다" } } } }));
+  const decide = decideOf(page);
+  await button(decide, "완료").click();
+  await expect(decide.getByRole("alert")).toContainText("카드를 완료하지 못했어.");
+  await expect(railRow(page, ID.review)).toHaveAttribute("aria-current", "true");
+  await expect(dialogOf(page).locator('section[aria-label="처리됨"]')).toHaveCount(0);
+  await expect(button(decide, "완료")).toBeEnabled();
+  await button(decide, "보류").click();
+  await expect(decide.getByRole("alert")).toContainText("카드를 보류하지 못했어.");
+  await shot(page, "w1440-light-complete-failed");
+  void harness;
+  gate("17 오류 상태", "통과", "완료와 보류가 실패하면 결재 상자에 알림이 서고 안건과 단추는 그대로다");
+});
+
+test("되돌리기가 실패하면 처리됨을 지우지 않고 안건으로 돌리지 않으며 결재 상자에 알린다", async ({ page }) => {
+  const harness = await openScreen(page, 1440, "light");
+  await openWindow(page);
+  let failing = false;
+  await page.route("**/api/cards/*/status", route => failing
+    ? route.fulfill({ status: 500, json: { detail: { error: { code: "SERVER", message: "서버가 응답하지 않습니다" } } } }) : route.fallback());
+  const decide = decideOf(page);
+  await button(decide, "완료").click();
+  await expect(dialogOf(page).locator('section[aria-label="처리됨"] .pas-rt-rail-item')).toHaveAttribute("data-card-id", ID.review);
+  await expect(railRow(page, ID.question)).toHaveAttribute("aria-current", "true");
+  failing = true;
+  await decide.locator(".pas-rt-undo").getByRole("button", { name: "되돌리기" }).click();
+  await expect(decide.getByRole("alert")).toContainText("되돌리지 못했어.");
+  await expect(dialogOf(page).locator('section[aria-label="처리됨"] .pas-rt-rail-item')).toHaveAttribute("data-card-id", ID.review);
+  await expect(railRow(page, ID.question)).toHaveAttribute("aria-current", "true");
+  expect(harness.callsOf("POST", /status$/).filter(call => (call.body as { status?: string }).status === "review")).toHaveLength(0);
+  gate("17 오류 상태", "통과", "되돌리기가 실패하면 처리됨과 활성 안건을 그대로 두고 결재 상자에 알린다");
+});
+
+test("카드 목록을 못 읽으면 진행 중과 보류함이 0으로 조용히 보이지 않고 레일에 실패와 다시 시도가 선다", async ({ page }) => {
+  let failList = true;
+  await openScreen(page, 1440, "light", {
+    beforeGoto: async target => { await target.route(url => url.pathname === "/api/cards", route => failList
+      ? route.fulfill({ status: 503, json: { detail: { error: { code: "SERVER", message: "카드 목록을 읽지 못했습니다" } } } }) : route.fallback()); },
+  });
+  await openWindow(page);
+  const rail = dialogOf(page).getByTestId("pas-rt-rail");
+  await expect(rail.getByTestId("pas-rt-rail-error")).toContainText("카드 목록을 불러오지 못해");
+  await expect(rail.locator(".pas-rt-hold-note")).toHaveCount(0);
+  await expect(rail.locator('section[aria-label="진행 중"] .pas-rt-rail-count')).toHaveText("–");
+  failList = false;
+  await button(rail, "다시 시도").click();
+  await expect(rail.getByTestId("pas-rt-rail-error")).toHaveCount(0);
+  await expect(rail.locator(".pas-rt-hold-note")).toHaveText("보류함 3개");
+  gate("17 오류 상태", "통과", "카드 목록 읽기가 실패하면 진행 중과 보류함 자리에 실패와 다시 시도가 서고 다시 시도로 복구된다");
+});
+
+test("미뤄 둔 진행 중과 검증 대기 안건에도 미루기 해제가 있다", async ({ page }) => {
+  const fixture = buildPasThreadFixture();
+  for (const id of [ID.running, ID.verifying]) fixture.cards[id].snoozedUntil = new Date(Date.now() + 3 * 3600_000).toISOString();
+  const harness = await openScreen(page, 1440, "light", { fixture });
+  await openWindow(page);
+  for (const id of [ID.running, ID.verifying]) {
+    await pick(page, id);
+    await expect(button(decideOf(page), "미루기 해제")).toBeVisible();
+    await expect(button(decideOf(page), "답변 미루기")).toHaveCount(0);
+    await expect(button(decideOf(page), "지시 적기")).toBeVisible();
+  }
+  await button(decideOf(page), "미루기 해제").click();
+  await expect.poll(() => harness.callsOf("PATCH", /\/api\/cards\/[^/]+$/).length).toBe(1);
+  expect(harness.callsOf("PATCH", /\/api\/cards\/[^/]+$/)[0].body).toMatchObject({ snoozedUntil: null });
+  await expect(dialogOf(page).locator(`section[aria-label="미뤄 둠"] .pas-rt-rail-item[data-card-id="${ID.verifying}"]`)).toHaveCount(0);
+});
+
+test("항목 대상이 잡힌 채 다르게 답하기나 되묻기를 열면 알림줄과 보내는 곳이 어긋나지 않는다", async ({ page }) => {
+  const harness = await openScreen(page, 1440, "light");
+  await openWindow(page);
+  await pick(page, ID.question);
+  const decide = decideOf(page);
+  const target = () => dialogOf(page).getByTestId("card-check-items").getByRole("button", { name: "고칠 점 남기기" }).first();
+  // 항목 대상을 잡은 뒤 되묻기를 열면 대상은 풀리고 알림줄은 되묻기를 가리킨다. 글은 항목 머리글 없이 간다.
+  await target().click();
+  await expect(decide.locator(".v3-card-target-notice")).toContainText("1번 항목");
+  await button(decide, "되묻기").click();
+  await expect(decide.locator(".v3-card-target-notice")).toHaveText(/되묻기/);
+  await expect(decide.locator(".v3-card-target-notice")).not.toContainText("항목");
+  await decide.getByRole("textbox", { name: "물어볼 것" }).fill("이건 그냥 되묻는 말");
+  await button(decide, "답 전송").click();
+  await expect.poll(() => harness.callsOf("POST", /comments$/).length).toBe(1);
+  expect(harness.callsOf("POST", /comments$/)[0].body).toMatchObject({ body: "이건 그냥 되묻는 말", questionId: "pas-rt-question-1" });
+  // 되묻기 입력창이 열려 있을 때 항목 대상을 잡으면 입력창은 항목 지시가 되고 알림줄도 그렇게 말한다.
+  await button(decide, "되묻기").click();
+  await target().click();
+  await expect(decide.locator(".v3-card-target-notice")).toContainText("1번 항목");
+  await decide.getByRole("textbox", { name: "커멘트" }).fill("이 항목 다시 봐 줘");
+  await button(decide, "커멘트 전송").click();
+  await expect.poll(() => harness.callsOf("POST", /comments$/).length).toBe(2);
+  expect(harness.callsOf("POST", /comments$/)[1].body).toMatchObject({ body: "1번 항목: 이 항목 다시 봐 줘", questionId: "pas-rt-question-1" });
+  // 다르게 답하기도 같다: 대상은 풀리고 글 답으로 간다.
+  await target().click();
+  await button(decide, "다르게 답하기").click();
+  await expect(decide.locator(".v3-card-target-notice")).not.toContainText("항목");
+  await decide.getByRole("textbox", { name: "다르게 답하기" }).fill("표로 해줘");
+  await button(decide, "답 전송").click();
+  await expect.poll(() => harness.callsOf("POST", /answer$/).length).toBe(1);
+  expect(harness.callsOf("POST", /answer$/)[0].body).toMatchObject({ mode: "text", answer: "표로 해줘" });
+});

@@ -1,11 +1,13 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Button, DashboardIconCap, Dialog, DialogPopup, DialogTitle, useDashboardStore, useIsMobile } from "@seosoyoung/soul-ui";
 import { ExternalLink, PanelLeft, X } from "lucide-react";
+import type { MobilePlannerTab } from "../mobile-planner-state";
 import { StatusChip } from "../StatusChip";
 import { PasThreadDecideBox } from "./PasThreadDecideBox";
 import { PasThreadRail } from "./PasThreadRail";
 import { PasThreadBody } from "./PasThreadTimeline";
 import { AGENDA_KIND_LABEL, type ReportEntry } from "./pas-report-thread-model";
+import { useCardSessionPanel } from "./use-card-session-panel";
 import { usePasReportThread, type PasReportThreadInput } from "./use-pas-report-thread";
 import "./v3-pas-report-thread.css";
 
@@ -32,22 +34,29 @@ export interface PasReportThreadReportProps extends Omit<PasReportThreadInput, "
   onClose(): void;
   /** 창을 연 말풍선 단추. 닫으면 초점이 여기로 돌아간다. */
   openTriggerRef: RefObject<HTMLElement | null>;
+  /** 보고 창을 품은 PAS 자신의 세션. 카드의 담당 세션이 이것이면 PAS 화면의 대화를 그대로 쓴다. */
+  ownSessionId?: string | null;
+  /** false면(견본) 카드 패널의 세션 칸이 스트림을 열거나 세션을 조회하지 않는다. */
+  liveSessions?: boolean;
 }
 
+// 보고 창 대화상자 말고 겹쳐 열린 팝업 층. 있으면 Esc는 가장 위의 그 층이 먼저 받는다.
+const INNER_POPUPS = '[data-slot="popover-popup"], [data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="alert-dialog-popup"]';
+const innerLayerOpen = () => document.querySelector(INNER_POPUPS) !== null || document.querySelectorAll('[data-slot="dialog-popup"]').length > 1;
 const activeRailItem = () => document.querySelector<HTMLElement>('.pas-rt-dialog .pas-rt-rail-item[data-active="true"]');
 
-export function PasReportThreadReport({ open, onClose, openTriggerRef, ...input }: PasReportThreadReportProps) {
+export function PasReportThreadReport({ open, onClose, openTriggerRef, ownSessionId = null, liveSessions = true, ...input }: PasReportThreadReportProps) {
   const drawerMode = useMediaQuery(DRAWER_QUERY);
   return <Dialog open={open} onOpenChange={next => { if (!next) onClose(); }}>
     <DialogPopup className="v3-surface pas-rt-dialog" showCloseButton={false} data-testid="pas-report-thread-dialog"
       initialFocus={() => (drawerMode ? document.querySelector<HTMLElement>('.pas-rt-dialog [data-testid="pas-rt-rail-toggle"]') : activeRailItem())}
       finalFocus={() => openTriggerRef.current?.isConnected ? openTriggerRef.current : null}>
-      <PasReportThreadBody {...input} drawerMode={drawerMode} onClose={onClose} />
+      <PasReportThreadBody {...input} drawerMode={drawerMode} onClose={onClose} ownSessionId={ownSessionId} liveSessions={liveSessions} />
     </DialogPopup>
   </Dialog>;
 }
 
-function PasReportThreadBody({ drawerMode, onClose, ...input }: Omit<PasReportThreadInput, "entries"> & { entries: readonly ReportEntry[]; drawerMode: boolean; onClose(): void }) {
+function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, ...input }: Omit<PasReportThreadInput, "entries"> & { entries: readonly ReportEntry[]; drawerMode: boolean; onClose(): void; ownSessionId: string | null; liveSessions: boolean }) {
   const controller = usePasReportThread(input);
   const { active, detail, loadState } = controller;
   const mobile = useIsMobile();
@@ -59,9 +68,11 @@ function PasReportThreadBody({ drawerMode, onClose, ...input }: Omit<PasReportTh
   const autoRef = useRef(true);
   const [railOpen, setRailOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<MobilePlannerTab>("today");
   const [autoScroll, setAutoScroll] = useState(true);
   const [hasNew, setHasNew] = useState(false);
   const drawerOpen = drawerMode && railOpen;
+  const sessionPanel = useCardSessionPanel({ cardId: panelOpen ? active?.cardId ?? null : null, ownSessionId, enabled: liveSessions });
 
   const jump = useCallback(() => {
     const scroll = threadRef.current;
@@ -107,10 +118,13 @@ function PasReportThreadBody({ drawerMode, onClose, ...input }: Omit<PasReportTh
     railTrigger.current?.focus({ preventScroll: true });
     setRailOpen(false);
   }, []);
+  const resetSessionPanel = sessionPanel.reset;
   const closePanel = useCallback(() => {
     setPanelOpen(false);
+    setPanelTab("today");
+    resetSessionPanel();
     requestAnimationFrame(() => panelTrigger.current?.focus({ preventScroll: true }));
-  }, []);
+  }, [resetSessionPanel]);
   useEffect(() => { if (!drawerMode) setRailOpen(false); }, [drawerMode]);
   useEffect(() => {
     if (drawerOpen) requestAnimationFrame(() => activeRailItem()?.focus({ preventScroll: true }));
@@ -119,6 +133,8 @@ function PasReportThreadBody({ drawerMode, onClose, ...input }: Omit<PasReportTh
   useEffect(() => {
     const closeInner = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      // 카드 패널 안 팝업(상태 고르기, 증거 확대 등)이 열려 있으면 그 Esc는 팝업 몫이다. 창이나 패널을 닫지 않는다.
+      if (innerLayerOpen()) return;
       if (panelOpen) { event.preventDefault(); event.stopImmediatePropagation(); closePanel(); return; }
       if (railOpen && drawerMode) { event.preventDefault(); event.stopImmediatePropagation(); closeRail(); }
     };
@@ -136,7 +152,8 @@ function PasReportThreadBody({ drawerMode, onClose, ...input }: Omit<PasReportTh
     return () => cancelAnimationFrame(frame);
   }, [focusKey, drawerMode]);
 
-  const openPanel = (trigger: HTMLElement | null) => { panelTrigger.current = trigger; setPanelOpen(true); };
+  const openPanel = (trigger: HTMLElement | null) => { panelTrigger.current = trigger; setPanelTab("today"); setPanelOpen(true); };
+  const openSession = sessionPanel.workspaceProps.onOpenSession;
   return <>
     <header className="pas-rt-head">
       {drawerMode ? <div className="pas-rt-rail-toggle"><DashboardIconCap ref={railTrigger} size="small" appearance="bare" label="안건 목록"
@@ -167,15 +184,14 @@ function PasReportThreadBody({ drawerMode, onClose, ...input }: Omit<PasReportTh
             <div>{active ? <PasThreadBody controller={controller} agenda={active} />
               : <p className="pas-rt-empty" data-testid="pas-rt-empty">결재할 안건이 없습니다</p>}</div>
           </div>
-          {!autoScroll ? <Button className="pas-rt-jump" data-testid="pas-rt-jump-latest"
-            onClick={() => { jump(); threadRef.current?.focus({ preventScroll: true }); }}>{hasNew ? "새 경과 ↓" : "최신 경과로 ↓"}</Button> : null}
+          {!autoScroll ? <Button className="pas-rt-jump" data-testid="pas-rt-jump-latest" data-new={hasNew || undefined}
+            onClick={() => { jump(); threadRef.current?.focus({ preventScroll: true }); }}>최신 경과로 ↓</Button> : null}
         </div>
         <PasThreadDecideBox controller={controller} agenda={active} undoButtonRef={undoButtonRef} onLayoutChange={keepLatest} />
       </div>
     </div>
     {panelOpen && active ? <Suspense fallback={null}><CardWorkspace cardId={active.cardId} folders={folders ?? []} onClose={closePanel}
-      onOpenSession={session => { window.open(`/?session=${encodeURIComponent(session.agentSessionId)}`, "_blank", "noopener"); }}
-      mobileMode={mobile} mobileTab="today" activeSession={undefined} chatInputDisabled historyEnabled={false} sessionStreamActive={false}
-      sessionConnectionStatus="disconnected" reconnectSession={() => undefined} onAcknowledgedReview={() => undefined} /></Suspense> : null}
+      mobileMode={mobile} mobileTab={panelTab} onCloseChat={() => setPanelTab("today")} {...sessionPanel.workspaceProps}
+      onOpenSession={(summary, selection) => { openSession(summary, selection); if (selection?.source !== "automatic" && mobile) setPanelTab("chat"); }} /></Suspense> : null}
   </>;
 }

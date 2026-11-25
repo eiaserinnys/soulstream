@@ -143,7 +143,8 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   }, [effectiveVisibleKey, entries.length, focusInput]);
 
   const windowNode = renderReportWindow?.({ open: windowStart !== null, onClose: () => setWindowStart(null), openTriggerRef: windowTrigger, entries, startCardId: windowStart?.cardId ?? null, completion, dismissReport }) ?? null;
-  if (!ready || (!entries.length && !completion.recent)) return windowNode;
+  // 판이 비어도 보고 창은 같은 자리(둘째 자식)에 서야 마지막 안건 처분으로 판이 비는 순간 다시 마운트되지 않는다.
+  if (!ready || (!entries.length && !completion.recent)) return <>{null}{windowNode}</>;
   // The global reduced-motion duration must not interpolate the initial font
   // gate's opacity or measured height for a frame.
   const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} data-inline-max-height={inlineMaxHeight !== undefined || undefined} data-overflow={sizing.overflowing} data-undo={Boolean(completion.recent) || undefined} style={{ transitionProperty: 'none', opacity: sizing.waitingForFont ? 0 : undefined, height: sizing.height, maxHeight: bubble?.maxHeight, ...(inlineMaxHeight !== undefined ? { '--pas-report-inline-max-height': `${inlineMaxHeight}px` } : {}), ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}

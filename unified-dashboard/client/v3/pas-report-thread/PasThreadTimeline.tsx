@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Button, FrameLoading, useAgentPortraitUrlResolver, useAuth } from "@seosoyoung/soul-ui";
+import { Badge, Button, FrameLoading, useAgentPortraitUrlResolver, useAuth } from "@seosoyoung/soul-ui";
+import { InputRequestOptionContent } from "@seosoyoung/soul-ui/components/InputRequestOptionContent";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardComment, CardDetail, CardQuestion } from "@seosoyoung/soul-ui/cards/card-types";
 import { ChevronDown, ChevronUp } from "lucide-react";
@@ -47,7 +48,7 @@ function PasThreadTimeline({ controller, agenda, detail }: { controller: PasRepo
       {item.kind === "milestone" ? <Milestone item={item} now={controller.now} /> : null}
       {item.kind === "comments" ? <CardTimeline card={card} detail={{ ...withoutLines, comments: item.comments }} portraitUrl={portraitUrl} userPortraitUrl={userPortraitUrl}
         commentsOnly pending={false} onAnswer={() => {}} /> : null}
-      {item.kind === "question" ? <QuestionBlock controller={controller} agenda={agenda} detail={detail} question={item.question}
+      {item.kind === "question" ? <QuestionBlock detail={detail} question={item.question}
         portraitUrl={portraitUrl} userPortraitUrl={userPortraitUrl} /> : null}
       {item.kind === "notes" ? <Notes notes={item.notes} now={controller.now} /> : null}
     </section>)}
@@ -62,7 +63,7 @@ function PasThreadTimeline({ controller, agenda, detail }: { controller: PasRepo
 function Milestone({ item, now }: { item: Extract<ThreadItem, { kind: "milestone" }>; now: number }) {
   return <p className="pas-rt-milestone" data-tone={item.tone}>
     <span className="pas-rt-milestone-dot" aria-hidden="true" />
-    <span className="pas-rt-milestone-text">{item.text}</span>
+    <span className="pas-rt-milestone-text" data-v3-selectable-content="true">{item.text}</span>
     <time dateTime={new Date(item.at).toISOString()}>{clockText(item.at, now)}</time>
   </p>;
 }
@@ -80,16 +81,26 @@ function Notes({ notes, now }: { notes: CardComment[]; now: number }) {
   </div>;
 }
 
-function QuestionBlock({ controller, agenda, detail, question, portraitUrl, userPortraitUrl }: {
-  controller: PasReportThreadController; agenda: Agenda; detail: CardDetail; question: CardQuestion; portraitUrl: string | null; userPortraitUrl: string;
+/**
+ * 열린 선택 질문의 선택지는 결재 상자 알약 한 곳에서만 고른다. 스레드는 제목, 배경, 되묻기 글타래와
+ * 선택지 설명을 읽기 전용으로 보인다. 답한 질문과 철회된 질문은 정본 모양(고른 선택지 표시) 그대로다.
+ */
+function QuestionBlock({ detail, question, portraitUrl, userPortraitUrl }: {
+  detail: CardDetail; question: CardQuestion; portraitUrl: string | null; userPortraitUrl: string;
 }) {
   const view = cardQuestionDetailView(question, detail.comments ?? [], "");
   const withdrawn = Boolean(question.withdrawnAt);
-  const live = view.open && controller.question?.id === question.id;
+  const readonlyOptions = view.open && view.kind === "choice" ? view.options : [];
   return <div className="pas-rt-question" data-open={view.open || undefined} data-withdrawn={withdrawn || undefined}>
     {view.title ? <h3 className="v3-card-question-title">{view.title}</h3> : null}
-    <CardQuestionBody view={view} portraitUrl={portraitUrl} userPortraitUrl={userPortraitUrl} pending={controller.busy} layout="stack"
-      onChoose={live ? label => controller.choose(agenda, label) : undefined} />
+    <CardQuestionBody view={readonlyOptions.length ? { ...view, options: [] } : view} portraitUrl={portraitUrl} userPortraitUrl={userPortraitUrl} pending layout="stack" />
+    {readonlyOptions.length ? <ul className="pas-rt-question-options" aria-label="선택지 설명" data-testid="pas-rt-question-options">
+      {readonlyOptions.map(option => <li key={option.label}>
+        <InputRequestOptionContent layout="stack" option={{ label: option.label, description: option.description ?? undefined }}
+          descriptionClassName="v3-card-question-effect"
+          labelAccessory={option.recommended ? <Badge variant="info" size="sm" className="v3-card-question-recommended">권함</Badge> : null} />
+      </li>)}
+    </ul> : null}
     {withdrawn && question.withdrawalReason ? <p className="v3-card-question-withdrawal">{question.withdrawalReason}</p> : null}
     {!view.open ? <CardQuestionAnswered view={view} /> : null}
   </div>;

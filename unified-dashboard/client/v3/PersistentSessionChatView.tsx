@@ -76,7 +76,7 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
       renderQuestion={pasCardQuestion}
       renderCardDetails={(entry, lookupCards) => <PasCardExpansion key={entry.key} entry={entry} lookupCards={lookupCards} />}
       renderCardStatus={entry => <PasCardExpansionStatus entry={entry} />}
-      renderReportWindow={windowProps => <PasReportThreadReport {...windowProps} />} />}
+      renderReportWindow={windowProps => <PasReportThreadReport {...windowProps} ownSessionId={sessionId} />} />}
     <ReportTimelineRowProvider render={renderReportTimelineRow}>
       <ChatView {...props} storeScope={storeScope} registerGeneratedTextActions={register} registerChatUiOperations={registerOperations} />
     </ReportTimelineRowProvider>

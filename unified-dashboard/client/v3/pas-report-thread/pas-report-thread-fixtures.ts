@@ -1,5 +1,5 @@
 import type { CardCheckItem, CardComment, CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
-import type { PersistentReportEntry } from "../../../../packages/wire-schema/src/persistent_report";
+import { CARD_QUESTION_KEY_PREFIX, type PersistentReportEntry } from "../../../../packages/wire-schema/src/persistent_report";
 
 /**
  * 보고 창 견본과 화면 시험이 함께 쓰는 운영 형태 표본: 긴 제목, 질문(선택지와 부탁), 검수, 막힘, 진행 중, 미뤄 둠.
@@ -109,10 +109,10 @@ export function buildPasThreadFixture(base = Date.now()): PasThreadFixture {
   });
   const entries: PersistentReportEntry[] = [
     entry({ key: `card_${review.id}`, card_id: review.id, card_numbers: [review.number!], title: longReview, card_status: "review", context: "검수 요청" }),
-    entry({ key: `cq_${choice.id}`, card_id: question.id, card_numbers: [question.number!], title: "의존 관계 표시", kind: "ask", question_id: choice.id,
+    entry({ key: `${CARD_QUESTION_KEY_PREFIX}${choice.id}`, card_id: question.id, card_numbers: [question.number!], title: "의존 관계 표시", kind: "ask", question_id: choice.id,
       question_kind: "choice", question_title: "의존 관계 표시", question_text: choice.text, options: choice.options ?? [], question_option_details: choice.optionDetails,
       question_thread: [{ id: "q-c1", question_id: choice.id, session_id: `${question.id}-session`, author_kind: "agent", body: "구현 비용은 첫째가 작습니다.", created_at: minutes(base, 19) }], updated_at: minutes(base, 19) }),
-    entry({ key: `cq_${ask.id}`, card_id: request.id, card_numbers: [request.number!], title: "인증 코드 다시 받기", kind: "ask", question_id: ask.id,
+    entry({ key: `${CARD_QUESTION_KEY_PREFIX}${ask.id}`, card_id: request.id, card_numbers: [request.number!], title: "인증 코드 다시 받기", kind: "ask", question_id: ask.id,
       question_kind: "request", question_title: "인증 코드 다시 받기", question_text: ask.text, options: [], updated_at: minutes(base, 8) }),
     entry({ key: `card_${blocked.id}`, card_id: blocked.id, card_numbers: [blocked.number!], title: blocked.title, card_status: "blocked", updated_at: minutes(base, 60) }),
     entry({ key: `card_${snoozed.id}`, card_id: snoozed.id, card_numbers: [snoozed.number!], title: snoozed.title, card_status: "review", updated_at: minutes(base, 200) }),

@@ -1,7 +1,8 @@
 /* PAS 결재형 보고 창(시간순 통합 사건 스레드). 색과 글자는 v3, PAS 토큰만 쓴다. */
 
 /* 보고 창. 정본 Dialog 겉틀 위에 왼쪽 레일과 한 줄기 스레드를 얹는다. */
-.pas-rt-dialog { width: min(calc(var(--v3-action-size) * 24), calc(100vw - var(--v3-space-6) * 3)); max-width: none; height: min(calc(var(--v3-action-size) * 17.5), calc(100dvh - var(--v3-space-8) * 2)); max-height: calc(100dvh - var(--v3-space-8)); padding: 0; border: 1px solid var(--persistent-session-line); border-radius: var(--radius-root); background: var(--persistent-session-paper); }
+/* 이정표 점과 확인 항목 위 괘선은 두 테마 모두 바탕과 2:1 이상으로 구분된다. */
+.pas-rt-dialog { --pas-rt-mark: color-mix(in srgb, var(--v3-text-secondary) 55%, transparent); width: min(calc(var(--v3-action-size) * 24), calc(100vw - var(--v3-space-6) * 3)); max-width: none; height: min(calc(var(--v3-action-size) * 17.5), calc(100dvh - var(--v3-space-8) * 2)); max-height: calc(100dvh - var(--v3-space-8)); padding: 0; border: 1px solid var(--persistent-session-line); border-radius: var(--radius-root); background: var(--persistent-session-paper); }
 .pas-rt-head { display: flex; flex: none; align-items: center; justify-content: space-between; gap: var(--v3-space-4); min-width: 0; padding: var(--v3-space-4) var(--v3-space-5); border-bottom: 1px solid var(--persistent-session-line); }
 .pas-rt-heading { display: flex; flex: 1 1 auto; align-items: center; gap: var(--v3-space-2); min-width: 0; }
 .pas-rt-number { flex: none; color: var(--v3-accent); font: var(--v3-type-body) var(--v3-font-family); font-variant-numeric: tabular-nums; }
@@ -31,17 +32,18 @@
 .pas-rt-dialog :is(.pas-rt-rail-title, .pas-rt-title, .pas-rt-milestone-text, .pas-rt-notes-list, .pas-rt-empty, .pas-rt-thread-state p) { word-break: keep-all; overflow-wrap: anywhere; }
 .pas-rt-rail-portrait { grid-area: portrait; grid-row: 1 / 3; width: var(--v3-session-avatar-size); height: var(--v3-session-avatar-size); border-radius: var(--radius-pill); object-fit: cover; }
 .pas-rt-rail-foot { flex: none; margin-top: var(--v3-space-2); border-top: 1px solid var(--persistent-session-line); padding-top: var(--v3-space-2); }
+.pas-rt-rail-error { display: flex; flex-direction: column; align-items: flex-start; gap: var(--v3-space-2); margin: 0; padding: 0 var(--v3-space-4); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
 .pas-rt-hold-note { margin: 0; padding: 0 var(--v3-space-4); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
 
 /* 한 줄기 시간순 스레드 */
 .pas-rt-thread { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
 .pas-rt-thread-content { position: relative; display: flex; flex: 1; min-height: 0; }
-.pas-rt-thread .pas-rt-thread-scroll { flex: 1; height: auto; min-width: 0; min-height: 0; overflow-y: auto; padding: var(--v3-space-5) var(--v3-space-6) var(--v3-space-4); }
+.pas-rt-thread .pas-rt-thread-scroll { scrollbar-gutter: stable; flex: 1; height: auto; min-width: 0; min-height: 0; overflow-y: auto; padding: var(--v3-space-5) var(--v3-space-6) var(--v3-space-4); }
 .pas-rt-jump { position: absolute; right: var(--v3-space-4); bottom: var(--v3-space-3); z-index: var(--v3-layer-panel); }
 .pas-rt-timeline { display: flex; flex-direction: column; gap: var(--v3-space-4); min-width: 0; }
 .pas-rt-event { min-width: 0; }
-.pas-rt-milestone { display: flex; align-items: center; gap: var(--v3-space-2); margin: 0; min-width: 0; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
-.pas-rt-milestone-dot { flex: none; width: var(--v3-space-2); height: var(--v3-space-2); border-radius: var(--radius-pill); background: var(--persistent-session-line); }
+.pas-rt-milestone { display: flex; align-items: flex-start; gap: var(--v3-space-2); margin: 0; min-width: 0; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
+.pas-rt-milestone-dot { flex: none; width: var(--v3-space-2); height: var(--v3-space-2); margin-block-start: calc((1lh - var(--v3-space-2)) / 2); border-radius: var(--radius-pill); background: var(--pas-rt-mark); }
 .pas-rt-milestone[data-tone="delegate"] .pas-rt-milestone-dot { background: var(--v3-accent); }
 .pas-rt-milestone-text { flex: 1 1 auto; min-width: 0; }
 .pas-rt-milestone time, .pas-rt-notes-list time { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -53,14 +55,18 @@
 .pas-rt-notes-list li { display: flex; gap: var(--v3-space-2); min-width: 0; }
 .pas-rt-notes-list li > span { min-width: 0; white-space: pre-wrap; }
 .pas-rt-question { display: flex; flex-direction: column; gap: var(--v3-space-2); min-width: 0; }
+.pas-rt-question-options { display: flex; flex-direction: column; gap: var(--v3-space-2); margin: 0; padding: 0; list-style: none; }
+.pas-rt-question-options li { display: flex; flex-direction: column; gap: var(--v3-space-1); min-width: 0; border-left: var(--v3-space-1) solid var(--persistent-session-line); padding: var(--v3-space-1) var(--v3-space-3); }
+.pas-rt-question-options { font: var(--v3-type-body) var(--v3-font-family); }
+.pas-rt-question-options .v3-card-question-effect { color: var(--v3-text-secondary); font: var(--v3-type-body) var(--v3-font-family); overflow-wrap: anywhere; word-break: keep-all; }
 .pas-rt-question[data-withdrawn] { color: var(--v3-text-secondary); }
-.pas-rt-items { border-top: 1px solid var(--persistent-session-line); padding-top: var(--v3-space-3); }
+.pas-rt-items { border-top: 1px solid var(--pas-rt-mark); padding-top: var(--v3-space-3); }
 .pas-rt-thread-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--v3-space-3); min-height: calc(var(--v3-action-size) * 4); padding: var(--v3-space-6); color: var(--v3-text-secondary); font: var(--v3-type-body) var(--v3-font-family); text-align: center; }
 .pas-rt-thread-state p { margin: 0; }
 .pas-rt-empty { margin: 0; padding: var(--v3-space-6); color: var(--v3-text-secondary); font: var(--v3-type-body) var(--v3-font-family); text-align: center; }
 
 /* 스레드 끝 고정 결재 상자 */
-.pas-rt-decide { display: flex; flex: none; flex-direction: column; gap: var(--v3-space-2); border-top: 1px solid var(--persistent-session-line); background: var(--persistent-session-panel); padding: var(--v3-space-4) var(--v3-space-6) var(--v3-space-5); }
+.pas-rt-decide { overflow-y: hidden; scrollbar-gutter: stable; scrollbar-width: thin; display: flex; flex: none; flex-direction: column; gap: var(--v3-space-2); border-top: 1px solid var(--persistent-session-line); background: var(--persistent-session-panel); padding: var(--v3-space-4) var(--v3-space-6) var(--v3-space-5); }
 /* 결재 단추 글자는 정본 CardQuestionActions(.v3-card-question-actions)와 같은 본문 토큰이다. 높이, 여백, 곡률은 정본 Button 그대로 둔다. */
 .pas-rt-decide [data-slot="button"] { font: var(--v3-type-body) var(--v3-font-family); }
 .pas-rt-decide .pas-rt-undo [data-slot="button"] { font: var(--v3-type-meta) var(--v3-font-family); gap: var(--v3-space-1); }

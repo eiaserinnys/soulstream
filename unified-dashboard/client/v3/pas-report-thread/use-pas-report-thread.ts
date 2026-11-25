@@ -81,12 +81,14 @@ export function usePasReportThread({ entries, completion, dismissReport, startCa
   useEffect(() => {
     if (!activeCardId) return;
     let current = true;
+    // 견본처럼 목록을 따로 주는 호출은 이미 들어 있는 상세로 보이고 서버에 묻지 않는다.
+    if (cardSource !== undefined && useCardStore.getState().details[activeCardId]) { setLoad({ id: activeCardId, state: "ready" }); return; }
     setLoad({ id: activeCardId, state: "loading" });
     useCardStore.getState().loadCard(activeCardId)
       .then(() => { if (current) setLoad({ id: activeCardId, state: "ready" }); })
       .catch(() => { if (current) setLoad({ id: activeCardId, state: "error" }); });
     return () => { current = false; };
-  }, [activeCardId, attempt]);
+  }, [activeCardId, attempt, cardSource]);
   const loadState: ThreadLoad = detail ? "ready" : load.id === activeCardId ? load.state : "loading";
   const retry = useCallback(() => setAttempt(value => value + 1), []);
   const question: CardQuestion | null = openQuestionOf(detail, active?.entry ?? null);
@@ -120,7 +122,8 @@ export function usePasReportThread({ entries, completion, dismissReport, startCa
     const entry = agenda.entry;
     if (!entry?.card_id) return false;
     const next = nextAfter(agenda.cardId);
-    const done = await completion.complete(entry as ReportEntry & { card_id: string }, [...entries], status);
+    // 실패 문구는 모달 뒤 말풍선 알림이 아니라 창 안 결재 상자에 보인다.
+    const done = await completion.complete(entry as ReportEntry & { card_id: string }, [...entries], status, setActionError);
     if (!done) return false;
     setSnoozeUndo(null);
     setProcessed(items => [...items.filter(item => item.agenda.cardId !== agenda.cardId), { agenda, label: status === "on_hold" ? "보류" : "완료" }]);
@@ -183,8 +186,10 @@ export function usePasReportThread({ entries, completion, dismissReport, startCa
   }, [snoozeUndo]);
   const undoCompletion = async () => {
     const cardId = completion.recent?.cardId;
-    await completion.undo();
-    if (!cardId) return;
+    setActionError(null);
+    // 서버가 되돌림을 받아들인 것을 확인한 뒤에만 처리됨에서 지우고 그 안건으로 돌린다.
+    const restored = await completion.undo(setActionError);
+    if (!restored || !cardId) return;
     setProcessed(items => items.filter(item => item.agenda.cardId !== cardId));
     setActiveId(cardId);
   };
