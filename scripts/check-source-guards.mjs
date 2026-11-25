@@ -5,6 +5,7 @@
  * 종료 코드: 0 위반 없음, 1 위반 있음, 2 읽을 수 없는 입력(생성 index.ts 없음, 설정 JSON 오류).
  */
 
+import { spawnSync } from 'node:child_process';
 import { existsSync, opendirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, posix, relative, sep } from 'node:path';
 
@@ -834,6 +835,22 @@ function reflectKey() {
   return items;
 }
 
+// 옛 클라이언트 이름 금지. 예전 CI의 `git grep -i -n` 단계와 같은 대상(추적 파일 전체, 대소문자 무시, 확장자 제한 없음)이다.
+// 낱말을 통째로 적으면 이 파일이 스스로 걸리므로 쪼개 잇는다. git 작업 트리가 아니면(시험 fixture) 건너뛴다.
+function removedClientName() {
+  if (!existsSync(join(root, '.git'))) return [];
+  const forbidden = 'kaleido' + 'scope';
+  const result = spawnSync('git', ['grep', '-i', '-n', '-e', forbidden], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (result.error) throw result.error;
+  if (result.status === 1) return [];
+  if (result.status !== 0) throw new Error(`git grep 실패(종료 ${result.status}): ${result.stderr.trim()}`);
+  const fix = '추적 파일에서 옛 클라이언트 이름을 지운다';
+  return result.stdout.split('\n').filter(Boolean).map((out) => {
+    const match = /^(.+?):(\d+):/.exec(out);
+    return `${match ? `${match[1]}:${match[2]}` : out}  → ${fix}`;
+  });
+}
+
 function main() {
   config = JSON.parse(readFileSync(join(root, 'scripts', 'source-guards.config.json'), 'utf8'));
   const rules = [
@@ -845,6 +862,7 @@ function main() {
     ['intra-identical', intraIdentical],
     ['record-copy', recordCopies],
     ['reflect-key', reflectKey],
+    ['removed-client-name', removedClientName],
     ['renamed-reexport', renamedReexport],
     ['runtime-cycle', runtimeCycle],
     ['same-name-alias', sameNameAlias],
