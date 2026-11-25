@@ -227,3 +227,20 @@ test('설정이 가리키는 파일이 없으면 종료 2로 끝난다', () => {
   const result = fixture({ canonicalModules: { 'orch-server-ts/src/http/missing_route_validation.ts': ['orch'] } }).run();
   assert.equal(result.status, 2, result.stdout + result.stderr);
 });
+
+test('removed-client-name은 추적된 비 TS 파일의 옛 이름을 잡고 없으면 통과한다', () => {
+  const word = 'kaleido' + 'scope';
+  const failure = fixture();
+  failure.write('tools/helper.py', `# uses ${word.toUpperCase()} client\n`);
+  assert.equal(spawnSync('git', ['init', '-q'], { cwd: roots.at(-1) }).status, 0);
+  assert.equal(spawnSync('git', ['add', '-A'], { cwd: roots.at(-1) }).status, 0);
+  const result = failure.run();
+  violates(result, 'removed-client-name');
+  assert.match(result.stdout, /^removed-client-name: tools\/helper\.py:1  → /m);
+
+  const pass = fixture();
+  pass.write('tools/helper.py', '# nothing here\n');
+  assert.equal(spawnSync('git', ['init', '-q'], { cwd: roots.at(-1) }).status, 0);
+  assert.equal(spawnSync('git', ['add', '-A'], { cwd: roots.at(-1) }).status, 0);
+  clean(pass.run());
+});
