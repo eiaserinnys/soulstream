@@ -264,6 +264,28 @@ test('forbidden patterns: no UUID, email, non-loopback IPv4, private home path o
   }
 });
 
+test('forbidden patterns: no card, PR or issue numbers, date tags, private names or internal names', () => {
+  // The messages carry only the entry key and the pattern label, never the matched text.
+  const forbidden = [
+    ['card, PR or issue number', /(?:카드|PR|이슈|card|issue)\s*#\s*\d+/i],
+    ['number sign followed by three or more digits', /#\d{3,}/],
+    ['dated operating-standard tag', /\d{6}\s*운영\s*기준/i],
+    ['operating-standard tag', /운영\s*기준/i],
+    ['dated case tag', /사례\s*\d{6}/i],
+    ['private node, host or person name', /eiaserinnys|eias-linegames|linegames|silent-manari|netcup/i],
+    ['internal agent name', /utonium|roselin|bubbles|buttercup|blossom|astra/i],
+    ['internal agent name (carbon outside a model name)', /(?<!-)carbon/i],
+    ['internal deployment tool name', /haniel|하니엘/i],
+    ['private tool or project name', /\barbor\b|\/EB\/|E&B|kal 지침/i],
+    ['director address or quotation', /디렉터님|디렉터의 말|디렉터(?!리)/i],
+  ];
+  for (const [where, text] of seedTexts()) {
+    for (const [label, pattern] of forbidden) {
+      assert.equal(pattern.test(text), false, `${where}: ${label}`);
+    }
+  }
+});
+
 // --- install profile arguments ---------------------------------------------
 
 test('agent_id / profile / mcp_profile arguments match the install profile set', () => {

@@ -15,7 +15,7 @@ Defined in [`orch-server-ts/.env.example`](../../orch-server-ts/.env.example):
 - `SOULSTREAM_PUBLIC_URL`: required public HTTP origin for OAuth metadata and issuer (no path or query).
 - `DASHBOARD_DIR`: optional path to the built `unified-dashboard/dist` directory when serving the web UI from the orchestrator.
 - `NODE_NAME`: optional human-readable node label (required when external MCP ingress is enabled).
-- `DEFAULT_EXECUTION_NODE_ID`: node that runs cards, conversations, and persistent sessions that name no node (empty uses the built-in central default, `eiaserinnys`). It is separate from `NODE_NAME`, which only labels the external MCP ingress caller.
+- `DEFAULT_EXECUTION_NODE_ID`: node that runs cards, conversations, and persistent sessions that name no node (empty falls back to the built-in default node; the Linux installer sets `local`). It is separate from `NODE_NAME`, which only labels the external MCP ingress caller.
 - `PERSISTENT_SESSION_BOOTSTRAP`: `true` or `false`, default `false`. When `true`, `GET /api/persistent-sessions` reports `create_defaults.bootstrap_enabled: true`, and once the first coding agent is connected the dashboard calls `POST /api/persistent-sessions/bootstrap` to create one default persistent session. The call creates nothing when the signed-in user already sees a persistent session (it answers `200 {"created": false, "session_id": ...}`), answers `409` with code `bootstrap_disabled` when the switch is off and `bootstrap_unavailable` while no usable model or agent exists, and creates through the ordinary create path (`201 {"created": true, "session_id": ...}`). Overlapping calls from one user create one session. The session is not created during installation because its first turn runs immediately and needs a logged-in coding agent. The Linux installer sets `true`.
 
 Board and attachment Cloudflare R2 storage settings are managed in the central PostgreSQL database admin settings rather than environment variables.
@@ -146,7 +146,7 @@ agents:
 
 - Required fields: `id`, `name`, `backend`, `workspace_dir`.
 - Optional fields: `model`, `default_preset`, `max_turns`, `allowed_tools`, `disallowed_tools`, `portrait_path`, `context_scope` (`full` by default; `minimal` omits folder-inherited `page_context`, folder `atom_context`, `board_workspace`, `running_sessions`, and `cogito_context`), `claude_auto_memory_enabled` (Claude-only; `false` disables reading and writing `MEMORY.md`), `mcp_profile`, `atom_contexts`, and `env`.
-- For Claude sessions, the runner always adds `Monitor` to `disallowed_tools` to block this background task entry point (#1673).
+- For Claude sessions, the runner always adds `Monitor` to `disallowed_tools` to block this background task entry point.
 
 ### Profiles created by the Linux installer
 
