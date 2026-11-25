@@ -69,8 +69,12 @@ export async function openComponents(page: Page, theme: Theme) {
   await installV3VisualQaRoutes(page, { unifiedFolderView: true, timelineEventCount: 1, liveEventText: "채팅의 기존 본문과 입력창입니다." });
   await page.route("**/api/auth/config", route => route.fulfill({ json: { authEnabled: true, devModeEnabled: false } }));
   await page.route("**/api/auth/status", route => route.fulfill({ json: { authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } } }));
-  await page.goto("/components");
-  await expect(page.getByTestId("components-review")).toBeVisible({ timeout: 30_000 });
+  // 개발 서버가 처음 쓰는 의존성을 다시 묶는 동안 앱이 서지 않는 때가 있다. 못 섰으면 다시 불러온다.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.goto("/components");
+    if (await page.getByTestId("components-review").waitFor({ timeout: 20_000 }).then(() => true, () => false)) break;
+  }
+  await expect(page.getByTestId("components-review")).toBeVisible({ timeout: 20_000 });
 }
 
 /** 표본 하나(Sample의 data-component 머리말)를 화면에 올려 그 칸만 캡처한다. */
@@ -90,7 +94,7 @@ export async function shotSample(page: Page, componentPrefix: string, relative: 
 export async function shot(page: Page, relative: string) {
   const file = path.join(shots, relative);
   mkdirSync(path.dirname(file), { recursive: true });
-  await page.screenshot({ path: file, animations: "disabled" });
+  await page.screenshot({ path: file, animations: "disabled", timeout: 30_000 });
   return file;
 }
 
