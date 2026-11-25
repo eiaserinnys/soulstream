@@ -11,6 +11,7 @@ import "../v3/v3-run-history.css";
 
 /** 목록 칸 폭이 이만큼보다 좁으면 소스 줄이 좁은 모양(글자 수는 메타 줄로, 단추는 펼친 트리 머리로)이 된다. 칸 폭 기준이라 넓은 화면의 좁은 칸에도 맞는다. */
 const COMPACT_BELOW = 432;
+const COMPACT_HYSTERESIS = 24;
 
 /**
  * 칸 요소의 폭을 지켜보다가 COMPACT_BELOW보다 좁으면 true. 요소가 사라졌다 다시 서도(본문 보기를 다녀온 뒤) 이어서 지켜본다.
@@ -21,7 +22,11 @@ export function useCompact(): [(element: HTMLElement | null) => void, boolean] {
   const [compact, setCompact] = useState(false);
   useLayoutEffect(() => {
     if (!element || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) => setCompact((entry?.contentRect.width ?? COMPACT_BELOW) < COMPACT_BELOW));
+    // 줄 모양이 바뀌면 목록 높이가 달라져 세로 스크롤바가 생기거나 사라지며 폭이 15px쯤 흔들린다. 되돌아올 때는 여유를 두어 문턱에서 깜빡이지 않게 한다.
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry?.contentRect.width ?? COMPACT_BELOW;
+      setCompact(current => width < COMPACT_BELOW + (current ? COMPACT_HYSTERESIS : 0));
+    });
     observer.observe(element);
     return () => observer.disconnect();
   }, [element]);

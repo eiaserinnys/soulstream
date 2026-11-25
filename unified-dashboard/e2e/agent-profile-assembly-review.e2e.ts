@@ -67,7 +67,8 @@ for (const [width, height] of [[1366, 657], [1280, 632]]) {
     expect(list.scroll).toBeGreaterThan(0);
     expect(list.frameTop).toBeGreaterThanOrEqual(list.detailTop - 1);
     expect(list.detailBottom - list.frameBottom).toBeCloseTo(12, 0);
-    expect(list.rows).toBeGreaterThanOrEqual(4);
+    // 가장 긴 제목은 두 줄까지 감싸 줄이 한 줄 더 높다(세라피엘 검수 결함 1). 낮은 창에서도 목록이 세 줄은 온전히 보여야 한다.
+    expect(list.rows).toBeGreaterThanOrEqual(3);
     const guide = await guidance.boundingBox();
     expect(guide!.y + guide!.height).toBeLessThanOrEqual(list.detailBottom);
     await shot(page, `low-list-end-${width}x${height}`);

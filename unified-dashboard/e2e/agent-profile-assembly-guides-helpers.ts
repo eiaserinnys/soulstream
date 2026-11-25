@@ -111,7 +111,11 @@ export async function pageOverflow(page: Page) {
 
 /** 구성 화면의 소스 줄은 눌러 펴는 줄이라 본문은 줄 끝의 「본문 보기」로 연다. */
 export async function openBody(page: Page, title: string) {
-  await page.getByTestId("agent-context-assembly").locator(`button[aria-label*="${title}"][aria-label$="본문 보기"]`).click();
+  const assembly = page.getByTestId("agent-context-assembly");
+  const body = assembly.locator(`button[aria-label*="${title}"][aria-label$="본문 보기"]`);
+  // 좁은 칸에서는 「본문 보기」가 펼친 트리 머리에 있으니 먼저 소스 줄을 편다.
+  if (!(await body.isVisible())) await assembly.locator("button[aria-expanded]", { hasText: title }).first().click();
+  await body.click();
 }
 
 const fixesFile = path.join(shots, "fixes.json");
