@@ -99,13 +99,16 @@ The one-line Linux installer installs the `beta` branch of both the Soulstream a
 
    has_beta() { git -C "$1" rev-parse --verify --quiet refs/remotes/origin/beta >/dev/null; }
    check() { # name dir sha
-     local name=$1 dir=$2 sha=$3
+     local name=$1 dir=$2 sha=$3 old
      git -C "$dir" merge-base --is-ancestor "$sha" origin/main
      jq -e --arg n "$name" --arg sha "$sha" '.status == "completed" and .repositories[$n].current_sha == $sha' "$FRESH_RECORD" >/dev/null
      if has_beta "$dir"; then
-       git -C "$dir" merge-base --is-ancestor origin/beta "$sha"
-       jq -e --arg n "$name" --arg sha "$sha" --arg old "$(git -C "$dir" rev-parse origin/beta)" \
-         '.status == "completed" and .repositories[$n].current_sha == $sha and .repositories[$n].previous_sha == $old' "$UPDATE_RECORD" >/dev/null
+       old=$(git -C "$dir" rev-parse origin/beta)
+       if [ "$old" != "$sha" ]; then
+         git -C "$dir" merge-base --is-ancestor "$old" "$sha"
+         jq -e --arg n "$name" --arg sha "$sha" --arg old "$old" \
+           '.status == "completed" and .repositories[$n].current_sha == $sha and .repositories[$n].previous_sha == $old' "$UPDATE_RECORD" >/dev/null
+       fi
      fi
    }
 
@@ -116,6 +119,6 @@ The one-line Linux installer installs the `beta` branch of both the Soulstream a
 
    git -C "$ATOM_DIR" push origin "$ATOM_SHA:refs/heads/beta" && git -C "$SOULSTREAM_DIR" push origin "$SOULSTREAM_SHA:refs/heads/beta"
    ```
-   The assertions are: each candidate is an ancestor of `origin/main`; an existing `origin/beta` is an ancestor of the candidate and equals the previous `beta` used in step 3; and the record files show the candidate as `current_sha`. The VMs are already deleted at this point, so the script reads the records, not a server. If the second push fails, run the same script again. The first push is then a no-op and the second one completes the move. Do not use `--force` or a `+` refspec.
+   The assertions are: each candidate is an ancestor of `origin/main`; an existing `origin/beta` is an ancestor of the candidate and equals the previous `beta` used in step 3; and the record files show the candidate as `current_sha`. The VMs are already deleted at this point, so the script reads the records, not a server. `origin/beta` already equal to the candidate means an earlier run of this script already moved that repository, so its update assertions are skipped. If the second push fails, run the same script again. The first push is then a no-op and the second one completes the move. Do not use `--force` or a `+` refspec.
 6. **Fix forward.** `beta` never moves backward, and the repository rules block deleting it or rewriting it. To fix a bad `beta`, put the fix on `main`, run steps 1 to 5 again, and move `beta` forward to the fixed commit.
 7. **Delete each VM as soon as its check ends.** Delete the instance; do not just shut it down.
