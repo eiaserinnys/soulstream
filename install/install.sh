@@ -16,6 +16,11 @@ ATOM_SEED_NAMES='skill_catalog domain_catalog common_rules common_rules_extra co
 # Tests reassign these three after sourcing.
 SOULSTREAM_REPO_URL=https://github.com/eiaserinnys/soulstream.git
 ATOM_REPO_URL=https://github.com/eiaserinnys/atom.git
+# The branch each repository follows when --ref or --atom-ref is not given: the verified channel. Tests reassign these after sourcing.
+DEFAULT_SOULSTREAM_REF=beta
+DEFAULT_ATOM_REF=beta
+# Absolute path of the installer file that is running, set by main before it changes directory. Tests reassign it after sourcing.
+RUNNING_INSTALLER=
 SYSTEMD_DIR=/etc/systemd/system
 # Records what this installer added under /usr/local so uninstall.sh removes only that. Tests reassign these after sourcing.
 RECEIPT_FILE=/etc/soulstream/install-receipt.json
@@ -1038,23 +1043,64 @@ install_clis() {
     as_soul agy --version
   fi
 }
+# The branch a repository follows when its ref is not given.
+default_ref_for() {
+  case $1 in
+    soulstream) printf '%s' "$DEFAULT_SOULSTREAM_REF" ;;
+    atom) printf '%s' "$DEFAULT_ATOM_REF" ;;
+    *) printf 'No default revision for %s.\n' "$1" >&2; return 1 ;;
+  esac
+}
+# Prints the commit that origin/<ref> points to. There is no fallback to main.
+default_channel_target() {
+  local dir=$1 ref=$2 target
+  if ! target=$(as_soul git -C "$dir" rev-parse --verify --quiet "refs/remotes/origin/${ref}^{commit}"); then
+    printf '%s: Cannot resolve revision origin/%s.\n' "$dir" "$ref" >&2; return 1
+  fi
+  printf '%s' "$target"
+}
+# A default-channel update never moves a checkout back to an older commit: a newer database ledger would stop the
+# services in the schema step. An empty previous (a new clone) and the same commit pass.
+check_not_behind() {
+  local dir=$1 previous=$2 target=$3 ref=$4
+  [[ -n "$previous" ]] || return 0
+  if ! as_soul git -C "$dir" merge-base --is-ancestor "$previous" "$target"; then
+    printf '%s: current HEAD %s is not an ancestor of origin/%s %s. Pass --ref main --atom-ref main to keep tracking main.\n' "$dir" "${previous:0:12}" "$ref" "${target:0:12}" >&2
+    return 1
+  fi
+}
+# The target revision's own install.sh is what the update expects, so the file that is running must be the same bytes.
+# It is read here as root: the README command leaves it in a temporary file that only root can read.
+check_installer_matches() {
+  local dir=$1 target=$2 ref=$3
+  if [[ -n "$RUNNING_INSTALLER" ]] && cmp -s "$RUNNING_INSTALLER" <(as_soul git -C "$dir" show "${target}:install/install.sh" 2>/dev/null); then return 0; fi
+  printf 'The running installer is not install/install.sh of origin/%s. Download install.sh from https://raw.githubusercontent.com/eiaserinnys/soulstream/%s/install/install.sh and run it again, or pass --ref main --atom-ref main with the installer from main.\n' "$ref" "$ref" >&2
+  return 1
+}
+# Without a ref the clone starts on the default branch. A clone left at the end of main by a run that failed before the
+# services stopped would be ahead of the default branch, and the next run would refuse it.
+clone_repository() {
+  local url=$1 dir=$2 default_ref=$3
+  if [[ -n "$default_ref" ]]; then as_soul git clone --branch "$default_ref" "$url" "$dir"; else as_soul git clone "$url" "$dir"; fi
+}
 # Records the previous and target commits of one repository before any service stops.
 check_repository() {
-  local name=$1 dir=$2 url=$3 ref=$4 ref_set=$5 previous= target mode branch=
+  local name=$1 dir=$2 url=$3 ref=$4 ref_set=$5 previous= target mode branch= default_ref=
+  if [[ "$ref_set" != true ]]; then default_ref=$(default_ref_for "$name") || return 1; fi
   if [[ -e "$dir" && ! -d "$dir/.git" ]]; then printf '%s: Exists and is not a git checkout.\n' "$dir" >&2; return 1; fi
   if [[ -d "$dir/.git" ]]; then
     previous=$(as_soul git -C "$dir" rev-parse HEAD) || return 1
     # Untracked files such as config/*.yaml and .env.orch are the installer's own.
     if [[ -n "$(as_soul git -C "$dir" status --porcelain --untracked-files=no)" ]]; then printf '%s: Repository has uncommitted changes.\n' "$dir" >&2; return 1; fi
     as_soul git -C "$dir" fetch --prune --tags origin || return 1
-  elif ! as_soul git clone "$url" "$dir"; then
+  elif ! clone_repository "$url" "$dir" "$default_ref"; then
     # The path did not exist before this run.
     rm -rf "$dir"
     return 1
   fi
-  if [[ "$ref_set" != true ]]; then
-    mode=main; branch=main
-    if ! target=$(as_soul git -C "$dir" rev-parse --verify --quiet 'origin/main^{commit}'); then printf '%s: Cannot resolve revision %s.\n' "$dir" origin/main >&2; return 1; fi
+  if [[ -n "$default_ref" ]]; then
+    mode=branch; branch=$default_ref
+    target=$(default_channel_target "$dir" "$default_ref") || return 1
   elif target=$(as_soul git -C "$dir" rev-parse --verify --quiet "refs/remotes/origin/${ref}^{commit}"); then
     mode=branch; branch=$ref
   elif target=$(as_soul git -C "$dir" rev-parse --verify --quiet "refs/tags/${ref}^{commit}") ||
@@ -1068,7 +1114,28 @@ check_repository() {
      ! as_soul git -C "$dir" merge-base --is-ancestor "refs/heads/${branch}" "$target"; then
     printf '%s: Local branch %s has commits that are not on origin.\n' "$dir" "$branch" >&2; return 1
   fi
+  if [[ -n "$default_ref" ]]; then check_not_behind "$dir" "$previous" "$target" "$default_ref" || return 1; fi
   REPO_PATH[$name]=$dir; REPO_PREVIOUS[$name]=$previous; REPO_TARGET[$name]=$target; REPO_MODE[$name]=$mode; REPO_BRANCH[$name]=$branch
+}
+# Runs the two default-channel checks on existing checkouts before the first change to the server (packages, Node.js, CLIs).
+# Only checkouts that follow the default channel are looked at; a given --ref or --atom-ref is the administrator's choice.
+guard_existing_checkouts() {
+  local root=$1 atom_root=$2 ref target previous
+  if [[ "$REF_SET" != true ]]; then
+    ref=$DEFAULT_SOULSTREAM_REF
+    previous=$(as_soul git -C "$root" rev-parse HEAD) || return 1
+    as_soul git -C "$root" fetch --prune --tags origin || return 1
+    target=$(default_channel_target "$root" "$ref") || return 1
+    check_not_behind "$root" "$previous" "$target" "$ref" || return 1
+    check_installer_matches "$root" "$target" "$ref" || return 1
+  fi
+  if [[ "$ATOM_REF_SET" != true ]]; then
+    ref=$DEFAULT_ATOM_REF
+    previous=$(as_soul git -C "$atom_root" rev-parse HEAD) || return 1
+    as_soul git -C "$atom_root" fetch --prune --tags origin || return 1
+    target=$(default_channel_target "$atom_root" "$ref") || return 1
+    check_not_behind "$atom_root" "$previous" "$target" "$ref" || return 1
+  fi
 }
 # protect_atom_backup root: reads the state file of the previous run, before stop_services overwrites it. When that run did not
 # complete and its atom dump still exists, the dump is the only copy from before the update's first migrate, so this run
@@ -1092,6 +1159,7 @@ check_repositories() {
     printf 'The selected Soulstream revision predates atom support.\n' >&2
     return 1
   fi
+  if [[ "$REF_SET" != true ]]; then check_installer_matches "$root" "${REPO_TARGET[soulstream]}" "$DEFAULT_SOULSTREAM_REF" || return 1; fi
   check_repository atom "$atom_root" "$ATOM_REPO_URL" "$ATOM_REF" "$ATOM_REF_SET" || return 1
   protect_atom_backup "$root"
 }
@@ -1145,7 +1213,6 @@ stop_services() {
 checkout_repository() {
   local name=$1 dir=${REPO_PATH[$1]} target=${REPO_TARGET[$1]} branch=${REPO_BRANCH[$1]} head
   case "${REPO_MODE[$name]}" in
-    main) as_soul git -C "$dir" checkout -B main origin/main || return 1 ;;
     branch) as_soul git -C "$dir" checkout -B "$branch" "origin/$branch" || return 1 ;;
     detach) as_soul git -C "$dir" checkout --detach "$target" || return 1 ;;
   esac
@@ -1623,12 +1690,19 @@ run_step() {
   if [[ "$MAINTENANCE_ENTERED" == true ]]; then write_install_state "$INSTALL_ROOT" updating "$STEP" >> "$LOG" 2>&1; fi
   "$@" >> "$LOG" 2>&1
 }
+# Fixed before prepare_install_cwd changes the directory, so a relative path such as install/install.sh still finds the file.
+pin_running_installer() { RUNNING_INSTALLER=$(realpath -- "${BASH_SOURCE[0]}" 2>/dev/null) || RUNNING_INSTALLER=; }
 prepare_install_cwd() { cd /; }
 # Everything that changes the server; services stop only after both repositories are checked.
 run_install() {
   disable_xtrace
   local home=$1 root=$2 atom_root=$3
   INSTALL_ROOT=$root
+  # An existing server is checked against the default channel before anything on it changes, not only before the services stop.
+  if [[ -d "$root/.git" && -d "$atom_root/.git" ]]; then
+    STEP='Checking repositories'
+    guard_existing_checkouts "$root" "$atom_root" >> "$LOG" 2>&1
+  fi
   run_step 'Installing packages' install_packages
   if [[ "$TAILSCALE" == true ]]; then STEP='Setting up Tailscale'; printf '%s\n' "$STEP"; setup_tailscale; fi
   run_step 'Setting up account' setup_account
@@ -1661,6 +1735,7 @@ main() {
   set -Eeuo pipefail
   trap 'restore_tty_echo; cleanup_temp_files' EXIT
   parse_args "$@"
+  pin_running_installer
   prepare_install_cwd
   preflight
   # Asked before packages are installed or services stop, so a rejected value changes nothing on the server.

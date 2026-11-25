@@ -417,8 +417,8 @@ test('a Soulstream revision without atom support stops before atom is cloned', a
     git('init', '-q', '--bare', '--initial-branch=main', origin);
     git('init', '-q', '--initial-branch=main', work);
     git('-C', work, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'stage one');
-    git('-C', work, 'push', '-q', origin, 'HEAD:refs/heads/main');
-    git('clone', '-q', origin, t.root);
+    git('-C', work, 'push', '-q', origin, 'HEAD:refs/heads/beta');
+    git('clone', '-q', '--branch', 'beta', origin, t.root);
     const result = await t.run('as_soul() { "$@"; }\nSOULSTREAM_REPO_URL=$ORIGIN; ATOM_REPO_URL=$ORIGIN.missing; SYSTEMD_DIR=$FAKE_DIR/units\nparse_args\ncheck_repositories "$ROOT" "$ATOM_ROOT"\n', { ...gitEnv, ORIGIN: origin });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /The selected Soulstream revision predates atom support\./);

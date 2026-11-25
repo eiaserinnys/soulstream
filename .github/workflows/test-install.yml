@@ -8,6 +8,8 @@ on:
     branches: [main]
     paths:
       - 'install/**'
+      - 'README.md'
+      - 'docs/guide/installation.md'
       - 'packages/db-schema/**'
       - 'soul-server-ts/scripts/**'
       - 'soul-server-ts/tests/scripts/**'
@@ -35,6 +37,8 @@ on:
   pull_request:
     paths:
       - 'install/**'
+      - 'README.md'
+      - 'docs/guide/installation.md'
       - 'packages/db-schema/**'
       - 'soul-server-ts/scripts/**'
       - 'soul-server-ts/tests/scripts/**'

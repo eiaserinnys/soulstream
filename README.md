@@ -37,8 +37,10 @@ flowchart LR
 Run the one-line installer as `root` on a fresh Debian 13 (`x86_64`) server. The recommended size is at least 2 vCPU, 4 GB RAM, and 40 GB disk.
 
 ```bash
-bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl/certs/ca-certificates.crt) || (apt-get update && apt-get install -y curl ca-certificates); tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex'
+bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl/certs/ca-certificates.crt) || (apt-get update && apt-get install -y curl ca-certificates); tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/beta/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex'
 ```
+
+By default, this installs the verified `beta` channel of Soulstream and atom. For the latest development commits, download `install.sh` from `main` instead of `beta` and pass `--ref main --atom-ref main`.
 
 `--backends` takes a comma-separated list of `claude`, `codex`, and `antigravity` (default: `claude,codex`). The first one is the backend for the default profiles. For `--ref`, `--atom-ref`, `--tailscale`, and the other options, see [Installation](docs/guide/installation.md).
 
@@ -67,10 +69,10 @@ sudo cat /home/soulstream/soulstream/.admin-password
 To change the administrator password later, run this command as `root` on the server in an interactive SSH session. It asks for the new password on the terminal:
 
 ```bash
-bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex --set-admin-password'
+bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/beta/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex --set-admin-password'
 ```
 
-The command also updates the server to the latest version, and the new password applies to both the dashboard and atom right away. To change it without a terminal, pass `--admin-password-file <path>` instead of `--set-admin-password`; see [Changing the administrator password](docs/guide/installation.md#changing-the-administrator-password) for details.
+The command also updates the server to the latest verified version on the `beta` channel, and the new password applies to both the dashboard and atom right away. To change it without a terminal, pass `--admin-password-file <path>` instead of `--set-admin-password`; see [Changing the administrator password](docs/guide/installation.md#changing-the-administrator-password) for details.
 
 #### Connect coding agents
 

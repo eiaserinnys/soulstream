@@ -42,17 +42,20 @@ const GIT_ENV = {
   GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.invalid', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.invalid',
 };
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...GIT_ENV } }).trim();
-const SEED = { 'install/seed/load_atom_seed.mjs': '// atom seed loader\n' };
+// The fake installer is what the soulstream origin carries as install/install.sh; setup() writes the same bytes as the running installer.
+const FAKE_INSTALLER = '#!/usr/bin/env bash\n# installer under test\n';
+const SEED = { 'install/seed/load_atom_seed.mjs': '// atom seed loader\n', 'install/install.sh': FAKE_INSTALLER };
 const UNITS = ['soulstream-worker.service', 'soulstream-orch.service', 'soulstream-atom.service'];
 
-// A bare origin and a working copy that pushes to it.
+// A bare origin and a working copy that pushes to it. A commit on main moves the default channel (beta) with it,
+// unless { beta: false } leaves beta behind, as when main has commits that were not verified yet.
 function remote(dir, name) {
   const origin = join(dir, `${name}.git`), work = join(dir, `${name}-work`);
   git('init', '-q', '--bare', '--initial-branch=main', origin);
   git('init', '-q', '--initial-branch=main', work);
   git('-C', work, 'remote', 'add', 'origin', origin);
   let count = 0;
-  const commit = (files = {}, branch = 'main') => {
+  const commit = (files = {}, branch = 'main', { beta = branch === 'main' } = {}) => {
     if (branch !== 'main') git('-C', work, 'checkout', '-q', '-B', branch);
     for (const [path, body] of Object.entries({ ...files, [`${name}.txt`]: `${name} ${++count}\n` })) {
       mkdirSync(dirname(join(work, path)), { recursive: true });
@@ -61,6 +64,7 @@ function remote(dir, name) {
     git('-C', work, 'add', '-A');
     git('-C', work, 'commit', '-q', '-m', `${name} ${count}`);
     git('-C', work, 'push', '-q', 'origin', `HEAD:refs/heads/${branch}`);
+    if (beta) git('-C', work, 'push', '-q', 'origin', 'HEAD:refs/heads/beta');
     const sha = git('-C', work, 'rev-parse', 'HEAD');
     if (branch !== 'main') git('-C', work, 'checkout', '-q', 'main');
     return sha;
@@ -78,6 +82,7 @@ as_soul() { "$@"; }
 SOULSTREAM_REPO_URL=$S_URL
 ATOM_REPO_URL=$A_URL
 SYSTEMD_DIR=$UNITS
+RUNNING_INSTALLER=$INSTALLER_COPY
 LOG=$FAKE_DIR/install.log
 : >> "$LOG"
 exec 3>>"$FAKE_DIR/fd3.log"
@@ -91,8 +96,10 @@ function setup({ units = true } = {}) {
   if (units) for (const unit of UNITS) writeFileSync(join(unitDir, unit), '[Unit]\n');
   const soul = remote(dir, 'soulstream'), atom = remote(dir, 'atom');
   const fake = createFakeCommands(dir);
+  const installerCopy = join(dir, 'running-install.sh');
+  writeFileSync(installerCopy, FAKE_INSTALLER);
   const run = async (body, extra = {}) => {
-    const result = await runBash(PRELUDE + body, [], { env: fake.env({ ...GIT_ENV, INSTALL_SH: script, HOME_DIR: home, ROOT: root, ATOM_ROOT: atomRoot, UNITS: unitDir, S_URL: soul.origin, A_URL: atom.origin, ...extra }) });
+    const result = await runBash(PRELUDE + body, [], { env: fake.env({ ...GIT_ENV, INSTALL_SH: script, INSTALLER_COPY: installerCopy, HOME_DIR: home, ROOT: root, ATOM_ROOT: atomRoot, UNITS: unitDir, S_URL: soul.origin, A_URL: atom.origin, ...extra }) });
     fake.assertNoProtectedRequests();
     return result;
   };
@@ -121,8 +128,8 @@ test('a missing atom checkout is cloned while checking, with no previous commit 
     assert.equal(result.status, 0, result.stderr);
     const r = repos(result.stdout);
     assert.ok(existsSync(join(t.atomRoot, '.git')));
-    assert.deepEqual(r.atom, { path: t.atomRoot, previous: '', target: a1, mode: 'main' });
-    assert.deepEqual(r.soulstream, { path: t.root, previous: s1, target: s1, mode: 'main' });
+    assert.deepEqual(r.atom, { path: t.atomRoot, previous: '', target: a1, mode: 'branch' });
+    assert.deepEqual(r.soulstream, { path: t.root, previous: s1, target: s1, mode: 'branch' });
     assert.equal(t.systemctl(), false);
   } finally { t.cleanup(); }
 });
@@ -179,7 +186,7 @@ test('a revision that cannot be resolved stops the check', async () => {
   } finally { t.cleanup(); }
 });
 
-test('without a ref both repositories move to the newest origin main', async () => {
+test('without a ref both repositories move to the newest origin beta', async () => {
   const t = setup();
   try {
     const s1 = t.soul.commit(SEED), a1 = t.atom.commit();
@@ -190,7 +197,7 @@ test('without a ref both repositories move to the newest origin main', async () 
     assert.equal(result.status, 0, result.stderr);
     const r = repos(result.stdout);
     assert.deepEqual([r.soulstream.previous, r.soulstream.target, r.atom.previous, r.atom.target], [s1, s2, a1, a2]);
-    assert.deepEqual([t.head(t.root), t.branch(t.root), t.head(t.atomRoot), t.branch(t.atomRoot)], [s2, 'main', a2, 'main']);
+    assert.deepEqual([t.head(t.root), t.branch(t.root), t.head(t.atomRoot), t.branch(t.atomRoot)], [s2, 'beta', a2, 'beta']);
   } finally { t.cleanup(); }
 });
 
@@ -208,7 +215,7 @@ test('a branch ref checks out the branch; tag and commit refs detach at their co
     assert.equal(onBranch.status, 0, onBranch.stderr);
     assert.equal(repos(onBranch.stdout).soulstream.mode, 'branch');
     assert.deepEqual([t.head(t.root), t.branch(t.root)], [feature, 'feature']);
-    assert.deepEqual([t.head(t.atomRoot), t.branch(t.atomRoot)], [a2, 'main']);
+    assert.deepEqual([t.head(t.atomRoot), t.branch(t.atomRoot)], [a2, 'beta']);
 
     const onTag = await checkAndCheckout(t, '--ref', 'v1');
     assert.equal(onTag.status, 0, onTag.stderr);
@@ -240,7 +247,7 @@ test('a first-stage checkout updates when the target has atom support, and an ol
     const promoted = await checkAndCheckout(t);
     assert.equal(promoted.status, 0, promoted.stderr);
     assert.ok(existsSync(join(t.atomRoot, '.git')));
-    assert.deepEqual([t.head(t.root), t.branch(t.root)], [withAtom, 'main']);
+    assert.deepEqual([t.head(t.root), t.branch(t.root)], [withAtom, 'beta']);
   } finally { t.cleanup(); }
 });
 
@@ -248,15 +255,23 @@ test('local commits that are not on origin stop the check', async () => {
   const t = setup();
   try {
     t.soul.commit(SEED); t.atom.commit();
-    git('clone', '-q', t.soul.origin, t.root);
+    git('clone', '-q', '--branch', 'beta', t.soul.origin, t.root);
     git('clone', '-q', t.atom.origin, t.atomRoot);
     git('-C', t.root, 'commit', '-q', '--allow-empty', '-m', 'local only');
     const local = t.head(t.root);
     const result = await check(t);
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, new RegExp(`${t.root}: Local branch main has commits that are not on origin\\.`));
+    assert.match(result.stderr, new RegExp(`${t.root}: Local branch beta has commits that are not on origin\\.`));
     assert.equal(t.head(t.root), local);
     assert.equal(t.systemctl(), false);
+    // An explicit ref keeps the same protection on its own branch.
+    const onMain = await check(t, '--ref', 'main');
+    assert.equal(onMain.status, 0, onMain.stderr);
+    git('-C', t.root, 'checkout', '-q', '-B', 'main', 'origin/main');
+    git('-C', t.root, 'commit', '-q', '--allow-empty', '-m', 'local only on main');
+    const explicit = await check(t, '--ref', 'main');
+    assert.notEqual(explicit.status, 0);
+    assert.match(explicit.stderr, new RegExp(`${t.root}: Local branch main has commits that are not on origin\\.`));
   } finally { t.cleanup(); }
 });
 
@@ -393,6 +408,194 @@ test('a first installation without unit files stops nothing and still writes the
     assert.deepEqual(state.repositories.soulstream, { path: t.root, previous_sha: null, target_sha: s1, current_sha: s1 });
     assert.deepEqual(state.repositories.atom, { path: t.atomRoot, previous_sha: null, target_sha: a1, current_sha: a1 });
     assert.ok(result.stdout.includes(`\nSoulstream revision: none -> ${s1.slice(0, 12)}\nAtom revision: none -> ${a1.slice(0, 12)}\n`), result.stdout);
+  } finally { t.cleanup(); }
+});
+
+// The default channel: without --ref and --atom-ref both repositories follow origin/beta.
+const EXPLICIT_MAIN = FLOW.replace('parse_args\n', 'parse_args --ref main --atom-ref main\n');
+const notAncestor = (dir, head, beta) => `${dir}: current HEAD ${head.slice(0, 12)} is not an ancestor of origin/beta ${beta.slice(0, 12)}. Pass --ref main --atom-ref main to keep tracking main.`;
+const DOWNLOAD = 'Download install.sh from https://raw.githubusercontent.com/eiaserinnys/soulstream/beta/install/install.sh and run it again, or pass --ref main --atom-ref main with the installer from main.';
+const didNotStart = (t) => {
+  const argv = t.fake.argv();
+  assert.equal(t.systemctl(), false);
+  assert.equal(stepAt(argv, 'install_packages'), -1);
+  assert.equal(stepAt(argv, 'install_node'), -1);
+  assert.ok(!existsSync(t.statePath));
+};
+
+test('with main ahead of beta, no arguments check out origin/beta and --ref main --atom-ref main check out origin/main', async () => {
+  const t = setup();
+  try {
+    t.soul.commit(SEED); t.atom.commit();
+    git('clone', '-q', t.soul.origin, t.root);
+    git('clone', '-q', t.atom.origin, t.atomRoot);
+    const s2 = t.soul.commit(), a2 = t.atom.commit();
+    const s3 = t.soul.commit({}, 'main', { beta: false }), a3 = t.atom.commit({}, 'main', { beta: false });
+    const channel = await checkAndCheckout(t);
+    assert.equal(channel.status, 0, channel.stderr);
+    assert.deepEqual([t.head(t.root), t.branch(t.root), t.head(t.atomRoot), t.branch(t.atomRoot)], [s2, 'beta', a2, 'beta']);
+    const latest = await checkAndCheckout(t, '--ref', 'main', '--atom-ref', 'main');
+    assert.equal(latest.status, 0, latest.stderr);
+    assert.deepEqual([t.head(t.root), t.branch(t.root), t.head(t.atomRoot), t.branch(t.atomRoot)], [s3, 'main', a3, 'main']);
+    assert.equal(t.systemctl(), false);
+  } finally { t.cleanup(); }
+});
+
+for (const side of ['soulstream', 'atom']) {
+  test(`a ${side} checkout on main ahead of beta stops with no systemctl call and before Node.js is touched`, async () => {
+    const t = setup();
+    try {
+      const s1 = t.soul.commit(SEED), a1 = t.atom.commit();
+      git('clone', '-q', t.soul.origin, t.root);
+      git('clone', '-q', t.atom.origin, t.atomRoot);
+      const aheadOf = side === 'soulstream' ? { dir: t.root, beta: s1, ahead: t.soul.commit({}, 'main', { beta: false }) } : { dir: t.atomRoot, beta: a1, ahead: t.atom.commit({}, 'main', { beta: false }) };
+      git('-C', aheadOf.dir, 'pull', '-q', '--ff-only', 'origin', 'main');
+      const message = notAncestor(aheadOf.dir, aheadOf.ahead, aheadOf.beta);
+
+      const direct = await check(t);
+      assert.notEqual(direct.status, 0);
+      assert.ok(direct.stderr.includes(message), direct.stderr);
+      assert.equal(t.systemctl(), false);
+
+      // Both checkouts exist, so the check runs before the first step: no package, Node.js or CLI step is reached.
+      const result = await t.run(FLOW);
+      assert.equal(result.status, 1);
+      assert.ok(t.fd3().includes('Installation failed at: Checking repositories\n'), t.fd3());
+      assert.ok(t.fd3().includes(message), t.fd3());
+      assert.ok(!t.fd3().includes('Services stopped:'));
+      didNotStart(t);
+      assert.equal(t.head(aheadOf.dir), aheadOf.ahead);
+
+      // --ref main --atom-ref main keeps tracking main and is not blocked.
+      const tracking = await t.run(EXPLICIT_MAIN);
+      assert.equal(tracking.status, 0, t.fd3());
+      assert.equal(t.state().status, 'completed');
+    } finally { t.cleanup(); }
+  });
+}
+
+test('a main checkout that is behind beta moves forward to beta', async () => {
+  const t = setup();
+  try {
+    const s1 = t.soul.commit(SEED), a1 = t.atom.commit();
+    git('clone', '-q', t.soul.origin, t.root);
+    git('clone', '-q', t.atom.origin, t.atomRoot);
+    const s2 = t.soul.commit(), a2 = t.atom.commit();
+    t.soul.commit({}, 'main', { beta: false });
+    const result = await t.run(FLOW);
+    assert.equal(result.status, 0, t.fd3());
+    assert.deepEqual([t.head(t.root), t.branch(t.root), t.head(t.atomRoot), t.branch(t.atomRoot)], [s2, 'beta', a2, 'beta']);
+    assert.deepEqual([t.state().repositories.soulstream.previous_sha, t.state().repositories.atom.previous_sha], [s1, a1]);
+  } finally { t.cleanup(); }
+});
+
+test('a running installer that differs from install/install.sh of the target stops a default run before anything changes', async () => {
+  const t = setup();
+  try {
+    installed(t);
+    const older = join(t.dir, 'older-install.sh');
+    writeFileSync(older, '#!/usr/bin/env bash\n# an older installer\n');
+    for (const copy of [older, join(t.dir, 'does-not-exist.sh')]) {
+      const result = await t.run(FLOW, { INSTALLER_COPY: copy });
+      assert.equal(result.status, 1);
+      assert.ok(t.fd3().includes(DOWNLOAD), t.fd3());
+      didNotStart(t);
+    }
+    // The same stop in the repository check of a new server, which has no checkout to look at first.
+    const fresh = setup({ units: false });
+    try {
+      fresh.soul.commit(SEED); fresh.atom.commit();
+      const result = await fresh.run(FLOW, { INSTALLER_COPY: older });
+      assert.equal(result.status, 1);
+      assert.ok(fresh.fd3().includes(DOWNLOAD), fresh.fd3());
+      assert.equal(fresh.systemctl(), false);
+      assert.ok(!existsSync(fresh.atomRoot));
+    } finally { fresh.cleanup(); }
+    // An explicit --ref is the administrator's choice: neither this check nor the ancestor check applies.
+    const explicit = await t.run(EXPLICIT_MAIN, { INSTALLER_COPY: older });
+    assert.equal(explicit.status, 0, t.fd3());
+  } finally { t.cleanup(); }
+});
+
+test('without origin/beta a run ends with Cannot resolve revision origin/beta. and does not fall back to main', async () => {
+  const t = setup();
+  try {
+    t.soul.commit(SEED, 'main', { beta: false }); t.atom.commit({}, 'main', { beta: false });
+    git('clone', '-q', t.soul.origin, t.root);
+    git('clone', '-q', t.atom.origin, t.atomRoot);
+    const direct = await check(t);
+    assert.notEqual(direct.status, 0);
+    assert.match(direct.stderr, new RegExp(`${t.root}: Cannot resolve revision origin/beta\\.`));
+    assert.equal(t.systemctl(), false);
+    const result = await t.run(FLOW);
+    assert.equal(result.status, 1);
+    assert.ok(t.fd3().includes(`${t.root}: Cannot resolve revision origin/beta.`), t.fd3());
+    didNotStart(t);
+  } finally { t.cleanup(); }
+  // A new server: the clone of the missing branch fails and leaves no directory.
+  const fresh = setup({ units: false });
+  try {
+    fresh.soul.commit(SEED, 'main', { beta: false }); fresh.atom.commit({}, 'main', { beta: false });
+    const result = await fresh.run(FLOW);
+    assert.equal(result.status, 1);
+    assert.ok(!existsSync(fresh.root));
+    assert.ok(!existsSync(fresh.atomRoot));
+    assert.equal(fresh.systemctl(), false);
+  } finally { fresh.cleanup(); }
+});
+
+test('after a new server fails before the services stop, the same command runs again without being blocked', async () => {
+  const t = setup({ units: false });
+  try {
+    const s1 = t.soul.commit(SEED);
+    // main is ahead of beta: a clone that kept the end of main would be refused on the next run.
+    t.soul.commit({}, 'main', { beta: false });
+    const failed = await t.run(FLOW, { A_URL: join(t.dir, 'missing-atom.git') });
+    assert.equal(failed.status, 1);
+    assert.deepEqual([t.head(t.root), t.branch(t.root)], [s1, 'beta']);
+    assert.ok(!existsSync(t.atomRoot));
+    assert.equal(t.systemctl(), false);
+    const a1 = t.atom.commit();
+    const rerun = await t.run(FLOW);
+    assert.equal(rerun.status, 0, t.fd3());
+    assert.equal(t.state().status, 'completed');
+    assert.deepEqual([t.state().repositories.soulstream.target_sha, t.state().repositories.atom.target_sha], [s1, a1]);
+  } finally { t.cleanup(); }
+});
+
+test('the running installer is found through a relative path after the directory changes', async () => {
+  const t = setup();
+  try {
+    const installer = readFileSync(script, 'utf8');
+    t.soul.commit({ ...SEED, 'install/install.sh': installer }); t.atom.commit();
+    const work = join(t.dir, 'work');
+    mkdirSync(join(work, 'install'), { recursive: true });
+    writeFileSync(join(work, 'install', 'install.sh'), installer);
+    const result = await t.run(`cd "$WORK"
+source install/install.sh
+as_soul() { "$@"; }
+SOULSTREAM_REPO_URL=$S_URL; ATOM_REPO_URL=$A_URL; SYSTEMD_DIR=$UNITS
+pin_running_installer
+prepare_install_cwd
+printf 'cwd=%s\\npinned=%s\\n' "$PWD" "$RUNNING_INSTALLER"
+parse_args
+check_repositories "$ROOT" "$ATOM_ROOT"
+`, { WORK: work });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.stdout.includes(`cwd=/\npinned=${join(work, 'install', 'install.sh')}\n`), result.stdout);
+    // A different file under the same relative name is refused.
+    writeFileSync(join(work, 'install', 'install.sh'), `${installer}# edited\n`);
+    const edited = await t.run(`cd "$WORK"
+source install/install.sh
+as_soul() { "$@"; }
+SOULSTREAM_REPO_URL=$S_URL; ATOM_REPO_URL=$A_URL; SYSTEMD_DIR=$UNITS
+pin_running_installer
+prepare_install_cwd
+parse_args
+check_repositories "$ROOT" "$ATOM_ROOT"
+`, { WORK: work });
+    assert.notEqual(edited.status, 0);
+    assert.ok(edited.stderr.includes(DOWNLOAD), edited.stderr);
   } finally { t.cleanup(); }
 });
 

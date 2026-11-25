@@ -90,7 +90,7 @@ test('database password prepared before rendering is retained', () => {
   assert.equal(run.status,0,run.stderr);
  } finally { rmSync(dir,{recursive:true,force:true}); }
 });
-test('repository reruns ignore untracked installer files, protect tracked changes and follow origin main', () => {
+test('repository reruns ignore untracked installer files, protect tracked changes and follow origin beta', () => {
  const dir=mkdtempSync(join(tmpdir(),'install-clone-')), origin=join(dir,'origin.git'), source=join(dir,'source'), root=join(dir,'clone');
  // The remote is a local bare repository and git ignores the host configuration.
  const gitEnv={...process.env,GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1',GIT_TERMINAL_PROMPT:'0'};
@@ -131,11 +131,11 @@ test('repository reruns ignore untracked installer files, protect tracked change
   git('-C',source,'add','tracked.txt');
   git('-C',source,'-c','user.name=Test','-c','user.email=test@example.invalid','commit','-m','C');
   const c=git('-C',source,'rev-parse','HEAD');
-  git('-C',source,'push','origin','main');
+  git('-C',source,'push','origin','main','main:beta');
   const noRef=run('','false');
   assert.equal(noRef.status,0,noRef.stderr);
   assert.equal(git('-C',root,'rev-parse','HEAD'),c);
-  assert.equal(git('-C',root,'rev-parse','--abbrev-ref','HEAD'),'main');
+  assert.equal(git('-C',root,'rev-parse','--abbrev-ref','HEAD'),'beta');
   for (const file of files) assert.equal(readFileSync(join(root,file),'utf8'),`preserve ${file}\n`);
  } finally { rmSync(dir,{recursive:true,force:true}); }
 });
