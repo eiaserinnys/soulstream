@@ -25,6 +25,8 @@ export interface CardCheckItem {
 }
 export interface CardNow { text: string; turn: "agent" | "user" | "outside"; ask: string | null; updatedAt: string; sessionId: string | null }
 export interface CardNowHistoryEntry { text: string; turn: CardNow["turn"]; ask: string | null; at: string }
+/** 카드 상세가 싣는 상태 전환 이력(최신 20개). 서버 단위가 더하기 전 응답에는 없다. */
+export interface CardStatusHistoryEntry { status: CardStatus; at: string; actorKind: string | null; sessionId: string | null }
 /** 카드 목록·상세 응답이 싣는 담당 에이전트 표시 정보. 담당이 없거나 사람이면 null이다. */
 export interface CardAssigneeAgent {
   agentId: string; nodeId: string | null;
@@ -43,6 +45,8 @@ export interface CardRow {
   nodeId: string | null; modelPreset: string | null; version: number; archived: boolean;
   createdAt: string; updatedAt: string;
   completedAt?: string | null;
+  /** 사용자가 답변을 미뤄 둔 시각(ISO). 없거나 null이면 미루지 않았다. 서버 단위가 더하기 전 응답에는 없다. */
+  snoozedUntil?: string | null;
   latestActivity?: CardActivity | null;
   items?: CardCheckItem[];
   now?: CardNow | null;
@@ -59,5 +63,5 @@ export interface CardLinkedSession { sessionId: string; cardId: string; displayN
   agentName?: string | null; agentPortraitUrl?: string | null;
   modelPreset?: string | null; modelLabel?: string | null; backend?: string | null }
 export interface CardComment { id: string; cardId: string; authorKind: "user" | "agent"; authorId: string; sessionId: string | null; kind: "comment" | "spoken" | "note"; itemId?: number | null; questionId?: string | null; body: string; createdAt: string }
-export interface CardDetail { card: CardRow; reports: CardReport[]; questions: CardQuestion[]; sessions: CardLinkedSession[]; comments?: CardComment[]; notes?: CardComment[]; nowHistory?: CardNowHistoryEntry[] }
+export interface CardDetail { card: CardRow; reports: CardReport[]; questions: CardQuestion[]; sessions: CardLinkedSession[]; comments?: CardComment[]; notes?: CardComment[]; nowHistory?: CardNowHistoryEntry[]; statusHistory?: CardStatusHistoryEntry[] }
 export interface CardAssignment { folderId: string; nodeId: string; agentId: string; modelPreset: string }

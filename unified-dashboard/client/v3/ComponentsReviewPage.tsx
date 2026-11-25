@@ -55,6 +55,7 @@ import { DashboardIconCapBareReviewSample } from "./DashboardIconCapBareReviewSa
 import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./ChatUiPartsReviewSample";
 import { ChatUiReviewSample } from './ChatUiReviewSample';
 import { PersistentReportReviewSample } from './PersistentReportReviewSample';
+import { PasReportThreadReviewSample } from './PasReportThreadReviewSample';
 import { CardQuestionPartsSample, CardQuestionReviewSample, type CardQuestionScene } from './CardQuestionReviewSample';
 import { PersistentSessionWeeklyUsageReviewSample } from './PersistentSessionWeeklyUsageReviewSample';
 import { ReportTimelineRow } from './ReportTimelineRow';
@@ -193,6 +194,7 @@ export function ComponentsReviewPage() {
     <p className="v3-components-label">PersistentSessionWeeklyUsage · Claude 계정 풀 · 가짜 요약</p>
     <ClaudePoolPasReviewSample availableCount={Number(sampleParams.get('count') ?? 2)} />
   </div>;
+  if (sampleParams.get('sample') === 'pas-report-thread') return <PasReportThreadReviewSample defaultOpen empty={sampleParams.get('empty') === '1'} />;
   if (sampleParams.get('sample') === 'pas-card') return <div className="v3-detail-pane v3-detail-pane--inline"><p className="v3-components-label">PAS 카드 펼친 장</p><PersistentReportReviewSample cardPreview bubble before={sampleParams.get('before') === '1'} /></div>;
   if (sampleParams.get('sample') === 'card-question') {
     const scenes: CardQuestionScene[] = ['ga', 'na', 'da', 'ra', 'legacy'];
@@ -365,6 +367,8 @@ export function ComponentsReviewPage() {
             <Sample name="PAS 카드 완료" state="검수 대기 · 완료 버튼"><PersistentReportReviewSample completionScenario="review" bubble /></Sample>
             <Sample name="PAS 막힘 카드" state="확인했어 유지"><PersistentReportReviewSample completionScenario="blocked" bubble /></Sample>
             <Sample name="PAS 완료 되돌리기" state="완료 후 되돌리기 줄"><PersistentReportReviewSample completionScenario="undo" bubble /></Sample>
+            <Sample name="PAS 결재형 보고 창" state="긴 제목 · 질문 · 검수 · 막힘 · 진행 중 · 미뤄 둠"><PasReportThreadReviewSample /></Sample>
+            <Sample name="PAS 결재형 보고 창" state="빈 판"><PasReportThreadReviewSample empty /></Sample>
             <Sample name="PAS 완료 되돌리기" state="마지막 장 완료 · 되돌리기 줄만"><PersistentReportReviewSample completionScenario="undo-only" bubble /></Sample>
             <Sample name="PersistentReportDeck" state="PAS 보고 · 넘김 · 답 · 확인했어"><PersistentReportReviewSample /></Sample>
             <Sample name="PersistentReportDeck" state="PAS 말풍선 · 1440"><PersistentReportReviewSample bubble /></Sample>

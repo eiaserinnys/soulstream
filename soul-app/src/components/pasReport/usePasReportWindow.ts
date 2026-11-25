@@ -9,17 +9,13 @@ import { cardOperationId } from '../../hooks/useCardActions';
 import { useCardComments } from '../../hooks/useCardComments';
 import { useCardItems } from '../../hooks/useCardItems';
 import {
-  entryAgenda, groupAgendas, itemInstructionBody, nextSnoozeReturn, openQuestionOf,
-  type Agenda, type RailGroups, type SnoozeOption,
-} from '../../lib/pas-report-thread-model';
+  itemInstructionBody, nextSnoozeReturn,
+  type ProcessedAgenda, type RailGroups, type SnoozeOption, type SnoozeUndo, type ThreadLoad,
+} from '../../../../packages/soul-ui/src/lib/pas-report-thread-core';
+import { entryAgenda, groupAgendas, openQuestionOf, type Agenda } from '../../lib/pas-report-thread-model';
 import { refreshCard, useCardStore } from '../../store/cardStore';
 import { usePlannerStore } from '../../store/plannerStore';
 import type { CardCompletion } from '../persistent/usePersistentCardCompletion';
-
-export interface ProcessedAgenda { agenda: Agenda; label: string }
-export interface SnoozeUndo { cardId: string; number: number | null; expiresAt: number }
-export type ThreadLoad = 'loading' | 'ready' | 'error';
-export type SendMode = 'comment' | 'ask' | 'answer';
 
 export interface PasReportWindowInput {
   api: ApiClient | null;
@@ -29,7 +25,7 @@ export interface PasReportWindowInput {
   /** 보고 판에서 보던 장의 카드. 이 안건에서 창을 연다. */
   startCardId: string | null;
   /** 견본이 처리됨 상태를 바로 보일 때만 준다. 운영 화면은 창을 연 뒤 처분한 안건만 쌓는다. */
-  initialProcessed?: ProcessedAgenda[];
+  initialProcessed?: ProcessedAgenda<Agenda>[];
 }
 
 /** 다음 미루기 시각까지 기다렸다 지금을 다시 센다. 타이머 한도(약 24일)를 넘으면 한도까지 기다렸다 다시 센다. */
@@ -48,7 +44,7 @@ export function usePasReportWindow({ api, entries, completion, dismissReport, st
   const rows = useCardStore(state => state.rows);
   const list = useCardList(api);
   const cards: readonly CardDto[] = list.cards;
-  const [processed, setProcessed] = useState<ProcessedAgenda[]>(initialProcessed ?? []);
+  const [processed, setProcessed] = useState<ProcessedAgenda<Agenda>[]>(initialProcessed ?? []);
   // 처분한 안건은 판이 따라잡기 전에도 결재 대기에 남지 않는다. 판의 장이 바뀌면(다시 열림) 돌아온다.
   const boardAgendas = useMemo(() => {
     const settled = new Map(processed.map(item => [item.agenda.cardId, item.agenda.updatedAt]));
@@ -60,7 +56,7 @@ export function usePasReportWindow({ api, entries, completion, dismissReport, st
   const [deadline, setDeadline] = useState<number | null>(null);
   const now = useNow(deadline);
   useEffect(() => { setDeadline(nextSnoozeReturn(boardAgendas, now)); }, [boardAgendas, now]);
-  const groups: RailGroups = useMemo(() => groupAgendas(boardAgendas, cards, now), [boardAgendas, cards, now]);
+  const groups: RailGroups<Agenda> = useMemo(() => groupAgendas(boardAgendas, cards, now), [boardAgendas, cards, now]);
 
   const [activeId, setActiveId] = useState<string | null>(startCardId);
   const [snoozeUndo, setSnoozeUndo] = useState<SnoozeUndo | null>(null);

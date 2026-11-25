@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, type ComponentProps } from 'react';
+import { act, useEffect, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
@@ -41,6 +41,7 @@ const transport = vi.fn().mockResolvedValue({ ok: true, delivered: true, reason:
 let entries: PersistentReportEntry[];
 let cardTransition: ((cardId: string, status: 'done' | 'on_hold' | 'review') => Promise<void>) | undefined;
 let questionRenderer: ComponentProps<typeof PersistentReportDeck>['renderQuestion'];
+let reportWindow: ComponentProps<typeof PersistentReportDeck>['renderReportWindow'];
 let portalTarget: HTMLDivElement | null = null;
 let inlineMaxHeight: number | null = null;
 const dismiss = vi.fn(async (key: string) => { entries = entries.filter(entry => entry.key !== key); await render(); });
@@ -50,12 +51,13 @@ const render = () => act(async () => root.render(<InternalLinkProvider internalO
     renderCardDetails={entry => <div data-testid={`card-details-${entry.key}`}>운영 카드 칸</div>}
     renderCardStatus={entry => <span data-testid={`card-status-${entry.key}`}>{entry.key.startsWith('cq_') ? '질문' : '카드 상태'}</span>}
     renderQuestion={questionRenderer}
+    renderReportWindow={reportWindow}
     seat={portalTarget ? { target: portalTarget, body: { left: 0, top: 300, width: 152, height: 228 }, layout: { left: 0, bottom: 284, width: 342, maxHeight: 250, tailLeft: 228, tailDirection: 'left' } } : inlineMaxHeight === null ? undefined : { target: null, body: null, layout: null, inlineMaxHeight }} />
 </PersistentReportProvider></InternalLinkProvider>));
 const button = (name: string) => Array.from(host.querySelectorAll('button')).find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
 let contentHeight = 0;
 beforeEach(async () => {
-  vi.clearAllMocks(); transport.mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); cardTransition = undefined; questionRenderer = undefined; contentHeight = 100; portalTarget = null; inlineMaxHeight = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow, secondCardRow]); entries = [one, two];
+  vi.clearAllMocks(); transport.mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); cardTransition = undefined; questionRenderer = undefined; reportWindow = undefined; contentHeight = 100; portalTarget = null; inlineMaxHeight = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow, secondCardRow]); entries = [one, two];
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) {
@@ -686,4 +688,18 @@ it('shows the neighbour sheet in the same place, not the first sheet, when the a
     expect(host.querySelector(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)).toBeNull();
     expect(host.querySelector('[data-current="true"]')?.getAttribute('data-testid')).toBe('report-sheet-two');
   } finally { vi.useRealTimers(); }
+});
+
+it('keeps the report window mounted when the last sheet leaves and the deck empties', async () => {
+  let mounts = 0; let unmounts = 0;
+  const Probe = () => { useEffect(() => { mounts += 1; return () => { unmounts += 1; }; }, []); return <div data-testid="window-probe" />; };
+  reportWindow = () => <Probe />;
+  entries = [one];
+  await render();
+  expect(host.querySelector('[data-testid="window-probe"]')).not.toBeNull();
+  entries = [];
+  await render();
+  expect(host.querySelector('[data-testid="report-deck"]')).toBeNull();
+  expect(host.querySelector('[data-testid="window-probe"]')).not.toBeNull();
+  expect({ mounts, unmounts }).toEqual({ mounts: 1, unmounts: 0 });
 });

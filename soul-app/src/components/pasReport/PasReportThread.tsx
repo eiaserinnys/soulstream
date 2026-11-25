@@ -4,7 +4,8 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { CardComment, CardDetail, CardQuestion } from '../../api/cardTypes';
 import { cardItemTargetText, formatCardTime } from '../../lib/card-check-item-summary';
-import { buildThread, summarizeTechnicalNotes, type ThreadItem } from '../../lib/pas-report-thread-model';
+import type { ThreadItem } from '../../../../packages/soul-ui/src/lib/pas-report-thread-core';
+import { buildThread, summarizeTechnicalNotes } from '../../lib/pas-report-thread-model';
 import { useAgentPortraitResolver } from '../../store/agentPortraitStore';
 import { withAlpha } from '../../theme/surfaceRoles';
 import { useTokens, type DesignTokens } from '../../theme';
@@ -82,7 +83,7 @@ function ThreadBody({ controller, follow, paneWidth, detail }: {
 type Styles = ReturnType<typeof makeStyles>;
 
 const ThreadRow = React.memo(function ThreadRow({ item, detail, portraitUri, styles }: {
-  item: ThreadItem; detail: CardDetail; portraitUri: string | null; styles: Styles;
+  item: ThreadItem<CardComment, CardQuestion>; detail: CardDetail; portraitUri: string | null; styles: Styles;
 }) {
   switch (item.kind) {
     case 'request': return <RequestRow detail={detail} styles={styles} />;
@@ -108,7 +109,7 @@ function RequestRow({ detail, styles }: { detail: CardDetail; styles: Styles }) 
   </View>;
 }
 
-function MilestoneRow({ item, styles }: { item: Extract<ThreadItem, { kind: 'milestone' }>; styles: Styles }) {
+function MilestoneRow({ item, styles }: { item: Extract<ThreadItem<CardComment, CardQuestion>, { kind: 'milestone' }>; styles: Styles }) {
   const time = formatCardTime(new Date(item.at).toISOString());
   return <View testID={`pas-report-milestone-${item.tone}`} style={styles.milestone}>
     <View style={[styles.dot, item.tone === 'delegate' && styles.dotDelegate]} />

@@ -6,7 +6,7 @@ import { reportReviewEntries } from '../client/v3/persistent-report-review-data'
 import { waitForStableLayout } from './layout-stability';
 import { reviewCard } from '../client/v3/components-review-fixtures';
 
-const output = '/home/eias/workspace/.local/artifacts/20261013-270-report-bubble-impl/web';
+const output = process.env.PAS_REPORT_SHOTS ?? path.resolve(import.meta.dirname, '../../.local/artifacts/20261013-270-report-bubble-impl/web');
 const sse = (type: string, payload: object, id: number) => `id: ${id}\nevent: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`;
 function gate() { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; }
 test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest board and focus', async ({ page }) => {
@@ -172,7 +172,7 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   await snapshot('1440-answer');
   await editor.fill('쓰던 글');
   await page.getByTestId('chat-input').locator('input[type=file]').setInputFiles({ name: '메모.pdf', mimeType: 'application/pdf', buffer: Buffer.from('첨부') });
-  const attachment = page.getByTestId('chat-input').getByTitle('메모.pdf'); await expect(attachment).toBeVisible();
+  const attachment = page.getByTestId('chat-input').getByTitle('메모.pdf').first(); await expect(attachment).toBeVisible();
   await current().getByRole('button', { name: '응', exact: true }).click();
   await expect.poll(() => sends.length).toBe(1);
   await expect(editor).toHaveValue('쓰던 글'); await expect(attachment).toBeVisible();

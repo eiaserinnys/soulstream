@@ -1,0 +1,114 @@
+/* PAS 결재형 보고 창(시간순 통합 사건 스레드). 색과 글자는 v3, PAS 토큰만 쓴다. */
+
+/* 보고 창. 정본 Dialog 겉틀 위에 왼쪽 레일과 한 줄기 스레드를 얹는다. */
+/* 이정표 점과 확인 항목 위 괘선은 두 테마 모두 바탕과 2:1 이상으로 구분된다. */
+.pas-rt-dialog { --pas-rt-mark: color-mix(in srgb, var(--v3-text-secondary) 55%, transparent); width: min(calc(var(--v3-action-size) * 24), calc(100vw - var(--v3-space-6) * 3)); max-width: none; height: min(calc(var(--v3-action-size) * 17.5), calc(100dvh - var(--v3-space-8) * 2)); max-height: calc(100dvh - var(--v3-space-8)); padding: 0; border: 1px solid var(--persistent-session-line); border-radius: var(--radius-root); background: var(--persistent-session-paper); }
+.pas-rt-head { display: flex; flex: none; align-items: center; justify-content: space-between; gap: var(--v3-space-4); min-width: 0; padding: var(--v3-space-4) var(--v3-space-5); border-bottom: 1px solid var(--persistent-session-line); }
+.pas-rt-heading { display: flex; flex: 1 1 auto; align-items: center; gap: var(--v3-space-2); min-width: 0; }
+.pas-rt-number { flex: none; color: var(--v3-accent); font: var(--v3-type-body) var(--v3-font-family); font-variant-numeric: tabular-nums; }
+.pas-rt-title { min-width: 0; overflow: hidden; color: var(--foreground); font: var(--v3-type-card) var(--v3-font-family); text-overflow: ellipsis; white-space: nowrap; }
+.pas-rt-tools { display: flex; flex: none; align-items: center; gap: var(--v3-space-1); }
+.pas-rt-main { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; }
+.pas-rt-rail-toggle { flex: none; }
+.pas-rt-rail-scrim { position: absolute; z-index: var(--v3-layer-panel); inset: 0; border: 0; background: color-mix(in srgb, var(--background) 50%, transparent); }
+
+/* 왼쪽 결재 레일 */
+.pas-rt-rail { display: flex; flex: none; flex-direction: column; width: calc(var(--v3-action-size) * 6 + var(--v3-space-4)); min-height: 0; padding: var(--v3-space-3) var(--v3-space-3) var(--v3-space-4); border-right: 1px solid var(--persistent-session-line); }
+.pas-rt-rail-head { display: flex; flex: none; align-items: center; justify-content: space-between; gap: var(--v3-space-2); padding: var(--v3-space-1) var(--v3-space-3) var(--v3-space-2) var(--v3-space-4); }
+.pas-rt-rail-head h2 { font: var(--v3-type-body) var(--v3-font-family); }
+.pas-rt-rail-count { min-width: var(--v3-space-5); border-radius: var(--radius-pill); background: var(--muted); padding: 0 var(--v3-space-2); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); text-align: center; font-variant-numeric: tabular-nums; }
+.pas-rt-rail-sections { flex: 1; min-height: 0; overflow-y: auto; }
+.pas-rt-rail-sections > section + section { margin-top: var(--v3-space-6); }
+.pas-rt-rail-list { display: flex; flex-direction: column; gap: var(--v3-space-1); list-style: none; margin: 0; padding: 0; }
+.pas-rt-rail-item { display: grid; width: 100%; min-width: 0; grid-template-columns: auto auto minmax(0, 1fr); grid-template-areas: "number kind status" "title title title"; align-items: center; gap: var(--v3-space-1) var(--v3-space-2); border: 1px solid transparent; border-radius: var(--radius-floor); background: transparent; padding: var(--v3-space-3) var(--v3-space-3) var(--v3-space-3) var(--v3-space-4); color: var(--foreground); text-align: left; cursor: pointer; }
+.pas-rt-rail-item[data-has-portrait] { grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-areas: "number kind status portrait" "title title title portrait"; }
+.pas-rt-rail-item:hover { background: color-mix(in srgb, var(--muted) 60%, transparent); }
+.pas-rt-rail-item:focus-visible { outline: calc(var(--v3-space-1) / 2) solid transparent; box-shadow: 0 0 0 var(--v3-space-1) var(--ring); }
+.pas-rt-rail-item[data-active] { border-color: var(--persistent-session-line); background: var(--persistent-session-panel); box-shadow: inset var(--v3-space-1) 0 var(--v3-accent); }
+.pas-rt-rail-number { grid-area: number; color: var(--v3-accent); font: var(--v3-type-meta) var(--v3-font-family); font-variant-numeric: tabular-nums; }
+.pas-rt-rail-kind { grid-area: kind; display: flex; min-width: 0; }
+.pas-rt-rail-status { display: flex; grid-area: status; align-items: center; gap: var(--v3-space-1); justify-self: start; min-width: 0; }
+.pas-rt-rail-title { grid-area: title; min-width: 0; color: var(--foreground); font: var(--v3-type-body) var(--v3-font-family); overflow-wrap: anywhere; }
+.pas-rt-dialog :is(.pas-rt-rail-title, .pas-rt-title, .pas-rt-milestone-text, .pas-rt-notes-list, .pas-rt-empty, .pas-rt-thread-state p) { word-break: keep-all; overflow-wrap: anywhere; }
+.pas-rt-rail-portrait { grid-area: portrait; grid-row: 1 / 3; width: var(--v3-session-avatar-size); height: var(--v3-session-avatar-size); border-radius: var(--radius-pill); object-fit: cover; }
+.pas-rt-rail-foot { flex: none; margin-top: var(--v3-space-2); border-top: 1px solid var(--persistent-session-line); padding-top: var(--v3-space-2); }
+.pas-rt-rail-error { display: flex; flex-direction: column; align-items: flex-start; gap: var(--v3-space-2); margin: 0; padding: 0 var(--v3-space-4); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
+.pas-rt-hold-note { margin: 0; padding: 0 var(--v3-space-4); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
+
+/* 한 줄기 시간순 스레드 */
+.pas-rt-thread { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.pas-rt-thread-content { position: relative; display: flex; flex: 1; min-height: 0; }
+.pas-rt-thread .pas-rt-thread-scroll { scrollbar-gutter: stable; flex: 1; height: auto; min-width: 0; min-height: 0; overflow-y: auto; padding: var(--v3-space-5) var(--v3-space-6) var(--v3-space-4); }
+.pas-rt-jump { position: absolute; right: var(--v3-space-4); bottom: var(--v3-space-3); z-index: var(--v3-layer-panel); }
+.pas-rt-timeline { display: flex; flex-direction: column; gap: var(--v3-space-4); min-width: 0; }
+.pas-rt-event { min-width: 0; }
+.pas-rt-milestone { display: flex; align-items: flex-start; gap: var(--v3-space-2); margin: 0; min-width: 0; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
+.pas-rt-milestone-dot { flex: none; width: var(--v3-space-2); height: var(--v3-space-2); margin-block-start: calc((1lh - var(--v3-space-2)) / 2); border-radius: var(--radius-pill); background: var(--pas-rt-mark); }
+.pas-rt-milestone[data-tone="delegate"] .pas-rt-milestone-dot { background: var(--v3-accent); }
+.pas-rt-milestone-text { flex: 1 1 auto; min-width: 0; }
+.pas-rt-milestone time, .pas-rt-notes-list time { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pas-rt-notes { min-width: 0; }
+.pas-rt-notes-toggle { display: inline-flex; align-items: center; gap: var(--v3-space-1); border: 0; border-radius: var(--radius-pill); background: none; padding: var(--v3-space-1) var(--v3-space-2); color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); cursor: pointer; }
+.pas-rt-notes-toggle:hover { background: color-mix(in srgb, var(--muted) 60%, transparent); }
+.pas-rt-notes-toggle:focus-visible { outline: calc(var(--v3-space-1) / 2) solid transparent; box-shadow: 0 0 0 var(--v3-space-1) var(--ring); }
+.pas-rt-notes-list { display: flex; flex-direction: column; gap: var(--v3-space-2); margin: var(--v3-space-2) 0 0; padding: 0 0 0 var(--v3-space-4); list-style: none; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
+.pas-rt-notes-list li { display: flex; gap: var(--v3-space-2); min-width: 0; }
+.pas-rt-notes-list li > span { min-width: 0; white-space: pre-wrap; }
+.pas-rt-question { display: flex; flex-direction: column; gap: var(--v3-space-2); min-width: 0; }
+.pas-rt-question-options { display: flex; flex-direction: column; gap: var(--v3-space-2); margin: 0; padding: 0; list-style: none; }
+.pas-rt-question-options li { display: flex; flex-direction: column; gap: var(--v3-space-1); min-width: 0; border-left: var(--v3-space-1) solid var(--pas-rt-mark); padding: var(--v3-space-1) var(--v3-space-3); }
+.pas-rt-question-options { font: var(--v3-type-body) var(--v3-font-family); }
+.pas-rt-question-options .v3-card-question-effect { color: var(--v3-text-secondary); font: var(--v3-type-body) var(--v3-font-family); overflow-wrap: anywhere; word-break: keep-all; }
+.pas-rt-question[data-withdrawn] { color: var(--v3-text-secondary); }
+.pas-rt-items { border-top: 1px solid var(--pas-rt-mark); padding-top: var(--v3-space-3); }
+.pas-rt-thread-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--v3-space-3); min-height: calc(var(--v3-action-size) * 4); padding: var(--v3-space-6); color: var(--v3-text-secondary); font: var(--v3-type-body) var(--v3-font-family); text-align: center; }
+.pas-rt-thread-state p { margin: 0; }
+.pas-rt-empty { margin: 0; padding: var(--v3-space-6); color: var(--v3-text-secondary); font: var(--v3-type-body) var(--v3-font-family); text-align: center; }
+
+/* 스레드 끝 고정 결재 상자 */
+.pas-rt-decide { overflow-y: hidden; scrollbar-gutter: stable; scrollbar-width: thin; display: flex; flex: none; flex-direction: column; gap: var(--v3-space-2); border-top: 1px solid var(--persistent-session-line); background: var(--persistent-session-panel); padding: var(--v3-space-4) var(--v3-space-6) var(--v3-space-5); }
+/* 결재 단추 글자는 정본 CardQuestionActions(.v3-card-question-actions)와 같은 본문 토큰이다. 높이, 여백, 곡률은 정본 Button 그대로 둔다. */
+.pas-rt-decide [data-slot="button"] { font: var(--v3-type-body) var(--v3-font-family); }
+.pas-rt-decide .pas-rt-undo [data-slot="button"] { font: var(--v3-type-meta) var(--v3-font-family); gap: var(--v3-space-1); }
+.pas-rt-stamps { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--v3-space-4); }
+.pas-rt-stamps-primary, .pas-rt-stamps-secondary { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--v3-space-2); }
+.pas-rt-stamps-secondary { margin-left: auto; }
+.pas-rt-stamps-secondary > .v3-card-question-actions { display: contents; }
+.pas-rt-choice[data-slot="button"] { min-width: 0; }
+.pas-rt-hint, .pas-rt-settled { min-width: 0; overflow: hidden; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); text-overflow: ellipsis; white-space: nowrap; }
+.pas-rt-snooze-options { display: flex; flex-wrap: wrap; gap: var(--v3-space-2); width: 100%; }
+.pas-rt-undo { display: flex; align-items: center; gap: var(--v3-space-2); min-height: calc(var(--spacing) * 8); }
+.pas-rt-undo-label { min-width: 0; overflow: hidden; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); text-overflow: ellipsis; white-space: nowrap; }
+.pas-rt-error { margin: 0; overflow-wrap: anywhere; }
+.pas-rt-composer-drawer { display: flex; flex-direction: column; gap: var(--v3-space-2); }
+
+/* 카드 패널은 보고 창 안쪽을 덮는다. */
+.pas-rt-dialog > .v3-workspace-scrim { position: absolute; z-index: var(--v3-layer-modal); inset: 0; background: var(--persistent-session-paper); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.pas-rt-dialog .v3-workspace { background: var(--persistent-session-paper); }
+.pas-rt-dialog .v3-task-default-values { flex-wrap: wrap; }
+
+/* 820px 아래: 레일은 머리줄 「안건 목록」 단추의 서랍이 된다. */
+@media (max-width: 819px) {
+  .pas-rt-dialog { width: 100%; height: 100%; max-height: none; }
+  .pas-rt-head { flex-wrap: wrap; gap: var(--v3-space-2); padding: var(--v3-space-3); row-gap: var(--v3-space-1); }
+  .pas-rt-heading { order: 2; flex: 1 0 100%; gap: var(--v3-space-1); }
+  .pas-rt-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; font: var(--v3-type-side-title) var(--v3-font-family); }
+  .pas-rt-tools { order: 1; margin-left: auto; gap: 0; }
+  .pas-rt-rail-toggle { order: 0; }
+  .pas-rt-rail { position: absolute; z-index: var(--v3-layer-panel); inset: 0 auto 0 0; width: min(calc(var(--v3-action-size) * 6), 85%); background: var(--persistent-session-paper); }
+  .pas-rt-main:not([data-rail-open]) .pas-rt-rail { display: none; }
+  .pas-rt-thread .pas-rt-thread-scroll { padding: var(--v3-space-4); }
+  .pas-rt-decide { padding: var(--v3-space-3) var(--v3-space-4) var(--v3-space-4); }
+  .pas-rt-hint { white-space: normal; }
+  .pas-rt-stamps-secondary { margin-left: 0; }
+}
+
+/* 카드 패널 청크를 못 받았을 때 패널 자리에 서는 실패 안내 */
+.pas-rt-panel-fallback { position: absolute; inset: 0; z-index: var(--v3-layer-modal); display: flex; align-items: center; justify-content: center; padding: var(--v3-space-6); background: color-mix(in srgb, var(--background) 60%, transparent); }
+.pas-rt-panel-fallback-box { display: flex; flex-direction: column; align-items: flex-start; gap: var(--v3-space-3); max-width: 100%; padding: var(--v3-space-5); border: 1px solid var(--persistent-session-line); border-radius: var(--radius-root); background: var(--persistent-session-panel); }
+.pas-rt-panel-fallback-box p { margin: 0; word-break: keep-all; color: var(--v3-text-secondary); font: var(--v3-type-body) var(--v3-font-family); overflow-wrap: anywhere; }
+
+/* 움직임 줄이기: 보고 창은 사라질 때 서서히 흐려지지 않고 바로 내려간다. 사라지는 동안 창이 남아 Esc가 먹지 않은 것처럼 보이는 틈을 없앤다. */
+@media (prefers-reduced-motion: reduce) {
+  .pas-rt-dialog { transition: none; }
+}

@@ -370,6 +370,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
       <PersistentSessionWeeklyUsage {...usageSummary} onRetry={usageSummary.retry} onNextNode={nextWeeklyUsageNode}/>
     </div>}
     {chatReady && !error && <>
+      {/* 오른쪽 칸(overlaySession*) 로직의 사본이 pas-report-thread/use-card-session-panel.ts에 있다. 한쪽을 고치면 다른 쪽도 같이 맞춘다. */}
       {selectedCardId && <CardWorkspace cardId={selectedCardId} initialSessionId={overlaySessionId} folders={folders ?? []} onClose={closeCardWorkspace} onCloseChat={() => setMobileTab('today')} onOpenSession={selectOverlaySession}
         mobileMode={mobileMode} mobileTab={mobileTab} activeSession={overlayActiveSession} storeScope={overlaySessionId === sessionId ? undefined : overlayStoreScope ?? undefined} onSessionChange={continueOverlaySession}
         chatInputDisabled={overlayChatInputDisabled} fileUploadUrl={!overlayChatInputDisabled && overlayNodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(overlayNodeId)}` : undefined}

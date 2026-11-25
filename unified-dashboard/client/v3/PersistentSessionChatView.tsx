@@ -9,6 +9,7 @@ import { usePersistentCardCompletion } from './usePersistentCardCompletion';
 import { createPersistentSessionsApi } from "../lib/persistent-sessions";
 import { PasCardExpansion, PasCardExpansionStatus, pasCardQuestion } from './PasCardExpansion';
 import { ReportTimelineRow } from './ReportTimelineRow';
+import { PasReportThreadReport } from './pas-report-thread/PasReportThreadReport';
 
 type PersistentSessionChatViewProps = {
   sessionId: string;
@@ -74,7 +75,8 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
     {(!loadDisplaySettings || listedSettings || settledSettingsSession === sessionId) && <PersistentReportDeck sessionId={sessionId} notify={notify} completion={completion} disabled={props.chatInputDisabled} seat={reportSeat} focusInput={focusInput} dismissReport={dismiss}
       renderQuestion={pasCardQuestion}
       renderCardDetails={(entry, lookupCards) => <PasCardExpansion key={entry.key} entry={entry} lookupCards={lookupCards} />}
-      renderCardStatus={entry => <PasCardExpansionStatus entry={entry} />} />}
+      renderCardStatus={entry => <PasCardExpansionStatus entry={entry} />}
+      renderReportWindow={windowProps => <PasReportThreadReport {...windowProps} ownSessionId={sessionId} />} />}
     <ReportTimelineRowProvider render={renderReportTimelineRow}>
       <ChatView {...props} storeScope={storeScope} registerGeneratedTextActions={register} registerChatUiOperations={registerOperations} />
     </ReportTimelineRowProvider>

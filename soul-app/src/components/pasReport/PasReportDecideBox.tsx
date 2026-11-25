@@ -3,7 +3,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { restoreAttachmentFocus } from '../../lib/attachment-focus';
-import { formatReturnTime, snoozeOptions } from '../../lib/pas-report-thread-model';
+import { snoozeOptions, type SendMode } from '../../../../packages/soul-ui/src/lib/pas-report-thread-core';
+import { formatReturnTime } from '../../lib/pas-report-thread-model';
 import { cardQuestionViewFromDetail } from '../planner/card-question-viewmodel';
 import { useSessionStore } from '../../store/sessionStore';
 import { createPrimitiveRoles, useTokens, type DesignTokens } from '../../theme';
@@ -12,7 +13,7 @@ import { PersistentReportUndoRow } from '../persistent/PersistentReportSheet';
 import { reportStyles } from '../persistent/persistentReportStyles';
 import { CardCommentComposer, CardComposerNotice, type CardCommentComposerHandle } from '../planner/CardCommentComposer';
 import { cardQuestionPlaceholder } from '../planner/CardQuestionBlock';
-import type { PasReportWindowController, SendMode } from './usePasReportWindow';
+import type { PasReportWindowController } from './usePasReportWindow';
 
 export type ComposerMode = 'closed' | SendMode;
 /** 서랍, 답변 미루기 펼침, 입력창은 창이 쥔다. 뒤로 가기가 열린 것 하나씩 닫으려면 한 곳에서 알아야 한다. */
