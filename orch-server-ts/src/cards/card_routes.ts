@@ -54,9 +54,7 @@ export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOpt
         const executor=await options.cardExecutionServiceProvider();
         const result=operation==='execute'?await executor.execute({...mutation.parse(request.body),...actor,cardId:request.params.id})
           :await executor.observe(request.params.id,z.string().min(1).parse(request.query.requestId),actor);
-        const allowedIds = await cardAllowedFolderIds(options,()=>options.accessProvider.resolveAccess(request));
-        const visible = allowedIds === null ? result.card : (await service.projectCards([result.card],allowedIds))[0]!;
-        return reply.code(result.execution.state==='pending'?202:200).send({...result,card:serializeCardRow(visible)});
+        return reply.code(result.execution.state==='pending'?202:200).send({...result,card:serializeCardRow(result.card)});
       }catch(error){const failure=cardRouteErrorResponse(error);return reply.code(failure.status).send(failure.body);}
     }});
   }

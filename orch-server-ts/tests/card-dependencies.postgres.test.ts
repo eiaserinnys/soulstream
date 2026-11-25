@@ -107,7 +107,8 @@ describe("card dependencies", () => {
     await expect(sql.begin(tx => replaceCardDependencies(tx,visible,[hidden],allowed)))
       .rejects.toMatchObject({statusCode:422,message:`선행 카드 ${hidden}을 찾을 수 없습니다`});
     const number = (await cards.getCard(hidden))!.card.number;
-    await expect(cards.createCard({ ...actor,folderId:"dependencies",title:"차단",request:"",dependsOn:[`#${number}`],allowedFolderIds:allowed }))
+    await expect(cards.createCard({ ...actor,folderId:"dependencies",title:"차단",request:"",assignee:{kind:"agent",agentId:"dev"},
+      dependsOn:[`#${number}`],allowedFolderIds:allowed,idempotencyKey:key() }))
       .rejects.toMatchObject({statusCode:422,message:`선행 카드 #${number}을 찾을 수 없습니다`});
     await expect(mutateCardRouteBody(options,"create_card",undefined,{folderId:"dependencies",title:"차단",request:"",dependsOn:[`#${number}`],
       assignee:{kind:"agent",agentId:"dev"},idempotencyKey:key()},access,()=>actor))
@@ -216,7 +217,8 @@ describe("card dependencies", () => {
   },60000);
 
   it("includes predecessor status in a centrally admitted card prompt", async () => {
-    const first = (await cards.createCard({...actor,folderId:"dependencies",title:"중앙 선행",request:"",idempotencyKey:key()})).operation.target_id;
+    const first = (await cards.createCard({...actor,folderId:"dependencies",title:"중앙 선행",request:"",
+      assignee:{kind:"agent",agentId:"dev"},idempotencyKey:key()})).operation.target_id;
     const second = (await cards.createCard({...actor,folderId:"dependencies",title:"중앙 뒤",request:"",queue:true,
       assignee:{kind:"agent",agentId:"dev"},dependsOn:[first],idempotencyKey:key()})).operation.target_id;
     const card = (await cards.getCard(second))!.card;
