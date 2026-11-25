@@ -22,6 +22,9 @@ test("the three card maintenance tools are strict internal tools and are part of
 test("update_unstarted_card requires a card and an idempotency key and accepts empty request/brief", () => {
   assert.equal(update.safeParse({ card_id: "card-1", idempotency_key: "k", request: "" }).success, true);
   assert.equal(update.safeParse({ card_id: "card-1", idempotency_key: "k", brief: "" }).success, true);
+  assert.equal(update.safeParse({ card_id: "card-1", idempotency_key: "k", depends_on: [] }).success, true);
+  assert.equal(update.safeParse({ card_id: "card-1", idempotency_key: "k", depends_on: ["#12"] }).success, true);
+  assert.equal(update.safeParse({ card_id: "card-1", idempotency_key: "k", depends_on: Array(11).fill("#12") }).success, false);
   assert.equal(update.safeParse({ card_id: "card-1", idempotency_key: "k", title: "제목", request: "원문", brief: "인계",
     agent_id: "roselin", model_preset: "sol", node_id: "node-1", expected_version: 3,
     caller_session_id: "session-1" }).success, true);
@@ -62,5 +65,5 @@ test("bulk_set_card_status bounds the card list to 1~20 and only accepts the fou
 
 test("create_card points pre-start edits at update_unstarted_card", () => {
   assert.equal(cardTools.create_card.config.description,
-    "요청 원문을 담은 카드를 드래프트로 만든다. 시작 전 수정은 update_unstarted_card를 쓴다. queue=true면 대기열에 올려 순서가 오면 시스템이 실행한다. assignee를 생략하면 만든 세션의 에이전트가 담당이 되고, 담당이 에이전트일 때 node_id와 model_preset을 생략하면 만든 세션의 값이 들어가며, brief에 인계 내용을 적는다.");
+    "요청 원문을 담은 카드를 드래프트로 만든다. 시작 전 수정은 update_unstarted_card를 쓴다. queue=true면 대기열에 올려 순서가 오면 시스템이 실행한다. depends_on에 선행 카드(#12 또는 전체 UUID)를 주면 그 카드들이 완료된 뒤에야 대기열에서 시작한다. 드래프트에는 기록만 한다. assignee를 생략하면 만든 세션의 에이전트가 담당이 되고, 담당이 에이전트일 때 node_id와 model_preset을 생략하면 만든 세션의 값이 들어가며, brief에 인계 내용을 적는다.");
 });

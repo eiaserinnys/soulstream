@@ -20,6 +20,7 @@ export const cardHandlers = {
   ...cardMaintenanceHandlers,
   create_card: (o, a, c) => run(async () => {
     if (a.run === true && a.queue === true) throw new Error("run과 queue는 함께 쓸 수 없습니다");
+    if (a.run === true && a.depends_on !== undefined) throw Object.assign(new Error("run과 depends_on은 함께 쓸 수 없습니다"), { statusCode: 422 });
     matchingHeader(a, c);
     const actor = agent(a, c, true);
     const assignee = !Object.hasOwn(a, "assignee") ? {} : { assignee: !a.assignee ? null : {
@@ -27,7 +28,7 @@ export const cardHandlers = {
       sessionId: (a.assignee as Args).session_id, userId: (a.assignee as Args).user_id,
     } };
     const created = await mutation(o.cards, "create_card", undefined, { folderId: a.folder_id, title: a.title, request: a.request, brief: a.brief,
-      attachments: a.attachments, ...assignee, nodeId: a.node_id, modelPreset: a.model_preset, queue: a.queue,
+      attachments: a.attachments, ...assignee, nodeId: a.node_id, modelPreset: a.model_preset, queue: a.queue, dependsOn: a.depends_on,
       idempotencyKey: a.idempotency_key ?? randomUUID() }, actor);
     if (a.run !== true) return compactMutation(created);
     const card = created.card as { id: string; status: string } | null;
@@ -272,11 +273,15 @@ async function runCard(options: Options, cardId: string, actor: FolderActorParam
       return executor.observe(cardId, result.execution.requestId, actor);
     }) as typeof result;
   }
-  return { card: serializeCardRow(result.card as never), execution: result.execution,
+  const allowedFolderIds = await mcpAllowedFolderIds(options);
+  const card = allowedFolderIds === null ? result.card :
+    (await (await options.cardServiceProvider!()).projectCards([result.card as never],allowedFolderIds))[0]!;
+  return { card: serializeCardRow(card), execution: result.execution,
     ...(result.execution.state === "pending" ? { guidance: "실행 시작 확인이 아직이다. 잠시 뒤 같은 카드로 run_card를 다시 부르면 결과를 확인한다." } : {}) };
 }
 function compactCard(card: Args) {
-  return { id: card.id, number: card.number, version: card.version, status: card.status };
+  return { id: card.id, number: card.number, version: card.version, status: card.status,
+    ...(card.dependsOn !== undefined ? { dependsOn: card.dependsOn } : {}) };
 }
 function compactMutation(result: Args) {
   const card = result.card as Args | null;

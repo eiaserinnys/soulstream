@@ -14,6 +14,7 @@ export type CardPromptInput = {
     brief: string;
     reason?: string | null;
     comments?: readonly CardPromptComment[];
+    dependsOn?: readonly CardDependency[];
     running: readonly CardPromptEntry[];
 };
 export function buildCardPrompt(input: CardPromptInput): string {
@@ -25,7 +26,7 @@ export function buildCardPrompt(input: CardPromptInput): string {
     return `[카드 실행] 이 세션은 카드 ${input.cardId} 「${input.title}」(폴더 ${input.folderName})을 맡았다.
 
 ## 요청 원문
-${input.request}
+${input.request}${input.dependsOn?.map(card => `\n선행 카드: ${card.number === null ? card.id : `#${card.number}`} ${card.title}(${CARD_STATUS_LABELS[card.status]})`).join("") ?? ""}
 
 ## 인계 요약 (지금까지)
 ${input.brief || "(아직 없음)"}${comments ? `
@@ -39,3 +40,5 @@ ${input.reason}` : ""}${runningCards.length ? `
 ## 같은 폴더에서 실행 중인 다른 카드
 ${running}` : ""}`;
 }
+import { CARD_STATUS_LABELS } from "@soulstream/wire-schema/card-status-labels";
+import type { CardDependency } from "./card_dependencies.js";

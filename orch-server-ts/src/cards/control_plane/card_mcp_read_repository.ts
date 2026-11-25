@@ -1,4 +1,6 @@
 import type { RepositorySql, SqlClient } from "./card_types.js";
+import { createHash } from "node:crypto";
+import { readCardDependencies } from "../card_dependencies.js";
 
 export const CARD_MCP_READ_KINDS = [
   "request", "brief", "attachments", "comments", "notes", "reports", "sessions", "now_history", "questions_history",
@@ -100,7 +102,9 @@ export class CardMcpReadRepository {
       LIMIT ${query.all ? null : query.limit + 1}
     `;
     const truncated = !query.all && rows.length > query.limit;
-    return { rows: truncated ? rows.slice(0, query.limit) : rows, truncated };
+    const page = truncated ? rows.slice(0, query.limit) : rows;
+    const dependencies = await readCardDependencies(this.sql, page.map(row => row.id), query.allowedFolderIds);
+    return { rows: page.map(row => ({ ...row, ...(dependencies.has(row.id) ? { dependsOn: dependencies.get(row.id)! } : {}) })), truncated };
   }
 
   async searchCards(query: CardMcpSearchQuery): Promise<{ rows: CardMcpSearchRow[]; truncated: boolean }> {
@@ -210,7 +214,9 @@ export class CardMcpReadRepository {
       LIMIT ${query.limit + 1}
     `;
     const truncated = rows.length > query.limit;
-    return { rows: truncated ? rows.slice(0, query.limit) : rows, truncated };
+    const page = truncated ? rows.slice(0, query.limit) : rows;
+    const dependencies = await readCardDependencies(this.sql, page.map(row => row.id), query.allowedFolderIds);
+    return { rows: page.map(row => ({ ...row, ...(dependencies.has(row.id) ? { dependsOn: dependencies.get(row.id)! } : {}) })), truncated };
   }
 
   async withCardSnapshot<T>(
@@ -226,7 +232,7 @@ export class CardMcpReadRepository {
         throw httpError(404, "Card not found");
       if (allowedFolderIds !== null && !allowedFolderIds.includes(access.folder_id))
         throw httpError(403, "Folder access denied", "FOLDER_ACCESS_DENIED");
-      const current = await this.readCurrent(transaction, cardId);
+      const current = await this.readCurrent(transaction, cardId, allowedFolderIds);
       return read({ sql: transaction, current });
     });
   }
@@ -342,7 +348,7 @@ export class CardMcpReadRepository {
     `);
   }
 
-  private async readCurrent(sql: RepositorySql, cardId: string): Promise<CardMcpCurrent> {
+  private async readCurrent(sql: RepositorySql, cardId: string, allowedFolderIds: readonly string[] | null): Promise<CardMcpCurrent> {
     const row = (await sql<{
       id: string; number: number | null; folder_id: string; title: string; status: string; archived: boolean; version: number;
       assignee_kind: string | null; assignee_agent_id: string | null; assignee_session_id: string | null; assignee_user_id: string | null;
@@ -406,6 +412,8 @@ export class CardMcpReadRepository {
       FROM cards c WHERE c.id=${cardId}
     `)[0];
     if (!row) throw httpError(404, "Card not found");
+    const dependencies = (await readCardDependencies(sql,[cardId],allowedFolderIds)).get(cardId);
+    const fingerprint = dependencies ? createHash("md5").update(JSON.stringify([row.fp_card,dependencies])).digest("hex") : row.fp_card;
     return {
       card: {
         id: row.id, number: row.number, folder_id: row.folder_id, title: row.title, status: row.status,
@@ -413,6 +421,7 @@ export class CardMcpReadRepository {
         assignee_agent_id: row.assignee_agent_id, assignee_session_id: row.assignee_session_id,
         assignee_user_id: row.assignee_user_id, now: row.now, items: row.items,
         blocked_kind: row.blocked_kind, blocked_detail: row.blocked_detail,
+        ...(dependencies ? { dependsOn: dependencies } : {}),
       },
       attachmentRefs: row.attachment_refs,
       available: {
@@ -421,7 +430,7 @@ export class CardMcpReadRepository {
         sessions: row.sessions_count, now_history: row.now_history_count,
       },
       fingerprints: {
-        card: row.fp_card, request: row.fp_request, brief: row.fp_brief, attachments: row.fp_attachments,
+        card: fingerprint, request: row.fp_request, brief: row.fp_brief, attachments: row.fp_attachments,
         questions: row.fp_questions, questions_history: row.fp_questions_history, comments: row.fp_comments,
         notes: row.fp_notes, reports: row.fp_reports, sessions: row.fp_sessions,
         now_history: row.fp_now_history,

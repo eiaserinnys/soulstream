@@ -1,11 +1,12 @@
 import { errorResult, errorResultFromError, jsonResult, type CallToolResult, type folderObjectTools } from "@soulstream/mcp-contract";
 import { executeFolderHostOperation, type FolderControlPlaneHostRouteOptions } from "../folders/folder_control_plane_host_route.js";
 import { describeFolderOperationError } from "../folders/folder_workspace_routes.js";
+import { cardAllowedFolderIds } from "../cards/card_route_body.js";
 
 import type { McpCallContext, McpHostOptions } from "./types.js";
 
 type Args = Record<string, unknown>;
-type Handler = (options: Pick<McpHostOptions, "folders">, args: Args, context: McpCallContext) => Promise<CallToolResult>;
+type Handler = (options: Pick<McpHostOptions, "folders" | "cards">, args: Args, context: McpCallContext) => Promise<CallToolResult>;
 
 export const folderObjectHandlers = {
   create_folder: (o, a, c) => mutate(o.folders, "create_folder", a, c, {
@@ -15,10 +16,15 @@ export const folderObjectHandlers = {
   list_child_folders: (o, a) => query(o.folders, "list_child_folders", {
     folderId: a.folder_id ?? null, includeArchived: a.include_archived, limit: a.limit, cursor: a.cursor,
   }),
-  get_folder: (o, a) => query(o.folders, "get_folder", {
-    folderId: a.folder_id, view: a.view, cardId: a.card_id,
-    includeArchived: a.include_archived, limit: a.limit, cursor: a.cursor,
-  }),
+  get_folder: async (o, a) => {
+    const allowedFolderIds = await cardAllowedFolderIds(o.cards,o.cards.resolveAccess);
+    if (allowedFolderIds !== null && !allowedFolderIds.includes(String(a.folder_id)))
+      return errorResult("Folder access denied");
+    return query(o.folders, "get_folder", {
+      folderId: a.folder_id, view: a.view, cardId: a.card_id, allowedFolderIds,
+      includeArchived: a.include_archived, limit: a.limit, cursor: a.cursor,
+    });
+  },
   rename_folder: (o, a, c) => mutate(o.folders, "rename_folder", a, c, { ...mutationFields(a), name: a.name }),
   archive_folder: (o, a, c) => mutate(o.folders, "archive_folder", a, c, mutationFields(a)),
   unarchive_folder: (o, a, c) => mutate(o.folders, "unarchive_folder", a, c, mutationFields(a)),

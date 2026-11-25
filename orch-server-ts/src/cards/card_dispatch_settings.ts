@@ -7,6 +7,8 @@ export type CardDispatchSettings = {
     nodeConcurrency: Record<string, number> & {
         default: number;
     };
+    reviewMeetsDependency: boolean;
+    startReleasedDependents: boolean;
     version: number;
     updatedAt: string;
     updatedBy: string;
@@ -27,15 +29,18 @@ export async function readCardDispatchSettings(sql: SqlClient): Promise<CardDisp
     return parseRow(rows[0]);
 }
 export async function updateCardDispatchSettings(sql: SqlClient, input: {
-    nodeConcurrency: unknown;
+    nodeConcurrency?: unknown;
+    reviewMeetsDependency?: unknown;
+    startReleasedDependents?: unknown;
     expectedVersion: number;
     updatedBy: string;
 }): Promise<CardDispatchSettings> {
-    const parsed = concurrencySchema.safeParse(input.nodeConcurrency);
+    const parsed = z.object({ nodeConcurrency: concurrencySchema.optional(), reviewMeetsDependency: z.boolean().optional(),
+        startReleasedDependents: z.boolean().optional() }).safeParse(input);
     if (!parsed.success || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1 || !input.updatedBy.trim()) {
         throw new CardDispatchSettingsError(422, "CARD_DISPATCH_INVALID", "Expected nodeConcurrency with non-negative integer values and default, positive expectedVersion and updatedBy");
     }
-    const rows = await sql<Row[]> `UPDATE system_settings SET value=${sql.json({ nodeConcurrency: parsed.data })},
+    const rows = await sql<Row[]> `UPDATE system_settings SET value=value || ${sql.json(parsed.data)},
     version=version+1,updated_at=NOW(),updated_by=${input.updatedBy.trim().toLowerCase()}
     WHERE setting_key='card_dispatch' AND version=${input.expectedVersion} RETURNING value,version,updated_at,updated_by`;
     if (rows[0])
@@ -44,9 +49,11 @@ export async function updateCardDispatchSettings(sql: SqlClient, input: {
     throw new CardDispatchSettingsError(409, "CARD_DISPATCH_CONFLICT", `card_dispatch changed from version ${input.expectedVersion} to ${current.version}. Reload before saving.`);
 }
 function parseRow(row: Row): CardDispatchSettings {
-    const parsed = z.object({ nodeConcurrency: concurrencySchema }).safeParse(row.value);
+    const parsed = z.object({ nodeConcurrency: concurrencySchema, reviewMeetsDependency: z.boolean().default(false),
+        startReleasedDependents: z.boolean().default(false) }).safeParse(row.value);
     if (!parsed.success)
         throw new CardDispatchSettingsError(503, "CARD_DISPATCH_UNAVAILABLE", "Stored card_dispatch is invalid");
-    return { key: "card_dispatch", nodeConcurrency: parsed.data.nodeConcurrency as CardDispatchSettings["nodeConcurrency"], version: row.version,
+    return { key: "card_dispatch", nodeConcurrency: parsed.data.nodeConcurrency as CardDispatchSettings["nodeConcurrency"],
+        reviewMeetsDependency: parsed.data.reviewMeetsDependency, startReleasedDependents: parsed.data.startReleasedDependents, version: row.version,
         updatedAt: new Date(row.updated_at).toISOString(), updatedBy: row.updated_by };
 }

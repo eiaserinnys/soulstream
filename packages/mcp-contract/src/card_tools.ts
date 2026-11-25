@@ -88,10 +88,10 @@ const itemEvidence = cardEvidenceSchema;
 export const cardTools = {
   ...cardMaintenanceTools,
   create_card: { name: "create_card", timeoutMs: 60000, config: {
-    description: "요청 원문을 담은 카드를 드래프트로 만든다. 시작 전 수정은 update_unstarted_card를 쓴다. queue=true면 대기열에 올려 순서가 오면 시스템이 실행한다. assignee를 생략하면 만든 세션의 에이전트가 담당이 되고, 담당이 에이전트일 때 node_id와 model_preset을 생략하면 만든 세션의 값이 들어가며, brief에 인계 내용을 적는다.",
+    description: "요청 원문을 담은 카드를 드래프트로 만든다. 시작 전 수정은 update_unstarted_card를 쓴다. queue=true면 대기열에 올려 순서가 오면 시스템이 실행한다. depends_on에 선행 카드(#12 또는 전체 UUID)를 주면 그 카드들이 완료된 뒤에야 대기열에서 시작한다. 드래프트에는 기록만 한다. assignee를 생략하면 만든 세션의 에이전트가 담당이 되고, 담당이 에이전트일 때 node_id와 model_preset을 생략하면 만든 세션의 값이 들어가며, brief에 인계 내용을 적는다.",
     inputSchema: { folder_id: id, title: id, request: z.string(), attachments: z.array(z.object({nodeId:id,path:id,name:id,mimeType:id}).strict()).optional()
         .describe("노드 파일 경로 첨부. 붙이는 순간 원래 노드에서 읽어 저장하며, 노드가 꺼져 있거나 파일을 못 읽으면 카드를 만들지 않는다."), assignee: assigneeSchema,
-      brief: z.string().optional(), idempotency_key: id.optional(), node_id: id.optional(), model_preset: id.optional(), queue: z.boolean().optional(), caller_session_id: callerSessionIdSchema,
+      brief: z.string().optional(), idempotency_key: id.optional(), node_id: id.optional(), model_preset: id.optional(), queue: z.boolean().optional(), depends_on: z.array(id).max(10).optional(), caller_session_id: callerSessionIdSchema,
       run: z.boolean().optional().describe("true면 만든 직후 run_card와 같은 방식으로 바로 실행한다. queue와 함께 쓰지 않는다.") },
   }, audience: "all" },
   dispatch_work: { name: "dispatch_work", strictInputSchema: true, config: {
@@ -101,7 +101,7 @@ export const cardTools = {
       model_preset: id.optional(), node_id: id.optional(), replace_assignee: z.boolean().optional(), caller_session_id: callerSessionIdSchema },
   }, audience: "internal" },
   run_card: { name: "run_card", timeoutMs: 60000, config: {
-    description: "드래프트(todo), 대기(queued), 보류(on_hold) 카드를 지금 실행한다. 시스템이 카드에 설정된 노드, 에이전트, 모델로 세션을 만들어 담당으로 잇고 진행 중으로 옮긴다. 담당 세션이 이미 있는 카드는 새로 만들지 않고 그 세션을 깨운다. 대기열 순서와 동시 실행 상한을 거치지 않는다. 생긴 세션은 부른 쪽의 자식이 아니며 완료 보고가 돌아오지 않으므로 경과는 카드에서 본다. 담당이 아니어도 실행할 수 있다.",
+    description: "드래프트(todo), 대기(queued), 보류(on_hold) 카드를 지금 실행한다. 선행 카드가 끝나지 않았어도 실행한다. 시스템이 카드에 설정된 노드, 에이전트, 모델로 세션을 만들어 담당으로 잇고 진행 중으로 옮긴다. 담당 세션이 이미 있는 카드는 새로 만들지 않고 그 세션을 깨운다. 대기열 순서와 동시 실행 상한을 거치지 않는다. 생긴 세션은 부른 쪽의 자식이 아니며 완료 보고가 돌아오지 않으므로 경과는 카드에서 본다. 담당이 아니어도 실행할 수 있다.",
     inputSchema: scope,
   }, audience: "all" },
   list_cards: { name: "list_cards", config: {

@@ -217,6 +217,14 @@ describe("card MCP execution", () => {
     expect(h.mcpRead.listCards).toHaveBeenLastCalledWith({ query: "키워드", cursor: "ignored", all: true },
       ["folder-1", "child-1"]);
   });
+  it("passes the caller's accessible folders into predecessor writes", async () => {
+    const h = cardHarness([{ id:"folder-1" },{ id:"child-1",parentFolderId:"folder-1" },{ id:"folder-2" }],
+      { restricted:true,allowedFolderIds:["folder-1"] });
+    await call(h.options,"create_card",{folder_id:"folder-1",title:"뒤",request:"",depends_on:["predecessor"],caller_session_id:"session-1"});
+    expect(h.service.createCard).toHaveBeenCalledWith(expect.objectContaining({dependsOn:["predecessor"],allowedFolderIds:["folder-1","child-1"]}));
+    await call(h.options,"update_unstarted_card",{card_id:"card-1",depends_on:["predecessor"],idempotency_key:"update",caller_session_id:"session-1"});
+    expect(h.service.updateUnstartedCard).toHaveBeenCalledWith(expect.objectContaining({dependsOn:["predecessor"],allowedFolderIds:["folder-1","child-1"]}),expect.any(Function));
+  });
   it("returns compact card mutation and item results without echoing saved content", async () => {
     const h = cardHarness();
     const richCard = {
@@ -457,6 +465,14 @@ describe("card MCP execution", () => {
     const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true, queue: true, caller_session_id: "session-1" });
     expect(result.isError).toBe(true);
     expect(result.content).toContainEqual(expect.objectContaining({ text: "run과 queue는 함께 쓸 수 없습니다" }));
+    expect(h.service.createCard).not.toHaveBeenCalled();
+  });
+  it("rejects run with dependencies before creating a card", async () => {
+    const h = cardHarness();
+    const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true,
+      depends_on: ["card-2"], caller_session_id: "session-1" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("run과 depends_on은 함께 쓸 수 없습니다");
     expect(h.service.createCard).not.toHaveBeenCalled();
   });
   it("includes the created card ID when create_card execution fails", async () => {

@@ -38,6 +38,7 @@ export const REFERENCE_ARGUMENT_SLOTS: Readonly<Record<string, "card" | "session
   after_card_id: "card",
   target_card_id: "card",
   source_card_ids: "card",
+  depends_on: "card",
   session_id: "session",
   target_session_id: "session",
   predecessor_session_id: "session",
@@ -112,7 +113,8 @@ export async function callWithReferenceTranslation(
     for (const ref of refs) {
       const result = results.find(entry => entry.ref === ref);
       if (!result) throw new Error(`응답에 ${ref}가 없습니다`);
-      if ("error" in result) return errorResult(result.error);
+      if ("error" in result) return errorResult(slots.some(slot => slot.name === "depends_on" && slot.ref === ref)
+        ? `선행 카드 ${ref}을 찾을 수 없습니다` : result.error);
       resolved.set(ref, result);
     }
   } catch (error) {

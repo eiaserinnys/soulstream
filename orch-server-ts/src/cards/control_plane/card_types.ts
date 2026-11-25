@@ -12,6 +12,7 @@ export type SqlClient = RepositorySql & {
 import type { CardStatus } from "@soulstream/wire-schema";
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
 import type { CardItem, CardNow } from "../card_item_rules.js";
+import type { CardDependency } from "../card_dependencies.js";
 
 /** PAS 판에 장을 남기지 않는 상태. 보류는 끝나지 않았지만 사용자가 내린 카드다. */
 export function isCardOffBoard(status: CardStatus): boolean {
@@ -71,6 +72,7 @@ export interface CardRow extends CardAssigneeFields {
   node_id: string | null;
   model_preset: string | null;
   status: CardStatus;
+  dependsOn?: CardDependency[];
   archived: boolean;
   version: number;
   created_session_id: string | null;

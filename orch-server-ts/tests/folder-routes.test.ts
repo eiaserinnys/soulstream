@@ -75,7 +75,7 @@ describe("unified folder HTTP and host contracts", () => {
       view: "outline", includeArchived: true, totalCards: 3, returnedCount: 1, nextCursor: "2",
       cards: [{ id: "archived-a", archived: true }],
     });
-    expect(getFolder).toHaveBeenLastCalledWith("f", true);
+    expect(getFolder).toHaveBeenLastCalledWith("f", true, null);
     expect((await app.inject("/api/folders/f?view=outline&includeArchived=sometimes")).statusCode).toBe(422);
 
     const fullWithListOptions = await app.inject("/api/folders/f?includeArchived=true&limit=1&cursor=1");

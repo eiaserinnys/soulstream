@@ -59,7 +59,7 @@ test("format and parse round-trip", () => {
 
 test("argument slots name only card and session identifier arguments", () => {
   assert.deepEqual({ ...REFERENCE_ARGUMENT_SLOTS }, {
-    card_id: "card", after_card_id: "card", target_card_id: "card", source_card_ids: "card",
+    card_id: "card", after_card_id: "card", target_card_id: "card", source_card_ids: "card", depends_on: "card",
     session_id: "session", target_session_id: "session", predecessor_session_id: "session",
     session_ids: "session", "assignee.session_id": "session",
   });
@@ -69,14 +69,24 @@ test("card maintenance slots translate single ids and every element of an id arr
   const { lookup, calls } = resolved({ "#412": CARD, "#9": { ref: "#9", kind: "card", id: "card-uuid-9", title: "작은 카드" } });
   const { call, received } = recorder();
   await callWithReferenceTranslation({
-    target_card_id: "#412", source_card_ids: ["#9", "plain-source", "#412"], card_ids: ["#9"],
+    target_card_id: "#412", source_card_ids: ["#9", "plain-source", "#412"], depends_on: ["#9"], card_ids: ["#9"],
     caller_session_id: "#7",
   }, lookup, call);
   assert.deepEqual(calls, [["#412", "#9"]]);
   assert.deepEqual(received[0], {
     target_card_id: "card-uuid-412", source_card_ids: ["card-uuid-9", "plain-source", "card-uuid-412"],
-    card_ids: ["#9"], caller_session_id: "#7",
+    depends_on: ["card-uuid-9"], card_ids: ["#9"], caller_session_id: "#7",
   });
+});
+
+test("an unavailable predecessor has the same error as a missing predecessor", async () => {
+  const lookup = async (refs: string[]) => refs.map(ref => ({ ref, error: "not found" }));
+  const result = await callWithReferenceTranslation({ depends_on: ["#412"] }, lookup, async () => {
+    throw new Error("unavailable predecessor reached the handler");
+  });
+  assert.equal(result.isError, true);
+  assert.equal(result.content[0]?.type, "text");
+  if (result.content[0]?.type === "text") assert.equal(result.content[0].text, "선행 카드 #412을 찾을 수 없습니다");
 });
 
 test("a call without a '#' value is untouched: no lookup, same args object, same result object", async () => {

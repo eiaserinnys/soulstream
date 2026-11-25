@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { MESSAGE_BODY_LIMIT } from "../conversation/conversation_messages.js";
-import { allowed, CardNotFoundError, cardRouteErrorResponse, listCardRouteBody, mutateCardRouteBody, readCardRouteBody, sendCardMessageSchema } from "./card_route_body.js";
+import { allowed, cardAllowedFolderIds, CardNotFoundError, cardRouteErrorResponse, listCardRouteBody, mutateCardRouteBody, readCardRouteBody, sendCardMessageSchema } from "./card_route_body.js";
 import { serializeCardRow } from "../folders/folder_contracts.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type {
@@ -48,13 +48,15 @@ export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOpt
           const body=settings.parse(request.body);
           await allowed(options,()=>options.accessProvider.resolveAccess(request),body.folderId);
           await service.saveExecutionSettings({...body,...actor,cardId:request.params.id});
-          return {card:serializeCardRow((await service.getCard(request.params.id))!.card)};
+          return {card:serializeCardRow((await service.getCard(request.params.id,await cardAllowedFolderIds(options,()=>options.accessProvider.resolveAccess(request))))!.card)};
         }
         if(!options.cardExecutionServiceProvider)throw Object.assign(new Error("Card execution unavailable"),{statusCode:503});
         const executor=await options.cardExecutionServiceProvider();
         const result=operation==='execute'?await executor.execute({...mutation.parse(request.body),...actor,cardId:request.params.id})
           :await executor.observe(request.params.id,z.string().min(1).parse(request.query.requestId),actor);
-        return reply.code(result.execution.state==='pending'?202:200).send({...result,card:serializeCardRow(result.card)});
+        const allowedIds=await cardAllowedFolderIds(options,()=>options.accessProvider.resolveAccess(request));
+        const card=allowedIds===null?result.card:(await service.projectCards([result.card],allowedIds))[0]!;
+        return reply.code(result.execution.state==='pending'?202:200).send({...result,card:serializeCardRow(card)});
       }catch(error){const failure=cardRouteErrorResponse(error);return reply.code(failure.status).send(failure.body);}
     }});
   }

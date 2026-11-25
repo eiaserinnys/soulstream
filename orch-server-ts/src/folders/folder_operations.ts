@@ -76,6 +76,7 @@ export interface FolderSnapshotReadOptions {
   includeArchived?: unknown;
   limit?: unknown;
   cursor?: unknown;
+  allowedFolderIds?: readonly string[] | null;
 }
 
 export async function readFolderSnapshot(
@@ -87,7 +88,7 @@ export async function readFolderSnapshot(
   options: FolderSnapshotReadOptions = {},
 ) {
   z.enum(["full", "outline"]).parse(view ?? "full");
-  const snapshot = await service.getFolder(folderId,includeCompleted);
+  const snapshot = await service.getFolder(folderId,includeCompleted,options.allowedFolderIds);
   if (!snapshot) throw Object.assign(new Error("Folder not found"), { statusCode: 404 });
   const outline = view === "outline";
   const directCard = Boolean(cardId);

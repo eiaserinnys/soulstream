@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { buildCardPrompt } from "../src/cards/card_prompt.js";
 
 describe("card comment prompt and reporting guidance", () => {
+  it("shows the current status of predecessor cards in the start prompt", () => {
+    const prompt = buildCardPrompt({ cardId: "c1", folderId: "f1", title: "뒤", folderName: "실험", request: "", brief: "", running: [],
+      dependsOn: [{ id: "c2", number: 12, title: "앞", status: "done", archived: false, met: true }] });
+    expect(prompt).toContain("선행 카드: #12 앞(완료)");
+  });
   it("includes each comment timestamp, ID, and body only when comments exist", () => {
     const base = { cardId: "c1", folderId: "f1", title: "작업", folderName: "실험", request: "원문", brief: "경과", running: [] };
     const withoutComments = buildCardPrompt(base);

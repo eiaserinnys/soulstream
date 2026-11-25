@@ -46,6 +46,7 @@ describe("folder object orchestrator MCP roundtrip", () => {
   let h: PagePostgresHarness;
   let identity: FolderProjectIdentityService;
   let folderHostOptions: FolderControlPlaneHostRouteOptions;
+  let cardHostOptions: McpHostOptions["cards"];
   let app: ReturnType<typeof Fastify>;
   let runtime: McpRuntime;
   let sequence = 0;
@@ -67,11 +68,12 @@ describe("folder object orchestrator MCP roundtrip", () => {
     const options = { serviceProvider: async () => new FolderControlPlaneService(sql, async () => []),
       cardServiceProvider: async () => cards, identity, nodeCredentials: null, authBearerToken: "service-token" };
     folderHostOptions = options;
-    app = Fastify();
-    registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, nodeCredentials: null, authBearerToken: options.authBearerToken, folders: options, cards: {
+    cardHostOptions = {
       cardServiceProvider: options.cardServiceProvider, provider: { listFolders: () => [], listSessionAssignments: () => ({}) },
       resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }),
-    } });
+    } as unknown as McpHostOptions["cards"];
+    app = Fastify();
+    registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, nodeCredentials: null, authBearerToken: options.authBearerToken, folders: options, cards: cardHostOptions });
     const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
     const orch = { baseUrl, headers: { authorization: "Bearer service-token" } };
     const logger = { warn: vi.fn() } as never;
@@ -102,7 +104,7 @@ describe("folder object orchestrator MCP roundtrip", () => {
   }
 
   async function callExternal(name: string, input: object) {
-    const server = buildExternalMcpServer({ folders: folderHostOptions } as unknown as McpHostOptions, {
+    const server = buildExternalMcpServer({ folders: folderHostOptions, cards: cardHostOptions } as unknown as McpHostOptions, {
       principal: "external", callerSessionId: null, nodeId: "test-node",
     });
     const client = new Client({ name: "external-parity-client", version: "1" });

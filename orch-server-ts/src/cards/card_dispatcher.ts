@@ -11,6 +11,7 @@ import type { NodeRegistryEvent } from "../node/registry_types.js";
 import { isTerminalSessionStatus } from "../session/session_status.js";
 import { isUsageLimitTermination } from "../session/session_limit_termination.js";
 import { buildCardPrompt } from "./card_prompt.js";
+import { dependencyMet } from "./card_dependencies.js";
 import type { CardControlPlaneService, CardMutationChange } from "./card_control_plane_service.js";
 import type { CardDispatchRepository, DispatchCard } from "./card_dispatch_repository.js";
 import type { CardRow } from "./control_plane/card_types.js";
@@ -263,7 +264,19 @@ export class CardDispatcher {
                     await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: latest.card.version });
             }
         }
-        if (card.status === "queued" || op.operation_type === "reorder_card_queue" || op.operation_type === "answer_card_question" || (previousStatus !== "review" && card.status === "review"))
+        const settings = previousStatus !== undefined && previousStatus !== card.status && (card.status === "done" || card.status === "review")
+            ? await this.options.repository.settings() : null;
+        const released = settings !== null && previousStatus !== undefined && !dependencyMet(previousStatus,settings.reviewMeetsDependency)
+            && dependencyMet(card.status,settings.reviewMeetsDependency);
+        if (released && settings?.startReleasedDependents && !(await this.options.orchestration?.enabled())) {
+            const ids = new Set((await this.options.repository.dependents(card.id)).map(item => item.id));
+            for (const waiting of await this.options.repository.queued()) {
+                if (!ids.has(waiting.id) || waiting.assignee_kind === "human" || !waiting.assignee_agent_id) continue;
+                const target = this.options.resolveTarget(waiting);
+                if (target.available) await this.dispatchCard(waiting,target);
+            }
+        }
+        if (released || card.status === "queued" || op.operation_type === "reorder_card_queue" || op.operation_type === "answer_card_question" || (previousStatus !== "review" && card.status === "review"))
             await this.dispatchOnce();
         const committed = change.committedCard;
         const kind = committed ? selectCardBoardNotice({operationType:op.operation_type, actorKind:op.actor_kind, previousStatus, committed, payload}) : null;
@@ -446,14 +459,20 @@ export class CardDispatcher {
             queue = queue.filter(c => c.id !== card.id);
             const target = targets.get(card.id)!;
             if (!target.available) continue;
+            await this.dispatchCard(card,target);
+        }
+    }
+    private async dispatchCard(card: DispatchCard, target: CardTarget): Promise<void> {
+            const cards = await this.options.cards();
             const detail = await cards.getCard(card.id);
             if (!detail || detail.card.status !== "queued")
-                continue;
+                return;
             const answers = detail.questions.filter(q => q.answer !== null).map(q => `${String(q.text)} → ${String(q.answer)}`).join("\n");
             const running = await this.options.repository.running();
             const prompt = buildCardPrompt({ cardId: card.id, folderId: card.folder_id, title: card.title, folderName: card.folder_name, request: card.request,
                 brief: [card.brief, answers].filter(Boolean).join("\n"), reason: await this.options.repository.rejectionReason(card.id),
                 comments: detail.comments.filter(comment => comment.author_kind === "user").map(comment => ({ id:String(comment.id),createdAt: comment.created_at as Date | string, body: String(comment.body) })),
+                dependsOn: detail.card.dependsOn,
                 running });
             const sessionId = randomUUID();
             await cards.recordDispatch({ cardId: card.id, expectedVersion: detail.card.version, sessionId, nodeId: target.nodeId });
@@ -466,9 +485,8 @@ export class CardDispatcher {
                 if (current?.card.status === "running")
                     await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "blocked", blockedKind: "no_report", blockedDetail: `세션 생성 실패: ${String(error)}`, expectedVersion: current.card.version });
                 this.options.warn(`card ${card.id} create failed: ${String(error)}`);
-                continue;
+                return;
             }
             await this.reconcileTerminal(sessionId);
-        }
     }
 }

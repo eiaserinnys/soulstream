@@ -3,6 +3,7 @@ import { normalizeOperation } from "./card_models.js";
 import { projectCardActivity } from "../card_latest_activity.js";
 import { completedCardCursor, pagedCardCursor, type CompletedCardQuery, type PagedCardQuery } from "../completed_card_query.js";
 import { projectCardAttachmentRows, projectCardQuestionRows } from "../card_attachment_projection.js";
+import { readCardDependencies } from "../card_dependencies.js";
 
 export class CardRepositoryRead {
   constructor(
@@ -18,10 +19,10 @@ export class CardRepositoryRead {
     if (!folder) throw Object.assign(new Error("Folder not found"),{ statusCode:404 });
     return folder;
   }
-  async getSnapshot(folderId: string, includeCompleted = true): Promise<FolderSnapshot | null> {
+  async getSnapshot(folderId: string, includeCompleted = true, allowedFolderIds: readonly string[] | null = null): Promise<FolderSnapshot | null> {
     const folder = await this.getFolder(folderId);
     if (!folder) return null;
-    return { folder, cards: await this.projectCards(await this.listCards({ folderId, includeArchived: true, includeCompleted })) };
+    return { folder, cards: await this.projectCards(await this.listCards({ folderId, includeArchived: true, includeCompleted }), allowedFolderIds) };
   }
   /**
    * One-card answer for a mutation. Folder-target operations read no card at all;
@@ -63,7 +64,7 @@ export class CardRepositoryRead {
     const page = rows.slice(0,params.limit), last = page.at(-1);
     const nextCursor = rows.length > params.limit && last ? completedCardCursor(last.cursor_time,last.id) : null;
     const cards = page.map(({ cursor_time: _cursorTime, ...card }) => card as CardRow);
-    return { cards: await this.projectCards(cards), nextCursor };
+    return { cards: await this.projectCards(cards,params.allowedFolderIds), nextCursor };
   }
   async listPagedCards(params: PagedCardQuery) {
     // PostgreSQL does not allow a SELECT alias in WHERE, so the ranked rows are filtered one level out.
@@ -90,14 +91,19 @@ export class CardRepositoryRead {
     const page = rows.slice(0,params.limit), last = page.at(-1);
     const nextCursor = rows.length > params.limit && last ? pagedCardCursor(Number(last.status_rank),last.cursor_time,last.id) : null;
     const cards = page.map(({ status_rank: _statusRank, cursor_time: _cursorTime, ...card }) => card as CardRow);
-    return { cards: await this.projectCards(cards), nextCursor };
+    return { cards: await this.projectCards(cards,params.allowedFolderIds), nextCursor };
   }
   async getCard(cardId: string): Promise<CardRow | null> {
     return (await this.sql<CardRow[]>`SELECT * FROM cards WHERE id=${cardId}`)[0] ?? null;
   }
-  async projectCards(cards: readonly CardRow[]) {
+  async projectCards(cards: readonly CardRow[], allowedFolderIds: readonly string[] | null = null) {
     const withActivity = await projectCardActivity(this.sql, cards);
-    return projectCardAttachmentRows(this.sql, withActivity, undefined, this.corsAllowedOrigins);
+    const projected = await projectCardAttachmentRows(this.sql, withActivity, undefined, this.corsAllowedOrigins);
+    const dependencies = await readCardDependencies(this.sql, cards.map(card => card.id), allowedFolderIds);
+    return projected.map(card => {
+      const { dependsOn: _previous, ...rest } = card;
+      return { ...rest, ...(dependencies.has(card.id) ? { dependsOn: dependencies.get(card.id)! } : {}) } as typeof card;
+    });
   }
   async listReports(cardId: string) {
     const rows = await this.sql<Record<string, unknown>[]>`SELECT * FROM card_reports WHERE card_id=${cardId} ORDER BY created_at DESC,id DESC`;
