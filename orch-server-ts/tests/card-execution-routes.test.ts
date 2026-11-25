@@ -10,7 +10,10 @@ afterEach(async () => { await Promise.all(apps.splice(0).map(app => app.close())
 
 function setup(user: string | null, allowedFolderIds = ["source", "target"]) {
   const card = { id: "card", folder_id: "source", version: 1 };
-  const result = { card, execution: { requestId: "request", sessionId: "session", state: "started" } };
+  // The executor reads the card with its predecessors; the route must re-project it for a restricted requester.
+  const result = { card: { ...card, dependsOn: [{ id: "hidden", number: 7, title: "숨김", status: "todo", archived: false, met: false }] },
+    execution: { requestId: "request", sessionId: "session", state: "started" } };
+  const project = vi.fn(async (cards: { dependsOn?: unknown }[], _allowed: readonly string[]) => cards.map(({ dependsOn: _hidden, ...rest }) => rest));
   const execute = vi.fn(async () => result);
   const observe = vi.fn(async () => result);
   const save = vi.fn(async () => undefined);
@@ -19,7 +22,7 @@ function setup(user: string | null, allowedFolderIds = ["source", "target"]) {
     provider: { listFolders: () => [{ id: "source" }, { id: "target" }] },
     accessProvider: { resolveAccess: () => ({ restricted: true, allowedFolderIds }) },
     resolveDashboardUserId: () => user,
-    cardServiceProvider: async () => ({ getCard: async () => ({ card }), saveExecutionSettings: save }),
+    cardServiceProvider: async () => ({ getCard: async () => ({ card }), saveExecutionSettings: save, projectCards: project }),
     cardExecutionServiceProvider: async () => ({ execute, observe }),
     authBearerToken: "service-token", environment: "production",
   } as unknown as FolderRouteOptions);
@@ -30,7 +33,7 @@ function setup(user: string | null, allowedFolderIds = ["source", "target"]) {
     ...(operation === "execution" ? {} : { payload: { expectedVersion: 1, idempotencyKey: "key",
       ...(operation === "execution-settings" ? { folderId: "target", nodeId: "node", agentId: "agent", modelPreset: "model" } : {}) } }),
   });
-  return { call, execute, observe, save };
+  return { call, execute, observe, save, project };
 }
 
 it.each(routes)("requires a dashboard user for %s, including trusted agent callers", async operation => {
@@ -48,7 +51,12 @@ it.each(routes)("dispatches %s with the authenticated user and source folder sco
   expect((await denied.call(operation)).statusCode).toBe(403);
   expect(denied.execute).not.toHaveBeenCalled(); expect(denied.observe).not.toHaveBeenCalled(); expect(denied.save).not.toHaveBeenCalled();
   const user = setup("owner@example.test");
-  expect((await user.call(operation)).statusCode).toBe(200);
+  const response = await user.call(operation);
+  expect(response.statusCode).toBe(200);
+  if (operation !== "execution-settings") {
+    expect(user.project).toHaveBeenCalledWith([expect.objectContaining({ id: "card" })], ["source", "target"]);
+    expect(response.json().card).not.toHaveProperty("dependsOn");
+  }
   const actor = { actorKind: "user", actorSessionId: null, actorUserId: "owner@example.test" };
   if (operation === "execution") expect(user.observe).toHaveBeenCalledWith("card", "request", actor);
   else expect(operation === "execute" ? user.execute : user.save).toHaveBeenCalledWith(expect.objectContaining({ cardId: "card", ...actor }));
