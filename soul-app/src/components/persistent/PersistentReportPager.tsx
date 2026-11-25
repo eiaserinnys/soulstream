@@ -26,7 +26,7 @@ function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps
   </View>;
 }
 
-export function PersistentReportPager({ entries: rawEntries, index: rawIndex, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, renderQuestion, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion, verticalList = false, revealKey, onRevealed, answeredHoldKey, onAnsweredHoldExpire, handling = false }: {
+export function PersistentReportPager({ entries: rawEntries, index: rawIndex, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, renderQuestion, onOpenCardDetails, onOpenReportWindow, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion, verticalList = false, revealKey, onRevealed, answeredHoldKey, onAnsweredHoldExpire, handling = false }: {
   expandedKey?: string | null; onExpandedKeyChange?(key: string | null): void;
   /** 답한 장을 확정한 붙들기 key. 있으면 펼치지 않은 동안 기한을 센다. */
   answeredHoldKey?: string | null; onAnsweredHoldExpire?(key: string): void;
@@ -35,6 +35,8 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   /** 카드 #1197: 질문 장은 본문과 동작 줄을 이 함수가 그린다. */
   renderQuestion?(entry: PersistentReportEntry, controls: { expanded: boolean; expand(): void; detailView: CardQuestionView | null }): { body: React.ReactNode; actions: React.ReactNode; meta?: React.ReactNode } | null;
   onOpenCardDetails?(entry: PersistentReportEntry): void;
+  /** 카드 #1871: 카드 장 머리줄의 「보고 창 열기」. 가로 넘김 판과 세로 목록 판 모두에 보인다. */
+  onOpenReportWindow?(entry: PersistentReportEntry): void;
   entries: PersistentReportEntry[]; index: number; api: ApiClient | null;
   onSelect(index: number): void; onDismiss(key: string): Promise<boolean | void>;
   onFocusComposer(): void;
@@ -245,6 +247,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
             expandedContent={expandable && expandedKey === entry.key
               ? renderCardDetails?.(entry, view => publishDetailQuestionView(entry.key, view)) : undefined}
             cardStatus={expandable ? renderCardStatus?.(entry) : undefined}
+            onOpenReportWindow={expandable && onOpenReportWindow ? () => { if (i !== index) onSelect(i); onOpenReportWindow(entry); } : undefined}
             onToggleCard={expandable && (renderCardDetails || onOpenCardDetails) ? () => {
               if (i !== index) onSelect(i);
               if (onOpenCardDetails) onOpenCardDetails(entry);
@@ -325,6 +328,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
         expandedContent={expandable && expandedKey === entry.key
           ? renderCardDetails?.(entry, view => publishDetailQuestionView(entry.key, view)) : undefined}
         cardStatus={expandable ? renderCardStatus?.(entry) : undefined}
+        onOpenReportWindow={expandable && onOpenReportWindow ? () => onOpenReportWindow(entry) : undefined}
         onToggleCard={expandable && (renderCardDetails || onOpenCardDetails) ? () => {
           if (onOpenCardDetails) onOpenCardDetails(entry);
           else setExpandedKey(expandedKey === entry.key ? null : entry.key);

@@ -97,6 +97,8 @@ export interface CardDto {
   items?: CardCheckItem[];
   /** Omitted by older server responses. */
   now?: CardNow | null;
+  /** 사용자가 답변을 미뤄 둔 시각(ISO). 없거나 null이면 미루지 않았다. Older responses omit it. */
+  snoozedUntil?: string | null;
 }
 export interface CardReport {
   id: string;
@@ -145,6 +147,13 @@ export interface CardComment {
   body: string;
   createdAt: string;
 }
+/** 카드 상태가 바뀐 기록. 서버가 오래된 순으로 준다. */
+export interface CardStatusHistoryEntry {
+  status: CardStatus;
+  at: string;
+  actorKind: string;
+  sessionId: string | null;
+}
 export interface CardDetail {
   card: CardDto;
   reports: CardReport[];
@@ -153,6 +162,8 @@ export interface CardDetail {
   sessions: Session[];
   notes?: CardComment[];
   nowHistory?: CardNowHistoryEntry[];
+  /** Omitted by older server responses. */
+  statusHistory?: CardStatusHistoryEntry[];
 }
 export interface CardDetailWire extends Omit<CardDetail, 'sessions'> {
   sessions: Array<{ sessionId: string; cardId: string | null; displayName: string | null;
@@ -173,6 +184,8 @@ export interface CardPatch {
   assignee?: { kind: 'agent' | 'human' | 'session' | null; agentId?: string | null; userId?: string | null; sessionId?: string | null } | null;
   nodeId?: string | null;
   modelPreset?: string | null;
+  /** 답변 미루기 시각(ISO). null이면 미루기를 해제한다. */
+  snoozedUntil?: string | null;
 }
 
 export interface CardExecutionResult extends CardMutationResult {card:CardDto;execution:{requestId:string;sessionId:string;state:'started'|'already_running'|'pending'}}

@@ -104,17 +104,8 @@ export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Pr
   };
 
   return <View testID="card-comment-composer" style={embedded ? composerStyles.embedded : undefined}>
-    {targetItem ? <View testID="card-comment-target" style={[composerStyles.target, { backgroundColor: t.colors.warningBg, borderColor: t.colors.warning }]}>
-      <Text style={composerStyles.targetText} numberOfLines={1}>{cardItemTargetText(targetItem.id, targetItem.title)}</Text>
-      <CompactTouchTarget accessibilityRole="button" accessibilityLabel="대상 해제" onPress={onReleaseTarget}>
-        <Text style={composerStyles.releaseText}>해제</Text>
-      </CompactTouchTarget>
-    </View> : questionTarget ? <View testID="card-question-target" style={[composerStyles.target, { backgroundColor: t.colors.warningBg, borderColor: t.colors.warning }]}>
-      <Text style={composerStyles.targetText} numberOfLines={1}>{cardQuestionTargetText(questionTarget)}</Text>
-      <CompactTouchTarget accessibilityRole="button" accessibilityLabel="대상 해제" onPress={onReleaseQuestionTarget}>
-        <Text style={composerStyles.releaseText}>해제</Text>
-      </CompactTouchTarget>
-    </View> : null}
+    {targetItem ? <CardComposerNotice testID="card-comment-target" text={cardItemTargetText(targetItem.id, targetItem.title)} onRelease={onReleaseTarget} />
+      : questionTarget ? <CardComposerNotice testID="card-question-target" text={cardQuestionTargetText(questionTarget)} onRelease={onReleaseQuestionTarget} /> : null}
     <AttachmentChips attachments={attachments.attachments} onRemove={attachments.removeAttachment} disabled={disabled}
       styles={chatStyles} textSecondaryColor={t.colors.textSecondary} textMutedColor={t.colors.textMuted} />
     <ChatComposer input={text} onChangeInput={setText} placeholder={placeholder} inputAccessibilityLabel={placeholder} sendAccessibilityLabel={placeholder === "커멘트" ? "커멘트 보내기" : "답 보내기"}
@@ -124,6 +115,19 @@ export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Pr
       onInputRef={(input) => { inputRef.current = input; }} />
   </View>;
 }));
+
+/** 입력창이 무엇을 쓰는지 알리는 줄과 「해제」. 고칠 점 대상, 되묻기, 보고 창의 지시 적기와 다르게 답하기가 같은 모양을 쓴다. */
+/** 대상이 있는 알림줄(항목, 되묻기)은 「대상 해제」, 대상 없이 입력창 이름만 알리는 줄은 「해제」(웹판과 같다). */
+export function CardComposerNotice({ testID, text, onRelease, releaseLabel = '대상 해제' }: { testID: string; text: string; onRelease?(): void; releaseLabel?: string }) {
+  const t = useTokens();
+  const composerStyles = useMemo(() => makeComposerStyles(t), [t]);
+  return <View testID={testID} style={[composerStyles.target, { backgroundColor: t.colors.warningBg, borderColor: t.colors.warning }]}>
+    <Text style={composerStyles.targetText} numberOfLines={1}>{text}</Text>
+    <CompactTouchTarget accessibilityRole="button" accessibilityLabel={releaseLabel} onPress={onRelease}>
+      <Text style={composerStyles.releaseText}>해제</Text>
+    </CompactTouchTarget>
+  </View>;
+}
 
 function makeComposerStyles(t: ReturnType<typeof useTokens>) {
   return StyleSheet.create({
