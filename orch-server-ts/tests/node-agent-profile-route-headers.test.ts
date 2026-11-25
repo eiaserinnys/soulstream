@@ -20,10 +20,6 @@ describe("node agent profile route proxy headers", () => {
       async listAgentProfiles() {
         return {};
       },
-      async getAgentPortrait(_nodeId, _agentId, options) {
-        calls.push(options ?? {});
-        return { status: "missing" };
-      },
       async getUserPortrait(_nodeId, options) {
         calls.push(options ?? {});
         return { status: "missing" };
@@ -48,7 +44,6 @@ describe("node agent profile route proxy headers", () => {
     const app = createApp({ config, nodeAgentProfileRoutes: { provider } });
 
     for (const url of [
-      "/api/nodes/node-a/agents/agent-a/portrait",
       "/api/nodes/node-a/user/portrait",
     ]) {
       await app.inject({
@@ -71,7 +66,7 @@ describe("node agent profile route proxy headers", () => {
       },
     });
 
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(2);
     for (const call of calls) {
       expect(call.headers).toEqual(
         expect.objectContaining({

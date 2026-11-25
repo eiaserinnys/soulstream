@@ -7,6 +7,8 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { buildAgentPortraitDictionary, useAgentPortraitStore } from "@seosoyoung/soul-ui";
+
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { AgentProfileEditorTab } from "./AgentProfileEditorTab";
 
@@ -82,6 +84,22 @@ const bundledProfile = {
   effective_atom_contexts: [...bundles.slice(0, 3).flatMap((bundle) => bundle.atom_contexts), ...profile.atom_contexts],
 };
 
+function portraitList(...entries: Array<[string, string]>) {
+  return {
+    portraits: entries.map(([agent_id, sha256]) => ({
+      agent_id, sha256, mime: "image/png", byte_size: 12, updated_at: "2026-11-25T00:00:00.000Z",
+      url: `/api/agent-portraits/${agent_id}?v=${sha256}`,
+    })),
+  };
+}
+
+function loadPortraits(...entries: Array<[string, string]>) {
+  useAgentPortraitStore.setState({
+    loaded: true, etag: null, lastFetchedAt: 0,
+    dictionary: buildAgentPortraitDictionary(portraitList(...entries)),
+  });
+}
+
 const portraitProfile = {
   ...profile,
   has_portrait: true,
@@ -93,6 +111,7 @@ describe("AgentProfileEditorTab", () => {
   let container: HTMLDivElement | undefined;
 
   beforeEach(() => {
+    useAgentPortraitStore.setState({ loaded: false, etag: null, lastFetchedAt: 0, dictionary: new Map() });
     useOrchestratorStore.setState({
       nodes: new Map([[
         "node-a",
@@ -122,13 +141,14 @@ describe("AgentProfileEditorTab", () => {
 
   it("shows the saved portrait in the list and form, and a placeholder for profiles without one", async () => {
     const withoutPortrait = { ...profile, agent_id: "roselin", name: "로젤린" };
+    loadPortraits(["seosoyoung", "old-sha"]);
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) =>
       String(input) === "/api/context-bundles"
         ? jsonResponse({ bundles: [] })
         : jsonResponse({ profiles: [portraitProfile, withoutPortrait] })));
     await renderEditor();
 
-    const expectedUrl = "/api/agent-profiles/seosoyoung/portrait?v=old-sha";
+    const expectedUrl = "/api/agent-portraits/seosoyoung?v=old-sha";
     expect(profileButton("서소영").querySelector("img")?.getAttribute("src")).toBe(expectedUrl);
     expect(profileButton("서소영").querySelector("img")?.getAttribute("alt")).toBe("서소영");
     expect(document.body.querySelector('[data-testid="agent-profile-editor"] img')?.getAttribute("src"))
@@ -155,12 +175,14 @@ describe("AgentProfileEditorTab", () => {
       static revokeObjectURL = revokeObjectURL;
     });
     const requests: string[] = [];
+    loadPortraits(["seosoyoung", "old-sha"]);
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       requests.push(`${init?.method ?? "GET"} ${url}`);
       if (url === "/api/context-bundles") return jsonResponse({ bundles: [] });
-      if (init?.method === "PUT" && url.endsWith("/portrait")) {
-        return jsonResponse({ ...portraitProfile, version: 5, portrait: { ...portraitProfile.portrait, sha256: "new-sha" } });
+      if (url === "/api/agent-portraits" && !init?.method) return jsonResponse(portraitList(["seosoyoung", "new-sha"]));
+      if (init?.method === "PUT" && url === "/api/agent-portraits/seosoyoung") {
+        return jsonResponse(portraitList(["seosoyoung", "new-sha"]).portraits[0]);
       }
       if (init?.method === "PUT") return jsonResponse({ ...portraitProfile, version: 4 });
       return jsonResponse({ profiles: [portraitProfile] });
@@ -181,14 +203,15 @@ describe("AgentProfileEditorTab", () => {
     await vi.waitFor(() => {
       expect(document.body.querySelector('[role="status"]')?.textContent).toContain("프로필을 저장했습니다.");
     });
-    expect(requests).toContain("PUT /api/agent-profiles/seosoyoung/portrait");
+    expect(requests).toContain("PUT /api/agent-portraits/seosoyoung");
+    expect(requests).toContain("GET /api/agent-portraits");
     // 미리보기 URL 해제와 img src 교체는 저장 뒤 passive effect에서 일어난다.
     // 상태 문구가 먼저 보일 수 있으므로 effect가 반영될 때까지 기다린다.
     await vi.waitFor(() => {
       expect(document.body.querySelector('[data-testid="agent-profile-editor"] img')?.getAttribute("src"))
-        .toBe("/api/agent-profiles/seosoyoung/portrait?v=new-sha");
+        .toBe("/api/agent-portraits/seosoyoung?v=new-sha");
       expect(profileButton("서소영").querySelector("img")?.getAttribute("src"))
-        .toBe("/api/agent-profiles/seosoyoung/portrait?v=new-sha");
+        .toBe("/api/agent-portraits/seosoyoung?v=new-sha");
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:selected-portrait");
     });
   });
@@ -526,7 +549,7 @@ describe("AgentProfileEditorTab", () => {
     expect(document.body.textContent).toContain("345자");
   });
 
-  it("opens the MCP tab for a node-only YAML agent while edit stays disabled", async () => {
+  it("opens the MCP tab for a node-only YAML agent and keeps its edit tab for the portrait", async () => {
     const request = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.endsWith("/agents")) return jsonResponse({ agents: [{ id: "yaml-agent", name: "YAML 에이전트", source: "yaml" }] });
@@ -538,8 +561,66 @@ describe("AgentProfileEditorTab", () => {
     container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container);
     flushSync(() => root?.render(createElement(AgentProfileEditorTab, { request: request as typeof fetch, initialMcpTarget: { agentId: "yaml-agent", nodeId: "node-a" } })));
     await vi.waitFor(() => expect(document.body.textContent).toContain("로컬 설정 사용 중"));
-    expect([...document.body.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button => button.textContent === "편집")?.disabled).toBe(true);
+    expect([...document.body.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(button => button.textContent === "편집")?.disabled).toBe(false);
     expect(request).toHaveBeenCalledWith("/api/mcp/agents/yaml-agent/preview?node_id=node-a", expect.any(Object));
+  });
+
+  it("uploads and deletes the portrait of a node-only YAML agent through the central store", async () => {
+    const NativeURL = URL;
+    vi.stubGlobal("URL", class extends NativeURL {
+      static createObjectURL = vi.fn(() => "blob:yaml-portrait");
+      static revokeObjectURL = vi.fn();
+    });
+    loadPortraits(["seosoyoung", "old-sha"]);
+    const requests: string[] = [];
+    let listed = portraitList(["seosoyoung", "old-sha"]);
+    const handle = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requests.push(`${init?.method ?? "GET"} ${url}`);
+      if (url.endsWith("/agents")) return jsonResponse({ agents: [{ id: "yaml-agent", name: "YAML 에이전트", source: "yaml" }] });
+      if (url === "/api/context-bundles") return jsonResponse({ bundles: [] });
+      if (url.endsWith("/context-preview")) return jsonResponse(previewFor([]));
+      if (url === "/api/agent-portraits" && !init?.method) return jsonResponse(listed);
+      if (init?.method === "PUT" && url === "/api/agent-portraits/yaml-agent") {
+        listed = portraitList(["seosoyoung", "old-sha"], ["yaml-agent", "yaml-sha"]);
+        return jsonResponse(listed.portraits[1]);
+      }
+      if (init?.method === "DELETE" && url === "/api/agent-portraits/yaml-agent") {
+        listed = portraitList(["seosoyoung", "old-sha"]);
+        return new Response(null, { status: 204 });
+      }
+      return jsonResponse({ profiles: [profile] });
+    };
+    vi.stubGlobal("fetch", vi.fn(handle));
+    container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container);
+    flushSync(() => root?.render(createElement(AgentProfileEditorTab, { request: handle as typeof fetch })));
+    await settle();
+    flushSync(() => profileButton("YAML 에이전트").click());
+    await settle();
+    clickButton("편집"); await settle();
+
+    const editor = () => document.body.querySelector('[data-testid="agent-profile-editor"]')!;
+    expect(editor().querySelector('[data-testid="profile-portrait-placeholder"]')).not.toBeNull();
+    expect(editor().querySelector('input[type="checkbox"]')).toBeNull();
+    const save = () => [...editor().querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "초상화 저장")!;
+    expect(save().disabled).toBe(true);
+
+    const fileInput = editor().querySelector<HTMLInputElement>('input[aria-label="초상화"]')!;
+    Object.defineProperty(fileInput, "files", { configurable: true, value: [new File(["png"], "p.png", { type: "image/png" })] });
+    flushSync(() => fileInput.dispatchEvent(new Event("change", { bubbles: true })));
+    await settle();
+    expect(editor().querySelector("img")?.getAttribute("src")).toBe("blob:yaml-portrait");
+    flushSync(() => save().click());
+    await vi.waitFor(() => expect(editor().querySelector('[role="status"]')?.textContent).toContain("초상화를 저장했습니다."));
+    expect(requests).toContain("PUT /api/agent-portraits/yaml-agent");
+    expect(requests.filter(request => request === "GET /api/agent-portraits").length).toBeGreaterThan(0);
+    await vi.waitFor(() => expect(editor().querySelector("img")?.getAttribute("src")).toBe("/api/agent-portraits/yaml-agent?v=yaml-sha"));
+    expect(requests.some(request => request.startsWith("PUT /api/agent-profiles"))).toBe(false);
+
+    flushSync(() => editor().querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    flushSync(() => save().click());
+    await vi.waitFor(() => expect(requests).toContain("DELETE /api/agent-portraits/yaml-agent"));
+    await vi.waitFor(() => expect(editor().querySelector('[data-testid="profile-portrait-placeholder"]')).not.toBeNull());
   });
 
   it("shows an explicit notice on the MCP tab when no node is connected", async () => {

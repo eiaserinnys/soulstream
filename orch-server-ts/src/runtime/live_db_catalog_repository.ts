@@ -68,6 +68,9 @@ import { createLiveSessionReviewRepository } from "./live_session_review_reposit
 import type { SessionReviewAcknowledgeRepository } from "../session/session_review_acknowledge_fallback.js";
 import type { SessionDeletionPort } from "../session/session_deletion_service.js";
 import { createLiveAgentProfileRepository } from "./live_agent_profile_repository.js";
+import { createLiveAgentPortraitRepository } from "./live_agent_portrait_repository.js";
+import { agentPortraitUrlFor } from "../node/agent_portrait_model.js";
+import type { AgentPortraitRepository, AgentPortraitUrlResolver } from "../node/agent_portrait_model.js";
 import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
 import { createLiveContextBundleRepository } from "./live_context_bundle_repository.js";
 import type { ContextBundleRepository } from "../node/context_bundle_routes.js";
@@ -83,6 +86,7 @@ import {
 
 export type LiveDbCatalogRepository = {
   readonly agentProfileRepository: AgentProfileRepository;
+  readonly agentPortraitRepository: AgentPortraitRepository;
   readonly contextBundleRepository: ContextBundleRepository;
   readonly adminUsersRepository: LiveAdminUsersRepository;
   readonly folderRouteProvider: LiveFolderProvider;
@@ -146,6 +150,7 @@ export type CreateLiveDbCatalogRepositoryOptions = {
   readonly onSearchTiming?: (timing: LiveCogitoSearchTiming) => void;
   readonly configProvider?: LiveConfigProviderBoundary;
   readonly registry?: InMemoryNodeRegistry;
+  readonly warn?: (message: string) => void;
   readonly sessionSnapshotLimit?: number;
   readonly boardAssetStorage?: LiveBoardAssetStorage | null;
   readonly sessionDeletion?: SessionDeletionPort;
@@ -184,7 +189,10 @@ export function createLiveDbCatalogRepository(
       },
     };
   const adminUsersRepository = createLiveAdminUsersRepository({ sqlResolver });
-  const agentProfileRepository = createLiveAgentProfileRepository(sqlResolver);
+  const agentPortraitRepository = createLiveAgentPortraitRepository(sqlResolver, options.warn);
+  const agentPortraitUrl: AgentPortraitUrlResolver = (agentId) =>
+    agentPortraitUrlFor(agentPortraitRepository, agentId);
+  const agentProfileRepository = createLiveAgentProfileRepository(sqlResolver, agentPortraitRepository);
   const contextBundleRepository = createLiveContextBundleRepository(sqlResolver);
   const cogitoSearchProvider = createLiveCogitoSearchProvider({
     searchDbConnectionFactory,
@@ -214,6 +222,7 @@ export function createLiveDbCatalogRepository(
     sqlResolver,
     registry: options.registry,
     agentProfiles: agentProfileRepository.snapshot,
+    agentPortraitUrl,
   });
   const sessionSnapshotLimit =
     options.sessionSnapshotLimit ?? DEFAULT_SESSION_SNAPSHOT_LIMIT;
@@ -222,6 +231,7 @@ export function createLiveDbCatalogRepository(
     rows: readonly Record<string, unknown>[],
     compact: boolean,
   ): Promise<Record<string, unknown>[]> {
+    await agentPortraitRepository.ready();
     const bindingWarnings = await loadSessionBindingWarnings(sql, rows);
     const feedStates = compact
       ? await loadSessionFeedStates(sql, rows)
@@ -238,6 +248,7 @@ export function createLiveDbCatalogRepository(
       }, {
         registry: options.registry,
         agentProfiles,
+        agentPortraitUrl,
       });
       const state = sessionFeedStateOrEmpty(feedStates, sessionId);
       const filteredState = folderExcludesNotifications(
@@ -418,6 +429,7 @@ export function createLiveDbCatalogRepository(
   }
   return {
     agentProfileRepository,
+    agentPortraitRepository,
     contextBundleRepository,
     adminUsersRepository,
     folderRouteProvider: folderProvider,

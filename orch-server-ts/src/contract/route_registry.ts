@@ -156,6 +156,27 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   { methods: ["GET", "PATCH"], path: "/api/conversations/v1/threads/{id}", name: "conversation_4", authRequired: true, family: "session" },
   {
     methods: ["GET"],
+    path: "/api/agent-portraits",
+    name: "list_agent_portraits",
+    authRequired: true,
+    family: "control_plane",
+  },
+  {
+    methods: ["DELETE", "GET", "PUT"],
+    path: "/api/agent-portraits/{agent_id}",
+    name: "agent_portrait_crud",
+    authRequired: true,
+    family: "control_plane",
+  },
+  {
+    methods: ["GET"],
+    path: "/api/agents/{agent_id}/portrait",
+    name: "agent_portrait_legacy",
+    authRequired: true,
+    family: "control_plane",
+  },
+  {
+    methods: ["GET"],
     path: "/api/context-bundles",
     name: "list_context_bundles",
     authRequired: true,

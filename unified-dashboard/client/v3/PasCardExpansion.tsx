@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
-import { Button, FrameLoading, useAuth, useDashboardStore, useInternalLinkClick } from '@seosoyoung/soul-ui';
+import { Button, FrameLoading, useAgentPortraitUrlResolver, useAuth, useDashboardStore, useInternalLinkClick } from '@seosoyoung/soul-ui';
 import { cardMutationKey, cardQuestionChoiceAnswer, cardQuestionTextAnswer } from '@seosoyoung/soul-ui/cards/card-api';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';
@@ -46,11 +46,9 @@ export function PasCardExpansion({ entry, lookupCards, samplePortraitUrl }: Prop
   const detail = storedDetail;
   const assignee = catalog?.sessionList?.find(session => session.agentSessionId === card?.assigneeSessionId)
     ?? detail?.sessions.find(session => session.sessionId === card?.assigneeSessionId);
-  const portraitNodeId = assignee?.nodeId ?? card?.nodeId;
   const portraitAgentId = assignee?.agentId ?? card?.assigneeAgentId;
-  const portraitUrl = samplePortraitUrl ?? (portraitNodeId && portraitAgentId
-    ? `/api/nodes/${encodeURIComponent(portraitNodeId)}/agents/${encodeURIComponent(portraitAgentId)}/portrait`
-    : '');
+  const resolvePortrait = useAgentPortraitUrlResolver();
+  const portraitUrl = samplePortraitUrl ?? resolvePortrait(portraitAgentId);
 
   useEffect(() => {
     if (entry.card_id || cardId || cardNumber === null) return;
@@ -193,9 +191,9 @@ function PasQuestionBody({ entry, answer, pending, onChoose }: { entry: Persiste
   const card = useCardStore(state => cardId ? state.byId[cardId] : undefined);
   const catalog = useDashboardStore(state => state.catalog);
   const assignee = catalog?.sessionList?.find(session => session.agentSessionId === card?.assigneeSessionId);
-  const nodeId = assignee?.nodeId ?? card?.nodeId;
   const agentId = assignee?.agentId ?? card?.assigneeAgentId;
-  const portrait = nodeId && agentId ? `/api/nodes/${encodeURIComponent(nodeId)}/agents/${encodeURIComponent(agentId)}/portrait` : null;
+  const resolvePortrait = useAgentPortraitUrlResolver();
+  const portrait = resolvePortrait(agentId) || null;
   return <CardQuestionBody view={view} portraitUrl={portrait} userPortraitUrl={user?.picture ?? ''} pending={pending} onChoose={onChoose} />;
 }
 

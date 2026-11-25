@@ -1,26 +1,38 @@
-import { type AgentPortraitRecord, type AgentPortraitWrite, type AgentProfileRecord, type AgentProfileRepository, type AgentProfileWrite, type SupportedPortraitMime, AgentProfileVersionConflictError } from "../node/agent_profile_routes.js";
+import { type AgentProfileRecord, type AgentProfileRepository, type AgentProfileWrite, AgentProfileVersionConflictError } from "../node/agent_profile_routes.js";
+import type { AgentPortraitRepository } from "../node/agent_portrait_model.js";
 import { optionalRead, type LiveDbSqlResolver } from "./live_db_sql.js";
 
+/** 프로필 행의 portrait_* 칸은 읽지 않는다. 초상 유무와 메타는 중앙 초상 저장소의 메모리 목록에서 붙인다. */
 export function createLiveAgentProfileRepository(
   sqlResolver: LiveDbSqlResolver,
+  portraits: Pick<AgentPortraitRepository, "ready" | "summary">,
 ): AgentProfileRepository {
   const profiles = new Map<string, AgentProfileRecord>();
+  const withPortrait = (profile: AgentProfileRecord): AgentProfileRecord => {
+    const summary = portraits.summary(profile.agentId);
+    return {
+      ...profile,
+      hasPortrait: summary !== null,
+      portrait: summary === null
+        ? null
+        : { mime: summary.mime, size: summary.byteSize, sha256: summary.sha256 },
+    };
+  };
   const remember = (profile: AgentProfileRecord): AgentProfileRecord => {
     profiles.set(profile.agentId, profile);
     return profile;
   };
   const repository: AgentProfileRepository = {
     snapshot() {
-      return [...profiles.values()].sort((left, right) =>
-        left.agentId.localeCompare(right.agentId)
-      );
+      return [...profiles.values()]
+        .sort((left, right) => left.agentId.localeCompare(right.agentId))
+        .map(withPortrait);
     },
     async list() {
+      await portraits.ready();
       const rows = await optionalRead(async () =>
         (await sqlResolver.resolveSql())`
           SELECT agent_id, name, context_bundles, atom_contexts, default_preset, aliases,
-                 portrait_blob IS NOT NULL AS has_portrait, portrait_mime,
-                 portrait_sha256, octet_length(portrait_blob) AS portrait_size,
                  version, created_at, updated_at
           FROM agent_profiles
           ORDER BY agent_id ASC
@@ -28,14 +40,13 @@ export function createLiveAgentProfileRepository(
       const mapped = rows.map(mapProfile);
       profiles.clear();
       for (const profile of mapped) remember(profile);
-      return mapped;
+      return mapped.map(withPortrait);
     },
     async get(agentId) {
+      await portraits.ready();
       const rows = await optionalRead(async () =>
         (await sqlResolver.resolveSql())`
           SELECT agent_id, name, context_bundles, atom_contexts, default_preset, aliases,
-                 portrait_blob IS NOT NULL AS has_portrait, portrait_mime,
-                 portrait_sha256, octet_length(portrait_blob) AS portrait_size,
                  version, created_at, updated_at
           FROM agent_profiles WHERE agent_id = ${agentId} LIMIT 1
         `);
@@ -43,14 +54,15 @@ export function createLiveAgentProfileRepository(
         profiles.delete(agentId);
         return null;
       }
-      return remember(mapProfile(rows[0]));
+      return withPortrait(remember(mapProfile(rows[0])));
     },
     async put(input) {
       const rows = input.expectedVersion === null
         ? await insertProfile(sqlResolver, input)
         : await updateProfile(sqlResolver, input);
       if (!rows[0]) throw new AgentProfileVersionConflictError(input.agentId);
-      return remember(mapProfile(rows[0]));
+      await portraits.ready();
+      return withPortrait(remember(mapProfile(rows[0])));
     },
     async delete(agentId, expectedVersion) {
       const rows = await (await sqlResolver.resolveSql())`
@@ -66,34 +78,6 @@ export function createLiveAgentProfileRepository(
       if (existing !== null) throw new AgentProfileVersionConflictError(agentId);
       return false;
     },
-    async getPortrait(agentId) {
-      const rows = await optionalRead(async () =>
-        (await sqlResolver.resolveSql())`
-          SELECT portrait_blob, portrait_mime, portrait_sha256, version
-          FROM agent_profiles
-          WHERE agent_id = ${agentId} AND portrait_blob IS NOT NULL
-          LIMIT 1
-        `);
-      return rows[0] ? mapPortrait(rows[0]) : null;
-    },
-    async putPortrait(input) {
-      const rows = await updatePortrait(sqlResolver, input);
-      if (!rows[0]) throw new AgentProfileVersionConflictError(input.agentId);
-      return remember(mapProfile(rows[0]));
-    },
-    async deletePortrait(agentId, expectedVersion) {
-      const rows = await updatePortrait(sqlResolver, {
-        agentId,
-        body: null,
-        mime: null,
-        sha256: null,
-        expectedVersion,
-      });
-      if (rows[0]) return remember(mapProfile(rows[0]));
-      const existing = await this.get(agentId);
-      if (existing !== null) throw new AgentProfileVersionConflictError(agentId);
-      return null;
-    },
   };
   return repository;
 }
@@ -106,8 +90,6 @@ async function insertProfile(sqlResolver: LiveDbSqlResolver, input: AgentProfile
             ${input.defaultPreset}, ${sql.json(input.aliases)})
     ON CONFLICT (agent_id) DO NOTHING
     RETURNING agent_id, name, context_bundles, atom_contexts, default_preset, aliases,
-              portrait_blob IS NOT NULL AS has_portrait, portrait_mime,
-              portrait_sha256, octet_length(portrait_blob) AS portrait_size,
               version, created_at, updated_at
   `;
 }
@@ -122,31 +104,6 @@ async function updateProfile(sqlResolver: LiveDbSqlResolver, input: AgentProfile
         version = version + 1, updated_at = NOW()
     WHERE agent_id = ${input.agentId} AND version = ${input.expectedVersion}
     RETURNING agent_id, name, context_bundles, atom_contexts, default_preset, aliases,
-              portrait_blob IS NOT NULL AS has_portrait, portrait_mime,
-              portrait_sha256, octet_length(portrait_blob) AS portrait_size,
-              version, created_at, updated_at
-  `;
-}
-
-type NullablePortraitWrite = Omit<AgentPortraitWrite, "body" | "mime" | "sha256"> & {
-  readonly body: Buffer | null;
-  readonly mime: SupportedPortraitMime | null;
-  readonly sha256: string | null;
-};
-
-async function updatePortrait(
-  sqlResolver: LiveDbSqlResolver,
-  input: AgentPortraitWrite | NullablePortraitWrite,
-) {
-  const sql = await sqlResolver.resolveSql();
-  return sql`
-    UPDATE agent_profiles
-    SET portrait_blob = ${input.body}, portrait_mime = ${input.mime},
-        portrait_sha256 = ${input.sha256}, version = version + 1, updated_at = NOW()
-    WHERE agent_id = ${input.agentId} AND version = ${input.expectedVersion}
-    RETURNING agent_id, name, context_bundles, atom_contexts, default_preset, aliases,
-              portrait_blob IS NOT NULL AS has_portrait, portrait_mime,
-              portrait_sha256, octet_length(portrait_blob) AS portrait_size,
               version, created_at, updated_at
   `;
 }
@@ -159,28 +116,11 @@ function mapProfile(row: Record<string, unknown>): AgentProfileRecord {
     atomContexts: arrayValue(row.atom_contexts) as AgentProfileRecord["atomContexts"],
     defaultPreset: typeof row.default_preset === "string" ? row.default_preset : null,
     aliases: arrayValue(row.aliases) as AgentProfileRecord["aliases"],
-    hasPortrait: row.has_portrait === true,
-    portrait: row.has_portrait === true
-      ? {
-          mime: row.portrait_mime as SupportedPortraitMime,
-          size: Number(row.portrait_size),
-          sha256: String(row.portrait_sha256),
-        }
-      : null,
+    hasPortrait: false,
+    portrait: null,
     version: Number(row.version),
     createdAt: timestamp(row.created_at),
     updatedAt: timestamp(row.updated_at),
-  };
-}
-
-function mapPortrait(row: Record<string, unknown>): AgentPortraitRecord {
-  return {
-    body: Buffer.isBuffer(row.portrait_blob)
-      ? row.portrait_blob
-      : Buffer.from(row.portrait_blob as Uint8Array),
-    mime: row.portrait_mime as SupportedPortraitMime,
-    sha256: String(row.portrait_sha256),
-    version: Number(row.version),
   };
 }
 

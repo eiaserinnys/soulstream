@@ -40,7 +40,6 @@ type AgentSnapshot = {
   readonly max_turns?: unknown;
   readonly backend?: unknown;
   readonly default_preset?: unknown;
-  readonly portrait_b64?: unknown;
 };
 
 type LiveNodeAgentProfileBridge = {
@@ -61,7 +60,7 @@ export type CreateLiveNodeAgentProfileRouteProviderOptions = {
   readonly registry: NodeCommandRegistryPort;
   readonly bridge: LiveNodeAgentProfileBridge;
   readonly nodeHttpClient: LiveNodeAgentProfileHttpClient;
-  readonly agentProfileRepository: Pick<AgentProfileRepository, "list" | "getPortrait">;
+  readonly agentProfileRepository: Pick<AgentProfileRepository, "list">;
   /** Mints the node cookie for Tailscale callers; absent means cookie/authorization only. */
   readonly forwardAuth?: NodeForwardAuthIssuer;
 };
@@ -95,7 +94,7 @@ function createLiveNodeAgentProfileProvider(
           const dbProfile = dbProfiles.get(agent.id);
           return [agent.id, {
             name: dbProfile?.name ?? agent.name,
-            portrait_url: dbProfile?.hasPortrait ? "db" : agent.portrait_url,
+            portrait_url: agent.portrait_url,
             max_turns: agent.max_turns,
             backend: agent.backend,
             default_preset: dbProfile
@@ -105,25 +104,6 @@ function createLiveNodeAgentProfileProvider(
             source: dbProfile ? "db" : "yaml",
           } satisfies RawNodeAgentProfile];
         }),
-      );
-    },
-    getAgentPortrait: async (nodeId, agentId, requestOptions) => {
-      const dbPortrait = await options.agentProfileRepository.getPortrait(agentId);
-      if (dbPortrait !== null) {
-        return { status: "cached", body: dbPortrait.body };
-      }
-      const node = options.registry.getConnectedNode(nodeId);
-      if (node === undefined) return { status: "missing" };
-      const cached = agentSnapshots(node).find((agent) => agent.id === agentId)
-        ?.portrait_b64;
-      if (typeof cached === "string" && cached.length > 0) {
-        return { status: "cached", body: cached, encoding: "base64" };
-      }
-      return requestPortrait(
-        options,
-        nodeId,
-        `/api/agents/${encodeURIComponent(agentId)}/portrait`,
-        requestOptions,
       );
     },
     getUserPortrait: async (nodeId, requestOptions) =>

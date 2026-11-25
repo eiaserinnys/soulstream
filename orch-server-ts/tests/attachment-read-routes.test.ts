@@ -243,6 +243,48 @@ describe("authenticated attachment reads", () => {
     });
   });
 
+  it("caches authorized full reads as immutable and keeps ranges, downloads and errors uncached", async () => {
+    const content = vi.fn(async (_actor, _id, _context, input) => {
+      if (input.range !== undefined) return new Response("ab", { status: 206, headers: { "content-range": "bytes 0-1/4" } });
+      if (input.ifNoneMatch === '"etag-a"') return new Response(null, { status: 304, headers: { etag: '"etag-a"' } });
+      return new Response(openResponse().body, { status: 200, headers: { "content-type": "image/png", etag: '"etag-a"' } });
+    });
+    const { app } = makeApp({ content });
+    apps.push(app);
+    const immutable = "private, max-age=31536000, immutable";
+
+    const full = await app.inject({ method: "GET", url: "/api/attachments/attachment-1/content" });
+    expect(full.headers["cache-control"]).toBe(immutable);
+    expect(full.headers.etag).toBe('"etag-a"');
+    expect(full.headers.vary).toBe("Cookie, Authorization");
+
+    const conditional = await app.inject({
+      method: "GET",
+      url: "/api/attachments/attachment-1/content",
+      headers: { "if-none-match": '"etag-a"' },
+    });
+    expect(conditional.statusCode).toBe(304);
+    expect(conditional.headers["cache-control"]).toBe(immutable);
+    expect(conditional.rawPayload).toHaveLength(0);
+    expect(content).toHaveBeenLastCalledWith(expect.anything(), "attachment-1", { type: "owner" }, expect.objectContaining({ ifNoneMatch: '"etag-a"' }));
+
+    const range = await app.inject({ method: "GET", url: "/api/attachments/attachment-1/content", headers: { range: "bytes=0-1" } });
+    expect(range.statusCode).toBe(206);
+    expect(range.headers["cache-control"]).toBe("private, no-store");
+    const download = await app.inject({ method: "GET", url: "/api/attachments/attachment-1/content?download=true" });
+    expect(download.headers["cache-control"]).toBe("private, no-store");
+  });
+
+  it("does not cache when the actor is rejected", async () => {
+    const { app } = makeApp({ resolveActor: async () => { throw Object.assign(new Error("denied"), { statusCode: 401 }); } });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/api/attachments/attachment-1/content" });
+
+    expect(response.statusCode).toBeGreaterThanOrEqual(400);
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+  });
+
   it("dispatches a resolved legacy alias before looking up its source node", async () => {
     const legacy = vi.fn(async () => ({ kind: "response", response: openResponse() }));
     const { app, calls } = makeApp({

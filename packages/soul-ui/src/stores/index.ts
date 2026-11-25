@@ -11,6 +11,13 @@ export {
 export { ChatStoreScopeProvider, useChatStore, useChatStoreApi, useChatFlattenTree } from "./chat-store-scope";
 export { useFolderCardStore } from "./folder-card-store";
 export { useCustomViewStore } from "./custom-view-store";
+export {
+  useAgentPortraitStore,
+  useAgentPortraitDictionary,
+  useAgentPortraitUrlResolver,
+  startAgentPortraitSync,
+  AGENT_PORTRAIT_REFRESH_INTERVAL_MS,
+} from "./agent-portrait-store";
 export type {
   DashboardState,
   DashboardActions,

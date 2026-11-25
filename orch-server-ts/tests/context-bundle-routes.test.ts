@@ -55,9 +55,6 @@ function profiles(overrides: Partial<AgentProfileRepository> = {}): AgentProfile
     get: vi.fn(async () => profile),
     put: vi.fn(async () => profile),
     delete: vi.fn(async () => true),
-    getPortrait: vi.fn(async () => null),
-    putPortrait: vi.fn(async () => profile),
-    deletePortrait: vi.fn(async () => profile),
     ...overrides,
   };
 }

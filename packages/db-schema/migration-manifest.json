@@ -700,6 +700,10 @@
     {
       "id": "173_mcp_central_config.sql",
       "sha256": "284a202d6fb0b4bdd1df64594fe974cf41f1e792dd3df4e254cfa5d2307b8874"
+    },
+    {
+      "id": "174_agent_portraits.sql",
+      "sha256": "237cc1d7ae10809aba11d6b42524d9b662de1359f6159cba5f16a196dcc0ade9"
     }
   ]
 }

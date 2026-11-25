@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
+import type { AgentPortraitUrlResolver } from "../node/agent_portrait_model.js";
 import { queryInteger, queryValue } from "../http/route_validation.js";
 
 import { createApp } from "../app.js";
@@ -70,6 +71,7 @@ export type OrchestratorRuntimeCompositionOptions = {
   findRescuableSessionOwnerNodeId?:
     SessionCommandRouterOptions["findRescuableSessionOwnerNodeId"];
   agentProfiles?: SessionCommandRouterOptions["agentProfiles"];
+  agentPortraitUrl?: AgentPortraitUrlResolver;
   commandTimeoutMs?: number;
   enableSessionActionCommandRoutes?: boolean;
   enableSessionBackgroundScheduleRoutes?: boolean;
@@ -151,6 +153,7 @@ export function createOrchestratorRuntimeServices(
   const sessionSnapshotService = new SessionSnapshotService({
     registry,
     agentProfiles: options.agentProfiles,
+    agentPortraitUrl: options.agentPortraitUrl,
   });
   const sessionEventHub = new RuntimeSessionEventHub();
   const sessionBroadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
@@ -178,6 +181,7 @@ export function createOrchestratorRuntimeServices(
           sessionBroadcaster,
           registry,
           options.agentProfiles,
+          options.agentPortraitUrl,
         ),
         createNodeStreamBroadcasterSink(nodeStreamBroadcaster),
         ...(options.additionalNodeEventSinks ?? []),

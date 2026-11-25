@@ -51,9 +51,6 @@ function centralProfileStore() {
       rows.delete(agentId);
       return true;
     },
-    getPortrait: async () => null,
-    putPortrait: async () => { throw new Error("putPortrait is not used"); },
-    deletePortrait: async () => null,
   };
   return {
     rows,

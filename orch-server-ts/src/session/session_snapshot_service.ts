@@ -2,6 +2,7 @@ import type { InMemoryNodeRegistry } from "../node/registry.js";
 import type { CachedNodeSession } from "../node/session_cache.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import { serializeSessionRow } from "../runtime/live_session_serialization.js";
+import type { AgentPortraitUrlResolver } from "../node/agent_portrait_model.js";
 import type { AgentProfileIdentityOverlay } from "../node/agent_profile_lookup.js";
 import {
   projectSessionFeedSummary,
@@ -50,6 +51,7 @@ export type SessionSnapshotRecord = Record<string, unknown> & {
 export type SessionSnapshotServiceOptions = {
   registry: InMemoryNodeRegistry;
   agentProfiles?: () => readonly AgentProfileIdentityOverlay[];
+  agentPortraitUrl?: AgentPortraitUrlResolver;
 };
 
 const DEFAULT_LIMIT = 50;
@@ -60,9 +62,11 @@ const SESSION_LIST_PROMPT_PREVIEW_LENGTH = 200;
 export class SessionSnapshotService {
   private readonly registry: InMemoryNodeRegistry;
   private readonly agentProfiles: () => readonly AgentProfileIdentityOverlay[];
+  private readonly agentPortraitUrl: AgentPortraitUrlResolver | undefined;
 
   constructor(options: SessionSnapshotServiceOptions) {
     this.registry = options.registry;
+    this.agentPortraitUrl = options.agentPortraitUrl;
     this.agentProfiles = options.agentProfiles ?? (() => []);
   }
 
@@ -138,6 +142,7 @@ export class SessionSnapshotService {
         {
           registry: this.registry,
           agentProfiles: this.agentProfiles(),
+          agentPortraitUrl: this.agentPortraitUrl,
         },
       ),
       agent_session_id: session.agentSessionId,

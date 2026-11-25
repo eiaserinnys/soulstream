@@ -90,15 +90,15 @@ describe("computeInterventionDisplay — system 분기", () => {
 });
 
 describe("computeInterventionDisplay — agent 분기 (회귀 보존)", () => {
-  it("agentInfo 있고 system 아니면 agent 이름 + 노드 프록시 portrait", () => {
+  it("agentInfo 있고 system 아니면 agent 이름 + 중앙 초상 주소(노드 id를 쓰지 않음)", () => {
     const msg = makeMsg({
       agentInfo: { source: "agent", agent_node: "eias", agent_id: "shay", agent_name: "Shay" },
     });
-    const d = computeInterventionDisplay(msg, null);
+    const d = computeInterventionDisplay(msg, null, (id) => `/api/agent-portraits/${id}?v=abc`);
     expect(d.isAgent).toBe(true);
     expect(d.displayName).toBe("Shay");
     expect(d.displayId).toBe("Shay@eias");
-    expect(d.portraitUrl).toBe("/api/nodes/eias/agents/shay/portrait");
+    expect(d.portraitUrl).toBe("/api/agent-portraits/shay?v=abc");
     expect(d.fallbackEmoji).toBe("\u{1F916}");
   });
 

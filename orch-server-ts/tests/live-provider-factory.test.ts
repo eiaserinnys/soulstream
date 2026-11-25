@@ -1,3 +1,4 @@
+import { createFakeAgentPortraits } from "./fake_agent_portraits.js";
 import type { FastifyRequest } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
@@ -977,15 +978,13 @@ function createLiveDependencies(): LiveProviderDependencies {
   };
   return {
     dbCatalogRepository: {
+      agentPortraitRepository: createFakeAgentPortraits(),
       agentProfileRepository: {
         snapshot: vi.fn(() => []),
         list: vi.fn(async () => []),
         get: vi.fn(async () => null),
         put: vi.fn(),
         delete: vi.fn(),
-        getPortrait: vi.fn(async () => null),
-        putPortrait: vi.fn(),
-        deletePortrait: vi.fn(),
       },
       contextBundleRepository: {
         list: vi.fn(async () => []),

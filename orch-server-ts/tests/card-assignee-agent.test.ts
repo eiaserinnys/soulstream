@@ -107,6 +107,7 @@ function setup() {
     serializeSessions: (rows) => rows.map((row) => serializeSessionRow(row, {
       registry,
       agentProfiles: [],
+      agentPortraitUrl: (agentId) => agentId === "roselin" ? `/api/agent-portraits/roselin?v=${"e".repeat(64)}` : "",
     })),
   });
   const detail = {
@@ -146,7 +147,7 @@ describe("card assignee agent display", () => {
       agentId: "roselin",
       nodeId: "node-1",
       agentName: "로젤린",
-      portraitUrl: "/api/nodes/node-1/agents/roselin/portrait",
+      portraitUrl: `/api/agent-portraits/roselin?v=${"e".repeat(64)}`,
       modelPreset: "opus",
       modelLabel: "Opus 4.6",
     });
@@ -154,7 +155,7 @@ describe("card assignee agent display", () => {
       agentId: "roselin",
       nodeId: "node-1",
       agentName: "로젤린",
-      portraitUrl: "/api/nodes/node-1/agents/roselin/portrait",
+      portraitUrl: `/api/agent-portraits/roselin?v=${"e".repeat(64)}`,
       modelPreset: "opus",
       modelLabel: "Opus 4.6",
     });
@@ -175,14 +176,14 @@ describe("card assignee agent display", () => {
       agentId: "roselin",
       nodeId: "node-1",
       agentName: "로젤린",
-      portraitUrl: "/api/nodes/node-1/agents/roselin/portrait",
+      portraitUrl: `/api/agent-portraits/roselin?v=${"e".repeat(64)}`,
       modelPreset: "opus",
       modelLabel: "Opus 4.6",
     });
     expect(body.sessions[0]).toMatchObject({
       sessionId: "session-1",
       agentName: "로젤린",
-      agentPortraitUrl: "/api/nodes/node-1/agents/roselin/portrait",
+      agentPortraitUrl: `/api/agent-portraits/roselin?v=${"e".repeat(64)}`,
       modelPreset: "opus",
       modelLabel: "Opus 4.6",
       backend: "anthropic",

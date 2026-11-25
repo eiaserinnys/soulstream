@@ -8,6 +8,7 @@ import {
   findRegisteredAgentProfile,
   type AgentProfileIdentityOverlay,
 } from "../node/agent_profile_lookup.js";
+import type { AgentPortraitUrlResolver } from "../node/agent_portrait_model.js";
 import type { NodeConnectionSnapshot } from "../node/registry_types.js";
 import { normalizeSessionBindingWarnings } from "@soulstream/page-model";
 import { normalizeLastChatMessage } from
@@ -16,6 +17,7 @@ import { normalizeLastChatMessage } from
 export type SessionSerializationOptions = {
   readonly registry?: InMemoryNodeRegistry;
   readonly agentProfiles?: readonly AgentProfileIdentityOverlay[];
+  readonly agentPortraitUrl?: AgentPortraitUrlResolver;
 };
 
 function reportProjection(row: Record<string, unknown>): PersistentReportEntry[] {
@@ -161,7 +163,7 @@ export function serializeSessionRow(
     ),
   };
 
-  enrichAgent(payload, options.registry, options.agentProfiles ?? []);
+  enrichAgent(payload, options.registry, options.agentProfiles ?? [], options.agentPortraitUrl);
   enrichModelPreset(payload, options.registry);
   const callerInfo = extractCallerInfo(row.metadata);
   if (callerInfo !== undefined) {
@@ -239,6 +241,7 @@ function enrichAgent(
   payload: Record<string, unknown>,
   registry: InMemoryNodeRegistry | undefined,
   agentProfiles: readonly AgentProfileIdentityOverlay[],
+  agentPortraitUrl: AgentPortraitUrlResolver | undefined,
 ): void {
   const agentId = payload.agentId;
   if (typeof agentId !== "string" || agentId.length === 0 || registry === undefined) {
@@ -257,10 +260,8 @@ function enrichAgent(
     payload.agentName = profile.agent.name;
   }
   payload.backend = profile.backend;
-  if (typeof profile.agent.portrait_url === "string" && profile.agent.portrait_url) {
-    payload.agentPortraitUrl =
-      `/api/nodes/${profile.nodeId}/agents/${profile.id}/portrait`;
-  }
+  const portraitUrl = agentPortraitUrl?.(profile.id) ?? "";
+  if (portraitUrl !== "") payload.agentPortraitUrl = portraitUrl;
 }
 
 function applyUserProfileFallback(

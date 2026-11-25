@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { isRecord } from "@soulstream/wire-schema/json-record";
+import { sendWithEtag, sha256Etag } from "../http/conditional_cache.js";
 
 export type SystemPortraitSource = "system" | "channel_observer" | "trello_watcher";
 
@@ -86,10 +87,13 @@ export function registerSystemConfigRoutes(
       if (result === undefined) {
         return reply.code(404).send({ detail: "Portrait asset not found" });
       }
-      return reply
-        .header("Cache-Control", "public, max-age=3600")
-        .type("image/png")
-        .send(decodeBody(result.body, result.encoding));
+      const body = decodeBody(result.body, result.encoding);
+      return sendWithEtag(request, reply, {
+        etag: sha256Etag(body),
+        cacheControl: "public, no-cache",
+        contentType: "image/png",
+        body,
+      });
     },
   );
 

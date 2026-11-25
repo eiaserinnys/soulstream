@@ -89,8 +89,16 @@ export function registerAttachmentReadRoutes(
             : {}),
           signal: controller.abort.signal,
           ...(download.value ? { download: true } : {}),
+          ...(typeof request.headers["if-none-match"] === "string"
+            ? { ifNoneMatch: request.headers["if-none-match"] }
+            : {}),
         },
       );
+      // 권한 확인을 통과한 뒤에만 캐시 머리를 단다. Range와 download는 지금 동작(no-store)을 지킨다.
+      if ((response.status === 200 || response.status === 304)
+        && request.headers.range === undefined && !download.value) {
+        reply.header("Cache-Control", "private, max-age=31536000, immutable");
+      }
       return sendReadResponse(reply, response, controller);
     } catch (error) {
       controller.cleanup();

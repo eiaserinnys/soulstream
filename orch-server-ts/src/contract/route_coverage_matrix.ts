@@ -60,6 +60,7 @@ import { pageYjsRouteAuthRequirements } from "../page/page_yjs_route.js";
 import { pageBrowserRouteAuthRequirements } from "../page/page_browser_routes.js";
 import { plannerRouteAuthRequirements } from "../planner/planner_routes.js";
 import { agentProfileRouteAuthRequirements } from "../node/agent_profile_routes.js";
+import { agentPortraitRouteAuthRequirements } from "../node/agent_portrait_routes.js";
 import { contextBundleRouteAuthRequirements } from "../node/context_bundle_routes.js";
 import { recurringJobRouteAuthRequirements } from "../recurring-jobs/recurring_job_routes.js";
 import { persistentContextRouteAuthRequirements } from "../persistent-context/persistent_context_host_routes.js";
@@ -96,6 +97,7 @@ export const routeCoverageOwners = [
   { owner: "page.browser", authRequirements: pageBrowserRouteAuthRequirements },
   { owner: "planner", authRequirements: plannerRouteAuthRequirements },
   { owner: "agent.profiles", authRequirements: agentProfileRouteAuthRequirements },
+  { owner: "agent.portraits", authRequirements: agentPortraitRouteAuthRequirements },
   { owner: "context.bundles", authRequirements: contextBundleRouteAuthRequirements },
   { owner: "node.agent-profiles", authRequirements: nodeAgentProfileRouteAuthRequirements },
   { owner: "node.agent-context-overview", authRequirements: agentContextOverviewRouteAuthRequirements },
@@ -233,6 +235,12 @@ export const tsOnlyRouteKeys = [
   "GET /api/ui-events/installs",
   "GET /api/session-statistics",
   "GET /api/session-statistics/days/{date}",
+  "GET /api/agent-portraits",
+  "GET /api/agent-portraits/{agent_id}",
+  "HEAD /api/agent-portraits/{agent_id}",
+  "PUT /api/agent-portraits/{agent_id}",
+  "DELETE /api/agent-portraits/{agent_id}",
+  "GET /api/agents/{agent_id}/portrait",
   "GET /api/context-bundles",
   "DELETE /api/context-bundles/{bundle_id}",
   "GET /api/context-bundles/{bundle_id}",

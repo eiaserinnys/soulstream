@@ -17,6 +17,7 @@ import type { LiveSystemPortraitAssetBoundary } from "./live_system_config_route
 import type { LiveAdminUsersRepository } from "./live_admin_users_route_provider.js";
 import type { SessionReviewAcknowledgeRepository } from "../session/session_review_acknowledge_fallback.js";
 import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
+import type { AgentPortraitRepository } from "../node/agent_portrait_model.js";
 import type { ContextBundleRepository } from "../node/context_bundle_routes.js";
 import type { AttachmentReadRepository } from "../attachments/attachment_read_service.js";
 import type { AttachmentCommitRepository } from "../attachments/attachment_commit_contract.js";
@@ -34,6 +35,7 @@ export type LiveProviderDependencyCategory =
 
 export type LiveDbCatalogRepositoryBoundary = {
   readonly agentProfileRepository: AgentProfileRepository;
+  readonly agentPortraitRepository: AgentPortraitRepository;
   readonly contextBundleRepository: ContextBundleRepository;
   readonly adminUsersRepository: LiveAdminUsersRepository;
   readonly folderRouteProvider: LiveFolderProvider;

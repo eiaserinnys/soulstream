@@ -115,6 +115,20 @@ export {
   writeCachedUserPreferences,
 } from "./user-preferences";
 export type { UserPreferencesSnapshot } from "./user-preferences";
+
+// === Central agent portraits ===
+export {
+  EMPTY_AGENT_PORTRAIT_DICTIONARY,
+  agentPortraitUrl,
+  buildAgentPortraitDictionary,
+  normalizeAgentPortraitUrl,
+} from "./agent-portrait";
+export type {
+  AgentPortraitDictionary,
+  AgentPortraitEntry,
+  AgentPortraitItem,
+  AgentPortraitListResponse,
+} from "./agent-portrait";
 export {
   CHAT_FONT_SIZE_STEPS,
   DEFAULT_CHAT_FONT_SIZE,

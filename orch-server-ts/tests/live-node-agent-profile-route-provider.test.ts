@@ -69,7 +69,6 @@ describe("live node agent profile route provider", () => {
           createdAt: "2026-11-15T00:00:00.000Z",
           updatedAt: "2026-11-15T00:00:00.000Z",
         }],
-        getPortrait: async () => null,
       },
     });
 
@@ -86,47 +85,7 @@ describe("live node agent profile route provider", () => {
     });
   });
 
-  it("returns cached registration portraits before hitting node HTTP", async () => {
-    const portrait = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString("base64");
-    const { provider, requestNode } = createFixture({
-      agents: [{ id: "agent-a", portrait_b64: portrait }],
-    });
-
-    await expect(provider.getAgentPortrait("node-a", "agent-a")).resolves.toEqual({
-      status: "cached",
-      body: portrait,
-      encoding: "base64",
-    });
-    expect(requestNode).not.toHaveBeenCalled();
-  });
-
-  it("uses the DB portrait before registration and node HTTP fallbacks", async () => {
-    const dbPortrait = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x01]);
-    const { provider, requestNode } = createFixture({
-      agents: [{ id: "agent-a", portrait_b64: "legacy" }],
-      agentProfileRepository: {
-        list: async () => [],
-        getPortrait: async () => ({
-          body: dbPortrait,
-          mime: "image/png",
-          sha256: "a".repeat(64),
-          version: 2,
-        }),
-      },
-    });
-
-    await expect(provider.getAgentPortrait("node-a", "agent-a")).resolves.toEqual({
-      status: "cached",
-      body: dbPortrait,
-    });
-    await expect(provider.getAgentPortrait("disconnected-node", "agent-a")).resolves.toEqual({
-      status: "cached",
-      body: dbPortrait,
-    });
-    expect(requestNode).not.toHaveBeenCalled();
-  });
-
-  it("requests agent and user portraits with forwarded auth headers as binary live node HTTP responses", async () => {
+  it("requests user portraits with forwarded auth headers as binary live node HTTP responses", async () => {
     const portraitBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d]);
     const { provider, requestNode } = createFixture({
       agents: [{ id: "remote agent" }],
@@ -135,31 +94,6 @@ describe("live node agent profile route provider", () => {
         headers: { "content-type": "image/png" },
         body: portraitBytes,
       })),
-    });
-
-    await expect(
-      provider.getAgentPortrait("node-a", "remote agent", {
-        headers: {
-          authorization: "Bearer caller-token",
-          cookie: "session=abc",
-          "x-forwarded-for": "203.0.113.10",
-        },
-      }),
-    ).resolves.toEqual({
-      status: "upstream",
-      statusCode: 200,
-      body: portraitBytes,
-      contentType: "image/png",
-    });
-    expect(requestNode).toHaveBeenCalledWith({
-      nodeId: "node-a",
-      method: "GET",
-      path: "/api/agents/remote%20agent/portrait",
-      headers: {
-        authorization: "Bearer caller-token",
-        cookie: "session=abc",
-      },
-      responseType: "arrayBuffer",
     });
 
     await expect(
@@ -192,9 +126,6 @@ describe("live node agent profile route provider", () => {
       }),
     });
 
-    await expect(provider.getAgentPortrait("missing-node", "agent-a")).resolves.toEqual({
-      status: "missing",
-    });
     await expect(provider.getUserPortrait("node-a")).resolves.toEqual({
       status: "requestFailure",
     });
@@ -257,9 +188,8 @@ describe("live node agent profile route provider", () => {
 
     await provider.previewAgentContext("node-a", { agent_id: "agent-a" }, requestOptions);
     await provider.getUserPortrait("node-a", requestOptions);
-    await provider.getAgentPortrait("node-a", "agent-a", requestOptions);
 
-    expect(requestNode).toHaveBeenCalledTimes(3);
+    expect(requestNode).toHaveBeenCalledTimes(2);
     const nowSeconds = Math.floor(Date.now() / 1000);
     const requests = vi.mocked(requestNode).mock.calls.map(
       (call) => (call as unknown as Parameters<ProviderOptions["nodeHttpClient"]["requestNode"]>)[0],
@@ -274,7 +204,6 @@ describe("live node agent profile route provider", () => {
     expect(requests.map((request) => request.path)).toEqual([
       "/api/context/preview",
       "/api/dashboard/portrait/user",
-      "/api/agents/agent-a/portrait",
     ]);
   });
 
@@ -427,7 +356,6 @@ function createFixture(input: {
     nodeHttpClient: { requestNode },
     agentProfileRepository: input.agentProfileRepository ?? {
       list: async () => [],
-      getPortrait: async () => null,
     },
     ...(input.forwardAuth ? { forwardAuth: input.forwardAuth } : {}),
   });

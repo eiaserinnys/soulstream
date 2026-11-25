@@ -4,6 +4,7 @@ import type { ChatMessage } from "../../lib/flatten-tree";
 import type { ChatAttachmentItem } from "../../lib/chat-attachment-model";
 import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments";
 import { useChatStore } from "../../stores/chat-store-scope";
+import { useAgentPortraitUrlResolver } from "../../stores/agent-portrait-store";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { externalSenderDisplay, ExternalSenderCaption, ExternalSenderHeading } from "./externalSender";
 import { MarkdownContent } from "../MarkdownContent";
@@ -35,8 +36,9 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
   const agentDisplayId = isAgent
     ? `${agentDisplayName}@${msg.agentInfo!.agent_node}`
     : null;
+  const resolvePortraitUrl = useAgentPortraitUrlResolver();
   const agentPortraitUrl = isAgent && msg.agentInfo!.agent_id
-    ? `/api/nodes/${msg.agentInfo!.agent_node}/agents/${msg.agentInfo!.agent_id}/portrait`
+    ? resolvePortraitUrl(msg.agentInfo!.agent_id)
     : null;
 
   // user 분기 displayName: 메시지 단위 caller_info.display_name 우선 (멀티-소스 세션 정확도 향상).
