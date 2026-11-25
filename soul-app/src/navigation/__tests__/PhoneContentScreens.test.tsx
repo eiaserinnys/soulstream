@@ -2,7 +2,7 @@ import { render, renderHook } from '@testing-library/react-native';
 import { StyleSheet, Text } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens } from '../../theme';
-import { PhoneCardDetail, PhoneMarkdownDocument } from '../PhoneContentScreens';
+import { PhoneCardDetail, PhoneMarkdownDocument, PhonePasReportWindow } from '../PhoneContentScreens';
 
 jest.mock('@react-navigation/native', () => ({
   useIsFocused: () => true,
@@ -15,6 +15,15 @@ jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent
 jest.mock('../../api/client', () => ({ createApiClient: () => ({}) }));
 jest.mock('../phoneSessionNavigation', () => ({ openPhoneChat: jest.fn() }));
 jest.mock('../../components/planner/MarkdownDocumentContent', () => ({ MarkdownDocumentContent: () => null }));
+const mockBound: { props: any; back: jest.Mock } = { props: null, back: jest.fn(() => false) };
+jest.mock('../../components/pasReport/PasReportWindowBound', () => {
+  const ReactModule = require('react');
+  return { PasReportWindowBound: ReactModule.forwardRef((props: unknown, ref: unknown) => {
+    mockBound.props = props;
+    ReactModule.useImperativeHandle(ref, () => ({ back: () => mockBound.back() }));
+    return null;
+  }) };
+});
 jest.mock('../../store/settingsStore', () => ({ useSettingsStore: (selector: (state: { serverUrl: string }) => unknown) => selector({ serverUrl: 'https://soulstream.test' }) }));
 jest.mock('../../theme', () => ({ useTokens: () => ({ colors: { border: 'border' }, uiSpacing: { md: 12 } }) }));
 
@@ -83,4 +92,50 @@ test('채팅까지 돌아가면 상세 화면 정리가 탭 바를 되살린다'
   expect(tabs.setOptions).toHaveBeenLastCalledWith({ tabBarStyle: {
     backgroundColor: 'transparent', borderTopColor: 'border', overflow: 'hidden',
   } });
+});
+
+describe('PhonePasReportWindow (#1871)', () => {
+  function renderWindow() {
+    const tabs = { setOptions: jest.fn() };
+    let removeListener: ((event: { preventDefault(): void }) => void) | undefined;
+    const navigation = {
+      getParent: () => tabs,
+      getState: () => ({ index: 1, routes: [{ name: 'PersistentSession' }, { name: 'PasReportWindow' }] }),
+      addListener: jest.fn((_name: string, listener: (event: { preventDefault(): void }) => void) => { removeListener = listener; return () => {}; }),
+      goBack: jest.fn(), navigate: jest.fn(),
+    };
+    const screen = render(<PhonePasReportWindow route={{ params: { startCardId: 'card-7' } }} navigation={navigation} />);
+    return { screen, tabs, navigation, beforeRemove: (event: { preventDefault(): void }) => removeListener?.(event) };
+  }
+  beforeEach(() => { mockBound.back = jest.fn(() => false); });
+
+  test('시작 안건을 넘기고, 카드 패널 열기는 기존 CardDetail 화면으로 이동한다', () => {
+    const { navigation, tabs } = renderWindow();
+    expect(mockBound.props.startCardId).toBe('card-7');
+    mockBound.props.onOpenCard('card-9');
+    expect(navigation.navigate).toHaveBeenCalledWith('CardDetail', { cardId: 'card-9' });
+    expect(tabs.setOptions.mock.calls[0][0].tabBarStyle).toMatchObject({ display: 'none' });
+  });
+
+  test('뒤로 가기는 창 안에서 열린 것을 닫았으면 화면을 지우지 않고, 닫을 것이 없으면 화면을 닫는다', () => {
+    const { beforeRemove } = renderWindow();
+    const consumed = { preventDefault: jest.fn() };
+    mockBound.back = jest.fn(() => true);
+    beforeRemove(consumed);
+    expect(consumed.preventDefault).toHaveBeenCalledTimes(1);
+    const idle = { preventDefault: jest.fn() };
+    mockBound.back = jest.fn(() => false);
+    beforeRemove(idle);
+    expect(idle.preventDefault).not.toHaveBeenCalled();
+  });
+
+  test('닫기 단추는 열린 것이 남아 있어도 한 번에 화면을 닫는다', () => {
+    const { navigation, beforeRemove } = renderWindow();
+    mockBound.back = jest.fn(() => true);
+    mockBound.props.onClose();
+    expect(navigation.goBack).toHaveBeenCalledTimes(1);
+    const event = { preventDefault: jest.fn() };
+    beforeRemove(event);
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
 });

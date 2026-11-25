@@ -17,6 +17,7 @@ import { usePersistentCardCompletion } from '../components/persistent/usePersist
 import { minimumReportBubbleHeight } from '../components/persistent/persistentReportStyles';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { PersistentSessionCardOverlay } from '../components/persistent/PersistentSessionCardOverlay';
+import { PasReportWindowOverlay, type PasReportWindowOverlayHandle } from '../components/pasReport/PasReportWindowOverlay';
 import { PersistentReportCardExpansion } from '../components/persistent/PersistentReportCardExpansion';
 import { PersistentSessionTaskList } from '../components/persistent/PersistentSessionTaskList';
 import { SwayCharacter } from '../components/persistent/SwayCharacter';
@@ -51,6 +52,8 @@ export interface PersistentSessionScreenProps {
   active?: boolean;
   chatActive?: boolean;
   onOpenPhoneCard?(cardId: string): void;
+  /** 카드 #1871: 폰은 PAS 화면 스택의 PasReportWindow 화면으로 간다. */
+  onOpenPhoneReportWindow?(startCardId: string | null): void;
   onHome(): void;
 }
 
@@ -63,7 +66,7 @@ export function PersistentSessionScreen(props: PersistentSessionScreenProps) {
     <PersistentSessionContents {...props} inputComposerRef={inputComposerRef} />
   </ChatUiControllerProvider>;
 }
-function PersistentSessionContents({ active = true, chatActive = active, onOpenPhoneCard, onHome, inputComposerRef }: PersistentSessionScreenProps & { inputComposerRef: React.RefObject<ChatInputComposerHandle | null> }) {
+function PersistentSessionContents({ active = true, chatActive = active, onOpenPhoneCard, onOpenPhoneReportWindow, onHome, inputComposerRef }: PersistentSessionScreenProps & { inputComposerRef: React.RefObject<ChatInputComposerHandle | null> }) {
   const t = useTokens();
   const device = useDeviceType();
   const phone = device === 'phone';
@@ -158,6 +161,13 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       expandedKey: phone ? null : expandedReportKey });
   }, [continuity, pasKey, settingsOpen, phone, expandedReportKey]);
   const [reportSeatHeight, setReportSeatHeight] = useState(0);
+  // 카드 #1871: 태블릿의 보고 창은 이 화면의 겹침이다. 카드 패널은 그 위에 겹쳐 열린다.
+  const [reportWindow, setReportWindow] = useState<{ startCardId: string | null } | null>(null);
+  const reportWindowRef = React.useRef<PasReportWindowOverlayHandle>(null);
+  const openReportWindow = React.useCallback((entry: PersistentReportEntry) => {
+    if (phone && onOpenPhoneReportWindow) onOpenPhoneReportWindow(entry.card_id ?? null);
+    else setReportWindow({ startCardId: entry.card_id ?? null });
+  }, [onOpenPhoneReportWindow, phone]);
   const openContentLink = useOpenContentLink();
   const openCard = React.useCallback((cardId: string) => {
     if (phone && onOpenPhoneCard) onOpenPhoneCard(cardId);
@@ -305,7 +315,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       t, api, portraitUri: questionPortrait.uri, questionActions, reportSend,
       answerHold: { begin: report.beginAnsweredHold, confirm: report.holdAnswered, release: report.releaseAnsweredHold },
     })}
-    onOpenCardDetails={phone || reportsScene ? openReportCardDirectly : undefined}
+    onOpenCardDetails={phone || reportsScene ? openReportCardDirectly : undefined} onOpenReportWindow={openReportWindow}
     onFocusComposer={() => inputComposerRef.current?.focusAccessibility()} /> : null;
   const back = React.useCallback(() => {
     const state = host.store.getState();
@@ -313,12 +323,16 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       state.closeCard();
       return true;
     }
+    if (reportWindow) {
+      if (!reportWindowRef.current?.back()) setReportWindow(null);
+      return true;
+    }
     if (state.scene === 'cards' || (reportsListMode && state.scene === 'reports')) {
       state.swipe('right');
       return true;
     }
     return false;
-  }, [host.store, reportsListMode]);
+  }, [host.store, reportsListMode, reportWindow]);
   React.useEffect(() => {
     if (!active) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', back);
@@ -484,6 +498,9 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         paddingTop: phone ? t.uiSpacing.md : 0, paddingBottom: phone || duoTopBand ? 0 : bottomSafeAreaInset }}>
         {taskList}
       </View> : null}
+      {!phone ? <PasReportWindowOverlay ref={reportWindowRef} open={reportWindow} bottomSafeAreaInset={bottomSafeAreaInset}
+        sheetTop={duoTopBand ? headerHeight : 0} railBand={duoTopBand} onClose={() => setReportWindow(null)}
+        onOpenCard={cardId => host.store.getState().openCardOverlay(cardId)} /> : null}
       <PersistentSessionCardOverlay api={api} cardId={selectedCardId}
         sessionId={session?.session_id} bottomSafeAreaInset={bottomSafeAreaInset}
         sheetTop={duoTopBand ? headerHeight : 0} railBand={duoTopBand} onClose={() => host.store.getState().closeCard()} />

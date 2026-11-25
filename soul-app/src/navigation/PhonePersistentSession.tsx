@@ -11,7 +11,7 @@ import { usePhoneConversationKeyboard } from './usePhoneConversationKeyboard';
 export function PhonePersistentSession({ navigation }: { navigation: any }) {
   const host = usePersistentSessionHost();
   const focused = useIsFocused();
-  const [cardDetailOpen, setCardDetailOpen] = useState(() => navigation.getState?.().routes?.some((route: { name: string }) => route.name === 'CardDetail') ?? false);
+  const [cardDetailOpen, setCardDetailOpen] = useState(() => navigation.getState?.().routes?.some((route: { name: string }) => route.name === 'CardDetail' || route.name === 'PasReportWindow') ?? false);
   usePhoneConversationKeyboard(navigation);
   const home = useCallback(() => {
     host.store.getState().leave();
@@ -30,8 +30,12 @@ export function PhonePersistentSession({ navigation }: { navigation: any }) {
     setCardDetailOpen(true);
     navigation.navigate('CardDetail', { cardId });
   }, [navigation]);
+  const openReportWindow = useCallback((startCardId: string | null) => {
+    setCardDetailOpen(true);
+    navigation.navigate('PasReportWindow', { startCardId });
+  }, [navigation]);
   return <PersistentSessionScreen active={focused} chatActive={focused || cardDetailOpen}
-    onOpenPhoneCard={openCard} onHome={home} />;
+    onOpenPhoneCard={openCard} onOpenPhoneReportWindow={openReportWindow} onHome={home} />;
 }
 
 export function PersistentPhoneTabIcon({ color, size, active }: { color: ColorValue; size: number; active: boolean }) {

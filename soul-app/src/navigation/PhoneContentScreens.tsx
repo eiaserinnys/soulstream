@@ -1,9 +1,11 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { createApiClient } from '../api/client';
 import { CardDetailContent } from '../components/planner/CardDetailSheet';
 import { MarkdownDocumentContent } from '../components/planner/MarkdownDocumentContent';
+import { PasReportWindowBound } from '../components/pasReport/PasReportWindowBound';
+import type { PasReportWindowHandle } from '../components/pasReport/PasReportWindow';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTokens } from '../theme';
 import { openPhoneChat } from './phoneSessionNavigation';
@@ -12,6 +14,7 @@ import { usePhoneRailMode } from './tabContract';
 import { useDuoSideBand } from './duoSideBand';
 
 export type MarkdownDocumentRouteParams = { documentId: string };
+export type PasReportWindowRouteParams = { startCardId: string | null };
 
 function PhoneDetailScreenFrame({ navigation, children }: { navigation: any; children: React.ReactNode }) {
   const t = useTokens();
@@ -25,7 +28,7 @@ function PhoneDetailScreenFrame({ navigation, children }: { navigation: any; chi
       const state = navigation.getState?.();
       const index = state?.index ?? ((state?.routes?.length ?? 0) - 1);
       const topRoute = state?.routes?.[index]?.name;
-      if (topRoute === 'CardDetail' || topRoute === 'MarkdownDocument') return;
+      if (topRoute === 'CardDetail' || topRoute === 'MarkdownDocument' || topRoute === 'PasReportWindow') return;
       tabs?.setOptions({ tabBarStyle: getDefaultTabBarStyle(t.colors) });
     };
   }, [navigation, t.colors, duo]));
@@ -55,5 +58,24 @@ export function PhoneMarkdownDocument({ route, navigation }: {
   return <PhoneDetailScreenFrame navigation={navigation}>
     <MarkdownDocumentContent visible={visible} api={api} documentId={route.params.documentId}
       onClose={() => navigation.goBack()} />
+  </PhoneDetailScreenFrame>;
+}
+
+/** PAS 결재형 보고 창(#1871). PAS 화면 스택 위에 push되고, 카드 패널 열기는 기존 CardDetail 화면으로 간다. */
+export function PhonePasReportWindow({ route, navigation }: {
+  route: { params: PasReportWindowRouteParams };
+  navigation: any;
+}) {
+  const windowRef = useRef<PasReportWindowHandle>(null);
+  const closing = useRef(false);
+  // 뒤로 가기(안드로이드 하드웨어 뒤로, iOS 가장자리 끌기)는 열린 것 하나씩(서랍, 답변 미루기 펼침, 입력창, 보고 창 순) 닫는다.
+  useFocusEffect(useCallback(() => navigation.addListener('beforeRemove', (event: { preventDefault(): void }) => {
+    if (closing.current) return;
+    if (windowRef.current?.back()) event.preventDefault();
+  }), [navigation]));
+  return <PhoneDetailScreenFrame navigation={navigation}>
+    <PasReportWindowBound ref={windowRef} startCardId={route.params.startCardId}
+      onClose={() => { closing.current = true; navigation.goBack(); }}
+      onOpenCard={cardId => navigation.navigate('CardDetail', { cardId })} />
   </PhoneDetailScreenFrame>;
 }

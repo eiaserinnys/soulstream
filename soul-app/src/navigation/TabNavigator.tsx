@@ -47,7 +47,7 @@ import { createSurfaceRoles } from '../theme/surfaceRoles';
 import { openPhoneChat, openPhoneSearchSession } from './phoneSessionNavigation';
 import { useSearchStore } from '../store/searchStore';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
-import { PhoneCardDetail, PhoneMarkdownDocument, type MarkdownDocumentRouteParams } from './PhoneContentScreens';
+import { PhoneCardDetail, PhoneMarkdownDocument, PhonePasReportWindow, type MarkdownDocumentRouteParams, type PasReportWindowRouteParams } from './PhoneContentScreens';
 import { getDefaultTabBarStyle } from './tabBarStyle';
 import { PhonePersistentSession, PersistentPhoneTabIcon } from './PhonePersistentSession';
 import { usePersistentSessionHost, usePersistentSessionScene } from './PersistentSessionContext';
@@ -193,7 +193,7 @@ function PhoneRailTabBar({ state, descriptors, navigation, insets, duoSideBand }
   );
   const showHeaderCap = !duoSideBand && !rootWithoutHeader
     && (active === 'DailyTab' || active === 'FolderTab' || active === 'FeedTab')
-    && nestedRouteName !== 'CardDetail' && nestedRouteName !== 'MarkdownDocument';
+    && nestedRouteName !== 'CardDetail' && nestedRouteName !== 'MarkdownDocument' && nestedRouteName !== 'PasReportWindow';
   const compact = duoSideBand && windowWidth > windowHeight;
   // 하위 화면이 탭바를 숨기면 레일 열 폭은 유지하고 캡슐만 감춘다.
   const hidden = !duoSideBand && StyleSheet.flatten(
@@ -309,6 +309,7 @@ export type PersistentStackParamList = {
   PersistentSession: undefined;
   CardDetail: { cardId: string };
   MarkdownDocument: MarkdownDocumentRouteParams;
+  PasReportWindow: PasReportWindowRouteParams;
 };
 export type SettingsStackParamList = {
   Settings: undefined;
@@ -598,6 +599,7 @@ function PersistentNavigator() {
     <PersistentStack.Screen name="PersistentSession" component={PhonePersistentSession} />
     <PersistentStack.Screen name="CardDetail" component={PhoneCardDetail} />
     <PersistentStack.Screen name="MarkdownDocument" component={PhoneMarkdownDocument} />
+    <PersistentStack.Screen name="PasReportWindow" component={PhonePasReportWindow} />
   </PersistentStack.Navigator>;
 }
 

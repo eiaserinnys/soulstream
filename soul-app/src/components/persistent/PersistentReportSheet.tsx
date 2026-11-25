@@ -30,7 +30,9 @@ export function PersistentReportUndoRow({ undo, styles }: {
 export function PersistentReportSheet({ entry, index, count, current, compact, showNav, width, styles,
   titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, surfaceHeight, busy = false, disabled = false,
   canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onReady, expandedContent, cardStatus, onToggleCard,
-  acknowledgeLabel = '확인했어', holdAction, undo, cardSurface = false, hidePageIndicator = false, question }: {
+  acknowledgeLabel = '확인했어', holdAction, undo, cardSurface = false, hidePageIndicator = false, question, onOpenReportWindow }: {
+  /** 카드 #1871: 머리줄(report-window-toggle 옆)의 「보고 창 열기」. 카드 장에만 준다. */
+  onOpenReportWindow?(): void;
   /** 카드 #1197: 새 질문 장은 본문과 동작 줄을 질문 부품이 그린다. */
   question?: { body: React.ReactNode; actions: React.ReactNode; meta?: React.ReactNode } | null;
   expandedContent?: React.ReactNode; cardStatus?: React.ReactNode; onToggleCard?(): void;
@@ -69,8 +71,9 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const received = <Text testID="report-received" style={styles.todo}><Text style={styles.receivedLabel}>받은 답  </Text>{entry.answer}</Text>;
   const readingPath = !hidePageIndicator && (surfaceHeight !== undefined || bubble || !!expandedContent);
   const expanded = Boolean(expandedContent);
-  const heading = <View style={onToggleCard ? styles.headingRow : undefined}>
-    <View testID="report-head" style={[styles.heading, onToggleCard ? styles.headingContent : undefined]}>
+  const headingRowed = Boolean(onToggleCard || onOpenReportWindow);
+  const heading = <View style={headingRowed ? styles.headingRow : undefined}>
+    <View testID="report-head" style={[styles.heading, headingRowed ? styles.headingContent : undefined]}>
     <Text ref={titleRef} testID="report-title" accessible accessibilityRole="header"
       style={[styles.title, Platform.OS === 'web' ? { outlineStyle: 'solid', outlineWidth: 0 } : undefined, onToggleCard ? { paddingVertical: Math.max(0,
         (t.foundation.iconFrame.compact - t.foundation.typography.cardTitle.lineHeight) / 2) } : undefined]}
@@ -91,12 +94,16 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
     {cardStatus}
     {question?.meta}
     </View>
-    {onToggleCard ? <View style={styles.toggleSeat}>
-      <GlassButton testID="report-window-toggle" iconOnly size="compact" borderRadius={t.foundation.radius.capsule}
+    {headingRowed ? <View style={[styles.toggleSeat, onOpenReportWindow && onToggleCard ? { flexDirection: 'row', alignItems: 'center' } : null]}>
+      {onOpenReportWindow ? <GlassButton testID="report-window-open" iconOnly size="compact" borderRadius={t.foundation.radius.capsule}
+        accessibilityLabel="보고 창 열기" onPress={onOpenReportWindow}>
+        <Ionicons name="reader-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
+      </GlassButton> : null}
+      {onToggleCard ? <GlassButton testID="report-window-toggle" iconOnly size="compact" borderRadius={t.foundation.radius.capsule}
         accessibilityLabel={expanded ? '축소' : '확대'} accessibilityState={{ expanded }}
         onPress={onToggleCard}>
         <Ionicons name={expanded ? 'contract-outline' : 'expand-outline'} size={t.iconSize.standard} color={t.colors.textPrimary} />
-      </GlassButton>
+      </GlassButton> : null}
     </View> : null}
   </View>;
   const hasAction = entry.action !== '';

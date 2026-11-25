@@ -73,7 +73,8 @@ test('vertical list does not scroll on layout or index changes without a reveal 
 });
 
 function pager(entries = reportReviewEntries, onDeckTouch?: (active: boolean) => void, completion?: any,
-  options: { bubble?: boolean; maxHeight?: number; verticalList?: boolean; onReady?: (ready: boolean) => void } = {}) {
+  options: { bubble?: boolean; maxHeight?: number; verticalList?: boolean; onReady?: (ready: boolean) => void;
+    onOpenReportWindow?: (entry: PersistentReportEntry) => void; onOpenCardDetails?: (entry: PersistentReportEntry) => void } = {}) {
   const onSelect = jest.fn(), onDismiss = jest.fn().mockResolvedValue(undefined), onAppend = jest.fn((_text: string, _reply?: ReportReplyDraft) => ({ ok: true as const }));
   const api = { listCards: jest.fn().mockResolvedValue({ cards: [{ id: 'public-card', number: 270 }] }) } as any;
   const send = { busy: false, close: jest.fn(() => true), canCancel: () => false, cancelSent: () => false,
@@ -84,7 +85,8 @@ function pager(entries = reportReviewEntries, onDeckTouch?: (active: boolean) =>
       <PersistentReportPager entries={entries} index={index} api={api}
         onSelect={i => { onSelect(i); setIndex(i); }} onDismiss={onDismiss} onFocusComposer={jest.fn()}
         onDeckTouch={onDeckTouch} completion={completion} send={send} bubble={options.bubble} maxHeight={options.maxHeight}
-        verticalList={options.verticalList} onReady={options.onReady} />
+        verticalList={options.verticalList} onReady={options.onReady} onOpenReportWindow={options.onOpenReportWindow}
+        onOpenCardDetails={options.onOpenCardDetails} />
     </ChatUiControllerProvider>;
   }
   const screen = render(<Harness />);
@@ -1164,4 +1166,41 @@ test('undo of a completed card keeps the projected order for selecting the resto
   act(() => hook.result.current.report.select(1));
   expect(hook.result.current.report.index).toBe(1);
   expect(hook.result.current.report.entries[hook.result.current.report.index].key).toBe('card_533');
+});
+
+describe('카드 #1871 보고 창 열기', () => {
+  const cardEntry: PersistentReportEntry = { ...reportReviewEntries[0], key: 'card_531', card_numbers: [531], card_id: 'card-531' };
+  const ownEntry: PersistentReportEntry = { ...reportReviewEntries[1], key: 'pas_own', card_numbers: [] };
+
+  test.each([['가로 넘김 판', false], ['세로 목록 판', true]] as const)('%s의 카드 장 머리줄에서 report-window-toggle 옆에 보고 창 열기를 두고 누르면 그 장으로 연다', (_name, verticalList) => {
+    const onOpenReportWindow = jest.fn(), onOpenCardDetails = jest.fn();
+    const screen = pager([cardEntry], undefined, undefined, { verticalList, onOpenReportWindow, onOpenCardDetails });
+    const sheet = within(screen.getByTestId('report-sheet-card_531'));
+    const open = sheet.getByTestId('report-window-open');
+    expect(open.props.accessibilityLabel).toBe('보고 창 열기');
+    // 같은 머리줄 오른쪽 자리에 확대 단추와 나란히 선다.
+    expect(sheet.getByTestId('report-window-toggle')).toBeTruthy();
+    let seat = open.parent;
+    while (seat && !within(seat).queryByTestId('report-window-toggle')) seat = seat.parent;
+    // 두 단추를 함께 담는 가장 가까운 칸에는 제목 줄이 없고, 그 칸 안에서 보고 창 열기가 확대 단추 앞에 선다.
+    expect(seat && within(seat).queryByTestId('report-head') === null).toBe(true);
+    const order = seat ? within(seat).queryAllByTestId(/^report-window-(open|toggle)$/).map(node => node.props.testID) : [];
+    expect(order).toEqual(['report-window-open', 'report-window-toggle']);
+    fireEvent.press(open);
+    expect(onOpenReportWindow).toHaveBeenCalledTimes(1);
+    expect(onOpenReportWindow).toHaveBeenCalledWith(expect.objectContaining({ key: 'card_531' }));
+    expect(onOpenCardDetails).not.toHaveBeenCalled();
+  });
+
+  test.each([['가로 넘김 판', false], ['세로 목록 판', true]] as const)('%s에서 카드가 없는 PAS 자체 장에는 보고 창 열기가 없고 머리줄 모양은 그대로다', (_name, verticalList) => {
+    const screen = pager([ownEntry], undefined, undefined, { verticalList, onOpenReportWindow: jest.fn() });
+    expect(screen.queryByTestId('report-window-open')).toBeNull();
+    expect(screen.queryByTestId('report-window-toggle')).toBeNull();
+  });
+
+  test('열기 핸들러를 주지 않으면 지금 판의 머리줄과 같다', () => {
+    const screen = pager([cardEntry], undefined, undefined, { onOpenCardDetails: jest.fn() });
+    expect(screen.queryByTestId('report-window-open')).toBeNull();
+    expect(screen.getByTestId('report-window-toggle')).toBeTruthy();
+  });
 });
