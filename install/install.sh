@@ -694,7 +694,7 @@ as_soul() { sudo -H -u soulstream env HOME=/home/soulstream PATH=/home/soulstrea
 # Only a codex this run installs goes into the receipt; one already on the server stays out of it.
 install_codex_global() {
   if ! as_soul bash -c 'command -v codex >/dev/null'; then
-    npm install -g @openai/codex
+    npm install -g @openai/codex || return 1
     receipt_update '.codex_npm_global_installed = true' || return 1
   fi
 }

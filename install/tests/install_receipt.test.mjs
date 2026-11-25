@@ -25,16 +25,18 @@ curl() {
   local url= out=
   while (($#)); do case "$1" in -o) out=$2; shift ;; http*) url=$1 ;; esac; shift; done
   printf 'curl %s\\n' "$url" >> "$FAKE_ARGV_LOG"
+  [[ -z "\${FAKE_CURL_FAIL:-}" ]] || return 22
   case "$url" in
     */SHASUMS256.txt) printf 'abc  node-%s-linux-x64.tar.gz\\n' "$NODE_VERSION" > "$out" ;;
     *) : > "$out" ;;
   esac
 }
-sha256sum() { cat > /dev/null; }
+sha256sum() { cat > /dev/null; [[ -z "\${FAKE_SHA_FAIL:-}" ]]; }
 tar() {
   local dest= previous=
   for arg in "$@"; do [[ "$previous" == -C ]] && dest=$arg; previous=$arg; done
   printf 'tar %s\\n' "$dest" >> "$FAKE_ARGV_LOG"
+  [[ -z "\${FAKE_TAR_FAIL:-}" ]] || return 2
   mkdir -p "$dest/bin"
   printf '#!/usr/bin/env bash\\nprintf "%%s\\\\n" "%s"\\n' "$NODE_VERSION" > "$dest/bin/node"
   chmod 755 "$dest/bin/node"
@@ -44,7 +46,7 @@ corepack() {
   local name
   for name in pnpm pnpx yarn yarnpkg; do ln -sfn "../lib/node_modules/corepack/dist/$name.js" "$USR_LOCAL/bin/$name"; done
 }
-npm() { printf 'npm %s\\n' "$*" >> "$FAKE_ARGV_LOG"; }
+npm() { printf 'npm %s\\n' "$*" >> "$FAKE_ARGV_LOG"; [[ -z "\${FAKE_NPM_FAIL:-}" ]]; }
 # The only as_soul call install_codex_global makes is the probe; it finds codex when $CODEX_PRESENT exists.
 as_soul() { [[ -e "$CODEX_PRESENT" ]]; }
 `;
@@ -145,6 +147,29 @@ test('shims that were already there are not recorded, and a shim recorded once s
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(t.read().corepack_shims_created, ['pnpx', 'yarnpkg']);
   } finally { t.sandbox.cleanup(); }
+});
+
+test('a failed npm install -g leaves the codex field false and stops, even when called under || return 1', async () => {
+  const t = setup();
+  try {
+    // install_clis calls the function as `install_codex_global || return 1`, which turns errexit off inside it.
+    const result = await t.run('install_node; run() { install_codex_global || return 1; }; run', { FAKE_NPM_FAIL: '1' });
+    assert.notEqual(result.status, 0);
+    assert.ok(t.sandbox.called('npm install -g @openai/codex'));
+    assert.equal(t.read().codex_npm_global_installed, false);
+  } finally { t.sandbox.cleanup(); }
+});
+
+test('a failed download, checksum or unpack stops install_node before Node.js is recorded', async () => {
+  for (const failure of ['FAKE_CURL_FAIL', 'FAKE_SHA_FAIL', 'FAKE_TAR_FAIL']) {
+    const t = setup();
+    try {
+      const result = await t.run('install_node', { [failure]: '1' });
+      assert.notEqual(result.status, 0, failure);
+      assert.deepEqual(t.read(), { schema: 1, node_tarball_installed: false, node_version: null, corepack_shims_created: [], codex_npm_global_installed: false }, failure);
+      assert.equal(t.sandbox.called('corepack '), false, failure);
+    } finally { t.sandbox.cleanup(); }
+  }
 });
 
 test('a receipt that cannot be written stops install_node before it touches /usr/local', async () => {

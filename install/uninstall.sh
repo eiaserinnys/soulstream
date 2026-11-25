@@ -66,7 +66,8 @@ pg() { sudo -u postgres psql -X -Atq -v ON_ERROR_STOP=1 "$@"; }
 serve_query() {
   local out
   out=$(tailscale serve status --json 2>/dev/null) || return 1
-  jq -e 'type == "object"' <<< "$out" >/dev/null 2>&1 || return 1
+  # tailscale prints null instead of {} when nothing is served (never used, or after tailscale logout).
+  jq -e 'type == "object" or type == "null"' <<< "$out" >/dev/null 2>&1 || return 1
   SERVE_JSON=$out
 }
 # serve_matches <json> <port> <proxy>: the hosts whose root route on that port proxies to <proxy>.

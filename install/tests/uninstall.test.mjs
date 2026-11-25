@@ -275,6 +275,24 @@ test('Tailscale Serve: only the matching roots go, other paths and other proxies
   });
 });
 
+test('Tailscale Serve: a status of null (nothing served) is an empty configuration, not an unreadable one', async () => {
+  // Nothing installed and nothing served: no prompt, no failure.
+  const empty = createSandbox();
+  try {
+    const result = await runBash(empty, 'source "$UNINSTALL_SH"; parse_args "$@"; run_uninstall "$UN_HOME" "$UN_RECEIPT" "$UN_SYSTEMD" "$UN_USRLOCAL" "$UN_LOG"', [], { extra: { FAKE_SERVE_STATUS_NULL: '1' } });
+    assert.deepEqual([result.status, result.stdout, result.stderr], [0, 'Nothing to uninstall.\n', '']);
+    assert.ok(empty.called('tailscale serve status --json'));
+  } finally { empty.cleanup(); }
+  // Installed, but Serve was never configured: no off command, no Serve failure, everything else goes.
+  await withServer({}, async (s) => {
+    const result = await runUninstall(s, ['--yes'], { extra: { FAKE_SERVE_STATUS_NULL: '1' } });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.doesNotMatch(result.stdout, /Tailscale Serve/);
+    assert.equal(s.called('tailscale serve --https'), false);
+    for (const path of productPaths(s)) assert.equal(present(path), false, path);
+  });
+});
+
 test('Tailscale Serve: an unreadable status, a failed off command or a route still there is reported and the receipt stays', async () => {
   // Status call 1 is the scan, 2 is the step's first read, 3 is the check after the offs.
   const cases = [
