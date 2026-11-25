@@ -5,7 +5,7 @@ import {
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 
-import { singleLinePreview } from "./session-preview";
+import { singleLinePreview, visibleLastMessagePreview } from "./session-preview";
 import {
   sessionPresentationStatus,
 } from "./session-node-connectivity";
@@ -51,7 +51,7 @@ export function sessionPanelGroups(
 
 export function sessionPanelTitle(session: SessionSummary): string {
   return singleLinePreview(session.displayName, SESSION_PANEL_TITLE_LENGTH)
-    ?? singleLinePreview(session.lastMessage?.preview, SESSION_PANEL_TITLE_LENGTH)
+    ?? singleLinePreview(visibleLastMessagePreview(session), SESSION_PANEL_TITLE_LENGTH)
     ?? "제목 없는 세션";
 }
 

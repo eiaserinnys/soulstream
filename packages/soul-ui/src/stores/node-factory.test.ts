@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { EXECUTE_INSTRUCTION_PROMPT, PERSISTENT_INITIAL_INSTRUCTION } from "@soulstream/wire-schema/conversation-visibility";
 import { createNodeFromEvent, applyFinalAssistantMessageToLiveText, applyUpdate } from "./node-factory";
 import { createProcessingContext, makeNode, registerNode, type ProcessingContext } from "./processing-context";
 import type {
@@ -265,6 +266,28 @@ describe("createNodeFromEvent", () => {
       expect(make({ caller_info: { source: "system" } })).toMatchObject({ cardNotice: true, cacheKeepalive: false });
       expect(make({ payload: { text, callerInfo: { source: "system" } } })).toMatchObject({ cardNotice: true });
       expect(make({ caller_info: { source: "browser" } })).toMatchObject({ cardNotice: false });
+    });
+
+    describe("initial instruction mark", () => {
+      const legacy = "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.";
+      const make = (type: "user_message" | "intervention_sent", text: string, fields: object = {}) =>
+        createNodeFromEvent({ type, text, ...fields } as unknown as SoulSSEEvent, 204);
+
+      it.each(["user_message", "intervention_sent"] as const)("marks the current and legacy first instruction in %s", (type) => {
+        expect(make(type, `${EXECUTE_INSTRUCTION_PROMPT}\n${PERSISTENT_INITIAL_INSTRUCTION}`)).toMatchObject({ initialInstruction: true });
+        expect(make(type, `${EXECUTE_INSTRUCTION_PROMPT}\n${legacy}`)).toMatchObject({ initialInstruction: true });
+        expect(make(type, "", { payload: { text: `${EXECUTE_INSTRUCTION_PROMPT}\n${legacy}` } })).toMatchObject({ initialInstruction: true });
+      });
+
+      it.each([
+        ["human text", "안녕하세요"],
+        ["ordinary session instruction", `${EXECUTE_INSTRUCTION_PROMPT}\n결과를 표로 정리해줘.`],
+        ["same lead only", EXECUTE_INSTRUCTION_PROMPT],
+        ["instruction without the lead", PERSISTENT_INITIAL_INSTRUCTION],
+      ])("does not mark %s", (_name, text) => {
+        expect(make("user_message", text)).toMatchObject({ initialInstruction: false });
+        expect(make("intervention_sent", text)).toMatchObject({ initialInstruction: false });
+      });
     });
 
     it.each([

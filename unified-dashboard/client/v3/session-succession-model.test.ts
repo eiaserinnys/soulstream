@@ -7,6 +7,7 @@ import {
   resolveRunAssignmentDefaults,
 } from "./session-succession-model";
 import type { RunTreeNode } from "./folder-workspace-run-model";
+import { EXECUTE_INSTRUCTION_PROMPT, PERSISTENT_INITIAL_INSTRUCTION } from "../../../packages/wire-schema/src/conversation_visibility";
 
 const pageAnchor = { pageId: "task-page", blockId: "anchor-block", expectedVersion: 8 };
 
@@ -121,6 +122,15 @@ describe("succession predecessor options", () => {
     ]);
     expect(options.map((option) => option.runNumber)).toEqual([3, 2, 1]);
     expect(options.map((option) => option.label).join(" ")).not.toContain("550e8400");
+  });
+
+  it("skips a stored [SILENT] or first-instruction preview in the label", () => {
+    const stored = (preview: string) => ({ type: "assistant_message" as const, preview, timestamp: "2026-07-15T00:00:00Z" });
+    const options = buildSuccessionSessionOptions([
+      runNode({ agentSessionId: "silent-session", lastMessage: stored("[SILENT]") }, 2),
+      runNode({ agentSessionId: "first-session", lastMessage: stored(`${EXECUTE_INSTRUCTION_PROMPT}\n${PERSISTENT_INITIAL_INSTRUCTION}`) }, 1),
+    ]);
+    expect(options.map((option) => option.label)).toEqual(["제목 없는 세션", "제목 없는 세션"]);
   });
 
   it("clamps fallback previews by Unicode code point and excludes unresolved rows", () => {

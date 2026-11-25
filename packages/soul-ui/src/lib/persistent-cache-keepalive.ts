@@ -10,8 +10,12 @@ export function isCacheKeepaliveInput(value: unknown): boolean {
     || payload?.purpose === CACHE_KEEPALIVE_PURPOSE;
 }
 
-/** Hides marked inputs and their output while preserving dividers and errors. */
-export function projectHiddenInputTurns<T extends Pick<ChatMessage, "treeNodeType" | "cacheKeepalive" | "cardNotice">
+/**
+ * Hides marked inputs and their output while preserving dividers and errors.
+ * An initial-instruction input only loses its own bubble: it counts as a visible input
+ * for turn bookkeeping, so the greeting that follows and the completion caption stay.
+ */
+export function projectHiddenInputTurns<T extends Pick<ChatMessage, "treeNodeType" | "cacheKeepalive" | "cardNotice" | "initialInstruction">
   & Partial<Pick<ChatMessage, "inputId" | "preparedInputId">>>(
   messages: T[],
 ): { messages: T[]; suppressStreaming: boolean } {
@@ -28,7 +32,7 @@ export function projectHiddenInputTurns<T extends Pick<ChatMessage, "treeNodeTyp
         activeHiddenInputIds.clear();
         hiding = false;
         hasVisibleInput = true;
-        return true;
+        return message.initialInstruction !== true;
       }
       if (message.cacheKeepalive || !hasVisibleInput) hiding = true;
       if (hiding && message.inputId) {

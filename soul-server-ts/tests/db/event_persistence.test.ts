@@ -363,6 +363,42 @@ describe("EventPersistence durable ingress", () => {
     });
   });
 
+  describe("last_message projection skips text hidden from the conversation", () => {
+    const effectOf = (event: object) =>
+      buildEventOutboxAppendInput("sess-1", { timestamp: 1, ...event } as unknown as SSEEventPayload).appendInput.session_effect;
+    const firstInstruction =
+      "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.\n새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.";
+
+    it.each([
+      ["a [SILENT] assistant_message", { type: "assistant_message", content: "  [SILENT]\n" }],
+      ["a final [SILENT] assistant transcript", { type: "realtime_transcript", role: "assistant", final: true, text: "[SILENT]" }],
+      ["a cache keepalive purpose input", { type: "user_message", text: "아무 글", purpose: "cache_keepalive" }],
+      ["a legacy cache keepalive text", { type: "user_message", text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 '[SILENT]'만 답하십시오." }],
+      ["a keepalive intervention", { type: "intervention_sent", text: "ok", purpose: "cache_keepalive" }],
+      ["a card notice input", { type: "user_message", text: "[카드 검수 대기] 맡긴 카드 #1 확인", caller_info: { source: "system" } }],
+      ["a first instruction user_message", { type: "user_message", text: firstInstruction }],
+      ["a first instruction intervention", { type: "intervention_sent", text: ` ${firstInstruction}\n` }],
+    ])("returns no effect for %s", (_label, event) => {
+      expect(effectOf(event)).toBeNull();
+    });
+
+    it("still projects ordinary human input and ordinary answers", () => {
+      expect(effectOf({ type: "user_message", text: "결과를 알려줘", caller_info: { source: "browser" } })).toMatchObject({
+        kind: "last_message",
+        last_message: { type: "user_message", preview: "결과를 알려줘" },
+      });
+      expect(effectOf({ type: "user_message", text: "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.\n결과를 표로 정리해줘." })).toMatchObject({
+        last_message: { type: "user_message" },
+      });
+      expect(effectOf({ type: "assistant_message", content: "[SILENT] 라고 쓰면 조용해집니다" })).toMatchObject({
+        last_message: { type: "assistant_message", preview: "[SILENT] 라고 쓰면 조용해집니다" },
+      });
+      expect(effectOf({ type: "assistant_message", content: "안녕하세요" })).toMatchObject({
+        last_message: { type: "assistant_message", preview: "안녕하세요" },
+      });
+    });
+  });
+
   it("maps runner snapshot correlation to semantic dedupe without leaking it into payload", async () => {
     const ingress = makeMockIngress();
     const ep = new EventPersistence(
@@ -1146,6 +1182,28 @@ describe("EventPersistence.handleSideEffects", () => {
       task,
     );
     expect(task.lastAssistantText).toBe("Hello.");
+  });
+
+  it("[SILENT] 답은 앞 턴의 답을 지우고 빈 글로 둔다", async () => {
+    const ep = makeEventPersistence();
+    const task = makeTask({ lastAssistantText: "previous turn" });
+    await ep.handleSideEffects(
+      "sess-1",
+      { type: "assistant_message", content: " [SILENT]\n", timestamp: 1 } as unknown as SSEEventPayload,
+      task,
+    );
+    expect(task.lastAssistantText).toBe("");
+  });
+
+  it("[SILENT]로 시작하지만 더 긴 답은 그대로 둔다", async () => {
+    const ep = makeEventPersistence();
+    const task = makeTask();
+    await ep.handleSideEffects(
+      "sess-1",
+      { type: "assistant_message", content: "[SILENT] 이 아닌 보통 답", timestamp: 1 } as unknown as SSEEventPayload,
+      task,
+    );
+    expect(task.lastAssistantText).toBe("[SILENT] 이 아닌 보통 답");
   });
 
   it("assistant_message is captured in runtime state without a worker DB mutation", async () => {

@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
+import { EXECUTE_INSTRUCTION_PROMPT, PERSISTENT_INITIAL_INSTRUCTION } from "../../../packages/wire-schema/src/conversation_visibility";
 import { RichSessionRow } from "./RichSessionRow";
 
 describe("RichSessionRow model label", () => {
@@ -27,6 +28,31 @@ describe("RichSessionRow model label", () => {
       .map((span) => span.textContent)).toEqual(["키키", "eias-linegames"]);
   });
 });
+
+describe("RichSessionRow preview", () => {
+  const first = `${EXECUTE_INSTRUCTION_PROMPT}\n${PERSISTENT_INITIAL_INSTRUCTION}`;
+  const stored = (preview: string) => ({ type: "assistant_message" as const, preview, timestamp: "2026-11-25T00:00:00Z" });
+
+  it("shows neither a stored [SILENT] nor a first-instruction prompt", () => {
+    const text = renderPreview(session({ lastMessage: stored("[SILENT]"), prompt: first }));
+    expect(text).toBe("아직 표시할 메시지가 없습니다.");
+    expect(text).not.toContain("[SILENT]");
+  });
+
+  it("falls to an ordinary prompt when the stored preview is [SILENT]", () => {
+    expect(renderPreview(session({ lastMessage: stored("[SILENT]"), prompt: "결과를 표로 정리해줘." }))).toBe("결과를 표로 정리해줘.");
+  });
+
+  it("still shows an ordinary stored preview", () => {
+    expect(renderPreview(session({ lastMessage: stored("안녕하세요"), prompt: first }))).toBe("안녕하세요");
+  });
+});
+
+function renderPreview(session: SessionSummary): string {
+  const container = document.createElement("div");
+  container.innerHTML = renderToStaticMarkup(<RichSessionRow session={session} onOpen={vi.fn()} />);
+  return container.querySelector(".v3-run-row small")?.textContent ?? "";
+}
 
 function renderAgentLine(session: SessionSummary): Element {
   const container = document.createElement("div");

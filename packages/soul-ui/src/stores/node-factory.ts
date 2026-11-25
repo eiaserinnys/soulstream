@@ -38,7 +38,7 @@ import type {
 } from "@shared/types";
 import { formatRetryingErrorHistory } from "@shared/sse-events";
 import { isAssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
-import { isCardNoticeInput } from "@soulstream/wire-schema/conversation-visibility";
+import { isCardNoticeInput, isPersistentInitialInstructionInput } from "@soulstream/wire-schema/conversation-visibility";
 import { mapAttachmentEventSignals } from "../lib/attachment-event-signals";
 import { formatAssignedCardContextSnapshot } from "../lib/assigned-card-context-content";
 import { isCacheKeepaliveInput } from "../lib/persistent-cache-keepalive";
@@ -52,12 +52,20 @@ export { applyPendingResolution, applyUpdate } from "./event-update";
 /** 이 길이를 초과하는 콘텐츠는 truncate하여 메모리를 절약한다 */
 const PLACEHOLDER_TEXT = new Set(["{}", "[]", "null", "undefined"]);
 
-function isCardNoticeEvent(event: SoulSSEEvent): boolean {
+function eventInputPayload(event: SoulSSEEvent): Record<string, unknown> {
   const record = event as unknown as Record<string, unknown>;
   const payload = record.payload;
-  return isCardNoticeInput(event.type, payload && typeof payload === "object" && !Array.isArray(payload)
+  return payload && typeof payload === "object" && !Array.isArray(payload)
     ? payload as Record<string, unknown>
-    : record);
+    : record;
+}
+
+function isCardNoticeEvent(event: SoulSSEEvent): boolean {
+  return isCardNoticeInput(event.type, eventInputPayload(event));
+}
+
+function isInitialInstructionEvent(event: SoulSSEEvent): boolean {
+  return isPersistentInitialInstructionInput(event.type, eventInputPayload(event));
 }
 
 function meaningfulDisplayText(value: string): string {
@@ -139,6 +147,7 @@ export function createNodeFromEvent(
         inputId: e.input_id,
         cacheKeepalive: isCacheKeepaliveInput(e),
         cardNotice: isCardNoticeEvent(e),
+        initialInstruction: isInitialInstructionEvent(e),
       });
     }
 
@@ -227,6 +236,7 @@ export function createNodeFromEvent(
         inputId: e.input_id,
         cacheKeepalive: isCacheKeepaliveInput(e),
         cardNotice: isCardNoticeEvent(e),
+        initialInstruction: isInitialInstructionEvent(e),
       });
     }
 

@@ -66,6 +66,7 @@ export interface ChatMessage extends AttachmentEventSignalFields {
   };
   cacheKeepalive?: boolean;
   cardNotice?: boolean;
+  initialInstruction?: boolean;
   contextReset?: boolean;
   timestamp?: number;
   /** thinking 전용: 접기 토글에 표시할 내면 사고 텍스트 */
@@ -253,6 +254,7 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     && a.inputId === b.inputId
     && a.cacheKeepalive === b.cacheKeepalive
     && a.cardNotice === b.cardNotice
+    && a.initialInstruction === b.initialInstruction
     && a.contextReset === b.contextReset
     && a.preparedInputId === b.preparedInputId
     && a.assignedCardCount === b.assignedCardCount
@@ -407,6 +409,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         inputId: n.inputId,
         cacheKeepalive: n.cacheKeepalive,
         cardNotice: n.cardNotice,
+        initialInstruction: n.initialInstruction,
       };
     }
 
@@ -462,6 +465,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         inputId: n.inputId,
         cacheKeepalive: n.cacheKeepalive,
         cardNotice: n.cardNotice,
+        initialInstruction: n.initialInstruction,
       };
     }
 

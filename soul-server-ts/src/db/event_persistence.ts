@@ -13,6 +13,11 @@
 
 import type { Logger } from "pino";
 import {
+  isHiddenConversationInput,
+  isPersistentInitialInstructionInput,
+  isSilent,
+} from "@soulstream/wire-schema/conversation-visibility";
+import {
   EVENT_DURABILITY,
   type EventDurability,
 } from "@soulstream/wire-schema";
@@ -316,6 +321,10 @@ export class EventPersistence extends EventTransitionPublisher {
           task.lastAssistantText = content;
         }
       }
+      // [SILENT] 답은 보일 답 글이 아니다. 앞 턴의 답도 남기지 않는다.
+      if (typeof task.lastAssistantText === "string" && isSilent(task.lastAssistantText)) {
+        task.lastAssistantText = "";
+      }
     }
     if (eventType === "progress") {
       const text = (event as { text?: unknown }).text;
@@ -375,6 +384,15 @@ function buildLastMessageEffect(
 ): EventOutboxSessionEffect | null {
   const message = feedMessageSource(event);
   if (message === null) return null;
+  // 대화에서 숨기는 글은 미리보기로 만들지 않는다. null이면 앞의 보이는 미리보기가 그대로 남는다.
+  if (message.type === "assistant_message") {
+    if (isSilent(message.text)) return null;
+  } else {
+    const payload = event as Record<string, unknown>;
+    const eventType = String(payload.type);
+    if (isHiddenConversationInput(eventType, payload)
+      || isPersistentInitialInstructionInput(eventType, payload)) return null;
+  }
   const preview = sanitizeJsonText(message.text).trim();
   if (preview.length === 0) return null;
   const updatedAt = createdAt.toISOString();
