@@ -636,6 +636,29 @@ test('a regular CLAUDE.md file is kept', async () => {
   } finally { t.cleanup(); }
 });
 
+test('edited mcp-registry.yaml and mcp-profiles.yaml and a CLAUDE.md link to another file survive a rerun', async () => {
+  const t = configSetup();
+  try {
+    await t.render('claude,codex');
+    appendFileSync(t.files['mcp-registry'], '# my own server\n');
+    appendFileSync(t.files['mcp-profiles'], '# my own profile\n');
+    const claude = join(t.home, 'workspace', 'CLAUDE.md');
+    unlinkSync(claude);
+    symlinkSync('my-notes.md', claude);
+    const edited = { registry: readFileSync(t.files['mcp-registry']), profiles: readFileSync(t.files['mcp-profiles']) };
+    const before = t.recorded();
+    const result = await t.render('claude,codex');
+    assert.ok(readFileSync(t.files['mcp-registry']).equals(edited.registry));
+    assert.ok(readFileSync(t.files['mcp-profiles']).equals(edited.profiles));
+    assert.equal(readFileSync(`${t.files['mcp-registry']}.installer-new`, 'utf8'), EXPECTED_REGISTRY);
+    assert.equal(readFileSync(`${t.files['mcp-profiles']}.installer-new`, 'utf8'), EXPECTED_PROFILES);
+    assert.equal(readlinkSync(claude), 'my-notes.md');
+    assert.equal(result.warnings, `${t.kept(t.files['mcp-registry'])}\n${t.kept(t.files['mcp-profiles'])}\nKept your ${claude}.\n`);
+    const after = t.recorded();
+    for (const kind of ['mcp-registry', 'mcp-profiles']) assert.equal(after[t.files[kind]], before[t.files[kind]], kind);
+  } finally { t.cleanup(); }
+});
+
 test('the first-stage output function matches the files the first-stage installer wrote', () => {
   for (const backends of ['claude,codex', 'codex', 'claude,codex,antigravity']) {
     for (const [kind, name] of Object.entries(KINDS)) {
@@ -839,4 +862,90 @@ test('a non-empty atom database is dumped right before migrate, and an empty one
       }
     } finally { t.cleanup(); }
   }
+});
+
+// A retry of a failed update keeps that update's first atom dump (card 1815): the dump taken before the first
+// migrate is the only copy of the old atom schema, and later runs would otherwise dump the migrated database.
+// One run as install.sh runs it: read the previous state, then init_atom, then fail after atom was initialized.
+const RERUN = (status) => `setup_secrets "$ROOT" "$ATOM_ROOT"
+protect_atom_backup "$ROOT"
+MAINTENANCE_ENTERED=true; STEP='Initializing atom'
+init_atom "$ATOM_ROOT"
+printf 'atom=%s\\n' "\${BACKUP_PATHS[atom]-}"
+write_install_state "$ROOT" ${status} 'Building Soulstream'
+`;
+const atomPath = (result) => /^atom=(.*)$/m.exec(result.stdout)[1];
+// The first attempt of an update: the services were stopped, atom was dumped, then a later step failed.
+async function firstAttempt(t, status = 'failed') {
+  const result = await t.run(`setup_secrets "$ROOT" "$ATOM_ROOT"
+MAINTENANCE_ENTERED=true; STEP='Initializing atom'
+init_atom "$ATOM_ROOT"
+printf 'atom=%s\\n' "\${BACKUP_PATHS[atom]-}"
+write_install_state "$ROOT" ${status} 'Building Soulstream'
+`, { FAKE_ATOM_POPULATED: 't' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(t.dumps('atom'), [dumpName('atom', 1, t.head)]);
+  return atomPath(result);
+}
+
+test('retrying a failed update keeps its first atom dump and takes no new one', async () => {
+  const t = schemaSetup();
+  try {
+    const first = await firstAttempt(t);
+    assert.equal(t.state().backups.atom.path, first);
+    for (let i = 0; i < 3; i++) {
+      const retry = await t.run(RERUN('failed'), { FAKE_ATOM_POPULATED: 't', PREVIOUS: t.head });
+      assert.equal(retry.status, 0, retry.stderr);
+      assert.deepEqual(t.dumps('atom'), [dumpName('atom', 1, t.head)]);
+      assert.equal(atomPath(retry), first);
+      assert.deepEqual(t.state().backups.atom, { path: first, restore_command: restoreLine(first) });
+      assert.ok(retry.stdout.includes(`Keeping the first atom backup of this update: ${first}`), retry.stdout);
+    }
+    assert.equal((t.fake.argv().match(/== pg_dump\n/g) ?? []).length, 1);
+  } finally { t.cleanup(); }
+});
+
+test('a run after a completed update dumps atom again', async () => {
+  const t = schemaSetup();
+  try {
+    const first = await firstAttempt(t, 'completed');
+    const next = await t.run(RERUN('completed'), { FAKE_ATOM_POPULATED: 't', PREVIOUS: t.head });
+    assert.equal(next.status, 0, next.stderr);
+    assert.deepEqual(t.dumps('atom'), [dumpName('atom', 1, t.head), dumpName('atom', 2, t.head, t.head.slice(0, 12))]);
+    assert.notEqual(atomPath(next), first);
+  } finally { t.cleanup(); }
+});
+
+test('a run after the protected dump was deleted dumps atom again', async () => {
+  const t = schemaSetup();
+  try {
+    const first = await firstAttempt(t);
+    rmSync(first);
+    const next = await t.run(RERUN('failed'), { FAKE_ATOM_POPULATED: 't', PREVIOUS: t.head });
+    assert.equal(next.status, 0, next.stderr);
+    assert.deepEqual(t.dumps('atom'), [dumpName('atom', 2, t.head, t.head.slice(0, 12))]);
+    assert.equal(atomPath(next), join(t.backups, dumpName('atom', 2, t.head, t.head.slice(0, 12))));
+    assert.ok(!next.stdout.includes('Keeping the first atom backup'), next.stdout);
+  } finally { t.cleanup(); }
+});
+
+test('the protected atom dump reaches the state file and the failure notice even when a step before atom fails', async () => {
+  const t = setup();
+  try {
+    installed(t);
+    const dump = join(t.root, '.local', 'backups', 'atom-20261124T000001Z-aaaaaaaaaaaa-to-bbbbbbbbbbbb.pgdump');
+    mkdirSync(dirname(dump), { recursive: true });
+    writeFileSync(dump, 'PGDMP\n');
+    writeFileSync(t.statePath, JSON.stringify({ status: 'failed', step: 'Building Soulstream', backups: { atom: { path: dump, restore_command: 'x' } } }));
+    const result = await t.run(`parse_args
+INSTALL_ROOT=$ROOT; STEP='Stopping services'
+check_repositories "$ROOT" "$ATOM_ROOT"
+stop_services "$ROOT"
+printf 'atom=%s\\n' "\${BACKUP_PATHS[atom]-}"
+`);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(atomPath(result), dump);
+    assert.equal(t.state().status, 'updating');
+    assert.equal(t.state().backups.atom.path, dump);
+  } finally { t.cleanup(); }
 });
