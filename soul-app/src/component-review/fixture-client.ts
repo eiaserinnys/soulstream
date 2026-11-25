@@ -1,3 +1,4 @@
+import { dependencyScenes } from './cardDependencyFixtures';
 import { useSessionStore } from '../store/sessionStore';
 import type { ApiClient } from '../api/client';
 import { createApiRequestContext } from '../api/clientCore';
@@ -268,6 +269,8 @@ function createCardChecksReviewApi(): ApiClient {
     assigneeKind: 'session', assigneeSessionId: cardChecksSessionId, assigneeAgentId: 'public-agent',
     nodeId: null,
     ...(legacy ? {} : { items: Array.from({ length: 7 }, (_, index) => itemState(index + 1)), now: currentNow }),
+    // 태블릿 상세 오버레이의 선행 카드 묶음(카드가 시작한 뒤에도 남는다).
+    ...(scenario === 'dependencies' ? { dependsOn: dependencyScenes.find(scene => scene.name === 'mixed')!.deps } : {}),
   };
   if (scenario === 'all-confirmed' && card.items) {
     card = { ...card, items: card.items.map((item) => item.display === 'dropped' ? item : { ...item, confirmed: { at: currentAt, rev: item.rev }, display: 'confirmed' }) };

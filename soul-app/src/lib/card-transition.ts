@@ -5,11 +5,26 @@ import type { CardStatus } from '../../../packages/wire-schema/generated/typescr
 import type { CardDetail, CardDto, CardExecutionResult, CardMutationResult } from '../api/cardTypes';
 import { captureAuthScope, subscribeAuthScope } from './auth-scope';
 import { useCardStore } from '../store/cardStore';
+import { CARD_BOARD_STATUS_LABELS } from '../../../packages/soul-ui/src/lib/card-board-status-labels';
+import { cardDependencyStopReason, type CardDependency } from '../../../packages/wire-schema/src/card_dependency_display';
 
 type Attempt={key:string;version:number;requestId?:string;timer?:ReturnType<typeof setTimeout>;deadline?:number;timeout?:ReturnType<typeof setTimeout>};
 const executionAttempts=new Map<string,Attempt>();
 const states=new Map<string,CardExecutionState>();
 export const cardExecutionState=(id:string)=>states.get(id);
+/** 선행 카드 한 장의 상태 칩 글. 웹 cardDependencyStatus처럼 todo는 「드래프트」, 충족되지 않은 채 보관된 선행은 「보관됨」이다. */
+export function cardDependencyStatus(dep: CardDependency): { label: string; tone: 'error' | 'neutral' } {
+  return cardDependencyStopReason(dep) === 'archived' ? { label: '보관됨', tone: 'error' } : { label: CARD_BOARD_STATUS_LABELS[dep.status], tone: 'neutral' };
+}
+export const cardDependencyLabel = (dep: CardDependency) => dep.number == null ? dep.title : `#${dep.number}`;
+export const unmetCardDependencies = (card: Pick<CardDto, 'dependsOn'>) => card.dependsOn?.filter(dep => !dep.met) ?? [];
+export const CARD_DEPENDENCY_START_TITLE = '선행 카드가 끝나지 않았습니다';
+export function cardDependencyStartMessage(card: Pick<CardDto, 'dependsOn'>) {
+  const names = unmetCardDependencies(card).map(dep => `${cardDependencyLabel(dep)}(${cardDependencyStatus(dep).label})`).join(', ');
+  return `${names}이 아직 충족되지 않았습니다. 기다리지 않고 지금 시작할까요?`;
+}
+/** 사용자가 시작 확인에서 취소했다. 실패가 아니므로 안내를 띄우지 않는다. */
+export class CardTransitionDeclined extends Error { constructor() { super('카드 시작을 취소했습니다.'); } }
 export class CardExecutionSettingsRequired extends Error {constructor(readonly card:CardDto){super('실행 설정을 보완하세요.');}}
 const writes = new Map<string,{next:CardStatus;promise:Promise<CardMutationResult>}>();
 const listeners = new Set<() => void>();
@@ -69,7 +84,7 @@ export function cardTransitionProblem(detail: CardDetail, next: CardStatus): str
   return null;
 }
 export function performCardTransition(api: ApiClient, source: CardDto, next: CardStatus, operationId: string,
-  reason?: string, isActive: () => boolean = () => true):Promise<CardMutationResult> {
+  reason?: string, isActive: () => boolean = () => true, confirmStart?: (card: CardDto) => Promise<boolean>):Promise<CardMutationResult> {
   const existing=writes.get(source.id);
   if(existing)return next==='running'&&existing.next==='running'?existing.promise:Promise.reject(new Error('이 카드를 저장 중입니다.'));
   const scope = captureAuthScope().generation;
@@ -82,6 +97,11 @@ export function performCardTransition(api: ApiClient, source: CardDto, next: Car
     if (problem) throw new Error(problem);
     if(next==='running'){
       const card=detail.card,prior=executionAttempts.get(card.id);
+      if(!prior&&confirmStart&&unmetCardDependencies(card).length){
+        const accepted=await confirmStart(card);
+        if(!accepted)throw new CardTransitionDeclined();
+        if(!isActive()||captureAuthScope().generation!==scope)throw new Error('카드 이동이 취소되었습니다.');
+      }
       if(!prior&&!card.assigneeSessionId&&(!card.nodeId||!card.assigneeAgentId||!card.modelPreset))throw new CardExecutionSettingsRequired(card);
       const attempt=prior??{key:operationId,version:card.version};
       clearTimeout(attempt.timer);clearTimeout(attempt.timeout);attempt.deadline=undefined;executionAttempts.set(card.id,attempt);

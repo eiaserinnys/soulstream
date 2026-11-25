@@ -73,7 +73,11 @@ export function CardStatusMenu({ api, card, onClose, entry = 'status', visible =
     }
     const ok = await transition(detail.card, next, undefined, () => active.current);
     if (ok && active.current) close();
-    else if (active.current) setShowTransitionResult(true);
+    else if (active.current) {
+      // 시작 확인에서 취소했다면 보여 줄 결과가 없다. 보이는 메뉴는 그대로 남고, 길게 누르기 메뉴처럼 숨은 채 떠 있던 메뉴는 닫는다(빈 결과 창이 뜨지 않게).
+      if (action.wasDeclined()) { if (!visible) close(); }
+      else setShowTransitionResult(true);
+    }
   };
   useEffect(() => {
     if (!requestedStatus || !detail || handledStatus.current === requestedStatus) return;
