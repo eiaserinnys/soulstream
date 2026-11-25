@@ -50,6 +50,8 @@ declare -ga TEMP_FILES=()
 declare -gA REPO_PATH=() REPO_PREVIOUS=() REPO_TARGET=() REPO_MODE=() REPO_BRANCH=()
 # Keyed by database name; holds the dumps this run confirmed. backup_database runs in this shell, so on_error sees them.
 declare -gA BACKUP_PATHS=()
+# The atom dump of an update that did not finish, found by protect_atom_backup; empty when the last run completed or its dump is gone.
+PROTECTED_ATOM_BACKUP=
 # Owner of both databases, and the role a manual restore creates objects as.
 DATABASE_OWNER=soulstream
 # Dumps kept per database in <root>/.local/backups.
@@ -1068,6 +1070,20 @@ check_repository() {
   fi
   REPO_PATH[$name]=$dir; REPO_PREVIOUS[$name]=$previous; REPO_TARGET[$name]=$target; REPO_MODE[$name]=$mode; REPO_BRANCH[$name]=$branch
 }
+# protect_atom_backup root: reads the state file of the previous run, before stop_services overwrites it. When that run did not
+# complete and its atom dump still exists, the dump is the only copy from before the update's first migrate, so this run
+# keeps it (init_atom takes no new one) and lists it in BACKUP_PATHS for the state file and the failure notice.
+# A completed run, or a dump the administrator deleted, leaves nothing protected.
+protect_atom_backup() {
+  local state=$1/.local/install-state.json path
+  PROTECTED_ATOM_BACKUP=
+  [[ -f "$state" ]] || return 0
+  path=$(jq -r 'if .status != "completed" then (.backups.atom.path // empty) else empty end' "$state") || { printf '%s: Cannot read the previous installation state.\n' "$state" >&2; return 1; }
+  if [[ -n "$path" && -f "$path" ]]; then
+    PROTECTED_ATOM_BACKUP=$path
+    BACKUP_PATHS[atom]=$path
+  fi
+}
 check_repositories() {
   local root=$1 atom_root=$2
   check_repository soulstream "$root" "$SOULSTREAM_REPO_URL" "$REF" "$REF_SET" || return 1
@@ -1077,6 +1093,7 @@ check_repositories() {
     return 1
   fi
   check_repository atom "$atom_root" "$ATOM_REPO_URL" "$ATOM_REF" "$ATOM_REF_SET" || return 1
+  protect_atom_backup "$root"
 }
 # Prints one repository's entry for install-state.json; missing commits are null.
 repo_state_json() {
@@ -1208,8 +1225,17 @@ ENV
   rm -f "$fresh"
   chown soulstream:soulstream "$atom_root/.env" || return 1
   # A non-empty atom database is dumped before every migrate, the same revision included; the .env above names this database.
-  populated=$(sudo -u postgres psql -d atom -tA -v ON_ERROR_STOP=1 <<< "SELECT to_regclass('public.cards') IS NOT NULL;") || return 1
-  if [[ "$populated" == t ]]; then backup_database "$INSTALL_ROOT" atom || return 1; fi
+  # Not when this run retries a failed update: the database is already migrated, and the dump of that update's first run must stay.
+  if [[ -n "$PROTECTED_ATOM_BACKUP" ]]; then
+    printf 'Keeping the first atom backup of this update: %s\n' "$PROTECTED_ATOM_BACKUP"
+  else
+    populated=$(sudo -u postgres psql -d atom -tA -v ON_ERROR_STOP=1 <<< "SELECT to_regclass('public.cards') IS NOT NULL;") || return 1
+    if [[ "$populated" == t ]]; then
+      backup_database "$INSTALL_ROOT" atom || return 1
+      # A crash inside migrate leaves the state file of the previous step, which would not name this dump.
+      if [[ "$MAINTENANCE_ENTERED" == true ]]; then write_install_state "$INSTALL_ROOT" updating "$STEP" || return 1; fi
+    fi
+  fi
   # migrate reads <atom_root>/.env, so it runs after the file is written.
   as_soul npm --prefix "$atom_root" run migrate
   sudo -u postgres psql -d atom -tAc "SELECT current_database() = 'atom' AND to_regclass('public.cards') IS NOT NULL AND to_regclass('public.agents') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'agents' AND column_name = 'scope');" | grep -qx t
