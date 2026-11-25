@@ -26,6 +26,9 @@ FORBIDDEN_DATABASE_TOKENS = (
     "soul_dashboard_db",
     "serendipity",
 )
+# 정본은 packages/db-schema/scripts/postgres-test-policy.mjs의 TEST_SCHEMA_PATTERN이다.
+# 빈 DB 검사에서 시험이 남긴 스키마(vitest 도우미와 이 파일의 test_schema_*)를 세지 않는다.
+TEST_SCHEMA_PATTERN = "^[a-z][a-z0-9_]*_[0-9]{13}_[a-z0-9]+$"
 
 
 def ensure_test_db_url(url: str) -> None:
@@ -60,14 +63,18 @@ async def ensure_external_database_empty(url: str) -> None:
             """
             SELECT COALESCE(SUM(n_live_tup), 0)::bigint
             FROM pg_stat_user_tables
-            """
+            WHERE schemaname !~ $1
+            """,
+            TEST_SCHEMA_PATTERN,
         )
         table_count = await conn.fetchval(
             """
             SELECT COUNT(*)::int
             FROM information_schema.tables
             WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-            """
+              AND table_schema !~ $1
+            """,
+            TEST_SCHEMA_PATTERN,
         )
     finally:
         await conn.close()
