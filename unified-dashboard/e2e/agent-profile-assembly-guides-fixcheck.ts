@@ -89,7 +89,7 @@ async function overviewChecks(page: Page): Promise<string[]> {
     const before = await frame.boundingBox();
     const corner = frame.locator("thead th.guides-matrix-corner");
     const sideways = width === NARROW.width && theme === "light";
-    const rest = sideways ? await corner.screenshot() : null;
+    const rest = sideways ? await corner.screenshot({ timeout: 30_000 }) : null;
     const point = await overviewCenter(page);
     const summary = summarizeWheel(await wheelOverview(page, point));
     console.log(`${label}: ${wheelLine(summary)}`);
@@ -104,7 +104,7 @@ async function overviewChecks(page: Page): Promise<string[]> {
       const left = await frame.evaluate(element => element.scrollLeft);
       expect(left, "가로 휠이 표를 움직이지 못함").toBeGreaterThan(0);
       const sticky = await stickyGeometry(frame);
-      const diff = await meanDifference(page, rest!, await corner.screenshot());
+      const diff = await meanDifference(page, rest!, await corner.screenshot({ timeout: 30_000 }));
       expect(Math.abs(sticky.nameLeft)).toBeLessThanOrEqual(1);
       expect(Math.abs(sticky.cornerLeft)).toBeLessThanOrEqual(1);
       expect(Math.abs(sticky.headTop)).toBeLessThanOrEqual(1);
@@ -193,7 +193,7 @@ async function warningsToggle(page: Page, theme: Theme): Promise<string[]> {
   expect(on.bg).not.toBe(off.bg);
   expect(on.bg).not.toBe(disabled.bg);
   expect(Number(disabled.opacity)).toBeLessThan(1);
-  await page.getByTestId("skill-catalog-frame").locator("aside").screenshot({ path: `../.local/shots/states/warnings-toggle-${theme}.png` });
+  await page.getByTestId("skill-catalog-frame").locator("aside").screenshot({ path: `../.local/shots/states/warnings-toggle-${theme}.png`, timeout: 30_000 });
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   return [`경고 있는 것만 ${theme}: 끔 바탕 ${off.bg}, 켬 바탕 ${on.bg}(글 ${on.color}), disabled 바탕 ${disabled.bg}·불투명도 ${disabled.opacity}. 켬은 끔·disabled와 바탕이 다르고 불투명도 1`];

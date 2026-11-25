@@ -32,7 +32,7 @@ async function open(page: Page, width: number, height: number, state = "normal",
 }
 async function shot(page: Page, name: string) {
   mkdirSync(output, { recursive: true });
-  await page.screenshot({ path: path.join(output, `review-${name}.png`), animations: "disabled" });
+  await page.screenshot({ path: path.join(output, `review-${name}.png`), animations: "disabled", timeout: 30_000 });
 }
 const row = (page: Page, title: string) => page.getByTestId("agent-context-assembly").locator("button").filter({ hasText: title });
 async function setScene(page: Page, value: string) {

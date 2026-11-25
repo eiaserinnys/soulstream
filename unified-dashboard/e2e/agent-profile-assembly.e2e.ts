@@ -32,7 +32,7 @@ async function open(page: Page, width: number, state = "normal") {
 }
 async function capture(page: Page, width: number, name: string) {
   mkdirSync(output, { recursive: true });
-  await page.screenshot({ path: path.join(output, `${name}-${width}.png`), animations: "disabled" });
+  await page.screenshot({ path: path.join(output, `${name}-${width}.png`), animations: "disabled", timeout: 30_000 });
 }
 function record(width: number, name: string, value: unknown) {
   mkdirSync(output, { recursive: true });
@@ -105,12 +105,12 @@ for (const width of [1440, 360]) {
     expect(geometry.action.width).toBeGreaterThanOrEqual(24);
     expect(geometry.action.height).toBeGreaterThanOrEqual(24);
     expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth);
-    const before = await page.screenshot({ animations: "disabled" });
+    const before = await page.screenshot({ animations: "disabled", timeout: 30_000 });
     await page.getByLabel("조립 백엔드").selectOption("codex");
     await page.getByLabel("조립 카드 역할").selectOption("assignee");
     await expect(row(page, "조건부 지침")).not.toContainText("빠짐");
     await capture(page, width, "conditions");
-    const after = await page.screenshot({ animations: "disabled" });
+    const after = await page.screenshot({ animations: "disabled", timeout: 30_000 });
     const comparison = await headerPixels(page, before, after);
     record(width, "unchanged-header", comparison);
     expect(comparison.changed).toBe(0);

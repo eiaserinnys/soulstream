@@ -87,7 +87,7 @@ export async function shotSample(page: Page, componentPrefix: string, relative: 
   await page.evaluate(() => document.fonts.ready);
   const file = path.join(shots, relative);
   mkdirSync(path.dirname(file), { recursive: true });
-  await sample.screenshot({ path: file, animations: "disabled" });
+  await sample.screenshot({ path: file, animations: "disabled", timeout: 30_000 });
   return file;
 }
 
