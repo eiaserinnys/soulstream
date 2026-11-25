@@ -2,7 +2,7 @@
 // 캡처는 워크트리 .local/shots/, 조작 결과(ui-design §0의 14~18번과 대화상자 표)는 .local/shots/operations.md로 쓴다.
 import { expect, test, type Page } from "@playwright/test";
 import { LONGEST_SKILL_NAME } from "../client/v3/guides-fixture";
-import { NARROW, WIDE, openSettings, shot, writeOperations, type OperationResults, type Theme } from "./agent-profile-assembly-guides-helpers";
+import { NARROW, WIDE, openComponents, openSettings, shot, shotSample, writeOperations, type OperationResults, type Theme } from "./agent-profile-assembly-guides-helpers";
 
 const SIZES = { wide: WIDE, narrow: NARROW } as const;
 type Size = keyof typeof SIZES;
@@ -137,6 +137,22 @@ test("states: 한눈에와 구성 로딩, 오류, 빈 상태, 옛 응답", async
   await expect(assembly(page).locator("button[data-status]").first()).toBeVisible({ timeout: 15_000 });
   expect(await assembly(page).locator("button[aria-expanded]").count()).toBe(0);
   await shot(page, "states/legacy-profile.png");
+});
+
+test("components: /components의 새 표본 셋(GuideParts, 한눈에 표, SettingsListDetail 변형)을 밝고 어두운 테마로 캡처한다", async ({ page }) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  for (const theme of ["light", "dark"] as const) {
+    await openComponents(page, theme);
+    await shotSample(page, "GuideParts", `states/components-guideparts-${theme}.png`);
+    // 표 표본은 불러온 뒤에 선다.
+    await expect(page.locator('[data-review-sample="guide-matrix"] table')).toBeVisible({ timeout: 15_000 });
+    await shotSample(page, "ProfileOverviewMatrix", `states/components-matrix-${theme}.png`);
+    await expect(page.getByTestId("review-list-detail-fill")).toBeVisible();
+    await shotSample(page, "SettingsListDetail fill", `states/components-list-detail-${theme}.png`);
+  }
+  expect(errors).toEqual([]);
 });
 
 test("operations: ui-design §0 14번부터 18번을 재서 operations.md를 쓴다", async ({ page }) => {

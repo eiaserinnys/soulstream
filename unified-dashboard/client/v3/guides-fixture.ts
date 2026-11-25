@@ -19,6 +19,8 @@ const DESCRIPTIONS = [
 export const LONGEST_DESCRIPTION = "이 설명은 일부러 길게 쓴 견본이다. 목록 줄에서는 한 줄로 줄어들고 상세 머리에서는 여러 줄로 이어지며, 좁은 폭에서도 가로 스크롤이 생기지 않고 말줄임이나 줄바꿈으로 처리되는지를 확인하기 위해 같은 뜻을 되풀이해서 늘려 쓴다. 가상의 작업 기록을 모아 한 장으로 정리하고, 변경 이력을 훑어 빠진 항목을 알리고, 설정이 어긋난 값을 표로 보인다.";
 
 const SKILL_COUNT = 180;
+const NO_ENTRY_SKILL = 100;
+const NO_CARD_CATALOG = 12;
 const CATALOG_COUNT = 27;
 const skillName = (index: number) => index === 6 ? LONGEST_SKILL_NAME : `${ROOTS[index % ROOTS.length]}-${TAILS[Math.floor(index / ROOTS.length) % TAILS.length]}`;
 const catalogName = (index: number) => `${ROOTS[index % ROOTS.length]}-${["axis", "board", "chart"][Math.floor(index / ROOTS.length) % 3]}-catalog`;
@@ -52,7 +54,8 @@ export const guideSkills: SkillGuide[] = Array.from({ length: SKILL_COUNT }, (_,
   return {
     name,
     description: index === 6 ? LONGEST_DESCRIPTION : DESCRIPTIONS[index % DESCRIPTIONS.length]!,
-    entry_node_id: uuid(1, index), entry_card_id: uuid(2, index), body_node_id: uuid(3, index),
+    // 엔트리 카드를 못 찾은 스킬(서버는 둘 다 null로 보낸다)이 하나 있다.
+    entry_node_id: index === NO_ENTRY_SKILL ? null : uuid(1, index), entry_card_id: index === NO_ENTRY_SKILL ? null : uuid(2, index), body_node_id: uuid(3, index),
     lint: index % 17 === 0 ? null : {
       body_chars: 900 + ((index * 379) % 6400),
       links: links[index]!,
@@ -67,7 +70,7 @@ export const guideSkills: SkillGuide[] = Array.from({ length: SKILL_COUNT }, (_,
 export const guideCatalogs: CatalogGuide[] = Array.from({ length: CATALOG_COUNT }, (_, index) => ({
   name: catalogName(index),
   description: index === 4 ? LONGEST_DESCRIPTION : `가상의 갈래 ${index + 1}번. ${DESCRIPTIONS[index % DESCRIPTIONS.length]}`,
-  node_id: uuid(4, index), card_id: uuid(5, index),
+  node_id: index === NO_CARD_CATALOG ? null : uuid(4, index), card_id: index === NO_CARD_CATALOG ? null : uuid(5, index),
   lint: index % 9 === 8 ? null : {
     axis: index % 4 === 3 ? ["작업 종류", "실행 환경", "대상 문서"] : ["작업 종류", "실행 환경"],
     composition: [`${skillName(index)} (기본)`, `${skillName(index + 40)}`, `${skillName(index + 80)} (조건부)`],
@@ -76,9 +79,16 @@ export const guideCatalogs: CatalogGuide[] = Array.from({ length: CATALOG_COUNT 
   },
 }));
 
-export const guideReport: GuideReport = {
+/** 서버는 보고의 최상위 findings를 원본 레코드 그대로 준다. level과 message가 없을 수 있고 target과 affected가 붙는다. */
+export type RawReportFinding = { code: string; level?: string; message?: string; target?: string; affected?: string[] };
+const REPORT_FINDINGS: RawReportFinding[] = [
+  { code: "E007", target: skillName(3), affected: [skillName(3), skillName(40)] },
+  { code: "W103", message: "겹친 절이 둘 이상의 스킬에 실린다", target: catalogName(2) },
+];
+
+export const guideReport: Omit<GuideReport, "findings"> & { findings: RawReportFinding[] } = {
   generated_at: "2026-11-25T05:30:00.000Z", uploaded_at: "2026-11-25T05:41:12.000Z",
-  uploaded_by_session_id: "견본-세션", verify_job_id: "견본-검증-작업", findings: FINDING_POOL.slice(0, 2),
+  uploaded_by_session_id: "견본-세션", verify_job_id: "견본-검증-작업", findings: REPORT_FINDINGS,
 };
 
 // 프로필 18개: 중앙 11(db) + 노드 설정 7(yaml). 한 칸은 오류 프로필이다.
@@ -88,11 +98,16 @@ const NODE_PROFILES: Record<string, string[]> = {
   "sample-usage-node": ["가온", "나비", "하늬"],
 };
 export const OVERVIEW_ERROR_PROFILE = "아름";
+/** 이름 칸이 비어 agent_id로 보이는 프로필(서버는 display_name을 null로 보낸다). */
+const NAMELESS_PROFILE = "채움";
 
 const doc = (node: number, card: number, title: string, depth: number, chars: number): OverviewDocument => ({ node_id: uuid(6, node), card_id: uuid(7, card), title, depth, chars });
 function docTree(seed: number, parent: string, count: number): OverviewDocument[] {
   const root = doc(seed * 100, seed * 100, parent, 0, 0);
-  return [root, ...Array.from({ length: count }, (_, i) => doc(seed * 100 + i + 1, seed * 100 + i + 1, `규칙 ${String(i + 1).padStart(2, "0")}`, 1 + (i % 3 === 2 ? 1 : 0), 700 + ((seed * 131 + i * 977) % 5200)))];
+  const children = Array.from({ length: count }, (_, i) => doc(seed * 100 + i + 1, seed * 100 + i + 1, `규칙 ${String(i + 1).padStart(2, "0")}`, 1 + (i % 3 === 2 ? 1 : 0), 700 + ((seed * 131 + i * 977) % 5200)));
+  // 카드 id를 못 읽은 문서(서버는 card_id를 null로 보낸다)가 첫 소스에 하나 있다.
+  if (seed === 1 && children[0]) children[0] = { ...children[0], card_id: null };
+  return [root, ...children];
 }
 
 /** 스킬 목록 소스의 문서: 엔트리 카드(깊이 1)와, 본문까지 싣는 소스는 본문 노드(깊이 2). */
@@ -101,6 +116,7 @@ function skillListDocs(seed: number, from: number, count: number, withBodies: bo
   const docs = [root];
   for (let index = from; index < from + count; index += 1) {
     const skill = guideSkills[index % SKILL_COUNT]!;
+    if (!skill.entry_node_id) continue;
     docs.push({ node_id: skill.entry_node_id, card_id: skill.entry_card_id, title: skill.name, depth: 1, chars: 260 + ((index * 53) % 320) });
     if (withBodies) docs.push({ node_id: skill.body_node_id, card_id: uuid(8, index % SKILL_COUNT), title: `${skill.name} 본문`, depth: 2, chars: skill.lint?.body_chars ?? 2400 });
   }
@@ -137,7 +153,7 @@ export function buildOverview(nodeId: string, options: { errorProfile?: boolean;
   ].map(({ name, index, node }) => {
     const failed = options.errorProfile !== false && name === OVERVIEW_ERROR_PROFILE;
     return {
-      agent_id: `${node ? "node" : "central"}-${index}`, display_name: name, source: node ? "yaml" : "db",
+      agent_id: `${node ? "node" : "central"}-${index}`, display_name: name === NAMELESS_PROFILE ? null : name, source: node ? "yaml" : "db",
       status: failed ? "error" as const : "ok" as const, error: failed ? "노드에 연결하지 못했습니다." : null,
       sources: failed ? [] : profileSources(index, node, name),
     };

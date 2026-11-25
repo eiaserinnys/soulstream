@@ -311,6 +311,43 @@ describe("documents가 있는 새 응답과 없는 옛 응답", () => {
     unmount();
   });
 
+  it("실서버 꼴: 제목, 부모 제목, 실린 문서는 manifest.sources에만 있고 sections에는 칸이 없다", async () => {
+    const entry = guideSkills.find(item => item.entry_card_id && item.entry_node_id)!;
+    const serverShape = () => ({
+      manifest: {
+        sources: [
+          { node_id: "11111111-aaaa", mode: "full", depth: 3, status: "ok", chars: 900, token_estimate: 225, title: "규칙", parent_title: "공통",
+            documents: [{ node_id: "11111111-aaaa", card_id: "card-root", title: "규칙", depth: 0, chars: 300 }, { node_id: "11111111-bbbb", card_id: null, title: "카드 없는 절", depth: 1, chars: 600 }] },
+          { node_id: "22222222-aaaa", mode: "full", depth: 3, status: "ok", chars: 400, token_estimate: 100, title: "스킬 목록", parent_title: "공통",
+            documents: [{ node_id: "22222222-aaaa", card_id: "card-skills", title: "스킬 목록", depth: 0, chars: 0 }, { node_id: entry.entry_node_id, card_id: entry.entry_card_id, title: entry.name, depth: 1, chars: 280 }] },
+        ],
+        total_chars: 1300, total_token_estimate: 325,
+      },
+      assembled: "# 규칙\n\n본문",
+      sections: [{ spec_index: 0, title: "규칙", markdown: "# 규칙" }, { spec_index: 1, title: "스킬 목록", markdown: "# 스킬 목록" }],
+      atom_base_url: null,
+    });
+    const request = vi.fn(async () => Response.json(serverShape()));
+    const guides = { skills: guideSkills, catalogs: [], report: guideReport };
+    const host = document.createElement("div"); document.body.append(host);
+    const root = createRoot(host);
+    flushSync(() => root.render(createElement(AgentContextAssemblyView, {
+      target: { kind: "central", agentId: "agent", specs: specs.map(context => ({ context, source: "공통 규칙" })) },
+      nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request: routed(request, guides),
+    })));
+    await vi.waitFor(() => expect(sourceRows(host).length).toBe(2));
+    const [first] = sourceRows(host);
+    // 「공통 / 규칙」 가르기와 펼침이 manifest.sources에서 온다.
+    expect(first!.textContent).toContain("공통 / ");
+    expect(first!.getAttribute("aria-expanded")).toBe("false");
+    flushSync(() => first!.click());
+    const tree = host.querySelector('[data-testid="agent-context-documents"]')!;
+    expect(tree.querySelectorAll("li").length).toBe(2);
+    expect(tree.textContent).toContain("카드 없는 절");
+    expect(host.querySelector('[data-testid="agent-context-skills"]')?.textContent).toContain(entry.name);
+    flushSync(() => root.unmount()); host.remove();
+  });
+
   it("스킬 목록(/api/skill-guides)을 못 받아도 구성 화면은 그대로 서고 스킬 구역만 빠진다", async () => {
     const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(assemblyPreviewDocuments(JSON.parse(String(init?.body)))));
     const host = document.createElement("div"); document.body.append(host);

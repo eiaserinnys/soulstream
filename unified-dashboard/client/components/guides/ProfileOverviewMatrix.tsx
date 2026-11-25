@@ -3,7 +3,7 @@ import { useMemo, type CSSProperties } from "react";
 import { Circle, TriangleAlert } from "lucide-react";
 import { Button, FrameNotice } from "@seosoyoung/soul-ui";
 
-import { buildMatrix, useContextOverview, useSkillGuides, type MatrixCell, type OverviewProfile } from "../../lib/skill-guides";
+import { buildMatrix, profileLabel, useContextOverview, useSkillGuides, type MatrixCell, type OverviewProfile } from "../../lib/skill-guides";
 import "../../v3/v3-run-history.css";
 import "./guides.css";
 
@@ -53,7 +53,7 @@ export function ProfileOverviewMatrix({ nodeId, request = fetch }: { nodeId: str
   const cells = (values: Record<string, MatrixCell>, label: string) => profiles.map(profile => {
     const cell = values[profile.agent_id];
     return (
-      <td key={profile.agent_id} {...columnProps(profile)} title={cell ? `${profile.display_name} · ${label} · ${cellLabel(cell)}` : undefined}>
+      <td key={profile.agent_id} {...columnProps(profile)} title={cell ? `${profileLabel(profile)} · ${label} · ${cellLabel(cell)}` : undefined}>
         {cell && <Circle className={`size-3 ${cell.state === "always" ? "fill-current" : ""}`} aria-label={cellLabel(cell)} />}
       </td>
     );
@@ -70,9 +70,9 @@ export function ProfileOverviewMatrix({ nodeId, request = fetch }: { nodeId: str
               </span>
             </th>
             {profiles.map(profile => (
-              <th key={profile.agent_id} scope="col" className="guides-matrix-profile" {...columnProps(profile)} title={profile.status === "error" ? `${profile.display_name} · ${profile.error ?? "읽지 못했습니다"}` : profile.display_name}>
+              <th key={profile.agent_id} scope="col" className="guides-matrix-profile" {...columnProps(profile)} title={profile.status === "error" ? `${profileLabel(profile)} · ${profile.error ?? "읽지 못했습니다"}` : profileLabel(profile)}>
                 {profile.status === "error" && <TriangleAlert className="guides-matrix-error size-3" aria-label="읽지 못함" />}
-                <span>{profile.display_name}</span>
+                <span>{profileLabel(profile)}</span>
               </th>
             ))}
           </tr>

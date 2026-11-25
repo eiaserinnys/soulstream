@@ -4,15 +4,15 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  buildMatrix, computeSkillUsage, conditionText, formatChars, listText, loadedHow, profileCount, reportTime, requestVerify, resetGuideSession,
-  severityRank, useContextOverview, useSkillGuides, worstFinding,
+  buildMatrix, computeSkillUsage, conditionText, formatChars, listText, loadedHow, normalizeFinding, profileCount, profileLabel, reportTime, requestVerify, resetGuideSession,
+  severityRank, skillsByEntryCard, useContextOverview, useSkillGuides, worstFinding,
   type ContextOverview, type OverviewDocument, type OverviewProfile, type OverviewSource, type SkillGuide, type SkillGuides,
 } from "./skill-guides";
 
 const skill = (name: string, extra: Partial<SkillGuide> = {}): SkillGuide => ({
   name, description: `${name} 설명`, entry_node_id: `n-${name}`, entry_card_id: `c-${name}`, body_node_id: `b-${name}`, lint: null, ...extra,
 });
-const doc = (node_id: string, card_id: string, depth = 1, chars = 100, title = node_id): OverviewDocument => ({ node_id, card_id, title, depth, chars });
+const doc = (node_id: string, card_id: string | null, depth = 1, chars = 100, title = node_id): OverviewDocument => ({ node_id, card_id, title, depth, chars });
 const source = (node_id: string, documents: OverviewDocument[], extra: Partial<OverviewSource> = {}): OverviewSource => ({
   node_id, title: node_id, parent_title: "공통", origin: { kind: "profile" }, applies_when: null, mode: "full", depth: 3, chars: 1000, token_estimate: 250, status: "ok", documents, ...extra,
 });
@@ -22,7 +22,7 @@ const profile = (agent_id: string, sources: OverviewSource[], extra: Partial<Ove
 const overview = (profiles: OverviewProfile[]): ContextOverview => ({ node_id: "node-a", collected_at: null, profiles });
 
 const skills = [skill("alpha"), skill("beta"), skill("gamma"), skill("delta")];
-const byCard = new Map(skills.map(item => [item.entry_card_id, item]));
+const byCard = skillsByEntryCard(skills);
 
 describe("loadedHow", () => {
   it("제목만 소스와 색인 뿌리 아래 문서는 제목만, 스킬 엔트리는 본문 노드가 같은 소스에 있으면 본문까지", () => {
@@ -33,6 +33,27 @@ describe("loadedHow", () => {
     expect(loadedHow({ mode: "full" }, doc("n1", "c-alpha"), byCard, nodes)).toBe("body");
     expect(loadedHow({ mode: "full" }, doc("n2", "c-beta"), byCard, nodes)).toBe("entry");
     expect(loadedHow({ mode: undefined }, doc("n3", "x", 1, 0), byCard, nodes)).toBeNull();
+  });
+});
+
+describe("서버가 null로 보내는 칸", () => {
+  it("엔트리 카드가 없는 스킬은 잇기 맵에서 빠지고, card_id가 null인 문서는 스킬로 잇지 않는다", () => {
+    const orphan = skill("orphan", { entry_node_id: null, entry_card_id: null });
+    const map = skillsByEntryCard([...skills, orphan]);
+    expect([...map.keys()]).not.toContain(null);
+    expect(map.size).toBe(skills.length);
+    const nodes = new Set(["n1"]);
+    expect(loadedHow({ mode: "full" }, doc("n1", null, 1, 40), map, nodes)).toBe("body");
+    expect(loadedHow({ mode: "full" }, doc("n1", null, 1, 0), map, nodes)).toBeNull();
+    const data = overview([profile("p1", [source("s1", [doc("e1", null), doc("e2", "c-alpha")])])]);
+    expect(computeSkillUsage(data, [...skills, orphan]).get("alpha")?.length).toBe(1);
+    expect(computeSkillUsage(data, [orphan]).size).toBe(0);
+  });
+  it("이름이 없는 프로필은 agent_id로 보인다", () => {
+    expect(profileLabel({ agent_id: "central-3", display_name: null })).toBe("central-3");
+    expect(profileLabel({ agent_id: "central-3", display_name: "한울" })).toBe("한울");
+    const data = overview([profile("p9", [source("s1", [doc("e1", "c-alpha")])], { display_name: null })]);
+    expect(computeSkillUsage(data, skills).get("alpha")![0]!.profileName).toBe("p9");
   });
 });
 
@@ -137,6 +158,36 @@ describe("서버 꼴 읽기", () => {
     expect(seen!.skills[0]!.lint).toBeNull();
     expect(seen!.skills[1]!.lint!.links[0]!.kind).toBeNull();
     expect(seen!.catalogs[0]!.lint).toBeNull();
+    unmount();
+  });
+
+  it("보고의 최상위 findings는 읽기 전에 정규화한다: level이 없으면 code 첫 글자로, message가 없으면 빈 글", async () => {
+    const body = {
+      skills: [], catalogs: [],
+      report: {
+        generated_at: null, uploaded_at: "2026-11-25T05:41:12.000Z", uploaded_by_session_id: null, verify_job_id: null,
+        findings: [
+          { code: "E007", target: "alpha", affected: ["alpha", "beta"] },
+          { code: "I201", message: "설명이 길다" },
+          { code: "W103", level: "warning", message: "겹친 절" },
+          { code: "X900", level: "critical" },
+          { message: "코드 없는 레코드는 버린다" },
+          "문자열도 버린다",
+        ],
+      },
+    };
+    const request = vi.fn(async () => Response.json(body));
+    let seen: SkillGuides | null = null;
+    const unmount = mount(() => { const { state } = useSkillGuides(request as unknown as typeof fetch); if (state.status === "ready") seen = state.data; return null; });
+    await vi.waitFor(() => expect(seen).not.toBeNull());
+    expect(seen!.report!.findings).toEqual([
+      { code: "E007", level: "error", message: "" },
+      { code: "I201", level: "info", message: "설명이 길다" },
+      { code: "W103", level: "warning", message: "겹친 절" },
+      { code: "X900", level: "warning", message: "" },
+    ]);
+    expect(severityRank(seen!.report!.findings)).toBe(0);
+    expect(normalizeFinding(null)).toBeNull();
     unmount();
   });
 

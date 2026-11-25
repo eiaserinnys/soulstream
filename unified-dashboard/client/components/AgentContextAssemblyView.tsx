@@ -5,52 +5,14 @@ import { ArrowLeft, Check, ChevronRight, Copy, ExternalLink, FileText, RotateCw 
 import { Badge, Button, ContextContentRenderer, DashboardIconCap, FrameLoading, FrameNotice, useAtomPublicUrl } from "@seosoyoung/soul-ui";
 
 import { conditionSummary, inputClassName, type AgentAtomContext } from "./AgentAtomContextFields";
-import { formatChars, loadedHow, reportTime as formatReport, skillsByEntryCard as indexSkills, useSkillGuides, type LoadedHow, type SkillGuide } from "../lib/skill-guides";
+import { formatChars, loadedHow, reportTime as formatReport, skillsByEntryCard as indexSkills, useSkillGuides, type SkillGuide } from "../lib/skill-guides";
+import { buildRows, collectListedSkills, contextShape, formatTokens, rowMeta, rowTitle, skillChoices, type PreviewResponse, type Row, type RowStatus } from "./agent-context-assembly-model";
 import { LinkChips, SkillLintBadge, howLabel } from "./guides/GuideParts";
 import "../v3/v3-run-history.css";
 
 export type AssemblyTarget =
   | { kind: "central"; agentId: string; specs: Array<{ context: AgentAtomContext; source: string }> }
   | { kind: "node"; agentId: string };
-
-interface ManifestSource {
-  node_id: string;
-  mode?: string;
-  depth?: number;
-  applies_when?: Record<string, unknown>;
-  status: "ok" | "empty" | "error" | "filtered";
-  chars: number;
-  token_estimate: number;
-}
-
-/** 소스에 실린 문서 하나. depth는 소스 뿌리에서의 깊이다. */
-export interface PreviewDocument { node_id: string; card_id: string; title: string; depth: number; chars: number }
-
-interface PreviewSection { spec_index: number; title: string | null; parent_title?: string | null; markdown: string | null; documents?: PreviewDocument[] }
-
-interface PreviewResponse {
-  manifest: { sources: ManifestSource[]; total_chars?: number; total_token_estimate?: number };
-  assembled: string | null;
-  sections: PreviewSection[];
-  atom_base_url: string | null;
-}
-
-type RowStatus = ManifestSource["status"] | "duplicate";
-
-interface Row {
-  key: string;
-  nodeId: string;
-  context: AgentAtomContext;
-  origin: string | null;
-  title: string | null;
-  parentTitle: string | null;
-  /** 서버가 실린 문서를 주지 않은 옛 응답이면 null. 줄을 펼치지 않고 본문으로 바로 들어간다. */
-  documents: PreviewDocument[] | null;
-  status: RowStatus | null;
-  tokens: number | null;
-  chars: number | null;
-  markdown: string | null;
-}
 
 type View =
   | { kind: "list" }
@@ -128,20 +90,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
     () => indexSkills(guides.state.status === "ready" ? guides.state.data.skills : []),
     [guides.state],
   );
-  // 상시 목록의 스킬: 실린 문서 가운데 스킬 엔트리 카드인 것. 주입 순서대로, 이름마다 한 번만.
-  const listedSkills = useMemo(() => {
-    const seen = new Map<string, { skill: SkillGuide; rowKey: string; how: LoadedHow }>();
-    for (const row of rows) {
-      const documents = row.documents ?? [];
-      const nodeIds = new Set(documents.map(document => document.node_id));
-      for (const document of documents) {
-        const skill = skillsByEntryCard.get(document.card_id);
-        const how = skill ? loadedHow(row.context, document, skillsByEntryCard, nodeIds) : null;
-        if (skill && how && !seen.has(skill.name)) seen.set(skill.name, { skill, rowKey: row.key, how });
-      }
-    }
-    return Array.from(seen.values());
-  }, [rows, skillsByEntryCard]);
+  const listedSkills = useMemo(() => collectListedSkills(rows, skillsByEntryCard), [rows, skillsByEntryCard]);
   // 스킬이 모두 같은 방식으로 실리면 구역 머리에 한 번만 적고, 다른 것만 줄에 적는다.
   const commonHow = listedSkills.length > 0 && listedSkills.every(item => item.how === listedSkills[0]!.how) ? listedSkills[0]!.how : null;
   const reportTime = guides.state.status === "ready" ? formatReport(guides.state.data.report) : null;
@@ -259,7 +208,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
                       onClick={() => expandable ? toggle(row.key) : open({ kind: "source", key: row.key })}
                     />
                     {data && expandable && <DashboardIconCap size="small" label={`${rowTitle(row)} 본문 보기`} onClick={() => open({ kind: "source", key: row.key })}><FileText className="size-4" aria-hidden="true" /></DashboardIconCap>}
-                    {atomBaseUrl && data && <DashboardIconCap size="small" label={`${rowTitle(row)} atom에서 열기`} onClick={() => window.open(`${atomBaseUrl}/#${row.nodeId}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap>}
+                    {atomBaseUrl && data && row.nodeId && <DashboardIconCap size="small" label={`${rowTitle(row)} atom에서 열기`} onClick={() => window.open(`${atomBaseUrl}/#${row.nodeId}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap>}
                   </div>
                   {data && expandable && expanded.has(row.key) && <DocumentTree row={row} skillsByEntryCard={skillsByEntryCard} />}
                 </div>
@@ -415,8 +364,8 @@ function SourceDetail({ row, data, skillsByEntryCard, atomBaseUrl, requestState,
   const skillSelectRef = useRef<HTMLSelectElement>(null);
   useEffect(() => { if (focusSkill) skillSelectRef.current?.focus(); }, [focusSkill]);
   const text = all ? data.assembled : row.markdown;
-  const skills = all ? [] : (row.documents ?? []).flatMap((document) => { const skill = skillsByEntryCard.get(document.card_id); return skill ? [{ name: skill.name, nodeId: skill.body_node_id }] : []; });
-  const atomUrl = !all && atomBaseUrl ? `${atomBaseUrl}/#${row.nodeId}` : null;
+  const skills = all ? [] : skillChoices(row, skillsByEntryCard);
+  const atomUrl = !all && atomBaseUrl && row.nodeId ? `${atomBaseUrl}/#${row.nodeId}` : null;
   const origin = all ? null : [row.origin, contextShape(row.context)].filter(Boolean).join(" · ");
   const chars = all ? data.manifest.total_chars ?? 0 : row.chars;
   const tokens = all ? data.manifest.total_token_estimate ?? 0 : row.status === "ok" ? row.tokens : null;
@@ -507,61 +456,3 @@ function SkillOriginal({ nodeId, request, atomBaseUrl, skillNodeId, name, parent
     </div>
   );
 }
-
-function buildRows(specs: Array<{ context: AgentAtomContext; source: string }> | null, data: PreviewResponse | null): Row[] {
-  const sections = data?.sections ?? [];
-  const sources = data?.manifest.sources ?? [];
-  if (specs) {
-    return specs.map(({ context, source }, index) => {
-      const at = sections.findIndex((section) => section.spec_index === index);
-      const manifest = at >= 0 ? sources[at] : null;
-      return {
-        key: `${index}`,
-        nodeId: context.node_id,
-        context,
-        origin: source,
-        title: at >= 0 ? sections[at]!.title : null,
-        parentTitle: at >= 0 ? sections[at]!.parent_title ?? null : null,
-        documents: at >= 0 ? sections[at]!.documents ?? null : null,
-        status: data ? (manifest?.status ?? "duplicate") : null,
-        tokens: manifest?.token_estimate ?? null,
-        chars: manifest?.chars ?? null,
-        markdown: at >= 0 ? sections[at]!.markdown : null,
-      };
-    });
-  }
-  return sections.map((section, index) => {
-    const manifest = sources[index]!;
-    return {
-      key: `${section.spec_index}`,
-      nodeId: manifest.node_id,
-      context: { node_id: manifest.node_id, depth: manifest.depth, mode: manifest.mode as AgentAtomContext["mode"], applies_when: manifest.applies_when },
-      origin: "노드 설정",
-      title: section.title,
-      parentTitle: section.parent_title ?? null,
-      documents: section.documents ?? null,
-      status: manifest.status,
-      tokens: manifest.token_estimate,
-      chars: manifest.chars,
-      markdown: section.markdown,
-    };
-  });
-}
-
-function rowTitle(row: Row): string {
-  return row.title ?? row.nodeId.slice(0, 8);
-}
-
-function rowMeta(row: Row): string {
-  return [row.origin, contextShape(row.context), conditionSummary(row.context.applies_when) || null].filter(Boolean).join(" · ");
-}
-
-function contextShape(context: AgentAtomContext): string {
-  const mode = context.mode === "index" ? "색인 · " : context.mode === "titles" ? "제목만 · " : "전체 · ";
-  return `${mode}깊이 ${context.depth ?? 3}`;
-}
-
-function formatTokens(tokens: number): string {
-  return tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens);
-}
-

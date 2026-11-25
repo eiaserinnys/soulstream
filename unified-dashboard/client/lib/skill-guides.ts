@@ -22,8 +22,9 @@ export interface SkillLint {
 export interface SkillGuide {
   name: string;
   description: string;
-  entry_node_id: string;
-  entry_card_id: string;
+  /** 엔트리 카드를 못 찾은 스킬은 둘 다 null이다. */
+  entry_node_id: string | null;
+  entry_card_id: string | null;
   body_node_id: string;
   /** 보고에 없으면 null. */
   lint: SkillLint | null;
@@ -37,8 +38,8 @@ export interface CatalogLint {
 export interface CatalogGuide {
   name: string;
   description: string;
-  node_id: string;
-  card_id: string;
+  node_id: string | null;
+  card_id: string | null;
   lint: CatalogLint | null;
 }
 export interface GuideReport {
@@ -47,6 +48,7 @@ export interface GuideReport {
   uploaded_by_session_id: string | null;
   /** 있을 때만 「다시 검증」이 보인다. */
   verify_job_id: string | null;
+  /** 읽은 뒤의 꼴. 서버는 보고 원본 레코드를 그대로 준다(`normalizeFinding`). */
   findings: GuideFinding[];
 }
 export interface SkillGuides {
@@ -62,11 +64,31 @@ export type GuidesState =
 
 const guidesPath = "/api/skill-guides";
 
+const LEVELS: readonly FindingLevel[] = ["error", "warning", "info"];
+
+/**
+ * 보고 원본 레코드를 진단 하나로 읽는다. level이 없거나 모르는 값이면 서버(levelOf)처럼 code 첫 글자로 정한다:
+ * E는 error, I는 info, 나머지는 warning. message가 없으면 빈 글.
+ */
+export function normalizeFinding(raw: unknown): GuideFinding | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const record = raw as Record<string, unknown>;
+  if (typeof record.code !== "string") return null;
+  const level = LEVELS.find(item => item === record.level) ?? (record.code.startsWith("E") ? "error" : record.code.startsWith("I") ? "info" : "warning");
+  return { code: record.code, level, message: typeof record.message === "string" ? record.message : "" };
+}
+
+const normalizeFindings = (raw: unknown): GuideFinding[] => Array.isArray(raw) ? raw.flatMap(item => normalizeFinding(item) ?? []) : [];
+
 async function fetchGuides(request: typeof fetch, signal?: AbortSignal): Promise<SkillGuides> {
   const response = await request(guidesPath, { credentials: "same-origin", signal });
   if (!response.ok) throw new Error(`skill-guides ${response.status}`);
   const body = await response.json() as Partial<SkillGuides>;
-  return { skills: body.skills ?? [], catalogs: body.catalogs ?? [], report: body.report ?? null };
+  return {
+    skills: body.skills ?? [],
+    catalogs: body.catalogs ?? [],
+    report: body.report ? { ...body.report, findings: normalizeFindings(body.report.findings) } : null,
+  };
 }
 
 export function useSkillGuides(request: typeof fetch = fetch): {
@@ -129,7 +151,7 @@ export async function fetchSkillBody(request: typeof fetch, name: string, signal
 // context-overview: 노드의 프로필마다 실린 소스. 노드마다 한 번 읽어 설정 창이 열린 동안 두고, 창을 닫으면 버린다.
 
 export type SourceOrigin = { kind: "bundle"; bundle_id: string; bundle_name: string } | { kind: "profile" } | { kind: "node_config" };
-export interface OverviewDocument { node_id: string; card_id: string; title: string; depth: number; chars: number }
+export interface OverviewDocument { node_id: string; card_id: string | null; title: string; depth: number; chars: number }
 export interface OverviewSource {
   node_id: string;
   title: string | null;
@@ -145,7 +167,8 @@ export interface OverviewSource {
 }
 export interface OverviewProfile {
   agent_id: string;
-  display_name: string;
+  /** 이름이 없는 프로필은 null. 화면은 `profileLabel`로 agent_id를 쓴다. */
+  display_name: string | null;
   /** 노드 설정 전용 프로필은 "yaml", 중앙 프로필은 "db". */
   source: string;
   status: "ok" | "error";
@@ -212,6 +235,8 @@ export function useExecNode(): [string, (nodeId: string) => void] {
 // ---------------------------------------------------------------------------------------------
 // 계산: 실린 방식, 쓰이는 곳, 한눈에 표
 
+export const profileLabel = (profile: { agent_id: string; display_name: string | null }): string => profile.display_name || profile.agent_id;
+
 export const originLabel = (origin: SourceOrigin): string =>
   origin.kind === "bundle" ? origin.bundle_name : origin.kind === "profile" ? "프로필" : "노드 설정";
 
@@ -224,9 +249,14 @@ export function conditionText(appliesWhen: Record<string, string[]> | null | und
     .join(" · ");
 }
 
+/** 엔트리 카드가 없는 스킬은 문서와 이을 수 없어 건너뛴다. */
 export function skillsByEntryCard(skills: readonly SkillGuide[]): Map<string, SkillGuide> {
-  return new Map(skills.map(skill => [skill.entry_card_id, skill]));
+  const byCard = new Map<string, SkillGuide>();
+  for (const skill of skills) if (skill.entry_card_id) byCard.set(skill.entry_card_id, skill);
+  return byCard;
 }
+
+export const skillForCard = (byCard: ReadonlyMap<string, SkillGuide>, cardId: string | null): SkillGuide | undefined => cardId ? byCard.get(cardId) : undefined;
 
 /**
  * 문서가 소스에 실린 방식. 구조만 잡는 빈 문서는 null이다.
@@ -234,12 +264,12 @@ export function skillsByEntryCard(skills: readonly SkillGuide[]): Map<string, Sk
  */
 export function loadedHow(
   source: { mode?: string },
-  document: { node_id: string; card_id: string; depth: number; chars: number },
+  document: { node_id: string; card_id: string | null; depth: number; chars: number },
   skillsByCard: ReadonlyMap<string, SkillGuide>,
   nodeIdsInSource: ReadonlySet<string>,
 ): LoadedHow | null {
   if (source.mode === "titles" || (source.mode === "index" && document.depth > 0)) return "title";
-  const skill = skillsByCard.get(document.card_id);
+  const skill = skillForCard(skillsByCard, document.card_id);
   if (skill) return nodeIdsInSource.has(skill.body_node_id) ? "body" : "entry";
   return document.chars > 0 ? "body" : null;
 }
@@ -265,13 +295,13 @@ export function computeSkillUsage(overview: ContextOverview | null, skills: read
     for (const source of profile.sources) {
       const nodeIds = new Set(source.documents.map(document => document.node_id));
       for (const document of source.documents) {
-        const skill = byCard.get(document.card_id);
+        const skill = skillForCard(byCard, document.card_id);
         const how = skill ? loadedHow(source, document, byCard, nodeIds) : null;
         if (!skill || !how) continue;
         const list = usage.get(skill.name) ?? [];
         const origin = originLabel(source.origin);
         if (!list.some(item => item.profileId === profile.agent_id && item.origin === origin && item.sourceTitle === source.title && item.how === how)) {
-          list.push({ profileId: profile.agent_id, profileName: profile.display_name, origin, sourceTitle: source.title, sourceParent: source.parent_title, appliesWhen: source.applies_when, how });
+          list.push({ profileId: profile.agent_id, profileName: profileLabel(profile), origin, sourceTitle: source.title, sourceParent: source.parent_title, appliesWhen: source.applies_when, how });
         }
         usage.set(skill.name, list);
       }
@@ -308,7 +338,7 @@ export function buildMatrix(overview: ContextOverview, skills: readonly SkillGui
     for (const source of profile.sources) {
       let row = rows.get(source.node_id);
       if (!row) {
-        row = { node_id: source.node_id, title: source.title, parent: source.parent_title, cells: {}, skillEntries: source.documents.filter(document => byCard.has(document.card_id)).length };
+        row = { node_id: source.node_id, title: source.title, parent: source.parent_title, cells: {}, skillEntries: source.documents.filter(document => skillForCard(byCard, document.card_id)).length };
         rows.set(source.node_id, row);
       }
       const condition = conditionText(source.applies_when);

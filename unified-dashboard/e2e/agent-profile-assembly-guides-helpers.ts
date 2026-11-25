@@ -46,6 +46,32 @@ export async function openSettings(page: Page, options: OpenOptions) {
   await page.getByRole("button", { name: options.category, exact: true }).click();
 }
 
+/** 컴포넌트 검수 창(/components)을 연다. 표본 부품은 모두 자기 가짜 응답으로 선다. */
+export async function openComponents(page: Page, theme: Theme) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+  await page.addInitScript((value) => { localStorage.setItem("soul-dashboard-theme", value); localStorage.setItem("ls.webglGlass", "0"); }, theme);
+  await installV3VisualQaRoutes(page, { unifiedFolderView: true, timelineEventCount: 1, liveEventText: "채팅의 기존 본문과 입력창입니다." });
+  await page.route("**/api/auth/config", route => route.fulfill({ json: { authEnabled: true, devModeEnabled: false } }));
+  await page.route("**/api/auth/status", route => route.fulfill({ json: { authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } } }));
+  await page.goto("/components");
+  await expect(page.getByTestId("components-review")).toBeVisible({ timeout: 30_000 });
+}
+
+/** 표본 하나(Sample의 data-component 머리말)를 화면에 올려 그 칸만 캡처한다. */
+export async function shotSample(page: Page, componentPrefix: string, relative: string) {
+  const sample = page.locator(`[data-component^="${componentPrefix}"]`);
+  // 검수 창은 구역을 이어서 그린다. 표본이 DOM에 설 때까지 기다린 뒤 화면에 올린다.
+  await expect(sample).toBeAttached({ timeout: 30_000 });
+  await sample.scrollIntoViewIfNeeded();
+  await expect(sample).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const file = path.join(shots, relative);
+  mkdirSync(path.dirname(file), { recursive: true });
+  await sample.screenshot({ path: file, animations: "disabled" });
+  return file;
+}
+
 export async function shot(page: Page, relative: string) {
   const file = path.join(shots, relative);
   mkdirSync(path.dirname(file), { recursive: true });

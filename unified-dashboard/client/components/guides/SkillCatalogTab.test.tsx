@@ -124,6 +124,18 @@ describe("SkillCatalogTab 목록", () => {
     expect(button("경고 있는 것만")!.getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("카탈로그 상세의 「atom에서 열기」는 node_id가 있을 때만 보인다", async () => {
+    const nullable = [...catalogs, { name: "no-id-catalog", description: "id 없는 갈래", node_id: null, card_id: null, lint: null }];
+    await mount(makeRequest({ guides: { skills, catalogs: nullable, report: report() } }).request);
+    await click(tab("카탈로그"));
+    const openButton = () => document.body.querySelector('button[aria-label="atom에서 열기"]');
+    await vi.waitFor(() => expect(rowNames()).toContain("no-id-catalog"));
+    await click(rows()[0]);
+    await vi.waitFor(() => expect(openButton()).not.toBeNull());
+    await click(rows()[rowNames().indexOf("no-id-catalog")]);
+    expect(openButton()).toBeNull();
+  });
+
   it("카탈로그 탭은 쓰는 스킬 수로 차례를 잡고 상세에 축, 구성, 쓰는 스킬, 진단을 보인다", async () => {
     await mount(makeRequest().request);
     await click(tab("카탈로그"));

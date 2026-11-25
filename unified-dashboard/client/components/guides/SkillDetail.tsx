@@ -174,6 +174,7 @@ function VerifyPane({ skill, reportExists }: { skill: SkillGuide; reportExists: 
 
 export function CatalogDetail({ catalog, reportExists, onSelect }: { catalog: CatalogGuide; reportExists: boolean; onSelect(name: string): void }) {
   const lint = catalog.lint;
+  const atomBaseUrl = useAtomPublicUrl();
   const axis = listText(lint?.axis);
   const composition = listText(lint?.composition);
   const group = (title: string, lines: string[]) => (
@@ -185,7 +186,13 @@ export function CatalogDetail({ catalog, reportExists, onSelect }: { catalog: Ca
   );
   return (
     <>
-      <SettingsDetailHeader title={catalog.name} selectableTitle inlineActions subtitle={catalog.description} />
+      <SettingsDetailHeader
+        title={catalog.name}
+        selectableTitle
+        inlineActions
+        subtitle={catalog.description}
+        actions={atomBaseUrl && catalog.node_id ? <DashboardIconCap size="small" label="atom에서 열기" onClick={() => window.open(`${atomBaseUrl}/#${catalog.node_id}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap> : null}
+      />
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
         {!lint ? <FrameNotice>{reportExists ? "보고에 없음" : "검증 보고 없음"}</FrameNotice> : (
           <>
