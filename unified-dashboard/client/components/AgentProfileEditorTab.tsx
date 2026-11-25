@@ -394,7 +394,7 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
       <div className="flex min-h-0 flex-col p-4" data-testid="agent-profile-editor">
         {selectedNodeProfile && loadedNodeId !== selectedNodeId ? <FrameLoading label="노드 에이전트를 불러오는 중…" /> : selectedNodeProfile ? (
           <>
-          {/* 노드 설정 전용 프로필은 여기서 고치지 않는다. 편집 탭을 끈 채로 두어 자리와 읽기 전용임을 함께 보인다. */}
+          {/* 노드 설정 전용 프로필은 프로필 항목을 여기서 고치지 않는다. 편집 탭은 열어 초상 칸만 보인다. */}
           <div className="mcp-tabs"><DetailTabs<"assembly" | "edit" | "mcp">
             id="agent-profile-pane"
             label="프로필 보기"
