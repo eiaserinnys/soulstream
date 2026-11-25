@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Fake stat for the owner lookup `stat -c %U:%G -- <path>`: the owner comes from $FAKE_DIR/owners
+# ("<path> <user:group>" lines, root:root when a path has none). Any other call goes to the real stat.
+if [[ $# -eq 4 && "$1" == -c && "$2" == '%U:%G' && "$3" == -- ]]; then
+  printf '%s\n' "stat $*" >> "$FAKE_ARGV_LOG"
+  [[ -e "$4" || -L "$4" ]] || { printf 'fake stat: %s: No such file or directory\n' "$4" >&2; exit 1; }
+  if [[ -n "${FAKE_STAT_FAIL:-}" && ( "$FAKE_STAT_FAIL" == 1 || "$4" == *"$FAKE_STAT_FAIL" ) ]]; then printf 'fake stat: cannot stat %s\n' "$4" >&2; exit 1; fi
+  owner=root:root
+  if [[ -r "$FAKE_DIR/owners" ]]; then
+    while IFS=' ' read -r entry entry_owner; do
+      if [[ "$entry" == "$4" ]]; then owner=$entry_owner; fi
+    done < "$FAKE_DIR/owners"
+  fi
+  printf '%s\n' "$owner"
+  exit 0
+fi
+exec "$FAKE_REAL_STAT" "$@"
