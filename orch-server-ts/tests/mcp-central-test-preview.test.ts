@@ -39,6 +39,16 @@ describe("MCP test and preview operations", () => {
     { id: "other", name: "other", type: "sse", config: { url: "https://example.test" }, node_scope: [], node_overrides: {}, icon: null, version: 1 }],
     profiles: [{ id: "p", name: null, description: null, mcp_servers: ["atom", "other"], hosted_tools: [], node_scope: ["n"], version: 1 }],
     bindings: [{ agent_id: "a", node_id: "n", mcp_profile_id: "p", version: 1 }] };
+  it("preserves short values and scrubs longer values and URL queries", async () => {
+    const sync = { sendAux: async (_node: string, build: () => Promise<unknown>) => {
+      await build();
+      return { ok: false, error_message: "failed 1 true fake-long-value https://example.test/path?q=1" };
+    } };
+    const actions = createMcpTestPreviewService({ service: {} as never, sync: sync as never, resolveSql: async () => (async () => []) as never });
+    const result = await actions.test({ node_id: "n", draft_server: { id: "s", type: "stdio", node_scope: ["n"],
+      config: { command: "node", env: { SHORT: "1", FOUR: "true", LONG: "fake-long-value" } } } });
+    expect(result).toMatchObject({ error_message: "failed 1 [비공개] [비공개] https://example.test/path" });
+  });
   it("applies node override, resolves values after gating and scrubs the result", async () => {
     const sent: unknown[] = [];
     const sql = vi.fn(async () => [{ name: "key", value: "fake-secret-value" }]);
