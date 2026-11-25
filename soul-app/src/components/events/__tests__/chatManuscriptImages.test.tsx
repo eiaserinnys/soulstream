@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { Image as NativeImage, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AssistantMessage } from '../AssistantMessage';
@@ -19,7 +19,7 @@ const fetchMock = jest.fn().mockResolvedValue({ ok: false, headers: { get: () =>
 beforeEach(() => {
   useSettingsStore.setState({ serverUrl });
   useAuthStore.setState({ jwt: 'component-test-jwt' });
-  (jest.spyOn(Image, 'loadAsync') as jest.Mock).mockImplementation(() => Promise.resolve({ width: 390, height: 844 }));
+  jest.spyOn(NativeImage, 'getSizeWithHeaders').mockImplementation(() => Promise.resolve({ width: 390, height: 844 }));
   global.fetch = fetchMock as unknown as typeof fetch;
 });
 
@@ -51,8 +51,9 @@ test('PAS event 8309 keeps both images at their prose positions and opens one tw
     await Promise.resolve();
     await Promise.resolve();
   });
-  await waitFor(() => expect(Image.loadAsync).toHaveBeenCalledWith(
-    { uri: firstImage, headers: { Authorization: 'Bearer component-test-jwt' } },
+  await waitFor(() => expect(NativeImage.getSizeWithHeaders).toHaveBeenCalledWith(
+    firstImage,
+    { Authorization: 'Bearer component-test-jwt' },
   ));
 
   expect(screen.getByTestId('assistant-markdown-0').props.markdown).toContain('기존 배치');
@@ -95,8 +96,9 @@ test('원고형 사용자 메시지는 이미지 첨부만 본문 뒤에 원래 
     await Promise.resolve();
     await Promise.resolve();
   });
-  await waitFor(() => expect(Image.loadAsync).toHaveBeenCalledWith(
-    { uri: expect.stringContaining('path=%2Fincoming%2Ffirst.png'), headers: { Authorization: 'Bearer component-test-jwt' } },
+  await waitFor(() => expect(NativeImage.getSizeWithHeaders).toHaveBeenCalledWith(
+    expect.stringContaining('path=%2Fincoming%2Ffirst.png'),
+    { Authorization: 'Bearer component-test-jwt' },
   ));
   for (const label of ['first.png 크게 보기', 'second.webp 크게 보기']) {
     expect(screen.getAllByRole('button', { name: label })).toHaveLength(1);
@@ -154,7 +156,7 @@ test('원고형 사용자 메시지는 이미지 첨부만 본문 뒤에 원래 
 });
 
 test('세 장 gallery는 두 열을 유지하고 원래 viewer 전체 순서로 연다', async () => {
-  (jest.spyOn(Image, 'loadAsync') as jest.Mock).mockImplementation(({ uri }: { uri: string }) => Promise.resolve(
+  jest.spyOn(NativeImage, 'getSizeWithHeaders').mockImplementation((uri) => Promise.resolve(
     uri.endsWith('/2.png') ? { width: 900, height: 480 }
       : uri.endsWith('/3.png') ? { width: 300, height: 300 }
         : { width: 390, height: 844 },

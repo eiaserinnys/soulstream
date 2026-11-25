@@ -457,6 +457,7 @@ export function AppWallpaperBackground({
           source={source}
           contentFit="cover"
           accessible={false}
+          accessibilityIgnoresInvertColors
           pointerEvents="none"
           style={[StyleSheet.absoluteFill, styles.wallpaperImage]}
         />

@@ -29,6 +29,7 @@ test('사진 배경은 바닥 그림(cover, 절대 배치로 채움) 뒤에 자�
   const image = screen.getByTestId('app-wallpaper-image');
   expect(image.props.source).toEqual({ uri: `${SERVER}/api/user/background?v=1700000000`, headers: { Authorization: 'Bearer tok' } });
   expect(image.props.contentFit).toBe('cover');
+  expect(image.props.accessibilityIgnoresInvertColors).toBe(true);
   expect(image.props.cachePolicy).toBe('memory-disk');
   expect(StyleSheet.flatten(image.props.style)).toMatchObject({ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.42 });
 

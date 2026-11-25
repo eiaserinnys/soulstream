@@ -1,7 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { act } from '@testing-library/react-native';
 import { AppState } from 'react-native';
-import { renderHook } from '@testing-library/react-native';
+import { act, renderHook } from '@testing-library/react-native';
 import {
   AGENT_PORTRAIT_FOREGROUND_REFRESH_MS,
   AGENT_PORTRAIT_STORAGE_KEY,

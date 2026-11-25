@@ -28,6 +28,7 @@
 !/packages/soul-ui/src/cards/card-execution-state.ts
 !/packages/soul-ui/src/lib
 /packages/soul-ui/src/lib/*
+!/packages/soul-ui/src/lib/agent-portrait.ts
 !/packages/soul-ui/src/lib/action-failure.ts
 !/packages/soul-ui/src/lib/claude-runtime-actions.ts
 !/packages/soul-ui/src/lib/owned-agents.ts
