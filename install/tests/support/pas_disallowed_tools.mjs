@@ -1,4 +1,4 @@
-// Expected PAS disallowed_tools, in order (card #1787 U11 design input).
+// Expected PAS disallowed_tools, in order.
 export const PAS_DISALLOWED_TOOLS = [
   'Agent',
   'AskUserQuestion',
