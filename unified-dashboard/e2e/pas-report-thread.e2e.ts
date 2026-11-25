@@ -1164,6 +1164,8 @@ test("미뤄 둔 진행 중과 검증 대기 안건에도 미루기 해제가 �
   await expect.poll(() => harness.callsOf("PATCH", /\/api\/cards\/[^/]+$/).length).toBe(1);
   expect(harness.callsOf("PATCH", /\/api\/cards\/[^/]+$/)[0].body).toMatchObject({ snoozedUntil: null });
   await expect(dialogOf(page).locator(`section[aria-label="미뤄 둠"] .pas-rt-rail-item[data-card-id="${ID.verifying}"]`)).toHaveCount(0);
+  // 누른 단추가 사라져도 초점은 body로 떨어지지 않고 남는 「지시 적기」에 선다.
+  await expect(button(decideOf(page), "지시 적기")).toBeFocused();
 });
 
 test("항목 대상이 잡힌 채 다르게 답하기나 되묻기를 열면 알림줄과 보내는 곳이 어긋나지 않는다", async ({ page }) => {
@@ -1385,28 +1387,66 @@ test("움직임 줄이기에서는 보고 창이 사라지는 동안 남지 않�
   expect(await dialogOf(page).evaluate(node => getComputedStyle(node).transitionDuration)).toBe("0s");
 });
 
-test("카드 패널 청크를 못 받으면 패널 자리에 실패 안내와 닫기가 서고 보고 창은 살아 있다", async ({ page }) => {
-  const harness = await openScreen(page, 1440, "light", {
+for (const width of [1440, 360] as const) {
+  test(`카드 패널 청크를 못 받으면 패널 자리에 실패 안내와 닫기가 서고, 안내 동안 초점은 닫기에만 머문다 ${width}`, async ({ page }) => {
+    const harness = await openScreen(page, width, "light", {
+      height: 900,
+      beforeGoto: async target => { await target.route(url => /PasCardPanel\.tsx/.test(url.pathname), route => route.abort()); },
+    });
+    await openWindow(page);
+    await button(decideOf(page), "지시 적기").click();
+    await decideOf(page).getByRole("textbox", { name: "커멘트" }).fill("쓰던 글");
+    const opener = dialogOf(page).getByTestId("pas-rt-open-card-panel");
+    await opener.click();
+    const failure = dialogOf(page).getByTestId("pas-rt-panel-error");
+    await expect(failure).toBeVisible();
+    // 글은 실패 사실과 회복 길만 남는다(보고 창이 그대로라는 말은 화면이 이미 보여 준다).
+    await expect(failure.locator("p")).toHaveText("카드 패널을 불러오지 못했습니다. 페이지를 새로 고치면 다시 받습니다.");
+    expect(await failure.locator("p").evaluate(node => getComputedStyle(node).wordBreak)).toBe("keep-all");
+    await shot(page, `w${width}-light-card-panel-chunk-failed`);
+    const close = failure.getByTestId("pas-rt-panel-error-close");
+    await expect(close).toBeFocused();
+    // 안내 동안 보고 창의 나머지는 잠겨 초점이 가림막 뒤로 가지 않는다.
+    await expect(dialogOf(page).locator(".pas-rt-head")).toHaveAttribute("inert", "");
+    await expect(dialogOf(page).locator(".pas-rt-main")).toHaveAttribute("inert", "");
+    for (let index = 0; index < 6; index += 1) {
+      await page.keyboard.press(index % 2 === 0 ? "Tab" : "Shift+Tab");
+      await expect(close, `Tab ${index + 1}번째`).toBeFocused();
+    }
+    for (let index = 0; index < 3; index += 1) { await page.keyboard.press("Tab"); await expect(close).toBeFocused(); }
+    for (let index = 0; index < 3; index += 1) { await page.keyboard.press("Shift+Tab"); await expect(close).toBeFocused(); }
+    // 보고 창과 쓰던 글은 그대로다.
+    await expect(decideOf(page).getByRole("textbox", { name: "커멘트" })).toHaveValue("쓰던 글");
+    await close.click();
+    await expect(failure).toHaveCount(0);
+    // 닫으면 잠금이 풀리고 초점은 「카드 패널 열기」로 간다. 그 뒤 Tab은 창 안으로 이어진다.
+    await expect(opener).toBeFocused();
+    await expect(dialogOf(page).locator(".pas-rt-head")).not.toHaveAttribute("inert", /.*/);
+    await expect(dialogOf(page).locator(".pas-rt-main")).not.toHaveAttribute("inert", /.*/);
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => Boolean(document.activeElement?.closest(".pas-rt-main")))).toBe(true);
+    // 창은 그대로 쓸 수 있다: 쓰던 글을 보낸다.
+    await button(decideOf(page), "커멘트 전송").click();
+    await expect.poll(() => harness.callsOf("POST", /comments$/).length).toBe(1);
+    expect(harness.callsOf("POST", /comments$/)[0].body).toMatchObject({ body: "쓰던 글" });
+    if (width === 1440) dialogRows.push({ target: "카드 패널 실패 안내(청크를 못 받았을 때)", open: "「카드 패널 열기」", first: "닫기", enter: "닫기 단추 누름", esc: "안내만 닫는다. 보고 창과 쓰던 글 그대로", after: "「카드 패널 열기」(잠금을 먼저 풀고)" });
+  });
+}
+
+test("카드 패널 안내를 Esc로 닫아도 잠금이 풀리고 초점은 「카드 패널 열기」로 간다", async ({ page }) => {
+  await openScreen(page, 1440, "light", {
     beforeGoto: async target => { await target.route(url => /PasCardPanel\.tsx/.test(url.pathname), route => route.abort()); },
   });
   await openWindow(page);
-  await button(decideOf(page), "지시 적기").click();
-  await decideOf(page).getByRole("textbox", { name: "커멘트" }).fill("쓰던 글");
-  await dialogOf(page).getByTestId("pas-rt-open-card-panel").click();
-  const failure = dialogOf(page).getByTestId("pas-rt-panel-error");
-  await expect(failure).toBeVisible();
-  await expect(failure).toContainText("카드 패널을 불러오지 못했습니다");
-  await shot(page, "w1440-light-card-panel-chunk-failed");
-  // 보고 창과 쓰던 글은 그대로다.
-  await expect(dialogOf(page).getByTestId("pas-rt-timeline")).toBeVisible();
-  await expect(decideOf(page).getByRole("textbox", { name: "커멘트" })).toHaveValue("쓰던 글");
-  await button(failure, "닫기").click();
-  await expect(failure).toHaveCount(0);
-  await expect(dialogOf(page).getByTestId("pas-rt-open-card-panel")).toBeFocused();
-  // 닫은 뒤에도 창은 그대로 쓸 수 있다: 지시 적기를 보낸다.
-  await button(decideOf(page), "커멘트 전송").click();
-  await expect.poll(() => harness.callsOf("POST", /comments$/).length).toBe(1);
-  expect(harness.callsOf("POST", /comments$/)[0].body).toMatchObject({ body: "쓰던 글" });
+  const opener = dialogOf(page).getByTestId("pas-rt-open-card-panel");
+  await opener.click();
+  await expect(dialogOf(page).getByTestId("pas-rt-panel-error")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialogOf(page).getByTestId("pas-rt-panel-error")).toHaveCount(0);
+  await expect(dialogOf(page)).toBeVisible();
+  await expect(opener).toBeFocused();
+  await expect(dialogOf(page).locator(".pas-rt-main")).not.toHaveAttribute("inert", /.*/);
 });
 
 test("카드 패널을 연 채 안건이 모두 사라지면 패널도 내려가고, 안건이 돌아와도 저절로 다시 뜨지 않는다", async ({ page }) => {
@@ -1422,6 +1462,8 @@ test("카드 패널을 연 채 안건이 모두 사라지면 패널도 내려가
   await harness.publishEntries();
   await expect(dialogOf(page).getByTestId("pas-rt-empty")).toBeVisible();
   await expect(page.getByTestId("v3-card-workspace")).toHaveCount(0);
+  // 초점은 body로 떨어지지 않고 빈 안내에 남는다.
+  await expect(dialogOf(page).getByTestId("pas-rt-empty")).toBeFocused();
   fixture.entries = original;
   await harness.publishEntries();
   await expect(dialogOf(page).locator(".pas-rt-rail-item[data-active=true]")).toBeVisible();

@@ -26,6 +26,7 @@ export function PasThreadDecideBox({ controller, agenda, undoButtonRef, onLayout
   const [focusRequest, setFocusRequest] = useState(0);
   const triggerRef = useRef<HTMLElement | null>(null);
   const snoozeTriggerRef = useRef<HTMLButtonElement>(null);
+  const commentButtonRef = useRef<HTMLButtonElement>(null);
   const settled = controller.processed.find(item => item.agenda.cardId === agenda?.cardId) ?? null;
   const questionOpen = question !== null;
   // 질문이 열려 있는 동안 창의 글은 모두 질문 글타래에 붙는다. 그래서 일반 지시 적기 단추는 두지 않는다.
@@ -90,11 +91,21 @@ export function PasThreadDecideBox({ controller, agenda, undoButtonRef, onLayout
 
   const canSnooze = agenda !== null && agenda.kind !== "running" && agenda.kind !== "verifying";
   // 미뤄 둔 안건은 그 종류의 단추 그대로, 답변 미루기 자리만 미루기 해제로 바뀐다.
+  // 해제하면 누른 단추가 사라진다. 초점이 body로 떨어지지 않게 그 자리에 남는 단추(답변 미루기, 없으면 지시 적기)로 준다.
+  const unsnoozeAndRefocus = async (target: Agenda) => {
+    const done = await controller.unsnooze(target);
+    requestAnimationFrame(() => {
+      const current = document.activeElement;
+      if (current && current !== document.body && current.isConnected) return;
+      // 실패하면 해제 단추가 그대로 남아 있으니 거기로 돌려준다.
+      (done ? snoozeTriggerRef.current ?? commentButtonRef.current : document.querySelector<HTMLElement>('.pas-rt-decide [data-testid="pas-rt-unsnooze"]'))?.focus({ preventScroll: true });
+    });
+  };
   const snoozeSlot = !agenda || (!canSnooze && !snoozed) ? null : snoozed
-    ? <Button variant="outline" disabled={busy} data-testid="pas-rt-unsnooze" onClick={() => void controller.unsnooze(agenda)}>미루기 해제</Button>
+    ? <Button variant="outline" disabled={busy} data-testid="pas-rt-unsnooze" onClick={() => void unsnoozeAndRefocus(agenda)}>미루기 해제</Button>
     : <Button ref={snoozeTriggerRef} variant="outline" disabled={busy} aria-expanded={snoozeOpen} data-testid="pas-rt-snooze-trigger"
       onClick={() => setSnoozeOpen(value => !value)}>답변 미루기</Button>;
-  const commentButton = <Button variant="outline" disabled={busy} data-testid="pas-rt-open-composer"
+  const commentButton = <Button ref={commentButtonRef} variant="outline" disabled={busy} data-testid="pas-rt-open-composer"
     onClick={event => open("comment", event.currentTarget)}>지시 적기</Button>;
   const hint = snoozed && agenda ? <span className="pas-rt-hint">미뤄 둠: {formatReturnTime(agenda.snoozedUntil!, now)}</span> : null;
 

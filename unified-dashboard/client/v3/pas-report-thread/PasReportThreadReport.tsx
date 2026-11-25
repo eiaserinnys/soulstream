@@ -1,3 +1,4 @@
+import { flushSync } from "react-dom";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Button, DashboardIconCap, Dialog, DialogPopup, DialogTitle, useDashboardStore, useIsMobile } from "@seosoyoung/soul-ui";
 import { ExternalLink, PanelLeft, X } from "lucide-react";
@@ -67,6 +68,8 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
   const autoRef = useRef(true);
   const [railOpen, setRailOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  // 카드 패널을 못 받아 실패 안내가 선 동안 보고 창의 나머지는 잠근다.
+  const [panelFailed, setPanelFailed] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [hasNew, setHasNew] = useState(false);
   const drawerOpen = drawerMode && railOpen;
@@ -117,6 +120,8 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
   }, []);
   const closePanel = useCallback(() => {
     // 패널이 사라지기 전에 초점을 연 단추로 옮긴다. 패널 안에서 초점이 사라지면 대화상자가 초점을 창 머리로 끌어간다.
+    // inert가 남아 있으면 초점이 연 단추로 가지 못하므로 먼저 풀고 곧바로 그려 둔다.
+    flushSync(() => setPanelFailed(false));
     panelTrigger.current?.focus({ preventScroll: true });
     setPanelOpen(false);
     requestAnimationFrame(() => panelTrigger.current?.focus({ preventScroll: true }));
@@ -149,10 +154,19 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
   }, [focusKey, drawerMode]);
 
   // 안건이 모두 사라져 패널이 내려가면 열림 표시도 함께 닫는다. 안건이 돌아와도 패널이 저절로 다시 뜨지 않는다.
-  useEffect(() => { if (!active && panelOpen) setPanelOpen(false); }, [active, panelOpen]);
+  useEffect(() => {
+    if (active || !panelOpen) return;
+    setPanelOpen(false);
+    setPanelFailed(false);
+    // 연 단추는 안건이 없어 꺼져 있다. 패널이 사라지며 떨어진 초점을 빈 안내가 받는다.
+    requestAnimationFrame(() => {
+      const current = document.activeElement;
+      if (!current || current === document.body) document.querySelector<HTMLElement>('.pas-rt-dialog [data-testid="pas-rt-empty"]')?.focus({ preventScroll: true });
+    });
+  }, [active, panelOpen]);
   const openPanel = (trigger: HTMLElement | null) => { panelTrigger.current = trigger; setPanelOpen(true); };
   return <>
-    <header className="pas-rt-head">
+    <header className="pas-rt-head" inert={panelFailed || undefined}>
       {drawerMode ? <div className="pas-rt-rail-toggle"><DashboardIconCap ref={railTrigger} size="small" appearance="bare" label="안건 목록"
         data-testid="pas-rt-rail-toggle" aria-expanded={railOpen} onClick={railOpen ? closeRail : () => setRailOpen(true)}>
         <PanelLeft className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap></div> : null}
@@ -167,7 +181,7 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
         <DashboardIconCap size="small" appearance="bare" label="보고 창 닫기" onClick={onClose}><X className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap>
       </div>
     </header>
-    <div className="pas-rt-main" data-rail-open={drawerOpen || undefined}>
+    <div className="pas-rt-main" data-rail-open={drawerOpen || undefined} inert={panelFailed || undefined}>
       {drawerOpen ? <button type="button" tabIndex={-1} className="pas-rt-rail-scrim" aria-label="안건 목록 닫기" onClick={closeRail} /> : null}
       <PasThreadRail controller={{ ...controller, select: id => { controller.select(id); if (drawerMode) closeRail(); } }} />
       <div className="pas-rt-thread" inert={drawerOpen ? true : undefined}>
@@ -179,7 +193,7 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
               autoRef.current = atBottom; setAutoScroll(atBottom); if (atBottom) setHasNew(false);
             }}>
             <div>{active ? <PasThreadBody controller={controller} agenda={active} />
-              : <p className="pas-rt-empty" data-testid="pas-rt-empty">결재할 안건이 없습니다</p>}</div>
+              : <p className="pas-rt-empty" data-testid="pas-rt-empty" tabIndex={-1}>결재할 안건이 없습니다</p>}</div>
           </div>
           {!autoScroll ? <Button className="pas-rt-jump" data-testid="pas-rt-jump-latest" data-new={hasNew || undefined}
             onClick={() => { jump(); threadRef.current?.focus({ preventScroll: true }); }}>최신 경과로 ↓</Button> : null}
@@ -187,7 +201,7 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
         <PasThreadDecideBox controller={controller} agenda={active} undoButtonRef={undoButtonRef} onLayoutChange={keepLatest} />
       </div>
     </div>
-    {panelOpen && active ? <PasCardPanelBoundary onClose={closePanel}><Suspense fallback={null}><PasCardPanel cardId={active.cardId} folders={folders ?? []} ownSessionId={ownSessionId}
+    {panelOpen && active ? <PasCardPanelBoundary onClose={closePanel} onFailed={() => setPanelFailed(true)}><Suspense fallback={null}><PasCardPanel cardId={active.cardId} folders={folders ?? []} ownSessionId={ownSessionId}
       liveSessions={liveSessions} mobile={mobile} onClose={closePanel} /></Suspense></PasCardPanelBoundary> : null}
   </>;
 }
