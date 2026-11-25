@@ -1,4 +1,4 @@
-// The administrator password that Soulstream and atom share (card #1787 U26): how a first install gets it, how
+// The administrator password that Soulstream and atom share: how a first install gets it, how
 // an update keeps it and how a later run changes it.
 //
 // Nothing here reaches the host. install.sh is only sourced (main never runs), every path is temporary, and the

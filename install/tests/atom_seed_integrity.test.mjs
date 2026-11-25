@@ -1,8 +1,8 @@
-// Integrity checks for the approved public atom seed (card #1787 U10).
+// Integrity checks for the public atom seed.
 //
-// The seed and the two portraits are published byte-for-byte as approved by
-// the director; the sha256 comparison in the unit's verify step owns the
-// byte-identity check. This file checks the seed's internal contract:
+// The seed and the two portraits are published byte-for-byte as reviewed; the
+// sha256 comparison in the unit's verify step owns the byte-identity check.
+// This file checks the seed's internal contract:
 // shape, ordering, placeholders, link blocks, forbidden patterns, profile
 // arguments and the portrait files.
 //
@@ -261,6 +261,53 @@ test('forbidden patterns: no UUID, email, non-loopback IPv4, private home path o
     }
     tsNetRe.lastIndex = 0;
     assert.equal(tsNetRe.test(text), false, `.ts.net at ${where}`);
+  }
+});
+
+// Every string in the seed, wherever it sits: object keys and values at any depth (entry key, title,
+// content, tags, parent, symlink target, exported keys and the rest). Locations name the entry key and
+// the field path only.
+function seedStringFields() {
+  const rows = [];
+  const walk = (value, where) => {
+    if (typeof value === 'string') rows.push([where, value]);
+    else if (Array.isArray(value)) value.forEach((item, index) => walk(item, `${where}[${index}]`));
+    else if (value !== null && typeof value === 'object') {
+      for (const [name, item] of Object.entries(value)) {
+        rows.push([`${where} (field name)`, name]);
+        walk(item, `${where}.${name}`);
+      }
+    }
+  };
+  for (const [name, value] of Object.entries(SEED)) {
+    if (name === 'entries') continue;
+    walk(value, `seed.${name}`);
+  }
+  for (const entry of SEED.entries) walk(entry, `entry:${entry.key}`);
+  return rows;
+}
+
+test('forbidden patterns: no card, PR or issue numbers, date tags, private names or internal names', () => {
+  // The messages carry only the location and the pattern label, never the matched text.
+  const forbidden = [
+    ['card, PR or issue number', /(?:카드|PR|이슈|card|issue)\s*#\s*\d+/i],
+    ['number sign followed by three or more digits', /#\d{3,}/],
+    ['dated operating-standard tag', /\d{6}\s*운영\s*기준/i],
+    ['operating-standard tag', /운영\s*기준/i],
+    ['dated case tag', /사례\s*\d{6}/i],
+    ['private node, host or person name', /eiaserinnys|eias-linegames|linegames|silent-manari|netcup/i],
+    ['internal agent name', /utonium|roselin|bubbles|buttercup|blossom|astra/i],
+    ['internal agent name (carbon outside a model name such as gemini-4-carbon or Gemini Carbon)', /(?<!-)(?<!gemini )carbon/i],
+    ['internal deployment tool name', /haniel|하니엘/i],
+    ['private tool or project name', /\barbor\b|\/EB\/|E&B|kal 지침/i],
+    // Built from two pieces: the source guard bans the literal name in tracked files.
+    ['removed client name', new RegExp('kaleido' + 'scope', 'i')],
+    ['director address or quotation', /디렉터님|디렉터의 말|디렉터(?!리)/i],
+  ];
+  for (const [where, text] of seedStringFields()) {
+    for (const [label, pattern] of forbidden) {
+      assert.equal(pattern.test(text), false, `${where}: ${label}`);
+    }
   }
 });
 

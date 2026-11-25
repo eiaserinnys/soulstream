@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Clean-install atom seed loader (card #1787 U10).
+// Clean-install atom seed loader.
 //
 // Loads the approved public seed (install/seed/atom-seed.json) into a freshly
 // installed atom instance through the password-login HTTP contract. The three
