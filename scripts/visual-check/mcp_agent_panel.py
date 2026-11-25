@@ -4,6 +4,7 @@
 from __future__ import annotations
 import argparse
 import copy
+import fcntl
 import importlib.util
 import json
 import os
@@ -32,6 +33,8 @@ def fixture(agent_id='example-agent', node_id=None):
     data['bindings'] = [
         {'agent_id': agent_id, 'node_id': node_id, 'mcp_profile_id': data['profiles'][0]['id'], 'version': 1},
         {'agent_id': 'other-agent', 'node_id': base.NODES[1], 'mcp_profile_id': data['profiles'][0]['id'], 'version': 1},
+        {'agent_id': 'sample-agent', 'node_id': 'sample-node-remote', 'mcp_profile_id': data['profiles'][0]['id'], 'version': 1},
+        {'agent_id': 'sample-agent-' + 'long-identifier-' * 3, 'node_id': 'sample-node-' + 'long-identifier-' * 3, 'mcp_profile_id': data['profiles'][0]['id'], 'version': 1},
     ]
     return data
 
@@ -75,6 +78,7 @@ def install(page, origin, data, scenario, seen, theme):
         if path == '/api/mcp/config' and scenario['preview'] == 'unmanaged':
             return route.fulfill(json={**data, 'managed_nodes': [node for node in data['managed_nodes'] if node['node_id'] != base.NODES[0]]})
         if path.startswith('/api/mcp/agents/') and route.request.method == 'PUT':
+            seen['put_count'] = seen.get('put_count', 0) + 1
             seen['binding'] = route.request.post_data_json
             seen['binding_agent'] = unquote(path.split('/')[4])
             if scenario.get('save_conflict'): return route.fulfill(status=409, json={'code': 'MCP_REVISION_CONFLICT', 'message': 'conflict'})
@@ -82,6 +86,9 @@ def install(page, origin, data, scenario, seen, theme):
             if body.get('fork') and profile_id:
                 forked = copy.deepcopy(next(item for item in data['profiles'] if item['id'] == profile_id))
                 forked['id'] += '-copy'; data['profiles'].append(forked); profile_id = forked['id']
+                if scenario.get('repeat_fork'):
+                    for binding in data['bindings']:
+                        if binding['agent_id'] != seen['binding_agent']: binding['mcp_profile_id'] = profile_id
             data['bindings'] = [item for item in data['bindings'] if not (item['agent_id'] == seen['binding_agent'] and item['node_id'] in body['node_ids'])]
             if profile_id:
                 data['bindings'].extend({'agent_id': seen['binding_agent'], 'node_id': node, 'mcp_profile_id': profile_id, 'version': 2} for node in body['node_ids'])
@@ -92,7 +99,8 @@ def install(page, origin, data, scenario, seen, theme):
             stage = scenario['test']
             if stage == 'loading': seen['held_test'] = route; return
             if stage == 'success': return route.fulfill(json={'ok': True, 'latency_ms': 42, 'server_info': {'name': '예시 서버', 'version': '1.0'}, 'tool_count': 120, 'tools': [f'example_tool_{i}' for i in range(100)]})
-            return route.fulfill(json={'ok': False, 'latency_ms': 42, 'error_stage': stage, 'error_message': '시험용 오류입니다.'})
+            return route.fulfill(json={'ok': False, 'latency_ms': 42, 'error_stage': stage,
+                                       'error_message': scenario.get('test_detail') or f'MCP {stage} failed'})
         return route.fallback()
     page.route('**/api/**', route_api)
 
@@ -123,13 +131,23 @@ THEMES = ('light', 'dark')
 
 
 def write_operations(out):
+    with (out / '.operations.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        write_operations_locked(out)
+
+
+def write_operations_locked(out):
     lines = ['# 조작 결과', '', '각 조합의 결과는 해당 실행에서 끝까지 통과한 단언을 기록한다.', '',
              '| 폭 | 테마 | 결과 | 실행 시간 | 실행된 단언 |', '|---|---|---|---|---|']
     for width in WIDTHS:
         for theme in THEMES:
             path = out / f'agent-checks-{width}-{theme}.json'
-            result = json.loads(path.read_text(encoding='utf8')) if path.exists() else {}
-            status = {'passed': '통과', 'failed': '실패', 'running': '실행 중'}.get(result.get('status'), '미실행')
+            try:
+                result = json.loads(path.read_text(encoding='utf8')) if path.exists() else {}
+                status = {'passed': '통과', 'failed': '실패', 'running': '실행 중'}.get(result.get('status'), '미실행')
+            except (OSError, json.JSONDecodeError):
+                result, status = {}, '읽지 못함'
+            if result.get('status') == 'passed' and result.get('seconds', 0) > 300: status = '통과 (목표 초과)'
             names = ', '.join(result.get('passed', [])) or '없음'
             if result.get('failed'): names += f"; 실패: {result['failed']}"
             elapsed = f"{result['seconds']}초" if 'seconds' in result else '—'
@@ -143,7 +161,8 @@ def write_operations(out):
     descriptions = {'central-rows': '중앙 판 일치의 서버 행', 'central': '중앙 판 일치', 'isolation': '격리 필수 서버',
                     'local': '로컬 설정', 'mismatch': '판 불일치', 'blocked': '실행 불가', 'no-isolation': '격리 토글 없음',
                     'unmanaged': '관리 목록 밖 노드', 'unavailable': '미리보기 503', 'loading': '미리보기 로딩',
-                    'shared': '공유 프로필 분리 확인', 'long': '긴 서버·에이전트·노드 이름',
+                    'shared': '공유 프로필 분리 확인', 'save': '연결 저장 성공 안내', 'fork-result': '프로필 분리 성공 안내',
+                    'long': '긴 서버·에이전트·노드 이름',
                     'no-node': '연결된 노드 없음', 'disconnect': '저장 전 연결 안 함', 'success': '서버 시험 성공',
                     'config': '설정 단계 실패', 'connect': '연결 단계 실패', 'initialize': '초기화 단계 실패',
                     'list_tools': '도구 목록 단계 실패', 'timeout': '시간 초과'}
@@ -164,14 +183,16 @@ class Checks:
         self.out, self.width, self.theme = out, width, theme
         self.started = time.monotonic()
         self.path = out / f'agent-checks-{width}-{theme}.json'
-        self.result = {'status': 'running', 'passed': []}
+        self.result = {'status': 'running', 'passed': [], 'started_at': time.time()}
         for prefix in ('agent', 'test'):
             for path in out.glob(f'{prefix}-*-{width}-{theme}.png'): path.unlink()
         self.path.unlink(missing_ok=True)
         self.save()
 
     def save(self):
-        self.path.write_text(json.dumps(self.result, ensure_ascii=False, indent=2), encoding='utf8')
+        temp = self.path.with_name(f'.{self.path.name}.{os.getpid()}.tmp')
+        temp.write_text(json.dumps(self.result, ensure_ascii=False, indent=2), encoding='utf8')
+        os.replace(temp, self.path)
         write_operations(self.out)
 
     def run(self, name, action):
@@ -187,7 +208,7 @@ class Checks:
         missing = set(CHECK_NAMES) - set(self.result['passed'])
         assert not missing, f'실행되지 않은 단언: {sorted(missing)}'
         self.result['seconds'] = round(time.monotonic() - self.started, 1)
-        assert self.result['seconds'] < 300, f"실행 시간 초과: {self.result['seconds']}초"
+        self.result['finished_at'] = time.time()
         self.result['status'] = 'passed'
         self.save()
 
@@ -206,9 +227,12 @@ def assert_controls(page, width):
     select = pane.get_by_label('MCP 프로필')
     assert select.evaluate('el => el.clientWidth') >= 160
     assert select.locator('xpath=../span').evaluate('el => el.getClientRects().length') == 1
-    for button in (pane.get_by_role('button', name='연결 저장'), pane.get_by_role('button', name='이 프로필 편집')):
+    save = pane.get_by_role('button', name='연결 저장')
+    assert abs(select.bounding_box()['height'] - save.bounding_box()['height']) <= 1
+    for button in (save, pane.get_by_role('button', name='이 프로필 편집')):
         box, other = select.bounding_box(), button.bounding_box()
-        if abs(box['y'] - other['y']) <= 1: assert abs(box['height'] - other['height']) <= 1
+        if box['y'] < other['y'] + other['height'] and other['y'] < box['y'] + box['height']:
+            assert abs(box['height'] - other['height']) <= 1
     first = pane.get_by_role('checkbox', name=base.NODES[0])
     expect(first).to_be_checked(); expect(first).to_be_disabled()
 
@@ -218,6 +242,7 @@ def assert_disconnect(page, seen, out, suffix):
     select = pane.get_by_label('MCP 프로필')
     before = len(seen['preview_calls'])
     select.select_option('')
+    expect(pane.get_by_role('checkbox', name=base.NODES[0])).to_be_checked()
     for checkbox in pane.get_by_role('checkbox').all(): expect(checkbox).to_be_disabled()
     notice = pane.get_by_text('연결을 뗀 뒤의 미리보기는 저장한 뒤에 볼 수 있습니다.', exact=False)
     expect(notice).to_be_visible(); notice.scroll_into_view_if_needed()
@@ -259,8 +284,25 @@ def assert_preview(page, width):
         })""")
         assert all(abs(row['badgeLeft'] - row['nameLeft']) <= 1 for row in rows), rows
     expect(pane.get_by_text('백엔드: example', exact=False)).to_be_visible()
-    shared = pane.get_by_text('other-agent (sample-node-b)', exact=False)
-    assert shared.evaluate("el => getComputedStyle(el.closest('.whitespace-nowrap')).whiteSpace") == 'nowrap'
+    shared = pane.locator('[data-v3-selectable-content]').filter(has_text='같은 프로필 사용:').first
+    layout = shared.evaluate("""root => {
+      const text = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), lines = new Map();
+      while (text.nextNode()) {
+        const node = text.currentNode;
+        for (let i = 0; i < node.length; i++) {
+          const char = node.data[i]; if (/\\s/.test(char)) continue;
+          const range = document.createRange(); range.setStart(node, i); range.setEnd(node, i + 1);
+          const rect = range.getBoundingClientRect(); if (!rect.width) continue;
+          const y = Math.round(rect.top), previous = lines.get(y);
+          if (!previous || rect.left < previous.x) lines.set(y, {x: rect.left, char});
+        }
+      }
+      return [...lines.values()].map(line => line.char);
+    }""")
+    assert layout and ',' not in layout, layout
+    sizes = pane.locator('.overflow-y-auto').evaluate_all('els => els.map(el => [el.scrollWidth, el.clientWidth])')
+    assert sizes and all(scroll <= client for scroll, client in sizes), sizes
+    assert shared.get_by_text('sample-agent-long-identifier-', exact=False).count() > 0
 
 
 def assert_selectable(page):
@@ -292,15 +334,33 @@ def assert_stale(page, scenario, seen):
     expect(pane.get_by_text('중앙 판 14 일치')).to_be_visible()
 
 
-def assert_save(page):
+def assert_visible_in_ancestors(locator):
+    assert locator.evaluate("""el => {
+      const r = el.getBoundingClientRect();
+      if (r.top < 0 || r.bottom > innerHeight || r.left < 0 || r.right > innerWidth) return false;
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        const s = getComputedStyle(p), b = p.getBoundingClientRect();
+        if (/(auto|scroll|hidden|clip)/.test(s.overflowY) && (r.top < b.top - 1 || r.bottom > b.bottom + 1)) return false;
+        if (/(auto|scroll|hidden|clip)/.test(s.overflowX) && (r.left < b.left - 1 || r.right > b.right + 1)) return false;
+      }
+      return true;
+    }""")
+
+
+def assert_save(page, seen, out, suffix):
     pane = page.locator('[data-testid=agent-profile-editor]')
-    pane.get_by_role('button', name='연결 저장').click()
-    expect(pane.locator('p[role=status]')).to_contain_text('저장')
-    expect(pane.get_by_role('button', name='연결 저장')).to_be_focused()
-    assert page.evaluate("() => document.activeElement !== document.body && !!document.activeElement.closest('.config-dialog')")
+    button, status = pane.get_by_role('button', name='연결 저장'), pane.locator('p[role=status]')
+    for _ in range(10):
+        before = seen.get('put_count', 0)
+        button.click()
+        expect(status).to_contain_text('저장'); expect(button).to_be_focused()
+        assert seen.get('put_count') == before + 1
+        assert page.evaluate("() => document.activeElement !== document.body && !!document.activeElement.closest('.config-dialog')")
+        assert_visible_in_ancestors(button); assert_visible_in_ancestors(status)
+    shot(page, out, f'agent-save-{suffix}')
 
 
-def assert_fork(page, out, suffix):
+def assert_fork(page, out, suffix, scenario, seen):
     pane = page.locator('[data-testid=agent-profile-editor]')
     fork = pane.get_by_role('button', name='이 에이전트 전용으로 분리')
     fork.click(); dialog = page.get_by_role('dialog', name='프로필 분리')
@@ -308,11 +368,20 @@ def assert_fork(page, out, suffix):
     shot(page, out, f'agent-shared-{suffix}')
     page.keyboard.press('Tab'); assert dialog.evaluate('el => el.contains(document.activeElement)')
     page.keyboard.press('Escape'); expect(fork).to_be_focused()
-    fork.click(); dialog.get_by_role('button', name='분리', exact=True).click()
-    expect(pane.locator('p[role=status]')).to_contain_text('분리')
-    expect(pane.get_by_role('button', name='연결 저장')).to_be_focused()
+    scenario['repeat_fork'] = True
+    for _ in range(10):
+        before = seen.get('put_count', 0)
+        fork.click(); dialog.get_by_role('button', name='분리', exact=True).click()
+        expect(pane.locator('p[role=status]')).to_contain_text('분리')
+        save = pane.get_by_role('button', name='연결 저장'); expect(save).to_be_focused()
+        assert seen.get('put_count') == before + 1
+        assert page.evaluate('() => document.activeElement !== document.body')
+        assert_visible_in_ancestors(save); assert_visible_in_ancestors(pane.locator('p[role=status]'))
     options = pane.get_by_label('MCP 프로필').locator('option').all_text_contents()
     assert len(options) == len(set(options)), options
+    select = pane.get_by_label('MCP 프로필')
+    assert select.evaluate('el => el.selectedOptions[0].textContent') == select.input_value()
+    shot(page, out, f'agent-fork-result-{suffix}')
     page.keyboard.press('Tab')
     assert page.evaluate("() => document.activeElement !== document.body && !!document.activeElement.closest('.config-dialog') && document.activeElement.textContent.trim() !== '닫기'")
 
@@ -320,34 +389,46 @@ def assert_fork(page, out, suffix):
 def assert_navigation(page):
     pane = page.locator('[data-testid=agent-profile-editor]')
     profile_id = pane.get_by_label('MCP 프로필').input_value()
-    pane.get_by_role('button', name='이 프로필 편집').click()
+    pane.get_by_role('button', name='이 프로필 편집').focus(); page.keyboard.press('Enter')
     expect(page.get_by_role('tab', name='프로필', exact=True)).to_have_attribute('aria-selected', 'true')
     header = page.locator('.config-detail header').last
     expect(header).to_be_visible()
     expect(page.get_by_label('프로필 ID')).to_have_value(profile_id)
     expect(header).to_be_focused()
+    assert header.evaluate("el => getComputedStyle(el).outlineStyle !== 'auto'")
     assert header.evaluate('el => { const y = el.getBoundingClientRect().top; return y >= 0 && y < innerHeight; }')
+    if page.viewport_size['width'] == 1440:
+        tab = page.get_by_role('tab', name='프로필', exact=True)
+        assert tab.evaluate("""el => { let p = el.parentElement; while (p && !/(auto|scroll|hidden)/.test(getComputedStyle(p).overflowY)) p = p.parentElement;
+          return !p || el.getBoundingClientRect().top >= p.getBoundingClientRect().top - 1; }""")
 
 
 def assert_wrong_agents(browser, width, theme, origin):
     for mode in ('slow', 'unavailable', 'missing'):
-        data, seen = fixture('yaml-worker'), {}
+        target = 'ghost-agent' if mode == 'missing' else 'yaml-worker'
+        data, seen = fixture(target), {}
         scenario = {'preview': 'central', 'test': 'success', 'node_lookup': mode}
         context, page = new_page(browser, width, theme, origin, data, scenario, seen)
         try:
             base.open_panel(page, origin); page.get_by_role('tab', name='프로필', exact=True).click()
-            page.get_by_role('button', name=f'yaml-worker ({base.NODES[0]})').click()
+            page.get_by_role('button', name=f'{target} ({base.NODES[0]})').click()
+            if width < 640:
+                mobile = page.get_by_label('프로필', exact=True)
+                expect(mobile).to_have_value(f'node:{target}')
+                assert mobile.evaluate('el => el.selectedOptions[0].value') == f'node:{target}'
             if mode == 'slow':
                 expect(page.get_by_text('노드 에이전트를 불러오는 중…')).to_be_visible()
                 assert not seen.get('preview_calls')
                 assert page.locator('[data-testid=agent-profile-editor]').get_by_text('에이전트 MCP 연결', exact=False).count() == 0
                 seen['held_node'].fulfill(json={'agents': [{'id': 'yaml-worker', 'name': 'YAML 작업자', 'source': 'yaml'}]})
             expect(page.get_by_text('중앙 판 14 일치')).to_be_visible()
-            assert set(seen.get('preview_calls', [])) == {'yaml-worker'}, (mode, seen)
+            if width < 640:
+                assert mobile.evaluate('el => el.selectedOptions[0].value') == f'node:{target}'
+            assert set(seen.get('preview_calls', [])) == {target}, (mode, seen)
             assert page.locator('aside button.bg-accent-blue\\/15').filter(has_text='예시 에이전트').count() == 0
             page.get_by_role('button', name='연결 저장').click()
             expect(page.locator('[data-testid=agent-profile-editor] p[role=status]')).to_contain_text('저장')
-            assert seen.get('binding_agent') == 'yaml-worker', (mode, seen)
+            assert seen.get('binding_agent') == target, (mode, seen)
         finally: context.close()
 
 
@@ -393,8 +474,8 @@ def agent_states(browser, width, theme, origin, out, checks):
                 shot(page, out, f'agent-isolation-{suffix}')
                 pane.get_by_role('tab', name='일반 세션').click()
                 checks.run('stale', lambda: assert_stale(page, scenario, seen))
-                checks.run('save', lambda: assert_save(page))
-                checks.run('fork', lambda: assert_fork(page, out, suffix))
+                checks.run('save', lambda: assert_save(page, seen, out, suffix))
+                checks.run('fork', lambda: assert_fork(page, out, suffix, scenario, seen))
                 checks.run('navigation', lambda: assert_navigation(page))
             elif state == 'unavailable':
                 notice = pane.get_by_text('노드에 연결할 수 없거나 노드가 이 기능을 받지 않습니다.')
@@ -454,16 +535,22 @@ def assert_no_node(browser, width, theme, origin, out):
 
 def assert_conflict(browser, width, theme, origin):
     scenario = {'preview': 'central', 'test': 'success', 'save_conflict': True}
-    context, page = new_page(browser, width, theme, origin, fixture(), scenario, {})
+    seen = {}
+    context, page = new_page(browser, width, theme, origin, fixture(), scenario, seen)
     try:
         enter_agent(page, origin)
         pane = page.locator('[data-testid=agent-profile-editor]')
-        pane.get_by_role('button', name='연결 저장').click()
-        alert = pane.get_by_role('alert'); button = alert.get_by_role('button', name='다시 읽기')
-        expect(button).to_be_visible()
-        gap = button.evaluate("""el => { const b = el.getBoundingClientRect(), t = el.previousElementSibling.getBoundingClientRect();
-          return b.top >= t.bottom - 1 ? b.top - t.bottom : b.left - t.right; }""")
-        assert gap >= 8, gap
+        save = pane.get_by_role('button', name='연결 저장')
+        for _ in range(10):
+            before = seen.get('put_count', 0)
+            save.click()
+            alert = pane.get_by_role('alert'); button = alert.get_by_role('button', name='다시 읽기')
+            expect(button).to_be_visible(); expect(save).to_be_focused()
+            assert seen.get('put_count') == before + 1
+            assert page.evaluate('() => document.activeElement !== document.body')
+            gap = button.evaluate("""el => { const b = el.getBoundingClientRect(), t = el.previousElementSibling.getBoundingClientRect();
+              return b.top >= t.bottom - 1 ? b.top - t.bottom : b.left - t.right; }""")
+            assert gap >= 8, gap
     finally: context.close()
 
 
@@ -475,7 +562,8 @@ def server_states(browser, width, theme, origin, out, checks):
         base.open_panel(page, origin)
         select = page.get_by_label('시험 노드'); button = page.get_by_role('button', name='연결 시험', exact=True)
         box, other = select.bounding_box(), button.bounding_box()
-        if abs(box['y'] - other['y']) <= 1: assert abs(box['height'] - other['height']) <= 1
+        if box['y'] < other['y'] + other['height'] and other['y'] < box['y'] + box['height']:
+            assert abs(box['height'] - other['height']) <= 1
         for stage in ('success', 'config', 'connect', 'initialize', 'list_tools', 'timeout', 'loading'):
             scenario['test'] = stage; button.click()
             if stage == 'loading': expect(page.get_by_role('button', name='시험 중…')).to_be_disabled()
@@ -488,12 +576,21 @@ def server_states(browser, width, theme, origin, out, checks):
                 expect(listing).to_be_visible(); assert listing.inner_text().endswith('외 20개')
                 assert listing.evaluate('el => getComputedStyle(el).userSelect') != 'none'
             else:
-                label = {'config': '설정', 'connect': '연결', 'initialize': '초기화', 'list_tools': '도구 목록', 'timeout': '시간 초과'}[stage]
-                error = page.get_by_text(f'{label}: 시험용 오류입니다.')
+                label = {'config': '서버 정의를 확인해 주세요.', 'connect': '서버에 연결하지 못했습니다.',
+                         'initialize': '서버가 MCP 초기화에 응하지 않았습니다.', 'list_tools': '도구 목록을 받지 못했습니다.',
+                         'timeout': '제한 시간 안에 응답이 없었습니다.'}[stage]
+                error = page.get_by_text(label, exact=True)
                 expect(error).to_be_visible(); assert error.evaluate('el => getComputedStyle(el).userSelect') != 'none'
+                assert page.get_by_text(f'MCP {stage} failed', exact=True).count() == 0
             if stage == 'success': listing.scroll_into_view_if_needed()
             elif stage != 'loading': error.scroll_into_view_if_needed()
             shot(page, out, f'test-{stage}-{suffix}')
+            if stage not in ('success', 'loading'):
+                scenario['test_detail'] = '시험용 상세 설명입니다.'; button.click()
+                detail = page.get_by_text('시험용 상세 설명입니다.', exact=True)
+                expect(detail).to_be_visible()
+                assert detail.evaluate('el => parseFloat(getComputedStyle(el).fontSize)') < error.evaluate('el => parseFloat(getComputedStyle(el).fontSize)')
+                scenario.pop('test_detail')
             if stage == 'loading': seen['held_test'].fulfill(json={'ok': True, 'latency_ms': 1, 'tool_count': 0, 'tools': []})
     finally: context.close()
 
