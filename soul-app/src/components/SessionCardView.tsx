@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   View,
   Text,
-  Image,
   Pressable,
   type GestureResponderEvent,
 } from 'react-native';
@@ -11,6 +10,9 @@ import Animated from 'react-native-reanimated';
 import type { Session } from '../api/types';
 import { getSessionDisplayName } from '../lib/session-display-name';
 import { useTokens } from '../theme';
+import { useAgentPortraitResolver } from '../store/agentPortraitStore';
+import { resolveRemoteImageSource } from '../lib/remote-image';
+import { RemoteImage } from './RemoteImage';
 import {
   resolveSessionCardAvatar,
   resolveSessionCardCaller,
@@ -91,9 +93,10 @@ export function SessionCardView({
   const statusLabel = STATUS_LABELS[session.status] ?? session.status;
   const agentLabel = resolveSessionAgentLabel(session);
 
+  const portraits = useAgentPortraitResolver();
   const avatar = useMemo(
-    () => resolveSessionCardAvatar(session, serverUrl),
-    [session.agentName, session.agentId, session.agentSessionId, session.agentPortraitUrl, serverUrl],
+    () => resolveSessionCardAvatar({ ...session, agentPortraitUrl: portraits.normalize(session.agentPortraitUrl) }, serverUrl),
+    [session.agentName, session.agentId, session.agentSessionId, session.agentPortraitUrl, serverUrl, portraits],
   );
 
   const caller = useMemo(
@@ -151,12 +154,9 @@ export function SessionCardView({
   ].filter(Boolean).join(', ');
 
   const avatarView = (avatar.uri ? (
-        <Image
+        <RemoteImage
           testID={avatarTestID}
-          source={{
-            uri: avatar.uri,
-            ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}),
-          }}
+          source={resolveRemoteImageSource(avatar.uri, serverUrl, jwt)}
           style={styles.avatar}
         />
       ) : (

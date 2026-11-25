@@ -2,7 +2,7 @@ import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityCo
 import { useContinuityScroll } from '../../hooks/useContinuityScroll';
 import {CardTransitionSettings} from './CardTransitionSettings';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ApiClient } from '../../api/client';
@@ -17,6 +17,9 @@ import { useUIStore } from '../../store/uiStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
+import { useAgentPortraitResolver } from '../../store/agentPortraitStore';
+import { resolveRemoteImageSource } from '../../lib/remote-image';
+import { RemoteImage } from '../RemoteImage';
 import { resolveSessionCardAvatar, resolveSessionAgentLabel } from '../sessionCardDisplay';
 import { useDeviceType, useTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
@@ -161,10 +164,11 @@ export function CardDetailContent(props: CardDetailContentProps) {
     ?? detail?.sessions.find((session) => session.agentSessionId === card?.assigneeSessionId);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const jwt = useAuthStore((state) => state.jwt);
+  const portraits = useAgentPortraitResolver();
   const agent = assigned ?? { agentSessionId: card?.assigneeKind === 'session' && card.assigneeSessionId ? card.assigneeSessionId : card?.id ?? '',
     agentId: card?.assigneeAgentId, agentPortraitUrl: null };
   const nodeId = assigned?.nodeId ?? card?.nodeId;
-  const identity = { ...agent, agentPortraitUrl: agent.agentPortraitUrl ?? (agent.agentId && nodeId ? `/api/nodes/${nodeId}/agents/${agent.agentId}/portrait` : null) };
+  const identity = { ...agent, agentPortraitUrl: portraits.forSession(agent.agentPortraitUrl, agent.agentId) || null };
   const avatar = resolveSessionCardAvatar(identity, serverUrl);
   // 질문 장 조작 함수는 렌더마다 새로 만들지 않는다. 타임라인 행의 memo 경계가 무너진다.
   const questionHandlers = React.useMemo<CardQuestionHandlers>(() => ({ portraitUri: avatar.uri ?? null,
@@ -320,7 +324,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
           <View style={styles.chips}>
           {!card.assigneeSessionId?<>
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="폴더 변경" disabled={locked || !api} onPress={()=>setAssignmentOpen(true)} surfaceStyle={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{useSessionStore.getState().catalog.folders.find(f=>f.id===card.folderId)?.name??card.folderId}</Text></CompactTouchTarget>
-          <CompactTouchTarget accessibilityRole="button" accessibilityLabel="담당 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}>{avatar.uri ? <Image source={{ uri: avatar.uri, ...(jwt && avatar.uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={styles.chipAvatar} /> : <Text style={styles.chipText}>{avatar.fallbackChar}</Text>}
+          <CompactTouchTarget accessibilityRole="button" accessibilityLabel="담당 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}>{avatar.uri ? <RemoteImage source={resolveRemoteImageSource(avatar.uri, serverUrl, jwt)} style={styles.chipAvatar} /> : <Text style={styles.chipText}>{avatar.fallbackChar}</Text>}
             <Text style={styles.chipText} numberOfLines={1}>{card.assigneeKind === 'human' ? card.assigneeUserId : resolveSessionAgentLabel(identity)}</Text></CompactTouchTarget>
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="노드 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{nodeId ?? '노드 미지정'}</Text></CompactTouchTarget>
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="모델 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{assigned?.modelPreset ?? card.modelPreset ?? '기본 모델'}</Text></CompactTouchTarget>

@@ -1,9 +1,11 @@
 import { chatImageSource } from '../chat-image-source';
 import { Image } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { getAttachmentImageSize as getNativeAttachmentImageSize } from '../attachment-image-size.native';
 import { getAttachmentImageSize as getWebAttachmentImageSize } from '../attachment-image-size.web';
 
 afterEach(() => jest.restoreAllMocks());
+beforeEach(() => (ExpoImage.loadAsync as jest.Mock).mockClear());
 
 const serverUrl = 'https://soulstream.eiaserinnys.me';
 const jwt = 'test-jwt';
@@ -27,22 +29,45 @@ test('web chat images keep the original URL and use browser authentication', () 
   });
 });
 
-test('native size lookup receives the same URI and headers as its image source', async () => {
-  const source = chatImageSource('/api/attachments/files?path=%2Fimage.png', serverUrl, jwt, 'ios');
-  const getSizeWithHeaders = jest.spyOn(Image, 'getSizeWithHeaders');
-  getSizeWithHeaders.mockImplementation(() => Promise.resolve({ width: 390, height: 844 }));
+const diskUri = 'https://soulstream.eiaserinnys.me/api/attachments/att-1/content';
+const memoryUri = 'https://soulstream.eiaserinnys.me/api/attachments/files?path=%2Fimage.png';
+
+test('native size lookup uses expo-image loadAsync for disk-cached addresses with the same URI and headers', async () => {
+  const source = { uri: diskUri, headers: { Authorization: 'Bearer test-jwt' } };
+  const loadAsync = jest.spyOn(ExpoImage, 'loadAsync') as jest.Mock;
+  loadAsync.mockImplementation(() => Promise.resolve({ width: 390, height: 844 }));
+  const legacy = jest.spyOn(Image, 'getSizeWithHeaders');
 
   await expect(getNativeAttachmentImageSize(source)).resolves.toEqual({ width: 390, height: 844 });
-  expect(getSizeWithHeaders).toHaveBeenCalledWith(source.uri, source.headers);
+  expect(loadAsync).toHaveBeenCalledWith({ uri: source.uri, headers: source.headers });
+  expect(legacy).not.toHaveBeenCalled();
 });
 
-test('native size lookup uses getSizeWithHeaders with an empty header map when the source has no headers', async () => {
-  const source = { uri: 'https://images.example/image.png' };
-  const getSizeWithHeaders = jest.spyOn(Image, 'getSizeWithHeaders');
-  getSizeWithHeaders.mockImplementation(() => Promise.resolve({ width: 390, height: 844 }));
+test('native size lookup sends no headers to loadAsync when the disk-cached source has none', async () => {
+  const source = { uri: diskUri };
+  const loadAsync = jest.spyOn(ExpoImage, 'loadAsync') as jest.Mock;
+  loadAsync.mockImplementation(() => Promise.resolve({ width: 390, height: 844 }));
 
   await expect(getNativeAttachmentImageSize(source)).resolves.toEqual({ width: 390, height: 844 });
-  expect(getSizeWithHeaders).toHaveBeenCalledWith(source.uri, {});
+  expect(loadAsync).toHaveBeenCalledWith({ uri: source.uri });
+});
+
+test('native size lookup keeps getSizeWithHeaders for memory-cached addresses so no stale disk size is read', async () => {
+  const source = { uri: memoryUri, headers: { Authorization: 'Bearer test-jwt' } };
+  const loadAsync = jest.spyOn(ExpoImage, 'loadAsync') as jest.Mock;
+  const legacy = jest.spyOn(Image, 'getSizeWithHeaders').mockImplementation(() => Promise.resolve({ width: 120, height: 80 }));
+
+  await expect(getNativeAttachmentImageSize(source)).resolves.toEqual({ width: 120, height: 80 });
+  expect(legacy).toHaveBeenCalledWith(source.uri, source.headers);
+  expect(loadAsync).not.toHaveBeenCalled();
+});
+
+test('native size lookup sends empty headers to getSizeWithHeaders when a memory-cached source has none', async () => {
+  const source = { uri: 'https://images.example/image.png' };
+  const legacy = jest.spyOn(Image, 'getSizeWithHeaders').mockImplementation(() => Promise.resolve({ width: 5, height: 6 }));
+
+  await expect(getNativeAttachmentImageSize(source)).resolves.toEqual({ width: 5, height: 6 });
+  expect(legacy).toHaveBeenCalledWith(source.uri, {});
 });
 
 test('web size lookup resolves callback dimensions when Image.getSize returns undefined', async () => {

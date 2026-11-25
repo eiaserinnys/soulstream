@@ -34,6 +34,18 @@ jest.mock('expo-glass-effect', () => {
   };
 });
 
+// expo-image는 native view manager를 요구한다. Jest에서는 props(source, onError, onLoad, style,
+// contentFit, cachePolicy 등)를 그대로 지닌 호스트 View로 바꿔 원격 이미지 부품의 계약을 검증한다.
+// Image.loadAsync는 크기 재기(attachment-image-size.native)가 쓰며, 시험이 mockResolvedValue로 덮는다.
+jest.mock('expo-image', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const Image = (props) => React.createElement(View, props);
+  Image.loadAsync = jest.fn(() => Promise.resolve({ width: 100, height: 100 }));
+  Image.prefetch = jest.fn(() => Promise.resolve(true));
+  return { __esModule: true, Image };
+});
+
 // Expo vector icons load expo-font's ESM entrypoint, which Jest leaves untransformed.
 // The component-level tests observe icon names and sizes through these host components.
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');

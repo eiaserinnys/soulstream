@@ -339,3 +339,35 @@ describe('pickFallbackChar (caller=null — PR #7 보존)', () => {
     expect(pickFallbackChar(null, null, null, '·')).toBe('·');
   });
 });
+
+describe('pickUserAvatarUri — 초상 주소 정규화', () => {
+  const normalize = (url: string | null | undefined) => (url?.includes('/api/nodes/') ? '/api/agent-portraits/roselin?v=abc' : url ?? '');
+
+  it('caller.avatar_url의 옛 노드 주소를 정규화한 주소에 서버 출처를 붙인다', () => {
+    const caller: MessageCaller = { source: 'agent', avatar_url: '/api/nodes/n1/agents/roselin/portrait' };
+    expect(pickUserAvatarUri(caller, null, null, SERVER, normalize)).toEqual({
+      uri: `${SERVER}/api/agent-portraits/roselin?v=abc`,
+      useBearer: true,
+    });
+  });
+
+  it('정규화가 빈 문자열이면(사전에 없는 에이전트) 아바타를 만들지 않는다', () => {
+    const caller: MessageCaller = { source: 'agent', avatar_url: '/api/nodes/n1/agents/ghost/portrait' };
+    expect(pickUserAvatarUri(caller, null, null, SERVER, () => '')).toEqual({ uri: null, useBearer: false });
+  });
+
+  it('caller가 없으면 fallback 주소도 정규화한다', () => {
+    expect(pickUserAvatarUri(null, null, '/api/nodes/n1/agents/roselin/portrait', SERVER, normalize)).toEqual({
+      uri: `${SERVER}/api/agent-portraits/roselin?v=abc`,
+      useBearer: true,
+    });
+  });
+
+  it('정규화 함수를 주지 않으면 지금 동작 그대로다', () => {
+    const caller: MessageCaller = { source: 'agent', avatar_url: '/api/nodes/n1/agents/roselin/portrait' };
+    expect(pickUserAvatarUri(caller, null, null, SERVER)).toEqual({
+      uri: `${SERVER}/api/nodes/n1/agents/roselin/portrait`,
+      useBearer: true,
+    });
+  });
+});

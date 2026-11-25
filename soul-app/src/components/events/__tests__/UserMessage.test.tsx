@@ -1,5 +1,6 @@
 import { fireEvent, render, renderHook } from '@testing-library/react-native';
-import { Image, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { Image } from 'expo-image';
 import type { Session, SessionEvent } from '../../../api/types';
 import { UserMessage } from '../UserMessage';
 import { useSettingsStore } from '../../../store/settingsStore';
@@ -21,7 +22,7 @@ test('채팅 말풍선과 첨부의 시각 속성 snapshot은 불변이다', () 
   expectButtonLabelsOnly(screen, ['첨부 이미지 1', '첨부 이미지 2']);
   expect({ bubble: StyleSheet.flatten(screen.getByTestId('user-message-bubble').props.style),
     text: screen.getByTestId('user-message-text').props.children,
-    images: screen.UNSAFE_getAllByType(Image).map(({ props }) => ({ source: props.source, style: StyleSheet.flatten(props.style), resizeMode: props.resizeMode, accessibilityLabel: props.accessibilityLabel })) }).toMatchSnapshot();
+    images: screen.UNSAFE_getAllByType(Image).map(({ props }) => ({ source: props.source, style: StyleSheet.flatten(props.style), resizeMode: props.contentFit, accessibilityLabel: props.accessibilityLabel })) }).toMatchSnapshot();
 });
 
 test('사용자 말풍선 네 모서리는 같은 곡률을 쓴다', () => {

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
-import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useStore, type StoreApi } from 'zustand';
 import { createApiClient } from '../api/client';
 import type { PersistentSessionCreateDefaults, PersistentSessionResource } from '../api/persistentSessionEndpoints';
@@ -11,6 +11,9 @@ import { resolveSessionCardAvatar } from '../components/sessionCardDisplay';
 import { resolvePersistentSessionEntry } from '../lib/persistent-session-entry';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { useAuthStore } from '../store/authStore';
+import { useAgentPortraitResolver } from '../store/agentPortraitStore';
+import { resolveRemoteImageSource } from '../lib/remote-image';
+import { RemoteImage } from '../components/RemoteImage';
 import { createPersistentSessionScene, type PersistentSessionScene } from '../store/persistentSessionScene';
 import { useSettingsStore } from '../store/settingsStore';
 import { useSessionStore } from '../store/sessionStore';
@@ -168,28 +171,32 @@ export function useOptionalPersistentSessionHost() {
 export function usePersistentSessionScene<T>(selector: (state: PersistentSessionScene) => T) {
   return useStore(usePersistentSessionHost().store, selector);
 }
-export function PersistentSessionPortrait({ session, size }: {
-  session: PersistentSessionHost['portrait']; size: number;
-}) {
-  const [failedUri, setFailedUri] = useState<string | null>(null);
-  const t = useTokens();
+/** PAS의 초상. 세션 행에 저장된 주소를 쓰고, 없으면 에이전트 id로 사전에서 찾는다. 노드 id로 주소를 만들지 않는다. */
+export function usePersistentSessionAvatar(session: PersistentSessionHost['portrait']) {
   const serverUrl = useSettingsStore(state => state.serverUrl);
-  const jwt = useAuthStore(state => state.jwt);
+  const portraits = useAgentPortraitResolver();
   const storedPortrait = useSessionStore(state => {
     if (!session) return null;
     return state.sessions[session.session_id]?.agentPortraitUrl
       ?? Object.values(state.sessions).find(item => item.nodeId === session.node_id && item.agentId === session.agent_id)?.agentPortraitUrl;
   });
-  const avatar = resolveSessionCardAvatar({
+  return useMemo(() => resolveSessionCardAvatar({
     agentSessionId: session?.session_id ?? '', agentId: session?.agent_id,
-    agentName: session?.agent_name, agentPortraitUrl: storedPortrait ?? (session?.agent_id && session.node_id
-      ? `/api/nodes/${encodeURIComponent(session.node_id)}/agents/${encodeURIComponent(session.agent_id)}/portrait` : null),
-  }, serverUrl);
+    agentName: session?.agent_name, agentPortraitUrl: portraits.forSession(storedPortrait, session?.agent_id) || null,
+  }, serverUrl), [session, storedPortrait, serverUrl, portraits]);
+}
+export function PersistentSessionPortrait({ session, size }: {
+  session: PersistentSessionHost['portrait']; size: number;
+}) {
+  const t = useTokens();
+  const serverUrl = useSettingsStore(state => state.serverUrl);
+  const jwt = useAuthStore(state => state.jwt);
+  const avatar = usePersistentSessionAvatar(session);
   const style = { width: size, height: size, borderRadius: capsuleRadius(size) };
-  return avatar.uri && failedUri !== avatar.uri
-    ? <Image source={{ uri: avatar.uri, ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }}
-      onError={() => setFailedUri(avatar.uri)} style={style} />
-    : <View style={[style, { alignItems: 'center', justifyContent: 'center', backgroundColor: t.colors.surfaceMuted }]}>
-      <Text style={{ ...t.foundation.typography.label, color: t.colors.textPrimary }}>{avatar.fallbackChar}</Text>
-    </View>;
+  const fallback = <View style={[style, { alignItems: 'center', justifyContent: 'center', backgroundColor: t.colors.surfaceMuted }]}>
+    <Text style={{ ...t.foundation.typography.label, color: t.colors.textPrimary }}>{avatar.fallbackChar}</Text>
+  </View>;
+  return avatar.uri
+    ? <RemoteImage source={resolveRemoteImageSource(avatar.uri, serverUrl, jwt)} fallback={fallback} style={style} />
+    : fallback;
 }

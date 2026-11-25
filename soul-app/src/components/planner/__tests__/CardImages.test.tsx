@@ -1,5 +1,6 @@
 import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
-import { Image, Platform } from 'react-native';
+import { Platform } from 'react-native';
+import { Image } from 'expo-image';
 import { CardTimeline } from '../CardTimeline';
 import { CardRequestView } from '../CardRequestView';
 import { CardReportView } from '../CardReportView';

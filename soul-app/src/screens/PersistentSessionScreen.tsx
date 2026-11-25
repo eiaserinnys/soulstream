@@ -29,7 +29,7 @@ import { PersistentSessionWeeklyUsage } from '../components/persistent/Persisten
 import { useUsageSummary } from '../hooks/useUsageSummary';
 import { useOpenContentLink } from '../hooks/useOpenContentLink';
 import { decodeAuthJwt } from '../auth/jwt-payload';
-import { usePersistentSessionHost, usePersistentSessionScene } from '../navigation/PersistentSessionContext';
+import { usePersistentSessionAvatar, usePersistentSessionHost, usePersistentSessionScene } from '../navigation/PersistentSessionContext';
 import { usePhoneRailMode } from '../navigation/tabContract';
 import { DUO_RAIL_CENTER_FROM_END, DUO_RAIL_END_INSET, DUO_TOP_BAND_RAIL_TOP, DUO_TOP_BAND_STATUS_CENTER_Y, DUO_TOP_BAND_STATUS_RESERVE, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand, useDuoTopBand } from '../navigation/duoSideBand';
 import { RAIL_CAPSULE_WIDTH, railCapsuleLength, RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
@@ -46,7 +46,6 @@ import { persistentReportStatusCard } from '../lib/persistent-report-card';
 import { resolvePersistentConversationLeft } from '../lib/persistent-session-column';
 import { cardQuestionChipLabel, renderCardQuestionSurface } from '../components/persistent/cardQuestionSurface';
 import { useCardActions } from '../hooks/useCardActions';
-import { resolveSessionCardAvatar } from '../components/sessionCardDisplay';
 
 export interface PersistentSessionScreenProps {
   active?: boolean;
@@ -117,16 +116,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const reportSend = usePersistentReportSend(session?.session_id ?? '', api, report.entries, report.server, status, setNotice,
     { begin: report.beginAnsweredHold, confirm: report.holdAnswered, release: report.releaseAnsweredHold });
   const questionActions = useCardActions(api);
-  const storedQuestionPortrait = useSessionStore(state => {
-    if (!session) return null;
-    return state.sessions[session.session_id]?.agentPortraitUrl
-      ?? Object.values(state.sessions).find(item => item.nodeId === session.node_id && item.agentId === session.agent_id)?.agentPortraitUrl;
-  });
-  const questionPortrait = React.useMemo(() => resolveSessionCardAvatar({
-    agentSessionId: session?.session_id ?? '', agentId: session?.agent_id,
-    agentName: session?.agent_name, agentPortraitUrl: storedQuestionPortrait ?? (session?.agent_id && session.node_id
-      ? `/api/nodes/${encodeURIComponent(session.node_id)}/agents/${encodeURIComponent(session.agent_id)}/portrait` : null),
-  }, serverUrl), [session, storedQuestionPortrait, serverUrl]);
+  const questionPortrait = usePersistentSessionAvatar(session ?? null);
   const reportCount = reportSend.entries.length;
   const hasReports = reportCount > 0 || !!completion.recent;
   React.useEffect(() => {

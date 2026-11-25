@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -16,6 +15,7 @@ import { restoreAttachmentFocus } from '../lib/attachment-focus';
 import { isLegacyAttachmentImage, isSvgAttachmentImage, type AttachmentView } from '../lib/attachment-view';
 import { filenameFromContentDisposition } from '../lib/attachment-link-view';
 import { ImageViewerModal } from './ImageViewerModal';
+import { RemoteImage } from './RemoteImage';
 import { AttachmentSvg } from './AttachmentSvg';
 
 /** The thumbnail is the existing chat attachment Image, with a viewer on tap. */
@@ -106,8 +106,8 @@ export function AttachmentImage({ source, sources = [source], index = 0, testID,
         : svg ? <View testID={testID} style={{ ...dimensions, borderRadius: t.radius.floor, backgroundColor: t.colors.border, overflow: 'hidden' }}>
           <AttachmentSvg source={source as ImageURISource} label={accessibilityLabel} radius={t.radius.floor} />
         </View>
-          : <Image testID={testID} source={source} style={{ ...dimensions, borderRadius: t.radius.floor, backgroundColor: t.colors.border }}
-            resizeMode="cover" accessible={false} />}
+          : <RemoteImage testID={testID} source={source} style={{ ...dimensions, borderRadius: t.radius.floor, backgroundColor: t.colors.border }}
+            contentFit="cover" accessible={false} />}
     </Pressable>
     {open ? <ImageViewerModal sources={sources} captions={captions} items={items} mimeTypes={mimeTypes} onSaveOriginal={onSaveOriginal}
       initialIndex={index} onClose={closeViewer} /> : null}
@@ -310,11 +310,11 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
         </Text>
       </View> : currentInfo.aspectRatio === null ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator testID="chat-image-loading" size="small" color={t.colors.accent} />
-      </View> : <Image
+      </View> : <RemoteImage
         source={imageSource}
         onError={handleError}
         accessible={false}
-        resizeMode="contain"
+        contentFit="contain"
         style={{ width: '100%', height: '100%', borderRadius: attachment.radius }}
       />}
     </Pressable>

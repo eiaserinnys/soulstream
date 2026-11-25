@@ -5,6 +5,9 @@ import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
 import type { SessionEvent, Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
+import { useAgentPortraitResolver } from '../../store/agentPortraitStore';
+import { resolveRemoteImageSource } from '../../lib/remote-image';
+import { RemoteImage } from '../RemoteImage';
 import { createSessionVisualRoles, TABLET_SPACING, useTokens, type DesignTokens } from '../../theme';
 import { capsuleRadius } from '../../theme/tokens';
 import { decodeAuthJwt } from '../../auth/jwt-payload';
@@ -120,6 +123,7 @@ export function UserMessage({
   const chatStyles = useMemo(() => makeChatBodyStyles(t), [t]);
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const jwt = useAuthStore((s) => s.jwt);
+  const portraits = useAgentPortraitResolver();
   // caller_info v1 (atom ed3a216d): 본인 JWT의 google picture를 자기 메시지 아바타로
   // 사용. session.userPortraitUrl(노드 소유자 정적 정보)은 fallback. authStore에 파생
   // 필드를 두는 정공법은 본 카드 범위 외(별도 후속 부채). useMemo로 jwt 변할 때만 디코드.
@@ -188,11 +192,12 @@ export function UserMessage({
   const senderColor = presentation === 'manuscript' ? t.colors.textMuted
     : variant === 'intervention' ? t.colors.interventionText : t.colors.accentText;
 
-  const { uri: avatarUri, useBearer } = pickUserAvatarUri(
+  const { uri: avatarUri } = pickUserAvatarUri(
     caller,
     profile,
     session?.userPortraitUrl,
     serverUrl,
+    portraits.normalize,
   );
   const fallbackChar = pickFallbackChar(caller, profile, session?.userName, '나');
 
@@ -341,13 +346,8 @@ export function UserMessage({
             : <Ionicons name="link-outline" size={t.iconSize.messageSender} color={t.colors.textMuted} />}
         </View>
       ) : avatarUri ? (
-        <Image
-          source={{
-            uri: avatarUri,
-            ...(useBearer && jwt
-              ? { headers: { Authorization: `Bearer ${jwt}` } }
-              : {}),
-          }}
+        <RemoteImage
+          source={resolveRemoteImageSource(avatarUri, serverUrl, jwt)}
           style={styles.avatar}
         />
       ) : (

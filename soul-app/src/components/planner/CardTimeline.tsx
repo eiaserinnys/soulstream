@@ -16,6 +16,7 @@ import { cardDetailStyles } from './CardDetail.styles';
 import { cardImageSource } from '../../lib/card-image-source';
 import { segmentCardReportImages } from '../../lib/card-report-images';
 import { useAuthStore } from '../../store/authStore';
+import { useAgentPortraitResolver } from '../../store/agentPortraitStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { extractCardBodyLinks } from '../../lib/card-body-attachments';
 import { parseExactAttachmentLink, scopedAttachmentUrl } from '../../lib/attachment-link-view';
@@ -73,7 +74,7 @@ export const CardTimeline = React.memo(function CardTimeline({ detail, onChooseA
   return <View testID="card-timeline" style={styles.timeline}>{items.filter(item => !commentsOnly || item.type === 'comment').map((item) => {
     const author = catalog[item.sessionId ?? ''] ?? detail.sessions.find((session) => session.agentSessionId === item.sessionId) ?? assigned;
     return <TimelineMessage key={item.id} id={item.id} type={item.type} source={item.source} author={author}
-      cardId={detail.card.id} agentId={detail.card.assigneeAgentId} nodeId={detail.card.nodeId} target={item.type === 'comment' && (item.source as CardComment).itemId != null ? cardItemTargetText((item.source as CardComment).itemId!, detail.card.items?.find(row => row.id === (item.source as CardComment).itemId)?.title) : undefined} onChooseAnswer={onChooseAnswer} questionView={item.questionView} questionHandlers={questionHandlers} />;
+      cardId={detail.card.id} agentId={detail.card.assigneeAgentId} target={item.type === 'comment' && (item.source as CardComment).itemId != null ? cardItemTargetText((item.source as CardComment).itemId!, detail.card.items?.find(row => row.id === (item.source as CardComment).itemId)?.title) : undefined} onChooseAnswer={onChooseAnswer} questionView={item.questionView} questionHandlers={questionHandlers} />;
   })}</View>;
 });
 
@@ -102,16 +103,16 @@ function makeEntry(id: string, type: EntryType, source: Source): Entry {
   }
 }
 
-const TimelineMessage = React.memo(function TimelineMessage({ id, type, source, author, cardId, agentId: fallbackAgentId, nodeId: fallbackNodeId, target, onChooseAnswer, questionView, questionHandlers }: {
-  id: string; type: EntryType; source: Source; author?: Session; cardId: string; agentId: string | null; nodeId: string | null; target?: string;
+const TimelineMessage = React.memo(function TimelineMessage({ id, type, source, author, cardId, agentId: fallbackAgentId, target, onChooseAnswer, questionView, questionHandlers }: {
+  id: string; type: EntryType; source: Source; author?: Session; cardId: string; agentId: string | null; target?: string;
   onChooseAnswer(answer: string): void; questionView?: CardQuestionView; questionHandlers?: CardQuestionHandlers;
 }) {
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const entry = makeEntry(id, type, source);
   const agentId = author?.agentId ?? fallbackAgentId;
-  const nodeId = author?.nodeId ?? fallbackNodeId;
-  const session: Session = { ...author, agentSessionId: author?.agentSessionId ?? entry.sessionId ?? cardId, displayName: author?.displayName ?? null, status: author?.status ?? 'idle', createdAt: author?.createdAt ?? entry.at, updatedAt: author?.updatedAt ?? entry.at, agentId, agentName: author?.agentName ?? agentId, agentPortraitUrl: author?.agentPortraitUrl ?? (agentId && nodeId ? `/api/nodes/${nodeId}/agents/${agentId}/portrait` : null) };
+  const portraits = useAgentPortraitResolver();
+  const session: Session = { ...author, agentSessionId: author?.agentSessionId ?? entry.sessionId ?? cardId, displayName: author?.displayName ?? null, status: author?.status ?? 'idle', createdAt: author?.createdAt ?? entry.at, updatedAt: author?.updatedAt ?? entry.at, agentId, agentName: author?.agentName ?? agentId, agentPortraitUrl: portraits.forSession(author?.agentPortraitUrl, agentId) || null };
   const event: SessionEvent = { id: entry.id, type: entry.user ? 'user_message' : 'assistant_message', data: { text: entry.body } };
   const newQuestion = questionHandlers && questionView ? questionView : null;
   const kindLabel = newQuestion?.kind === 'request' ? '부탁' : entry.kind;

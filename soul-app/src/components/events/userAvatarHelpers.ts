@@ -97,13 +97,16 @@ export interface UserAvatarUriResult {
 export function pickUserAvatarUri(
   caller: MessageCaller | null,
   profile: GoogleProfile | null,
-  fallbackPortraitUrl: string | null | undefined,
+  fallbackPortraitUrlRaw: string | null | undefined,
   serverUrl: string | null,
+  /** 서버가 준 초상 주소(노드 이벤트의 옛 avatar_url 포함)를 사전의 버전 주소로 바꾼다. 지금 동작은 그 위에 그대로 얹는다. */
+  normalizePortraitUrl: (url: string | null | undefined) => string = (url) => url ?? '',
 ): UserAvatarUriResult {
   if (caller?.source === 'external') return { uri: null, useBearer: false };
+  const fallbackPortraitUrl = normalizePortraitUrl(fallbackPortraitUrlRaw);
   // 1) 본인이 아닌 발신자 — caller.avatar_url만 신뢰
   if (caller) {
-    const url = caller.avatar_url;
+    const url = normalizePortraitUrl(caller.avatar_url);
     if (url && url.length > 0) {
       if (url.startsWith('http')) {
         return { uri: url, useBearer: false };
