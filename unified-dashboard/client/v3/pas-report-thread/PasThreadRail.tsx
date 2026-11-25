@@ -32,7 +32,7 @@ export function PasThreadRail({ controller }: { controller: PasReportThreadContr
       {unknownCount
         ? <div className="pas-rt-rail-error" role="alert" data-testid="pas-rt-rail-error">
           <span>카드 목록을 불러오지 못해 진행 중과 보류함을 알 수 없습니다.</span>
-          <Button variant="outline" size="xs" onClick={controller.retryCards}>다시 시도</Button>
+          <Button variant="outline" onClick={controller.retryCards}>다시 시도</Button>
         </div>
         : <p className="pas-rt-hold-note">보류함 {groups.holdCount}개</p>}
     </div>

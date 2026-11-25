@@ -1199,3 +1199,231 @@ test("항목 대상이 잡힌 채 다르게 답하기나 되묻기를 열면 알
   await expect.poll(() => harness.callsOf("POST", /answer$/).length).toBe(1);
   expect(harness.callsOf("POST", /answer$/)[0].body).toMatchObject({ mode: "text", answer: "표로 해줘" });
 });
+
+/* 세라피엘 2차 검수 반영(#1871): 결함 9~12와 담당 감수 사소 */
+
+for (const width of [1440, 360] as const) for (const theme of ["light", "dark"] as const) {
+  test(`결함 9 ${width} ${theme}: 읽기 전용 선택지의 막대가 바탕과 2:1 이상이고, 이름과 설명은 선택되며, 눌리는 요소는 없다`, async ({ page }) => {
+    await openScreen(page, width, theme, { height: 900 });
+    await openWindow(page);
+    await pick(page, ID.question);
+    const list = dialogOf(page).getByTestId("pas-rt-question-options");
+    await list.scrollIntoViewIfNeeded();
+    const items = list.locator("li");
+    await expect(items).toHaveCount(2);
+    // 막대(왼쪽 테두리 4px)가 바탕과 2:1 이상으로 보인다. 라이트에서 바탕과 같은 색이던 결함 9(가).
+    expect(await items.first().evaluate(node => getComputedStyle(node).borderLeftWidth)).toBe("4px");
+    for (let index = 0; index < 2; index += 1) {
+      const box = (await items.nth(index).boundingBox())!;
+      const bar = await pixel(page, box.x + 2, box.y + box.height / 2);
+      const ground = await pixel(page, box.x - 6, box.y + box.height / 2);
+      expect(contrast(bar, ground), `${width} ${theme} 선택지 ${index + 1} 막대`).toBeGreaterThanOrEqual(2);
+    }
+    // 눌리는 요소가 없고, 마우스를 올려도 바탕이 바뀌지 않으며, 눌러도 답이 가지 않는다(결함 1 그대로).
+    await expect(list.locator("button, [role=button], [tabindex], a, input")).toHaveCount(0);
+    const before = await items.first().evaluate(node => getComputedStyle(node).backgroundColor);
+    const first = (await items.first().boundingBox())!;
+    await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2);
+    expect(await items.first().evaluate(node => getComputedStyle(node).backgroundColor)).toBe(before);
+    expect(await items.first().evaluate(node => getComputedStyle(node).cursor)).toBe("auto");
+    // 이름과 설명 글은 선택되고 복사할 수 있다(결함 9 (나)).
+    for (const node of [list, items.first().locator("*").first()]) expect(await node.evaluate(element => getComputedStyle(element).userSelect)).not.toBe("none");
+    const name = list.getByText("카드 안에 줄로 보여 주기", { exact: true });
+    await name.dblclick({ position: { x: 6, y: 6 } });
+    expect(await page.evaluate(() => window.getSelection()?.toString().trim() ?? "")).toContain("카드");
+    const description = list.getByText(/카드 행 아래에 기다리는 카드 번호를/);
+    const box = (await description.boundingBox())!;
+    await page.evaluate(() => window.getSelection()?.removeAllRanges());
+    await page.mouse.move(box.x + 1, box.y + 6);
+    await page.mouse.down();
+    await page.mouse.move(box.x + Math.min(box.width - 2, 200), box.y + 6, { steps: 6 });
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.getSelection()?.toString().trim() ?? "")).toContain("카드 행");
+    if (theme === "light") await shot(page, `w${width}-light-question-options-selected`);
+  });
+}
+
+for (const width of [1440, 360] as const) {
+  test(`결함 10 ${width}: 카드 목록 실패의 레일 「다시 시도」는 스레드 실패의 「다시 시도」와 같은 14px, 32px이다`, async ({ page }) => {
+    const harness = await openScreen(page, width, "light", {
+      height: 900,
+      beforeGoto: async target => { await target.route(url => url.pathname === "/api/cards", route => route.fulfill({ status: 503, json: { detail: { error: { code: "SERVER", message: "카드 목록을 읽지 못했습니다" } } } })); },
+    });
+    harness.failDetail(ID.review, true);
+    await openCap(page).click();
+    await expect(dialogOf(page)).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const dialog = dialogOf(page);
+    const threadRetry = button(dialog.getByTestId("pas-rt-thread-error"), "다시 시도");
+    await expect(threadRetry).toBeVisible();
+    if (width === 360) await dialog.getByTestId("pas-rt-rail-toggle").click();
+    const railError = dialog.getByTestId("pas-rt-rail-error");
+    await expect(railError).toBeVisible();
+    const railRetry = button(railError, "다시 시도");
+    const measure = (node: Locator) => node.evaluate(element => ({ size: getComputedStyle(element).fontSize, height: Math.round(element.getBoundingClientRect().height) }));
+    // 같은 역할의 단추는 한 창 안에서 한 크기다. 넓은 폭의 기본 단추는 14px, 32px이다(좁은 폭은 기본 단추의 터치 크기를 따른다).
+    expect(await measure(railRetry)).toEqual(await measure(threadRetry));
+    if (width === 1440) expect(await measure(railRetry)).toEqual({ size: "14px", height: 32 });
+    // 넘치거나 두 줄이 되지 않는다. 시작선은 구역 머리와 1px 안이다.
+    const rail = dialog.getByTestId("pas-rt-rail");
+    expect(await rail.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    const retryBox = (await railRetry.boundingBox())!;
+    const railBox = (await rail.boundingBox())!;
+    expect(retryBox.x + retryBox.width).toBeLessThanOrEqual(railBox.x + railBox.width);
+    const headLeft = (await rail.locator(".pas-rt-rail-head h2").first().boundingBox())!.x;
+    expect(Math.abs(retryBox.x - headLeft)).toBeLessThanOrEqual(1);
+    expect(Math.abs((await railError.locator("span").first().boundingBox())!.x - headLeft)).toBeLessThanOrEqual(1);
+    await shot(page, `w${width}-light-rail-error-retry`);
+  });
+}
+
+for (const width of [1440, 360] as const) {
+  test(`결함 11 ${width}: 미뤄 둔 진행 중과 검증 대기에만 「미뤄 둠: 시각」이 다른 종류와 같은 자리, 같은 모양으로 있다`, async ({ page }) => {
+    const fixture = buildPasThreadFixture();
+    for (const id of [ID.running, ID.verifying]) fixture.cards[id].snoozedUntil = new Date(Date.now() + 3 * 3600_000).toISOString();
+    const harness = await openScreen(page, width, "light", { fixture, height: 900 });
+    await openWindow(page);
+    const decide = decideOf(page);
+    const hintStyle = (node: Locator) => node.evaluate(element => { const style = getComputedStyle(element); return { parent: element.parentElement!.className, size: style.fontSize, color: style.color, weight: style.fontWeight }; });
+    await pick(page, ID.snoozed);
+    const reference = await hintStyle(decide.locator(".pas-rt-hint"));
+    expect(reference.parent).toContain("pas-rt-stamps-primary");
+    for (const id of [ID.running, ID.verifying]) {
+      await pick(page, id);
+      await expect(decide.locator(".pas-rt-hint")).toHaveText(/^미뤄 둠: .+/);
+      expect(await hintStyle(decide.locator(".pas-rt-hint"))).toEqual(reference);
+      const hint = (await decide.locator(".pas-rt-hint").boundingBox())!;
+      const box = (await decide.boundingBox())!;
+      expect(hint.x + hint.width, `${id} 표시가 결재 상자 안`).toBeLessThanOrEqual(box.x + box.width);
+      await noHorizontalOverflow(page);
+    }
+    await shot(page, `w${width}-light-snoozed-running-hint`);
+    // 해제하면 표시와 해제 단추가 함께 사라지고 「지시 적기」만 남는다.
+    await pick(page, ID.verifying);
+    await button(decide, "미루기 해제").click();
+    await expect.poll(() => harness.callsOf("PATCH", /\/api\/cards\/[^/]+$/).length).toBe(1);
+    await expect(decide.locator(".pas-rt-hint")).toHaveCount(0);
+    await expect(button(decide, "미루기 해제")).toHaveCount(0);
+    await expect(decide.locator("button")).toHaveText(["지시 적기"]);
+  });
+}
+
+test("결함 11: 미루지 않은 진행 중과 검증 대기 안건에는 「미뤄 둠」 표시가 없다", async ({ page }) => {
+  await openScreen(page, 1440, "light");
+  await openWindow(page);
+  for (const id of [ID.running, ID.verifying]) {
+    await pick(page, id);
+    await expect(decideOf(page).locator(".pas-rt-hint")).toHaveCount(0);
+    await expect(button(decideOf(page), "미루기 해제")).toHaveCount(0);
+  }
+});
+
+// 결함 12. 둘째 Esc가 삼켜진 것이 아니라, 사라지는 동안 창이 남아 있던 것이다. 둘째 Esc는 곧바로 창을 닫는 중으로 바꾸고,
+// 움직임 줄이기에서는 그 틈이 없어야 한다. 6번 되풀이해 그 틈(Esc 뒤 창이 사라지기까지)이 600ms 안인지 본다.
+const ESC_ROUNDS = 6;
+async function pressEscAndExpectClosed(page: Page, label: string) {
+  const dialog = dialogOf(page);
+  const startedAt = Date.now();
+  await page.keyboard.press("Escape");
+  await expect(dialog, `${label}: 이 Esc로 보고 창이 닫힌다`).toHaveCount(0, { timeout: 600 });
+  return Date.now() - startedAt;
+}
+test("결함 12: 「지시 적기」를 연 채 카드 패널을 Esc로 닫으면, 이어지는 Esc 한 번에 보고 창이 닫힌다(6번 되풀이)", async ({ page }) => {
+  await openScreen(page, 1440, "light");
+  const workspace = page.getByTestId("v3-card-workspace");
+  for (let round = 1; round <= ESC_ROUNDS; round += 1) {
+    await openWindow(page);
+    await button(decideOf(page), "지시 적기").click();
+    await dialogOf(page).getByTestId("pas-rt-open-card-panel").click();
+    await expect(workspace).toBeVisible();
+    await page.keyboard.press("Escape");
+    // 첫 Esc는 패널만 닫는다. 창과 입력창은 그대로다.
+    await expect(workspace).toHaveCount(0);
+    await expect(dialogOf(page)).toBeVisible();
+    await expect(decideOf(page).locator(".pas-rt-composer-drawer")).toHaveCount(1);
+    await expect(dialogOf(page).getByTestId("pas-rt-open-card-panel")).toBeFocused();
+    await pressEscAndExpectClosed(page, `${round}번째`);
+    await expect(openCap(page)).toBeFocused();
+  }
+});
+test("결함 12: 카드 패널 안 증거 확대를 더한 순서(Esc 셋)도 6번 모두 셋째 Esc에 보고 창이 닫힌다", async ({ page }) => {
+  await openScreen(page, 1440, "light");
+  const workspace = page.getByTestId("v3-card-workspace");
+  for (let round = 1; round <= ESC_ROUNDS; round += 1) {
+    await openWindow(page);
+    await button(decideOf(page), "지시 적기").click();
+    await dialogOf(page).getByTestId("pas-rt-open-card-panel").click();
+    await expect(workspace).toBeVisible();
+    const evidence = workspace.locator(".v3-card-check-item-evidence img").first();
+    await evidence.scrollIntoViewIfNeeded();
+    await evidence.click();
+    await expect(page.locator('[data-slot="dialog-popup"]')).toHaveCount(2);
+    await page.keyboard.press("Escape");
+    await expect(page.locator('[data-slot="dialog-popup"]')).toHaveCount(1);
+    await expect(workspace).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(workspace).toHaveCount(0);
+    await expect(dialogOf(page)).toBeVisible();
+    await pressEscAndExpectClosed(page, `${round}번째 셋째`);
+  }
+});
+test("결함 12: 입력창 안에 초점이 있을 때 Esc는 입력창만 닫고 「지시 적기」로 돌아가며, 그 다음 Esc가 창을 닫는다", async ({ page }) => {
+  await openScreen(page, 1440, "light");
+  await openWindow(page);
+  await button(decideOf(page), "지시 적기").click();
+  await expect(decideOf(page).getByRole("textbox", { name: "커멘트" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(decideOf(page).locator(".pas-rt-composer-drawer")).toHaveCount(0);
+  await expect(button(decideOf(page), "지시 적기")).toBeFocused();
+  await expect(dialogOf(page)).toBeVisible();
+  await pressEscAndExpectClosed(page, "입력창을 닫은 뒤");
+});
+
+test("움직임 줄이기에서는 보고 창이 사라지는 동안 남지 않는다", async ({ page }) => {
+  await openScreen(page, 1440, "light");
+  await openWindow(page);
+  expect(await dialogOf(page).evaluate(node => getComputedStyle(node).transitionDuration)).toBe("0s");
+});
+
+test("카드 패널 청크를 못 받으면 패널 자리에 실패 안내와 닫기가 서고 보고 창은 살아 있다", async ({ page }) => {
+  const harness = await openScreen(page, 1440, "light", {
+    beforeGoto: async target => { await target.route(url => /PasCardPanel\.tsx/.test(url.pathname), route => route.abort()); },
+  });
+  await openWindow(page);
+  await button(decideOf(page), "지시 적기").click();
+  await decideOf(page).getByRole("textbox", { name: "커멘트" }).fill("쓰던 글");
+  await dialogOf(page).getByTestId("pas-rt-open-card-panel").click();
+  const failure = dialogOf(page).getByTestId("pas-rt-panel-error");
+  await expect(failure).toBeVisible();
+  await expect(failure).toContainText("카드 패널을 불러오지 못했습니다");
+  await shot(page, "w1440-light-card-panel-chunk-failed");
+  // 보고 창과 쓰던 글은 그대로다.
+  await expect(dialogOf(page).getByTestId("pas-rt-timeline")).toBeVisible();
+  await expect(decideOf(page).getByRole("textbox", { name: "커멘트" })).toHaveValue("쓰던 글");
+  await button(failure, "닫기").click();
+  await expect(failure).toHaveCount(0);
+  await expect(dialogOf(page).getByTestId("pas-rt-open-card-panel")).toBeFocused();
+  // 닫은 뒤에도 창은 그대로 쓸 수 있다: 지시 적기를 보낸다.
+  await button(decideOf(page), "커멘트 전송").click();
+  await expect.poll(() => harness.callsOf("POST", /comments$/).length).toBe(1);
+  expect(harness.callsOf("POST", /comments$/)[0].body).toMatchObject({ body: "쓰던 글" });
+});
+
+test("카드 패널을 연 채 안건이 모두 사라지면 패널도 내려가고, 안건이 돌아와도 저절로 다시 뜨지 않는다", async ({ page }) => {
+  const fixture = buildPasThreadFixture();
+  // 진행 중 카드도 없는 판으로 만들어, 결재 대기 안건이 사라지면 활성 안건이 비게 한다.
+  fixture.list = fixture.list.filter(card => card.status === "on_hold");
+  const original = fixture.entries;
+  const harness = await openScreen(page, 1440, "light", { fixture });
+  await openWindow(page);
+  await dialogOf(page).getByTestId("pas-rt-open-card-panel").click();
+  await expect(page.getByTestId("v3-card-workspace")).toBeVisible();
+  fixture.entries = original.filter(entry => !entry.card_id);
+  await harness.publishEntries();
+  await expect(dialogOf(page).getByTestId("pas-rt-empty")).toBeVisible();
+  await expect(page.getByTestId("v3-card-workspace")).toHaveCount(0);
+  fixture.entries = original;
+  await harness.publishEntries();
+  await expect(dialogOf(page).locator(".pas-rt-rail-item[data-active=true]")).toBeVisible();
+  await expect(page.getByTestId("v3-card-workspace")).toHaveCount(0);
+});

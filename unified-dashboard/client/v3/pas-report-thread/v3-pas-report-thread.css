@@ -56,7 +56,7 @@
 .pas-rt-notes-list li > span { min-width: 0; white-space: pre-wrap; }
 .pas-rt-question { display: flex; flex-direction: column; gap: var(--v3-space-2); min-width: 0; }
 .pas-rt-question-options { display: flex; flex-direction: column; gap: var(--v3-space-2); margin: 0; padding: 0; list-style: none; }
-.pas-rt-question-options li { display: flex; flex-direction: column; gap: var(--v3-space-1); min-width: 0; border-left: var(--v3-space-1) solid var(--persistent-session-line); padding: var(--v3-space-1) var(--v3-space-3); }
+.pas-rt-question-options li { display: flex; flex-direction: column; gap: var(--v3-space-1); min-width: 0; border-left: var(--v3-space-1) solid var(--pas-rt-mark); padding: var(--v3-space-1) var(--v3-space-3); }
 .pas-rt-question-options { font: var(--v3-type-body) var(--v3-font-family); }
 .pas-rt-question-options .v3-card-question-effect { color: var(--v3-text-secondary); font: var(--v3-type-body) var(--v3-font-family); overflow-wrap: anywhere; word-break: keep-all; }
 .pas-rt-question[data-withdrawn] { color: var(--v3-text-secondary); }
@@ -101,4 +101,14 @@
   .pas-rt-decide { padding: var(--v3-space-3) var(--v3-space-4) var(--v3-space-4); }
   .pas-rt-hint { white-space: normal; }
   .pas-rt-stamps-secondary { margin-left: 0; }
+}
+
+/* 카드 패널 청크를 못 받았을 때 패널 자리에 서는 실패 안내 */
+.pas-rt-panel-fallback { position: absolute; inset: 0; z-index: var(--v3-layer-modal); display: flex; align-items: center; justify-content: center; padding: var(--v3-space-6); background: color-mix(in srgb, var(--background) 60%, transparent); }
+.pas-rt-panel-fallback-box { display: flex; flex-direction: column; align-items: flex-start; gap: var(--v3-space-3); max-width: 100%; padding: var(--v3-space-5); border: 1px solid var(--persistent-session-line); border-radius: var(--radius-root); background: var(--persistent-session-panel); }
+.pas-rt-panel-fallback-box p { margin: 0; color: var(--v3-text-secondary); font: var(--v3-type-body) var(--v3-font-family); overflow-wrap: anywhere; }
+
+/* 움직임 줄이기: 보고 창은 사라질 때 서서히 흐려지지 않고 바로 내려간다. 사라지는 동안 창이 남아 Esc가 먹지 않은 것처럼 보이는 틈을 없앤다. */
+@media (prefers-reduced-motion: reduce) {
+  .pas-rt-dialog { transition: none; }
 }

@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSta
 import { Button, DashboardIconCap, Dialog, DialogPopup, DialogTitle, useDashboardStore, useIsMobile } from "@seosoyoung/soul-ui";
 import { ExternalLink, PanelLeft, X } from "lucide-react";
 import { StatusChip } from "../StatusChip";
+import { PasCardPanelBoundary } from "./PasCardPanelBoundary";
 import { PasThreadDecideBox } from "./PasThreadDecideBox";
 import { PasThreadRail } from "./PasThreadRail";
 import { PasThreadBody } from "./PasThreadTimeline";
@@ -115,6 +116,8 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
     setRailOpen(false);
   }, []);
   const closePanel = useCallback(() => {
+    // 패널이 사라지기 전에 초점을 연 단추로 옮긴다. 패널 안에서 초점이 사라지면 대화상자가 초점을 창 머리로 끌어간다.
+    panelTrigger.current?.focus({ preventScroll: true });
     setPanelOpen(false);
     requestAnimationFrame(() => panelTrigger.current?.focus({ preventScroll: true }));
   }, []);
@@ -145,6 +148,8 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
     return () => cancelAnimationFrame(frame);
   }, [focusKey, drawerMode]);
 
+  // 안건이 모두 사라져 패널이 내려가면 열림 표시도 함께 닫는다. 안건이 돌아와도 패널이 저절로 다시 뜨지 않는다.
+  useEffect(() => { if (!active && panelOpen) setPanelOpen(false); }, [active, panelOpen]);
   const openPanel = (trigger: HTMLElement | null) => { panelTrigger.current = trigger; setPanelOpen(true); };
   return <>
     <header className="pas-rt-head">
@@ -182,7 +187,7 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
         <PasThreadDecideBox controller={controller} agenda={active} undoButtonRef={undoButtonRef} onLayoutChange={keepLatest} />
       </div>
     </div>
-    {panelOpen && active ? <Suspense fallback={null}><PasCardPanel cardId={active.cardId} folders={folders ?? []} ownSessionId={ownSessionId}
-      liveSessions={liveSessions} mobile={mobile} onClose={closePanel} /></Suspense> : null}
+    {panelOpen && active ? <PasCardPanelBoundary onClose={closePanel}><Suspense fallback={null}><PasCardPanel cardId={active.cardId} folders={folders ?? []} ownSessionId={ownSessionId}
+      liveSessions={liveSessions} mobile={mobile} onClose={closePanel} /></Suspense></PasCardPanelBoundary> : null}
   </>;
 }

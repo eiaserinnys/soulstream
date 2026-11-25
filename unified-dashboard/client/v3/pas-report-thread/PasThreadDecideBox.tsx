@@ -133,6 +133,8 @@ export function PasThreadDecideBox({ controller, agenda, undoButtonRef, onLayout
     primary = <><Button variant="default" disabled={busy || !agenda.entry} onClick={() => void controller.acknowledge(agenda)}>확인했어</Button>{hint}</>;
     secondary = <>{commentButton}{snoozeSlot}</>;
   } else {
+    // 진행 중과 검증 대기는 결재 단추가 없지만, 미뤄 둔 것이면 다른 종류와 같은 자리에 돌아올 시각을 보인다.
+    primary = hint;
     secondary = <>{commentButton}{snoozeSlot}</>;
   }
   const options = snoozeOpen ? snoozeOptions(new Date()) : [];

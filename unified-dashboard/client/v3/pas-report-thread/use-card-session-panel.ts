@@ -14,6 +14,9 @@ const noop = () => undefined;
  * 세션 행을 누르면 새 탭이 아니라 오른쪽 칸에 그 세션이 열린다. 패널을 닫으면 선택은 사라진다.
  * 카드의 담당 세션이 PAS 자신의 세션이면 PAS 화면의 대화를 그대로 쓰고 따로 스트림을 열지 않는다.
  * `enabled`가 false면(견본) 스트림과 세션 조회를 하지 않는다.
+ *
+ * 이 로직은 PersistentSessionScreen.tsx의 카드 패널 오른쪽 칸(overlaySession* 묶음)을 따라 한 사본이다.
+ * 한쪽을 고치면 다른 쪽도 같이 맞춘다.
  */
 export function useCardSessionPanel({ cardId, ownSessionId, enabled }: { cardId: string | null; ownSessionId: string | null; enabled: boolean }) {
   const { user, refreshAuthStatus } = useAuth();
@@ -62,7 +65,6 @@ export function useCardSessionPanel({ cardId, ownSessionId, enabled }: { cardId:
     storeScope.store.getState().setActiveSessionSummary(activeSession);
   }, [activeSession, sessionId, storeScope]);
 
-  const reset = useCallback(() => { setSelection(null); setResolved(null); }, []);
   const openSession = useCallback((summary: SessionSummary, _selection?: CardSessionSelection) => {
     if (!cardId) return;
     setSelection({ cardId, sessionId: summary.agentSessionId });
@@ -87,7 +89,6 @@ export function useCardSessionPanel({ cardId, ownSessionId, enabled }: { cardId:
 
   const ownLive = own && activeSessionKey === sessionId;
   return {
-    reset,
     workspaceProps: {
       initialSessionId: sessionId,
       onOpenSession: openSession,
@@ -96,7 +97,8 @@ export function useCardSessionPanel({ cardId, ownSessionId, enabled }: { cardId:
       onSessionChange: continueSession,
       chatInputDisabled,
       fileUploadUrl: !chatInputDisabled && nodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(nodeId)}` : undefined,
-      historyEnabled: own ? ownLive : Boolean(sessionId && stream.synchronizedSessionKey === sessionId),
+      // PersistentSessionScreen과 같다. PAS 자신의 세션은 화면의 대화 저장소가 이미 이력을 들고 있어 여기서 이력 버퍼를 또 만들지 않는다.
+      historyEnabled: own ? false : Boolean(sessionId && stream.synchronizedSessionKey === sessionId),
       loadDisplaySettings: !own,
       sessionStreamActive: own ? ownLive : Boolean(sessionId && stream.status === "connected"),
       sessionConnectionStatus: own ? ("connected" as const) : sessionId ? stream.status : ("disconnected" as const),

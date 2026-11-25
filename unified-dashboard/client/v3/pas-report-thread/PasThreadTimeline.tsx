@@ -94,7 +94,7 @@ function QuestionBlock({ detail, question, portraitUrl, userPortraitUrl }: {
   return <div className="pas-rt-question" data-open={view.open || undefined} data-withdrawn={withdrawn || undefined}>
     {view.title ? <h3 className="v3-card-question-title">{view.title}</h3> : null}
     <CardQuestionBody view={readonlyOptions.length ? { ...view, options: [] } : view} portraitUrl={portraitUrl} userPortraitUrl={userPortraitUrl} pending layout="stack" />
-    {readonlyOptions.length ? <ul className="pas-rt-question-options" aria-label="선택지 설명" data-testid="pas-rt-question-options">
+    {readonlyOptions.length ? <ul className="pas-rt-question-options" aria-label="선택지 설명" data-testid="pas-rt-question-options" data-v3-selectable-content="true">
       {readonlyOptions.map(option => <li key={option.label}>
         <InputRequestOptionContent layout="stack" option={{ label: option.label, description: option.description ?? undefined }}
           descriptionClassName="v3-card-question-effect"
