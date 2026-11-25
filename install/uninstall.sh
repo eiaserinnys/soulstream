@@ -88,12 +88,12 @@ read_receipt() {
   RECEIPT_STATE=invalid
   [[ -f "$UN_RECEIPT" && ! -L "$UN_RECEIPT" && -r "$UN_RECEIPT" ]] || return 0
   has_cmd jq || return 0
-  jq -e '.schema == 1
+  [[ "$(jq '.schema == 1
     and (.node_tarball_installed | type == "boolean")
     and (.codex_npm_global_installed | type == "boolean")
     and (.corepack_shims_created | type == "array" and all(.[]; IN("pnpm", "pnpx", "yarn", "yarnpkg")))
     and (if .node_tarball_installed then (.node_version | type == "string" and test("^v[0-9]+[.][0-9]+[.][0-9]+$")) else true end)' \
-    "$UN_RECEIPT" >/dev/null 2>&1 || return 0
+    "$UN_RECEIPT" 2>/dev/null)" == true ]] || return 0
   R_NODE=$(jq -r '.node_tarball_installed' "$UN_RECEIPT") || return 0
   R_NODE_VERSION=$(jq -r '.node_version // ""' "$UN_RECEIPT") || return 0
   R_CODEX=$(jq -r '.codex_npm_global_installed' "$UN_RECEIPT") || return 0
