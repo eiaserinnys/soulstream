@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 
+# Secrets pass through shell variables, so tracing is off for this script and for the shells it starts.
+disable_xtrace() {
+  { set +x; export -n SHELLOPTS 2>/dev/null || true; } 2>/dev/null
+  return 0
+}
+disable_xtrace
+
 # Atom listens on loopback; tests point this at a fake server.
 ATOM_URL=http://127.0.0.1:4200
 ATOM_API_KEY_RE='^[A-Za-z0-9._~+/=-]+$'
@@ -25,6 +32,20 @@ SERVICE_UNITS='soulstream-worker.service soulstream-orch.service soulstream-atom
 MAINTENANCE_ENTERED=false
 INSTALL_ROOT=
 MANAGED_CONFIG_WARNINGS=
+# One rule for the administrator password shared by Soulstream and atom. The five excluded characters are read
+# differently by systemd EnvironmentFile=, dotenv and the installer's own env readers; leading and trailing spaces
+# are trimmed by atom but not by Soulstream.
+PASSWORD_RULE_MESSAGE="Invalid administrator password: use 8 to 128 printable ASCII characters on a single line, with no leading or trailing space and none of # \\ ' \" \`"
+FORBIDDEN_PASSWORD_CHARS='#\'\''"`'
+ADMIN_PASSWORD_FILE=
+SET_ADMIN_PASSWORD=false
+CHOSEN_ADMIN_PASSWORD=
+PASSWORD_SOURCE=
+GENERATED_PASSWORD_IS_NEW=false
+GENERATED_PASSWORD_SAVED=false
+TTY_SAVED_STATE=
+# Temporary files that may hold secrets; removed on every exit path.
+declare -ga TEMP_FILES=()
 # Keyed by soulstream and atom; filled by check_repositories.
 declare -gA REPO_PATH=() REPO_PREVIOUS=() REPO_TARGET=() REPO_MODE=() REPO_BRANCH=()
 # Keyed by database name; holds the dumps this run confirmed. backup_database runs in this shell, so on_error sees them.
@@ -34,11 +55,63 @@ DATABASE_OWNER=soulstream
 # Dumps kept per database in <root>/.local/backups.
 BACKUP_KEEP=3
 
+register_temp_file() {
+  TEMP_FILES+=("$1")
+  return 0
+}
+
+cleanup_temp_files() {
+  if ((${#TEMP_FILES[@]})); then
+    rm -f -- "${TEMP_FILES[@]}" 2>/dev/null || true
+    TEMP_FILES=()
+  fi
+  return 0
+}
+
 usage() {
-  printf 'Usage: install.sh [--backends claude,codex,antigravity] [--ref git-ref] [--atom-ref git-ref] [--tailscale [--tailscale-auth-key-file path] [--tailscale-user login]] [--help]\n'
+  printf 'Usage: install.sh [--backends claude,codex,antigravity] [--ref git-ref] [--atom-ref git-ref] [--admin-password-file path | --set-admin-password] [--tailscale [--tailscale-auth-key-file path] [--tailscale-user login]] [--help]\n'
+}
+
+validate_admin_password() {
+  local pw=$1 LC_ALL=C
+  if (( ${#pw} < 8 || ${#pw} > 128 )) ||
+     [[ "$pw" == ' '* || "$pw" == *' ' || "$pw" =~ [^[:print:]] || "$pw" == *["$FORBIDDEN_PASSWORD_CHARS"]* ]]; then
+    printf '%s\n' "$PASSWORD_RULE_MESSAGE" >&2
+    return 1
+  fi
+  return 0
+}
+
+# Reads the whole file as bytes. Only a final LF (and the CR before it) is a line end; anything else that is not
+# printable ASCII, including a second line or a NUL byte, fails the value rule.
+read_admin_password_file() {
+  disable_xtrace
+  local file=$1 raw orig_bytes LC_ALL=C
+  if [[ ! -f "$file" || ! -r "$file" ]]; then
+    printf 'Admin password file is not readable.\n' >&2
+    return 1
+  fi
+  orig_bytes=$(wc -c < "$file") || { printf 'Admin password file is not readable.\n' >&2; return 1; }
+  # printf x only after a successful cat, so a read error is not mistaken for a value.
+  { raw=$(cat -- "$file" && printf x); } 2>/dev/null || { printf 'Admin password file is not readable.\n' >&2; return 1; }
+  raw=${raw%x}
+  # Command substitution drops NUL bytes; under LC_ALL=C, ${#raw} is the exact byte count that remains.
+  if (( orig_bytes != ${#raw} )); then
+    printf '%s\n' "$PASSWORD_RULE_MESSAGE" >&2
+    return 1
+  fi
+  if [[ "$raw" == *$'\n' ]]; then
+    raw=${raw%$'\n'}
+    raw=${raw%$'\r'}
+  fi
+  validate_admin_password "$raw" || return 1
+  CHOSEN_ADMIN_PASSWORD=$raw
+  PASSWORD_SOURCE=file
+  return 0
 }
 
 parse_args() {
+  disable_xtrace
   BACKENDS=claude,codex
   REF=
   REF_SET=false
@@ -48,16 +121,23 @@ parse_args() {
   TAILSCALE_AUTH_KEY=
   TAILSCALE_AUTH_KEY_FILE=
   TAILSCALE_USER=
+  ADMIN_PASSWORD_FILE=
+  SET_ADMIN_PASSWORD=false
+  CHOSEN_ADMIN_PASSWORD=
+  PASSWORD_SOURCE=
+  GENERATED_PASSWORD_SAVED=false
   while (($#)); do
     case "$1" in
       --help) usage; exit 0 ;;
       --tailscale) TAILSCALE=true; shift ;;
-      --backends|--ref|--atom-ref|--tailscale-auth-key|--tailscale-auth-key-file|--tailscale-user)
+      --set-admin-password) SET_ADMIN_PASSWORD=true; shift ;;
+      --backends|--ref|--atom-ref|--admin-password-file|--tailscale-auth-key|--tailscale-auth-key-file|--tailscale-user)
         if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then usage >&2; exit 2; fi
         case "$1" in
           --ref) REF=$2; REF_SET=true ;;
           --atom-ref) ATOM_REF=$2; ATOM_REF_SET=true ;;
           --backends) BACKENDS=$2 ;;
+          --admin-password-file) ADMIN_PASSWORD_FILE=$2 ;;
           --tailscale-auth-key) TAILSCALE_AUTH_KEY=$2 ;;
           --tailscale-auth-key-file) TAILSCALE_AUTH_KEY_FILE=$2 ;;
           --tailscale-user) TAILSCALE_USER=${2,,} ;;
@@ -66,6 +146,12 @@ parse_args() {
       *) usage >&2; exit 2 ;;
     esac
   done
+  if [[ "$SET_ADMIN_PASSWORD" == true && -n "$ADMIN_PASSWORD_FILE" ]]; then usage >&2; exit 2; fi
+  if [[ -n "$ADMIN_PASSWORD_FILE" ]]; then
+    # The installer changes to / before anything else runs, so the file is read now, from the caller's directory.
+    [[ "$ADMIN_PASSWORD_FILE" == /* ]] || ADMIN_PASSWORD_FILE=$PWD/$ADMIN_PASSWORD_FILE
+    read_admin_password_file "$ADMIN_PASSWORD_FILE" || exit 2
+  fi
   if [[ "$TAILSCALE" != true && ( -n "$TAILSCALE_AUTH_KEY" || -n "$TAILSCALE_AUTH_KEY_FILE" || -n "$TAILSCALE_USER" ) ]]; then usage >&2; exit 2; fi
   if [[ -n "$TAILSCALE_AUTH_KEY" && -n "$TAILSCALE_AUTH_KEY_FILE" ]]; then usage >&2; exit 2; fi
   if [[ -n "$TAILSCALE_AUTH_KEY_FILE" ]]; then
@@ -82,59 +168,239 @@ parse_args() {
     remaining=${remaining#*,}
   done
   BACKENDS=$normalized
+  return 0
 }
 
 has_backend() { [[ ",$BACKENDS," == *",$1,"* ]]; }
 
+# Prints the value of key in an env file; a missing file or key prints nothing. Every return is explicit because
+# callers run this where errexit is suspended.
 read_env_value() {
   local file=$1 key=$2 value
   [[ -f "$file" ]] || return 0
-  value=$(awk -v key="$key" 'index($0,key "=")==1 { value=substr($0,length(key)+2) } END { print value }' "$file")
+  value=$(awk -v key="$key" 'index($0,key "=")==1 { value=substr($0,length(key)+2) } END { print value }' "$file") || return 1
   value=${value#\"}; value=${value%\"}
   printf '%s' "$value"
+  return 0
 }
 
+# The administrator password already on this server. <root>/.admin-password is the source of truth: setup_secrets
+# rewrites it first, so after a failed password change a plain rerun finishes with the new value.
+read_existing_admin_password() {
+  disable_xtrace
+  local root=$1 atom_root=$2 existing=
+  if [[ -f "$root/.admin-password" ]]; then
+    existing=$(<"$root/.admin-password") || return 1
+  fi
+  if [[ -z "$existing" ]]; then existing=$(read_env_value "$root/.env.orch" DASHBOARD_ADMIN_PASSWORD) || return 1; fi
+  if [[ -z "$existing" ]]; then existing=$(read_env_value "$atom_root/.env" DASHBOARD_ADMIN_PASSWORD) || return 1; fi
+  printf '%s' "$existing"
+  return 0
+}
+
+restore_tty_echo() {
+  if [[ -n "${TTY_SAVED_STATE:-}" ]]; then
+    stty "$TTY_SAVED_STATE" <&4 2>/dev/null || stty "$TTY_SAVED_STATE" </dev/tty 2>/dev/null || stty echo </dev/tty 2>/dev/null || true
+    TTY_SAVED_STATE=
+  fi
+  return 0
+}
+
+# Turns echo off on fd 4. Fails, with echo restored, unless the state was saved and echo is really off.
+hide_tty_echo() {
+  local saved
+  if ! saved=$(stty -g <&4 2>/dev/null) || [[ -z "$saved" ]]; then
+    return 1
+  fi
+  TTY_SAVED_STATE=$saved
+  if ! stty -echo <&4 2>/dev/null; then
+    restore_tty_echo
+    return 1
+  fi
+  return 0
+}
+
+on_password_prompt_signal() {
+  local code=$1
+  restore_tty_echo
+  { exec 4<&- 4>&-; } 2>/dev/null || true
+  cleanup_temp_files
+  printf '\nAborted.\n' >&2
+  exit "$code"
+}
+
+# Asks twice on fd 4 (/dev/tty). Enter at the first prompt means: generate one (PASSWORD_SOURCE=generated_tty).
+prompt_admin_password_on_tty() {
+  disable_xtrace
+  local attempt pw1 pw2 rc=1
+  local prev_exit prev_int prev_term prev_hup
+  prev_exit=$(trap -p EXIT); prev_int=$(trap -p INT); prev_term=$(trap -p TERM); prev_hup=$(trap -p HUP)
+  trap 'restore_tty_echo; cleanup_temp_files' EXIT
+  trap 'on_password_prompt_signal 130' INT
+  trap 'on_password_prompt_signal 143' TERM
+  trap 'on_password_prompt_signal 129' HUP
+
+  for ((attempt = 1; attempt <= 3; attempt++)); do
+    if ! hide_tty_echo; then
+      printf 'Cannot disable terminal echo on /dev/tty. Pass --admin-password-file <path> instead.\n' >&2
+      rc=1; break
+    fi
+    printf 'Administrator password for Soulstream and atom (8-128 chars; press Enter to generate): ' >&4
+    if ! IFS= read -r pw1 <&4; then
+      restore_tty_echo
+      printf '\nAborted.\n' >&2
+      rc=1; break
+    fi
+    printf '\n' >&4
+    restore_tty_echo
+    pw1=${pw1%$'\r'}
+
+    if [[ -z "$pw1" ]]; then
+      CHOSEN_ADMIN_PASSWORD=
+      PASSWORD_SOURCE=generated_tty
+      printf 'A random administrator password will be generated and shown once at the end of installation.\n' >&4
+      rc=0; break
+    fi
+    if ! validate_admin_password "$pw1" 2>&4; then
+      pw1=
+      continue
+    fi
+
+    if ! hide_tty_echo; then
+      printf 'Cannot disable terminal echo on /dev/tty. Pass --admin-password-file <path> instead.\n' >&2
+      pw1=; rc=1; break
+    fi
+    printf 'Confirm administrator password: ' >&4
+    if ! IFS= read -r pw2 <&4; then
+      restore_tty_echo
+      printf '\nAborted.\n' >&2
+      pw1=; rc=1; break
+    fi
+    printf '\n' >&4
+    restore_tty_echo
+    pw2=${pw2%$'\r'}
+
+    if [[ "$pw1" == "$pw2" ]]; then
+      CHOSEN_ADMIN_PASSWORD=$pw1
+      PASSWORD_SOURCE=user_tty
+      pw1=; pw2=; rc=0; break
+    fi
+    printf 'Passwords do not match.\n' >&4
+    pw1=; pw2=
+  done
+
+  if (( rc != 0 && attempt > 3 )); then
+    printf 'Too many invalid password attempts.\n' >&2
+  fi
+  restore_tty_echo
+  eval "${prev_exit:-trap - EXIT}"
+  eval "${prev_int:-trap - INT}"
+  eval "${prev_term:-trap - TERM}"
+  eval "${prev_hup:-trap - HUP}"
+  return "$rc"
+}
+
+# Decides where this run's administrator password comes from, before packages are installed or services stop.
+# Sets PASSWORD_SOURCE: file, user_tty, generated_tty, keep (an existing value) or generated_silent.
+# A first install asks only when stdin is a terminal and /dev/tty opens; --set-admin-password needs /dev/tty only.
+resolve_admin_password() {
+  disable_xtrace
+  local root=$1 atom_root=$2 existing rc=0
+  if [[ "$PASSWORD_SOURCE" == file ]]; then
+    return 0
+  fi
+  if [[ "$SET_ADMIN_PASSWORD" == true ]]; then
+    if ! { exec 4<>/dev/tty; } 2>/dev/null; then
+      printf 'No interactive terminal available. Pass --admin-password-file <path> instead.\n' >&2
+      return 1
+    fi
+    prompt_admin_password_on_tty || rc=$?
+    exec 4<&- 4>&-
+    return "$rc"
+  fi
+  existing=$(read_existing_admin_password "$root" "$atom_root") || return 1
+  if [[ -n "$existing" ]]; then
+    existing=
+    PASSWORD_SOURCE=keep
+    return 0
+  fi
+  if [[ -t 0 ]] && { exec 4<>/dev/tty; } 2>/dev/null; then
+    prompt_admin_password_on_tty || rc=$?
+    exec 4<&- 4>&-
+    return "$rc"
+  fi
+  PASSWORD_SOURCE=generated_silent
+  return 0
+}
+
+# Every read and every openssl call is checked: callers run this where errexit is suspended, and an empty secret
+# must never reach a file.
 prepare_secrets() {
+  disable_xtrace
   local root=$1 atom_root=$2 db_url
-  BEARER=$(read_env_value "$root/.env.orch" AUTH_BEARER_TOKEN)
-  JWT=$(read_env_value "$root/.env.orch" JWT_SECRET)
-  ADMIN_PASSWORD=$(read_env_value "$root/.env.orch" DASHBOARD_ADMIN_PASSWORD)
-  db_url=$(read_env_value "$root/.env.orch" DATABASE_URL)
+  GENERATED_PASSWORD_IS_NEW=false
+  BEARER=$(read_env_value "$root/.env.orch" AUTH_BEARER_TOKEN) || return 1
+  JWT=$(read_env_value "$root/.env.orch" JWT_SECRET) || return 1
+  db_url=$(read_env_value "$root/.env.orch" DATABASE_URL) || return 1
   DB_PASSWORD=${db_url#postgresql://soulstream:}; DB_PASSWORD=${DB_PASSWORD%%@*}
   [[ "$db_url" == postgresql://soulstream:*@* ]] || DB_PASSWORD=
-  [[ -n "$BEARER" ]] || BEARER=$(openssl rand -hex 32)
-  [[ -n "$JWT" ]] || JWT=$(openssl rand -hex 32)
-  [[ -n "$DB_PASSWORD" ]] || DB_PASSWORD=$(openssl rand -hex 32)
+  if [[ -z "$BEARER" ]]; then BEARER=$(openssl rand -hex 32) || return 1; fi
+  if [[ -z "$JWT" ]]; then JWT=$(openssl rand -hex 32) || return 1; fi
+  if [[ -z "$DB_PASSWORD" ]]; then DB_PASSWORD=$(openssl rand -hex 32) || return 1; fi
   # The administrator password signs in to both Soulstream and atom in every mode.
-  if [[ -z "$ADMIN_PASSWORD" && -f "$root/.admin-password" ]]; then ADMIN_PASSWORD=$(<"$root/.admin-password"); fi
-  if [[ -z "$ADMIN_PASSWORD" ]]; then ADMIN_PASSWORD=$(read_env_value "$atom_root/.env" DASHBOARD_ADMIN_PASSWORD); fi
-  if [[ -z "$ADMIN_PASSWORD" ]]; then ADMIN_PASSWORD=$(openssl rand -hex 12); fi
-  ATOM_JWT_SECRET=$(read_env_value "$atom_root/.env" JWT_SECRET)
-  [[ -n "$ATOM_JWT_SECRET" ]] || ATOM_JWT_SECRET=$(openssl rand -hex 32)
+  case "${PASSWORD_SOURCE:-}" in
+    file|user_tty)
+      ADMIN_PASSWORD=$CHOSEN_ADMIN_PASSWORD ;;
+    generated_tty)
+      ADMIN_PASSWORD=$(openssl rand -hex 12) || return 1
+      GENERATED_PASSWORD_IS_NEW=true ;;
+    *)
+      ADMIN_PASSWORD=$(read_existing_admin_password "$root" "$atom_root") || return 1
+      if [[ -z "$ADMIN_PASSWORD" ]]; then
+        ADMIN_PASSWORD=$(openssl rand -hex 12) || return 1
+        GENERATED_PASSWORD_IS_NEW=true
+      fi ;;
+  esac
+  ATOM_JWT_SECRET=$(read_env_value "$atom_root/.env" JWT_SECRET) || return 1
+  if [[ -z "$ATOM_JWT_SECRET" ]]; then ATOM_JWT_SECRET=$(openssl rand -hex 32) || return 1; fi
+  [[ -n "$BEARER" && -n "$JWT" && -n "$DB_PASSWORD" && -n "$ADMIN_PASSWORD" && -n "$ATOM_JWT_SECRET" ]] || return 1
+  return 0
 }
 
 # The only writer of <root>/.admin-password.
 setup_secrets() {
+  disable_xtrace
   local root=$1 atom_root=$2 temp
-  prepare_secrets "$root" "$atom_root"
-  temp=$(mktemp "$root/.admin-password.XXXXXX")
-  printf '%s\n' "$ADMIN_PASSWORD" > "$temp"
-  chmod 600 "$temp"
-  chown soulstream:soulstream "$temp"
-  mv "$temp" "$root/.admin-password"
+  prepare_secrets "$root" "$atom_root" || return 1
+  temp=$(mktemp "$root/.admin-password.XXXXXX") || return 1
+  register_temp_file "$temp"
+  if ! { printf '%s\n' "$ADMIN_PASSWORD" > "$temp" && chmod 600 "$temp" && chown soulstream:soulstream "$temp" && mv "$temp" "$root/.admin-password"; }; then
+    rm -f "$temp"
+    return 1
+  fi
+  # Only a password this run generated needs the hint on_error prints.
+  if [[ "$GENERATED_PASSWORD_IS_NEW" == true ]]; then GENERATED_PASSWORD_SAVED=true; fi
+  return 0
 }
 
-# Remove keys owned by the installer, preserving every other line verbatim.
+# Remove keys owned by the installer, preserving every other line verbatim. Nothing is replaced unless every step
+# worked, and the temporary file never outlives a failure.
 merge_env() {
   local target=$1 fresh=$2 managed=$3 temp
-  temp=$(mktemp "${target}.XXXXXX")
+  temp=$(mktemp "${target}.XXXXXX") || return 1
+  register_temp_file "$temp"
   if [[ -f "$target" ]]; then
-    awk -v keys="$managed" 'BEGIN { n=split(keys,a," "); for(i=1;i<=n;i++) owned[a[i]]=1 }
-      { line=$0; sub(/=.*/,"",line); if (!(line in owned)) print }' "$target" > "$temp"
+    if ! awk -v keys="$managed" 'BEGIN { n=split(keys,a," "); for(i=1;i<=n;i++) owned[a[i]]=1 }
+      { line=$0; sub(/=.*/,"",line); if (!(line in owned)) print }' "$target" > "$temp"; then
+      rm -f "$temp"
+      return 1
+    fi
   fi
-  cat "$fresh" >> "$temp"
-  chmod 600 "$temp"
-  mv "$temp" "$target"
+  if ! { cat "$fresh" >> "$temp" && chmod 600 "$temp" && mv "$temp" "$target"; }; then
+    rm -f "$temp"
+    return 1
+  fi
+  return 0
 }
 
 # Fill ATOM_NODES (declared by the caller) with UUID values from the seed map.
@@ -389,8 +655,13 @@ render_config() {
   read_atom_seed_map "$root/config/.atom-seed-map.json" || return 1
   atom_api_key=$(read_atom_api_key "$root/.atom-api-key") || return 1
   mkdir -p "$root/config" "$home/workspace/.projects" "$root/.local"
-  fresh_orch=$(mktemp); fresh_worker=$(mktemp)
-  cat > "$fresh_orch" <<ENV
+  fresh_orch=$(mktemp) || return 1
+  register_temp_file "$fresh_orch"
+  fresh_worker=$(mktemp) || { rm -f "$fresh_orch"; return 1; }
+  register_temp_file "$fresh_worker"
+  # One chain: a failed write or a failed merge leaves the existing env files untouched and removes both temporary files.
+  if ! {
+    cat > "$fresh_orch" <<ENV &&
 ENVIRONMENT=production
 HOST=127.0.0.1
 PORT=5200
@@ -407,24 +678,25 @@ ATOM_API_KEY=${atom_api_key}
 SKILL_CATALOG_NODE_ID=${ATOM_NODES[skill_catalog]:-}
 DOMAIN_CATALOG_NODE_ID=${ATOM_NODES[domain_catalog]:-}
 ENV
-  if [[ "${TAILSCALE:-false}" == true ]]; then
-    cat >> "$fresh_orch" <<ENV
+    if [[ "${TAILSCALE:-false}" == true ]]; then
+      cat >> "$fresh_orch" <<ENV
 SOULSTREAM_PUBLIC_URL=https://${TAILSCALE_DNS}
 CORS_ALLOWED_ORIGINS=https://${TAILSCALE_DNS},http://127.0.0.1:5200
 ATOM_PUBLIC_URL=https://${TAILSCALE_DNS}:8443
 TAILSCALE_AUTH_ENABLED=true
 TAILSCALE_ALLOWED_LOGIN=${TAILSCALE_USER}
 ENV
-  else
-    cat >> "$fresh_orch" <<ENV
+    else
+      cat >> "$fresh_orch" <<ENV &&
 SOULSTREAM_PUBLIC_URL=http://127.0.0.1:5200
 CORS_ALLOWED_ORIGINS=http://127.0.0.1:5200,http://localhost:5200
 ATOM_PUBLIC_URL=http://127.0.0.1:4200
-DASHBOARD_ADMIN_PASSWORD=${ADMIN_PASSWORD}
 ENV
-  fi
-  if has_backend antigravity; then printf 'AGY_CLI_PATH=%s/.local/bin/agy\n' "$home" >> "$fresh_orch"; fi
-  cat > "$fresh_worker" <<ENV
+      # printf, not a heredoc: the password is written byte for byte.
+      printf 'DASHBOARD_ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD" >> "$fresh_orch"
+    fi &&
+    { ! has_backend antigravity || printf 'AGY_CLI_PATH=%s/.local/bin/agy\n' "$home" >> "$fresh_orch"; } &&
+    cat > "$fresh_worker" <<ENV &&
 ENVIRONMENT=production
 SOULSTREAM_NODE_ID=local
 SOULSTREAM_UPSTREAM_URL=ws://127.0.0.1:5200/ws/node
@@ -454,10 +726,14 @@ ATOM_ENABLED=true
 ATOM_SERVER_URL=http://127.0.0.1:4200
 ATOM_API_KEY=${atom_api_key}
 ENV
-  if has_backend claude; then printf 'CLAUDE_AUTH_TOKEN_PATH=%s/.claude/.credentials.json\n' "$home" >> "$fresh_worker"; fi
-  if has_backend codex; then printf 'CODEX_ADAPTER_MODE=app-server\n' >> "$fresh_worker"; fi
-  merge_env "$root/.env.orch" "$fresh_orch" 'ENVIRONMENT HOST PORT DEFAULT_EXECUTION_NODE_ID DEFAULT_PAS_AGENT_ID PERSISTENT_SESSION_BOOTSTRAP DATABASE_URL DASHBOARD_DIR SOULSTREAM_PUBLIC_URL CORS_ALLOWED_ORIGINS AUTH_BEARER_TOKEN JWT_SECRET DASHBOARD_ADMIN_PASSWORD TAILSCALE_AUTH_ENABLED TAILSCALE_ALLOWED_LOGIN ATOM_ENABLED ATOM_SERVER_URL ATOM_PUBLIC_URL ATOM_API_KEY SKILL_CATALOG_NODE_ID DOMAIN_CATALOG_NODE_ID AGY_CLI_PATH'
-  merge_env "$root/.env.soul-server-ts" "$fresh_worker" 'ENVIRONMENT SOULSTREAM_NODE_ID SOULSTREAM_UPSTREAM_URL SOULSTREAM_BACKENDS AUTH_BEARER_TOKEN JWT_SECRET PORTABLE_LOCAL_MCP_AUTHORIZATION HOST PORT MCP_INTERNAL_PORT MCP_ENABLED MCP_PATH MCP_REQUIRE_AUTH MCP_ALLOWED_HOSTS AGENTS_CONFIG_PATH EVENT_OUTBOX_DIR INCOMING_FILE_DIR SOUL_RUNNER_PROCESS_ENABLED SOUL_RUNNER_STATE_DIR SOUL_RUNNER_ARTIFACT_DIR SOUL_RUNNER_RELEASES_DIR WORKTREE_MCP_ENABLED WORKTREE_PROJECTS_ROOT SESSION_ISOLATION_MODE CLAUDE_ACCOUNT_POOL_ENABLED ATOM_ENABLED ATOM_SERVER_URL ATOM_API_KEY CLAUDE_AUTH_TOKEN_PATH CODEX_ADAPTER_MODE CLAUDE_CODE_EXECPATH CODEX_CLI_PATH AGY_CLI_PATH DISABLE_AUTOUPDATER'
+    { ! has_backend claude || printf 'CLAUDE_AUTH_TOKEN_PATH=%s/.claude/.credentials.json\n' "$home" >> "$fresh_worker"; } &&
+    { ! has_backend codex || printf 'CODEX_ADAPTER_MODE=app-server\n' >> "$fresh_worker"; } &&
+    merge_env "$root/.env.orch" "$fresh_orch" 'ENVIRONMENT HOST PORT DEFAULT_EXECUTION_NODE_ID DEFAULT_PAS_AGENT_ID PERSISTENT_SESSION_BOOTSTRAP DATABASE_URL DASHBOARD_DIR SOULSTREAM_PUBLIC_URL CORS_ALLOWED_ORIGINS AUTH_BEARER_TOKEN JWT_SECRET DASHBOARD_ADMIN_PASSWORD TAILSCALE_AUTH_ENABLED TAILSCALE_ALLOWED_LOGIN ATOM_ENABLED ATOM_SERVER_URL ATOM_PUBLIC_URL ATOM_API_KEY SKILL_CATALOG_NODE_ID DOMAIN_CATALOG_NODE_ID AGY_CLI_PATH' &&
+    merge_env "$root/.env.soul-server-ts" "$fresh_worker" 'ENVIRONMENT SOULSTREAM_NODE_ID SOULSTREAM_UPSTREAM_URL SOULSTREAM_BACKENDS AUTH_BEARER_TOKEN JWT_SECRET PORTABLE_LOCAL_MCP_AUTHORIZATION HOST PORT MCP_INTERNAL_PORT MCP_ENABLED MCP_PATH MCP_REQUIRE_AUTH MCP_ALLOWED_HOSTS AGENTS_CONFIG_PATH EVENT_OUTBOX_DIR INCOMING_FILE_DIR SOUL_RUNNER_PROCESS_ENABLED SOUL_RUNNER_STATE_DIR SOUL_RUNNER_ARTIFACT_DIR SOUL_RUNNER_RELEASES_DIR WORKTREE_MCP_ENABLED WORKTREE_PROJECTS_ROOT SESSION_ISOLATION_MODE CLAUDE_ACCOUNT_POOL_ENABLED ATOM_ENABLED ATOM_SERVER_URL ATOM_API_KEY CLAUDE_AUTH_TOKEN_PATH CODEX_ADAPTER_MODE CLAUDE_CODE_EXECPATH CODEX_CLI_PATH AGY_CLI_PATH DISABLE_AUTOUPDATER'
+  }; then
+    rm -f "$fresh_orch" "$fresh_worker"
+    return 1
+  fi
   rm -f "$fresh_orch" "$fresh_worker"
   work=$(mktemp -d)
   render_agents "$home" "$root" > "$work/agents"
@@ -726,7 +1002,12 @@ fix_usr_local_owners() {
       fixed+=("$path")
     done
   fi
-  if ((${#fixed[@]})); then printf 'Ownership under %s reset on: %s\n' "$USR_LOCAL" "${fixed[*]}"; fi
+  if ((${#fixed[@]})); then
+    printf 'Ownership under %s reset on: %s\n' "$USR_LOCAL" "${fixed[*]}"
+    # run_step sends the line above to the install log only. fd 3 is the user's screen; a run without it skips this.
+    { printf 'Ownership under %s reset on: %s\n' "$USR_LOCAL" "${fixed[*]}" >&3; } 2>/dev/null || true
+  fi
+  return 0
 }
 as_soul() { sudo -H -u soulstream env HOME=/home/soulstream PATH=/home/soulstream/.local/bin:/usr/local/bin:/usr/bin:/bin COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$@"; }
 # Only a codex this run installs goes into the receipt; one already on the server stays out of it.
@@ -906,20 +1187,26 @@ build_atom() {
 init_atom() {
   local atom_root=$1 fresh frontend=http://127.0.0.1:4200 populated
   if [[ "${TAILSCALE:-false}" == true ]]; then frontend=https://${TAILSCALE_DNS}:8443; fi
-  fresh=$(mktemp)
-  cat > "$fresh" <<ENV
+  fresh=$(mktemp) || return 1
+  register_temp_file "$fresh"
+  if ! {
+    cat > "$fresh" <<ENV &&
 NODE_ENV=production
 API_HOST=127.0.0.1
 API_PORT=4200
 DATABASE_URL=postgresql://soulstream:${DB_PASSWORD}@127.0.0.1:5432/atom
 JWT_SECRET=${ATOM_JWT_SECRET}
-DASHBOARD_ADMIN_PASSWORD=${ADMIN_PASSWORD}
 DASHBOARD_DIR=${atom_root}/dashboard/dist
 FRONTEND_URL=${frontend}
 ENV
-  merge_env "$atom_root/.env" "$fresh" 'NODE_ENV API_HOST API_PORT DATABASE_URL JWT_SECRET DASHBOARD_ADMIN_PASSWORD DASHBOARD_DIR FRONTEND_URL'
+    printf 'DASHBOARD_ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD" >> "$fresh" &&
+    merge_env "$atom_root/.env" "$fresh" 'NODE_ENV API_HOST API_PORT DATABASE_URL JWT_SECRET DASHBOARD_ADMIN_PASSWORD DASHBOARD_DIR FRONTEND_URL'
+  }; then
+    rm -f "$fresh"
+    return 1
+  fi
   rm -f "$fresh"
-  chown soulstream:soulstream "$atom_root/.env"
+  chown soulstream:soulstream "$atom_root/.env" || return 1
   # A non-empty atom database is dumped before every migrate, the same revision included; the .env above names this database.
   populated=$(sudo -u postgres psql -d atom -tA -v ON_ERROR_STOP=1 <<< "SELECT to_regclass('public.cards') IS NOT NULL;") || return 1
   if [[ "$populated" == t ]]; then backup_database "$INSTALL_ROOT" atom || return 1; fi
@@ -1108,7 +1395,11 @@ UNIT
 }
 wait_and_create_workspace() {
   local root=$1 header cookie deadline status count
-  header=$(mktemp); cookie=$(mktemp); chmod 600 "$header" "$cookie"
+  header=$(mktemp) || return 1
+  register_temp_file "$header"
+  cookie=$(mktemp) || return 1
+  register_temp_file "$cookie"
+  chmod 600 "$header" "$cookie" || return 1
   printf 'Authorization: Bearer %s\n' "$(read_env_value "$root/.env.orch" AUTH_BEARER_TOKEN)" > "$header"
   deadline=$((SECONDS+120))
   until curl --max-time 3 -fsS http://127.0.0.1:5200/api/health >/dev/null 2>&1 && curl --max-time 3 -fsS http://127.0.0.1:4205/health >/dev/null 2>&1 && curl --max-time 3 -fsS -H "@$header" http://127.0.0.1:5200/api/nodes 2>/dev/null | jq -e '.nodes[] | select(.nodeId=="local" and .connected==true)' >/dev/null; do
@@ -1131,7 +1422,13 @@ wait_and_create_workspace() {
     rm -f "$header" "$cookie"
     return 0
   fi
-  printf '{"password":"%s"}' "$(cat "$root/.admin-password")" | curl -fsS -c "$cookie" -X POST -H 'Content-Type: application/json' --data @- http://127.0.0.1:5200/api/auth/password-login >/dev/null
+  # jq builds the JSON, so any password the value rule allows (spaces, $, !) reaches the login as is. The
+  # subshell sets pipefail so a failed jq stops the login instead of posting an empty body.
+  if ! ( set -o pipefail; jq -Rs '{password: (rtrimstr("\n") | rtrimstr("\r"))}' < "$root/.admin-password" |
+      curl -fsS -c "$cookie" -X POST -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:5200/api/auth/password-login >/dev/null ); then
+    rm -f "$header" "$cookie"
+    return 1
+  fi
   count=$(curl -fsS -b "$cookie" http://127.0.0.1:5200/api/folders | jq '[.folders[] | select(.name=="작업실")] | length')
   if [[ "$count" == 0 ]]; then
     curl -fsS -b "$cookie" -X POST -H 'Content-Type: application/json' --data '{"name":"작업실","idempotencyKey":"clean-install-default-workspace"}' http://127.0.0.1:5200/api/folders >/dev/null
@@ -1199,16 +1496,47 @@ finish_message() {
   printf '\nInstalled %s; backends: %s\n' "$(as_soul git -C "$root" rev-parse --short=12 HEAD)" "$BACKENDS"
   revision_line Soulstream soulstream
   revision_line Atom atom
+  # A password generated at a terminal goes to /dev/tty only; stdout and the install log never carry it.
+  local tty_shown=false
+  if [[ "${PASSWORD_SOURCE:-}" == generated_tty && -n "${ADMIN_PASSWORD:-}" ]] && { exec 4>/dev/tty; } 2>/dev/null; then
+    tty_shown=true
+  fi
   if [[ "$TAILSCALE" == true ]]; then
     printf 'Open https://%s from a tailnet device signed in as %s.\n' "$TAILSCALE_DNS" "$TAILSCALE_USER"
     printf 'Local processes on this server can forge identity headers.\n'
     printf 'Remove access: tailscale serve reset && tailscale logout\n'
-    printf 'Atom: https://%s:8443 (password: sudo cat %s/.admin-password)\n' "$TAILSCALE_DNS" "$root"
+    case "${PASSWORD_SOURCE:-}" in
+      user_tty|file)
+        printf 'Atom: https://%s:8443 (use the administrator password you set; saved in %s/.admin-password)\n' "$TAILSCALE_DNS" "$root" ;;
+      generated_tty)
+        if [[ "$tty_shown" == true ]]; then
+          printf 'Atom: https://%s:8443 (generated password shown on your terminal; saved in %s/.admin-password)\n' "$TAILSCALE_DNS" "$root"
+        else
+          printf 'Atom: https://%s:8443 (password: sudo cat %s/.admin-password)\n' "$TAILSCALE_DNS" "$root"
+        fi ;;
+      *)
+        printf 'Atom: https://%s:8443 (password: sudo cat %s/.admin-password)\n' "$TAILSCALE_DNS" "$root" ;;
+    esac
   else
     printf 'Connect: ssh -L 127.0.0.1:5200:127.0.0.1:5200 -L 127.0.0.1:4200:127.0.0.1:4200 <user>@<server>\n'
     printf 'Soulstream: http://127.0.0.1:5200\n'
     printf 'Atom: http://127.0.0.1:4200\n'
-    printf 'Password for both: sudo cat %s/.admin-password\n' "$root"
+    case "${PASSWORD_SOURCE:-}" in
+      user_tty|file)
+        printf 'Password for both: use the administrator password you set (saved in %s/.admin-password)\n' "$root" ;;
+      generated_tty)
+        if [[ "$tty_shown" == true ]]; then
+          printf 'Password for both: shown on your terminal (saved in %s/.admin-password)\n' "$root"
+        else
+          printf 'Password for both: sudo cat %s/.admin-password\n' "$root"
+        fi ;;
+      *)
+        printf 'Password for both: sudo cat %s/.admin-password\n' "$root" ;;
+    esac
+  fi
+  if [[ "$tty_shown" == true ]]; then
+    printf 'Generated administrator password (for Soulstream and atom): %s\n' "$ADMIN_PASSWORD" >&4
+    exec 4>&-
   fi
   printf 'PAS: once you connect a coding agent, the dashboard creates a default 서소영 (PAS) persistent session.\n'
   if [[ -n "${ATOM_SEED_WARNINGS:-}" ]]; then
@@ -1228,11 +1556,16 @@ finish_message() {
   printf 'After login, presets update within five minutes. To refresh now as root:\n'
   printf '%s\n' "awk -F= '/^AUTH_BEARER_TOKEN=/{print \"Authorization: Bearer \" substr(\$0,index(\$0,\"=\")+1)}' $root/.env.orch | curl -fsS -X POST -H @- http://127.0.0.1:5200/api/usage/refresh"
   if [[ "${PRESET_REFRESH_PENDING:-false}" == true ]]; then printf 'Model preset status is not confirmed yet; it updates within five minutes.\n'; fi
+  return 0
 }
 on_error() {
   trap - ERR
   printf '\nInstallation failed at: %s\nLog: %s\n' "$STEP" "$LOG" >&3
   tail -n 30 "$LOG" >&3
+  # A generated password is saved before anything can fail after it, but it is shown only at the very end.
+  if [[ "${GENERATED_PASSWORD_SAVED:-false}" == true && -n "${INSTALL_ROOT:-}" && -f "$INSTALL_ROOT/.admin-password" ]]; then
+    printf 'Administrator password saved (0600, owned by soulstream): sudo cat %s/.admin-password\n' "$INSTALL_ROOT" >&3
+  fi
   if [[ "$MAINTENANCE_ENTERED" == true ]]; then
     local unit state units='{}' summary= db
     # Leave no service partly started.
@@ -1265,6 +1598,7 @@ run_step() {
 prepare_install_cwd() { cd /; }
 # Everything that changes the server; services stop only after both repositories are checked.
 run_install() {
+  disable_xtrace
   local home=$1 root=$2 atom_root=$3
   INSTALL_ROOT=$root
   run_step 'Installing packages' install_packages
@@ -1295,10 +1629,14 @@ run_install() {
   finish_message "$root"
 }
 main() {
+  disable_xtrace
   set -Eeuo pipefail
+  trap 'restore_tty_echo; cleanup_temp_files' EXIT
   parse_args "$@"
   prepare_install_cwd
   preflight
+  # Asked before packages are installed or services stop, so a rejected value changes nothing on the server.
+  resolve_admin_password /home/soulstream/soulstream /home/soulstream/atom
   exec 3>&2
   LOG=/var/log/soulstream-install.log; STEP=setup
   touch "$LOG"; chmod 600 "$LOG"; trap on_error ERR

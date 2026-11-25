@@ -12,6 +12,14 @@ bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl
 
 `--backends` takes a comma-separated list of `claude`, `codex`, and `antigravity` (default: `claude,codex`). The first backend becomes the backend for the default `seosoyoung` and `seosoyoung-pas` profiles. Pin a revision with `--ref <ref>` for Soulstream or `--atom-ref <ref>` for atom (branch, tag, or commit).
 
+Administrator password options (shared by the Soulstream dashboard and atom):
+
+- On a fresh interactive install (`stdin` is a terminal and `/dev/tty` is available), the installer asks twice for an administrator password before installing packages. Press Enter at the first prompt to generate a random 24-character hex password and print it once on your terminal when installation finishes (never in `/var/log/soulstream-install.log`).
+- `--admin-password-file <path>`: read the administrator password from a single-line file without prompting (works on both fresh installs and updates). No command-line value flag is provided so the password never appears in `ps`.
+- `--set-admin-password`: prompt on `/dev/tty` for a new administrator password (or press Enter to generate a new one) even when a password already exists.
+- When no password flag is given and `stdin` is not a terminal (or `/dev/tty` cannot be opened), a fresh install generates a random password without stopping, saves it to `/home/soulstream/soulstream/.admin-password` (`0600`), and prints the `sudo cat` command at the end. For unattended runs that inherit a pseudo-terminal, append `</dev/null` to skip the prompt.
+- Password rules: 8 to 128 printable ASCII characters on a single line, no leading or trailing space, and none of `#`, `\`, `'`, `"`, or `` ` ``. Interior spaces and other ASCII symbols (including `$`, `!`, `@`, `%`, `^`, `&`, `*`, `=`, `;`, and `:`) are preserved verbatim in both Soulstream and atom.
+
 On one server, the installer sets up:
 
 - Soulstream (dashboard, orchestrator, and worker).
@@ -45,7 +53,7 @@ Forward both ports over SSH to open the dashboard and atom locally:
 ssh -L 127.0.0.1:5200:127.0.0.1:5200 -L 127.0.0.1:4200:127.0.0.1:4200 <user>@<server>
 ```
 
-Open Soulstream at `http://127.0.0.1:5200` and atom at `http://127.0.0.1:4200` with the same administrator password. The installer never prints it; read it on the server with `sudo cat /home/soulstream/soulstream/.admin-password`. The atom button (`atom 열기`) in the dashboard toolbar also opens atom (`ATOM_PUBLIC_URL`) in a new tab.
+Open Soulstream at `http://127.0.0.1:5200` and atom at `http://127.0.0.1:4200` with the same administrator password. Use the password you entered during installation (or the generated one shown once on your terminal); if you installed non-interactively or need to look it up later, read it on the server with `sudo cat /home/soulstream/soulstream/.admin-password`. The atom button (`atom 열기`) in the dashboard toolbar also opens atom (`ATOM_PUBLIC_URL`) in a new tab.
 
 In a new browser, the dashboard opens the persistent assistant session view (`/persistent`) by default; turn this off in **Settings > Appearance** (`설정 > 화면과 읽기`). The installer sets `PERSISTENT_SESSION_BOOTSTRAP=true`, so the dashboard creates one default persistent session (`seosoyoung-pas`) when you connect the first coding agent.
 
@@ -55,9 +63,25 @@ Re-run the same one-line command to update. Without `--ref` or `--atom-ref`, bot
 
 Before it stops any service, the installer checks both repositories. If it finds uncommitted changes, a non-git directory, an unresolvable revision, local commits not on `origin`, or a Soulstream revision predating atom support, it aborts without touching running services. Untracked installer files (config and `.env`) do not block updates.
 
-Updates preserve secrets, both databases (`soulstream` and `atom`), the existing workspace, unmanaged `.env` lines, and edited config files. Edited managed files stay untouched; new defaults go beside them as `<file>.installer-new` and appear under `Configuration:` ([managed config files](configuration.md#files-the-linux-installer-manages)).
+Updates preserve secrets, the existing administrator password (without prompting, reading `/home/soulstream/soulstream/.admin-password` first), both databases (`soulstream` and `atom`), the existing workspace, unmanaged `.env` lines, and edited config files. Edited managed files stay untouched; new defaults go beside them as `<file>.installer-new` and appear under `Configuration:` ([managed config files](configuration.md#files-the-linux-installer-manages)).
 
 After the checks pass, the installer stops `soulstream-worker`, `soulstream-orch`, and `soulstream-atom`, then checks out, builds, migrates, and restarts them. The finish output shows previous and new revisions for both repositories. If a step fails after stopping services, all three stay stopped and `/home/soulstream/soulstream/.local/install-state.json` records the failed step and revisions; fix the cause and re-run to recover. Databases do not roll back automatically. Instead, the installer dumps `soulstream` before non-additive schema changes and any non-empty `atom` database before every migration to `/home/soulstream/soulstream/.local/backups/` (mode `0600`, latest 3 per database). Failure output and `install-state.json` (`backups`) list backup paths and restore commands. Restore only when discarding the new revision: keep services stopped, check out a compatible revision, and restore into an empty database from a `root` shell.
+
+### Changing the administrator password
+
+Re-run the same one-line install command with `--set-admin-password` on an interactive SSH session, or pass `--admin-password-file <path>` for non-interactive rotation (keep the same `--backends`, and include `--tailscale` if your server uses Tailscale mode):
+
+```bash
+bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex --set-admin-password'
+```
+
+Non-interactive rotation from a root-owned `0600` file:
+
+```bash
+bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.sh -o "$tmp"; bash "$tmp" --backends claude,codex --admin-password-file /root/.soulstream-pass'
+```
+
+The installer validates the new password before stopping services. Once services stop, it writes `/home/soulstream/soulstream/.admin-password` first, then updates `/home/soulstream/atom/.env` and restarts `soulstream-atom`, verifies atom seed access, and in password mode updates `/home/soulstream/soulstream/.env.orch`, restarts `soulstream-orch`, and verifies dashboard login. If a later step fails, re-running the installer picks up the new password from `.admin-password` and finishes updating the remaining files. Do not edit only one `.env` file by hand.
 
 ### Tailscale Serve
 
@@ -69,7 +93,7 @@ bash install/install.sh --tailscale --tailscale-user owner@example.com
 
 Personal devices default to their own account when you omit `--tailscale-user`; tagged devices require it. To use an auth key, store it in a file and pass `--tailscale-auth-key-file <path>` so it never enters process arguments. After installation, open the printed HTTPS URL from a tailnet device signed in as that account. Local processes on the server can forge identity headers, so run only trusted processes on the host.
 
-atom is served on `:8443` of the same host (`https://<MagicDNS-name>:8443`) and still uses the administrator password in `/home/soulstream/soulstream/.admin-password` (read with `sudo cat`).
+atom is served on `:8443` of the same host (`https://<MagicDNS-name>:8443`) and signs in with the administrator password you set during installation (also saved in `/home/soulstream/soulstream/.admin-password`, readable with `sudo cat`).
 
 Re-run without `--tailscale` to return to password mode. To remove Serve access and disconnect the device, run `tailscale serve reset && tailscale logout`.
 
