@@ -69,8 +69,7 @@ import type { SessionReviewAcknowledgeRepository } from "../session/session_revi
 import type { SessionDeletionPort } from "../session/session_deletion_service.js";
 import { createLiveAgentProfileRepository } from "./live_agent_profile_repository.js";
 import { createLiveAgentPortraitRepository } from "./live_agent_portrait_repository.js";
-import { agentPortraitUrlFor } from "../node/agent_portrait_model.js";
-import type { AgentPortraitRepository, AgentPortraitUrlResolver } from "../node/agent_portrait_model.js";
+import { agentPortraitUrlFor, type AgentPortraitRepository, type AgentPortraitUrlResolver } from "../node/agent_portrait_model.js";
 import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
 import { createLiveContextBundleRepository } from "./live_context_bundle_repository.js";
 import type { ContextBundleRepository } from "../node/context_bundle_routes.js";

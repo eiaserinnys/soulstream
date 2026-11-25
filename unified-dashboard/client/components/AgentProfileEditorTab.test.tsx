@@ -594,10 +594,11 @@ describe("AgentProfileEditorTab", () => {
     vi.stubGlobal("fetch", vi.fn(handle));
     container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container);
     flushSync(() => root?.render(createElement(AgentProfileEditorTab, { request: handle as typeof fetch })));
-    await settle();
+    await vi.waitFor(() => expect(profileButtons("YAML 에이전트")).toHaveLength(1));
     flushSync(() => profileButton("YAML 에이전트").click());
-    await settle();
-    clickButton("편집"); await settle();
+    await vi.waitFor(() => expect([...document.body.querySelectorAll<HTMLButtonElement>('[role="tab"]')].some(tab => tab.textContent === "편집")).toBe(true));
+    clickButton("편집");
+    await vi.waitFor(() => expect(document.body.querySelector('[data-testid="profile-portrait-placeholder"]')).not.toBeNull());
 
     const editor = () => document.body.querySelector('[data-testid="agent-profile-editor"]')!;
     expect(editor().querySelector('[data-testid="profile-portrait-placeholder"]')).not.toBeNull();
@@ -728,6 +729,11 @@ function clickButtonByLabel(label: string) {
   const button = document.body.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
   expect(button).not.toBeNull();
   flushSync(() => button?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+}
+
+function profileButtons(name: string): HTMLButtonElement[] {
+  return Array.from(document.body.querySelectorAll<HTMLButtonElement>("aside button"))
+    .filter((candidate) => candidate.textContent?.includes(name));
 }
 
 function profileButton(name: string): HTMLButtonElement {
