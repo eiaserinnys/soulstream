@@ -364,6 +364,41 @@ test('owners: a failed chown stops install_node with a non-zero exit', async () 
   }
 });
 
+// run_step sends a step's output to the install log only, so the reset line must also reach fd 3, the user's screen.
+test('owners: the reset line goes to the install log and once to fd 3, and a run with nothing to fix prints nothing to fd 3', async () => {
+  const OPEN_FD3 = 'LOG=$FAKE_DIR/install.log; : > "$LOG"; exec 3>>"$FAKE_DIR/fd3.log"\n';
+  const fd3 = (t) => (existsSync(join(t.sandbox.dir, 'fd3.log')) ? readFileSync(join(t.sandbox.dir, 'fd3.log'), 'utf8') : '');
+  const t = setup();
+  try {
+    populate(t);
+    allBad(t);
+    const result = await t.run(`${OPEN_FD3}run_step 'Installing Node.js' install_node\n`);
+    assert.equal(result.status, 0, result.stderr);
+    const logged = readFileSync(join(t.sandbox.dir, 'install.log'), 'utf8').split('\n').filter((line) => line.startsWith('Ownership under '));
+    const screen = fd3(t).split('\n').filter((line) => line.startsWith('Ownership under '));
+    assert.equal(logged.length, 1, 'the install log keeps the line');
+    assert.deepEqual(screen, logged, 'fd 3 shows the same line once');
+    assert.ok(!result.stdout.includes('Ownership under '), 'the step output stays out of stdout');
+    // Fixed now: a rerun has nothing to change and says nothing anywhere.
+    const rerun = await t.run(`${OPEN_FD3}run_step 'Installing Node.js' install_node\n`);
+    assert.equal(rerun.status, 0, rerun.stderr);
+    assert.equal(fd3(t).split('\n').filter((line) => line.startsWith('Ownership under ')).length, 1, 'fd 3 got a second line');
+    assert.ok(!readFileSync(join(t.sandbox.dir, 'install.log'), 'utf8').includes('Ownership under '));
+  } finally { t.sandbox.cleanup(); }
+});
+
+test('owners: without an open fd 3 the reset line is skipped quietly', async () => {
+  const t = setup();
+  try {
+    populate(t);
+    allBad(t);
+    const result = await t.run('install_node');
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.split('\n').filter((line) => line.startsWith('Ownership under ')).length, 1);
+    assert.doesNotMatch(result.stderr, /Bad file descriptor/);
+  } finally { t.sandbox.cleanup(); }
+});
+
 test('no test created /etc/soulstream or the install log on this host', () => {
   assertHostUntouched(hostBefore);
 });

@@ -37,6 +37,8 @@ bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl
 
 `--backends` takes a comma-separated list of `claude`, `codex`, and `antigravity`. The default is `claude,codex`, and the first backend becomes the backend for the default `seosoyoung` and `seosoyoung-pas` profiles. For `--ref`, `--atom-ref`, `--tailscale`, and the other options, see [Installation](docs/guide/installation.md).
 
+On an interactive terminal, a fresh install prompts for the shared Soulstream and atom administrator password before installing packages (press Enter to generate one and display it once at the end). For non-interactive runs, pass `--admin-password-file <path>`; to change an existing password later, re-run with `--set-admin-password` or `--admin-password-file <path>`.
+
 ### What gets installed
 
 On one server, the installer sets up:
@@ -60,11 +62,13 @@ In the default password mode, both services listen on `127.0.0.1` only. Forward 
 ssh -L 127.0.0.1:5200:127.0.0.1:5200 -L 127.0.0.1:4200:127.0.0.1:4200 user@example.com
 ```
 
-Open Soulstream at `http://127.0.0.1:5200` and atom at `http://127.0.0.1:4200`. Both use the same administrator password. The installer does not print it, so read it on the server:
+Open Soulstream at `http://127.0.0.1:5200` and atom at `http://127.0.0.1:4200`. Both use the same administrator password that you set during installation (or that was shown once on your terminal if you pressed Enter to generate one). If you ran the installer without a terminal or need to check the saved password later, read it on the server:
 
 ```bash
 sudo cat /home/soulstream/soulstream/.admin-password
 ```
+
+To change the administrator password later, re-run the install command with `--set-admin-password` (interactive prompt) or `--admin-password-file <path>`.
 
 #### Connect coding agents
 
@@ -92,7 +96,7 @@ To update, run the same one-line install command again with the same `--backends
 
 Before it stops any service, the installer checks both repositories. If it finds a problem, such as uncommitted changes or local commits that are not on `origin`, it aborts and leaves the running services alone.
 
-Updates preserve generated secrets, the administrator password, both databases, workspace files, and configuration files you edited. Starter instructions are loaded into atom only on the first installation, when the atom tree is empty. Updates never overwrite instructions you edited in atom, and new starter items are not added to existing installations.
+Updates preserve generated secrets, the administrator password (without prompting again unless you add `--set-admin-password` or `--admin-password-file <path>`), both databases, workspace files, and configuration files you edited. Starter instructions are loaded into atom only on the first installation, when the atom tree is empty. Updates never overwrite instructions you edited in atom, and new starter items are not added to existing installations.
 
 For backups, failure recovery, and managed-file details, see [Installation](docs/guide/installation.md) and [Configuration](docs/guide/configuration.md).
 

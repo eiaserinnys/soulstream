@@ -32,6 +32,7 @@ Board and attachment Cloudflare R2 storage settings are managed in the central P
 - `GOOGLE_IOS_CLIENT_ID`: optional Google OAuth client ID for the iOS app.
 - `ALLOWED_EMAIL`: optional email allowlist for Google authentication.
 - `JWT_SECRET`: optional signing secret for dashboard authentication tokens.
+- `DASHBOARD_ADMIN_PASSWORD`: administrator password for dashboard password login (used when neither `GOOGLE_CLIENT_ID` nor `TAILSCALE_AUTH_ENABLED=true` is active; requires `JWT_SECRET`). On a Linux one-line installation, `/home/soulstream/soulstream/.admin-password` is the canonical password file shared with atom; change it by re-running the installer with `--set-admin-password` or `--admin-password-file <path>`.
 
 The OAuth authorization server stores its signing and cookie keys in PostgreSQL.
 They persist across restarts and must be preserved with the database. Its interaction
@@ -186,7 +187,7 @@ The Linux installer manages these keys in Atom's `.env` (`0600`, owned by `souls
 - `NODE_ENV=production`, `API_HOST=127.0.0.1`, `API_PORT=4200`
 - `DATABASE_URL`: the `atom` database on the local PostgreSQL, with the same `soulstream` role and password as Soulstream.
 - `JWT_SECRET`: generated once and kept across reruns.
-- `DASHBOARD_ADMIN_PASSWORD`: the administrator password shared with Soulstream (`/home/soulstream/soulstream/.admin-password`).
+- `DASHBOARD_ADMIN_PASSWORD`: the administrator password shared with Soulstream (`/home/soulstream/soulstream/.admin-password`), set on first install and rotated with `--set-admin-password` or `--admin-password-file <path>` (8 to 128 printable ASCII characters, no leading or trailing space, and none of `#`, `\`, `'`, `"`, or `` ` ``).
 - `DASHBOARD_DIR`: `/home/soulstream/atom/dashboard/dist`.
 - `FRONTEND_URL`: `http://127.0.0.1:4200`, or `https://<MagicDNS name>:8443` with `--tailscale`.
 
