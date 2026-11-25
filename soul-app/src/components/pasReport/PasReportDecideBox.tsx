@@ -2,14 +2,15 @@
 // 채운 주 단추나 선택지가 늘 왼쪽 묶음 첫 자리, 되묻기와 답변 미루기는 오른쪽 묶음이다. 좁은 폭에서 감겨도 같은 순서다.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { restoreAttachmentFocus } from '../../lib/attachment-focus';
 import { formatReturnTime, snoozeOptions } from '../../lib/pas-report-thread-model';
 import { cardQuestionViewFromDetail } from '../planner/card-question-viewmodel';
 import { useSessionStore } from '../../store/sessionStore';
-import { useTokens, type DesignTokens } from '../../theme';
+import { createPrimitiveRoles, useTokens, type DesignTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
 import { PersistentReportUndoRow } from '../persistent/PersistentReportSheet';
 import { reportStyles } from '../persistent/persistentReportStyles';
-import { CardCommentComposer, type CardCommentComposerHandle } from '../planner/CardCommentComposer';
+import { CardCommentComposer, CardComposerNotice, type CardCommentComposerHandle } from '../planner/CardCommentComposer';
 import { cardQuestionPlaceholder } from '../planner/CardQuestionBlock';
 import type { PasReportWindowController, SendMode } from './usePasReportWindow';
 
@@ -18,12 +19,24 @@ export type ComposerMode = 'closed' | SendMode;
 export interface DecideUi {
   mode: ComposerMode; setMode(mode: ComposerMode): void;
   snoozeOpen: boolean; setSnoozeOpen(open: boolean): void;
+  /** 입력창을 연 단추(지시 적기, 되묻기, 다르게 답하기, 고칠 점 남기기). 입력창을 닫으면 접근성 초점이 여기로 돌아간다. */
+  trigger: { current: unknown };
+  /** 항목 대상을 풀고 입력창을 닫아, 연 단추에 초점을 돌려놓는다. 적던 글은 남는다. */
+  closeComposer(): void;
 }
-export function useDecideUi(resetKey: string | null): DecideUi {
+export function useDecideUi(resetKey: string | null, releaseTarget: () => void): DecideUi {
   const [mode, setMode] = useState<ComposerMode>('closed');
   const [snoozeOpen, setSnoozeOpen] = useState(false);
-  useEffect(() => { setMode('closed'); setSnoozeOpen(false); }, [resetKey]);
-  return { mode, setMode, snoozeOpen, setSnoozeOpen };
+  const trigger = useRef<unknown>(null);
+  useEffect(() => { setMode('closed'); setSnoozeOpen(false); trigger.current = null; }, [resetKey]);
+  const closeComposer = () => {
+    releaseTarget();
+    setMode('closed');
+    const target = trigger.current;
+    trigger.current = null;
+    if (target) restoreAttachmentFocus(target);
+  };
+  return { mode, setMode, snoozeOpen, setSnoozeOpen, trigger, closeComposer };
 }
 
 export function PasReportDecideBox({ controller, ui }: { controller: PasReportWindowController; ui: DecideUi }) {
@@ -33,6 +46,9 @@ export function PasReportDecideBox({ controller, ui }: { controller: PasReportWi
   const { active: agenda, question, detail, busy, undo, snoozed, now, targetItemId } = controller;
   const { mode, snoozeOpen } = ui;
   const composerRef = useRef<CardCommentComposerHandle>(null);
+  const commentRef = useRef<View>(null);
+  const askRef = useRef<View>(null);
+  const answerRef = useRef<View>(null);
   const settled = controller.processed.find(item => item.agenda.cardId === agenda?.cardId) ?? null;
   const card = detail?.card;
   const catalogSession = useSessionStore(state => card?.assigneeSessionId ? state.sessions[card.assigneeSessionId] : undefined);
@@ -45,6 +61,7 @@ export function PasReportDecideBox({ controller, ui }: { controller: PasReportWi
   const targetStamp = targetItem?.id ?? null;
   useEffect(() => {
     if (targetStamp === null) return;
+    if (controller.targetTrigger.current) ui.trigger.current = controller.targetTrigger.current;
     ui.setMode('comment');
     ui.setSnoozeOpen(false);
   }, [targetStamp]);
@@ -54,18 +71,17 @@ export function PasReportDecideBox({ controller, ui }: { controller: PasReportWi
     return () => cancelAnimationFrame(frame);
   }, [composerOpen, composerMode]);
 
-  const open = (next: SendMode) => {
+  const open = (next: SendMode, from: React.RefObject<View | null>) => {
+    // 카드 상세가 없으면 입력창을 열 수 없다. 보이지 않는 입력창 상태만 남지 않게 아무것도 바꾸지 않는다.
+    if (!card) return;
     // 항목 대상이 잡힌 채 되묻기나 다르게 답하기를 열면 대상을 푼다. 그 글은 항목 지시가 아니다.
     if (next !== 'comment' && targetItem) controller.setTargetItem(null);
     ui.setSnoozeOpen(false);
+    ui.trigger.current = from.current;
     ui.setMode(next);
   };
-  const closeComposer = () => {
-    if (targetItem) controller.setTargetItem(null);
-    ui.setMode('closed');
-  };
-  const button = (label: string, onPress: () => void, options: { primary?: boolean; disabled?: boolean; testID?: string; expanded?: boolean; note?: string } = {}) =>
-    <GlassButton key={label} testID={options.testID} variant={options.primary ? 'primary' : 'paper'} size="compact" busy={options.disabled}
+  const button = (label: string, onPress: () => void, options: { primary?: boolean; disabled?: boolean; testID?: string; expanded?: boolean; note?: string; ref?: React.RefObject<View | null> } = {}) =>
+    <GlassButton key={label} testID={options.testID} buttonRef={options.ref} contentStyle={options.primary ? undefined : styles.paperFrame} variant={options.primary ? 'primary' : 'paper'} size="compact" busy={options.disabled}
       accessibilityLabel={label} accessibilityState={options.expanded === undefined ? undefined : { expanded: options.expanded }}
       onPress={() => { if (!options.disabled) onPress(); }} style={styles.button}>
       <Text style={[styles.buttonLabel, options.primary && { color: t.colors.accentText }]}>{label}{options.note ? <Text style={styles.recommended}>{`  ${options.note}`}</Text> : null}</Text>
@@ -73,7 +89,7 @@ export function PasReportDecideBox({ controller, ui }: { controller: PasReportWi
 
   const hint = snoozed && agenda?.snoozedUntil != null
     ? <Text key="hint" style={styles.hint} numberOfLines={1}>미뤄 둠: {formatReturnTime(agenda.snoozedUntil, now)}</Text> : null;
-  const commentButton = button('지시 적기', () => open('comment'), { disabled: busy, testID: 'pas-report-open-composer' });
+  const commentButton = button('지시 적기', () => open('comment', commentRef), { disabled: busy || !card, testID: 'pas-report-open-composer', ref: commentRef });
   const canSnooze = agenda !== null && agenda.kind !== 'running' && agenda.kind !== 'verifying';
   // 미뤄 둔 안건은 그 종류의 단추 그대로, 답변 미루기 자리만 미루기 해제로 바뀐다. 진행 중과 검증 대기도 미뤄 둔 것이면 해제를 둔다.
   const snoozeSlot = !agenda || (!canSnooze && !snoozed) ? null : snoozed
@@ -94,8 +110,8 @@ export function PasReportDecideBox({ controller, ui }: { controller: PasReportWi
       : view.options.map(option => button(option.label, () => { void controller.choose(agenda, option.label); },
         { disabled: busy, note: option.recommended ? '권함' : undefined }))}{hint}</>;
     secondary = <>
-      {request ? null : button('다르게 답하기', () => open('answer'), { disabled: busy, testID: 'pas-report-answer-freely' })}
-      {button('되묻기', () => open('ask'), { disabled: busy, testID: 'pas-report-ask-back' })}
+      {request ? null : button('다르게 답하기', () => open('answer', answerRef), { disabled: busy, testID: 'pas-report-answer-freely', ref: answerRef })}
+      {button('되묻기', () => open('ask', askRef), { disabled: busy, testID: 'pas-report-ask-back', ref: askRef })}
       {snoozeSlot}
     </>;
   } else if ((agenda.kind === 'question' || agenda.kind === 'request') && !detail) {
@@ -135,14 +151,16 @@ export function PasReportDecideBox({ controller, ui }: { controller: PasReportWi
     {undoRow}
     {controller.actionError ? <Text testID="pas-report-action-error" accessibilityRole="alert" selectable style={styles.error}>{controller.actionError}</Text> : null}
     {composerOpen && agenda && card ? <View testID="pas-report-composer" style={styles.composer}>
+      {composerMode === 'comment' && !targetItem ? <CardComposerNotice testID="pas-report-composer-notice" text="커멘트" onRelease={ui.closeComposer} /> : null}
+      {composerMode === 'answer' ? <CardComposerNotice testID="pas-report-composer-notice" text="다르게 답하기" onRelease={ui.closeComposer} /> : null}
       <CardCommentComposer key={`${card.id}:${composerMode}`} ref={composerRef} api={controller.api} cardId={card.id}
         sessionId={card.assigneeSessionId} nodeId={nodeId} question={composerMode === 'answer' ? question ?? undefined : undefined}
         cardLoaded locked={busy} sending={controller.commentsPending || busy} onBusyChange={() => {}}
         sendComment={controller.sendComment} runMutation={controller.runMutation} embedded
         targetItem={composerMode === 'comment' ? targetItem : null} questionTarget={composerMode === 'ask' ? openQuestion : null}
-        onReleaseQuestionTarget={closeComposer} onReleaseTarget={closeComposer}
+        onReleaseQuestionTarget={ui.closeComposer} onReleaseTarget={ui.closeComposer} onTargetSent={() => controller.setTargetItem(null)}
         placeholder={composerMode === 'comment' ? '커멘트' : cardQuestionPlaceholder(openQuestion, composerMode === 'answer')}
-        onSent={() => { if (composerMode === 'answer') controller.answeredByText(agenda); ui.setMode('closed'); }} />
+        onSent={() => { if (composerMode === 'answer') controller.answeredByText(agenda); ui.closeComposer(); }} />
     </View> : null}
   </View>;
 }
@@ -156,6 +174,9 @@ function makeStyles(t: DesignTokens) {
     group: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: t.uiSpacing.sm, rowGap: t.uiSpacing.xs, minWidth: 0, flexShrink: 1 },
     groupEnd: { marginLeft: 'auto', justifyContent: 'flex-end' },
     button: { maxWidth: '100%' },
+    // 채운 단추는 최소 높이가 더 크고(2pt 유리 테두리 포함) 테두리 단추는 바깥 가는 테두리를 따로 두어 한 줄에서 어긋난다.
+    // 같은 줄 단추는 같은 높이여야 하므로 테두리 단추의 안쪽 높이를 채운 단추의 높이에서 바깥 테두리만큼 뺀 값으로 맞춘다.
+    paperFrame: { minHeight: Math.max(t.hitTarget.min, createPrimitiveRoles(t).buttonPrimary.minHeight) - 2 * StyleSheet.hairlineWidth },
     buttonLabel: { ...type.body, color: t.colors.textPrimary },
     recommended: { ...type.label, color: t.colors.accent },
     hint: { ...type.meta, color: t.colors.textSecondary, flexShrink: 1 },

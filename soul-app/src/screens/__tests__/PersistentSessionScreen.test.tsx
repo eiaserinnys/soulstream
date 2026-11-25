@@ -1372,3 +1372,39 @@ test('마지막 보고를 완료하면 실행 취소가 끝날 때까지 보고 
   jest.useRealTimers();
   view.unmount(); measure.mockRestore();
 });
+
+// 카드 #1871: 폰의 보고 창은 내비게이터 화면이다. 여는 길(onOpenPhoneReportWindow)이 없으면 겹침 상태를 켜지 않아야 뒤로 가기가 삼켜지지 않는다.
+test.each([true, false])('폰의 「보고 창 열기」는 겹침 상태를 켜지 않고, 여는 길이 있으면 그 안건으로 연다 (여는 길 있음: %s)', async hasOpener => {
+  const cardReport = { key: 'card_531', kind: 'see' as const, title: '검수 결과', card_numbers: [531], card_id: 'card-531',
+    card_status: 'review', context: '결과를 확인해 주세요.', action: '', options: [], state: 'open' as const, answer: '', updated_at: '2026-10-21T00:00:00Z' };
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 47, 390, 715);
+    else if (this.props.testID === 'persistent-session-conversation') callback(20, 95, 350, 667);
+  });
+  const handlers: Array<() => boolean> = [];
+  const addEventListener = jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_event, handler) => {
+    handlers.push(handler as () => boolean);
+    return { remove: jest.fn() } as any;
+  });
+  mockDevice = 'phone';
+  useSettingsStore.setState({ serverUrl: 'https://screen.test' });
+  const onOpenPhoneReportWindow = jest.fn();
+  const view = render(<PersistentSessionProvider><Capture />
+    <PersistentSessionScreen onHome={jest.fn()} onOpenPhoneReportWindow={hasOpener ? onOpenPhoneReportWindow : undefined} /></PersistentSessionProvider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-card-phone', display_name: '관제', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-card-phone', [cardReport]);
+  });
+  act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+  act(() => view.getByTestId('persistent-body-probe').props.onComposerLayout({ x: 0, y: 560, width: 350, height: 76 }, { x: 0, y: 20, width: 350, height: 56 }));
+  measurePersistentReports(view);
+  await waitFor(() => expect(view.getByTestId('report-window-open')).toBeTruthy());
+  fireEvent.press(view.getByTestId('report-window-open'), { stopPropagation: jest.fn() });
+  if (hasOpener) expect(onOpenPhoneReportWindow).toHaveBeenCalledWith('card-531');
+  let handled = true;
+  act(() => { handled = handlers[handlers.length - 1](); });
+  expect(handled).toBe(false);
+  view.unmount();
+  addEventListener.mockRestore();
+  measure.mockRestore();
+});

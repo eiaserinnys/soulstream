@@ -36,7 +36,8 @@ export function PasReportThread({ controller, follow, paneWidth }: { controller:
       </View>
       : <View style={styles.state} testID="pas-report-thread-loading"><FrameLoading text="불러오는 중" /></View>;
   }
-  return <ThreadBody controller={controller} follow={follow} paneWidth={paneWidth} detail={detail} />;
+  // 카드마다 새로 선다. 원 요청 펼침 같은 지역 상태가 카드를 오가며 따라가지 않게 한다.
+  return <ThreadBody key={detail.card.id} controller={controller} follow={follow} paneWidth={paneWidth} detail={detail} />;
 }
 
 function ThreadBody({ controller, follow, paneWidth, detail }: {
@@ -65,7 +66,7 @@ function ThreadBody({ controller, follow, paneWidth, detail }: {
       {items.length ? <View testID="pas-report-items" style={styles.items}>
         <CardCheckItems key={detail.card.id} cardId={detail.card.id} items={items} pendingConfirmations={controller.itemActions.pendingConfirmations}
           initiallyConfirmedIds={current.initial} newlyConfirmedIds={current.newly} onConfirm={controller.itemActions.confirm}
-          onSetTarget={item => controller.setTargetItem(item.id)} onRecentConfirmation={setRecent} paneWidth={paneWidth} />
+          onSetTarget={(item, trigger) => controller.setTargetItem(item.id, trigger)} onRecentConfirmation={setRecent} paneWidth={paneWidth} />
       </View> : null}
     </ScrollView>
     {follow.following ? null : <View pointerEvents="box-none" style={styles.pillSeat}>
@@ -142,7 +143,7 @@ function QuestionRow({ question, detail, portraitUri, styles }: {
     <CardQuestionBody view={body} cardId={detail.card.id} portraitUri={portraitUri} onChoose={() => {}} busy />
     {!closed && view.kind === 'choice' && view.options.length ? <View testID={`pas-report-question-options-${question.id}`} style={styles.optionNotes}>
       {view.options.map(option => <View key={option.label} style={styles.optionNote}>
-        <Text selectable style={styles.optionLabel}>{option.label}{option.recommended ? '  권함' : ''}</Text>
+        <Text selectable style={styles.optionLabel}>{option.label}{option.recommended ? <Text style={styles.recommended}>{'  권함'}</Text> : null}</Text>
         {option.description ? <Text selectable style={styles.optionDescription}>{option.description}</Text> : null}
       </View>)}
     </View> : null}
@@ -194,7 +195,8 @@ function makeStyles(t: DesignTokens) {
     dotDelegate: { backgroundColor: t.colors.link },
     milestoneText: { ...type.meta, flex: 1, minWidth: 0, color: t.colors.textSecondary },
     optionNotes: { gap: t.uiSpacing.sm },
-    optionNote: { gap: t.uiSpacing.xxs, borderLeftWidth: t.uiSpacing.xs, borderLeftColor: t.persistentSession.line, paddingLeft: t.uiSpacing.md },
+    optionNote: { gap: t.uiSpacing.xxs, borderLeftWidth: t.uiSpacing.xs, borderLeftColor: t.colors.textMuted, paddingLeft: t.uiSpacing.md },
+    recommended: { ...type.label, color: t.colors.accent },
     optionLabel: { ...type.body, fontWeight: '600', color: t.colors.textPrimary },
     optionDescription: { ...type.body, color: t.colors.textSecondary },
     answer: { ...type.body, color: t.colors.textPrimary },

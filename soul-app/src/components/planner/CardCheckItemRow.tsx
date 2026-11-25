@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useMemo, useRef, useState, type ComponentRef } from 'react';
+import { StyleSheet, Text, View, type TouchableOpacity } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { CardCheckItem } from '../../api/cardTypes';
 import type { CardItemDisplay } from '../../../../packages/wire-schema/src/card_item_display';
@@ -57,7 +57,8 @@ export function CardCheckItemRow({
   paneWidth: number;
   onToggle(): void;
   onConfirm(confirmed: boolean): void;
-  onSetTarget(item: CardCheckItem): void;
+  /** trigger는 「고칠 점 남기기」 단추를 눌러 연 경우의 그 단추. 입력창을 닫은 뒤 초점을 돌려놓을 곳이다. */
+  onSetTarget(item: CardCheckItem, trigger?: unknown): void;
 }) {
   const t = useTokens();
   const openContentLink = useOpenContentLink({ type: 'card', id: cardId });
@@ -84,6 +85,7 @@ export function CardCheckItemRow({
   const attachmentItems = entries.filter((view): view is AttachmentView => view !== null);
   const [selected, setSelected] = useState<number | null>(null);
   const restoreFocus = useRef<(() => void) | undefined>(undefined);
+  const fixRef = useRef<ComponentRef<typeof TouchableOpacity>>(null);
   const openEvidence = (evidence: typeof ordered[number], restore?: () => void) => {
     const view = entries[ordered.indexOf(evidence)];
     if (view) {
@@ -226,7 +228,8 @@ export function CardCheckItemRow({
               testID={`card-check-item-${item.id}-fix`}
               accessibilityLabel={`${item.id} ${item.title} 고칠 점 남기기`}
               frameStyle={styles.fixFrame} surfaceStyle={styles.fixSurface}
-              onPress={() => onSetTarget(item)}>
+              touchableRef={fixRef}
+              onPress={() => onSetTarget(item, fixRef.current)}>
               <Text style={styles.fixText}>고칠 점 남기기</Text>
             </CompactTouchTarget> : null}
           </View>

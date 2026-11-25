@@ -58,7 +58,7 @@ export function PasReportRail({ controller, onSelect }: { controller: PasReportW
     </ScrollView>
     <View style={styles.foot}>
       {unknown ? <View testID="pas-report-rail-error" accessibilityRole="alert" style={styles.error}>
-        <Text style={styles.footText}>카드 목록을 불러오지 못해 진행 중과 보류함을 알 수 없어.</Text>
+        <Text style={styles.errorText}>카드 목록을 불러오지 못해 진행 중과 보류함을 알 수 없어.</Text>
         <GlassButton size="compact" variant="paper" accessibilityLabel="카드 목록 다시 시도" onPress={controller.retryCards}>
           <Text style={styles.retry}>다시 시도</Text>
         </GlassButton>
@@ -90,8 +90,9 @@ function makeStyles(t: DesignTokens) {
     note: { ...type.meta, color: t.colors.textSecondary, flexShrink: 1 },
     title: { ...type.body, color: t.colors.textPrimary },
     foot: { paddingTop: t.uiSpacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.persistentSession.line },
+    errorText: { ...type.meta, color: t.colors.textSecondary },
     footText: { ...type.meta, color: t.colors.textSecondary, paddingHorizontal: textInset },
-    error: { gap: t.uiSpacing.sm, alignItems: 'flex-start' },
+    error: { gap: t.uiSpacing.sm, alignItems: 'flex-start', paddingHorizontal: textInset },
     retry: { ...type.body, color: t.colors.textPrimary },
   });
 }

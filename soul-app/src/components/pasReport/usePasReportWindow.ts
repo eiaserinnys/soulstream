@@ -65,6 +65,12 @@ export function usePasReportWindow({ api, entries, completion, dismissReport, st
   const [activeId, setActiveId] = useState<string | null>(startCardId);
   const [snoozeUndo, setSnoozeUndo] = useState<SnoozeUndo | null>(null);
   const [targetItemId, setTargetItemId] = useState<number | null>(null);
+  /** 항목 지시를 연 「고칠 점 남기기」 단추. 입력창을 닫으면 접근성 초점이 여기로 돌아간다. */
+  const targetTrigger = useRef<unknown>(null);
+  const setTargetItem = useCallback((itemId: number | null, trigger?: unknown) => {
+    targetTrigger.current = itemId === null ? null : trigger ?? null;
+    setTargetItemId(itemId);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const busyRef = useRef(false);
@@ -213,6 +219,8 @@ export function usePasReportWindow({ api, entries, completion, dismissReport, st
     const restored = await completion.undo();
     if (!restored) { setActionError('되돌리지 못했어.'); return; }
     if (!cardId) return;
+    // 되돌리기 훅은 되돌리기 전에 읽은 완료 상태를 저장소에 넣어 둔다. 되돌린 카드를 다시 읽어야 안건이 결재 대기에 다시 선다.
+    if (api) { try { await refreshCard(api, cardId); } catch { /* 카드 갱신 알림이 이어서 읽는다. */ } }
     setProcessed(items => items.filter(item => item.agenda.cardId !== cardId));
     setActiveId(cardId);
   };
@@ -230,7 +238,7 @@ export function usePasReportWindow({ api, entries, completion, dismissReport, st
   return {
     api, groups, now, processed: processedAgendas, active, activeCardId, snoozed, detail, loadState, retry, question,
     cardsLoading: list.loading, cardsError: list.error, retryCards: list.refresh,
-    targetItemId, setTargetItem: setTargetItemId, busy, actionError, setActionError,
+    targetItemId, setTargetItem, targetTrigger, busy, actionError, setActionError,
     select: (cardId: string) => setActiveId(cardId),
     complete, acknowledge, choose, answeredByText, snooze, unsnooze, sendComment, runMutation,
     commentsPending: comments.pending, itemActions,

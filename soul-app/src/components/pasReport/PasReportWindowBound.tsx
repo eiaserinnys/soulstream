@@ -3,7 +3,7 @@ import React from 'react';
 import { PasReportWindow, type PasReportWindowHandle, type PasReportWindowProps } from './PasReportWindow';
 import { usePasReportSource } from './usePasReportSource';
 
-export const PasReportWindowBound = React.forwardRef<PasReportWindowHandle, Pick<PasReportWindowProps, 'startCardId' | 'onClose' | 'onOpenCard'>>(
+export const PasReportWindowBound = React.forwardRef<PasReportWindowHandle, Pick<PasReportWindowProps, 'startCardId' | 'onClose' | 'onOpenCard' | 'onLayersChange'>>(
   function PasReportWindowBound(props, ref) {
     const source = usePasReportSource();
     return <PasReportWindow ref={ref} {...source} {...props} />;

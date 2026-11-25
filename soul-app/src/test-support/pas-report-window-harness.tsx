@@ -35,7 +35,7 @@ export function mount(options: Options) {
   const ref = React.createRef<PasReportWindowHandle>();
   const props = {
     api: server.api, completion, startCardId: options.startCardId ?? null,
-    dismissReport: options.dismissReport ?? jest.fn(async () => true), onClose: jest.fn(), onOpenCard: jest.fn(),
+    dismissReport: options.dismissReport ?? jest.fn(async () => true), onClose: jest.fn(), onOpenCard: jest.fn(), onLayersChange: jest.fn(),
   };
   const view = (entries: Options['entries']) => <PasReportWindow ref={ref} {...props} entries={entries} />;
   windowDims.width = options.width ?? 390;

@@ -1,6 +1,6 @@
 // 카드 #1871: PAS 결재형 보고 창(C안 「시간순 통합 사건 스레드」). 폰 화면과 태블릿 겹침이 같은 부품을 쓴다.
 // 820pt 이상은 왼쪽 고정 레일, 그 아래는 머리줄 「안건 목록」 단추로 여는 서랍이 같은 세로 행을 그린다.
-import React, { forwardRef, useImperativeHandle, useMemo, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTokens, type DesignTokens } from '../../theme';
@@ -23,10 +23,12 @@ export interface PasReportWindowProps extends PasReportWindowInput {
   onClose(): void;
   /** 카드 패널 열기. 폰은 기존 CardDetail 화면으로 가고, 태블릿은 PAS 화면이 카드를 여는 지금 길을 따른다. */
   onOpenCard(cardId: string): void;
+  /** 서랍, 답변 미루기 펼침, 입력창 가운데 하나라도 열려 있으면 true. 폰은 이것으로 iOS 끌기를 막는다(usePreventRemove). */
+  onLayersChange?(open: boolean): void;
 }
 
 export const PasReportWindow = forwardRef<PasReportWindowHandle, PasReportWindowProps>(function PasReportWindow(props, ref) {
-  const { onClose, onOpenCard } = props;
+  const { onClose, onOpenCard, onLayersChange } = props;
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const controller = usePasReportWindow(props);
@@ -35,15 +37,19 @@ export const PasReportWindow = forwardRef<PasReportWindowHandle, PasReportWindow
   const wide = width >= PAS_REPORT_RAIL_MIN_WIDTH;
   const [drawerRequested, setDrawerRequested] = useState(false);
   const drawerOpen = drawerRequested && !wide;
-  const ui = useDecideUi(controller.activeCardId);
+  const ui = useDecideUi(controller.activeCardId, () => controller.setTargetItem(null));
   const follow = useScrollFollow(controller.activeCardId);
   const { active } = controller;
+
+  const layersOpen = drawerOpen || ui.snoozeOpen || ui.mode !== 'closed';
+  useEffect(() => { onLayersChange?.(layersOpen); }, [layersOpen, onLayersChange]);
+  useEffect(() => () => onLayersChange?.(false), [onLayersChange]);
 
   useImperativeHandle(ref, () => ({
     back() {
       if (drawerOpen) { setDrawerRequested(false); return true; }
       if (ui.snoozeOpen) { ui.setSnoozeOpen(false); return true; }
-      if (ui.mode !== 'closed') { controller.setTargetItem(null); ui.setMode('closed'); return true; }
+      if (ui.mode !== 'closed') { ui.closeComposer(); return true; }
       return false;
     },
   }), [controller, drawerOpen, ui]);

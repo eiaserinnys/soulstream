@@ -22,7 +22,7 @@ export function CardCheckItems({
   initiallyConfirmedIds: readonly number[];
   newlyConfirmedIds: readonly number[];
   onConfirm(itemId: number, confirmed: boolean): Promise<boolean>;
-  onSetTarget(item: CardCheckItem): void;
+  onSetTarget(item: CardCheckItem, trigger?: unknown): void;
   onRecentConfirmation(itemId: number, confirmed: boolean): void;
   paneWidth: number;
 }) {

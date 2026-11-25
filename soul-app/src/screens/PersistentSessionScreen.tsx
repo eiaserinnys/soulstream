@@ -165,7 +165,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const [reportWindow, setReportWindow] = useState<{ startCardId: string | null } | null>(null);
   const reportWindowRef = React.useRef<PasReportWindowOverlayHandle>(null);
   const openReportWindow = React.useCallback((entry: PersistentReportEntry) => {
-    if (phone && onOpenPhoneReportWindow) onOpenPhoneReportWindow(entry.card_id ?? null);
+    // 폰은 보고 창이 내비게이터 화면이다. 여는 길이 없으면 겹침 상태를 켜지 않는다(켜 두면 뒤로 가기 한 번이 삼켜진다).
+    if (phone) onOpenPhoneReportWindow?.(entry.card_id ?? null);
     else setReportWindow({ startCardId: entry.card_id ?? null });
   }, [onOpenPhoneReportWindow, phone]);
   const openContentLink = useOpenContentLink();

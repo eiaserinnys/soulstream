@@ -397,6 +397,8 @@ export interface GlassButtonProps {
   style?: StyleProp<ViewStyle>;
   frameStyle?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
+  /** 닫은 뒤 접근성 초점을 이 단추로 돌려놓을 때 쓰는 참조(카드 #1871). 모양은 바뀌지 않는다. */
+  buttonRef?: React.Ref<View>;
   testID?: string;
   surfaceTestID?: string;
 }
@@ -421,6 +423,7 @@ export function GlassButton({
   style,
   frameStyle,
   contentStyle,
+  buttonRef,
   testID,
   surfaceTestID,
 }: GlassButtonProps) {
@@ -459,6 +462,7 @@ export function GlassButton({
   const pressHandler = () => { if (busy) return; onPress(); };
   const renderButton = (nativePressFeedback: boolean) => (
     <Pressable
+      ref={buttonRef}
       testID={testID}
       onPress={pressHandler}
       onFocus={() => {

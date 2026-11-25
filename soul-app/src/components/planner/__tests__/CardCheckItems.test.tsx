@@ -56,7 +56,8 @@ test('서버 display 일곱 값을 그대로 표시하고 확인·고칠 점 조
   fireEvent.press(screen.getByLabelText('1 항목 1 확인'));
   expect(onConfirm).toHaveBeenCalledWith(1, true);
   fireEvent.press(screen.getByLabelText('4 항목 4 고칠 점 남기기'));
-  expect(onSetTarget).toHaveBeenCalledWith(expect.objectContaining({ id: 4 }));
+  // 두 번째 인자는 입력창을 닫은 뒤 초점을 돌려놓을 「고칠 점 남기기」 단추다.
+  expect(onSetTarget).toHaveBeenCalledWith(expect.objectContaining({ id: 4 }), expect.anything());
 });
 
 test('확인 항목의 상태 기호와 근거 기호는 Ionicons로 렌더링한다', () => {

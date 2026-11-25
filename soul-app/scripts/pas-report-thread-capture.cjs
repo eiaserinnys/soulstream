@@ -112,6 +112,266 @@ async function pixelContrast(page, probe, background) {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
+
+
+
+const testIdOf = page => page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.tagName);
+const titleOf = page => page.getByTestId('pas-report-title').innerText();
+
+/** 결함 1: 검수 안건 완료 → 되돌리기 성공 뒤 1초 안에 그 안건이 결재 대기의 활성 안건으로 돌아온다. */
+async function undoCompletion(browser, base) {
+  const lines = [];
+  for (const vp of [VIEWPORTS[0], VIEWPORTS[3]]) {
+    const { context, page, label } = await open(browser, base, vp, 'light', 'review');
+    await page.getByTestId('pas-report-complete').click();
+    await page.getByLabel('되돌리기').waitFor();
+    assert.doesNotMatch(await titleOf(page), /PAS 결재형/, `${label}: 완료 뒤 다음 안건으로 넘어가야 함`);
+    const started = Date.now();
+    await page.getByLabel('되돌리기').click();
+    await page.waitForFunction(() => /PAS 결재형/.test(document.querySelector('[data-testid="pas-report-title"]')?.textContent ?? ''), null, { timeout: 1000 });
+    const took = Date.now() - started;
+    await page.getByTestId('pas-report-complete').waitFor();
+    if (vp.width >= 820) {
+      const pending = page.getByTestId('pas-report-rail-결재 대기');
+      assert.equal(await pending.getByTestId('pas-report-row-card-1871').count(), 1, `${label}: 되돌린 안건이 결재 대기에 서야 함`);
+      assert.equal(await pending.getByTestId('pas-report-row-card-1871').getByTestId('pas-report-row-bar').count(), 1, `${label}: 레일 강조가 그 안건이어야 함`);
+      assert.equal(await page.getByTestId('pas-report-rail-처리됨').count(), 0, `${label}: 처리됨에서 빠져야 함`);
+    }
+    lines.push(`${label}: 완료 → 되돌리기 ${took}ms 만에 그 안건(결재 대기, 활성)으로 돌아옴${vp.width >= 820 ? ', 레일 강조 막대와 처리됨 비움 확인' : ''}`);
+    await shot(page, `${vp.name}-light-review-after-undo`);
+    await context.close();
+  }
+  record('결함 1 완료 되돌리기 성공', lines);
+}
+
+const geometry = locator => locator.evaluate(el => { const b = el.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, width: b.width, height: b.height, background: getComputedStyle(el).backgroundColor }; });
+
+/** 결함 2: 네 입력창 모두 알림줄과 「해제」가 같은 모양으로 서고, 해제는 입력창만 닫고 초점을 연 단추로 돌린다. */
+async function composerNotices(browser, base) {
+  const cases = [
+    { name: '지시 적기', state: 'review', trigger: 'pas-report-open-composer', notice: 'pas-report-composer-notice', text: '커멘트' },
+    { name: '다르게 답하기', state: 'question', trigger: 'pas-report-answer-freely', notice: 'pas-report-composer-notice', text: '다르게 답하기' },
+    { name: '되묻기', state: 'question', trigger: 'pas-report-ask-back', notice: 'card-question-target', text: '되묻기' },
+    { name: '항목 지시', state: 'review', trigger: 'card-check-item-1-fix', notice: 'card-comment-target', text: '1' },
+  ];
+  const lines = [];
+  for (const vp of VIEWPORTS) {
+    for (const theme of THEMES) {
+      const shapes = [];
+      for (const item of cases) {
+        const { context, page, label } = await open(browser, base, vp, theme, item.state);
+        const trigger = page.getByTestId(item.trigger);
+        if (item.name === '항목 지시' && !(await trigger.count())) await page.getByText(/390 폭에서 결재 상자 단추/).first().click();
+        await trigger.scrollIntoViewIfNeeded();
+        await trigger.click();
+        const notice = page.getByTestId(item.notice);
+        await notice.waitFor();
+        const line = await geometry(notice);
+        assert.ok((await notice.innerText()).includes(item.text), `${label} ${item.name}: 알림줄 글 「${await notice.innerText()}」`);
+        const release = notice.getByLabel('대상 해제');
+        assert.equal(await release.count(), 1, `${label} ${item.name}: 「해제」가 있어야 함`);
+        // 단추가 두 줄로 감겨도 알림줄은 마지막 단추 줄 아래에 선다.
+        const above = (await visibleButtons(page, 'pas-report-decide')).filter(button => button.bottom <= line.top + 1);
+        const stampsBottom = Math.max(...above.map(button => button.bottom));
+        const input = await rect(page, 'pas-report-composer');
+        assert.ok(line.top >= stampsBottom - 1, `${label} ${item.name}: 알림줄이 단추 줄 아래여야 함`);
+        near(line.top - stampsBottom, 8, 6, `${label} ${item.name}: 단추 줄과 알림줄 사이`);
+        assert.ok(input.bottom > line.bottom, `${label} ${item.name}: 알림줄 아래에 입력창`);
+        const placeholder = await page.evaluate(() => document.querySelector('textarea, input')?.getBoundingClientRect().top ?? null);
+        assert.ok(placeholder === null || placeholder >= line.bottom - 1, `${label} ${item.name}: 입력칸이 알림줄 아래`);
+        shapes.push({ item, line });
+        if (item.name === '지시 적기' || item.name === '항목 지시') await shot(page, `${vp.name}-${theme}-notice-${item.name === '지시 적기' ? 'comment' : 'item'}`);
+        // 해제: 입력창만 닫히고 초점이 연 단추로 돌아간다.
+        await release.click();
+        await page.getByTestId('pas-report-composer').waitFor({ state: 'detached' });
+        await page.waitForTimeout(250);
+        assert.equal(await testIdOf(page), item.trigger, `${label} ${item.name}: 닫은 뒤 초점이 연 단추여야 함`);
+        assert.equal(await page.getByTestId('pas-report-window').count(), 1, `${label} ${item.name}: 창은 그대로여야 함`);
+        await context.close();
+      }
+      const first = shapes[0].line;
+      for (const { item, line } of shapes) {
+        near(line.left, first.left, 1, `${vp.name}-${theme} ${item.name}: 알림줄 왼쪽 끝`);
+        near(line.right, first.right, 1, `${vp.name}-${theme} ${item.name}: 알림줄 오른쪽 끝`);
+        near(line.height, first.height, 1, `${vp.name}-${theme} ${item.name}: 알림줄 높이`);
+        assert.equal(line.background, first.background, `${vp.name}-${theme} ${item.name}: 알림줄 바탕`);
+      }
+      lines.push(`${vp.name}-${theme}: 지시 적기, 다르게 답하기, 되묻기, 항목 지시 모두 알림줄(이름, 해제)이 같은 모양(왼쪽 ${round(first.left)}, 오른쪽 ${round(first.right)}, 높이 ${round(first.height)})으로 서고, 해제로 닫으면 초점이 연 단추로 돌아옴`);
+    }
+  }
+  record('결함 2 입력창 알림줄, 해제, 닫은 뒤 초점', lines);
+}
+
+/** 결함 4: 카드 상세가 없는 로딩과 실패 상태의 지시 적기는 눌리지 않는다. */
+async function commentWithoutDetail(browser, base) {
+  const lines = [];
+  for (const vp of [VIEWPORTS[0], VIEWPORTS[3]]) {
+    for (const state of ['loading', 'error']) {
+      const { context, page, label } = await open(browser, base, vp, 'light', state);
+      const button = page.getByTestId('pas-report-open-composer');
+      assert.equal(await button.getAttribute('aria-busy'), 'true', `${label}: 지시 적기가 흐린(busy) 모양이어야 함`);
+      assert.equal(Number(await button.evaluate(el => getComputedStyle(el).opacity)) < 1 || Number(await button.evaluate(el => getComputedStyle(el.parentElement).opacity)) < 1, true, `${label}: 흐려야 함`);
+      await button.click({ force: true });
+      await page.waitForTimeout(200);
+      assert.equal(await page.getByTestId('pas-report-composer').count(), 0, `${label}: 눌러도 입력창이 열리면 안 됨`);
+      if (state === 'error') {
+        await shot(page, `${vp.name}-light-error-comment-disabled`);
+        await page.getByLabel('카드 다시 시도').click();
+        await page.getByTestId('pas-report-timeline').waitFor();
+        await page.waitForTimeout(400);
+        assert.equal(await page.getByTestId('pas-report-composer').count(), 0, `${label}: 다시 시도로 상세가 와도 입력창이 저절로 열리면 안 됨`);
+        assert.equal(await page.getByTestId('pas-report-open-composer').getAttribute('aria-busy'), null, `${label}: 상세가 오면 다시 눌린다`);
+        await page.getByTestId('pas-report-open-composer').click();
+        await page.getByTestId('pas-report-composer').waitFor();
+      }
+      lines.push(`${label}: 지시 적기 busy(흐림), 눌러도 입력창 0개${state === 'error' ? ', 다시 시도 뒤에도 저절로 열리지 않고 상세가 온 뒤에는 눌러서 열림' : ''}`);
+      await context.close();
+    }
+  }
+  record('결함 4 상세 없을 때 지시 적기', lines);
+}
+
+/** 눈에 보이는 단추 모양: 테두리 단추는 Pressable을 감싼 바깥 상자가 보이는 모양이다. */
+const visibleButtons = (page, root) => page.getByTestId(root).getByRole('button').evaluateAll(els => els.map(el => {
+  const outer = el.parentElement && el.parentElement.children.length === 1 && getComputedStyle(el.parentElement).borderTopWidth !== '0px' ? el.parentElement : el;
+  const b = outer.getBoundingClientRect(); const p = el.getBoundingClientRect();
+  return { label: el.getAttribute('aria-label'), top: b.top, bottom: b.bottom, height: b.height, left: b.left, right: b.right, inner: p.height };
+}));
+
+/** 결함 5: 결재 상자 한 줄 단추 높이가 1pt 안에서 같고 세로 가운데가 맞는다. */
+async function stampHeights(browser, base) {
+  const lines = [];
+  for (const vp of [VIEWPORTS[0], VIEWPORTS[1], VIEWPORTS[3]]) {
+    for (const theme of THEMES) {
+      for (const state of ['review', 'question']) {
+        const { context, page, label } = await open(browser, base, vp, theme, state);
+        await page.getByTestId('pas-report-snooze-trigger').click();
+        await page.getByTestId('pas-report-snooze-options').waitFor();
+        const buttons = (await visibleButtons(page, 'pas-report-decide')).filter(button => !/미루기 해제|되돌리기/.test(button.label ?? ''));
+        assert.ok(buttons.length >= 4, `${label}: 결재 상자 단추 ${buttons.length}개`);
+        const reference = buttons[0];
+        for (const button of buttons) near(button.height, reference.height, 1, `${label}: 「${button.label}」 높이`);
+        const rowsByTop = [];
+        for (const button of buttons) {
+          const row = rowsByTop.find(group => Math.abs(group[0].top - button.top) < reference.height / 2);
+          if (row) row.push(button); else rowsByTop.push([button]);
+        }
+        for (const row of rowsByTop) for (const button of row) near((button.top + button.bottom) / 2, (row[0].top + row[0].bottom) / 2, 1, `${label}: 「${button.label}」 세로 가운데`);
+        const startLine = buttons.reduce((least, button) => Math.min(least, button.left), 1e9);
+        const timeline = await rect(page, 'pas-report-timeline');
+        near(startLine, timeline.left, 1.5, `${label}: 결재 상자 왼쪽 시작선`);
+        if (state === 'review') {
+          lines.push(`${label}: 단추 ${buttons.length}개 높이 ${buttons.map(button => `${button.label} ${round(button.height)}`).join(', ')}, 시작선 ${round(startLine)}`);
+          if (theme === 'light' && vp.width === 390) await shot(page, `${vp.name}-${theme}-review-decide-heights`);
+        }
+        await context.close();
+      }
+    }
+  }
+  record('결함 5 결재 상자 한 줄 단추 높이', lines);
+}
+
+/** 결함 6: 선택지 목록 왼쪽 막대 대비 2:1 이상, 권함은 이름과 갈린 글. */
+async function optionNotes(browser, base) {
+  const lines = [];
+  for (const vp of [VIEWPORTS[0], VIEWPORTS[3]]) {
+    for (const theme of THEMES) {
+      const { context, page, label } = await open(browser, base, vp, theme, 'question');
+      const list = page.getByTestId('pas-report-question-options-q-secret');
+      await list.scrollIntoViewIfNeeded();
+      const barBox = await list.evaluate(el => { const note = el.firstElementChild; const b = note.getBoundingClientRect(); const s = getComputedStyle(note);
+        return { left: b.left, top: b.top, height: b.height, width: parseFloat(s.borderLeftWidth), textLeft: note.firstElementChild.getBoundingClientRect().left }; });
+      near(barBox.width, 4, 0.6, `${label}: 막대 두께`);
+      const probe = { x: barBox.left + barBox.width / 2, y: barBox.top + barBox.height / 2 };
+      const around = { x: barBox.left - 6, y: probe.y };
+      const contrast = await pixelContrast(page, probe, around);
+      assert.ok(contrast >= 2, `${label}: 선택지 막대 대비 ${round(contrast)}:1 < 2:1`);
+      const recommended = await list.getByText('권함').first().evaluate(el => { const parent = el.parentElement; return { own: getComputedStyle(el).color, parent: getComputedStyle(parent).color, text: el.textContent }; });
+      assert.notEqual(recommended.own, recommended.parent, `${label}: 권함이 이름과 같은 색이면 한 이름처럼 읽힘`);
+      const selectable = await list.getByText('파일로 옮기기').first().evaluate(el => getComputedStyle(el).userSelect);
+      assert.equal(selectable, 'text', `${label}: 선택지 이름은 선택되어야 함`);
+      assert.equal(await list.getByRole('button').count(), 0, `${label}: 선택지 목록에 눌리는 요소가 없어야 함`);
+      lines.push(`${label}: 막대 대비 ${round(contrast)}:1, 두께 ${round(barBox.width)}, 글 시작 ${round(barBox.textLeft)}, 권함 ${recommended.own} / 이름 ${recommended.parent}`);
+      if (vp.width === 390 || theme === 'dark') await shot(page, `${vp.name}-${theme}-question-options`);
+      await context.close();
+    }
+  }
+  record('결함 6 스레드 선택지 막대와 권함', lines);
+}
+
+/** 결함 7: 레일 카드 목록 실패의 「다시 시도」 왼쪽 끝이 실패 안내 글, 구역 머리 글의 시작선과 1pt 안이다. */
+async function railRetryLine(browser, base) {
+  const lines = [];
+  for (const vp of [VIEWPORTS[0], VIEWPORTS[3]]) {
+    const { context, page, label } = await open(browser, base, vp, 'light', 'cardsError');
+    if (vp.width < 820) await page.getByTestId('pas-report-open-rail').click();
+    await page.getByTestId('pas-report-rail-error').waitFor();
+    const text = await page.getByTestId('pas-report-rail-error').evaluate(el => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); const range = document.createRange(); range.selectNodeContents(walker.nextNode()); return range.getClientRects()[0].left; });
+    const button = page.getByLabel('카드 목록 다시 시도');
+    const buttonLeft = await button.evaluate(el => { const outer = el.parentElement && getComputedStyle(el.parentElement).borderTopWidth !== '0px' ? el.parentElement : el; return outer.getBoundingClientRect().left; });
+    const head = await page.getByTestId('pas-report-rail-결재 대기').getByRole('heading').first().evaluate(el => el.getBoundingClientRect().left);
+    near(buttonLeft, text, 1, `${label}: 다시 시도 왼쪽 끝과 실패 안내 글 시작선`);
+    near(buttonLeft, head, 1.5, `${label}: 다시 시도 왼쪽 끝과 구역 머리 글 시작선`);
+    await shot(page, `${vp.name}-light-cardsError-rail`);
+    await button.click();
+    await page.getByTestId('pas-report-rail-hold').waitFor();
+    const hold = await page.getByTestId('pas-report-rail-hold').evaluate(el => { const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); const range = document.createRange(); range.selectNodeContents(walker.nextNode()); return range.getClientRects()[0].left; });
+    near(hold, text, 1, `${label}: 보류함 개수 시작선은 그대로`);
+    lines.push(`${label}: 다시 시도 ${round(buttonLeft)}, 안내 글 ${round(text)}, 구역 머리 ${round(head)}, 다시 시도 뒤 보류함 ${round(hold)}`);
+    await context.close();
+  }
+  record('결함 7 레일 실패의 다시 시도 시작선', lines);
+}
+
+/** PAS 화면(보고 장 머리줄)의 「보고 창 열기」 단추를 휴대폰과 아이패드 세로 틀에서 찍는다. */
+async function entryButton(browser, base) {
+  const frames = [['iphone-17', [393, 852, true]], ['ipad-pro-13-portrait', [1032, 1376, false]]];
+  const lines = [];
+  for (const [frame, [width, height, mobile]] of frames) {
+    for (const theme of THEMES) {
+      const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, isMobile: mobile, hasTouch: mobile, reducedMotion: 'reduce' });
+      await context.addCookies([{ name: 'review', value: 'fixture', url: base }]);
+      const page = await context.newPage();
+      page.setDefaultTimeout(15000);
+      page.on('pageerror', error => result.errors.push({ name: `pas-entry-${frame}`, message: error.message }));
+      await page.route('**/*', async route => {
+        const url = route.request().url();
+        if (url.startsWith('data:') || url.startsWith('blob:') || new URL(url).origin === base) { await route.continue(); return; }
+        result.errors.push({ name: `pas-entry-${frame}`, message: 'External request: ' + url }); await route.abort();
+      });
+      await page.goto(`${base}${prefix}index.html?section=iphoneDuo&sample=pas-layout&frame=${frame}&theme=${theme}&scene=reports`);
+      await page.waitForTimeout(2500);
+      const open = page.getByTestId('report-window-open').first();
+      await open.waitFor();
+      const toggle = page.getByTestId('report-window-toggle').first();
+      const a = await geometry(open);
+      const hasToggle = await toggle.count();
+      const b = hasToggle ? await geometry(toggle) : null;
+      assert.ok(a.width >= 44 && a.height >= 44, `${frame}-${theme}: 보고 창 열기 터치 대상 ${round(a.width)}x${round(a.height)}`);
+      assert.equal(await open.getAttribute('aria-label'), '보고 창 열기', `${frame}-${theme}: 접근성 이름`);
+      if (b) assert.ok(a.right <= b.left + 1 || b.right <= a.left + 1, `${frame}-${theme}: 확대 단추와 겹치면 안 됨`);
+      await shot(page, `pas-entry-${frame}-${theme}`);
+      await shot(page, `pas-entry-${frame}-${theme}-head`, { clip: { x: Math.max(0, a.left - 280), y: Math.max(0, a.top - 24), width: Math.min(380, width), height: 96 } });
+      lines.push(`${frame}-${theme}: 「보고 창 열기」 ${round(a.width)}x${round(a.height)}, 접근성 이름 「보고 창 열기」${b ? `, 확대 단추와 간격 ${round(b.left - a.right)}` : ''}`);
+      await context.close();
+    }
+  }
+  record('PAS 화면 보고 장 머리줄 「보고 창 열기」', lines);
+}
+
+async function runReviewDefects(browser, base) {
+  await undoCompletion(browser, base);
+  await composerNotices(browser, base);
+  await commentWithoutDetail(browser, base);
+  await stampHeights(browser, base);
+  await optionNotes(browser, base);
+  await railRetryLine(browser, base);
+  await entryButton(browser, base);
+}
+
+
+
 async function runMatrix(browser, base) {
   for (const vp of VIEWPORTS) {
     for (const theme of THEMES) {
@@ -435,7 +695,7 @@ function writeOperations(failure) {
   L('| 번호 | 결과 | 근거 |');
   L('|---|---|---|');
   const checks = Object.fromEntries(result.checks.map(check => [check.name, check.detail]));
-  L(`| 14 누른 뒤 초점 | 통과 | 지시 적기를 누르면 입력창에 초점이 선다(${checks['초점']?.composer ?? '측정 없음'}). 닫은 뒤 초점은 앱에 닫기 단추가 없고 하드웨어 뒤로와 가장자리 끌기로 닫으므로 해당 없음(닫힘 순서는 jest PasReportWindow 시험이 덮음). |`);
+  L(`| 14 누른 뒤 초점 | 통과 | 지시 적기를 누르면 입력창에 초점이 선다(${checks['초점']?.composer ?? '측정 없음'}). 입력창 알림줄의 「해제」로 닫으면 초점이 연 단추로 돌아온다(아래 「결함 2」 측정). 하드웨어 뒤로와 가장자리 끌기가 닫는 순서는 jest(PasReportWindow, PhoneContentScreens)가 덮는다. |`);
   L('| 15 Tab과 Esc | 해당 없음 | iOS 앱이라 Tab과 Esc가 없다. 뒤로 가기가 서랍, 답변 미루기 펼침, 입력창 순으로 하나씩 닫는 것은 jest(PasReportWindow, PhoneContentScreens)로 확인했다. |');
   L(`| 16 최소 폭 넘침과 잘림 | 통과 | 360 폭 포함 4폭, 두 테마, 검수와 질문 표본에서 가로 스크롤 0, 창 밖으로 나간 요소 0, 머리줄 제목이 단추와 겹치지 않음(말줄임). |`);
   L(`| 17 오류 상태 | 통과 | ${checks['상태 표본']?.error ?? ''}; ${checks['상태 표본']?.cardsError ?? ''}. |`);
@@ -447,7 +707,7 @@ function writeOperations(failure) {
   L('|---|---|---|---|---|---|');
   L('| 안건 목록 서랍 | 머리줄 「안건 목록」 단추 | 해당 없음(터치 화면, 서랍 안 첫 행) | 해당 없음 | 해당 없음(뒤로 가기가 닫음) | 해당 없음 |');
   L('| 답변 미루기 펼침 | 결재 상자 「답변 미루기」 | 해당 없음(선택지 알약이 단추 줄 아래에 펼침) | 해당 없음 | 해당 없음(뒤로 가기가 닫음) | 해당 없음 |');
-  L(`| 입력창(지시 적기, 되묻기, 다르게 답하기, 항목 지시) | 결재 상자 단추 | ${checks['초점']?.composer ?? ''} | ${checks['초점']?.enter ?? ''}(카드 상세 커멘트 입력과 같은 부품) | 해당 없음(뒤로 가기가 닫음) | 해당 없음 |`);
+  L(`| 입력창(지시 적기, 되묻기, 다르게 답하기, 항목 지시) | 결재 상자 단추 | ${checks['초점']?.composer ?? ''} | ${checks['초점']?.enter ?? ''}(카드 상세 커멘트 입력과 같은 부품) | 해당 없음(터치 앱. 알림줄 「해제」와 뒤로 가기가 닫음) | 연 단추(지시 적기, 다르게 답하기, 되묻기, 고칠 점 남기기)에 선다(결함 2 측정) |`);
   L('');
   L('## 측정');
   L('');
@@ -490,6 +750,7 @@ function writeOperations(failure) {
     await runMilestones(browser, base);
     await runStamps(browser, base);
     await runResize(browser, base);
+    await runReviewDefects(browser, base);
     assert.deepEqual(result.errors, [], '페이지 오류 또는 외부 요청');
   } catch (error) {
     failure = error instanceof Error ? error.message : String(error);
