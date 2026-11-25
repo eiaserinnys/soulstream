@@ -338,6 +338,18 @@ test('agent_id / profile / mcp_profile arguments match the install profile set',
   assert.ok(seen >= 4, `expected the seed profile arguments, found ${seen}`);
 });
 
+// --- first request path -----------------------------------------------------
+
+test('first request path: the PAS role runs cards under the default agent and card-work links documents by relative url', () => {
+  const content = (key) => SEED.entries.find((entry) => entry.key === key)?.content ?? '';
+  const pasRole = content('seosoyoung.rules_pas.pas_role');
+  assert.ok(pasRole.includes('run=true'), 'pas_role must tell the PAS to run the card it creates');
+  assert.ok(pasRole.includes('agent_id: "seosoyoung"'), 'pas_role must name the default card assignee agent');
+  const cardWork = content('skill.card_work.body');
+  assert.ok(cardWork.includes('/?document='), 'card-work must show the relative document link form');
+  assert.ok(cardWork.includes('document.id'), 'card-work must name the document id to use');
+});
+
 // --- portraits -------------------------------------------------------------
 
 test('portraits: PNG signature, no text chunks, under 1 MiB', () => {
