@@ -577,6 +577,64 @@ describe("claude auth command boundary", () => {
     }
   });
 
+  it("reports the short claude.ai authorization URL as url_ready through command handling", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "claude-auth-command-short-"));
+    try {
+      const shortUrl = "https://claude.ai/oauth/authorize?Xk3_Zq-9aB.c~D4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wY";
+      const cliPath = join(rootDir, "fake-claude-cli.mjs");
+      const cliScript = [
+        "#!/usr/bin/env node",
+        "const [group, action] = process.argv.slice(2);",
+        "if (group === 'auth' && action === 'login') {",
+        "  process.stdout.write('Opening browser to sign in\\nIf the browser did not open, visit:\\n" + shortUrl + "\\nPaste code here if prompted >');",
+        "  process.stdin.resume();",
+        "  process.stdin.once('end', () => process.exit(0));",
+        "} else {",
+        "  process.exit(2);",
+        "}",
+      ].join("\n");
+      await writeFile(cliPath, cliScript, { encoding: "utf8", mode: 0o755 });
+      await chmod(cliPath, 0o755);
+
+      const logger = { info: () => undefined } as unknown as import("pino").Logger;
+      const accounts = new ClaudeAccountService({
+        accountsDir: join(rootDir, "accounts"),
+        homeDir: join(rootDir, "home"),
+      });
+      const login = new ClaudeLoginService({ port: accounts, logger, executablePath: cliPath });
+      const commands = new ClaudeAuthCommands({
+        agentRegistry: createAgentRegistry(["claude"]),
+        claudeAuth: createClaudeAuth(),
+        claudeAccounts: accounts,
+        claudeLoginService: login,
+        claudeAccountPoolEnabled: true,
+      } as unknown as ConstructorParameters<typeof ClaudeAuthCommands>[0]);
+
+      const started = await commands.handle({
+        type: "claude_auth_login_start",
+        requestId: "short-start",
+      }) as LoginCommandResponse;
+      const loginId = started.data!.login_id;
+      const urlReady = await waitForLoginResponse(
+        () => commands.handle({
+          type: "claude_auth_login_status",
+          requestId: "short-status",
+          login_id: loginId,
+        }) as Promise<LoginCommandResponse>,
+        (response) => response.data?.state === "url_ready",
+      );
+      expect(urlReady.data?.auth_url).toBe(shortUrl);
+
+      await commands.handle({
+        type: "claude_auth_login_cancel",
+        requestId: "short-cancel",
+        login_id: loginId,
+      });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects legacy token mutation commands with login_flow_required in pool mode", async () => {
     const auth = createClaudeAuth();
     const commands = new ClaudeAuthCommands({

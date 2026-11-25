@@ -10,8 +10,16 @@ import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_BASE_URL_ENV } from "../model_preset_e
 const ANTHROPIC_AUTH_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN";
 export const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
 const CLAUDE_CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR";
-const CLAUDE_AUTH_HOST = "claude.com";
-const CLAUDE_AUTH_PATH = "/cai/oauth/authorize";
+// 옛 긴 꼴: https://claude.com/cai/oauth/authorize?code=true&client_id=...&state=...
+const CLAUDE_LEGACY_AUTH_HOST = "claude.com";
+const CLAUDE_LEGACY_AUTH_PATH = "/cai/oauth/authorize";
+// 새 짧은 꼴(Claude CLI 2.1.331): https://claude.ai/oauth/authorize?<불투명 값 하나>
+const CLAUDE_SHORT_AUTH_HOST = "claude.ai";
+const CLAUDE_SHORT_AUTH_PATH = "/oauth/authorize";
+const CLAUDE_SHORT_AUTH_QUERY_MIN_LENGTH = 16;
+const CLAUDE_SHORT_AUTH_QUERY_MAX_LENGTH = 512;
+/** URL 예약되지 않은 글자와 %XX 만. `&`, `=`, `#`, 공백은 받지 않는다. */
+const OPAQUE_QUERY_PATTERN = /^(?:[A-Za-z0-9\-._~]|%[0-9A-Fa-f]{2})+$/;
 const BASE64URL_32_BYTE_VALUE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export const MAX_LOGIN_CODE_LENGTH = 2_048;
@@ -197,21 +205,38 @@ function stripTrailingUrlPunctuation(candidate: string): string {
 function isClaudeAuthorizationUrl(candidate: string): boolean {
   try {
     const parsed = new URL(candidate);
-    const params = parsed.searchParams;
-    return parsed.protocol === "https:" &&
-      parsed.host === CLAUDE_AUTH_HOST &&
-      parsed.pathname === CLAUDE_AUTH_PATH &&
-      params.get("code") === "true" &&
-      hasNonEmptyParam(params, "client_id") &&
-      params.get("response_type") === "code" &&
-      hasNonEmptyParam(params, "redirect_uri") &&
-      hasNonEmptyParam(params, "scope") &&
-      hasBase64Url32ByteParam(params, "code_challenge") &&
-      params.get("code_challenge_method") === "S256" &&
-      hasBase64Url32ByteParam(params, "state");
+    return isLegacyClaudeAuthorizationUrl(parsed) || isShortClaudeAuthorizationUrl(parsed);
   } catch {
     return false;
   }
+}
+
+function isLegacyClaudeAuthorizationUrl(parsed: URL): boolean {
+  const params = parsed.searchParams;
+  return parsed.protocol === "https:" &&
+    parsed.host === CLAUDE_LEGACY_AUTH_HOST &&
+    parsed.pathname === CLAUDE_LEGACY_AUTH_PATH &&
+    params.get("code") === "true" &&
+    hasNonEmptyParam(params, "client_id") &&
+    params.get("response_type") === "code" &&
+    hasNonEmptyParam(params, "redirect_uri") &&
+    hasNonEmptyParam(params, "scope") &&
+    hasBase64Url32ByteParam(params, "code_challenge") &&
+    params.get("code_challenge_method") === "S256" &&
+    hasBase64Url32ByteParam(params, "state");
+}
+
+function isShortClaudeAuthorizationUrl(parsed: URL): boolean {
+  const query = parsed.search.startsWith("?") ? parsed.search.slice(1) : "";
+  return parsed.protocol === "https:" &&
+    parsed.host === CLAUDE_SHORT_AUTH_HOST &&
+    parsed.username === "" &&
+    parsed.password === "" &&
+    parsed.hash === "" &&
+    parsed.pathname === CLAUDE_SHORT_AUTH_PATH &&
+    query.length >= CLAUDE_SHORT_AUTH_QUERY_MIN_LENGTH &&
+    query.length <= CLAUDE_SHORT_AUTH_QUERY_MAX_LENGTH &&
+    OPAQUE_QUERY_PATTERN.test(query);
 }
 
 function hasNonEmptyParam(params: URLSearchParams, key: string): boolean {
