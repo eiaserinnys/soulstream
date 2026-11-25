@@ -5,6 +5,7 @@ import { installChatUiRoutes, chatUiSession } from './chat-ui-fixtures';
 import { reportReviewEntries } from '../client/v3/persistent-report-review-data';
 import { waitForStableLayout } from './layout-stability';
 import { reviewCard } from '../client/v3/components-review-fixtures';
+import { EXECUTE_INSTRUCTION_PROMPT, PERSISTENT_INITIAL_INSTRUCTION } from '../../packages/wire-schema/src/conversation_visibility';
 
 const output = process.env.PAS_REPORT_SHOTS ?? path.resolve(import.meta.dirname, '../../.local/artifacts/20261013-270-report-bubble-impl/web');
 const sse = (type: string, payload: object, id: number) => `id: ${id}\nevent: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`;
@@ -366,5 +367,54 @@ test('PAS list settings show reports while GET hangs and survive its failure wit
   await expect(deck.locator('.pas-report-tail')).toHaveCount(1);
   await page.evaluate(()=>document.fonts.ready); await page.mouse.move(0,0);
   await page.screenshot({path:path.join(output,'1440-listed-settings-r5.png')});
+  expect(fixture.errors).toEqual([]);
+});
+
+const greeting = '안녕하세요. 새 영구 세션이 준비됐어요. 시키실 일을 말씀해 주세요.';
+test('PAS conversation opens on the greeting without the system first instruction bubble', async ({ page }) => {
+  mkdirSync(output, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  const fixture = await installChatUiRoutes(page, { ui: false, count: 3 });
+  const firstInstruction = `${EXECUTE_INSTRUCTION_PROMPT}\n${PERSISTENT_INITIAL_INSTRUCTION}`;
+  const rows = [
+    { id: 1, event_type: 'user_message', payload: { text: firstInstruction, timestamp: 1 } },
+    { id: 2, event_type: 'assistant_message', payload: { content: greeting, timestamp: 2, tool_use_id: 'greeting' } },
+    { id: 3, event_type: 'complete', payload: { result: 'done', attachments: [], timestamp: 3 } },
+  ];
+  await page.route('**/api/sessions/*/timeline?*', route => route.fulfill({ json: {
+    messages: [...rows].reverse().map(row => ({ ...row, parent_event_id: null, created_at: new Date(row.id * 1000).toISOString() })), next_cursor: null } }));
+  await page.goto(`/persistent/${chatUiSession}`);
+  const root = page.locator('[data-slot="chat-root"]').filter({ visible: true }).first();
+  await expect(root.getByText(greeting)).toBeVisible({ timeout: 30_000 });
+  await expect(root.getByText('업무 현황을 파악한 후')).toHaveCount(0);
+  await expect(root.getByText('새 영구 에이전트 세션입니다')).toHaveCount(0);
+  await page.evaluate(() => document.fonts.ready); await page.mouse.move(0, 0);
+  await page.screenshot({ path: path.join(output, 'pas-first-instruction-hidden-dark.png') });
+  expect(fixture.errors).toEqual([]);
+});
+
+test('review list row of a PAS whose stored preview is [SILENT] does not show it', async ({ page }) => {
+  mkdirSync(output, { recursive: true });
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  const fixture = await installChatUiRoutes(page, { ui: false, count: 3 });
+  const quiet = { agentSessionId: 'silent-preview-session', status: 'completed', reviewRequired: true, reviewState: 'needs_review', sessionType: 'claude',
+    createdAt: '2026-07-13T18:00:00.000Z', updatedAt: '2026-07-13T20:00:00.000Z', completedAt: '2026-07-13T20:00:00.000Z',
+    displayName: '조용한 영구 세션', prompt: `${EXECUTE_INSTRUCTION_PROMPT}\n${PERSISTENT_INITIAL_INSTRUCTION}`,
+    lastMessage: { type: 'assistant_message', preview: '[SILENT]', timestamp: '2026-07-13T20:00:00.000Z' },
+    nodeId: 'node-alpha', agentId: 'agent-alpha', agentName: '에이전트' };
+  const unnamed = { ...quiet, agentSessionId: 'silent-preview-unnamed', displayName: undefined, updatedAt: '2026-07-13T19:00:00.000Z' };
+  const listed = [quiet, unnamed];
+  await page.route('**/api/sessions/stream*', route => route.fulfill({ contentType: 'text/event-stream', body: 'retry: 60000\n\n' + sse('session_list', { sessions: listed, total: listed.length }) }));
+  await page.route(url => url.pathname === '/api/sessions', route => route.fulfill({ json: { sessions: listed, total: listed.length } }));
+  await page.goto('/v3');
+  const row = page.getByTestId('v3-session-row-silent-preview-session');
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('v3-session-row-silent-preview-unnamed')).toBeVisible();
+  await expect(page.getByTestId('v3-session-panel').getByText('[SILENT]')).toHaveCount(0);
+  await expect(row.getByText('아직 표시할 메시지가 없습니다.')).toBeVisible();
+  await page.evaluate(() => document.fonts.ready); await page.mouse.move(0, 0);
+  await page.screenshot({ path: path.join(output, 'review-list-silent-preview-hidden-dark.png') });
   expect(fixture.errors).toEqual([]);
 });

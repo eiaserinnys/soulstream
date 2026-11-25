@@ -43,6 +43,7 @@ export interface UserMessageNode extends BaseNode, AttachmentEventSignalFields {
   inputId?: string;
   cacheKeepalive?: boolean;
   cardNotice?: boolean;
+  initialInstruction?: boolean;
   user: string;
   context?: ContextItem[];
   /** 에이전트가 발신한 경우 채워지는 메타데이터 (caller_info.source==="agent"에서 도출) */
@@ -98,6 +99,7 @@ export interface InterventionNode extends BaseNode, AttachmentEventSignalFields 
   inputId?: string;
   cacheKeepalive?: boolean;
   cardNotice?: boolean;
+  initialInstruction?: boolean;
   user?: string;
   /**
    * F-9 fix(2026-05-08): 발신자가 agent인 경우 채워지는 메타데이터.

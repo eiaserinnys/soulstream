@@ -2,7 +2,7 @@ import type { SqlClient } from "../control_plane/control_plane_types.js";
 import type { SourceEvent } from "./conversation_projection.js";
 
 export const CONVERSATION_HISTORY_PROJECTION_VERSION = 2;
-export const CONVERSATION_HISTORY_PROJECTION_FINGERPRINT = "0947d4cbe50bc35ada45b13a9e50b921b0a92a7d114e3f5975c92cdfebf586e8";
+export const CONVERSATION_HISTORY_PROJECTION_FINGERPRINT = "6e1f6b7e8adac9f799921ea8ffeba3fdc71b910c46174cad5d73a1494fd56cbc";
 
 export type Row = { id: number; event_type: string; payload: Record<string, unknown> | null; created_at: Date };
 export const TYPES = ["user_message", "intervention_sent", "notification", "assistant_message", "tool_start", "tool_result", "complete", "error", "assistant_error"];

@@ -5,10 +5,8 @@ import type { ServiceCaller } from "../src/auth/service_caller.js";
 import { ModelPresetAvailabilityError } from "../src/model/model_preset_availability.js";
 import type { SessionCreateRouteResponse } from "../src/session/session_create_route_response.js";
 import { SessionResourceAccessError } from "../src/session/session_resource_access.js";
-import {
-  PERSISTENT_INITIAL_INSTRUCTION,
-  PersistentSessionSettingsService,
-} from "../src/session/persistent_session_settings_service.js";
+import { PERSISTENT_INITIAL_INSTRUCTION } from "@soulstream/wire-schema/conversation-visibility";
+import { PersistentSessionSettingsService } from "../src/session/persistent_session_settings_service.js";
 import { registerPersistentSessionSettingsRoutes } from "../src/session/persistent_session_settings_routes.js";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 

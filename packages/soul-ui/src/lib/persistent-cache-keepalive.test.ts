@@ -52,6 +52,48 @@ describe("card notice turn projection", () => {
   });
 });
 
+describe("initial instruction turn projection", () => {
+  type Row = { treeNodeType: string; content: string; inputId?: string; cardNotice?: boolean; cacheKeepalive?: boolean; initialInstruction?: boolean };
+  const input = (id: string, flags: Partial<Row> = {}): Row => ({ treeNodeType: "user_message", inputId: id, content: id, ...flags });
+  const row = (type: string, content: string, inputId?: string): Row => ({ treeNodeType: type, content, inputId });
+  const first = () => input("first", { initialInstruction: true });
+
+  it("drops only the first instruction bubble and keeps the greeting and complete", () => {
+    const result = projectHiddenInputTurns([first(), row("text", "greeting"), row("complete", "end")]);
+    expect(result.messages.map(item => item.content)).toEqual(["greeting", "end"]);
+    expect(result.suppressStreaming).toBe(false);
+  });
+
+  it("keeps the in-flight greeting visible and streaming on", () => {
+    const result = projectHiddenInputTurns([first(), row("text", "greeting", "first")]);
+    expect(result.messages.map(item => item.content)).toEqual(["greeting"]);
+    expect(result.suppressStreaming).toBe(false);
+  });
+
+  it("treats a following card notice like one that follows a visible input", () => {
+    const result = projectHiddenInputTurns([first(), input("notice", { cardNotice: true }), row("text", "answer", "notice"), row("complete", "end")]);
+    expect(result.messages.map(item => item.content)).toEqual(["answer", "end"]);
+  });
+
+  it("leaves ordinary and keepalive inputs as before", () => {
+    expect(projectHiddenInputTurns([input("human"), row("text", "answer"), row("complete", "end")]).messages.map(item => item.content))
+      .toEqual(["human", "answer", "end"]);
+    expect(projectHiddenInputTurns([input("keepalive", { cacheKeepalive: true }), row("text", "hidden"), row("complete", "end")]).messages).toEqual([]);
+  });
+
+  it("hides the first instruction and keeps the greeting in the transcript", () => {
+    const visible = transcript([
+      { type: "user_message", input_id: "first", text: `업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.\n새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.` },
+      { type: "assistant_message", content: "안녕하세요" },
+      { type: "complete", result: "done", attachments: [] },
+    ] as SoulSSEEvent[]);
+    const projected = projectHiddenInputTurns(visible).messages;
+    expect(projected.some(message => message.treeNodeType === "user_message")).toBe(false);
+    expect(projected.map(message => message.content)).toContain("안녕하세요");
+    expect(projected.some(message => message.treeNodeType === "complete")).toBe(true);
+  });
+});
+
 function transcript(events: SoulSSEEvent[]): ReturnType<typeof flattenTree> {
   const root: EventTreeNode = {
     type: "session",

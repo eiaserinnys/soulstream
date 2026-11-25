@@ -8,7 +8,7 @@ import {
 } from "@seosoyoung/soul-ui";
 import { RunRowFrame, type RunRowAction } from "./RunRowFrame";
 
-import { singleLinePreview } from "./session-preview";
+import { singleLinePreview, visibleSessionPreview } from "./session-preview";
 import { sessionPanelTitle } from "./v3-session-panel-model";
 import "./v3-run-history.css";
 
@@ -50,7 +50,7 @@ export function RichSessionRow({
   const visiblePreview = failed
     ? "세션 정보를 불러오지 못했습니다."
     : preview ?? singleLinePreview(
-      session.lastMessage?.preview ?? session.prompt,
+      visibleSessionPreview(session),
       120,
     ) ?? "아직 표시할 메시지가 없습니다.";
 

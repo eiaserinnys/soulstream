@@ -1,4 +1,5 @@
 import { isRecord } from "@soulstream/wire-schema/json-record";
+import { EXECUTE_INSTRUCTION_PROMPT } from "@soulstream/wire-schema/conversation-visibility";
 import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
 import { sessionCreateBadRequest, serviceUnavailable, sendMappedError, sendCreateAckError, type SessionCreateRouteResponse } from "./session_create_route_response.js";
 import { randomUUID } from "node:crypto";
@@ -80,8 +81,6 @@ const RESPOND_ACK_ERROR_HTTP_STATUS: Readonly<Record<string, number>> = {
 
 const WAIT_FOR_INSTRUCTION_PROMPT =
   "업무 현황을 파악한 후, 사용자의 다음 지시를 대기해주세요.";
-const EXECUTE_INSTRUCTION_PROMPT =
-  "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.";
 
 export function registerSessionCommandRoutes(
   app: FastifyInstance,

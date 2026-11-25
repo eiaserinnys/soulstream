@@ -1,6 +1,6 @@
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
-import { singleLinePreview } from "./session-preview";
+import { singleLinePreview, visibleLastMessagePreview } from "./session-preview";
 import type { RunTreeNode } from "./folder-workspace-run-model";
 import type { PageSessionDefaults } from "./folder-workspace-page-api";
 
@@ -86,7 +86,7 @@ export function buildSuccessionSessionOptions(
           node.session.displayName,
           SUCCESSION_SESSION_LABEL_LENGTH,
         ) ?? singleLinePreview(
-          node.session.lastMessage?.preview,
+          visibleLastMessagePreview(node.session),
           SUCCESSION_SESSION_LABEL_LENGTH,
         ) ?? "제목 없는 세션",
         runNumber: node.runNumber,
