@@ -1,6 +1,6 @@
 # Installation
 
-This guide covers the Linux one-line installer (including updates and Tailscale Serve), the Windows worker installer, and running the full Soulstream stack from source.
+This guide covers the Linux one-line installer (including updates, Tailscale Serve, and uninstalling), the Windows worker installer, and running the full Soulstream stack from source.
 
 ## Linux one-line installer
 
@@ -57,7 +57,7 @@ Before it stops any service, the installer checks both repositories. If it finds
 
 Updates preserve secrets, both databases (`soulstream` and `atom`), the existing workspace, unmanaged `.env` lines, and edited config files. Edited managed files stay untouched; new defaults go beside them as `<file>.installer-new` and appear under `Configuration:` ([managed config files](configuration.md#files-the-linux-installer-manages)).
 
-After the checks pass, the installer stops `soulstream-worker`, `soulstream-orch`, and `soulstream-atom`, then checks out, builds, migrates, and restarts them. The finish output shows previous and new revisions for both repositories. If a step fails after stopping services, all three stay stopped and `/home/soulstream/soulstream/.local/install-state.json` records the failed step and revisions; fix the cause and re-run to recover. Databases do not roll back automatically. Instead, the installer dumps `soulstream` before non-additive schema changes and any non-empty `atom` database before every migration to `/home/soulstream/soulstream/.local/backups/` (mode `0600`, latest 3 per database). Failure output and `install-state.json` (`backups`) list backup paths and restore commands. Restore only when discarding the new revision: keep services stopped, check out a compatible revision, and restore into an empty database from a `root` shell. No uninstaller is included.
+After the checks pass, the installer stops `soulstream-worker`, `soulstream-orch`, and `soulstream-atom`, then checks out, builds, migrates, and restarts them. The finish output shows previous and new revisions for both repositories. If a step fails after stopping services, all three stay stopped and `/home/soulstream/soulstream/.local/install-state.json` records the failed step and revisions; fix the cause and re-run to recover. Databases do not roll back automatically. Instead, the installer dumps `soulstream` before non-additive schema changes and any non-empty `atom` database before every migration to `/home/soulstream/soulstream/.local/backups/` (mode `0600`, latest 3 per database). Failure output and `install-state.json` (`backups`) list backup paths and restore commands. Restore only when discarding the new revision: keep services stopped, check out a compatible revision, and restore into an empty database from a `root` shell.
 
 ### Tailscale Serve
 
@@ -72,6 +72,43 @@ Personal devices default to their own account when you omit `--tailscale-user`; 
 atom is served on `:8443` of the same host (`https://<MagicDNS-name>:8443`) and still uses the administrator password in `/home/soulstream/soulstream/.admin-password` (read with `sudo cat`).
 
 Re-run without `--tailscale` to return to password mode. To remove Serve access and disconnect the device, run `tailscale serve reset && tailscale logout`.
+
+### Uninstalling
+
+Run the uninstaller as `root` on the dedicated server where you installed Soulstream:
+
+```bash
+bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall.sh -o "$tmp"; bash "$tmp"'
+```
+
+For non-interactive runs, pass `--yes` inside the inner command:
+
+```bash
+bash -c 'set -euo pipefail; tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; curl -fsSL https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall.sh -o "$tmp"; bash "$tmp" --yes'
+```
+
+Before changing anything, the uninstaller scans the server, prints what it found, and prompts once on `/dev/tty`. If no interactive terminal is available and you omit `--yes`, it exits without making changes. If you run the command again after a clean removal, it prints `Nothing to uninstall.` and exits `0`.
+
+If you want a copy of your data before uninstalling, export both databases and archive the workspace outside `/home/soulstream`:
+
+```bash
+sudo -u postgres pg_dump -Fc soulstream > /root/soulstream.pgdump && sudo -u postgres pg_dump -Fc atom > /root/atom.pgdump && tar -czf /root/soulstream-workspace.tar.gz -C /home/soulstream workspace
+```
+
+Because the Linux installer targets a dedicated server, confirming deletes the Soulstream-named resources by name:
+
+- `soulstream-worker.service`, `soulstream-orch.service`, and `soulstream-atom.service`, along with any remaining `soulstream` processes and the `soulstream` user's crontab.
+- The `soulstream` and `atom` PostgreSQL databases (session history, folders, cards, pages, and atom documents), and the `soulstream` PostgreSQL role unless objects in another database depend on it.
+- The `soulstream` system user and all of `/home/soulstream` (workspace files, git worktrees, automatic database backups under `/home/soulstream/soulstream/.local/backups`, the administrator password, user-scoped CLIs, and saved Claude, Codex, and Antigravity login credentials).
+- The install log at `/var/log/soulstream-install.log`.
+
+If Tailscale is installed, the uninstaller checks `tailscale serve status --json` and turns off the `/` routes on HTTPS ports `443` and `8443` only when they proxy to Soulstream (`http://127.0.0.1:5200`) and atom (`http://127.0.0.1:4200`), then checks Serve status again. It leaves other paths on those ports and all other ports untouched.
+
+For global tools under `/usr/local`, the uninstaller removes `@openai/codex`, Corepack shims (`pnpm`, `pnpx`, `yarn`, `yarnpkg`), and Node.js only when `/etc/soulstream/install-receipt.json` records that the installer added them. It removes Node.js and the Corepack shims only if `/usr/local/bin/node --version` still matches the recorded version and no other global npm packages exist in `/usr/local/lib/node_modules`. Otherwise, it keeps those tools and lists them at the end. When every step succeeds, the uninstaller also removes `/etc/soulstream/install-receipt.json`.
+
+The uninstaller keeps OS `apt` packages (such as `postgresql-17`, `git`, and `tmux`), tools that existed before installation or have no install receipt, and the Tailscale package and device login. If you also want to disconnect the server from your tailnet, run `tailscale logout`.
+
+If any Soulstream service fails to stop, or if the script cannot confirm it stopped, it skips removing processes, databases, `/usr/local` tools, the `soulstream` user, and `/home/soulstream`, and reports the failure. If remaining `soulstream` processes do not exit, it skips removing the user and `/home/soulstream`. When a step fails, independent steps still run. At the end, the uninstaller lists the failed items, keeps `/etc/soulstream/install-receipt.json` (and `/usr/local/bin/node` if an earlier `/usr/local` removal failed), and exits with code `1`. Fix the underlying cause and run the command again to finish cleaning up.
 
 ## Requirements
 
