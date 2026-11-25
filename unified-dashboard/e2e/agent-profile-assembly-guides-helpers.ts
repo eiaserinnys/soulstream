@@ -52,7 +52,20 @@ export async function openSettings(page: Page, options: OpenOptions) {
 export async function openComponents(page: Page, theme: Theme) {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-  await page.addInitScript((value) => { localStorage.setItem("soul-dashboard-theme", value); localStorage.setItem("ls.webglGlass", "0"); }, theme);
+  await page.addInitScript((value) => {
+    localStorage.setItem("soul-dashboard-theme", value); localStorage.setItem("ls.webglGlass", "0");
+    // 개발 서버는 서비스 워커 스크립트를 html로 답한다. 기존 컴포넌트 검수 시험처럼 등록을 가짜로 대신한다.
+    Object.defineProperty(navigator.serviceWorker, "register", { configurable: true, value: async () => ({ update: async () => undefined, active: null, addEventListener: () => undefined }) });
+    Object.defineProperty(navigator.serviceWorker, "controller", { configurable: true, get: () => null });
+  }, theme);
+  // 처리되지 않은 /api 요청이 연결 안 되는 API 서버로 가면 앱이 서지 못한다. 나중에 등록한 길이 먼저 맞으니 받침 길을 가장 먼저 둔다.
+  await page.route("**/api/**", route => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/api/ui-events/config") return route.fulfill({ json: { enabled: false, flushIntervalMs: 1000, maxBatchSize: 1, maxQueueSize: 500, schemaVersion: "soulstream.ui_event.v1" } });
+    if (pathname === "/api/health") return route.fulfill({ json: { healthy: true, ready: true, draining: false, build_id: "dev" } });
+    if (pathname.endsWith("/stream") || pathname.endsWith("/events")) return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": empty\n\n" });
+    return route.fulfill({ status: 200, json: {} });
+  });
   await installV3VisualQaRoutes(page, { unifiedFolderView: true, timelineEventCount: 1, liveEventText: "채팅의 기존 본문과 입력창입니다." });
   await page.route("**/api/auth/config", route => route.fulfill({ json: { authEnabled: true, devModeEnabled: false } }));
   await page.route("**/api/auth/status", route => route.fulfill({ json: { authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } } }));
