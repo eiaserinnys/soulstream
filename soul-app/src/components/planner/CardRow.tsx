@@ -29,17 +29,17 @@ import { withAlphaColor } from '../StatusPulseDecoration';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 import { AttachmentReadContextProvider } from '../../navigation/ContentLinkContexts';
 
-export function CardStatusChip({ card, title = false, board = false, detail = false, label, colors }: { card: CardDto; title?: boolean; board?: boolean; detail?: boolean; label?: string; colors?: ColorScheme }) {
+export function CardStatusChip({ card, title = false, board = false, detail = false, label, colors, tone, testID }: { card: Pick<CardDto, 'id' | 'status' | 'blockedKind'>; testID?: string; title?: boolean; board?: boolean; detail?: boolean; label?: string; colors?: ColorScheme; tone?: 'error' }) {
   const t = useTokens();
   const execution = useSyncExternalStore(subscribeCardWrites, () => cardExecutionState(card.id), () => undefined);
   const palette = colors ?? t.colors;
-  const color = colors ? card.status === 'review' ? palette.warningText : card.status === 'running' ? palette.successText
+  const color = tone === 'error' ? palette.errorText : colors ? card.status === 'review' ? palette.warningText : card.status === 'running' ? palette.successText
     : card.status === 'blocked' ? palette.warningText : palette.textMuted
     : card.status === 'review' ? t.colors.warningText : card.status === 'running' ? t.colors.success
     : card.status === 'blocked' ? t.colors.warning : t.colors.textMuted;
-  const capsuleColor = card.status === 'running' ? t.colors.statusRunning : card.status === 'review' ? t.colors.warning : card.status === 'done'
+  const capsuleColor = tone === 'error' ? t.colors.error : card.status === 'running' ? t.colors.statusRunning : card.status === 'review' ? t.colors.warning : card.status === 'done'
     ? t.colors.statusCompleted : card.status === 'blocked' ? t.colors.warning : t.colors.statusIdle;
-  return <Text style={{ ...t.foundation.typography.meta, color,
+  return <Text testID={testID} style={{ ...t.foundation.typography.meta, color,
     ...(title ? { ...t.foundation.typography.cardTitle, marginRight: t.uiSpacing.sm } : {}),
     ...(detail ? { backgroundColor: withAlphaColor(capsuleColor, 0.12), borderRadius: t.foundation.radius.capsule,
       paddingHorizontal: t.uiSpacing.xs, paddingVertical: t.uiSpacing.xxs, marginRight: t.uiSpacing.xs } : {}),

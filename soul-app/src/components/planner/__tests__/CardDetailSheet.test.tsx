@@ -38,6 +38,7 @@ import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
 import { useUIStore } from '../../../store/uiStore';
 import { LayoutContinuityProvider, useLayoutContinuity } from '../../../navigation/LayoutContinuityContext';
 import { setCardQuestionTarget } from '../CardQuestionBlock';
+import { NavigationContext } from '@react-navigation/native';
 // Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
 // promises) must settle inside act before RNTL's cleanup yields to the event loop.
 const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
@@ -829,4 +830,68 @@ test('PAS 위에서 기본 카드 상세와 연결 세션 탭을 읽어도 활�
   fireEvent.press(screen.getByTestId('task-run-row-s1'));
   expect(onOpenSession).toHaveBeenCalledWith('s1');
   await settleTimers();
+});
+
+describe('선행 카드 묶음', () => {
+  const deps = [
+    { id: 'dep-done', number: 11, title: '끝난 선행', status: 'done' as const, archived: false, met: true },
+    { id: 'dep-run', number: 12, title: '진행 중 선행', status: 'running' as const, archived: false, met: false },
+  ];
+  const withNow = { text: '상황판', turn: 'user' as const, ask: '확인', updatedAt: '', sessionId: 's1' };
+  const childrenOrder = (screen: ReturnType<typeof render>, ids: string[]) => {
+    const flat = JSON.stringify(screen.toJSON());
+    return ids.map(id => flat.indexOf(id));
+  };
+
+  test('카드가 시작한 뒤에도 머리와 상황판 사이에 충족 수와 함께 남는다', async () => {
+    const current = { ...detail, card: { ...card, status: 'running' as const, blockedKind: null, blockedDetail: null, now: withNow, dependsOn: deps } };
+    const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue(current) } as any} cardId={card.id} onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('card-dependencies')).toBeTruthy());
+    expect(screen.getByTestId('card-dependencies-count').props.children).toBe('1/2');
+    const [header, group, now] = childrenOrder(screen, ['card-detail-header', 'card-dependencies"', '상황판']);
+    expect(header).toBeLessThan(group);
+    expect(group).toBeLessThan(now);
+  });
+
+  test('선행이 없으면 묶음이 없다', async () => {
+    const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue(detail) } as any} cardId={card.id} onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('card-detail-title')).toBeTruthy());
+    expect(screen.queryByTestId('card-dependencies')).toBeNull();
+  });
+
+  test('폰에서는 행을 누르면 CardDetail 화면으로 이동한다', async () => {
+    const push = jest.fn();
+    const current = { ...detail, card: { ...card, dependsOn: deps } };
+    const screen = render(<NavigationContext.Provider value={{ push } as any}>
+      <CardDetailContent api={{ getCard: jest.fn().mockResolvedValue(current) } as any} cardId={card.id} onClose={jest.fn()} />
+    </NavigationContext.Provider>);
+    await waitFor(() => expect(screen.getByTestId('card-dependency-dep-run')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('card-dependency-dep-run'));
+    expect(push).toHaveBeenCalledWith('CardDetail', { cardId: 'dep-run' });
+  });
+
+  test('태블릿에서는 행을 누르면 카드 덮개를 그 카드로 연다', async () => {
+    mockDevice = 'tablet';
+    mockDimensions = { width: 1180, height: 820, scale: 1, fontScale: 1 };
+    useUIStore.setState({ selectedCardId: null });
+    const current = { ...detail, card: { ...card, dependsOn: deps } };
+    const screen = render(<CardDetailContent inline api={{ getCard: jest.fn().mockResolvedValue(current) } as any} cardId={card.id} onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('card-dependency-dep-run')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('card-dependency-dep-run'));
+    expect(useUIStore.getState().selectedCardId).toBe('dep-run');
+  });
+
+  test('상세 시작 단추도 미충족 선행을 한 번 묻고 취소하면 요청하지 않는다', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const source = { ...card, id: 'start-dep-detail', status: 'queued' as const, blockedKind: null, blockedDetail: null, assigneeSessionId: 'owner', dependsOn: deps };
+    const api = { getCard: jest.fn().mockResolvedValue({ ...detail, card: source, questions: [] }), executeCard: jest.fn() };
+    const screen = render(<CardDetailContent api={api as any} cardId={source.id} onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByLabelText('시작하기')).toBeTruthy());
+    await act(async () => fireEvent.press(screen.getByLabelText('시작하기')));
+    await waitFor(() => expect(alert).toHaveBeenCalledTimes(1));
+    expect(alert.mock.calls[0][1]).toBe('#12(실행 중)이 아직 충족되지 않았습니다. 기다리지 않고 지금 시작할까요?');
+    await act(async () => { (alert.mock.calls[0][2] as any[]).find(button => button.text === '취소').onPress(); });
+    expect(api.executeCard).not.toHaveBeenCalled();
+    await settleTimers();
+  });
 });

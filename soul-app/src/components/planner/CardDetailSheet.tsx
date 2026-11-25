@@ -39,12 +39,14 @@ import { cardDetailStyles } from './CardDetail.styles';
 import { FrameLoading } from '../FrameLoading';
 import { CardCheckItems } from './CardCheckItems';
 import { CardNowPanel } from './CardNowPanel';
+import { CardDependencies } from './CardDependencies';
 import { CardNotes } from './CardNotes';
 import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
 import { resolveChatComposerBottomGap, resolveChatPaneMinimumBottomPadding } from '../split/tabletShellInsets';
 import { ChatPaneMinimumBottomPaddingContext } from '../split/ChatPane';
 import { summarizeCardItems } from '../../lib/card-check-item-summary';
 import { useDuoSideBand } from '../../navigation/duoSideBand';
+import { useOptionalPersistentSessionHost } from '../../navigation/PersistentSessionContext';
 import { useRegisterDuoRailOverride, type PhoneRailAction } from '../../navigation/phoneRailActions';
 
 type CardDetailTab = 'items' | 'comments' | 'sessions' | 'notes';
@@ -254,6 +256,14 @@ export function CardDetailContent(props: CardDetailContentProps) {
     if (ok && next === 'done' && active.current) onClose();
     return ok;
   };
+  const navigation = useContext(NavigationContext) as { push?(name: string, params: object): void; navigate?(name: string, params: object): void } | null;
+  const persistentHost = useOptionalPersistentSessionHost();
+  // 기존 카드 열기 경로: 영구 세션 덮개, 태블릿 덮개, 폰 CardDetail 화면.
+  const openDependencyCard = (id: string) => {
+    if (tablet && persistentHost?.store.getState().selectedCardId === cardId) persistentHost.store.getState().openCardOverlay(id);
+    else if (tablet) useUIStore.getState().openCardOverlay(id);
+    else (navigation?.push ?? navigation?.navigate)?.call(navigation, 'CardDetail', { cardId: id });
+  };
   const openSession = (id: string) => {
     if (onOpenSession) onOpenSession(id);
     else useUIStore.getState().openSessionAtEvent(id);
@@ -333,6 +343,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
         </View> : null}
         {statusAction.execution && statusAction.execution.phase !== 'pending' ? <Text style={styles.error}>{statusAction.execution.message}</Text> : null}
       </View>
+      {card?.dependsOn?.length ? <CardDependencies dependencies={card.dependsOn} onOpenCard={openDependencyCard} /> : null}
       {card?.now && keyboardOverlap === 0 ? <View style={styles.nowWrap}>
         <CardNowPanel now={card.now} history={detail?.nowHistory ?? []} allConfirmed={allConfirmed}
           surfaceRole={inline ? 'glassCard' : 'panel'} completeDisabled={locked || !api || startPhase === 'pending'}

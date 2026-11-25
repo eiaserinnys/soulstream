@@ -65,6 +65,7 @@ import { ReviewIphoneDuo } from './ReviewIphoneDuo';
 import { ReviewClaudeAccountPool } from './ReviewClaudeAccountPool';
 import { ReviewClaudePoolPas } from './ReviewClaudePoolPas';
 import { ReviewSessionFiles } from './ReviewSessionFiles';
+import { ReviewCardDependencies } from './ReviewCardDependencies';
 
 const sections = [
   { value: 'sessionFiles', label: '세션 파일' },
@@ -87,6 +88,7 @@ const sections = [
   { value: 'boardConnected', label: '보드 연결' },
   { value: 'cardHome', label: '카드 홈' },
   { value: 'cardChecks', label: '카드 확인 항목' },
+  { value: 'cardDependencies', label: '선행 카드' },
   { value: 'chatUi', label: '채팅 입력 부품' },
   { value: 'chatUiRenderer', label: '채팅 UI 응답' },
   {value:'folderWorkspace',label:'폴더 카드'},
@@ -238,6 +240,7 @@ function Gallery() {
       {persistentContent}
     </View>;
   }
+  if (section === 'cardDependencies') return <ReviewCardDependencies />;
   if (section === 'cardChecks') return <View testID="card-checks-review-entry" style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewCardChecks /></View>;
   if (section === 'attachments') return <View testID="attachment-review-entry" style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewAttachments /></View>;
   if (section === 'chatUiRenderer') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewChatUi /></View>;

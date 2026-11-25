@@ -4,6 +4,7 @@ import type { AttachmentDescriptor } from '../../../packages/wire-schema/src/att
 import type { CardQuestionAttachment, CardQuestionKind, CardQuestionOption } from '../../../packages/wire-schema/src/card_questions';
 import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
 import type { CardAttachment } from '../../../packages/wire-schema/src/card_attachments';
+import type { CardDependency } from '../../../packages/wire-schema/src/card_dependency_display';
 import type { CardItemDisplay } from '../../../packages/wire-schema/src/card_item_display';
 
 export type CardAttachmentAssetEvidence =
@@ -99,6 +100,8 @@ export interface CardDto {
   now?: CardNow | null;
   /** 사용자가 답변을 미뤄 둔 시각(ISO). 없거나 null이면 미루지 않았다. Older responses omit it. */
   snoozedUntil?: string | null;
+  /** 선행 카드가 있을 때만 실린다. Older server responses omit it. */
+  dependsOn?: CardDependency[];
 }
 export interface CardReport {
   id: string;

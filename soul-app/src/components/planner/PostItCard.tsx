@@ -28,6 +28,10 @@ import { CardStatusChip } from './CardRow';
 import { CardStatusMenu } from './CardStatusMenu';
 import { cardAskPreview, cardProgressText, cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS, summarizeCardItems } from '../../lib/card-check-item-summary';
 import { useCardStore } from '../../store/cardStore';
+import { cardDependencyDisplay } from '../../../../packages/wire-schema/src/card_dependency_display';
+
+// 오류 띠 바탕: 종이 다섯 색 모두에서 오류 글자 대비 4.5:1 이상이 나오도록 옅게 둔다(capture-card-dependencies.cjs가 화소로 잰다).
+const DEPENDENCY_ERROR_ALPHA = 0.08;
 
 export function postItRotation(id: string) {
   return ((Array.from(id).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 5) - 2) * 0.4;
@@ -108,6 +112,10 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
   const body = activity ? postItActivityText(activity) : card.request || '아직 지시나 보고가 없습니다.';
   const itemSummary = summarizeCardItems(card.items, pendingItemConfirmations);
   const askPreview = cardAskPreview(itemSummary.needsReview, card.now?.ask);
+  // 선행 대기·멈춤 문구는 같은 자리의 「볼 것 N」과 ask를 대신한다(웹 PostItCard와 같은 판정).
+  const dependency = cardDependencyDisplay(card.status, card.dependsOn);
+  const bandLines = variant === 'compact' ? 1 : 2;
+  const dependencyReservedLines = dependency ? Math.ceil((roles.label.lineHeight * bandLines + t.uiSpacing.xs * 2) / roles.body.lineHeight) : 0;
   const canInteract = () => canPress() && !suppressDirectPress.current;
   const open = () => {
     if (!canInteract()) return;
@@ -184,14 +192,18 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
                     backgroundColor: cardItemDisplayColor(item.display, t.colors) }} />)}
                 {cardProgressText(itemSummary) ? <Text style={roles.label} accessibilityLabel={cardProgressText(itemSummary)}>{cardProgressText(itemSummary)}</Text> : null}
               </View> : null}
-              <Text testID={`postit-body-${card.id}`} style={roles.body} numberOfLines={card.now ? 1 : Math.max(1, bodyLines - (itemSummary.total ? 1 : 0))} ellipsizeMode="tail">
+              <Text testID={`postit-body-${card.id}`} style={roles.body} numberOfLines={card.now ? 1 : Math.max(1, bodyLines - (itemSummary.total ? 1 : 0) - dependencyReservedLines)} ellipsizeMode="tail">
                 {card.now?.text ? card.now.text : <>
                   <Text testID={`postit-activity-chip-${card.id}`} style={{ ...roles.label, fontWeight: '600', backgroundColor: roles.colors.surfaceCode }}>
                     {activity?.kind === 'report' ? '[보고]' : '[지시]'}
                   </Text>{' '}{body}
                 </>}
               </Text>
-              {card.now?.turn === 'user' && askPreview ? <Text testID={`postit-${card.id}-ask-preview`} accessibilityLabel={askPreview} numberOfLines={variant === 'compact' ? 1 : 2} ellipsizeMode="tail"
+              {dependency ? <Text testID={`postit-${card.id}-dependency`} accessibilityLabel={dependency.text} numberOfLines={bandLines} ellipsizeMode="tail"
+                style={{ ...roles.label,
+                  ...(dependency.tone === 'error' ? { color: roles.colors.errorText, backgroundColor: withAlphaColor(roles.colors.error, DEPENDENCY_ERROR_ALPHA) } : {}),
+                  borderRadius: t.radius.floor, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs }}>{dependency.text}</Text>
+              : card.now?.turn === 'user' && askPreview ? <Text testID={`postit-${card.id}-ask-preview`} accessibilityLabel={askPreview} numberOfLines={variant === 'compact' ? 1 : 2} ellipsizeMode="tail"
                 style={{ ...roles.label, color: roles.body.color, backgroundColor: withAlphaColor(roles.colors.warning, 0.12), borderRadius: t.radius.floor, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs }}>
                 {itemSummary.needsReview ? <Text style={{ color: roles.colors.warningText, fontWeight: '700' }}>볼 것 {itemSummary.needsReview}</Text> : null}{card.now.ask ? `${itemSummary.needsReview ? ' ' : ''}${card.now.ask}` : ''}
               </Text> : null}
