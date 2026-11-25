@@ -347,7 +347,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
         {statusAction.execution && statusAction.execution.phase !== 'pending' ? <Text style={styles.error}>{statusAction.execution.message}</Text> : null}
       </View>
       {card?.dependsOn?.length && keyboardOverlap === 0 ? <CardDependencies dependencies={card.dependsOn} onOpenCard={openDependencyCard} /> : null}
-      {card?.now && keyboardOverlap === 0 ? <View style={styles.nowWrap}>
+      {card?.now && keyboardOverlap === 0 ? <View testID="card-detail-now" style={styles.nowWrap}>
         <CardNowPanel now={card.now} history={detail?.nowHistory ?? []} allConfirmed={allConfirmed}
           surfaceRole={inline ? 'glassCard' : 'panel'} completeDisabled={locked || !api || startPhase === 'pending'}
           onComplete={() => { void status('done'); }} />

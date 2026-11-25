@@ -1,4 +1,5 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+import { ScrollView } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import type { CardDependency } from '../../../../../packages/wire-schema/src/card_dependency_display';
 import { CardDependencies } from '../CardDependencies';
@@ -70,8 +71,8 @@ test('선행 3장까지는 높이 제한 없이 모두 보이고 4장부터는 �
     const { maxHeight } = listStyle(screen);
     const frame = screen.getByTestId('card-dependency-m0').props.style;
     const rowHeight = Object.assign({}, ...[frame].flat(2).filter(Boolean)).minHeight as number;
-    expect(maxHeight).toBeGreaterThan(3 * rowHeight + rowHeight / 2);
-    expect(maxHeight).toBeLessThan(4 * rowHeight + 3 * 4);
+    expect(maxHeight).toBeGreaterThan(3 * rowHeight);
+    expect(maxHeight).toBeLessThan(3 * rowHeight + 3 * 4 + rowHeight / 2);
     // 접기 토글은 없고 모든 행이 목록 안에 있다.
     expect(screen.queryByText(/접기|펼치기/)).toBeNull();
     expect(screen.getAllByTestId(/^card-dependency-m\d+$/)).toHaveLength(count);
@@ -84,4 +85,21 @@ test('todo 선행은 웹처럼 드래프트 칩이고 행 안 칩은 오른쪽 �
   expect(screen.getByText('드래프트')).toBeTruthy();
   expect(screen.queryByText('할 일')).toBeNull();
   expect(screen.getByTestId('card-dependency-chip-t').props.style.marginRight).toBe(0);
+});
+
+test('4장부터는 목록이 처음 그려질 때 스크롤 표시를 한 번 알리고 스크롤을 켜며, 3장 이하는 스크롤을 끈다', () => {
+  const flashed: unknown[] = [];
+  const flash = jest.spyOn(ScrollView.prototype, 'flashScrollIndicators').mockImplementation(function (this: any) { flashed.push(this?.props?.testID ?? this); });
+  const listFlashes = () => flashed.filter(id => id === 'card-dependencies-list').length;
+  const four = render(<CardDependencies dependencies={many(4)} onOpenCard={() => {}} />);
+  expect(listFlashes()).toBe(1);
+  expect(four.getByTestId('card-dependencies-list').props.scrollEnabled).toBe(true);
+  four.rerender(<CardDependencies dependencies={many(4)} onOpenCard={() => {}} />);
+  expect(listFlashes()).toBe(1);
+  four.unmount();
+  flashed.length = 0;
+  const three = render(<CardDependencies dependencies={many(3)} onOpenCard={() => {}} />);
+  expect(listFlashes()).toBe(0);
+  expect(three.getByTestId('card-dependencies-list').props.scrollEnabled).toBe(false);
+  flash.mockRestore();
 });

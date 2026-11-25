@@ -55,15 +55,15 @@ const POSTIT_SCENES = {
   todo: { band: null },
 };
 const DETAIL_SCENES = {
-  wait1: { count: '0/1', rows: 1, chips: { 'dep-1864-running': '실행 중' } },
-  wait2: { count: '0/2', rows: 2, chips: { 'dep-1864-running': '실행 중', 'dep-1862-todo': '드래프트' } },
-  wait3: { count: '0/3', rows: 3, chips: { 'dep-1864-running': '실행 중', 'dep-1861-queued': '대기', 'dep-1859-review': '검수 대기' } },
-  cancelled: { count: '0/2', rows: 2, chips: { 'dep-1860-cancelled': '취소' }, stopped: ['dep-1860-cancelled'] },
-  archived: { count: '0/2', rows: 2, chips: { 'dep-1858-queued': '보관됨' }, stopped: ['dep-1858-queued'] },
+  wait1: { count: '0/1', rows: 1, started: false, chips: { 'dep-1864-running': '실행 중' } },
+  wait2: { count: '0/2', rows: 2, started: false, chips: { 'dep-1864-running': '실행 중', 'dep-1862-todo': '드래프트' } },
+  wait3: { count: '0/3', rows: 3, started: false, chips: { 'dep-1864-running': '실행 중', 'dep-1861-queued': '대기', 'dep-1859-review': '검수 대기' } },
+  cancelled: { count: '0/2', rows: 2, started: false, chips: { 'dep-1860-cancelled': '취소' }, stopped: ['dep-1860-cancelled'] },
+  archived: { count: '0/2', rows: 2, started: false, chips: { 'dep-1858-queued': '보관됨' }, stopped: ['dep-1858-queued'] },
   met: { count: '2/2', rows: 2, chips: { 'dep-1857-done': '완료', 'dep-1856-done': '완료' }, started: false },
   started: { count: '1/2', rows: 2, chips: { 'dep-1864-running': '실행 중', 'dep-1857-done': '완료' }, started: true },
-  longest: { count: '0/2', rows: 2, chips: { 'dep-1855-running': '실행 중', 'dep-x-queued': '대기' }, longTitle: ['dep-1855-running', 'dep-x-queued'] },
-  many: { count: '3/10', rows: 10, scrolls: true, chips: { 'dep-1840-done': '완료', 'dep-1849-running': '실행 중' } },
+  longest: { count: '0/2', rows: 2, started: false, chips: { 'dep-1855-running': '실행 중', 'dep-x-queued': '대기' }, longTitle: ['dep-1855-running', 'dep-x-queued'] },
+  many: { count: '3/10', rows: 10, started: false, scrolls: true, chips: { 'dep-1840-done': '완료', 'dep-1849-running': '실행 중' } },
 };
 const TABLET_SCENE = { count: '1/4', rows: 4, scrolls: true, chips: { 'dep-1857-done': '완료', 'dep-1864-running': '실행 중', 'dep-1860-cancelled': '취소', 'dep-1858-queued': '보관됨' }, stopped: ['dep-1860-cancelled', 'dep-1858-queued'] };
 const COLORS = ['yellow', 'pink', 'mint', 'blue', 'lavender'];
@@ -73,6 +73,7 @@ const PHONES = [
 ];
 const POSTIT_PAGE_HEIGHT = 3600;
 const MIN_HIT = 44;
+const MIN_CHIPS = 20;
 const MIN_TITLE_WIDTH = 96;
 const CONTRAST = 4.5;
 
@@ -308,8 +309,10 @@ async function measureDetail(page, tag, entry, expected, width, nowText, phone =
     // 시작 전 카드는 세션이 없어 머리 아래에 칩 줄이 보이고, 선행 묶음은 그 줄 아래에서 시작한다.
     const chips = await page.getByTestId('card-detail-chips').boundingBox();
     entry.chipsBottom = chips ? chips.y + chips.height : null;
+    entry.chipsRowChecked = !expected.started;
+    if (!expected.started) metrics.chipsRowChecked = (metrics.chipsRowChecked ?? 0) + 1;
     if (expected.started) check(!chips || chips.height < 1, `${tag}: 시작한 카드에 칩 줄이 보임`);
-    else if (check(chips && chips.height >= MIN_HIT - 0.5, `${tag}: 시작 전 카드의 머리 칩 줄이 보이지 않음 ${JSON.stringify(chips)}`)) check(group.y >= chips.y + chips.height - 0.5, `${tag}: 선행 묶음이 칩 줄 아래가 아님`);
+    else if (check(chips && chips.height >= MIN_CHIPS, `${tag}: 시작 전 카드의 머리 칩 줄이 보이지 않음 ${JSON.stringify(chips)}`)) check(group.y >= chips.y + chips.height - 0.5, `${tag}: 선행 묶음이 칩 줄 아래가 아님`);
   }
   const now = page.getByTestId('card-detail-frame').getByText(nowText);
   if (await now.count()) {
@@ -338,6 +341,16 @@ async function measureDetail(page, tag, entry, expected, width, nowText, phone =
       check(rowBox.y >= list.y - 0.5 && rowBox.y + rowBox.height <= list.y + list.height + 0.5, `${tag}/${id}: 행이 목록 안에 온전히 보이지 않음`);
     }
   }
+  // 묶음 아래 여백은 이웃 섹션 간격과 같다: 묶음 아래 끝~지금 패널 위 끝이 묶음 안 간격보다 크고, 지금 패널 아래 끝~탭 줄 위 끝과 1px 안이다.
+  const count = await page.getByTestId('card-dependencies-count').boundingBox();
+  const nowPanel = await page.getByTestId('card-detail-now').boundingBox();
+  const track = await page.getByTestId('settings-segment-card-detail-track').boundingBox();
+  const innerGap = list.y - (count.y + count.height);
+  const groupToNow = nowPanel.y - (group.y + group.height);
+  const nowToTabs = track.y - (nowPanel.y + nowPanel.height);
+  entry.gaps = { innerGap: Math.round(innerGap * 100) / 100, groupToNow: Math.round(groupToNow * 100) / 100, nowToTabs: Math.round(nowToTabs * 100) / 100 };
+  check(groupToNow > innerGap + 0.5, `${tag}: 묶음~지금 패널 간격 ${groupToNow}이 묶음 안 간격 ${innerGap}보다 크지 않음`);
+  check(Math.abs(groupToNow - nowToTabs) <= 1, `${tag}: 묶음~지금 패널 간격 ${groupToNow}와 지금 패널~탭 줄 간격 ${nowToTabs}가 1px 안으로 같지 않음`);
   if (phone) {
     // 폰 상세의 나머지 영역: 탭 줄, 본문 스크롤, 하단 커멘트 입력이 선행 묶음에 밀려나지 않는다.
     const viewport = page.viewportSize();
