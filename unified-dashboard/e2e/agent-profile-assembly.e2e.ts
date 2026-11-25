@@ -179,7 +179,8 @@ for (const width of [1440, 360]) {
 
   test(`node-only profile ${width}`, async ({ page }) => {
     await open(page, width); await chooseProfile(page, width, "노드 전용 검수 프로필", "node:node-sample");
-    await expect(page.getByRole("tab", { name: "편집" })).toBeDisabled();
+    // main(#2333)이 노드 전용 프로필에도 편집 탭(초상 칸)을 열었다.
+    await expect(page.getByRole("tab", { name: "편집" })).toBeEnabled();
     await expect(page.getByTestId("agent-context-assembly")).toContainText("노드 설정");
     await expect(page.getByLabel("다시 조립")).toHaveCount(0);
     await capture(page, width, "node-only");
