@@ -29,7 +29,7 @@ describe("card dependencies", () => {
     await prepareCardReminderSchema(h);
     await h.sql`INSERT INTO folders(id,name) VALUES('dependencies','선행 시험')`;
     await h.sql`INSERT INTO sessions(session_id,status) VALUES('pas','idle')`;
-    await h.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,
+    await h.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version BIGINT NOT NULL DEFAULT 1,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
     await h.sql`INSERT INTO system_settings(setting_key,value,updated_by) VALUES ('card_dispatch','{"nodeConcurrency":{"default":0}}','test')`;
     const sql = createFolderContentSqlAdapter(h.liveSql);
@@ -121,9 +121,11 @@ describe("card dependencies", () => {
   it("preserves omitted dispatch settings when updating either switch or concurrency", async () => {
     const sql = createFolderContentSqlAdapter(h.liveSql);
     const before = await readCardDispatchSettings(sql);
+    expect(typeof before.version).toBe("number");
     const switched = await updateCardDispatchSettings(sql, { reviewMeetsDependency: true,
       startReleasedDependents: true, expectedVersion: before.version, updatedBy: "director" });
     expect(switched).toMatchObject({ nodeConcurrency: { default: 0 }, reviewMeetsDependency: true, startReleasedDependents: true });
+    expect(typeof switched.version).toBe("number");
     const changed = await updateCardDispatchSettings(sql, { nodeConcurrency: { default: 2 }, expectedVersion: switched.version, updatedBy: "director" });
     expect(changed).toMatchObject({ nodeConcurrency: { default: 2 }, reviewMeetsDependency: true, startReleasedDependents: true });
     await h.sql`UPDATE system_settings SET value='{"nodeConcurrency":{"default":0}}' WHERE setting_key='card_dispatch'`;
@@ -247,7 +249,7 @@ describe("card dependencies", () => {
     let runtime: Awaited<ReturnType<typeof createCardDispatchRuntime>> | undefined;
     try {
       await prepareCardWorkSchema(db);
-      await db.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,
+      await db.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version BIGINT NOT NULL DEFAULT 1,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
       await db.sql.unsafe(await readFile(new URL("../../packages/db-schema/sql/migrations/113_card_orchestration.sql",import.meta.url),"utf8"));
       await db.sql`INSERT INTO system_settings(setting_key,value,updated_by) VALUES ('card_dispatch','{"nodeConcurrency":{"default":0}}','test')`;

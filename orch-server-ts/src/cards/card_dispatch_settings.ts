@@ -15,7 +15,8 @@ export type CardDispatchSettings = {
 };
 type Row = {
     value: unknown;
-    version: number;
+    // system_settings.version is BIGINT, which postgres.js returns as a string.
+    version: number | string;
     updated_at: Date;
     updated_by: string;
 };
@@ -53,7 +54,11 @@ function parseRow(row: Row): CardDispatchSettings {
         startReleasedDependents: z.boolean().default(false) }).safeParse(row.value);
     if (!parsed.success)
         throw new CardDispatchSettingsError(503, "CARD_DISPATCH_UNAVAILABLE", "Stored card_dispatch is invalid");
+    const version = typeof row.version === "number" ? row.version
+        : typeof row.version === "string" && /^[1-9]\d*$/.test(row.version) ? Number(row.version) : Number.NaN;
+    if (!Number.isSafeInteger(version) || version < 1)
+        throw new CardDispatchSettingsError(503, "CARD_DISPATCH_UNAVAILABLE", "Stored card_dispatch version is invalid");
     return { key: "card_dispatch", nodeConcurrency: parsed.data.nodeConcurrency as CardDispatchSettings["nodeConcurrency"],
-        reviewMeetsDependency: parsed.data.reviewMeetsDependency, startReleasedDependents: parsed.data.startReleasedDependents, version: row.version,
+        reviewMeetsDependency: parsed.data.reviewMeetsDependency, startReleasedDependents: parsed.data.startReleasedDependents, version,
         updatedAt: new Date(row.updated_at).toISOString(), updatedBy: row.updated_by };
 }

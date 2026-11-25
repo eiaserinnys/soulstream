@@ -49,7 +49,7 @@ describe("card dispatch and session lifecycle", () => {
         await h.sql `INSERT INTO folders(id,name) VALUES ('dispatch-folder','실험')`;
         await h.sql `ALTER TABLE sessions ADD COLUMN model_preset TEXT, ADD COLUMN metadata JSONB, ADD COLUMN termination_reason TEXT, ADD COLUMN termination_event_id INTEGER`;
         await prepareCardReminderSchema(h);
-        await h.sql `CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,
+        await h.sql `CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version BIGINT NOT NULL DEFAULT 1,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
         await h.sql `INSERT INTO system_settings(setting_key,value,updated_by) VALUES ('card_dispatch','{"nodeConcurrency":{"default":1}}','migration')`;
         const sql = createFolderContentSqlAdapter(h.liveSql);
@@ -463,6 +463,12 @@ describe("card dispatch and session lifecycle", () => {
         try {
             const settings = (await app.inject({ method: 'GET', url: '/api/settings/card-dispatch' })).json();
             expect(settings.settings.nodeConcurrency).toEqual({ default: 1 });
+            expect(typeof settings.settings.version).toBe('number');
+            const saved = await app.inject({ method: 'PUT', url: '/api/settings/card-dispatch', payload: { nodeConcurrency: { default: 1 },
+                reviewMeetsDependency: true, startReleasedDependents: true, expectedVersion: settings.settings.version } });
+            expect(saved.statusCode).toBe(200);
+            expect(saved.json().settings).toMatchObject({ reviewMeetsDependency: true, startReleasedDependents: true, version: settings.settings.version + 1 });
+            await h.sql `UPDATE system_settings SET value='{"nodeConcurrency":{"default":1}}',version=1`;
             const payload = { nodeConcurrency: { default: 2 }, expectedVersion: 1 };
             expect((await app.inject({ method: 'PUT', url: '/api/settings/card-dispatch', payload })).statusCode).toBe(200);
             expect((await app.inject({ method: 'PUT', url: '/api/settings/card-dispatch', payload })).statusCode).toBe(409);
