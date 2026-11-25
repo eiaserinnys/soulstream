@@ -22,6 +22,8 @@ export function useCompact(): [(element: HTMLElement | null) => void, boolean] {
   const [compact, setCompact] = useState(false);
   useLayoutEffect(() => {
     if (!element || typeof ResizeObserver === "undefined") return;
+    // 처음 그리기 전에 한 번 재서 넓은 모양이 한 프레임 비치지 않게 한다(관찰자의 첫 통지는 그린 뒤에 온다).
+    if (element.clientWidth > 0) setCompact(element.clientWidth < COMPACT_BELOW);
     // 줄 모양이 바뀌면 목록 높이가 달라져 세로 스크롤바가 생기거나 사라지며 폭이 15px쯤 흔들린다. 되돌아올 때는 여유를 두어 문턱에서 깜빡이지 않게 한다.
     const observer = new ResizeObserver(([entry]) => {
       const width = entry?.contentRect.width ?? COMPACT_BELOW;
