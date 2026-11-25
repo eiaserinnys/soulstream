@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Fake pgrep. Each call takes the next exit code from $FAKE_DIR/pgrep-seq, then FAKE_PGREP_DEFAULT (1).
+printf '%s\n' "pgrep $*" >> "$FAKE_ARGV_LOG"
+seq=$FAKE_DIR/pgrep-seq
+if [[ -s "$seq" ]]; then
+  read -r rc < "$seq"
+  tail -n +2 "$seq" > "$seq.new"
+  mv "$seq.new" "$seq"
+  [[ -s "$seq" ]] || rm -f "$seq"
+else
+  rc=${FAKE_PGREP_DEFAULT:-1}
+fi
+exit "$rc"

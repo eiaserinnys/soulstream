@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Delegates to the real rm, except it fails when an argument ends with FAKE_RM_FAIL.
+if [[ -n "${FAKE_RM_FAIL:-}" ]]; then
+  for arg in "$@"; do
+    if [[ "$arg" == *"$FAKE_RM_FAIL" ]]; then printf 'fake rm: refusing %s\n' "$arg" >&2; exit 1; fi
+  done
+fi
+exec "$FAKE_REAL_RM" "$@"

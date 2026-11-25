@@ -223,6 +223,9 @@ jobs:
       - name: Check installer syntax
         run: bash -n install/install.sh
 
+      - name: Check uninstaller syntax
+        run: bash -n install/uninstall.sh
+
       - name: Run installer tests
         run: node --test install/tests/*.test.mjs
 

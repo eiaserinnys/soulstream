@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Fake systemctl. FAKE_IS_ACTIVE="unit=value ..." sets what is-active prints (default inactive);
+# @empty prints nothing, @fail prints nothing and fails, @pad:<value> pads the value with spaces.
+printf '%s\n' "systemctl $*" >> "$FAKE_ARGV_LOG"
+case "$1" in
+  is-active)
+    value=inactive
+    for pair in ${FAKE_IS_ACTIVE:-}; do
+      if [[ "${pair%%=*}" == "$2" ]]; then value=${pair#*=}; fi
+    done
+    case "$value" in
+      @empty) exit 3 ;;
+      @fail) printf 'systemctl: failed\n' >&2; exit 1 ;;
+      @pad:*) printf '  %s \n' "${value#@pad:}"; exit 3 ;;
+      active) printf 'active\n'; exit 0 ;;
+      *) printf '%s\n' "$value"; exit 3 ;;
+    esac ;;
+  *) exit 0 ;;
+esac
