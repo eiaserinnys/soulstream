@@ -49,7 +49,7 @@ import {
 } from "./persistent_session_instructions_service.js";
 
 export const PERSISTENT_INITIAL_INSTRUCTION =
-  "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.";
+  "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤, 처음 쓰는 분이라면 다음 첫 요청을 그대로 보내 보시라고 권해 주십시오. 「작업실 폴더에 카드를 만들어 바로 시작해 줘. 샘플 프로젝트 소개 문서를 한 장(목표, 핵심 기능 세 가지, 첫 마일스톤) 쓰고, 세 부분을 확인 항목으로 나눠 각각 문서 링크를 단 뒤 검수를 요청해 줘.」 그다음 지시를 기다려 주십시오.";
 
 export type PersistentCreateDefaults = {
   node_id: string;
