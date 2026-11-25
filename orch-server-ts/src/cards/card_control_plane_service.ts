@@ -154,11 +154,12 @@ export class CardControlPlaneService {
   async getCard(cardId: string) {
     const card=await this.repo.getCard(cardId);
     if (!card) return null;
-    const [reports,questions,comments,sessions,notes,nowHistory]=await Promise.all([
+    const [reports,questions,comments,sessions,notes,nowHistory,statusHistory]=await Promise.all([
       this.repo.listReports(cardId),this.repo.listQuestions(cardId),this.repo.listComments(cardId),this.repo.listSessions(cardId),
       this.repo.listAllCardNotes(cardId),this.repo.listCardNowHistory(cardId),
+      this.repo.listCardStatusHistory(cardId),
     ]);
-    return { card:(await this.repo.projectCards([card]))[0]!,reports,questions,comments,sessions,notes,nowHistory };
+    return { card:(await this.repo.projectCards([card]))[0]!,reports,questions,comments,sessions,notes,nowHistory,statusHistory };
   }
   async getCardSessionMessages(cardId: string, query?: CardSessionMessagesQuery) {
     const detail=await this.getCard(cardId);
@@ -286,9 +287,9 @@ export class CardControlPlaneService {
   bulkSetCardStatus(params:FolderActorParams & BulkSetCardStatusInput, authorizeFolder:AuthorizeFolder) {
     return this.maintenance.bulkSetCardStatus(params, authorizeFolder);
   }
-  async patchCard(params: CardMutationParams & { title?: string; brief?: string; archived?: boolean; assignee?: CardAssigneeInput | null; nodeId?: string | null; modelPreset?: string | null; color?: CardColor }) {
+  async patchCard(params: CardMutationParams & { title?: string; brief?: string; archived?: boolean; assignee?: CardAssigneeInput | null; nodeId?: string | null; modelPreset?: string | null; color?: CardColor; snoozedUntil?: string | null }) {
     return this.mutateCard(params,"update_card",{ title:params.title,brief:params.brief,archived:params.archived,
-      ...(Object.hasOwn(params,"assignee") ? assigneeToFields(params.assignee) : {}),node_id:params.nodeId,model_preset:params.modelPreset,color:params.color },
+      ...(Object.hasOwn(params,"assignee") ? assigneeToFields(params.assignee) : {}),node_id:params.nodeId,model_preset:params.modelPreset,color:params.color,snoozed_until:params.snoozedUntil },
     async (sql,card,eventId,payload) => {
       const {writes}=await this.humanDecision(sql,card,{...params,type:'PATCH_CARD_CONTROL'},params,eventId,[],{}, {values:{'command.control':payload}});
       await this.patchDecisionWrites(sql,card,writes,params,eventId);

@@ -75,7 +75,7 @@ export function deriveCardDecisionFacts(row:Record<string,any>|null,questions:re
  hasCurrentNow:c.now!=null,hasItems:(c.items??[]).length>0,hasAsk:command.ask!==undefined,question:!q?'missing':q.answer!==null?'answered':q.withdrawn_at!==null?'withdrawn':'open',
  editing:command.questionId!==undefined,hasQuestion:command.questionId!==undefined,targetQuestion:!command.questionId?'missing':!q?'missing':q.answer!==null?'answered':q.withdrawn_at!==null?'withdrawn':'open',
  otherOpen:questions.some(other=>other.id!==command.questionId&&other.answer===null&&other.withdrawn_at===null),
- entrance:command.entrance??'direct',requestedSpoken:command.kind==='spoken',reply:command.mode==='reply',hasMode:command.mode!==undefined,userInput:evidence.userInput===true,replyLength:[...String(command.body??'')].length>300?'tooLong':'within',
+ entrance:command.entrance??'direct',requestedSpoken:command.kind==='spoken',reply:command.mode==='reply',hasMode:command.mode!==undefined,userInput:evidence.userInput===true,replyLength:[...String(command.body??'')].length>1200?'tooLong':'within',
  hasItem:command.itemId!==undefined,itemExists:(c.items??[]).some((item:any)=>item.id===command.itemId),
  execution:evidence.execution===true,admitted:evidence.admitted===true,admissionReceipt:evidence.admissionReceipt===true,admissionValid:evidence.admissionValid===true,
  sessionMatch: c.assignee_session_id?c.assignee_session_id===command.sessionId:evidence.sessionCardId===c.id,

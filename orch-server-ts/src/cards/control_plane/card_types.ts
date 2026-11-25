@@ -67,6 +67,7 @@ export interface CardRow extends CardAssigneeFields {
   waiting_for: string | null;
   limit_resume_session_id: string | null;
   limit_resume_at: Date | null;
+  snoozed_until: Date | null;
   node_id: string | null;
   model_preset: string | null;
   status: CardStatus;

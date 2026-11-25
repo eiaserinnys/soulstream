@@ -71,7 +71,7 @@ export async function readCardRouteBody(options: CardRouteBodyOptions, cardId: s
 export async function mutateCardRouteBody(options: CardRouteBodyOptions, operation: CardOperation,
   cardId: string | undefined, input: unknown, resolveAccess: ResolveAccess,
   resolveActor: () => FolderActorParams | Promise<FolderActorParams>, questionId?: string, itemIdPath?: string | number,
-  uploadCommentAttachment?: BoundCommentAttachmentUpload) {
+  uploadCommentAttachment?: BoundCommentAttachmentUpload, userFields = false) {
   const service = await options.cardServiceProvider!();
   const body = z.record(z.string(), z.unknown()).parse(input);
   let detail: CardDetail | null = null;
@@ -90,7 +90,7 @@ export async function mutateCardRouteBody(options: CardRouteBodyOptions, operati
     : operation === "confirm_card_item" ? { ...body, itemId: Number(itemIdPath) } : body;
   if (operation === "add_card_comment" && detail !== null)
     operationBody = await commentOperationBody(operationBody, detail, cardId!, uploadCommentAttachment);
-  const result = await executeCardOperation(service, operation, operationBody, cardId, actor);
+  const result = await executeCardOperation(service, operation, operationBody, cardId, actor, userFields);
   return { status: operation === "create_card" || operation === "add_card_report" || operation === "add_card_comment" || operation === "ask_card_question" ? 201 : 200, body: result };
 }
 

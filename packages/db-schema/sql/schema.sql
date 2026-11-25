@@ -4436,6 +4436,8 @@ BEGIN
     END IF;
 END $$;
 
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMPTZ;
+
 -- Cards that are not archived get a permanent serial number shown as #412.
 -- Archived cards have no number until they are restored. Numbers are never reused.
 -- This file is safe to apply again: the backfill runs only in the application
