@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { inputControlClassName, inputFieldClassName } from "@seosoyoung/soul-ui/components/ui/input";
 
 /**
@@ -99,7 +99,32 @@ export function SettingsListRow({ title, meta, selected, onSelect, portrait, bad
   );
 }
 
-export function SettingsDetailHeader({ title, subtitle, actions, selectableTitle = false, leadingIcon, inlineActions = false }: {
+/** 좁은 폭(640px 미만)에서 긴 부제를 세 줄로 접고 「더 보기」로 펼친다. 넘치지 않으면 단추가 없다. */
+function ClampedSubtitle({ text }: { text: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [open, setOpen] = useState(false);
+  const [overflow, setOverflow] = useState(false);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element || open) return;
+    const measure = () => setOverflow(element.scrollHeight > element.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [text, open]);
+  return (
+    <>
+      <p ref={ref} data-v3-selectable-content="true" className={`text-xs text-muted-foreground ${open ? "" : "max-sm:line-clamp-3"}`}>{text}</p>
+      {(overflow || open) && (
+        <button type="button" aria-expanded={open} className="mt-1 rounded-floor text-xs font-medium text-muted-foreground underline outline-none focus-visible:ring-2 focus-visible:ring-ring sm:hidden" onClick={() => setOpen(!open)}>{open ? "접기" : "더 보기"}</button>
+      )}
+    </>
+  );
+}
+
+export function SettingsDetailHeader({ title, subtitle, actions, selectableTitle = false, leadingIcon, inlineActions = false, clampSubtitle = false }: {
   title: string;
   leadingIcon?: ReactNode;
   selectableTitle?: boolean;
@@ -107,13 +132,15 @@ export function SettingsDetailHeader({ title, subtitle, actions, selectableTitle
   actions?: ReactNode;
   /** 부제가 여러 줄이어도 동작을 제목 줄 오른쪽에 둔다. 동작이 한두 개일 때만 쓴다. */
   inlineActions?: boolean;
+  /** 좁은 폭에서 부제를 세 줄로 접는다. inlineActions와 함께 쓴다. */
+  clampSubtitle?: boolean;
 }) {
   if (inlineActions) {
     return (
       <header className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <h3 data-v3-selectable-content={selectableTitle ? "true" : undefined} className="text-base font-semibold">{title}</h3>
-          {subtitle ? <p data-v3-selectable-content="true" className="text-xs text-muted-foreground">{subtitle}</p> : null}
+          {subtitle ? (clampSubtitle ? <ClampedSubtitle text={subtitle} /> : <p data-v3-selectable-content="true" className="text-xs text-muted-foreground">{subtitle}</p>) : null}
         </div>
         {actions ? <div className="flex shrink-0 gap-2">{actions}</div> : null}
       </header>

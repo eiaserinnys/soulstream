@@ -1,12 +1,13 @@
 // 고른 조건으로 노드 미리보기를 불러, 주입 순서대로 소스 목록을 보인다. 소스를 펼치면 실린 문서가 나오고,
 // 상시 목록의 스킬은 아래에 따로 모아 연결과 진단을 함께 보인다. 본문은 같은 자리에서 연다.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Check, ChevronRight, Copy, ExternalLink, FileText, RotateCw } from "lucide-react";
-import { Badge, Button, ContextContentRenderer, DashboardIconCap, FrameLoading, FrameNotice, useAtomPublicUrl } from "@seosoyoung/soul-ui";
+import { ArrowLeft, Check, Copy, ExternalLink, RotateCw } from "lucide-react";
+import { Button, ContextContentRenderer, DashboardIconCap, FrameLoading, FrameNotice, useAtomPublicUrl } from "@seosoyoung/soul-ui";
 
 import { conditionSummary, inputClassName, type AgentAtomContext } from "./AgentAtomContextFields";
-import { formatChars, loadedHow, reportTime as formatReport, skillsByEntryCard as indexSkills, useSkillGuides, type SkillGuide } from "../lib/skill-guides";
-import { buildRows, collectListedSkills, contextShape, formatTokens, rowMeta, rowTitle, skillChoices, type PreviewResponse, type Row, type RowStatus } from "./agent-context-assembly-model";
+import { formatChars, reportTime as formatReport, skillsByEntryCard as indexSkills, useSkillGuides, type SkillGuide } from "../lib/skill-guides";
+import { buildRows, collectListedSkills, contextShape, formatTokens, rowTitle, skillChoices, type PreviewResponse, type Row } from "./agent-context-assembly-model";
+import { AssemblyRow, SourceItem, useCompact } from "./AssemblyRows";
 import { LinkChips, SkillLintBadge, howLabel } from "./guides/GuideParts";
 import "../v3/v3-run-history.css";
 
@@ -44,6 +45,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
   const guides = useSkillGuides(request);
   const lastData = useRef<PreviewResponse | null>(null);
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [listRef, compact] = useCompact();
   const returnFocus = useRef<string | null>(null);
 
   useEffect(() => setBackend(initialBackend), [initialBackend, target.agentId]);
@@ -159,7 +161,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
       {!presentOnNode && (
         <p className="text-xs text-muted-foreground">{nodeId}에는 이 프로필이 없습니다.</p>
       )}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div ref={listRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {state.status === "error" && rows.length === 0 ? (
           <FrameNotice>
             <div className="flex flex-col items-center gap-3">
@@ -185,35 +187,28 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
                 strong
                 meta={null}
                 size={data ? `${formatTokens(data.manifest.total_token_estimate ?? 0)} 토큰` : null}
+                compact={compact}
                 loading={state.status === "loading"}
                 onClick={() => open({ kind: "all" })}
               />
             )}
-            {rows.map((row) => {
-              const expandable = row.documents !== null;
-              return (
-                <div key={row.key} className="space-y-2">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <AssemblyRow
-                      rowKey={row.key}
-                      refs={rowRefs}
-                      title={data ? rowTitle(row) : state.status === "error" ? rowTitle(row) : null}
-                      titlePrefix={data ? row.parentTitle : null}
-                      meta={rowMeta(row)}
-                      status={row.status}
-                      size={row.status === "ok" && row.chars !== null ? formatChars(row.chars) : null}
-                      loading={state.status === "loading"}
-                      inactive={state.status === "error"}
-                      expanded={expandable ? expanded.has(row.key) : undefined}
-                      onClick={() => expandable ? toggle(row.key) : open({ kind: "source", key: row.key })}
-                    />
-                    {data && expandable && <DashboardIconCap size="small" label={`${rowTitle(row)} 본문 보기`} onClick={() => open({ kind: "source", key: row.key })}><FileText className="size-4" aria-hidden="true" /></DashboardIconCap>}
-                    {atomBaseUrl && data && row.nodeId && <DashboardIconCap size="small" label={`${rowTitle(row)} atom에서 열기`} onClick={() => window.open(`${atomBaseUrl}/#${row.nodeId}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap>}
-                  </div>
-                  {data && expandable && expanded.has(row.key) && <DocumentTree row={row} skillsByEntryCard={skillsByEntryCard} />}
-                </div>
-              );
-            })}
+            {rows.map((row) => (
+              <SourceItem
+                key={row.key}
+                row={row}
+                title={data || state.status === "error" ? rowTitle(row) : null}
+                compact={compact}
+                loading={state.status === "loading"}
+                inactive={state.status === "error"}
+                ready={data !== null}
+                expanded={expanded.has(row.key)}
+                atomBaseUrl={atomBaseUrl}
+                skillsByEntryCard={skillsByEntryCard}
+                refs={rowRefs}
+                onToggle={() => row.documents !== null ? toggle(row.key) : open({ kind: "source", key: row.key })}
+                onOpenBody={() => open({ kind: "source", key: row.key })}
+              />
+            ))}
             {data && listedSkills.length > 0 && (
               <section className="space-y-2 pt-3" aria-label="스킬" data-testid="agent-context-skills">
                 <div className="flex items-baseline gap-2">
@@ -246,86 +241,6 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
       </>)}
     </div>
   );
-}
-
-function AssemblyRow({ rowKey, refs, title, titlePrefix = null, meta, status = null, size, loading, inactive = false, strong = false, expanded, onClick }: {
-  rowKey: string;
-  refs: React.MutableRefObject<Map<string, HTMLButtonElement>>;
-  title: string | null;
-  /** 같은 이름의 소스를 가르는 부모 문서 제목. */
-  titlePrefix?: string | null;
-  meta: string | null;
-  status?: RowStatus | null;
-  /** 줄 오른쪽에 적는 수. 글자 수 하나로 적는다. */
-  size: string | null;
-  loading: boolean;
-  inactive?: boolean;
-  strong?: boolean;
-  /** 주면 누를 때 실린 문서를 펼치는 줄이다. 안 주면 본문으로 들어가는 줄이다. */
-  expanded?: boolean;
-  onClick(): void;
-}) {
-  const left = status === "filtered" || status === "duplicate";
-  return (
-    <button
-      type="button"
-      ref={(element) => { if (element) refs.current.set(rowKey, element); else refs.current.delete(rowKey); }}
-      className="flex min-w-0 w-full items-center gap-3 rounded-floor border border-border bg-muted/10 px-3 py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background enabled:hover:bg-muted disabled:cursor-default"
-      data-status={status ?? undefined}
-      aria-expanded={expanded}
-      disabled={loading || inactive}
-      onClick={onClick}
-    >
-      {expanded !== undefined && !inactive && <ChevronRight className={`size-4 shrink-0 text-muted-foreground ${expanded ? "rotate-90" : ""}`} aria-hidden="true" />}
-      <span className={`min-w-0 flex-1 ${left ? "opacity-60" : ""}`}>
-        <span className="flex min-w-0 items-center gap-2">
-          {loading && !title ? <span className="flex h-5 flex-1 items-center"><span className="v3-run-skeleton v3-run-skeleton--title" /></span> : <span className={`min-w-0 truncate ${strong ? "font-semibold" : "font-medium"}`}>{titlePrefix && <span className="font-normal text-muted-foreground">{titlePrefix} / </span>}{title}</span>}
-          {!loading && status && <StatusBadge status={status} />}
-        </span>
-        {/* 좁은 폭에서는 오른쪽 칸이 제목 자리를 먹으니 글자 수를 메타 줄 앞으로 옮긴다. */}
-        {(meta || size) && <span className="block truncate text-xs text-muted-foreground">{size && <span className="tabular-nums sm:hidden">{size}{meta ? " · " : ""}</span>}{meta}</span>}
-      </span>
-      {loading ? <span className="v3-run-skeleton v3-run-skeleton--badge" /> : size && <span className="shrink-0 text-xs tabular-nums text-muted-foreground max-sm:hidden">{size}</span>}
-      {!inactive && expanded === undefined && <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
-    </button>
-  );
-}
-
-function DocumentTree({ row, skillsByEntryCard }: { row: Row; skillsByEntryCard: ReadonlyMap<string, SkillGuide> }) {
-  const documents = row.documents ?? [];
-  if (documents.length === 0) {
-    return (
-      <p className="rounded-floor border border-border px-3 py-2 text-xs text-muted-foreground">
-        {row.status === "filtered" ? `이 조건에서는 빠집니다. ${conditionSummary(row.context.applies_when)}`
-          : row.status === "duplicate" ? "앞에서 같은 소스가 이미 들어갑니다."
-            : row.status === "error" ? "atom에서 읽지 못했습니다." : "실린 문서가 없습니다."}
-      </p>
-    );
-  }
-  const nodeIds = new Set(documents.map(document => document.node_id));
-  return (
-    <ul className="rounded-floor border border-border px-3 py-2" aria-label={`${rowTitle(row)}에 실린 문서`} data-testid="agent-context-documents">
-      {documents.map((document) => {
-        const how = loadedHow(row.context, document, skillsByEntryCard, nodeIds);
-        return (
-          <li key={document.node_id} className="flex min-w-0 items-center gap-3 py-0.5 text-sm" style={{ paddingInlineStart: `calc(var(--v3-space-4) * ${document.depth})` }}>
-            <span className={`min-w-0 flex-1 truncate ${how ? "" : "text-muted-foreground"}`} data-v3-selectable-content="true">{document.title}</span>
-            {how && <span className={`shrink-0 whitespace-nowrap text-xs ${how === "body" ? "text-muted-foreground" : ""}`}>{howLabel(how)}</span>}
-            <span className="min-w-14 shrink-0 whitespace-nowrap text-right text-xs tabular-nums text-muted-foreground">{how && how !== "title" ? formatChars(document.chars) : ""}</span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function StatusBadge({ status }: { status: RowStatus }) {
-  if (status === "ok") return <Badge variant="secondary">들어감</Badge>;
-  if (status === "error") return <Badge variant="error">실패</Badge>;
-  if (status === "filtered") return <Badge variant="secondary">빠짐</Badge>;
-  if (status === "empty") return <Badge variant="outline">비어 있음</Badge>;
-  if (status === "duplicate") return <Badge variant="outline">중복</Badge>;
-  return null;
 }
 
 function DetailHeader({ title, meta, copyText, copyLabel = "본문 복사", atomUrl, onBack, backLabel }: {

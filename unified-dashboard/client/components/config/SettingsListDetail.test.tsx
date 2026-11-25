@@ -78,3 +78,37 @@ it("선택한 상세가 보이면 그대로 두고 화면 밖이면 머리로 �
     vi.unstubAllGlobals();
   }
 });
+
+it("clampSubtitle은 좁은 폭에서 부제를 세 줄로 접고, 넘칠 때만 「더 보기」 단추를 둔다", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get");
+  const clientHeight = vi.spyOn(HTMLElement.prototype, "clientHeight", "get");
+  try {
+    // 넘치지 않으면 단추가 없다.
+    scrollHeight.mockReturnValue(54); clientHeight.mockReturnValue(54);
+    await act(async () => root.render(<SettingsDetailHeader title="스킬" subtitle="짧은 설명" inlineActions clampSubtitle />));
+    expect(host.querySelector("button")).toBeNull();
+    expect(host.querySelector("p")!.className).toContain("max-sm:line-clamp-3");
+    // 넘치면 단추가 서고, 누르면 펼쳐져 접기로 바뀐다.
+    scrollHeight.mockReturnValue(144);
+    await act(async () => root.render(<SettingsDetailHeader title="스킬" subtitle="아주 긴 설명" inlineActions clampSubtitle />));
+    const toggle = host.querySelector("button")!;
+    expect(toggle.textContent).toBe("더 보기");
+    await act(async () => toggle.click());
+    expect(host.querySelector("p")!.className).not.toContain("line-clamp");
+    expect(host.querySelector("button")!.textContent).toBe("접기");
+    expect(host.querySelector("button")!.getAttribute("aria-expanded")).toBe("true");
+    // clampSubtitle을 안 주면 기존 마크업 그대로다.
+    await act(async () => root.render(<SettingsDetailHeader title="스킬" subtitle="설명" inlineActions />));
+    expect(host.querySelector("button")).toBeNull();
+    expect(host.querySelector("p")!.className).toBe("text-xs text-muted-foreground");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  }
+});

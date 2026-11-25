@@ -3,6 +3,7 @@ import { realpathSync } from "node:fs";
 
 export default defineConfig({
   testDir: "./e2e", testMatch: "agent-profile-assembly*.e2e.ts", workers: 2, retries: 0,
+  globalTeardown: "./e2e/agent-profile-assembly-teardown.ts",
   timeout: 120_000, reporter: [["list"]], outputDir: "../.local/card1783-captures/results",
   use: { ...devices["Desktop Chrome"], baseURL: "http://127.0.0.1:4304", actionTimeout: 5_000 },
   webServer: {

@@ -1,6 +1,6 @@
 // 견본 설정 창(/dialogues?sample=settings)의 지침과 스킬 보기 가짜 응답.
 // 미리보기는 ?assemblyState=legacy일 때만 실린 문서 칸이 없는 옛 꼴이다.
-// ?guidesState=normal(기본) | loading | failure | empty | noreport | nolint | verifying | conflict | bodyfail | overviewslow | overviewfail | noprofiles
+// ?guidesState=normal(기본) | loading | failure | empty | noreport | nolint | verifying | conflict | bodyfail | overviewslow | overviewfail | noprofiles | verifyfail
 import { assemblyPreview } from "./agent-profile-assembly-fixture";
 import { buildOverview, guideCatalogs, guideReport, guideSkills } from "./guides-fixture";
 import type { OverviewDocument } from "../lib/skill-guides";
@@ -37,6 +37,7 @@ export async function guidesSampleRoute(path: string, method: string, init: Requ
   }
   if (path === "/api/skill-guides/verify" && method === "POST") {
     if (state === "conflict") return json({ error: "no_verify_job" }, 409);
+    if (state === "verifyfail") return json({ detail: { error: { code: "RECURRING_JOB_FAILED", message: "견본 응답 실패" } } }, 500);
     verifyAsked = true;
     return json({ job_id: "견본-작업" }, 202);
   }

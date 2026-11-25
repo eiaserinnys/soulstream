@@ -164,7 +164,7 @@ for (const width of [1440, 360]) {
     await page.getByLabel("조립 백엔드").selectOption("codex");
     await expect(row(page, "조건부 지침")).toBeVisible({ timeout: 15000 });
     await page.getByLabel("조립 카드 역할").selectOption("assignee");
-    await expect(row(page, "조건부 지침")).toContainText("들어감", { timeout: 15000 });
+    await expect(row(page, "조건부 지침")).not.toContainText("빠짐", { timeout: 15000 });
     await openBody(page, "조건부 지침");
     const detail = page.getByTestId("agent-context-assembly-detail");
     const role = page.getByLabel("조립 카드 역할"); await role.focus(); await role.selectOption("member");

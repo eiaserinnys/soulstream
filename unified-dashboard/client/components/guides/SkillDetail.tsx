@@ -47,13 +47,14 @@ export function SkillDetail({ skill, guides, request, usage, overview, nodeId, o
         title={skill.name}
         selectableTitle
         inlineActions
+        clampSubtitle
         subtitle={skill.description}
         actions={atomBaseUrl ? <DashboardIconCap size="small" label="atom에서 열기" onClick={() => window.open(`${atomBaseUrl}/#${skill.body_node_id}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap> : null}
       />
       <div className="guides-detail-tabs">
         <DetailTabs<Pane> id="guide-detail" label="스킬 보기" panelId="guide-detail-panel" tabs={tabs} value={pane} onChange={setPane} />
       </div>
-      <div id="guide-detail-panel" role="tabpanel" aria-labelledby={`guide-detail-${pane}`} className={pane === "body" ? "flex min-h-0 flex-1 flex-col gap-3" : "min-h-0 flex-1 space-y-3 overflow-y-auto"}>
+      <div id="guide-detail-panel" role="tabpanel" aria-labelledby={`guide-detail-${pane}`} data-pane={pane} className={pane === "body" ? "flex min-h-0 flex-1 flex-col gap-3" : "min-h-0 flex-1 space-y-3 overflow-y-auto"}>
         {pane === "body" ? <BodyPane name={skill.name} request={request} />
           : pane === "links" ? <LinksPane skill={skill} guides={guides} onSelect={onSelect} onSelectCatalog={onSelectCatalog} />
             : pane === "usage" ? <UsagePane usage={usage} overview={overview} nodeId={nodeId} />
@@ -104,9 +105,10 @@ function LinksPane({ skill, guides, onSelect, onSelectCatalog }: { skill: SkillG
   }, [guides, skill]);
   if (!skill.lint) return <FrameNotice>보고에 없음</FrameNotice>;
   const row = (link: LinkRow, key: string) => (
-    <li key={key}>
-      <button type="button" className="flex w-full min-w-0 items-center gap-2 rounded-floor px-2 py-1 text-left text-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring" onClick={() => link.targetKind === "catalog" ? onSelectCatalog(link.name) : onSelect(link.name)}>
-        {link.kind && <Badge variant="outline" size="sm">{link.kind}</Badge>}
+    // 눌림 바탕만 상자 안쪽 여백으로 내고(-mx-2 px-2) 글은 묶음 제목 시작선에 맞춘다. 종류 배지는 같은 폭 칸에 둔다.
+    <li key={key} className="-mx-2">
+      <button type="button" className="flex w-full min-w-0 items-center gap-2 rounded-floor px-2 py-0.5 text-left text-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring" onClick={() => link.targetKind === "catalog" ? onSelectCatalog(link.name) : onSelect(link.name)}>
+        <span className="flex w-16 shrink-0">{link.kind && <Badge variant="outline" size="sm">{link.kind}</Badge>}</span>
         <span className="min-w-0 max-w-[60%] shrink-0 truncate font-medium">{link.name}</span>
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{descriptions.get(link.name) ?? ""}</span>
       </button>
@@ -190,6 +192,7 @@ export function CatalogDetail({ catalog, reportExists, onSelect }: { catalog: Ca
         title={catalog.name}
         selectableTitle
         inlineActions
+        clampSubtitle
         subtitle={catalog.description}
         actions={atomBaseUrl && catalog.node_id ? <DashboardIconCap size="small" label="atom에서 열기" onClick={() => window.open(`${atomBaseUrl}/#${catalog.node_id}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap> : null}
       />
@@ -202,8 +205,8 @@ export function CatalogDetail({ catalog, reportExists, onSelect }: { catalog: Ca
               {lint.used_by.length === 0 ? <p className="text-xs text-muted-foreground">없음</p> : (
                 <ul>
                   {lint.used_by.map(name => (
-                    <li key={name}>
-                      <button type="button" className="w-full min-w-0 truncate rounded-floor px-2 py-1 text-left text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onSelect(name)}>{name}</button>
+                    <li key={name} className="-mx-2">
+                      <button type="button" className="block w-full min-w-0 truncate rounded-floor px-2 py-0.5 text-left text-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onSelect(name)}>{name}</button>
                     </li>
                   ))}
                 </ul>

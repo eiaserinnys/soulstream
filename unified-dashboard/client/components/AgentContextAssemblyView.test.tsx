@@ -263,13 +263,75 @@ describe("documents가 있는 새 응답과 없는 옛 응답", () => {
     const tree = host.querySelector('[data-testid="agent-context-documents"]')!;
     expect(first!.getAttribute("aria-expanded")).toBe("true");
     expect(tree.querySelectorAll("li").length).toBe(5);
-    expect(tree.textContent).toContain("본문까지");
+    // 실린 방식이 모두 같으면 문서 줄마다 되풀이하지 않고 트리 머리에 한 번만 적는다.
+    const how = host.querySelector('[data-testid="agent-context-documents-how"]')!;
+    expect(how.textContent).toBe("본문까지");
+    expect(tree.textContent).not.toContain("본문까지");
     expect(tree.textContent).toMatch(/\d{1,3}(,\d{3})*자/);
+    // 트리는 소스 줄과 같은 묶음 안에서 줄 바로 밑에 붙는다.
+    const item = first!.closest('[data-testid="agent-context-source"]')!;
+    expect(item.contains(tree)).toBe(true);
+    expect(item.querySelectorAll("button[data-status]").length).toBe(1);
     expect(tree.textContent).not.toContain("토큰");
     expect(host.querySelector('[data-testid="agent-context-assembly-detail"]')).toBeNull();
     flushSync(() => host.querySelector<HTMLButtonElement>('button[aria-label$="본문 보기"]')!.click());
     expect(host.querySelector('[data-testid="agent-context-assembly-detail"]')).not.toBeNull();
     unmount();
+  });
+
+  it("정상 소스 줄에는 「들어감」 배지를 달지 않고, 빠짐은 배지로 보이며, 제목은 툴팁에 전체가 실린다", async () => {
+    const { host, unmount } = await mountView(assemblyPreviewDocuments);
+    const rowsNow = sourceRows(host);
+    const ok = rowsNow.filter(item => item.dataset.status === "ok");
+    expect(ok.length).toBeGreaterThan(0);
+    for (const row of ok) expect(row.textContent).not.toContain("들어감");
+    const full = ok[0]!.querySelector<HTMLElement>('[data-assembly-title="true"]')!;
+    expect(full.getAttribute("title")).toBe(full.textContent!.trim());
+    unmount();
+  });
+
+  it("실린 방식이 섞인 소스는 문서 줄마다 방식을 적고 머리에는 적지 않는다", async () => {
+    const mixed = (body: Parameters<typeof assemblyPreview>[0]) => {
+      const preview = assemblyPreviewDocuments(body);
+      const [first, ...rest] = preview.manifest.sources;
+      const skill = guideSkills.find(item => item.entry_card_id && item.entry_node_id)!;
+      const documents = [...first!.documents, { node_id: skill.entry_node_id!, card_id: skill.entry_card_id, title: skill.name, depth: 1, chars: 280 }];
+      return { ...preview, manifest: { ...preview.manifest, sources: [{ ...first!, documents }, ...rest] } };
+    };
+    const { host, unmount } = await mountView(mixed);
+    flushSync(() => sourceRows(host)[0]!.click());
+    const tree = host.querySelector('[data-testid="agent-context-documents"]')!;
+    expect(host.querySelector('[data-testid="agent-context-documents-how"]')).toBeNull();
+    expect(tree.textContent).toContain("본문까지");
+    expect(tree.textContent).toContain("이름과 설명만");
+    unmount();
+  });
+
+  it("좁은 칸(목록 폭 432 미만)에서는 글자 수가 메타 줄로 가고 본문 보기와 atom 열기 단추가 펼친 트리 머리로 옮겨 간다", async () => {
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(private readonly callback: (entries: Array<{ contentRect: { width: number } }>) => void) {}
+      observe() { this.callback([{ contentRect: { width: 300 } }]); }
+      unobserve() {}
+      disconnect() {}
+    });
+    try {
+      const { host, unmount } = await mountView(assemblyPreviewDocuments);
+      const [first] = sourceRows(host);
+      // 접힌 줄에는 단추가 없고, 오른쪽 글자 수 칸도 없다(글자 수는 메타 줄 앞에 있다).
+      expect(host.querySelectorAll('button[aria-label$="본문 보기"]')).toHaveLength(0);
+      expect(first!.querySelector(":scope > span.shrink-0.tabular-nums")).toBeNull();
+      expect(first!.textContent).toMatch(/\d{1,3}(,\d{3})*자 · /);
+      flushSync(() => first!.click());
+      const item = first!.closest('[data-testid="agent-context-source"]')!;
+      const inTree = item.querySelectorAll('button[aria-label$="본문 보기"]');
+      expect(inTree).toHaveLength(1);
+      expect(item.querySelector('[data-testid="agent-context-documents"]')!.parentElement!.contains(inTree[0]!)).toBe(true);
+      flushSync(() => (inTree[0] as HTMLButtonElement).click());
+      expect(host.querySelector('[data-testid="agent-context-assembly-detail"]')).not.toBeNull();
+      unmount();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("줄 오른쪽의 수는 글자 수 하나로 적고 토큰은 「전체」 줄에만 남는다", async () => {

@@ -19,6 +19,7 @@ const DESCRIPTIONS = [
 export const LONGEST_DESCRIPTION = "이 설명은 일부러 길게 쓴 견본이다. 목록 줄에서는 한 줄로 줄어들고 상세 머리에서는 여러 줄로 이어지며, 좁은 폭에서도 가로 스크롤이 생기지 않고 말줄임이나 줄바꿈으로 처리되는지를 확인하기 위해 같은 뜻을 되풀이해서 늘려 쓴다. 가상의 작업 기록을 모아 한 장으로 정리하고, 변경 이력을 훑어 빠진 항목을 알리고, 설정이 어긋난 값을 표로 보인다.";
 
 const SKILL_COUNT = 180;
+const EXTRA_SHARED = 22;
 const NO_ENTRY_SKILL = 100;
 const NO_CARD_CATALOG = 12;
 const CATALOG_COUNT = 27;
@@ -136,6 +137,12 @@ function profileSources(index: number, nodeProfile: boolean, name: string): Over
   if (!nodeProfile || index % 2 === 0) sources.push(shared(3, "skills", "공통", "공통 스킬", 41200, null, skillListDocs(3, 0, 24, true), "full"));
   if (index % 3 === 0) sources.push(shared(4, "windows-specific", "코딩", "윈도우 노드", 4100, { os: ["windows"] }, docTree(4, "windows-specific", 3)));
   if (index % 2 === 1) sources.push(shared(5, "card-rules", "공통", "카드 작업", 7300, { card_role: ["assignee"] }, docTree(5, "card-rules", 5)));
+  // 운영만큼 줄이 많게(공유 소스 20줄 넘게) 둘 이상의 프로필이 함께 쓰는 지침을 더한다.
+  for (let extra = 0; extra < EXTRA_SHARED; extra += 1) {
+    if ((index + extra) % 3 === 0) continue;
+    const parent = extra % 2 === 0 ? "공통" : "코딩";
+    sources.push(shared(60 + extra, `지침 ${String(extra + 1).padStart(2, "0")}`, parent, `${parent} 규칙`, 1200 + extra * 173, extra % 7 === 3 ? { card_role: ["member"] } : null, docTree(60 + extra, `지침 ${extra + 1}`, 2)));
+  }
   if (index % 4 === 2) sources.push(shared(6, "slack", "공통", "슬랙 대화", 2600, { source: ["slack"] }, docTree(6, "slack", 2)));
   const own: OverviewSource[] = [
     { ...shared(20 + index, "rules", name.slice(0, 12), "", 5200 + index * 311, null, docTree(20 + index, "rules", 3 + (index % 4))), origin: nodeProfile ? { kind: "node_config" } : { kind: "profile" } },

@@ -158,7 +158,8 @@ describe("SkillCatalogTab 목록", () => {
 
   it("목록이 비어 있으면 빈 상태 글이 선다", async () => {
     await mount(makeRequest({ guides: { skills: [], catalogs: [], report: report({ verify_job_id: null }) } }).request);
-    expect(document.body.textContent).toContain("항목이 없습니다.");
+    // 안내는 목록 자리에만 한 번 선다. 상세 자리는 비어 있다.
+    expect(document.body.textContent!.match(/항목이 없습니다\./g)).toHaveLength(1);
     expect(rows()).toHaveLength(0);
   });
 
@@ -285,6 +286,20 @@ describe("다시 검증", () => {
     const done = listReads();
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     expect(listReads()).toBe(done);
+  });
+
+  it("다시 검증이 202도 409도 아닌 실패(500)면 같은 단추 옆에 안내가 서고 단추와 초점이 그대로 남는다", async () => {
+    const { request, calls } = makeRequest({ verify: 500 });
+    await mount(request);
+    const verifyButton = button("다시 검증")!;
+    verifyButton.focus();
+    await click(verifyButton);
+    const head = document.body.querySelector('[data-testid="skill-catalog-report"]')!;
+    expect(calls).toContain("POST /api/skill-guides/verify");
+    expect(head.querySelector('[role="alert"]')!.textContent).toContain("요청하지 못했습니다");
+    expect(head.textContent).not.toContain("검증 중");
+    expect(button("다시 검증")).toBe(verifyButton);
+    expect(document.activeElement).toBe(verifyButton);
   });
 
   it("10분이 지나도 보고가 안 바뀌면 멈추고 원래 단추로 돌아간다", async () => {

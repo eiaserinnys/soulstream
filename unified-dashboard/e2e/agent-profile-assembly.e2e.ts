@@ -108,7 +108,7 @@ for (const width of [1440, 360]) {
     const before = await page.screenshot({ animations: "disabled" });
     await page.getByLabel("조립 백엔드").selectOption("codex");
     await page.getByLabel("조립 카드 역할").selectOption("assignee");
-    await expect(row(page, "조건부 지침")).toContainText("들어감");
+    await expect(row(page, "조건부 지침")).not.toContainText("빠짐");
     await capture(page, width, "conditions");
     const after = await page.screenshot({ animations: "disabled" });
     const comparison = await headerPixels(page, before, after);
@@ -145,7 +145,7 @@ for (const width of [1440, 360]) {
     await open(page, width);
     await page.getByLabel("조립 백엔드").selectOption("codex");
     await page.getByLabel("조립 카드 역할").selectOption("assignee");
-    await expect(row(page, "조건부 지침")).toContainText("들어감");
+    await expect(row(page, "조건부 지침")).not.toContainText("빠짐");
     await openBody(page, "스킬 목록");
     await page.getByLabel("스킬 정의 원문").selectOption({ label: SKILL_LABEL });
     await expect(page.getByTestId("agent-context-skill-original")).toContainText("가상의 스킬 정의 원문");

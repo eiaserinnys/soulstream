@@ -202,7 +202,7 @@ export function SkillCatalogTab({ request = fetch }: { request?: typeof fetch })
       <SettingsListHeader
         title={kind === "skill" ? "스킬" : "카탈로그"}
         description=""
-        actions={<Button type="button" size="sm" variant={warningsOnly ? "secondary" : "outline"} aria-pressed={warningsOnly} disabled={!data} onClick={() => setWarningsOnly(!warningsOnly)}>경고 있는 것만</Button>}
+        actions={<Button type="button" size="sm" variant={warningsOnly ? "default" : "outline"} aria-pressed={warningsOnly} disabled={!data} onClick={() => setWarningsOnly(!warningsOnly)}>경고 있는 것만</Button>}
       />
       {!data ? <ListSkeleton /> : (
         <SettingsListSection isEmpty={items.length === 0} emptyText={warningsOnly ? "경고가 없습니다." : "항목이 없습니다."}>
@@ -230,13 +230,14 @@ export function SkillCatalogTab({ request = fetch }: { request?: typeof fetch })
       <div className={`guides-kind-tabs${detailOpen ? " max-lg:hidden" : ""}`}>
         <DetailTabs<Kind> id="guide-kind" label="종류" panelId="guide-kind-panel" tabs={[["skill", "스킬"], ["catalog", "카탈로그"]]} value={kind} onChange={(next) => { setKind(next); setSelected(null); setDetailOpen(false); }} />
       </div>
-      <div id="guide-kind-panel" role="tabpanel" aria-labelledby={`guide-kind-${kind}`} className="skill-catalog-panel">
+      <div id="guide-kind-panel" role="tabpanel" aria-labelledby={`guide-kind-${kind}`} className="skill-catalog-panel" data-detail-open={detailOpen ? "true" : undefined}>
         <SettingsListDetailFrame testId="skill-catalog-frame" list={list} fill detailOpen={detailOpen}>
           <div className="lg:hidden">
             <DashboardIconCap ref={backRef} size="small" label="목록으로" onClick={closeDetail}><ArrowLeft className="size-4" aria-hidden="true" /></DashboardIconCap>
           </div>
           {!data ? <DetailSkeleton />
-            : !current ? <FrameNotice>{warningsOnly ? "경고가 없습니다." : "항목이 없습니다."}</FrameNotice>
+            // 항목이 없다는 안내는 목록 자리에만 두고 상세 자리는 비운다.
+            : !current ? null
               : current.kind === "skill"
                 ? <SkillDetail key={current.item.name} skill={current.item} guides={data} request={request} usage={usage.get(current.item.name) ?? []} overview={overview} nodeId={nodeId} onSelect={openDetail} onSelectCatalog={(name) => { setKind("catalog"); openDetail(name); }} />
                 : <CatalogDetail key={current.item.name} catalog={current.item} reportExists={reportExists} onSelect={(name) => { setKind("skill"); openDetail(name); }} />}

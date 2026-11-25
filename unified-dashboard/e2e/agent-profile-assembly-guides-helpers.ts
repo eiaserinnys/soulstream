@@ -1,12 +1,14 @@
 // 지침과 스킬 보기 시각 검수(agent-profile-assembly-guides.e2e.ts)의 공통 도구.
 import { expect, type Page } from "@playwright/test";
-import { mkdirSync, appendFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, appendFileSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 /** 캡처와 조작 결과는 워크트리 맨 위 .local/shots/에 둔다(git이 무시한다). */
 export const shots = path.resolve("../.local/shots");
 export const operationsFile = path.join(shots, "operations.md");
+/** 시험이 쓰는 앞부분. 마지막에 globalTeardown이 검수 지적 측정(fixes.json)을 붙여 operations.md로 합친다. */
+export const operationsMainFile = path.join(shots, "operations-main.md");
 
 export type Theme = "light" | "dark";
 export interface OpenOptions {
@@ -112,6 +114,23 @@ export async function openBody(page: Page, title: string) {
   await page.getByTestId("agent-context-assembly").locator(`button[aria-label*="${title}"][aria-label$="본문 보기"]`).click();
 }
 
+const fixesFile = path.join(shots, "fixes.json");
+/** 검수 지적 완료 조건 측정 결과(한 줄씩)를 남긴다. operations 시험이 읽어 operations.md에 적는다. */
+export function writeFixes(lines: string[]) {
+  mkdirSync(shots, { recursive: true });
+  writeFileSync(fixesFile, JSON.stringify(lines, null, 2));
+}
+const readFixes = (): string[] => existsSync(fixesFile) ? JSON.parse(readFileSync(fixesFile, "utf8")) as string[] : [];
+
+const FIXES_MARK = "<!--FIXES-->";
+/** operations-main.md의 자리표시를 검수 지적 측정으로 바꿔 operations.md를 쓴다. 두 시험이 모두 끝난 뒤에 부른다. */
+export function composeOperations() {
+  if (!existsSync(operationsMainFile)) return;
+  const fixes = readFixes();
+  const body = fixes.length > 0 ? fixes.map(line => `- ${line}`).join("\n") : "(이번 실행에서 재지 않음)";
+  writeFileSync(operationsFile, readFileSync(operationsMainFile, "utf8").replace(FIXES_MARK, body));
+}
+
 export interface OperationResults {
   /** [대상, 한 일, 결과] */
   focus: string[][];
@@ -150,6 +169,12 @@ export function writeOperations(out: OperationResults) {
 
 ${table(out.dialogs, ["대상", "여는 법", "첫 초점", "Enter", "Esc", "닫은 뒤 초점"])}
 
+## 검수 지적 완료 조건(세라피엘 화면 검수 b2552487, 결함 여섯과 권함 둘, 못 본 것 둘)
+
+시각 검수 스크립트의 fixes 시험이 아래를 재고 판정했다(조건을 못 채우면 시험이 실패한다).
+
+${FIXES_MARK}
+
 ## 실행 명령과 산출물 경로
 
 - 실행: \`corepack pnpm -C unified-dashboard exec playwright test --config playwright.agent-profile-assembly.config.ts\` (이 파일은 그 안의 \`agent-profile-assembly-guides.e2e.ts\` operations 시험이 쓴다)
@@ -175,5 +200,5 @@ ${bullet([
 판정: 위 글은 모두 세 물음(꼭 필요한가, 줄일 수 있는가, 덜 띄울 수 있는가)을 차례로 지났고, 숫자 카드 줄과 머리 요약 줄은 두지 않았다(§0 10번). 목록의 수는 글자 수 하나로 적고 토큰은 「전체」 줄과 소스 상세의 「예상 N 토큰」에만 남는다.
 `;
   mkdirSync(shots, { recursive: true });
-  writeFileSync(operationsFile, text);
+  writeFileSync(operationsMainFile, text);
 }
