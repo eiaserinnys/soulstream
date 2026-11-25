@@ -201,8 +201,9 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
               </Text>
               {dependency ? <Text testID={`postit-${card.id}-dependency`} accessibilityLabel={dependency.text} numberOfLines={bandLines} ellipsizeMode="tail"
                 style={{ ...roles.label,
-                  ...(dependency.tone === 'error' ? { color: roles.colors.errorText, backgroundColor: withAlphaColor(roles.colors.error, DEPENDENCY_ERROR_ALPHA) } : {}),
-                  borderRadius: t.radius.floor, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs }}>{dependency.text}</Text>
+                  // 가로 여백은 배경 상자가 있는 오류 톤에만 둔다. 중립 띠는 제목·본문과 같은 시작선에 놓는다.
+                  ...(dependency.tone === 'error' ? { color: roles.colors.errorText, backgroundColor: withAlphaColor(roles.colors.error, DEPENDENCY_ERROR_ALPHA), paddingHorizontal: t.uiSpacing.sm } : {}),
+                  borderRadius: t.radius.floor, paddingVertical: t.uiSpacing.xs }}>{dependency.text}</Text>
               : card.now?.turn === 'user' && askPreview ? <Text testID={`postit-${card.id}-ask-preview`} accessibilityLabel={askPreview} numberOfLines={variant === 'compact' ? 1 : 2} ellipsizeMode="tail"
                 style={{ ...roles.label, color: roles.body.color, backgroundColor: withAlphaColor(roles.colors.warning, 0.12), borderRadius: t.radius.floor, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs }}>
                 {itemSummary.needsReview ? <Text style={{ color: roles.colors.warningText, fontWeight: '700' }}>볼 것 {itemSummary.needsReview}</Text> : null}{card.now.ask ? `${itemSummary.needsReview ? ' ' : ''}${card.now.ask}` : ''}

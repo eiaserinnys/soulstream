@@ -43,7 +43,7 @@ const server = http.createServer(async (req, res) => {
 // 장면 이름과 기대 문구는 cardDependencyFixtures.ts의 장면과 한 쌍이다.
 const POSTIT_SCENES = {
   wait1: { band: '선행 대기 #1864', tone: 'neutral' },
-  wait2: { band: '선행 대기 #1864, #1861', tone: 'neutral' },
+  wait2: { band: '선행 대기 #1864, #1862', tone: 'neutral' },
   wait3: { band: '선행 대기 #1864 외 2건', tone: 'neutral' },
   cancelled: { band: '선행 취소됨 #1860', tone: 'error' },
   archived: { band: '선행 보관됨 #1858', tone: 'error' },
@@ -55,17 +55,17 @@ const POSTIT_SCENES = {
   todo: { band: null },
 };
 const DETAIL_SCENES = {
-  wait1: { count: '0/1', chips: { 'dep-1864-running': '실행 중' } },
-  wait2: { count: '0/2', chips: { 'dep-1864-running': '실행 중', 'dep-1861-queued': '대기' } },
-  wait3: { count: '1/4', chips: { 'dep-1864-running': '실행 중', 'dep-1861-queued': '대기', 'dep-1859-review': '검수 대기', 'dep-1857-done': '완료' } },
-  cancelled: { count: '0/2', chips: { 'dep-1860-cancelled': '취소' }, stopped: ['dep-1860-cancelled'] },
-  archived: { count: '0/2', chips: { 'dep-1858-queued': '보관됨' }, stopped: ['dep-1858-queued'] },
-  met: { count: '2/2', chips: { 'dep-1857-done': '완료', 'dep-1856-done': '완료' } },
-  started: { count: '1/2', chips: { 'dep-1864-running': '실행 중', 'dep-1857-done': '완료' } },
-  longest: { count: '0/2', chips: { 'dep-1855-running': '실행 중', 'dep-x-queued': '대기' }, longTitle: ['dep-1855-running', 'dep-x-queued'] },
-  many: { count: '3/10', chips: { 'dep-1840-done': '완료', 'dep-1849-running': '실행 중' } },
+  wait1: { count: '0/1', rows: 1, chips: { 'dep-1864-running': '실행 중' } },
+  wait2: { count: '0/2', rows: 2, chips: { 'dep-1864-running': '실행 중', 'dep-1862-todo': '드래프트' } },
+  wait3: { count: '0/3', rows: 3, chips: { 'dep-1864-running': '실행 중', 'dep-1861-queued': '대기', 'dep-1859-review': '검수 대기' } },
+  cancelled: { count: '0/2', rows: 2, chips: { 'dep-1860-cancelled': '취소' }, stopped: ['dep-1860-cancelled'] },
+  archived: { count: '0/2', rows: 2, chips: { 'dep-1858-queued': '보관됨' }, stopped: ['dep-1858-queued'] },
+  met: { count: '2/2', rows: 2, chips: { 'dep-1857-done': '완료', 'dep-1856-done': '완료' }, started: false },
+  started: { count: '1/2', rows: 2, chips: { 'dep-1864-running': '실행 중', 'dep-1857-done': '완료' }, started: true },
+  longest: { count: '0/2', rows: 2, chips: { 'dep-1855-running': '실행 중', 'dep-x-queued': '대기' }, longTitle: ['dep-1855-running', 'dep-x-queued'] },
+  many: { count: '3/10', rows: 10, scrolls: true, chips: { 'dep-1840-done': '완료', 'dep-1849-running': '실행 중' } },
 };
-const TABLET_SCENE = { count: '1/4', chips: { 'dep-1857-done': '완료', 'dep-1864-running': '실행 중', 'dep-1860-cancelled': '취소', 'dep-1858-queued': '보관됨' }, stopped: ['dep-1860-cancelled', 'dep-1858-queued'] };
+const TABLET_SCENE = { count: '1/4', rows: 4, scrolls: true, chips: { 'dep-1857-done': '완료', 'dep-1864-running': '실행 중', 'dep-1860-cancelled': '취소', 'dep-1858-queued': '보관됨' }, stopped: ['dep-1860-cancelled', 'dep-1858-queued'] };
 const COLORS = ['yellow', 'pink', 'mint', 'blue', 'lavender'];
 const PHONES = [
   { name: 'phone390', width: 390, height: 844 },
@@ -251,6 +251,12 @@ async function checkPostIts(browser, base, analysis, viewport, theme, view) {
     const areaRect = await page.getByTestId(`postit-body-area-${cardId}`).boundingBox();
     const footerRect = await page.getByTestId(`postit-footer-${cardId}`).boundingBox();
     check(measured.left >= paper.x - 0.5 && measured.right <= paper.x + paper.width + 0.5, `${tag}/${key}: 띠가 종이 밖으로 나감`);
+    // 중립 띠는 글자 시작선이, 오류 띠는 배경 상자 왼쪽 끝이 제목과 본문의 시작선과 한 줄이다.
+    const title = await page.evaluate(measureText, `postit-title-${cardId}`);
+    const bodyText = await page.evaluate(measureText, `postit-body-${cardId}`);
+    result.startDelta = { title: Math.round((measured.left - title.left) * 100) / 100, body: Math.round((measured.left - bodyText.left) * 100) / 100 };
+    check(Math.abs(measured.left - title.left) <= 1, `${tag}/${key}: 띠 시작선이 제목과 ${result.startDelta.title}px 어긋남`);
+    check(Math.abs(measured.left - bodyText.left) <= 1, `${tag}/${key}: 띠 시작선이 본문과 ${result.startDelta.body}px 어긋남`);
     check(measured.bottom <= areaRect.y + areaRect.height + 0.5, `${tag}/${key}: 띠 아래가 본문 영역에 잘림 (${measured.bottom} > ${areaRect.y + areaRect.height})`);
     check(measured.bottom <= footerRect.y + 0.5, `${tag}/${key}: 띠가 담당 줄과 겹침`);
     check(await page.getByTestId(`postit-body-${cardId}`).count() === 1, `${tag}/${key}: 요청 본문 자리가 사라짐`);
@@ -278,7 +284,7 @@ async function checkDetailPhone(browser, base, viewport, theme, scene) {
   metrics.viewports.push(entry);
   await page.getByTestId('card-dependencies').waitFor();
   await page.waitForTimeout(400);
-  await measureDetail(page, tag, entry, DETAIL_SCENES[scene], width, '선행 카드가 끝나기를 기다립니다');
+  await measureDetail(page, tag, entry, DETAIL_SCENES[scene], width, '선행 카드가 끝나기를 기다립니다', true);
   await page.screenshot({ path: path.join(output, `${tag}.png`) });
   if (scene === 'longest' && name === 'phone390' && theme === 'light') {
     // 창 크기 바꾸기: 열어 둔 채 가장 좁은 폭으로 줄여도 같은 단언이 선다.
@@ -286,22 +292,68 @@ async function checkDetailPhone(browser, base, viewport, theme, scene) {
     await page.waitForTimeout(400);
     const resized = { name: `${tag}→350`, kind: 'detail-resized', rows: {} };
     metrics.viewports.push(resized);
-    await measureDetail(page, resized.name, resized, DETAIL_SCENES[scene], 350, '선행 카드가 끝나기를 기다립니다');
+    await measureDetail(page, resized.name, resized, DETAIL_SCENES[scene], 350, '선행 카드가 끝나기를 기다립니다', true);
   }
   await context.close();
 }
 
-async function measureDetail(page, tag, entry, expected, width, nowText) {
+async function measureDetail(page, tag, entry, expected, width, nowText, phone = false) {
   const overflow = await noHorizontalOverflow(page);
   check(overflow.document <= overflow.window && overflow.body <= overflow.window, `${tag}: 문서 가로 넘침 ${JSON.stringify(overflow)}`);
   const group = await page.getByTestId('card-dependencies').boundingBox();
   const header = await page.getByTestId('card-detail-header').boundingBox();
   check(group.x >= 0 && group.x + group.width <= width, `${tag}: 선행 묶음이 화면 폭 밖`);
   check(group.y >= header.y + header.height - 0.5, `${tag}: 선행 묶음이 머리 아래가 아님`);
+  if (expected.started !== undefined) {
+    // 시작 전 카드는 세션이 없어 머리 아래에 칩 줄이 보이고, 선행 묶음은 그 줄 아래에서 시작한다.
+    const chips = await page.getByTestId('card-detail-chips').boundingBox();
+    entry.chipsBottom = chips ? chips.y + chips.height : null;
+    if (expected.started) check(!chips || chips.height < 1, `${tag}: 시작한 카드에 칩 줄이 보임`);
+    else if (check(chips && chips.height >= MIN_HIT - 0.5, `${tag}: 시작 전 카드의 머리 칩 줄이 보이지 않음 ${JSON.stringify(chips)}`)) check(group.y >= chips.y + chips.height - 0.5, `${tag}: 선행 묶음이 칩 줄 아래가 아님`);
+  }
   const now = page.getByTestId('card-detail-frame').getByText(nowText);
   if (await now.count()) {
     const nowBox = await now.first().boundingBox();
     check(nowBox.y >= group.y + group.height - 0.5, `${tag}: 선행 묶음이 상황판 위가 아님`);
+  }
+  // 목록: 3장까지는 모두 스크롤 없이 보이고, 4장부터는 넷째 행이 반쯤 보이며 안쪽만 스크롤한다.
+  const list = await page.getByTestId('card-dependencies-list').boundingBox();
+  const listState = await page.getByTestId('card-dependencies-list').evaluate((el) => ({ clientHeight: el.clientHeight, scrollHeight: el.scrollHeight }));
+  entry.list = { height: list.height, ...listState };
+  const allRowIds = await page.locator('[data-testid^="card-dependency-surface-"]').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid').replace('card-dependency-surface-', '')));
+  check(allRowIds.length === expected.rows, `${tag}: 목록 행 ${allRowIds.length}개 != ${expected.rows}`);
+  if (expected.scrolls) {
+    check(listState.scrollHeight > listState.clientHeight + 1, `${tag}: 선행이 많은데 목록이 안쪽 스크롤이 아님 ${JSON.stringify(listState)}`);
+    const fourth = await page.getByTestId(`card-dependency-surface-${allRowIds[3]}`).boundingBox();
+    entry.fourthRowVisible = Math.round((list.y + list.height - fourth.y) / fourth.height * 100) / 100;
+    check(fourth.y < list.y + list.height - 4 && fourth.y + fourth.height > list.y + list.height + 4, `${tag}: 넷째 행이 반쯤 보이지 않음 (보이는 비율 ${entry.fourthRowVisible})`);
+    for (const id of allRowIds.slice(0, 3)) {
+      const rowBox = await page.getByTestId(`card-dependency-surface-${id}`).boundingBox();
+      check(rowBox.y >= list.y - 0.5 && rowBox.y + rowBox.height <= list.y + list.height + 0.5, `${tag}/${id}: 앞 세 행이 목록 안에 온전히 보이지 않음`);
+    }
+  } else {
+    check(listState.scrollHeight <= listState.clientHeight + 1, `${tag}: 3장 이하인데 목록이 스크롤됨 ${JSON.stringify(listState)}`);
+    for (const id of allRowIds) {
+      const rowBox = await page.getByTestId(`card-dependency-surface-${id}`).boundingBox();
+      check(rowBox.y >= list.y - 0.5 && rowBox.y + rowBox.height <= list.y + list.height + 0.5, `${tag}/${id}: 행이 목록 안에 온전히 보이지 않음`);
+    }
+  }
+  if (phone) {
+    // 폰 상세의 나머지 영역: 탭 줄, 본문 스크롤, 하단 커멘트 입력이 선행 묶음에 밀려나지 않는다.
+    const viewport = page.viewportSize();
+    const dock = await page.getByTestId('card-detail-dock').boundingBox();
+    const scrollBox = await page.getByTestId('card-detail-scroll').boundingBox();
+    const tabIds = ['items', 'comments', 'sessions', 'notes'];
+    const tabs = [];
+    for (const id of tabIds) tabs.push(await page.getByTestId(`settings-segment-card-detail-${id}`).boundingBox());
+    const nowBox = await page.getByTestId('card-detail-frame').getByText(nowText).first().boundingBox().catch(() => null);
+    const intersects = (a, b) => a && b && a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    entry.phone = { scrollHeight: scrollBox?.height, dockBottom: dock && dock.y + dock.height, viewportHeight: viewport.height, tabsBottom: Math.max(...tabs.map((box) => box ? box.y + box.height : 0)) };
+    check(tabs.every((box) => box && box.y >= 0 && box.y + box.height <= viewport.height && box.x >= 0 && box.x + box.width <= viewport.width + 0.5), `${tag}: 탭 줄이 뷰포트 안에 온전하지 않음 ${JSON.stringify(tabs)}`);
+    check(tabs.every((box) => !intersects(box, dock) && !intersects(box, nowBox)), `${tag}: 탭 줄이 상황판이나 커멘트 입력과 겹침`);
+    check(scrollBox && scrollBox.height >= 120, `${tag}: 본문 스크롤 높이 ${scrollBox?.height} < 120`);
+    check(dock && dock.y + dock.height <= viewport.height + 0.5, `${tag}: 커멘트 입력 아래 끝 ${dock && dock.y + dock.height}이 뷰포트 ${viewport.height} 밖`);
+    check(!intersects(scrollBox, dock), `${tag}: 본문 스크롤이 커멘트 입력과 겹침`);
   }
   entry.count = await page.getByTestId('card-dependencies-count').textContent();
   check(entry.count === expected.count, `${tag}: 충족/전체 ${entry.count} != ${expected.count}`);
@@ -322,6 +374,9 @@ async function measureDetail(page, tag, entry, expected, width, nowText) {
     const title = await page.evaluate(measureText, `card-dependency-title-${id}`);
     const chip = await page.evaluate(measureText, `card-dependency-chip-${id}`);
     row.title = judgeText(title); row.chip = { judge: judgeText(chip), text: chip.text?.trim() };
+    // 칩-화살표 간격은 행 gap과 같다: 칩 자체의 오른쪽 여백을 행 안에서는 뺀다.
+    row.chipMarginRight = await page.getByTestId(`card-dependency-chip-${id}`).evaluate((el) => getComputedStyle(el).marginRight);
+    check(row.chipMarginRight === '0px', `${tag}/${id}: 칩 오른쪽 여백 ${row.chipMarginRight} != 0px`);
     check(title.lines === 1, `${tag}/${id}: 제목이 한 줄이 아님`);
     const longTitle = expected.longTitle?.includes(id);
     if (longTitle) check(row.title === 'ellipsized', `${tag}/${id}: 긴 선행 제목이 말줄임으로 끊기지 않음 (${row.title})`);
@@ -374,7 +429,7 @@ async function checkTablet(browser, base, theme) {
     for (const theme of ['light', 'dark']) {
       for (const viewport of PHONES) {
         await checkPostIts(browser, base, analysis, viewport, theme, 'postits');
-        if (viewport.name === 'phone390') await checkPostIts(browser, base, analysis, viewport, theme, 'papers');
+        await checkPostIts(browser, base, analysis, viewport, theme, 'papers');
         for (const scene of Object.keys(DETAIL_SCENES)) await checkDetailPhone(browser, base, viewport, theme, scene);
       }
       await checkTablet(browser, base, theme);

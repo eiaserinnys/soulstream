@@ -13,6 +13,7 @@ export function useCardTransition(api: ApiClient | null, cardId: string) {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [settingsCard,setSettingsCard]=useState<CardDto|null>(null);
   const settingsKey=useRef<string|null>(null);
+  const declined=useRef(false);
   const { run } = useCardActions(api,(cause)=>{
     if(cause instanceof CardExecutionSettingsRequired)setSettingsCard(cause.card);
     else if(cause instanceof CardTransitionDeclined)return;
@@ -32,9 +33,11 @@ export function useCardTransition(api: ApiClient | null, cardId: string) {
     if (!api || pending) return Promise.resolve(false);
     const scope = captureAuthScope().generation;
     setError(null);
+    declined.current = false;
     return run(async () => {
       try { return await performCardTransition(api, card, next, cardOperationId(), reason, () => mounted.current && (!isActive || isActive()), confirmStart); }
       catch (cause) {
+        if (cause instanceof CardTransitionDeclined) declined.current = true;
         if (!(cause instanceof CardExecutionSettingsRequired) && !(cause instanceof CardTransitionDeclined) && mounted.current && scope === captureAuthScope().generation && (!isActive || isActive())) setError(cause instanceof Error ? cause.message : String(cause));
         throw cause;
       }
@@ -50,5 +53,7 @@ export function useCardTransition(api: ApiClient | null, cardId: string) {
     const result=await performCardTransition(api,saved.card,'running',cardOperationId());
     if(result.card)setSettingsCard(null);
   };
-  return { transition, pending, execution, error,settingsCard,setSettingsCard:(value:CardDto|null)=>{if(!value)settingsKey.current=null;setSettingsCard(value);},saveSettingsAndExecute };
+  /** 직전 transition이 사용자가 시작 확인에서 취소해 끝났는가. 실패가 아니므로 결과 창을 띄우지 않는다. */
+  const wasDeclined = () => declined.current;
+  return { transition, wasDeclined, pending, execution, error,settingsCard,setSettingsCard:(value:CardDto|null)=>{if(!value)settingsKey.current=null;setSettingsCard(value);},saveSettingsAndExecute };
 }

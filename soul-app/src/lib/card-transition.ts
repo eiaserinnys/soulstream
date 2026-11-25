@@ -5,16 +5,16 @@ import type { CardStatus } from '../../../packages/wire-schema/generated/typescr
 import type { CardDetail, CardDto, CardExecutionResult, CardMutationResult } from '../api/cardTypes';
 import { captureAuthScope, subscribeAuthScope } from './auth-scope';
 import { useCardStore } from '../store/cardStore';
-import { CARD_STATUS_LABELS } from '../../../packages/wire-schema/src/card_status_labels';
+import { CARD_BOARD_STATUS_LABELS } from '../../../packages/soul-ui/src/lib/card-board-status-labels';
 import { cardDependencyStopReason, type CardDependency } from '../../../packages/wire-schema/src/card_dependency_display';
 
 type Attempt={key:string;version:number;requestId?:string;timer?:ReturnType<typeof setTimeout>;deadline?:number;timeout?:ReturnType<typeof setTimeout>};
 const executionAttempts=new Map<string,Attempt>();
 const states=new Map<string,CardExecutionState>();
 export const cardExecutionState=(id:string)=>states.get(id);
-/** 선행 카드 한 장의 상태 칩 글. 충족되지 않은 채 보관된 선행은 「대기」가 아니라 「보관됨」이다(웹 cardDependencyStatus와 같다). */
+/** 선행 카드 한 장의 상태 칩 글. 웹 cardDependencyStatus처럼 todo는 「드래프트」, 충족되지 않은 채 보관된 선행은 「보관됨」이다. */
 export function cardDependencyStatus(dep: CardDependency): { label: string; tone: 'error' | 'neutral' } {
-  return cardDependencyStopReason(dep) === 'archived' ? { label: '보관됨', tone: 'error' } : { label: CARD_STATUS_LABELS[dep.status], tone: 'neutral' };
+  return cardDependencyStopReason(dep) === 'archived' ? { label: '보관됨', tone: 'error' } : { label: CARD_BOARD_STATUS_LABELS[dep.status], tone: 'neutral' };
 }
 export const cardDependencyLabel = (dep: CardDependency) => dep.number == null ? dep.title : `#${dep.number}`;
 export const unmetCardDependencies = (card: Pick<CardDto, 'dependsOn'>) => card.dependsOn?.filter(dep => !dep.met) ?? [];

@@ -51,3 +51,37 @@ test('번호가 없는 선행은 제목만 쓰고 누름 영역은 44pt 이상�
   const flat = Array.isArray(frame) ? Object.assign({}, ...frame.flat(2).filter(Boolean)) : frame;
   expect(flat.minHeight).toBeGreaterThanOrEqual(44);
 });
+
+const many = (count: number) => Array.from({ length: count }, (_, index) => dep({ id: `m${index}`, number: 100 + index, title: `선행 ${index}` }));
+const listStyle = (screen: ReturnType<typeof render>) => {
+  const style = screen.getByTestId('card-dependencies-list').props.style;
+  return Object.assign({}, ...[style].flat(2).filter(Boolean));
+};
+
+test('선행 3장까지는 높이 제한 없이 모두 보이고 4장부터는 넷째 행이 반쯤 보이는 높이로 제한해 안쪽만 스크롤한다', () => {
+  const three = render(<CardDependencies dependencies={many(3)} onOpenCard={() => {}} />);
+  expect(listStyle(three).maxHeight).toBeUndefined();
+  three.unmount();
+  for (const count of [4, 10]) {
+    const screen = render(<CardDependencies dependencies={many(count)} onOpenCard={() => {}} />);
+    const list = screen.getByTestId('card-dependencies-list');
+    expect(list.props.nestedScrollEnabled).toBe(true);
+    // 행 세 장(행 사이 간격 포함)에 넷째 행의 절반을 더한 높이라 넷째 행이 반쯤 보인다.
+    const { maxHeight } = listStyle(screen);
+    const frame = screen.getByTestId('card-dependency-m0').props.style;
+    const rowHeight = Object.assign({}, ...[frame].flat(2).filter(Boolean)).minHeight as number;
+    expect(maxHeight).toBeGreaterThan(3 * rowHeight + rowHeight / 2);
+    expect(maxHeight).toBeLessThan(4 * rowHeight + 3 * 4);
+    // 접기 토글은 없고 모든 행이 목록 안에 있다.
+    expect(screen.queryByText(/접기|펼치기/)).toBeNull();
+    expect(screen.getAllByTestId(/^card-dependency-m\d+$/)).toHaveLength(count);
+    screen.unmount();
+  }
+});
+
+test('todo 선행은 웹처럼 드래프트 칩이고 행 안 칩은 오른쪽 여백이 없다', () => {
+  const screen = render(<CardDependencies dependencies={[dep({ id: 't', number: 7, title: '초안', status: 'todo' })]} onOpenCard={() => {}} />);
+  expect(screen.getByText('드래프트')).toBeTruthy();
+  expect(screen.queryByText('할 일')).toBeNull();
+  expect(screen.getByTestId('card-dependency-chip-t').props.style.marginRight).toBe(0);
+});

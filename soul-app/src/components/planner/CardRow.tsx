@@ -29,7 +29,7 @@ import { withAlphaColor } from '../StatusPulseDecoration';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 import { AttachmentReadContextProvider } from '../../navigation/ContentLinkContexts';
 
-export function CardStatusChip({ card, title = false, board = false, detail = false, label, colors, tone, testID }: { card: Pick<CardDto, 'id' | 'status' | 'blockedKind'>; testID?: string; title?: boolean; board?: boolean; detail?: boolean; label?: string; colors?: ColorScheme; tone?: 'error' }) {
+export function CardStatusChip({ card, title = false, board = false, detail = false, label, colors, tone, testID, flush = false }: { card: Pick<CardDto, 'id' | 'status' | 'blockedKind'>; testID?: string; title?: boolean; board?: boolean; detail?: boolean; label?: string; colors?: ColorScheme; tone?: 'error'; flush?: boolean }) {
   const t = useTokens();
   const execution = useSyncExternalStore(subscribeCardWrites, () => cardExecutionState(card.id), () => undefined);
   const palette = colors ?? t.colors;
@@ -42,7 +42,7 @@ export function CardStatusChip({ card, title = false, board = false, detail = fa
   return <Text testID={testID} style={{ ...t.foundation.typography.meta, color,
     ...(title ? { ...t.foundation.typography.cardTitle, marginRight: t.uiSpacing.sm } : {}),
     ...(detail ? { backgroundColor: withAlphaColor(capsuleColor, 0.12), borderRadius: t.foundation.radius.capsule,
-      paddingHorizontal: t.uiSpacing.xs, paddingVertical: t.uiSpacing.xxs, marginRight: t.uiSpacing.xs } : {}),
+      paddingHorizontal: t.uiSpacing.xs, paddingVertical: t.uiSpacing.xxs, marginRight: flush ? 0 : t.uiSpacing.xs } : {}),
     fontWeight: '700' }} numberOfLines={1}>
     {detail ? <Ionicons name="ellipse" size={STATUS_DOT_SIZE} color={color} /> : null}{detail ? ' ' : null}
     {label ?? (

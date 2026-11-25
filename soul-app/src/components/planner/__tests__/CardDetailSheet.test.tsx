@@ -2,6 +2,11 @@ import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useDraftStore } from '../../../store/draftStore';
 let mockDevice = 'phone';
+let mockPersistentHost: unknown = null;
+jest.mock('../../../navigation/PersistentSessionContext', () => ({
+  ...jest.requireActual('../../../navigation/PersistentSessionContext'),
+  useOptionalPersistentSessionHost: () => mockPersistentHost,
+}));
 let mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({ __esModule: true, default: () => mockDimensions }));
 jest.mock('../../../theme', () => ({ ...jest.requireActual('../../../theme'), useDeviceType: () => mockDevice }));
@@ -38,7 +43,7 @@ import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
 import { useUIStore } from '../../../store/uiStore';
 import { LayoutContinuityProvider, useLayoutContinuity } from '../../../navigation/LayoutContinuityContext';
 import { setCardQuestionTarget } from '../CardQuestionBlock';
-import { NavigationContext } from '@react-navigation/native';
+import { NavigationContext, NavigationRouteContext } from '@react-navigation/native';
 // Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
 // promises) must settle inside act before RNTL's cleanup yields to the event loop.
 const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
@@ -106,6 +111,7 @@ function checkItem(id: number, display: CardCheckItem['display']): CardCheckItem
 
 beforeEach(async () => {
   mockDevice = 'phone';
+  mockPersistentHost = null;
   mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
   await useAuthStore.persist.rehydrate();
   await useSettingsStore.persist.rehydrate();
@@ -879,6 +885,72 @@ describe('선행 카드 묶음', () => {
     await waitFor(() => expect(screen.getByTestId('card-dependency-dep-run')).toBeTruthy());
     fireEvent.press(screen.getByTestId('card-dependency-dep-run'));
     expect(useUIStore.getState().selectedCardId).toBe('dep-run');
+  });
+
+  test('키보드가 열리면 선행 묶음을 숨기고 닫히면 다시 보인다', async () => {
+    const current = { ...detail, card: { ...card, dependsOn: deps } };
+    const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue(current) } as any} cardId={card.id} onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('card-dependencies')).toBeTruthy());
+    const avoider = screen.UNSAFE_getByType(AppKeyboardAvoidingView);
+    act(() => avoider.props.onOverlapChange(220));
+    expect(screen.queryByTestId('card-dependencies')).toBeNull();
+    expect(screen.getByTestId('card-detail-scroll')).toBeTruthy();
+    act(() => avoider.props.onOverlapChange(0));
+    expect(screen.getByTestId('card-dependencies')).toBeTruthy();
+    await settleTimers();
+  });
+
+  describe('선행 행을 누르면 지금 보이는 상세에서 열린다', () => {
+    const open = async (options: { device: string; inline?: boolean; route?: string; host?: boolean; push?: jest.Mock }) => {
+      mockDevice = options.device;
+      if (options.device !== 'phone') mockDimensions = { width: 1180, height: 820, scale: 1, fontScale: 1 };
+      const persistentOpen = jest.fn();
+      mockPersistentHost = options.host ? { store: { getState: () => ({ selectedCardId: card.id, openCardOverlay: persistentOpen }) } } : null;
+      useUIStore.setState({ selectedCardId: null });
+      const overlay = jest.spyOn(useUIStore.getState(), 'openCardOverlay');
+      const current = { ...detail, card: { ...card, dependsOn: deps } };
+      const content = <CardDetailContent inline={options.inline} api={{ getCard: jest.fn().mockResolvedValue(current) } as any} cardId={card.id} onClose={jest.fn()} />;
+      const screen = render(<NavigationContext.Provider value={{ push: options.push } as any}>
+        <NavigationRouteContext.Provider value={options.route ? { key: 'route-key', name: options.route } as any : undefined}>{content}</NavigationRouteContext.Provider>
+      </NavigationContext.Provider>);
+      await waitFor(() => expect(screen.getByTestId('card-dependency-dep-run')).toBeTruthy());
+      fireEvent.press(screen.getByTestId('card-dependency-dep-run'));
+      await settleTimers();
+      return { persistentOpen, overlay };
+    };
+
+    test('영구 세션 덮개 안의 상세는 영구 세션 덮개를 그 선행 id로 연다', async () => {
+      const push = jest.fn();
+      const { persistentOpen, overlay } = await open({ device: 'tablet', inline: true, host: true, push });
+      expect(persistentOpen).toHaveBeenCalledWith('dep-run');
+      expect(useUIStore.getState().selectedCardId).toBeNull();
+      expect(push).not.toHaveBeenCalled();
+      overlay.mockRestore();
+    });
+
+    test('태블릿 일반 덮개 안의 상세는 태블릿 덮개를 그 선행 id로 연다', async () => {
+      const push = jest.fn();
+      const { persistentOpen } = await open({ device: 'tablet', inline: true, push });
+      expect(useUIStore.getState().selectedCardId).toBe('dep-run');
+      expect(persistentOpen).not.toHaveBeenCalled();
+      expect(push).not.toHaveBeenCalled();
+    });
+
+    test('태블릿에서 알림이나 링크로 연 CardDetail 모달 안에서는 그 위에 CardDetail을 쌓고 뒤의 덮개는 바꾸지 않는다', async () => {
+      const push = jest.fn();
+      const { persistentOpen } = await open({ device: 'tablet', inline: true, route: 'CardDetail', host: true, push });
+      expect(push).toHaveBeenCalledWith('CardDetail', { cardId: 'dep-run' });
+      expect(useUIStore.getState().selectedCardId).toBeNull();
+      expect(persistentOpen).not.toHaveBeenCalled();
+    });
+
+    test('폰은 CardDetail 화면을 쌓는다', async () => {
+      const push = jest.fn();
+      const { persistentOpen } = await open({ device: 'phone', route: 'CardDetail', push });
+      expect(push).toHaveBeenCalledWith('CardDetail', { cardId: 'dep-run' });
+      expect(useUIStore.getState().selectedCardId).toBeNull();
+      expect(persistentOpen).not.toHaveBeenCalled();
+    });
   });
 
   test('상세 시작 단추도 미충족 선행을 한 번 묻고 취소하면 요청하지 않는다', async () => {

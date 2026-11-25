@@ -23,7 +23,7 @@ import { RemoteImage } from '../RemoteImage';
 import { resolveSessionCardAvatar, resolveSessionAgentLabel } from '../sessionCardDisplay';
 import { useDeviceType, useTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
-import { NavigationContext } from '@react-navigation/native';
+import { NavigationContext, NavigationRouteContext } from '@react-navigation/native';
 import { CardCommentComposer, type CardCommentComposerHandle } from './CardCommentComposer';
 import { makeFolderWorkspaceStyles } from './FolderWorkspace.styles';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
@@ -258,9 +258,12 @@ export function CardDetailContent(props: CardDetailContentProps) {
   };
   const navigation = useContext(NavigationContext) as { push?(name: string, params: object): void; navigate?(name: string, params: object): void } | null;
   const persistentHost = useOptionalPersistentSessionHost();
-  // 기존 카드 열기 경로: 영구 세션 덮개, 태블릿 덮개, 폰 CardDetail 화면.
+  const route = useContext(NavigationRouteContext);
+  // 기존 카드 열기 경로: CardDetail 화면 안(폰 화면, 태블릿 알림·링크 모달)에서는 그 위에 CardDetail을 쌓고,
+  // 그 밖의 태블릿은 영구 세션 덮개나 일반 덮개를 연다. 모달 뒤에 가려진 덮개만 바꾸지 않는다.
   const openDependencyCard = (id: string) => {
-    if (tablet && persistentHost?.store.getState().selectedCardId === cardId) persistentHost.store.getState().openCardOverlay(id);
+    if (route?.name === 'CardDetail') (navigation?.push ?? navigation?.navigate)?.call(navigation, 'CardDetail', { cardId: id });
+    else if (tablet && persistentHost?.store.getState().selectedCardId === cardId) persistentHost.store.getState().openCardOverlay(id);
     else if (tablet) useUIStore.getState().openCardOverlay(id);
     else (navigation?.push ?? navigation?.navigate)?.call(navigation, 'CardDetail', { cardId: id });
   };
@@ -331,7 +334,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
           </View> : null}
         </View>
         {card ? <View style={styles.headerRow}>
-          <View style={styles.chips}>
+          <View testID="card-detail-chips" style={styles.chips}>
           {!card.assigneeSessionId?<>
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="폴더 변경" disabled={locked || !api} onPress={()=>setAssignmentOpen(true)} surfaceStyle={styles.chip}><Text style={styles.chipText} numberOfLines={1}>{useSessionStore.getState().catalog.folders.find(f=>f.id===card.folderId)?.name??card.folderId}</Text></CompactTouchTarget>
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="담당 변경" disabled={locked || !api} onPress={() => setAssignmentOpen(true)} surfaceStyle={styles.chip}>{avatar.uri ? <RemoteImage source={resolveRemoteImageSource(avatar.uri, serverUrl, jwt)} style={styles.chipAvatar} /> : <Text style={styles.chipText}>{avatar.fallbackChar}</Text>}
@@ -343,7 +346,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
         </View> : null}
         {statusAction.execution && statusAction.execution.phase !== 'pending' ? <Text style={styles.error}>{statusAction.execution.message}</Text> : null}
       </View>
-      {card?.dependsOn?.length ? <CardDependencies dependencies={card.dependsOn} onOpenCard={openDependencyCard} /> : null}
+      {card?.dependsOn?.length && keyboardOverlap === 0 ? <CardDependencies dependencies={card.dependsOn} onOpenCard={openDependencyCard} /> : null}
       {card?.now && keyboardOverlap === 0 ? <View style={styles.nowWrap}>
         <CardNowPanel now={card.now} history={detail?.nowHistory ?? []} allConfirmed={allConfirmed}
           surfaceRole={inline ? 'glassCard' : 'panel'} completeDisabled={locked || !api || startPhase === 'pending'}

@@ -9,6 +9,7 @@ const dependency = (number: number | null, title: string, status: CardDependency
 // 운영 응답 형태: 선행이 있을 때만 dependsOn이 실리고, 충족 여부 met는 서버가 판정한다.
 const running = dependency(1864, '앱 선행 카드 화면 구현', 'running');
 const queued = dependency(1861, '서버 선행 투영 마련', 'queued');
+const draft = dependency(1862, '선행 카드 설계 초안', 'todo');
 const review = dependency(1859, '웹 선행 카드 상세 검수', 'review');
 const done = dependency(1857, '선행 카드 설계 확정', 'done');
 const cancelled = dependency(1860, '이전 방식 정리', 'cancelled');
@@ -23,8 +24,8 @@ export type DependencyScene = { name: string; deps: CardDependency[]; status?: C
 /** 포스트잇과 상세에 같은 장면 이름을 쓴다. */
 export const dependencyScenes: DependencyScene[] = [
   { name: 'wait1', deps: [running] },
-  { name: 'wait2', deps: [running, queued] },
-  { name: 'wait3', deps: [running, queued, review, done] },
+  { name: 'wait2', deps: [running, draft] },
+  { name: 'wait3', deps: [running, queued, review] },
   { name: 'cancelled', deps: [cancelled, running] },
   { name: 'archived', deps: [archived, running] },
   { name: 'mixed', deps: [done, running, cancelled, archived] },
@@ -37,7 +38,9 @@ export const dependencyScenes: DependencyScene[] = [
 
 export function dependencyCard(scene: DependencyScene, color: CardColor = scene.color ?? 'yellow'): CardDto {
   return { ...makeCard(scene.status ?? 'queued'), id: `dep-card-${scene.name}-${color}`, number: 1865, color,
-    title: scene.title ?? dependencyCardTitle, assigneeKind: 'session', assigneeSessionId: 'public-shell-session-0',
+    title: scene.title ?? dependencyCardTitle, assigneeKind: 'session',
+    // 선행을 기다리는 카드는 아직 시작 전이라 세션이 없고 머리 아래에 폴더·담당·노드·모델 칩 줄이 보인다. 시작한 장면만 세션을 가진다.
+    assigneeSessionId: scene.status === 'running' ? 'public-shell-session-0' : null,
     assigneeAgentId: 'public-agent', nodeId: 'public-node', now: dependencyNow, dependsOn: scene.deps };
 }
 
