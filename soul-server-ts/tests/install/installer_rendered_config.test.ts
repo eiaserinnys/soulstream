@@ -4,11 +4,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse } from "dotenv";
 import { describe, expect, it } from "vitest";
-import { resolveCodexCliPath } from "@soulstream/executable-path";
+import { resolveAntigravityCliPath, resolveCodexCliPath } from "@soulstream/executable-path";
 import { loadAgentRegistry } from "../../src/agent_registry.js";
 import { parseEnv } from "../../src/config.js";
 import { resolveClaudeExecutableFromPath } from "../../src/engine/claude_executable_path.js";
-import { resolveAntigravityCliPath } from "../../src/engine/antigravity_cli_path.js";
 import { McpConfigService } from "../../src/mcp_config_service.js";
 
 // The installer reads the U10 seed map and the issued atom API key before it renders configuration.
@@ -74,7 +73,7 @@ describe("installer configuration", () => {
       const pathEnv = { PATH: `${dir}:${process.env.PATH ?? ""}`, HOME: home };
       expect(resolveClaudeExecutableFromPath(pathEnv, "linux")).toBe(join(dir, "claude"));
       expect(resolveCodexCliPath(undefined, pathEnv, "linux")).toMatchObject({ path: join(dir, "codex"), source: "PATH" });
-      expect(resolveAntigravityCliPath(pathEnv, "linux")).toMatchObject({ path: join(dir, "agy"), source: "PATH" });
+      expect(resolveAntigravityCliPath(null, pathEnv, "linux")).toMatchObject({ path: join(dir, "agy"), source: "PATH" });
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

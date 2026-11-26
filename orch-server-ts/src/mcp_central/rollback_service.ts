@@ -200,5 +200,3 @@ export function createRollbackService(options: {
 
   return { rollback };
 }
-
-export type RollbackService = ReturnType<typeof createRollbackService>;

@@ -5,9 +5,6 @@ export type CardDependency = { id: string; number: number | null; title: string;
 export function dependencyMet(status: CardStatus, reviewMeetsDependency: boolean): boolean {
   return status === "done" || (reviewMeetsDependency && status === "review");
 }
-export function dependencyStopped(dependency: CardDependency): boolean {
-  return dependency.status === "cancelled" || (dependency.archived && !dependency.met);
-}
 
 /** One projection for REST, MCP, queue eligibility and execution prompts. */
 export async function readCardDependencies(sql: RepositorySql, cardIds: readonly string[], allowedFolderIds: readonly string[] | null = null): Promise<Map<string, CardDependency[]>> {

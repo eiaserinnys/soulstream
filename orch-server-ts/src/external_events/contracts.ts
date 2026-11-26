@@ -20,7 +20,6 @@ export const subscribeSchema = identitySchema.extend({
   ttlMs: z.number().int().positive().nullable().optional(),
   cursor: z.string().nullable().optional(),
 });
-export type SubscriptionRequest = z.input<typeof subscribeSchema>;
 export const deliveryResultSchema = z.object({
   status: z.enum(["accepted_by_receiver", "delivery_failed"]), time: z.string().datetime(),
   http_status: z.number().int().optional(), reason: z.string().optional(),

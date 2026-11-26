@@ -15,14 +15,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { AntigravityEngineAdapter } from "../../src/engine/antigravity/adapter.js";
-import { resolveAntigravityCliPath } from "../../src/engine/antigravity_cli_path.js";
+import { resolveAntigravityCliPath } from "@soulstream/executable-path";
 import { AntigravityEventMapper, type AntigravityEvent } from "../../src/engine/antigravity/events.js";
 import type { EngineExecuteParams, SSEEventPayload } from "../../src/engine/protocol.js";
 
 const root = process.argv[2];
 assert(root && resolve(root).startsWith("/tmp/"), "Pass a mktemp -d root under /tmp");
 assert.equal((await readdir(root)).length, 0, "Scratch root must start empty");
-const executablePath = resolveAntigravityCliPath(process.env)?.path;
+const executablePath = resolveAntigravityCliPath(null, process.env)?.path;
 assert(executablePath, "agy must be installed");
 const workspace = join(root, "workspace");
 const state = join(root, "state");

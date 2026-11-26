@@ -46,6 +46,7 @@
     "soul-app/src/hooks/usePlannerStarred.ts": ["app"],
     "packages/mcp-contract/src/folder_shared.ts": ["orch", "worker"],
     "packages/wire-schema/src/catalog.ts": ["orch", "worker"],
+    "packages/wire-schema/src/claude_account_usage.ts": ["orch", "worker"],
     "packages/executable-path/src/index.ts": ["orch", "worker"],
     "packages/soul-ui/src/lib/user-preferences-envelope.ts": ["soul-ui", "app"],
     "soul-app/src/api/preferencesEndpoints.ts": ["app"],

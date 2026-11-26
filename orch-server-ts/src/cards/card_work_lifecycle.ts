@@ -1,7 +1,6 @@
 import { workAdmissionMatches } from './state/card_server_evidence.js';
 import type { CardRow, RepositorySql } from "./control_plane/card_types.js";
 export type CardWorkExecution = { registrationId: string; executionCommandId: string };
-export function invalidWork(message: string) { return Object.assign(new Error(message), { statusCode: 422, code: "INVALID_CARD_WORK" }); }
 
 /** Worker-supplied identity comes from Task.executionRegistration, never tool input. */
 export async function readWorkExecution(sql: RepositorySql, sessionId: string, execution: CardWorkExecution) {

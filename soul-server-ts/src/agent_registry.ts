@@ -144,18 +144,6 @@ export function readAgentsConfig(configPath: string): AgentsConfig {
   return AgentsConfigSchema.parse(parsed);
 }
 
-export function readAgentsConfigRaw(configPath: string): {
-  raw: string;
-  parsed: AgentsConfig;
-} {
-  const raw = fs.readFileSync(configPath, "utf-8");
-  const data: unknown = parseYaml(raw) ?? {};
-  return {
-    raw,
-    parsed: AgentsConfigSchema.parse(data),
-  };
-}
-
 /**
  * yaml 파일에서 AgentRegistry를 로딩한다.
  *

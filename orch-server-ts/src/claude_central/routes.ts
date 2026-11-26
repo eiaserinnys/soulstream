@@ -32,18 +32,6 @@ export type ClaudeCentralRouteOptions = {
   readonly service: ClaudeCentralRouteService;
 };
 
-export const claudeCentralRouteAuthRequirements = {
-  "GET /api/claude-auth/central/accounts": true,
-  "PATCH /api/claude-auth/central/accounts/:id": true,
-  "DELETE /api/claude-auth/central/accounts/:id": true,
-  "POST /api/claude-auth/central/logins": true,
-  "GET /api/claude-auth/central/logins/:login_id": true,
-  "POST /api/claude-auth/central/logins/:login_id/code": true,
-  "DELETE /api/claude-auth/central/logins/:login_id": true,
-  "GET /api/claude-auth/central/settings": true,
-  "PUT /api/claude-auth/central/settings": true,
-} as const;
-
 type AccountParams = { id: string };
 type LoginParams = { login_id: string };
 

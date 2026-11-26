@@ -7,8 +7,7 @@ import { fileURLToPath } from "node:url";
 import { loadAgentRegistry } from "./agent_registry.js";
 import { AgentProfileSource } from "./agent_profile_source.js";
 import { parseEnv } from "./config.js";
-import { resolveCodexCliPath } from "@soulstream/executable-path";
-import { resolveAntigravityCliPath } from "./engine/antigravity_cli_path.js";
+import { resolveAntigravityCliPath, resolveCodexCliPath } from "@soulstream/executable-path";
 import { createLogger } from "./logger.js";
 import { McpConfigService } from "./mcp_config_service.js";
 import {
@@ -223,7 +222,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const antigravityCliPath = configuredBackends.has("antigravity") ? resolveAntigravityCliPath(process.env) : undefined;
+  const antigravityCliPath = configuredBackends.has("antigravity") ? resolveAntigravityCliPath(null, process.env) : undefined;
   if (configuredBackends.has("antigravity")) {
     if (antigravityCliPath) {
       logger.info({ source: antigravityCliPath.source, path: antigravityCliPath.path }, "Antigravity CLI path resolved");

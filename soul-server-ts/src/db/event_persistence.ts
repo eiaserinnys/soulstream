@@ -451,10 +451,6 @@ export function isLiveOnlyEvent(event: SSEEventPayload): boolean {
   return (event as Record<string, unknown>)._live_only === true;
 }
 
-export function isTransientTextEvent(event: SSEEventPayload): boolean {
-  return resolveEventDurability(event) === "transient";
-}
-
 export function shouldPersistEvent(event: SSEEventPayload): boolean {
   return resolveEventDurability(event) === "durable";
 }

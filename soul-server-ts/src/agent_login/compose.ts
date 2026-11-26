@@ -1,12 +1,11 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { resolveCodexCliPath } from "@soulstream/executable-path";
+import { resolveAntigravityCliPath, resolveCodexCliPath } from "@soulstream/executable-path";
 import type { Logger } from "pino";
 
 import { buildSanitizedCliEnv } from "../claude_accounts/login_cli_helpers.js";
 import { antigravityEnvironment } from "../engine/antigravity_env.js";
-import { resolveAntigravityCliPath } from "../engine/antigravity_cli_path.js";
 import type { ProviderLimits } from "../auth/provider_limits.js";
 import type { AgentLoginActivity } from "./activity.js";
 import { createAntigravityDriver, findScriptExecutable } from "./antigravity_driver.js";
@@ -59,7 +58,7 @@ export function composeAgentLoginService(input: ComposeAgentLoginInput): AgentLo
         verifyUsage: verifyUsage("codex"),
       }),
       antigravity: createAntigravityDriver({
-        resolveCliPath: () => resolveAntigravityCliPath(env)?.path,
+        resolveCliPath: () => resolveAntigravityCliPath(null, env)?.path,
         resolveScriptPath: () => findScriptExecutable(env, process.platform),
         buildEnv: () => loginCliEnv(antigravityEnvironment(env), { TERM: "xterm-256color" }),
         verifyUsage: verifyUsage("antigravity"),

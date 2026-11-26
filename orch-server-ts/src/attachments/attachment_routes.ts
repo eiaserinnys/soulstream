@@ -85,20 +85,6 @@ export type AttachmentLegacyUploadInput = {
   contentBase64: string;
 };
 
-export type AttachmentUploadResult = {
-  path: unknown;
-  filename: unknown;
-  size: unknown;
-  content_type: unknown;
-  [key: string]: unknown;
-};
-
-export type AttachmentDeleteResult = {
-  cleaned?: unknown;
-  files_removed?: unknown;
-  [key: string]: unknown;
-};
-
 export type AttachmentDownloadResult = {
   content_b64: unknown;
   filename: unknown;

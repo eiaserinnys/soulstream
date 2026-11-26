@@ -17,6 +17,7 @@
     "./json-record": "./src/json_record.ts",
     "./caller-info": "./src/caller_info.ts",
     "./claude-oauth": "./src/claude_oauth.ts",
+    "./claude-account-usage": "./src/claude_account_usage.ts",
     "./session-delivery": "./src/session_delivery.ts",
     "./persistent-jev-candidates": "./src/persistent_jev_candidates.ts",
     "./card-orchestration": "./src/card_orchestration.ts",

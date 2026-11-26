@@ -7,13 +7,13 @@ import { join, resolve } from "node:path";
 import pino from "pino";
 import { parse } from "yaml";
 import { AntigravityEngineAdapter } from "../../src/engine/antigravity/adapter.js";
-import { resolveAntigravityCliPath } from "../../src/engine/antigravity_cli_path.js";
+import { resolveAntigravityCliPath } from "@soulstream/executable-path";
 import type { EngineExecuteParams, SSEEventPayload } from "../../src/engine/protocol.js";
 
 const root = process.argv[2];
 assert(root && resolve(root).startsWith("/tmp/"), "Pass a mktemp -d root under /tmp");
 assert.equal((await readdir(root)).length, 0, "Scratch root must start empty");
-const executablePath = resolveAntigravityCliPath(process.env)?.path;
+const executablePath = resolveAntigravityCliPath(null, process.env)?.path;
 assert(executablePath, "agy must be installed");
 
 const workspace = join(root, "workspace");

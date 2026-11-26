@@ -46,16 +46,6 @@ export async function sendActionCommand<
 
 export type SessionActionResponse = { status: number; body: unknown };
 
-export async function sendInterveneCommand(
-  reply: FastifyReply,
-  options: SessionActionCommandDispatchOptions,
-  payload: InterveneNodeCommandPayload,
-  durableDeliveryId?: string,
-): Promise<FastifyReply> {
-  const result = await executeInterveneCommand(options, payload, durableDeliveryId);
-  return reply.code(result.status).send(result.body);
-}
-
 export async function executeInterveneCommand(
   options: SessionActionCommandDispatchOptions,
   payload: InterveneNodeCommandPayload,
@@ -183,14 +173,6 @@ export function invalidRequest(reply: FastifyReply, message: string): FastifyRep
       message,
     },
   });
-}
-
-export function sendGenericStatusError(
-  reply: FastifyReply,
-  response: NodeCommandResponse,
-): FastifyReply {
-  const result = genericStatusErrorResponse(response);
-  return reply.code(result.status).send(result.body);
 }
 
 function genericStatusErrorResponse(response: NodeCommandResponse): SessionActionResponse {

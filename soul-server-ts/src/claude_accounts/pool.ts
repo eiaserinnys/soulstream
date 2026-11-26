@@ -3,11 +3,10 @@ import { ANTHROPIC_USAGE_URL } from "@soulstream/wire-schema/claude-oauth";
 import type { ProviderLimits, ProviderQuota } from "../auth/provider_limits.js";
 import {
   effectiveWindowUsedPercent,
-  isBlockedForScope,
-  isScopeBlockActive,
   isUsageExhaustedForScope,
   usageExhaustionResetMs,
-} from "./selector.js";
+} from "@soulstream/wire-schema/claude-account-usage";
+import { isBlockedForScope, isScopeBlockActive } from "./selector.js";
 import type {
   ClaudeAccountBlocksRecord,
   ClaudeAccountList,

@@ -8,10 +8,6 @@ import type { PushRegistrationRepository } from "./push_routes.js";
 import { SessionForegroundObserverTracker } from "./session_foreground_observer_tracker.js";
 
 export { SessionForegroundObserverTracker } from "./session_foreground_observer_tracker.js";
-export {
-  PUSH_NOTIFICATION_DEDUPE_MAX_ENTRIES,
-  PUSH_NOTIFICATION_DEDUPE_TTL_MS,
-} from "./push_notification_dedupe.js";
 
 export type PushDeviceToken = {
   readonly deviceId: string;
@@ -92,7 +88,6 @@ export type PushNotificationLogEvent = {
     | "llm_session";
 };
 
-export const PUSH_TOOL_INPUT_TTL_MS = 60 * 60_000;
 export const PUSH_EVENT_MAX_AGE_MS = 10 * 60_000;
 const PUSH_BODY_MAX = 100;
 export type CardQuestionPushInput = {

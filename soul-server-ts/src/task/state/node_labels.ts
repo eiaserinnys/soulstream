@@ -2,8 +2,6 @@ import type { NodeBarrierKind, NodeBarrierState, NodeStopDisposition } from "./n
 import type { NodeExecutionPhase } from "./node_execution_machine.js";
 import type { NodeCleanupIntent } from "./node_response_decision.js";
 import type {
-  NodeCentralSession,
-  NodeRegistrationMatch,
   NodeResponseCall,
   NodeResponseCell,
   NodeResponseRoute,
@@ -53,21 +51,10 @@ export const NODE_REASON_LABELS: Readonly<Record<NodeWireReason, string>> = {
   none: "사유 없음",
 };
 
-export const NODE_REGISTRATION_LABELS: Readonly<Record<NodeRegistrationMatch, string>> = {
-  same: "우리 등록",
-  different: "낡은 등록",
-};
-
 export const NODE_TERMINATION_LABELS: Readonly<Record<NodeTerminationProjection, string>> = {
   same: "우리 종료와 같음",
   different: "다른 종료",
   absent: "없음",
-};
-
-export const NODE_CENTRAL_LABELS: Readonly<Record<NodeCentralSession, string>> = {
-  present: "있음",
-  absent: "없음",
-  unknown: "모름",
 };
 
 export const NODE_CELL_LABELS: Readonly<Record<NodeResponseCell, string>> = {

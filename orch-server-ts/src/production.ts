@@ -57,7 +57,6 @@ import {
 import { registerDashboardServing } from "./dashboard/dashboard_serving.js";
 import { CodexEphemeralExecutor } from "./llm/codex_ephemeral_executor.js";
 import { AntigravityEphemeralExecutor } from "./llm/antigravity_ephemeral_executor.js";
-import { resolveAntigravityCliPath } from "./llm/antigravity_cli_path.js";
 import type { EphemeralLlmRouteOptions } from "./llm/ephemeral_llm_routes.js";
 import { InMemoryNodeRegistry, type NodeRegistryEvent } from "./node/registry.js";
 import { resolveRegisteredAgentId } from "./node/agent_profile_lookup.js";
@@ -192,7 +191,7 @@ import {
   type LiveTurnSummaryPipeline,
   type LiveTurnSummaryProductionOverrides,
 } from "./turn-summary/live_turn_summary_pipeline.js";
-import { resolveCodexCliPath } from "@soulstream/executable-path";
+import { resolveAntigravityCliPath, resolveCodexCliPath } from "@soulstream/executable-path";
 
 export type ProductionApplication = {
   readonly app: FastifyInstance;

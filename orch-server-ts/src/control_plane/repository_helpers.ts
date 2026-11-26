@@ -9,11 +9,3 @@ type PostgresJsonValue = Parameters<RepositorySql["json"]>[0];
 export function asPostgresJsonValue(value: unknown): PostgresJsonValue {
   return value as PostgresJsonValue;
 }
-
-export function numberFromDb(
-  value: string | number | null | undefined,
-  field: string,
-): number {
-  if (value === null || value === undefined) throw new Error(`${field} returned null`);
-  return Number(value);
-}

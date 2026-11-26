@@ -130,8 +130,6 @@ export interface CardMutationSnapshot {
   card: ProjectedCard | null;
 }
 
-export type FolderListRow = FolderRow;
-
 export interface FolderActorParams {
   actorKind?: FolderOperationActorKind;
   actorSessionId: string | null;

@@ -8,6 +8,7 @@ import {
   type RealtimeEventAck,
   type RealtimeToolApprovalAck,
 } from "./realtime_ack.js";
+import { commandRequestId } from "./command_family.js";
 
 interface CommandLike {
   type?: string;
@@ -231,10 +232,6 @@ export class RealtimeCommands {
       stringifyError(err),
     );
   }
-}
-
-function commandRequestId(cmd: CommandLike): string {
-  return cmd.requestId ?? cmd.request_id ?? "";
 }
 
 function stringifyError(err: unknown): string {

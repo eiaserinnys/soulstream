@@ -106,5 +106,3 @@ export function createServerStore() {
     },
   };
 }
-
-export type ServerStore = ReturnType<typeof createServerStore>;

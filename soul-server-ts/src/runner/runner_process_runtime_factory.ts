@@ -22,8 +22,7 @@ import { restoreRunnerEngineEventMetadata } from "./engine_event_stream.js";
 import {
   buildRunnerClaudeRuntimeObservationResult,
 } from "./runner_claude_runtime_observation.js";
-import type { CodexCliPathResolution } from "@soulstream/executable-path";
-import type { AntigravityCliPathResolution } from "../engine/antigravity_cli_path.js";
+import type { AntigravityCliPathResolution, CodexCliPathResolution } from "@soulstream/executable-path";
 import type { McpConfigService } from "../mcp_config_service.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
 import type {

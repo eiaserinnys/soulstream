@@ -329,19 +329,6 @@ export function buildQueryVariants(
   return variants;
 }
 
-export function buildSemanticVariants(queries: readonly string[]): QueryVariant[] {
-  const seen = new Set<string>();
-  const variants: QueryVariant[] = [];
-  for (const value of queries) {
-    const normalized = normalizeSearchQuery(value);
-    const query = value.trim();
-    if (!normalized || seen.has(normalized) || variants.length >= 3) continue;
-    seen.add(normalized);
-    variants.push({ query, kind: `semantic_${variants.length + 1}` });
-  }
-  return variants;
-}
-
 export function assertSearchMayContinue(
   signal: AbortSignal | undefined,
   deadlineAt: number,

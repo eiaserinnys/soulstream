@@ -25,16 +25,6 @@ export const SHARED_CLAUDE_HOME_ENTRIES = [
   "agent-memory",
 ] as const;
 
-export const PER_PROFILE_CLAUDE_ENTRIES = [
-  ".credentials.json",
-  ".claude.json",
-  "sessions",
-  "debug",
-  "cache",
-  "locks",
-  "shell-snapshots",
-] as const;
-
 export class ClaudeAccountProfileSymlinkConflictError extends Error {
   readonly profileDir: string;
   readonly entryName: string;
