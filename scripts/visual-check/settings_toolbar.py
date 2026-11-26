@@ -16,9 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from playwright.sync_api import expect, sync_playwright  # noqa: E402
 
 from settings_toc import capture_settings_toc, measure_direct_open, measure_operations, write_operations as write_toc_operations  # noqa: E402
-from settings_toolbar_r2 import capture_r2, write_operations  # noqa: E402
+from settings_toolbar_r2 import capture_r2, pas_empty_nonadmin, write_operations  # noqa: E402
 from settings_toolbar_r3 import capture_r3  # noqa: E402
-from settings_toolbar_fakes import CHECKS, INDEX, Fake, SESSION_ID, FAKE_PASTED_CODE, FAKE_USER_CODE, assert_no_secret_output, check, DIST, flow, listen, new_page, open_settings, serve, shot, soon, toolbar_metrics, wait_for_call  # noqa: E402
+from settings_toolbar_fakes import CHECKS, assert_connect_guide, INDEX, Fake, SESSION_ID, FAKE_PASTED_CODE, FAKE_USER_CODE, assert_no_secret_output, check, DIST, flow, listen, new_page, open_settings, serve, shot, soon, toolbar_metrics, wait_for_call  # noqa: E402
 
 def capture_toolbars(browser, base, out: Path, prefix: str, atom_expected: bool):
     """PAS 창 툴바 360, 768, 1280과 기존 대시보드 툴바 360, 1280. atom 단추 유무와 넘침, 단추 크기를 잰다."""
@@ -204,27 +204,30 @@ def capture_empty_states(browser, base, out: Path, prefix: str):
     shot(page, out, "pas-empty-manual-create-1280.png", width, "영구 세션 만들기를 누르면 설정창의 생성 양식", page.locator('[data-slot="dialog-popup"]'))
     context.close()
 
-    # 켜졌지만 모델이 없음: 코딩 에이전트 연결 안내
-    for narrow in (1280, 360):
-        fake = Fake(atom=True, sessions="unavailable")
-        context, page = new_page(browser, base, fake, narrow)
-        page.goto(base + "/persistent", wait_until="domcontentloaded")
-        expect(page.get_by_test_id("persistent-empty-unavailable")).to_be_visible(timeout=20000)
-        check(f"빈 상태(연결 필요) {narrow}px: bootstrap을 부르지 않음", ("POST", "/api/persistent-sessions/bootstrap") not in fake.calls, fake.calls[-5:])
-        dims = page.evaluate("() => ({doc: document.documentElement.scrollWidth, inner: window.innerWidth})")
-        check(f"빈 상태(연결 필요) {narrow}px: 가로 넘침 없음", dims["doc"] <= dims["inner"], dims)
-        shot(page, out, f"pas-empty-unavailable-{narrow}.png", narrow, "PAS 0개, 연결 필요: 코딩 에이전트 연결 안내(관리자)", page)
-        if narrow == 1280:
-            page.get_by_role("button", name="코딩 에이전트 연결").click()
-            expect(page.get_by_test_id("coding-agents-tab")).to_be_visible(timeout=15000)
-            page.wait_for_timeout(400)
-            shot(page, out, "pas-empty-unavailable-connect-1280.png", narrow, "코딩 에이전트 연결을 누르면 설정창의 코딩 에이전트 탭", page.locator('[data-slot="dialog-popup"]'))
-            fake.sessions = "bootstrap"
-            page.locator('[data-slot="dialog-popup"]').get_by_role("button", name="완료").click()
-            expect(page.get_by_test_id("persistent-empty-creating")).to_be_visible(timeout=15000)
-            check("설정창을 닫은 뒤 목록을 다시 읽고 기본 세션 만들기로 이어짐", wait_for_call(page, fake, ("POST", "/api/persistent-sessions/bootstrap")), fake.calls[-6:])
-            fake.held_bootstrap.abort()  # 붙잡아 둔 요청을 놓아야 닫을 때 정리 오류가 나지 않는다.
-        context.close()
+    # 켜졌지만 모델이 없음: 코딩 에이전트 로그인 안내. 다크와 라이트 둘 다 찍고 제목, 사유 문장, 정렬을 잰다.
+    for theme in ("dark", "light"):
+        for narrow in (1280, 360):
+            fake = Fake(atom=True, sessions="unavailable")
+            context, page = new_page(browser, base, fake, narrow, theme=theme)
+            page.goto(base + "/persistent", wait_until="domcontentloaded")
+            expect(page.get_by_test_id("persistent-empty-unavailable")).to_be_visible(timeout=20000)
+            check(f"빈 상태(연결 필요) {narrow}px {theme}: bootstrap을 부르지 않음", ("POST", "/api/persistent-sessions/bootstrap") not in fake.calls, fake.calls[-5:])
+            dims = page.evaluate("() => ({doc: document.documentElement.scrollWidth, inner: window.innerWidth})")
+            check(f"빈 상태(연결 필요) {narrow}px {theme}: 가로 넘침 없음", dims["doc"] <= dims["inner"], dims)
+            assert_connect_guide(page, f"빈 상태(연결 필요, 관리자) {narrow}px {theme}", admin=True)
+            suffix = "" if theme == "dark" else "-light"
+            shot(page, out, f"pas-empty-unavailable-{narrow}{suffix}.png", narrow, f"PAS 0개, 연결 필요: 코딩 에이전트 로그인 안내(관리자, {theme})", page)
+            if narrow == 1280 and theme == "dark":
+                page.get_by_role("button", name="코딩 에이전트 연결").click()
+                expect(page.get_by_test_id("coding-agents-tab")).to_be_visible(timeout=15000)
+                page.wait_for_timeout(400)
+                shot(page, out, "pas-empty-unavailable-connect-1280.png", narrow, "코딩 에이전트 연결을 누르면 설정창의 코딩 에이전트 탭", page.locator('[data-slot="dialog-popup"]'))
+                fake.sessions = "bootstrap"
+                page.locator('[data-slot="dialog-popup"]').get_by_role("button", name="완료").click()
+                expect(page.get_by_test_id("persistent-empty-creating")).to_be_visible(timeout=15000)
+                check("설정창을 닫은 뒤 목록을 다시 읽고 기본 세션 만들기로 이어짐", wait_for_call(page, fake, ("POST", "/api/persistent-sessions/bootstrap")), fake.calls[-6:])
+                fake.held_bootstrap.abort()  # 붙잡아 둔 요청을 놓아야 닫을 때 정리 오류가 나지 않는다.
+            context.close()
 
     # 기본 세션 만드는 중, 그리고 성공하면 그 세션으로 이동
     fake = Fake(atom=True, sessions="bootstrap")
@@ -249,6 +252,7 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--baseline-dist", required=True)
     parser.add_argument("--only-r2", action="store_true", help="2차와 3차 보강 그림과 조작 결과만 찍는다(반복 확인용)")
+    parser.add_argument("--only-empty", action="store_true", help="연결 필요 빈 상태(관리자와 비관리자)만 찍는다(카드 #1905 반복 확인용)")
     parser.add_argument("--only-r3", action="store_true", help="3차 보강 그림만 찍는다(조작 결과 파일은 쓰지 않는다)")
     parser.add_argument("--only-toc", action="store_true", help="카드 #1883 설정창 목차만 이전 빌드(baseline-)와 이번 빌드로 찍고 조작 결과(operations.md)를 쓴다")
     parser.add_argument("--dist", default=None, help="찍을 빌드 폴더. 고치기 전 코드의 빌드를 줘서 3차 단언이 실패하는지 볼 때 쓴다")
@@ -270,6 +274,12 @@ def main():
                 browser.close()
                 write_toc_operations(out)
                 (out / "checks.json").write_text(json.dumps(CHECKS, ensure_ascii=False, indent=2), encoding="utf-8")
+                return
+            if args.only_empty:
+                capture_empty_states(browser, base, out, "")
+                pas_empty_nonadmin(browser, base, out)
+                browser.close()
+                write_index(out)
                 return
             if args.only_r3:
                 capture_r3(browser, base, out)

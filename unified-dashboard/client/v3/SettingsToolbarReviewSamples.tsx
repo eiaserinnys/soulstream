@@ -114,13 +114,16 @@ const emptyDefaults = (patch: Partial<PersistentCreateDefaults>): PersistentCrea
   ...patch,
 });
 
+/** 클린 설치에서 서버가 실제로 보내는 사유. 사유가 있어도 화면에 나오지 않음을 보이려고 일부러 긴 문장을 쓴다. */
+const UNAVAILABLE_REASON = "기본 모델 gemini-4-neon이(가) 노드 local에 없습니다. 기본 모델 claude-opus을(를) 지금 쓸 수 없습니다. 기본 모델 codex-6.2-sol을(를) 지금 쓸 수 없습니다.";
+
 export function PersistentEmptyStateReviewSamples() {
   const pending = { bootstrap: () => new Promise<{ created: boolean; session_id: string }>(() => undefined) };
   const failing = { bootstrap: async (): Promise<{ created: boolean; session_id: string }> => { throw new Error("서버가 응답하지 않았습니다 (503)."); } };
   const scenes = [
     { id: "manual", label: "bootstrap 꺼짐 · 영구 세션 만들기", api: pending, defaults: emptyDefaults({}), admin: true },
-    { id: "unavailable-admin", label: "연결 필요 · 관리자", api: pending, defaults: emptyDefaults({ bootstrap_enabled: true, unavailable_reason: "기본 모델 sample-sol을(를) 지금 쓸 수 없습니다." }), admin: true },
-    { id: "unavailable-user", label: "연결 필요 · 관리자가 아님", api: pending, defaults: emptyDefaults({ bootstrap_enabled: true, unavailable_reason: "기본 모델 sample-sol을(를) 지금 쓸 수 없습니다." }), admin: false },
+    { id: "unavailable-admin", label: "연결 필요 · 관리자", api: pending, defaults: emptyDefaults({ bootstrap_enabled: true, unavailable_reason: UNAVAILABLE_REASON }), admin: true },
+    { id: "unavailable-user", label: "연결 필요 · 관리자가 아님", api: pending, defaults: emptyDefaults({ bootstrap_enabled: true, unavailable_reason: UNAVAILABLE_REASON }), admin: false },
     { id: "creating", label: "기본 영구 세션을 만드는 중", api: pending, defaults: emptyDefaults({ bootstrap_enabled: true }), admin: true },
     { id: "failed", label: "만들기 실패 · 다시 시도", api: failing, defaults: emptyDefaults({ bootstrap_enabled: true }), admin: true },
   ];

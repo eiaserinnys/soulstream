@@ -323,6 +323,7 @@ export function ClaudePoolRow(props: Props) {
   const earliestAvailableAt = list.pool?.earliest_available_at ?? null;
   const poolBlocked = list.pool !== null && list.pool.available_count < list.pool.total_count && earliestAvailableAt !== null;
   const releaseLabel = poolBlocked ? clockLabel(earliestAvailableAt) : null;
+  const unconfigured = list.pool?.total_count === 0;
   const sessionCount = list.accounts.reduce((total, account) => total + account.active_sessions, 0);
   const statusColor = available > 0
     ? "var(--color-emerald-400)"
@@ -341,15 +342,19 @@ export function ClaudePoolRow(props: Props) {
       <div className="c724-account-identity">
         <span className="c724-status-dot" style={{ backgroundColor: statusColor }} />
         <span className="c724-account-email">Claude</span>
-        <span className="c724-pool-summary">{summaryText(list)}</span>
+        {unconfigured ? null : <span className="c724-pool-summary">{summaryText(list)}</span>}
         {!expanded && releaseLabel ? <span className="c724-badge c724-badge-warn">{releaseLabel} 해제</span> : null}
         {sessionCount > 0 ? <span className="c724-meta-inline">세션 {sessionCount}</span> : null}
       </div>
+      {unconfigured ? <span className="c724-meta-inline">미설정</span> : null}
       <div className="c724-account-actions" onClick={(event) => event.stopPropagation()}>
         {expanded ? <Button variant="outline" size="sm" disabled={busyAccountId !== null || loginFlow !== null} onClick={() => void beginLogin()}>
           <Plus className="size-4" aria-hidden="true" /> 계정 추가
         </Button> : null}
-        {!expanded ? <span className="c724-meta-inline">계정 {accounts.length}</span> : null}
+        {!expanded && unconfigured
+          ? <Button size="sm" disabled={busyAccountId !== null || loginFlow !== null} onClick={() => void beginLogin()}>연결</Button>
+          : null}
+        {!expanded && !unconfigured ? <span className="c724-meta-inline">계정 {accounts.length}</span> : null}
         <DashboardIconCap size="small" label={expanded ? "계정 접기" : "계정 펼치기"} aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
           {expanded ? <ChevronUp className="size-4" aria-hidden="true" /> : <ChevronDown className="size-4" aria-hidden="true" />}
         </DashboardIconCap>

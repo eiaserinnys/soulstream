@@ -21,6 +21,9 @@
     {출력}/provider-panel-settings-{폭}-{테마}.png
     {출력}/provider-panel-login-sheet-{폭}-{테마}.png
     {출력}/provider-panel-loading-{폭}-{테마}.png
+    {출력}/provider-panel-unconfigured-{폭}-{테마}.png        (Claude 계정 0개 · 연결 전)
+    {출력}/provider-panel-unconfigured-sheet-{폭}-{테마}.png  (연결을 눌러 시트가 열린 뒤)
+    {출력}/unconfigured-report.json   (연결 단추 위치·크기를 Codex 행과 견준 값과 판정)
     {출력}/measurements.json   (열 시작 좌표·막대 위쪽 좌표·막대 높이·정렬 판정·로딩 이동량)
     {출력}/report.json         (프레임별 텍스트 잘림·막대 높이·선택 규칙과 종합 판정)
 
@@ -43,10 +46,12 @@ THEMES = ("dark", "light")
 WIDTHS = (1280, 390)
 STATES = ("pool-collapsed", "pool-expanded", "legacy", "codex")
 STATE_NODE = {
+    "none": "sample-provider-none",
     "pool": "sample-provider-pool",
     "legacy": "sample-provider-legacy",
     "codex": "sample-provider-codex",
 }
+UNCONFIGURED_WIDTHS = (1280, 360)
 TOLERANCE_PX = 1.0
 MIN_TRACK_HEIGHT_PX = 3.5
 
@@ -325,11 +330,134 @@ def capture_weekly_usage(base: str, out: Path) -> int:
     return 0
 
 
+UNCONFIGURED_MEASURE_SCRIPT = """
+() => {
+  const round = (value) => Math.round(value * 10) / 10;
+  const box = (element) => {
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    return { x: round(rect.x), y: round(rect.y), width: round(rect.width), height: round(rect.height) };
+  };
+  const rowInfo = (id) => {
+    const row = document.querySelector(`[data-provider-id="${id}"]`);
+    const top = row?.querySelector('.c724-account-top') ?? null;
+    const buttons = Array.from(top?.querySelectorAll('button') ?? []).filter((item) => (item.textContent ?? '').trim() === '연결');
+    const meta = Array.from(top?.querySelectorAll('.c724-meta-inline') ?? []).find((item) => (item.textContent ?? '').trim() === '미설정') ?? null;
+    const caps = Array.from(top?.querySelectorAll('.c724-account-actions button') ?? []);
+    return {
+      top: box(top),
+      lastAction: box(caps[caps.length - 1] ?? null),
+      connect: box(buttons[0] ?? null),
+      connectCount: buttons.length,
+      unconfigured: box(meta),
+      unconfiguredFont: meta ? (() => { const style = window.getComputedStyle(meta); return `${style.fontSize} ${style.fontWeight} ${style.fontFamily}`; })() : null,
+      rowText: (top?.textContent ?? '').trim(),
+    };
+  };
+  const header = document.querySelector('[data-testid="claude-pool-row-header"]');
+  return {
+    claude: rowInfo('claude'),
+    codex: rowInfo('codex'),
+    antigravity: rowInfo('antigravity'),
+    claudeExpanded: header?.getAttribute('aria-expanded') ?? null,
+    pageOverflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  };
+}
+"""
+
+
+def center_of(rect: dict) -> float:
+    return rect["y"] + rect["height"] / 2
+
+
+def unconfigured_failures(info: dict) -> list[str]:
+    """Claude 행의 연결 단추가 Codex 행의 연결 단추와 같은 모양·같은 끝선이고 세로 가운데가 맞는지 본다."""
+    failures: list[str] = []
+    claude, codex = info["claude"], info["codex"]
+    if claude["unconfigured"] is None:
+        failures.append("Claude 행에 미설정 글자가 없음")
+    elif claude["unconfiguredFont"] != codex["unconfiguredFont"]:
+        failures.append(f"미설정 글자 모양이 Codex 행과 다름: {claude['unconfiguredFont']} / {codex['unconfiguredFont']}")
+    if claude["connectCount"] != 1:
+        failures.append(f"Claude 행의 연결 단추 {claude['connectCount']}개")
+        return failures
+    button, other = claude["connect"], codex["connect"]
+    for key in ("width", "height"):
+        if abs(button[key] - other[key]) > TOLERANCE_PX:
+            failures.append(f"연결 단추 {key}가 Codex 행과 다름: {button[key]} / {other[key]}")
+    # 펼치기 화살표가 행 맨 오른쪽에 남으므로 동작 묶음의 오른쪽 끝선(화살표)을 Codex 행의 연결 단추와 견준다.
+    last = claude["lastAction"]
+    right, other_right = last["x"] + last["width"], other["x"] + other["width"]
+    if abs(right - other_right) > TOLERANCE_PX:
+        failures.append(f"동작 묶음 오른쪽 끝선이 Codex 행과 다름: {right} / {other_right}")
+    # 미설정 글자는 Codex 행처럼 연결 단추 바로 왼쪽에 있다.
+    meta = claude["unconfigured"]
+    if meta is not None and abs((meta["y"] + meta["height"] / 2) - center_of(button)) > TOLERANCE_PX:
+        failures.append("미설정 글자와 연결 단추의 세로 가운데가 다름")
+    codex_meta = codex["unconfigured"]
+    if meta is not None and codex_meta is not None:
+        gap = button["x"] - (meta["x"] + meta["width"])
+        other_gap = other["x"] - (codex_meta["x"] + codex_meta["width"])
+        if abs(gap - other_gap) > TOLERANCE_PX:
+            failures.append(f"미설정과 연결 사이 간격이 Codex 행과 다름: {gap} / {other_gap}")
+    center = button["y"] + button["height"] / 2
+    row_center = claude["top"]["y"] + claude["top"]["height"] / 2
+    if abs(center - row_center) > TOLERANCE_PX:
+        failures.append(f"연결 단추가 행 세로 가운데에 없음: {center} / {row_center}")
+    if info["pageOverflowX"] > 0:
+        failures.append(f"가로 넘침 {info['pageOverflowX']}px")
+    return failures
+
+
+def capture_unconfigured(base: str, out: Path) -> list[str]:
+    """Claude 계정 0개 행을 1280px와 360px로 찍고, 연결을 눌러 시트를 연 장면까지 남긴다."""
+    reports: list[dict] = []
+    failures: list[str] = []
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        try:
+            for width in UNCONFIGURED_WIDTHS:
+                for theme in THEMES:
+                    context = browser.new_context(viewport={"width": width, "height": 900},
+                                                  color_scheme=theme, reduced_motion="reduce")
+                    install_page(context, theme)
+                    page = context.new_page()
+                    page.on("pageerror", lambda error: print(f"pageerror: {error}", file=sys.stderr))
+                    page.goto(f"{base}/components?sample=claude-accounts&state=none")
+                    settle(page)
+                    open_expanded_node(page, STATE_NODE["none"])
+                    page.wait_for_selector('[data-provider-id="codex"]', state="visible")
+                    key = f"unconfigured-{width}-{theme}"
+                    page.screenshot(path=str(out / f"provider-panel-{key}.png"), animations="disabled")
+                    info = page.evaluate(UNCONFIGURED_MEASURE_SCRIPT)
+                    found = unconfigured_failures(info)
+                    sheet_opened = False
+                    if info["claude"]["connectCount"] == 1:
+                        page.locator('[data-provider-id="claude"] .c724-account-top').get_by_role("button", name="연결", exact=True).click()
+                        page.wait_for_selector(".c724-auth-sheet", state="visible")
+                        page.evaluate("() => document.fonts.ready")
+                        sheet_opened = True
+                        page.screenshot(path=str(out / f"provider-panel-unconfigured-sheet-{width}-{theme}.png"), animations="disabled")
+                        if page.locator('[data-testid="claude-pool-row-header"]').get_by_role("button", name="계정 접기").count() > 0:
+                            found.append("연결을 눌렀더니 행이 펼쳐짐")
+                    else:
+                        found.append("연결 단추가 없어 시트를 열지 못함")
+                    reports.append({"capture": key, "sheetOpened": sheet_opened, "failures": found, "measured": info})
+                    failures.extend(f"{key}: {message}" for message in found)
+                    print(f"{key}: {'통과' if not found else '; '.join(found)}")
+                    context.close()
+        finally:
+            browser.close()
+    (out / "unconfigured-report.json").write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding="utf-8")
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="노드 공급자 사용량 패널 시각 검수")
     parser.add_argument("base_url", help="대시보드 dev 서버 주소 (예: http://127.0.0.1:5173)")
     parser.add_argument("output_dir", help="캡처와 measurements.json 을 둘 폴더")
     parser.add_argument("--weekly-usage", action="store_true", help="PAS와 초기화 시각 없는 계정 행을 캡처")
+    parser.add_argument("--unconfigured", action="store_true", help="Claude 계정 0개 행만 캡처하고 연결 단추를 Codex 행과 견줌")
     args = parser.parse_args()
 
     base = args.base_url.rstrip("/")
@@ -337,6 +465,12 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     if args.weekly_usage:
         return capture_weekly_usage(base, out)
+    if args.unconfigured:
+        problems = capture_unconfigured(base, out)
+        if problems:
+            print("\n".join(problems), file=sys.stderr)
+            return 1
+        return 0
     rows_out: list[dict] = []
     frames_out: list[dict] = []
     loading_tops: dict[str, list[float]] = {}
@@ -494,6 +628,7 @@ def main() -> int:
         f"계정 이메일 없음: {', '.join(missing_account_emails)}" if missing_account_emails else "",
     ]
     messages = [message for message in failed_groups if message]
+    messages.extend(capture_unconfigured(base, out))
     if messages:
         print("\n".join(messages), file=sys.stderr)
         return 1

@@ -56,7 +56,7 @@ SUMMARY = {"agentSessionId": SESSION_ID, "displayName": "검수 PAS", "status": 
 NODE = {"nodeId": "eiaserinnys", "host": "localhost", "port": 3105, "status": "connected", "capabilities": {}, "connectedAt": 0, "sessionCount": 1}
 MODEL_PRESETS = [{"id": "sample-sol", "label": "Sol", "backend": "codex", "available": True, "reason": None, "reason_label": None, "resets_at": None, "usage_warning": False}]
 CREATE_DEFAULTS = {"node_id": "eiaserinnys", "preferred_agent_id": "roselin", "settings": SETTINGS, "initial_instruction": "새 영구 에이전트 세션입니다."}
-UNAVAILABLE = "기본 모델 sample-sol을(를) 지금 쓸 수 없습니다."
+UNAVAILABLE = "기본 모델 gemini-4-neon이(가) 노드 local에 없습니다. 기본 모델 claude-opus을(를) 지금 쓸 수 없습니다. 기본 모델 codex-6.2-sol을(를) 지금 쓸 수 없습니다."
 
 
 def quota(qid, label, window, percent):
@@ -260,6 +260,56 @@ def wait_for_call(page, fake, call, timeout_ms=5000):
 def check(label, condition, detail):
     CHECKS.append({"check": label, "ok": bool(condition), "detail": detail})
     assert condition, f"{label}: {json.dumps(detail, ensure_ascii=False)}"
+
+
+# 서버가 보내는 사유 문장의 조각. 어느 것도 화면에 그려지면 안 된다.
+UNAVAILABLE_FRAGMENTS = ("gemini-4-neon", "claude-opus", "codex-6.2-sol", "지금 쓸 수 없습니다", "에 없습니다", "unavailable")
+
+CONNECT_GUIDE_MEASURE = """() => {
+    const root = document.querySelector('[data-testid="persistent-empty-unavailable"]');
+    const group = root.querySelector('.persistent-empty-state');
+    const title = group.querySelector(':scope > p');
+    const lines = [...title.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => {
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        const rects = [...range.getClientRects()];
+        return {text: n.textContent, rects: rects.length, left: Math.min(...rects.map((r) => r.left)), right: Math.max(...rects.map((r) => r.right)), top: Math.min(...rects.map((r) => r.top))};
+    });
+    const steps = [...group.querySelectorAll('.persistent-empty-steps > li')];
+    const list = group.querySelector('.persistent-empty-steps');
+    const button = [...group.querySelectorAll('button')].find((b) => b.textContent.trim() === '코딩 에이전트 연결');
+    const frame = group.parentElement.getBoundingClientRect();
+    const box = group.getBoundingClientRect();
+    return {
+        lines, steps: steps.map((li) => li.textContent), listLeft: list ? list.getBoundingClientRect().left : null,
+        stepLeft: steps.map((li) => li.getBoundingClientRect().left), buttonLeft: button ? button.getBoundingClientRect().left : null,
+        buttonCount: group.querySelectorAll('button').length, groupLeft: box.left, groupRight: box.right,
+        frameLeft: frame.left, frameRight: frame.right, text: root.innerText,
+        reasonNodes: document.querySelectorAll('.persistent-empty-reason').length,
+        docScrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth,
+    };
+}"""
+
+TITLE_ADMIN = ("기본 영구 세션을 만들기 위해", "코딩 에이전트에 로그인해주세요.")
+TITLE_USER = ("기본 영구 세션을 만들기 위해", "관리자가 코딩 에이전트에 로그인해야 합니다.")
+
+
+def assert_connect_guide(page, label, admin):
+    """연결 필요 안내의 실측. 제목 두 줄, 사유 문장 없음, 단계와 단추의 왼쪽 끝이 제목과 같음, 묶음이 프레임 가운데, 가로 넘침 없음."""
+    m = page.evaluate(CONNECT_GUIDE_MEASURE)
+    want = TITLE_ADMIN if admin else TITLE_USER
+    check(f"{label}: 제목이 두 줄이고 정해진 자리에서 끊김", [line["text"] for line in m["lines"]] == list(want) and all(line["rects"] == 1 for line in m["lines"]) and m["lines"][0]["top"] < m["lines"][1]["top"], m["lines"])
+    check(f"{label}: 서버 사유 문장이 화면에 없음", not any(piece in m["text"] for piece in UNAVAILABLE_FRAGMENTS) and m["reasonNodes"] == 0, m["text"])
+    left = min(line["left"] for line in m["lines"])
+    if admin:
+        check(f"{label}: 단계 두 줄과 단추", len(m["steps"]) == 2 and m["buttonCount"] == 1, {"steps": m["steps"], "buttons": m["buttonCount"]})
+        check(f"{label}: 단계와 단추의 왼쪽 끝이 제목과 같음", abs(m["listLeft"] - left) <= 1 and all(abs(x - left) <= 1 for x in m["stepLeft"]) and abs(m["buttonLeft"] - left) <= 1, {"title": left, "list": m["listLeft"], "steps": m["stepLeft"], "button": m["buttonLeft"]})
+    else:
+        check(f"{label}: 비관리자는 제목만(단계와 단추 없음)", not m["steps"] and m["buttonCount"] == 0 and m["listLeft"] is None, {"steps": m["steps"], "buttons": m["buttonCount"]})
+    center_gap = abs((m["groupLeft"] + m["groupRight"]) / 2 - (m["frameLeft"] + m["frameRight"]) / 2)
+    check(f"{label}: 묶음이 프레임 가운데에 섬", center_gap <= 2, {"group": [m["groupLeft"], m["groupRight"]], "frame": [m["frameLeft"], m["frameRight"]]})
+    check(f"{label}: 글이 프레임 밖으로 나가지 않고 가로 넘침 없음", m["groupLeft"] >= m["frameLeft"] - 1 and m["groupRight"] <= m["frameRight"] + 1 and max(line["right"] for line in m["lines"]) <= m["frameRight"] + 1 and m["docScrollWidth"] <= m["innerWidth"], m)
+    return m
 
 
 def listen(page, sink):

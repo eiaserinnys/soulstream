@@ -185,6 +185,33 @@ describe("ClaudePoolRow", () => {
     expect(host.querySelectorAll(".c724-quota-cell")).toHaveLength(3);
   });
 
+  it("계정이 하나도 없으면 미설정과 연결을 보이고, 연결은 펼치지 않고 로그인 시트를 연다", async () => {
+    const initial = list([], { available_count: 0, best_weekly_remaining_percent: null, best_weekly_resets_at: null });
+    const requestMock = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input) === "/api/nodes/node-a/claude-auth/logins" && init?.method === "POST") return data(flow("url_ready"));
+      return data(initial);
+    });
+    await mount(initial, requestMock as unknown as typeof fetch);
+
+    expect(host.querySelector(".c724-meta-inline")?.textContent).toBe("미설정");
+    expect(host.textContent).not.toContain("0/0 가용");
+
+    await act(async () => button("연결").click());
+    await settle();
+
+    expect(requestMock).toHaveBeenCalledWith("/api/nodes/node-a/claude-auth/logins", expect.objectContaining({ method: "POST" }));
+    expect(host.querySelector('[data-testid="claude-login-sheet"]')).not.toBeNull();
+    expect(header().getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("계정이 있으면 미설정과 연결을 보이지 않는다", async () => {
+    const initial = list([account("first", 1)]);
+    await mount(initial, vi.fn(async () => data(initial)) as unknown as typeof fetch);
+
+    expect(host.textContent).not.toContain("미설정");
+    expect(() => button("연결")).toThrow("Missing button: 연결");
+  });
+
   it("reveals the account list and the add button when the header is expanded", async () => {
     const initial = list([account("first", 1), account("second", 2)]);
     await mount(initial, vi.fn(async () => data(initial)) as unknown as typeof fetch);

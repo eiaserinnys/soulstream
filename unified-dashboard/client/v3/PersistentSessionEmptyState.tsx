@@ -8,7 +8,7 @@ type Bootstrap = { phase: 'idle' } | { phase: 'creating' } | { phase: 'failed'; 
 /**
  * PAS 창에 영구 세션이 하나도 없을 때의 본문. 세 경우를 가른다.
  * - 서버가 기본 세션을 만들 수 있으면(bootstrap_enabled, 사유 없음) 한 번 부르고 그 세션으로 간다.
- * - 만들 수 있게 켜졌지만 모델이 없으면(사유 있음) 코딩 에이전트 연결을 안내한다.
+ * - 만들 수 있게 켜졌지만 모델이 없으면(사유 있음) 코딩 에이전트 로그인을 안내한다. 사유 문장은 그리지 않는다.
  * - 켜져 있지 않으면 설정창의 생성 양식으로 안내한다.
  */
 export function PersistentSessionEmptyState({ api, defaults, isAdmin, onOpenCodingAgents, onCreate }: {
@@ -59,11 +59,19 @@ export function PersistentSessionEmptyState({ api, defaults, isAdmin, onOpenCodi
     </FrameNotice>;
     return <FrameLoading label="기본 영구 세션을 만드는 중입니다" data-testid="persistent-empty-creating" />;
   }
+  // 서버가 보낸 사유(unavailable_reason)는 기술 문장이라 화면에 그리지 않는다. canBootstrap 판정에만 쓴다.
   if (bootstrapEnabled) return <FrameNotice data-testid="persistent-empty-unavailable">
-    <div className="persistent-empty-state">
-      <p>코딩 에이전트를 연결하면 기본 영구 세션을 만듭니다</p>
-      {reason ? <p className="persistent-empty-reason" data-v3-selectable-content="true">{reason}</p> : null}
-      {isAdmin ? <Button onClick={onOpenCodingAgents}>코딩 에이전트 연결</Button> : null}
+    <div className="persistent-empty-state persistent-empty-state--steps">
+      {isAdmin
+        ? <p>기본 영구 세션을 만들기 위해<br />코딩 에이전트에 로그인해주세요.</p>
+        : <p>기본 영구 세션을 만들기 위해<br />관리자가 코딩 에이전트에 로그인해야 합니다.</p>}
+      {isAdmin ? <>
+        <ol className="persistent-empty-steps">
+          <li>설정에서 Claude, Codex, Antigravity 가운데 하나를 연결합니다</li>
+          <li>안내대로 로그인하고 설정을 닫습니다</li>
+        </ol>
+        <Button onClick={onOpenCodingAgents}>코딩 에이전트 연결</Button>
+      </> : null}
     </div>
   </FrameNotice>;
   return <FrameNotice data-testid="persistent-empty-manual">

@@ -10,6 +10,7 @@ from pathlib import Path
 from playwright.sync_api import expect
 
 from settings_toolbar_fakes import (
+    assert_connect_guide,
     FAKE_PASTED_CODE, FAKE_USER_CODE, SESSION_ID, Fake, check, flow, new_page, open_settings, shot, soon, toolbar_metrics,
 )
 
@@ -332,13 +333,22 @@ def frames_and_states(browser, base, out: Path):
             for route in fake.held_usage:
                 route.abort()
         context.close()
-    fake = Fake(atom=True, sessions="unavailable", admin=False)
-    context, page = new_page(browser, base, fake, 1280)
-    page.goto(base + "/persistent", wait_until="domcontentloaded")
-    expect(page.get_by_test_id("persistent-empty-unavailable")).to_be_visible(timeout=20000)
-    check("빈 상태(연결 필요) 관리자가 아님: 코딩 에이전트 연결 단추가 없음", page.get_by_role("button", name="코딩 에이전트 연결").count() == 0, "단추 없음")
-    shot(page, out, "pas-empty-unavailable-nonadmin-1280.png", 1280, "PAS 0개, 연결 필요: 관리자가 아닌 사용자(단추 없음)", page)
-    context.close()
+    pas_empty_nonadmin(browser, base, out)
+
+
+def pas_empty_nonadmin(browser, base, out: Path):
+    """연결 필요 빈 상태, 관리자가 아닌 사용자. 제목 두 줄만 있고 단추, 단계, 사유 문장이 없다. 다크와 라이트, 1280과 360."""
+    for theme in ("dark", "light"):
+        for width in (1280, 360):
+            fake = Fake(atom=True, sessions="unavailable", admin=False)
+            context, page = new_page(browser, base, fake, width, theme=theme)
+            page.goto(base + "/persistent", wait_until="domcontentloaded")
+            expect(page.get_by_test_id("persistent-empty-unavailable")).to_be_visible(timeout=20000)
+            check(f"빈 상태(연결 필요) 관리자가 아님 {width}px {theme}: 코딩 에이전트 연결 단추가 없음", page.get_by_role("button", name="코딩 에이전트 연결").count() == 0, "단추 없음")
+            assert_connect_guide(page, f"빈 상태(연결 필요, 관리자가 아님) {width}px {theme}", admin=False)
+            suffix = "" if theme == "dark" else "-light"
+            shot(page, out, f"pas-empty-unavailable-nonadmin-{width}{suffix}.png", width, f"PAS 0개, 연결 필요: 관리자가 아닌 사용자(제목만, {theme})", page)
+            context.close()
 
 
 def bootstrap_failed(browser, base, out: Path):
