@@ -78,6 +78,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,
+      node_git_setup_v1: true,
       agent_login_v1: true,
     });
     expect(msg.supported_backends).toEqual(["codex"]);
@@ -110,6 +111,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,
+      node_git_setup_v1: true,
       agent_login_v1: true,
       runner_process_v1: true,
     });
@@ -169,6 +171,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,
+      node_git_setup_v1: true,
     });
     expect(msg.supported_backends).toEqual([]);
   });
@@ -267,6 +270,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,
+      node_git_setup_v1: true,
       agent_login_v1: true,
     });
     expect((msg.supported_backends ?? []).slice().sort()).toEqual(["claude", "codex"]);
@@ -358,6 +362,7 @@ describe("Claude account pool registration capability", () => {
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,
+      node_git_setup_v1: true,
       claude_account_pool_v1: true,
     });
   });
@@ -510,5 +515,17 @@ describe("buildRegistrationMsg — portrait wire (Python adapter.py:212-233 정�
     } finally {
       rmSync(altPath, { force: true });
     }
+  });
+});
+
+describe("node_git_setup_v1 capability", () => {
+  it("광고 조건 없이 항상 알린다", () => {
+    const msg = buildRegistrationMsg({
+      nodeId: "node-a",
+      host: "h",
+      port: 1,
+      agentRegistry: new AgentRegistry([]),
+    } as never);
+    expect(msg.capabilities?.node_git_setup_v1).toBe(true);
   });
 });

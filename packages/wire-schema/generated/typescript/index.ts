@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 215개 $defs (top-level wire 108 + supporting/SSE 107). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 226개 $defs (top-level wire 114 + supporting/SSE 112). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -94,6 +94,12 @@ export type SoulstreamUpstreamProtocol =
   | AgentLoginStatus
   | AgentLoginSubmitCode
   | AgentLoginCancel
+  | NodeGitStatus
+  | NodeGitIdentitySet
+  | NodeGitSshKeyCreate
+  | NodeGitSshCheck
+  | NodeGitCloneStart
+  | NodeGitCloneStatus
   | ClaudeCentralPoolSync
   | McpCentralSync
   | McpTestServer
@@ -147,6 +153,10 @@ export interface NodeRegister {
      * Codex와 Antigravity 로그인 명령(agent_login_*)을 처리할 수 있다.
      */
     agent_login_v1?: boolean;
+    /**
+     * 노드 Git 설정과 저장소 명령(node_git_*)을 처리할 수 있다.
+     */
+    node_git_setup_v1?: boolean;
     central_mcp_config_v1?: boolean;
     control_channel_v1?: boolean;
     [k: string]: unknown;
@@ -3477,6 +3487,167 @@ export interface AgentLoginCancel {
   [k: string]: unknown;
 }
 /**
+ * orch→노드: Git 사용자, SSH 키, 저장소 목록 조회.
+ */
+export interface NodeGitStatus {
+  type: "node_git_status";
+  requestId?: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: NodeGitSetupSnapshot;
+  error?: NodeGitError;
+  [k: string]: unknown;
+}
+/**
+ * 노드 워커 계정의 Git 사용자, SSH 키, 저장소 목록, 최근 클론 작업 스냅샷. 비밀키 내용은 담지 않는다.
+ */
+export interface NodeGitSetupSnapshot {
+  identity: {
+    name: string | null;
+    email: string | null;
+  };
+  ssh: {
+    state: "ready" | "missing" | "public_missing";
+    key_path: string;
+    public_key: string | null;
+  };
+  projects: {
+    state: "ready" | "root_unset" | "root_missing";
+    root: string | null;
+    repos: NodeGitRepoSummary[];
+  };
+  clone: NodeGitCloneJob | null;
+}
+/**
+ * WORKTREE_PROJECTS_ROOT 바로 아래 저장소 한 건의 요약.
+ */
+export interface NodeGitRepoSummary {
+  name: string;
+  origin_url: string | null;
+  /**
+   * detached HEAD면 null.
+   */
+  branch: string | null;
+  /**
+   * 추적 파일의 변경이 있거나 상태를 끝까지 읽지 못하면 true.
+   */
+  dirty: boolean;
+}
+/**
+ * 노드 메모리에 보관되는 클론 작업 한 건.
+ */
+export interface NodeGitCloneJob {
+  clone_id: string;
+  repo_name: string;
+  url: string;
+  state: "running" | "done" | "failed";
+  error: NodeGitError | null;
+  /**
+   * UTC ISO 8601.
+   */
+  started_at: string;
+  /**
+   * UTC ISO 8601.
+   */
+  finished_at: string | null;
+}
+export interface NodeGitError {
+  code: string;
+  message: string;
+  field?: "name" | "email" | "host" | "url" | "repo_name";
+  detail?: string;
+}
+/**
+ * orch→노드: 워커 계정의 git user.name과 user.email 저장.
+ */
+export interface NodeGitIdentitySet {
+  type: "node_git_identity_set";
+  requestId?: string;
+  name: string;
+  email: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: NodeGitSetupSnapshot;
+  error?: NodeGitError;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: ~/.ssh/id_ed25519 키 쌍 생성. 이미 있으면 덮어쓰지 않는다.
+ */
+export interface NodeGitSshKeyCreate {
+  type: "node_git_ssh_key_create";
+  requestId?: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: NodeGitSetupSnapshot;
+  error?: NodeGitError;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: git@host SSH 연결 확인.
+ */
+export interface NodeGitSshCheck {
+  type: "node_git_ssh_check";
+  requestId?: string;
+  host: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: NodeGitSshCheckResult;
+  error?: NodeGitError;
+  [k: string]: unknown;
+}
+/**
+ * SSH 연결 확인 결과. 연결 실패도 명령 성공이며 ok=false로 돌려준다.
+ */
+export interface NodeGitSshCheckResult {
+  host: string;
+  ok: boolean;
+  reason: "connected" | "auth_failed" | "unreachable" | "host_key_mismatch" | "failed";
+  /**
+   * 출력의 비어 있지 않은 첫 줄, 최대 300자.
+   */
+  output: string;
+}
+/**
+ * orch→노드: WORKTREE_PROJECTS_ROOT 아래로 저장소 클론 시작.
+ */
+export interface NodeGitCloneStart {
+  type: "node_git_clone_start";
+  requestId?: string;
+  url: string;
+  repo_name?: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: NodeGitCloneJob;
+  error?: NodeGitError;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: 클론 작업 상태 조회.
+ */
+export interface NodeGitCloneStatus {
+  type: "node_git_clone_status";
+  requestId?: string;
+  clone_id: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: NodeGitCloneJob;
+  error?: NodeGitError;
+  [k: string]: unknown;
+}
+/**
  * orch→노드: 중앙 Claude 계정 풀 스냅샷 동기화. revision이 노드가 가진 것보다 작으면 버린다.
  */
 export interface ClaudeCentralPoolSync {
@@ -4049,6 +4220,12 @@ export const CONTROL_COMMAND_TYPES = [
   "apply_agent_profile_update",
   "list_agents_config_snapshots",
   "rollback_agents_config",
+  "node_git_status",
+  "node_git_identity_set",
+  "node_git_ssh_key_create",
+  "node_git_ssh_check",
+  "node_git_clone_start",
+  "node_git_clone_status",
   "workspace_snapshot",
   "workspace_file_read",
   "workspace_file_diff",

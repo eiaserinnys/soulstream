@@ -26,6 +26,10 @@ export function supportsAgentLogin(capabilities: unknown): boolean {
   return isRecord(capabilities) && capabilities.agent_login_v1 === true;
 }
 
+export function supportsNodeGitSetup(capabilities: unknown): boolean {
+  return isRecord(capabilities) && capabilities.node_git_setup_v1 === true;
+}
+
 export function runnerInventoryCommandType(
   capabilities: unknown,
 ): "list_runner_inventory" | "list_sessions" {

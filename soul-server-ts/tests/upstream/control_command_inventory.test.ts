@@ -16,6 +16,7 @@ import { createHealthCommandFamily } from "../../src/upstream/health_command_fam
 import { createInterventionCommandFamily } from "../../src/upstream/intervention_command_family.js";
 import { createRealtimeCommandFamily } from "../../src/upstream/realtime_command_family.js";
 import { createReflectionCommandFamily } from "../../src/upstream/reflection_command_family.js";
+import { createNodeGitCommandFamily } from "../../src/upstream/node_git_command_family.js";
 import { createSessionCommandFamily } from "../../src/upstream/session_command_family.js";
 
 describe("control command inventory", () => {
@@ -32,10 +33,11 @@ describe("control command inventory", () => {
       ...createMcpConfigCommandFamily({} as never),
       ...createReflectionCommandFamily({} as never),
       ...createAgentConfigCommandFamily({} as never),
+      ...createNodeGitCommandFamily({} as never),
     }).sort();
     const inventoryTypes = CONTROL_COMMAND_INVENTORY.map(({ type }) => type).sort();
 
-    expect(inventoryTypes).toHaveLength(64);
+    expect(inventoryTypes).toHaveLength(70);
     expect(new Set(inventoryTypes).size).toBe(inventoryTypes.length);
     expect(inventoryTypes).toEqual(handlerTypes);
     expect(inventoryTypes).toEqual([...CONTROL_COMMAND_TYPES].sort());
@@ -54,6 +56,7 @@ describe("control command inventory", () => {
         "auth/provider-usage",
         "reflection",
         "agent-config",
+        "node-git",
         "mcp-config",
       ]),
     );
@@ -130,6 +133,12 @@ describe("control command inventory", () => {
       { type: "apply_agent_profile_update", family: "agent-config", policy: "durable_mutation" },
       { type: "list_agents_config_snapshots", family: "agent-config", policy: "bounded_result" },
       { type: "rollback_agents_config", family: "agent-config", policy: "durable_mutation" },
+      { type: "node_git_status", family: "node-git", policy: "bounded_result" },
+      { type: "node_git_identity_set", family: "node-git", policy: "bounded_result" },
+      { type: "node_git_ssh_key_create", family: "node-git", policy: "bounded_result" },
+      { type: "node_git_ssh_check", family: "node-git", policy: "bounded_result" },
+      { type: "node_git_clone_start", family: "node-git", policy: "bounded_result" },
+      { type: "node_git_clone_status", family: "node-git", policy: "bounded_result" },
     ]);
   });
 
@@ -151,6 +160,15 @@ describe("control command inventory", () => {
     expect(boundedResultTimeoutMs("test_mcp_server", 900)).toBe(14_500);
     expect(boundedResultTimeoutMs("preview_agent_mcp", 900)).toBe(5_000);
     expect(boundedResultTimeoutMs("list_sessions", 900)).toBe(900);
+  });
+
+  it("gives each node_git command its own budget", () => {
+    expect(boundedResultTimeoutMs("node_git_status", 900)).toBe(10_000);
+    expect(boundedResultTimeoutMs("node_git_identity_set", 900)).toBe(5_000);
+    expect(boundedResultTimeoutMs("node_git_ssh_key_create", 900)).toBe(10_000);
+    expect(boundedResultTimeoutMs("node_git_ssh_check", 900)).toBe(20_000);
+    expect(boundedResultTimeoutMs("node_git_clone_start", 900)).toBe(5_000);
+    expect(boundedResultTimeoutMs("node_git_clone_status", 900)).toBe(5_000);
   });
 
   it("gives list_runner_inventory 85 seconds (card #1266 U6) and leaves other commands on 900 milliseconds", () => {

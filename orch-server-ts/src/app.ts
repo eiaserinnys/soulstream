@@ -1,3 +1,4 @@
+import { registerNodeGitSetupRoutes, type NodeGitSetupRouteOptions } from "./node/node_git_setup_routes.js";
 import { registerAgentContextOverviewRoutes, type AgentContextOverviewRouteOptions } from "./node/agent_context_overview_routes.js";
 import { registerSkillGuidesRoutes, type SkillGuidesRouteOptions } from "./skills/skill_guides_routes.js";
 import { registerPersistentDefaultsRoutes, type PersistentDefaultsRoutes } from "./admin/persistent_defaults_routes.js";
@@ -242,6 +243,7 @@ export type CreateAppOptions = {
   cardOrchestrationRoutes?:CardOrchestrationRouteOptions;
   cardOrchestrationDecisionRoutes?:CardOrchestrationDecisionRouteOptions;
   nodeClaudeAuthRoutes?: NodeClaudeAuthRouteOptions;
+  nodeGitSetupRoutes?: NodeGitSetupRouteOptions;
   claudeCentralRoutes?: ClaudeCentralRouteOptions;
   mcpCentralRoutes?: McpCentralRouteOptions;
   nodeAgentProfileRoutes?: NodeAgentProfileRouteOptions;
@@ -323,6 +325,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.nodeClaudeAuthRoutes !== undefined) {
     registerNodeClaudeAuthRoutes(app, options.nodeClaudeAuthRoutes);
+  }
+  if (options.nodeGitSetupRoutes !== undefined) {
+    registerNodeGitSetupRoutes(app, options.nodeGitSetupRoutes);
   }
   if (options.claudeCentralRoutes !== undefined) {
     registerClaudeCentralRoutes(app, options.claudeCentralRoutes);

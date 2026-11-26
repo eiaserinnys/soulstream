@@ -1,7 +1,11 @@
+import { homedir } from "node:os";
+
 import { WorkspaceService, registerWorkspaceService } from "../workspace/workspace_service.js";
 import type { Logger } from "pino";
 
 import type { AgentLoginCommandHandler } from "../upstream/agent_login_commands.js";
+import { NodeGitService } from "../node_git/node_git_service.js";
+import { runBoundedProcess } from "../worktree/worktree_process.js";
 import type { AuthorizeOrchestrationWorker } from "../upstream/task_runtime_commands.js";
 import type { AgentConfigService } from "../agent_config_service.js";
 import type { FileAttachmentStore } from "../attachments/file_manager.js";
@@ -135,6 +139,13 @@ export function composeWorkerUpstreamAdapter({
       ...(claudeAccounts ? { claudeAccounts } : {}),
       ...(claudeLoginService ? { claudeLoginService } : {}),
       ...(agentLoginService ? { agentLoginService } : {}),
+      nodeGitService: new NodeGitService({
+        nodeId: env.SOULSTREAM_NODE_ID,
+        homeDir: homedir(),
+        projectsRoot: env.WORKTREE_PROJECTS_ROOT ?? null,
+        env: process.env,
+        processRunner: runBoundedProcess,
+      }),
       claudeAccountPoolEnabled: env.CLAUDE_ACCOUNT_POOL_ENABLED,
       providerUsage,
       sessionDb,

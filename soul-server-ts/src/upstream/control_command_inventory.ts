@@ -13,6 +13,7 @@ export type ControlCommandFamily =
   | "auth/provider-usage"
   | "reflection"
   | "agent-config"
+  | "node-git"
   | "mcp-config";
 
 export type ControlCommandPolicy =
@@ -92,6 +93,12 @@ export const CONTROL_COMMAND_INVENTORY = [
   entry("apply_agent_profile_update", "agent-config", "durable_mutation"),
   entry("list_agents_config_snapshots", "agent-config", "bounded_result"),
   entry("rollback_agents_config", "agent-config", "durable_mutation"),
+  entry("node_git_status", "node-git", "bounded_result"),
+  entry("node_git_identity_set", "node-git", "bounded_result"),
+  entry("node_git_ssh_key_create", "node-git", "bounded_result"),
+  entry("node_git_ssh_check", "node-git", "bounded_result"),
+  entry("node_git_clone_start", "node-git", "bounded_result"),
+  entry("node_git_clone_status", "node-git", "bounded_result"),
 ] as const satisfies readonly ControlCommandInventoryEntry[];
 
 const INVENTORY_BY_TYPE = new Map<string, ControlCommandInventoryEntry>(
@@ -116,6 +123,12 @@ export function boundedResultTimeoutMs(commandType: string, fallbackMs: number):
     case "test_mcp_server": return 14_500;
     case "preview_agent_mcp": return 5_000;
     case "workspace_snapshot": return 5_000;
+    case "node_git_status": return 10_000;
+    case "node_git_identity_set": return 5_000;
+    case "node_git_ssh_key_create": return 10_000;
+    case "node_git_ssh_check": return 20_000;
+    case "node_git_clone_start":
+    case "node_git_clone_status": return 5_000;
     case "workspace_file_read":
     case "workspace_file_diff": return 30_000;
     case "provider_usage_get":

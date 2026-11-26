@@ -120,6 +120,7 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
       runner_inventory_v1: true,
       ...(params.claudeAccountPoolEnabled ? { claude_account_pool_v1: true } : {}),
       ...(supportsAgentLogin(supportedBackends) ? { agent_login_v1: true } : {}),
+      node_git_setup_v1: true,
       ...(params.controlChannelEnabled ? { control_channel_v1: true } : {}),
       ...(params.runnerProcessEnabled === undefined
         ? {}

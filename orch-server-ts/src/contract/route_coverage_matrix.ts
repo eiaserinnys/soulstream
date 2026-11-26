@@ -33,6 +33,7 @@ import { agentContextOverviewRouteAuthRequirements } from "../node/agent_context
 import { skillGuidesRouteAuthRequirements } from "../skills/skill_guides_routes.js";
 import { nodeAgentProfileRouteAuthRequirements } from "../node/node_agent_profile_routes.js";
 import { nodeClaudeAuthRouteAuthRequirements } from "../node/node_claude_auth_routes.js";
+import { nodeGitSetupRouteAuthRequirements } from "../node/node_git_setup_routes.js";
 import { nodeSnapshotRouteAuthRequirements } from "../node/node_snapshot_routes.js";
 import { nodeWsRouteAuthRequirements } from "../node/ws_route.js";
 import { nodePairingRouteAuthRequirements } from "../node_credentials/pairing_routes.js";
@@ -103,6 +104,7 @@ export const routeCoverageOwners = [
   { owner: "node.agent-context-overview", authRequirements: agentContextOverviewRouteAuthRequirements },
   { owner: "skill.guides", authRequirements: skillGuidesRouteAuthRequirements },
   { owner: "node.claude-auth", authRequirements: nodeClaudeAuthRouteAuthRequirements },
+  { owner: "node.git-setup", authRequirements: nodeGitSetupRouteAuthRequirements },
   { owner: "node.snapshot", authRequirements: nodeSnapshotRouteAuthRequirements },
   { owner: "node.pairing", authRequirements: nodePairingRouteAuthRequirements },
   { owner: "node.releases", authRequirements: nodeReleaseRouteAuthRequirements },
@@ -208,6 +210,12 @@ export const tsOnlyRouteKeys = [
   "GET /api/nodes/{node_id}/agent-logins/{login_id}",
   "POST /api/nodes/{node_id}/agent-logins/{login_id}/code",
   "DELETE /api/nodes/{node_id}/agent-logins/{login_id}",
+  "GET /api/nodes/{node_id}/git",
+  "PUT /api/nodes/{node_id}/git/identity",
+  "POST /api/nodes/{node_id}/git/ssh-key",
+  "POST /api/nodes/{node_id}/git/ssh-check",
+  "POST /api/nodes/{node_id}/git/clones",
+  "GET /api/nodes/{node_id}/git/clones/{clone_id}",
   "GET /api/usage/stream",
   "GET /api/admin/settings/persistent-defaults",
   "PUT /api/admin/settings/persistent-defaults",
