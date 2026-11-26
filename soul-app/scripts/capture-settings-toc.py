@@ -78,6 +78,7 @@ def capture(browser, base: str, out: Path, prefix: str, results: dict, assert_ne
             visible = [row for rows in EXPECTED_CATEGORIES for row in rows if row in toc["rows"]]
             assert toc["rows"] == visible, (label, toc["rows"])
             assert toc["sw"] <= toc["cw"] and toc["doc"] <= toc["inner"], (label, toc)
+            assert "외부 에이전트" in toc["text"] and "내 에이전트" not in toc["text"], (label, toc["text"])
         page.screenshot(path=str(out / f"{prefix}app-settings-{label}.png"))
         context.close()
 

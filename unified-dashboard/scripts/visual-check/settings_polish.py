@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """설정 창 카탈로그 선택 상자·인라인 오류 글 대비 검수 (카드 #1691, 범위 축소).
 
-`/dialogues?sample=settings`의 내 에이전트·접속 링크 탭과, 설정 창 밖 컴포넌트 검수 창
+`/dialogues?sample=settings`의 외부 에이전트·접속 링크 탭과, 설정 창 밖 컴포넌트 검수 창
 (`/components`)에서 남는 항목 3과 4만 잰다.
 
   - 카탈로그 선택 상자의 트리거 값이 soul-ui SelectValue 이고, 처음 값이 첫 항목이 아닐 때
     열면 고른 항목 글자와 트리거 값 글자의 위쪽 끝 차이가 1px 이하인지
     (설정 창 접속 링크 + 설정 창 밖 컴포넌트 검수 창),
   - 라이트·다크에서 인라인 오류 글의 계산된 글자색과 뷰포트 전체 캡처의 실제 바탕 화소 대비가
-    4.5:1 이상인지 (내 에이전트 불러오기 실패, SettingsAlert, 접속 링크 폼 small[role=alert]),
+    4.5:1 이상인지 (외부 에이전트 불러오기 실패, SettingsAlert, 접속 링크 폼 small[role=alert]),
   - ui-design 0절 14~18번: 설정 창을 열 때(어떤 탭도 누르기 전)와 실제로 탭을 누른 뒤의 초점,
     선택 상자 Tab 과 Esc 의 초점, 360 넘침, 오류 상태와 다시 시도, 열린 채 1280↔360 창 크기 바꾸기.
 
-내 에이전트의 불러오기 실패는 앱 견본의 `ownedState=error`(첫 요청 503, 다시 시도하면 성공)로
+외부 에이전트의 불러오기 실패는 앱 견본의 `ownedState=error`(첫 요청 503, 다시 시도하면 성공)로
 만든다. 접속 링크 응답은 앱 코드가 `accessLinksVisual` 질의에서 실제 fetch 로 통과시켜
 page.route 가 받는다.
 
@@ -340,7 +340,7 @@ def run(browser, base: str, out: Path, captures: list[str], measurements: dict, 
 
             page.goto(base + "/dialogues" + SETTINGS_QUERY, wait_until="domcontentloaded")
             sn.settle(page)
-            tab_button = page.get_by_role("button", name="내 에이전트", exact=True).first
+            tab_button = page.get_by_role("button", name="외부 에이전트", exact=True).first
             tab_button.wait_for(state="visible", timeout=30000)
             page.wait_for_timeout(300)
             measurements[f"focus-open-{key}"] = FOCUS(page)
@@ -408,7 +408,7 @@ def run(browser, base: str, out: Path, captures: list[str], measurements: dict, 
             if width == NARROW:
                 page.goto(base + "/dialogues" + SETTINGS_QUERY + "&ownedState=error", wait_until="domcontentloaded")
                 sn.settle(page)
-                page.get_by_role("button", name="내 에이전트", exact=True).click(timeout=30000)
+                page.get_by_role("button", name="외부 에이전트", exact=True).click(timeout=30000)
                 page.get_by_text("공개 예시: 요청을 처리하지 못했습니다. 다시 시도해 주세요.", exact=True).wait_for(timeout=30000)
                 shot(page, out, f"owned-agents-error-{key}", captures)
                 measure_contrast(page, page.locator(".owned-agents [role=alert] p"), measurements, problems, f"contrast-owned-error-{key}")
@@ -420,7 +420,7 @@ def run(browser, base: str, out: Path, captures: list[str], measurements: dict, 
                 access_state.update(mode="error")
                 page.goto(base + "/dialogues" + SETTINGS_QUERY, wait_until="domcontentloaded")
                 sn.settle(page)
-                page.get_by_role("button", name="내 에이전트", exact=True).click(timeout=30000)
+                page.get_by_role("button", name="외부 에이전트", exact=True).click(timeout=30000)
                 page.get_by_text("아직 등록한 에이전트가 없습니다.", exact=True).wait_for(timeout=30000)
                 select_tab(page, "접속 링크", width)
                 page.get_by_text("링크 목록을 불러오지 못했습니다.", exact=True).wait_for(timeout=30000)

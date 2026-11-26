@@ -42,7 +42,7 @@ export const CONFIG_TAB_GROUPS: ReadonlyArray<{ id: ConfigTabGroupId; label: str
 /** 설정창 칸의 정본. 배열 순서가 묶음 안 순서이고, 목차와 본문이 모두 이 정의를 읽는다. */
 export const CONFIG_TABS: readonly ConfigTabDefinition[] = [
   { id: "appearance", label: "화면과 읽기", description: "나에게 편안한 배경과 대화 글자 크기를 고릅니다.", group: "personal", adminOnly: false, icon: Monitor },
-  { id: "owned_agents", label: "내 에이전트", description: "내 에이전트의 이름과 활성 상태, 연결 키를 관리합니다.", group: "personal", adminOnly: false, icon: KeyRound },
+  { id: "owned_agents", label: "외부 에이전트", description: "외부 에이전트의 이름과 활성 상태, 연결 키를 관리합니다.", group: "personal", adminOnly: false, icon: KeyRound },
   { id: "access_links", label: "접속 링크", description: "외부 에이전트가 내 세션에 일을 맡길 수 있는 링크를 관리합니다.", group: "personal", adminOnly: false, icon: Link },
   { id: "webhooks", label: "웹훅", description: "내 세션과 외부 서비스가 주고받는 웹훅을 관리합니다.", group: "personal", adminOnly: false, icon: Webhook },
 

@@ -195,7 +195,7 @@ describe("ConfigModal layout", () => {
     expect(nav?.querySelectorAll("section")).toHaveLength(4);
     expect([...nav!.querySelectorAll("h3")].map(el => el.textContent)).toEqual(["개인 환경", "세션과 작업", "에이전트와 노드", "기록과 관리"]);
     expect([...nav!.querySelectorAll("section")].map(section => [...section.querySelectorAll("button")].map(button => button.textContent))).toEqual([
-      ["화면과 읽기", "내 에이전트", "접속 링크", "웹훅"],
+      ["화면과 읽기", "외부 에이전트", "접속 링크", "웹훅"],
       ["영구 에이전트 세션", "영구 세션 기본 모델", "카드 실행", "반복 작업"],
       ["에이전트 프로필", "MCP", "스킬과 카탈로그", "코딩 에이전트 연결", "노드"],
       ["세션 통계", "사용 로그", "요청 검수", "사용자", "파일 저장소", "General Settings", "Runtime"],
@@ -209,7 +209,7 @@ describe("ConfigModal layout", () => {
     await settleConfigModal();
     const personal = document.querySelector('[data-testid="config-category-nav"] section')!;
     const names = [...personal.querySelectorAll('button')].map(button => button.textContent);
-    expect(names.slice(0, 3)).toEqual(['화면과 읽기', '내 에이전트', '접속 링크']);
+    expect(names.slice(0, 3)).toEqual(['화면과 읽기', '외부 에이전트', '접속 링크']);
     clickConfigTab('접속 링크');
     await settleConfigModal();
     expect(document.body.textContent).toContain('각 항목의 버튼으로 변경을 적용합니다');
@@ -221,7 +221,7 @@ describe("ConfigModal layout", () => {
     await settleConfigModal();
     const personal = document.querySelector('[data-testid="config-category-nav"] section')!;
     const names = [...personal.querySelectorAll('button')].map(button => button.textContent);
-    expect(names.slice(0, 4)).toEqual(['화면과 읽기', '내 에이전트', '접속 링크', '웹훅']);
+    expect(names.slice(0, 4)).toEqual(['화면과 읽기', '외부 에이전트', '접속 링크', '웹훅']);
     clickConfigTab('웹훅');
     await settleConfigModal();
     expect(document.body.textContent).toContain('들어오는 웹훅');
