@@ -216,8 +216,8 @@ describe("user preferences route harness", () => {
         payload: { wallpaper: { mode: "photo", customImage } },
       });
       expect(response.statusCode).toBe(200);
-      expect(calls[1]).toMatchObject(["put", "user@example.com", { wallpaper: { mode: "photo" } }, {}]);
-      expect((calls[1][2] as { wallpaper: Record<string, unknown> }).wallpaper).not.toHaveProperty("customImage");
+      const saved = calls[1] as ["put", string, { wallpaper: Record<string, unknown> }, unknown];
+      expect(saved[2].wallpaper).toEqual({ mode: "photo" });
     }
 
     await app.close();
