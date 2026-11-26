@@ -380,13 +380,6 @@ export class RunnerRecoveryCoordinator {
             if (
               outcome.status === "missing"
               && !registration.pidAlive
-              && (
-                registration.pid === null
-                || (
-                  registration.lifecycle !== null
-                  && isTerminalRunnerExecutionState(registration.lifecycle.execution_state)
-                )
-              )
               && registration.pidStartIdentity === null
             ) {
               try {

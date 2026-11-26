@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { PersistenceHostRepositories } from "./persistence_host_runtime.js";
+import { hostRequestLogLevel } from "./host_request_log_level.js";
 import { isLegacyHostDateValue } from "./repositories/session_mutation_repository.js";
 
 export interface PersistenceHostRouteOptions {
@@ -321,11 +322,12 @@ function sendTimed(
   reply.header(HOST_RECEIVED_AT_HEADER, String(timing.hostReceivedAtMs));
   reply.header(HOST_RESPONDED_AT_HEADER, String(hostRespondedAtMs));
   const response = send();
-  request.log.info(
+  const hostDurationMs = hostRespondedAtMs - timing.hostReceivedAtMs;
+  request.log[hostRequestLogLevel(statusCode, hostDurationMs)](
     {
       ...timing,
       hostRespondedAtMs,
-      hostDurationMs: hostRespondedAtMs - timing.hostReceivedAtMs,
+      hostDurationMs,
       statusCode,
     },
     "Persistence host response sent",

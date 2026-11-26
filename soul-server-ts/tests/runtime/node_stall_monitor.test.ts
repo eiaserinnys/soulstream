@@ -53,6 +53,57 @@ describe("node stall monitor", () => {
     expect(histogram.reset).toHaveBeenCalledOnce();
   });
 
+  it("lists recent SQLite transactions only in a window over the threshold", async () => {
+    vi.useFakeTimers();
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    let maxNanoseconds = 5_000_000;
+    const histogram: EventLoopDelayHistogram = {
+      enable: vi.fn(),
+      disable: vi.fn(),
+      reset: vi.fn(),
+      percentile: vi.fn(() => 1_000_000),
+      get max() { return maxNanoseconds; },
+    };
+    const monitor = startNodeStallMonitor({
+      logger,
+      histogram,
+      histogramIntervalMs: 100,
+      eventLoopWarningThresholdMs: 30,
+      watchdogEnabled: false,
+    });
+    monitors.push(monitor);
+    const finishTransaction = () => monitor.observeSqliteTransaction({
+      transactionId: "tx-done",
+      transactionLabel: "event_outbox.acknowledge_host_frame",
+      sessionId: "session-a",
+      attempt: 1,
+      stage: "completed",
+      startedAtMonoMs: 10,
+      attemptStartedAtMonoMs: 10,
+      observedAtMonoMs: 12,
+      elapsedMs: 2,
+      attemptElapsedMs: 2,
+    });
+
+    finishTransaction();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ eventLoopDelayMs: { p50: 1, p99: 1, max: 5 } }),
+      "node event loop delay summary",
+    );
+    expect(logger.info.mock.calls[0]![0]).not.toHaveProperty("recentSqliteTransactions");
+
+    finishTransaction();
+    maxNanoseconds = 31_000_000;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recentSqliteTransactions: [expect.objectContaining({ transactionId: "tx-done" })],
+      }),
+      "node event loop delay threshold exceeded",
+    );
+  });
+
   it("records a stall from a worker while the main thread is blocked", async () => {
     const directory = await mkdtemp(join(tmpdir(), "node-stall-monitor-"));
     tempDirectories.push(directory);

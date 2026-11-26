@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionStatisticsDailyService } from "../src/usage/session_statistics_daily_service.js";
-import { calculateSessionStatisticsDay, statisticsLiveDays } from "../src/usage/session_statistics_daily_calculator.js";
+import { calculateSessionStatisticsDay, statisticsLiveDays, type QuietTickMemory } from "../src/usage/session_statistics_daily_calculator.js";
 import { createSessionStatisticsDailyState, type SessionStatisticsDailyState } from "../src/usage/session_statistics_daily_state.js";
 import type { SessionStatisticsReadRequest, SessionStatisticsReadResult } from "../src/usage/session_statistics_types.js";
 import { read, usageRow } from "./fixtures/session_statistics_aggregation.fixtures.js";
@@ -19,6 +19,8 @@ function fixture() {
     access: { restricted: false, allowedFolderIds: [] }, visibleFolders: [], day: null };
   const saved = { ...createSessionStatisticsDailyState(metadata, "2026-10-19", CATALOG), sourceMaxEventId: "20" };
   const daily = { load: vi.fn(async () => [saved]), sourceMax: vi.fn(async () => new Map([["2026-10-19", "20"]])),
+    factsChangedSince: vi.fn(async (_since: string, _before: string, _receiptsSince: Date | null) =>
+      ({ changed: true, probedAt: new Date("2026-10-20T00:00:00.000Z") })),
     save: vi.fn(async (_state: SessionStatisticsDailyState, _maximum: string) => {}), withLock: vi.fn(async (work: () => Promise<void>) => { await work(); return true; }) };
   const repository = { daily, readMetadata: vi.fn(async () => ({ ...metadata, rows: [] as SessionStatisticsReadResult["rows"] })),
     readSlice: vi.fn(async (_input: SessionStatisticsReadRequest, _day: string) => metadata), read: vi.fn(async () => metadata) };
@@ -90,5 +92,42 @@ describe("daily statistics scheduling and live cache", () => {
     expect(f.daily.withLock).toHaveBeenCalledTimes(1);
     expect(f.daily.save).toHaveBeenCalledTimes(1);
     expect(f.daily.save.mock.calls[0]?.[1]).toBe("21");
+  });
+
+  it("skips the recent-days max scan on an idle tick and runs it again once a late fact arrives", async () => {
+    const f = fixture();
+    const quiet: { memory: QuietTickMemory } = { memory: undefined };
+    const tick = () => calculateSessionStatisticsDay(f.repository, f.input, CATALOG, quiet);
+
+    expect(await tick()).toBe(false);
+    expect(f.daily.sourceMax).toHaveBeenCalledTimes(1);
+    expect(f.daily.factsChangedSince.mock.calls[0]?.[2]).toBeNull();
+
+    f.daily.factsChangedSince.mockResolvedValue({ changed: false, probedAt: new Date("2026-10-20T00:01:00.000Z") });
+    expect(await tick()).toBe(false);
+    expect(await tick()).toBe(false);
+    expect(f.daily.sourceMax).toHaveBeenCalledTimes(1);
+    expect(f.daily.save).not.toHaveBeenCalled();
+    expect(f.daily.factsChangedSince.mock.calls[1]?.[2]).toBeInstanceOf(Date);
+
+    f.daily.factsChangedSince.mockResolvedValue({ changed: true, probedAt: new Date("2026-10-20T00:02:00.000Z") });
+    f.daily.sourceMax.mockResolvedValue(new Map([["2026-10-19", "21"]]));
+    expect(await tick()).toBe(true);
+    expect(f.daily.sourceMax).toHaveBeenCalledTimes(2);
+    expect(f.daily.save.mock.calls[0]?.[1]).toBe("21");
+  });
+
+  it("scans again when the recent-days window moves to a new day", async () => {
+    const f = fixture();
+    const quiet: { memory: QuietTickMemory } = { memory: undefined };
+    await calculateSessionStatisticsDay(f.repository, f.input, CATALOG, quiet);
+    f.daily.factsChangedSince.mockResolvedValue({ changed: false, probedAt: new Date("2026-10-20T00:01:00.000Z") });
+    await calculateSessionStatisticsDay(f.repository, f.input, CATALOG, quiet);
+    expect(f.daily.sourceMax).toHaveBeenCalledTimes(1);
+
+    const nextDay = { ...f.input, asOf: new Date(Date.parse(f.input.asOf) + 24 * 60 * 60 * 1000).toISOString() };
+    await calculateSessionStatisticsDay(f.repository, nextDay, CATALOG, quiet);
+    expect(f.daily.factsChangedSince.mock.calls.at(-1)?.[2]).toBeNull();
+    expect(f.daily.sourceMax).toHaveBeenCalledTimes(2);
   });
 });

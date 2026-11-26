@@ -63,6 +63,34 @@ describe("AgentProfileSource", () => {
     await vi.waitFor(() => expect(fetchRuntime).toHaveBeenCalledTimes(2));
   });
 
+  it("logs the DB identity override once per profile version", async () => {
+    const files = await fixture();
+    const info = vi.fn();
+    let profiles = [remote({ version: 3 })];
+    let nowMs = Date.parse("2026-08-01T00:00:00.000Z");
+    const source = new AgentProfileSource({
+      ...files,
+      runtimeUrl: "http://orch/api/agent-profiles/runtime",
+      logger: { info, warn: vi.fn() } as never,
+      fetchRuntime: async () => ({ profiles }),
+      now: () => new Date(nowMs),
+    });
+    const overrideLogs = () => info.mock.calls.filter(
+      ([, message]) => message === "DB agent profile overrides YAML-owned identity fields",
+    );
+
+    await source.initialize();
+    source.rebuild();
+    source.rebuild();
+    expect(overrideLogs()).toHaveLength(1);
+
+    profiles = [remote({ version: 4 })];
+    nowMs += 60_000;
+    await source.resolve("roselin");
+    await vi.waitFor(() => expect(overrideLogs()).toHaveLength(2));
+    expect(overrideLogs()[1]![0]).toEqual({ agentId: "roselin", version: 4 });
+  });
+
   it("rebuilds DB overlays after an unrelated YAML profile apply", async () => {
     const files = await fixture();
     const yaml = await readFile(files.agentsConfigPath, "utf8");

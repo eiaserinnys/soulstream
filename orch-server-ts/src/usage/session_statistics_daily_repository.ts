@@ -7,6 +7,13 @@ export type DailyBatch = SessionStatisticsDailyState & { sourceMaxEventId: strin
 export interface SessionStatisticsDailyRepositoryPort {
   load(since: string, before: string, version: number, sessionIds?: readonly string[]): Promise<DailyBatch[]>;
   sourceMax(since: string, before: string): Promise<ReadonlyMap<string, string>>;
+  /**
+   * Cheap stand-in for `sourceMax` between two ticks. Facts are only inserted with the ingress
+   * receipt of their event in the same transaction, so a receipt created after `receiptsSince`
+   * whose event falls in the window is the only way the window's facts can have changed.
+   * `receiptsSince === null` asks only for the database clock.
+   */
+  factsChangedSince(since: string, before: string, receiptsSince: Date | null): Promise<{ changed: boolean; probedAt: Date }>;
   save(state: SessionStatisticsDailyState, sourceMaxEventId: string): Promise<void>;
   withLock(work: () => Promise<void>): Promise<boolean>;
   loadOverview?(since: string, before: string, version: number, input: SessionStatisticsReadRequest, sessionIds: readonly string[]): Promise<DailyBatch[]>;
@@ -56,6 +63,21 @@ export class SessionStatisticsDailyRepository implements SessionStatisticsDailyR
       GROUP BY (recorded_at AT TIME ZONE 'Asia/Seoul')::date
     `;
     return new Map(rows.map(row => [row.day, row.max_event_id]));
+  }
+
+  async factsChangedSince(since: string, before: string, receiptsSince: Date | null): Promise<{ changed: boolean; probedAt: Date }> {
+    const [row] = await this.sql<readonly { probed_at: Date; changed: boolean }[]>`
+      SELECT now() AS probed_at,
+        ${receiptsSince === null} OR EXISTS (
+          SELECT 1
+          FROM event_ingress_receipts AS receipt
+          JOIN events AS event ON event.session_id = receipt.session_id AND event.id = receipt.event_id
+          WHERE receipt.created_at >= ${receiptsSince ?? new Date(0)}::timestamptz
+            AND event.created_at >= (${since}::date::timestamp AT TIME ZONE 'Asia/Seoul')
+            AND event.created_at < (${before}::date::timestamp AT TIME ZONE 'Asia/Seoul')
+        ) AS changed
+    `;
+    return { changed: row!.changed, probedAt: row!.probed_at };
   }
 
   async save(state: SessionStatisticsDailyState, sourceMaxEventId: string): Promise<void> {

@@ -2,7 +2,7 @@ import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 import { buildDailyDay, buildDailyOverview } from "./session_statistics_daily_merge.js";
 import { createSessionStatisticsDailyState, SESSION_STATISTICS_DAILY_AGGREGATION_VERSION,
   type SessionStatisticsDailyState } from "./session_statistics_daily_state.js";
-import { calculateSessionStatisticsDay, statisticsLiveDays, statisticsShiftDay } from "./session_statistics_daily_calculator.js";
+import { calculateSessionStatisticsDay, statisticsLiveDays, statisticsShiftDay, type QuietTickMemory } from "./session_statistics_daily_calculator.js";
 import { resolveSessionStatisticsDay } from "./session_statistics_period.js";
 import { SessionStatisticsService } from "./session_statistics_service.js";
 import type { SessionStatisticsReadRequest, SessionStatisticsReadResult, SessionStatisticsRepositoryPort } from "./session_statistics_types.js";
@@ -150,13 +150,14 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
   private startCalculator(input: SessionStatisticsReadRequest): void {
     if (this.started || this.closed) return;
     this.started = true;
+    const quiet: { memory: QuietTickMemory } = { memory: undefined };
     const tick = async () => {
       if (this.closed) return;
       let computed = false;
       try {
         computed = await calculateSessionStatisticsDay(await this.dailyRepositoryProvider(), {
           ...input, day: null, asOf: this.now().toISOString(),
-        }, this.modelCatalog.snapshot());
+        }, this.modelCatalog.snapshot(), quiet);
       } catch { this.reportFailure(); }
       if (!this.closed) {
         this.timer = setTimeout(run, computed ? 0 : 60_000);

@@ -532,7 +532,7 @@ function removeRequiredColumn(path: string): void {
   database.close();
 }
 function quietLogger() {
-  return { error: () => {}, info: () => {}, warn: () => {} } as never;
+  return { debug: () => {}, error: () => {}, info: () => {}, warn: () => {} } as never;
 }
 function diagnose(axis: string, observation: unknown, violations: string[]): void {
   console.info(`[strict-red diagnostic] ${axis}`, JSON.stringify({ observation, violations }));

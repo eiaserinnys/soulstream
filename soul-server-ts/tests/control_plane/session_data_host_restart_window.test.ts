@@ -31,6 +31,7 @@ function recordingLogger(): { logger: Logger; logs: LogEntry[] } {
     warn: record("warn"),
     info: record("info"),
     error: record("warn"),
+    debug: () => undefined,
   } as unknown as Logger;
   return { logger, logs };
 }

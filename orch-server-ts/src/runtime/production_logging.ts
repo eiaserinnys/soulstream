@@ -13,6 +13,10 @@ import {
   type OrchServerTsConfig,
 } from "../config.js";
 import {
+  hostRequestLogLevel,
+  isHostRequestPath,
+} from "../control_plane/host_request_log_level.js";
+import {
   externalAccessLogPath,
   isExternalAccessRequestPath,
 } from "../external_access/external_access_paths.js";
@@ -148,7 +152,10 @@ export function registerProductionLogging(
       request.log.warn(fields, "HTTP request completed");
       return;
     }
-    request.log.info(fields, "HTTP request completed");
+    const level = isHostRequestPath(fields.path)
+      ? hostRequestLogLevel(fields.statusCode, fields.durationMs)
+      : "info";
+    request.log[level](fields, "HTTP request completed");
   });
 }
 

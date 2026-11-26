@@ -50,4 +50,26 @@ describe("daily statistics PostgreSQL storage", () => {
     expect(slice.range).toMatchObject({ since: "2026-10-02", effective_until: "2026-10-03" });
     expect(slice.rows).toEqual([]);
   });
+
+  it("sees a receipt for an in-window event but not one for an event outside the window", async () => {
+    const sql = harness.sql;
+    await sql`INSERT INTO sessions (session_id, created_at) VALUES ('probe-session', '2026-10-01T00:00:00Z')`;
+    await sql`INSERT INTO events (session_id, id, event_type, created_at) VALUES
+      ('probe-session', 1, 'assistant_message', '2026-10-15T03:00:00Z'),
+      ('probe-session', 2, 'assistant_message', '2026-10-01T03:00:00Z')`;
+    const hash = "a".repeat(64);
+    await sql`INSERT INTO event_ingress_receipts (node_id, stream_id, source_seq, session_id, payload_hash, event_id, created_at) VALUES
+      ('node-a', '00000000-0000-4000-8000-000000000001', 1, 'probe-session', ${hash}, 2, '2026-10-21T00:00:00Z')`;
+    const repository = new SessionStatisticsDailyRepository(sql as unknown as FolderContentSql);
+    const probe = (receiptsSince: string | null) =>
+      repository.factsChangedSince("2026-10-13", "2026-10-20", receiptsSince === null ? null : new Date(receiptsSince));
+
+    expect(await probe(null)).toMatchObject({ changed: true, probedAt: expect.any(Date) });
+    expect((await probe("2026-10-20T00:00:00Z")).changed).toBe(false);
+
+    await sql`INSERT INTO event_ingress_receipts (node_id, stream_id, source_seq, session_id, payload_hash, event_id, created_at) VALUES
+      ('node-a', '00000000-0000-4000-8000-000000000001', 2, 'probe-session', ${hash}, 1, '2026-10-21T00:00:00Z')`;
+    expect((await probe("2026-10-20T00:00:00Z")).changed).toBe(true);
+    expect((await probe("2026-10-21T00:00:01Z")).changed).toBe(false);
+  });
 });

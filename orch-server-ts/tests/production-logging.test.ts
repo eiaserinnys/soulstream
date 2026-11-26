@@ -48,14 +48,34 @@ describe("production operations logging", () => {
         },
       },
     });
-    app.post("/api/schedules/host/:operation", async () => ({ ok: true }));
+    app.post("/api/schedules/host/:operation", async (_request, reply) => reply.code(409).send({ ok: false }));
     for (const authorization of ["Bearer production-service-token", "Bearer node-token"]) {
-      expect((await app.inject({ method: "POST", url: "/api/schedules/host/test", headers: { authorization, "x-soulstream-node-id": "header-node" } })).statusCode).toBe(200);
+      expect((await app.inject({ method: "POST", url: "/api/schedules/host/test", headers: { authorization, "x-soulstream-node-id": "header-node" } })).statusCode).toBe(409);
     }
     await app.close();
     const completed = capture.records().filter((record) => record.msg === "HTTP request completed");
     expect(completed.map((record) => record.nodeId)).toEqual(["header-node", "authenticated-node"]);
   });
+  it("keeps a fast successful host request out of the info log but records a failed one", async () => {
+    const capture = createLogCapture();
+    const app = createApp({
+      config: productionConfig,
+      logDestination: capture.stream,
+      productionAuth: { resolveTokenAccess: async () => ({ ok: true as const }) },
+    });
+    app.post("/api/schedules/host/ok", async () => ({ ok: true }));
+    app.post("/api/schedules/host/conflict", async (_request, reply) => reply.code(409).send({ ok: false }));
+    const headers = { authorization: "Bearer production-service-token" };
+    await app.inject({ method: "POST", url: "/api/schedules/host/ok", headers });
+    await app.inject({ method: "POST", url: "/api/schedules/host/conflict", headers });
+    await app.close();
+
+    const completed = capture.records().filter((record) => record.msg === "HTTP request completed");
+    expect(completed.map((record) => [record.path, record.statusCode])).toEqual([
+      ["/api/schedules/host/conflict", 409],
+    ]);
+  });
+
   it("records access, authentication, and 5xx diagnostics while redacting secrets", async () => {
     const capture = createLogCapture();
     const resolveTokenAccess = vi.fn()

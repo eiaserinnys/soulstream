@@ -11,7 +11,7 @@ import {
   SessionDeliveryNotificationHostClient,
 } from "../src/control_plane/persistence_host_clients.js";
 
-const logger = { info: vi.fn(), warn: vi.fn() } as unknown as Logger;
+const logger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn() } as unknown as Logger;
 const orch = { baseUrl: "https://orch.example", headers: { authorization: "Bearer token" } };
 
 afterEach(() => {
@@ -34,7 +34,8 @@ describe("worker control-plane host clients", () => {
   });
   it("records all four persistence host round-trip timestamps", async () => {
     const info = vi.fn();
-    const timingLogger = { info, warn: vi.fn() } as unknown as Logger;
+    const debug = vi.fn();
+    const timingLogger = { info, debug, warn: vi.fn() } as unknown as Logger;
     const now = vi.spyOn(Date, "now")
       .mockReturnValueOnce(1_000)
       .mockReturnValueOnce(1_300);
@@ -56,7 +57,8 @@ describe("worker control-plane host clients", () => {
     await expect(transport.request("session-data", "get", ["session-a"])).resolves.toBeNull();
 
     expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(info).toHaveBeenCalledWith(
+    expect(info).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledWith(
       {
         requestId,
         domain: "session-data",
@@ -73,6 +75,28 @@ describe("worker control-plane host clients", () => {
       },
       "persistence host request completed",
     );
+    now.mockRestore();
+  });
+
+  it("keeps a slow persistence host success at info", async () => {
+    const info = vi.fn();
+    const debug = vi.fn();
+    const now = vi.spyOn(Date, "now")
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(2_000);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("null", { status: 200 })));
+    const transport = new PersistenceHostTransport({
+      orch,
+      logger: { info, debug, warn: vi.fn() } as unknown as Logger,
+    });
+
+    await transport.request("session-data", "get", ["session-a"]);
+
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({ totalDurationMs: 1_000 }),
+      "persistence host request completed",
+    );
+    expect(debug).not.toHaveBeenCalled();
     now.mockRestore();
   });
 
