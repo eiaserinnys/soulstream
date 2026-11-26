@@ -16,7 +16,6 @@ export const SESSION_RESUME_VALUES = [
   "terminal_match",
   "terminal_mismatch",
 ] as const;
-export type SessionResume = (typeof SESSION_RESUME_VALUES)[number];
 
 export const SESSION_TERMINAL_TARGETS = [
   "completed",
@@ -31,7 +30,6 @@ export const SESSION_REVISION_VALUES = [
   "equal",
   "greater",
 ] as const;
-export type SessionRevision = (typeof SESSION_REVISION_VALUES)[number];
 
 export const SESSION_REGISTRATION_VALUES = [
   "not_provided",
@@ -57,7 +55,6 @@ export const SESSION_DELETE_PATHS = [
   "declined",
   "unavailable",
 ] as const;
-export type SessionDeletePath = (typeof SESSION_DELETE_PATHS)[number];
 
 export const SESSION_LIMIT_TERMINATION_VALUES = [
   "limit_recorded",
@@ -76,7 +73,6 @@ export const SESSION_WORKTREE_VALUES = [
   "not_ready",
   "setup_required",
 ] as const;
-export type SessionWorktree = (typeof SESSION_WORKTREE_VALUES)[number];
 
 /** 종료 전환의 사건 번호 검사(양수만 허용)를 가르는 사실. */
 export const SESSION_TERMINAL_EVENT_VALUES = ["positive", "non_positive"] as const;

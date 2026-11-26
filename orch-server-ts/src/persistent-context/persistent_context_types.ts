@@ -12,20 +12,6 @@ export type PersistentContextEvaluationResult = {
   readonly observation: PersistentJevObservation | null;
 };
 
-export type PersistentContextEvaluationRouteInput = {
-  readonly session_id: string;
-  readonly input_id: string;
-  readonly request: string;
-  readonly budget_ms: number;
-};
-
-export type PersistentContextCandidateCounts = {
-  turn_summaries: number;
-  cards: number;
-  search_sessions: number;
-  recent_completed_sessions: number;
-};
-
 export type PersistentContextRawCandidates = {
   readonly sessionIsPersistent: boolean;
   readonly inputEventId: number | null;

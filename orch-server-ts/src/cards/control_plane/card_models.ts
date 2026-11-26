@@ -22,24 +22,6 @@ export class CardVersionConflict extends Error {
   }
 }
 
-export class EmptyFolderPatchError extends Error {
-  readonly statusCode = 422;
-
-  constructor(public readonly targetKind: FolderOperationTargetKind) {
-    super(`folder ${targetKind} patch requires at least one field to update`);
-    this.name = "EmptyFolderPatchError";
-  }
-}
-
-export function assertFolderPatchHasFields(
-  targetKind: FolderOperationTargetKind,
-  fields: Record<string, unknown>,
-): void {
-  if (Object.values(fields).every((value) => value === undefined)) {
-    throw new EmptyFolderPatchError(targetKind);
-  }
-}
-
 export interface CardAssigneeInput {
   kind: CardAssigneeFields["assignee_kind"];
   agentId?: string | null;

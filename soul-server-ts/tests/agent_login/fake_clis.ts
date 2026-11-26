@@ -4,11 +4,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pino from "pino";
-import { resolveCodexCliPath } from "@soulstream/executable-path";
+import { resolveAntigravityCliPath, resolveCodexCliPath } from "@soulstream/executable-path";
 
 import { AgentLoginActivity } from "../../src/agent_login/activity.js";
 import { composeAgentLoginService } from "../../src/agent_login/compose.js";
-import { resolveAntigravityCliPath } from "../../src/engine/antigravity_cli_path.js";
 import type { AgentLoginTimings } from "../../src/agent_login/types.js";
 
 /** 시험이 쓰는 일회용 값. 로그에 나타나면 안 된다. */
@@ -237,7 +236,7 @@ export async function createHarness(options: {
 export function assertOnlyFakeClis(root: string, env: NodeJS.ProcessEnv, codexCliPath: string): void {
   const found = [
     ["codex", resolveCodexCliPath(codexCliPath, env)?.path],
-    ["agy", resolveAntigravityCliPath(env)?.path],
+    ["agy", resolveAntigravityCliPath(null, env)?.path],
   ] as const;
   for (const [name, path] of found) {
     if (path !== undefined && !path.startsWith(`${root}/`)) {

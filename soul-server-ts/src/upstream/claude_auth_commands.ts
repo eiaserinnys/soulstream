@@ -29,6 +29,7 @@ import {
   ClaudeLoginError,
   type ClaudeLoginService,
 } from "../claude_accounts/login_service.js";
+import { commandRequestId } from "./command_family.js";
 
 interface CommandLike {
   type?: string;
@@ -368,10 +369,6 @@ export class ClaudeAuthCommands {
     }
     return this.deps.claudeAuth;
   }
-}
-
-function commandRequestId(cmd: CommandLike): string {
-  return cmd.requestId ?? cmd.request_id ?? "";
 }
 
 function isClaudeAuthAccountPoolCommand(

@@ -246,5 +246,3 @@ export function createProfileStore() {
     },
   };
 }
-
-export type ProfileStore = ReturnType<typeof createProfileStore>;

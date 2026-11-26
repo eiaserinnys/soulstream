@@ -6,11 +6,6 @@ export const SYSTEM_FOLDER_IDS = Object.freeze({
 export type SystemFolderKey = keyof typeof SYSTEM_FOLDER_IDS;
 export type SystemFolderId = (typeof SYSTEM_FOLDER_IDS)[SystemFolderKey];
 
-export const DEFAULT_FOLDERS = Object.freeze({
-  claude: "⚙️ 클로드 코드 세션",
-  llm: "⚙️ LLM 세션",
-} satisfies Readonly<Record<SystemFolderKey, string>>);
-
 const SYSTEM_FOLDER_ID_SET: ReadonlySet<string> = new Set(Object.values(SYSTEM_FOLDER_IDS));
 
 export function isSystemFolderId(folderId: string | null | undefined): folderId is SystemFolderId {

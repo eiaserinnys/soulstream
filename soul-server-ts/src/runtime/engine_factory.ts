@@ -2,7 +2,6 @@ import type { Logger } from "pino";
 
 import type { Env } from "../config.js";
 import { AntigravityEngineAdapter } from "../engine/antigravity/adapter.js";
-import type { AntigravityCliPathResolution } from "../engine/antigravity_cli_path.js";
 import { OpenCodeEngineAdapter } from "../engine/opencode/adapter.js";
 import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
 import { ClaudeEngineAdapter } from "../engine/claude_adapter.js";
@@ -11,7 +10,7 @@ import type { ClaudeSessionClientRegistry } from
 import type { ClaudeAccountTurnPort } from "../engine/claude_account_pool.js";
 import { CodexEngineAdapter } from "../engine/codex_adapter.js";
 import { CodexAppServerEngineAdapter } from "../engine/codex_app_server/index.js";
-import type { CodexCliPathResolution } from "@soulstream/executable-path";
+import type { AntigravityCliPathResolution, CodexCliPathResolution } from "@soulstream/executable-path";
 import type { McpConfigService, ResolvedMcpServer } from "../mcp_config_service.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
 import { withFullSessionCredential } from "../runner/full_session_credential.js";

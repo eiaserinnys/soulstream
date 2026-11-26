@@ -75,10 +75,6 @@ export function rowToStateValue(
   };
 }
 
-export function sessionStatusLeaf(value: SessionStateValue): SessionStatusLeaf {
-  return value.status;
-}
-
 /** 종료 전환 입력의 목표 상태 글자를 기계의 종료 상태 값으로 읽는다. */
 export function sessionTerminalTarget(
   value: string,

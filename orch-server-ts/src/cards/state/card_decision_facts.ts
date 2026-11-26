@@ -29,8 +29,6 @@ export const CARD_FACT_VALUES={
  REGISTER_REPLACEMENT:{previousOwnerMatch:flag,hasNow:flag,assignmentChanged:flag},
 } as const;
 export type CardDecisionCommand=keyof typeof CARD_FACT_VALUES;
-export type CommandFacts<C extends CardDecisionCommand> = { [K in keyof typeof CARD_FACT_VALUES[C]]:
- (typeof CARD_FACT_VALUES[C])[K] extends readonly (infer V)[] ? V : never };
 type FactKey={ [C in CardDecisionCommand]:keyof typeof CARD_FACT_VALUES[C] }[CardDecisionCommand];
 type FactValue<K extends FactKey>={ [C in CardDecisionCommand]:K extends keyof typeof CARD_FACT_VALUES[C] ?
  (typeof CARD_FACT_VALUES[C])[K] extends readonly (infer V)[] ? V : never : never }[CardDecisionCommand];

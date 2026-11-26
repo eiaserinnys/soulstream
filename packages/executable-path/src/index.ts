@@ -110,6 +110,50 @@ export function resolveCodexCliPath(
   return findSpawnableExecutable(candidateCodexCliPaths(env, platform), platform);
 }
 
+export type AntigravityCliPathSource =
+  | "AGY_CLI_PATH"
+  | "PATH"
+  | "HOME_LOCAL_BIN"
+  | "HOME_NPM_GLOBAL"
+  | "HOMEBREW_ARM64_BIN"
+  | "HOMEBREW_INTEL_BIN";
+
+export interface AntigravityCliPathResolution {
+  path: string;
+  source: AntigravityCliPathSource;
+}
+
+/** Inspect files only; optional on nodes that do not run Antigravity. */
+export function resolveAntigravityCliPath(
+  configuredPath: string | null | undefined,
+  env: EnvLike,
+  platform: PlatformLike = process.platform,
+): AntigravityCliPathResolution | undefined {
+  const explicit = nonEmpty(configuredPath ?? env.AGY_CLI_PATH);
+  if (explicit && inspectExecutablePath(explicit, platform).spawnable) {
+    return { path: explicit, source: "AGY_CLI_PATH" };
+  }
+  const candidates: AntigravityCliPathResolution[] = executableCandidatesInPath("agy", env, platform, "PATH");
+  const home = nonEmpty(env.HOME);
+  if (home) {
+    candidates.push(...executableCandidatesInDirectory(
+      joinExecutablePath(home, ".local", "bin"), "agy", "HOME_LOCAL_BIN", env.PATHEXT, platform,
+    ));
+  }
+  if (platform === "darwin") {
+    if (home) {
+      candidates.push(...executableCandidatesInDirectory(
+        joinExecutablePath(home, ".npm-global", "bin"), "agy", "HOME_NPM_GLOBAL", env.PATHEXT, platform,
+      ));
+    }
+    candidates.push(
+      ...executableCandidatesInDirectory("/opt/homebrew/bin", "agy", "HOMEBREW_ARM64_BIN", env.PATHEXT, platform),
+      ...executableCandidatesInDirectory("/usr/local/bin", "agy", "HOMEBREW_INTEL_BIN", env.PATHEXT, platform),
+    );
+  }
+  return findSpawnableExecutable(candidates, platform);
+}
+
 function candidateCodexCliPaths(
   env: EnvLike,
   platform: PlatformLike,

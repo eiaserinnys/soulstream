@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveAntigravityCliPath } from "../src/llm/antigravity_cli_path.js";
+import { resolveAntigravityCliPath } from "@soulstream/executable-path";
 import { addVirtualFile, resetVirtualFs } from "./helpers/virtual_fs.js";
 
 vi.mock("node:fs", async (importOriginal) => {

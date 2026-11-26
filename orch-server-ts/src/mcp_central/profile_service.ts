@@ -168,5 +168,3 @@ export function createProfileService(options: {
 
   return { putProfile, deleteProfile, setAgentBindings };
 }
-
-export type ProfileService = ReturnType<typeof createProfileService>;

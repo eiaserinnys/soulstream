@@ -1,7 +1,6 @@
 import type {
   RouteKey,
   RouteRegistry,
-  RouteRegistryEntry,
 } from "./route_registry.js";
 
 export type RouteAuthRequirements = Readonly<Record<string, boolean>>;
@@ -190,8 +189,4 @@ function missingFrom(expected: readonly RouteKey[], actual: readonly RouteKey[])
 
 function sortedRouteKeys(keys: Iterable<string>): RouteKey[] {
   return [...new Set([...keys].map(normalizeRouteKey))].sort();
-}
-
-export function routeKeyFromRegistryEntry(entry: RouteRegistryEntry): RouteKey {
-  return normalizeRouteKey(entry.key);
 }

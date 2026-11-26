@@ -71,17 +71,6 @@ const commands=Object.keys(CARD_FACT_VALUES) as CardDecisionCommand[];
 const variants:DecisionEvent[]=commands.flatMap(type=>[...enumerateCardFacts(type)].flatMap(facts=>CARD_ACTORS.map(actor=>({type,actor,facts}))))
  .filter(event=>!cardCommandEntryFailure(event.type,{hasMode:event.facts.hasMode,requestedSpoken:event.facts.requestedSpoken},
   {kind:event.actor==='human'?'user':event.actor==='server'?'system':event.actor==='external'?'llm':'agent',sessionId:event.actor==='anonymousAgent'?null:'session'}));
-export function* worldCommandEdges(w:CardWorld){
- for(const event of variants){
- if(!factsConsistent(w,event))continue;
- const [snapshot,actions]=transition(cardDecisionMachine,w.snapshot,event);
- const verdict=(actions as unknown as DecisionAction[]).find(a=>['apply','noop','reject'].includes(a.type))!;
- const before=w.snapshot.value as CardStateValue,after=snapshot.value as CardStateValue;
- const a=stateValueToColumns(before),b=stateValueToColumns(after);
- const owner=after.assignee==='session'&&(before.assignee!=='session'||event.facts.assignmentChanged===true||event.type==='REGISTER_REPLACEMENT')?'live':w.owner;
- yield {event,verdict:verdict.type,failure:(verdict.params as any)?.failure,guard:(verdict.params as any)?.guard,actions,next:{...w,snapshot,owner,dismissed:a.status!==b.status||a.blocked_kind!==b.blocked_kind?false:w.dismissed} as CardWorld};
- }
-}
 export function worldEnvironmentEdges(w:CardWorld){
  const result:{event:string;next:CardWorld}[]=[];
  if((w.snapshot.value as CardStateValue).assignee==='session'&&w.owner==='live')for(const owner of ['ended','shortLimit','longLimit'] as const)result.push({event:`OWNER_END.${owner}`,next:{...w,owner}});

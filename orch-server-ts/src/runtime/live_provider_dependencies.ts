@@ -30,9 +30,6 @@ export const liveProviderDependencyCategories = [
   "systemPortraitAssets",
 ] as const;
 
-export type LiveProviderDependencyCategory =
-  (typeof liveProviderDependencyCategories)[number];
-
 export type LiveDbCatalogRepositoryBoundary = {
   readonly agentProfileRepository: AgentProfileRepository;
   readonly agentPortraitRepository: AgentPortraitRepository;

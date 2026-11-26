@@ -3,6 +3,7 @@ import type {
   ProviderUsageName,
   ProviderUsageResponse,
 } from "../auth/provider_usage.js";
+import { commandRequestId } from "./command_family.js";
 
 interface CommandLike {
   type?: string;
@@ -47,8 +48,4 @@ function normalizeProvider(value: unknown): ProviderUsageName | undefined {
     return value;
   }
   throw new ProviderUsageCommandError("provider must be one of: claude, codex, antigravity, opencode_go");
-}
-
-function commandRequestId(cmd: CommandLike): string {
-  return cmd.requestId ?? cmd.request_id ?? "";
 }
