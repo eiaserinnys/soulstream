@@ -9,6 +9,7 @@ import { ReconnectPolicy } from "./reconnect.js";
 import { buildRegistrationMsg } from "./registration.js";
 import { sendInitialRunnerState } from "./initial_runner_state_sync.js";
 import { isConnectionError } from "./adapter_connection_error.js";
+import { UPSTREAM_UNAUTHORIZED_HINT, UpstreamStatusTracker, type UpstreamStatus } from "./upstream_status.js";
 import { summarizePayloadForLog } from "./log_payload_summary.js";
 import { createUpstreamCommandDispatcher } from "./upstream_command_dispatcher.js";
 import { createActiveHandlerDrain } from "./active_handler_drain.js";
@@ -53,6 +54,7 @@ export class UpstreamAdapter {
   private readonly commandTransportObserver: CommandTransportObserver;
   private readonly controlChannelService: ControlChannelService | undefined;
   private authWarned = false;
+  private readonly status = new UpstreamStatusTracker();
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private awaitingHeartbeatPong = false;
   private missedHeartbeatPongs = 0;
@@ -93,6 +95,10 @@ export class UpstreamAdapter {
     }
   }
 
+  upstreamStatus(): UpstreamStatus {
+    return this.status.snapshot();
+  }
+
   async run(): Promise<void> {
     this.running = true;
     while (this.running) {
@@ -100,6 +106,7 @@ export class UpstreamAdapter {
         await this.connectAndServe();
       } catch (err) {
         if (!this.running) break;
+        if (this.status.markFailed(err)) this.logger.error(UPSTREAM_UNAUTHORIZED_HINT);
         if (isConnectionError(err)) {
           // 예상 연결 오류 — Python adapter.py L122-132 등가
           this.logger.warn({ err }, "Upstream connection failed");
@@ -394,10 +401,12 @@ export class UpstreamAdapter {
         established = true;
         this.reconnect.reset();
         this.authWarned = false;
+        this.status.markConnected();
         this.logger.info({ nodeId: this.config.nodeId }, "Registered with upstream");
         await servePromise;
       }
     } finally {
+      this.status.markDisconnected();
       this.stopAppHeartbeat();
       this.deps.eventOutboxPump?.disconnect();
       if (!established && ws.readyState === WebSocket.OPEN) {

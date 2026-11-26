@@ -26,6 +26,7 @@ import {
   type ContextPreviewRouteConfig,
 } from "./context/context_preview_route.js";
 import type { ReleaseActivationState } from "./release/release_activation_state.js";
+import type { UpstreamStatus } from "./upstream/upstream_status.js";
 
 export interface ServerParams {
   host: string;
@@ -38,6 +39,8 @@ export interface ServerParams {
    */
   logger: FastifyBaseLogger;
   releaseActivationState?: ReleaseActivationState;
+  /** `/health` 본문에 싣는 orch 연결 상태. ready와 상태 코드에는 영향이 없다. */
+  upstreamStatus?: () => UpstreamStatus;
   /**
    * MCP Streamable HTTP 라우트 mount 설정. 미지정 시 MCP 라우트 미등록.
    * MCP_ENABLED=true일 때 main.ts가 채워 전달.
@@ -106,6 +109,7 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
       node_id: params.nodeId,
       service: "soul-server-ts",
       phase: "B-1",
+      ...(params.upstreamStatus ? { upstream: params.upstreamStatus() } : {}),
       ...(release ?? {}),
     };
   });
