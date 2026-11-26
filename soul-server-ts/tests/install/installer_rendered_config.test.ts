@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse } from "dotenv";
@@ -35,6 +35,7 @@ describe("installer configuration", () => {
     const catalogDir = join(root, "packages/model-catalog/data");
     mkdirSync(catalogDir, { recursive: true });
     copyFileSync(resolve("../packages/model-catalog/data/model-catalog.yaml"), join(catalogDir, "model-catalog.yaml"));
+    cpSync(resolve("../install/common-files"), join(root, "install/common-files"), { recursive: true });
     writeFileSync(join(root, "config", ".atom-seed-map.json"), JSON.stringify(SEED_MAP));
     writeFileSync(join(root, ".atom-api-key"), `${API_KEY}\n`);
     try {
@@ -47,6 +48,7 @@ describe("installer configuration", () => {
       expect(parsed.ATOM_ENABLED).toBe(true);
       expect(parsed.ATOM_SERVER_URL).toBe("http://127.0.0.1:4200");
       expect(parsed.ATOM_API_KEY).toBe(API_KEY);
+      expect(raw.AGENT_COMMON_FILES_DIR).toBe(join(root, ".local", "agent-common"));
       expect(raw.CLAUDE_CODE_EXECPATH).toBeUndefined();
       expect(raw.CODEX_CLI_PATH).toBeUndefined();
       const agentsPath = join(root, "config", "agents.yaml");
