@@ -67,9 +67,10 @@ it("keeps authorized list results and detail/store refresh contracts additive", 
   try {
     const result = (await app.inject('/api/cards')).json();
     expect(result.cards.map((c: {id:string}) => c.id)).toEqual(['c','b','a']);
-    expect(result.cards[0]).toMatchObject({ request: '최초 원문', latestActivity: {body:'최초 원문'} });
+    const first = result.cards.find((c: {id:string}) => c.id === 'a');
+    expect(first).toMatchObject({ request: '최초 원문', latestActivity: {body:'최초 원문'} });
     expect((await app.inject('/api/cards/secret')).statusCode).toBe(403);
-    expect((await app.inject('/api/cards/a')).json().card.latestActivity).toEqual(result.cards[0].latestActivity);
+    expect((await app.inject('/api/cards/a')).json().card.latestActivity).toEqual(first.latestActivity);
     await h.sql`INSERT INTO card_reports(id,card_id,title,format,body,created_at) VALUES ('later','a','새 보고','markdown','새 원문','2026-09-15')`;
     expect((await app.inject('/api/cards/a')).json().card.latestActivity.body).toBe('새 원문');
     const snapshot = await service.getFolder('activity-a');

@@ -24,6 +24,7 @@
 /packages/soul-ui/src/*
 !/packages/soul-ui/src/cards
 /packages/soul-ui/src/cards/*
+!/packages/soul-ui/src/cards/card-order.ts
 !/packages/soul-ui/src/cards/completed-cards.ts
 !/packages/soul-ui/src/cards/card-execution-state.ts
 !/packages/soul-ui/src/lib

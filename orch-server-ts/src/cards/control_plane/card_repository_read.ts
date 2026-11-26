@@ -43,16 +43,22 @@ export class CardRepositoryRead {
       ORDER BY sort_order,name,id LIMIT ${params.limit ?? 100} OFFSET ${params.offset ?? 0}`;
   }
   async listCards(params: { folderId?: string | null; status?: string | null; includeArchived?: boolean; includeCompleted?: boolean; allowedFolderIds?: readonly string[] | null; order?: "position" | "status_changed" } = {}) {
-    const order = params.order === "status_changed"
-      ? this.sql`status_changed_at DESC,id COLLATE "C" DESC`
-      : this.sql`folder_id COLLATE "C",position_key COLLATE "C",id`;
+    const folderId = params.folderId ?? null, status = params.status ?? null, allowed = params.allowedFolderIds ?? null;
+    const includeArchived = params.includeArchived ?? false, includeCompleted = params.includeCompleted ?? true;
+    if (params.order === "status_changed") return await this.sql<CardRow[]>`SELECT * FROM cards
+      WHERE (${folderId}::text IS NULL OR folder_id=${folderId})
+        AND (${status}::text IS NULL OR status=${status})
+        AND (${includeArchived} OR archived=FALSE)
+        AND (${includeCompleted} OR status <> 'done')
+        AND (${allowed}::text[] IS NULL OR folder_id=ANY(${allowed}::text[]))
+      ORDER BY status_changed_at DESC,id COLLATE "C" DESC`;
     return await this.sql<CardRow[]>`SELECT * FROM cards
-      WHERE (${params.folderId ?? null}::text IS NULL OR folder_id=${params.folderId ?? null})
-        AND (${params.status ?? null}::text IS NULL OR status=${params.status ?? null})
-        AND (${params.includeArchived ?? false} OR archived=FALSE)
-        AND (${params.includeCompleted ?? true} OR status <> 'done')
-        AND (${params.allowedFolderIds ?? null}::text[] IS NULL OR folder_id=ANY(${params.allowedFolderIds ?? null}::text[]))
-      ORDER BY ${order}`;
+      WHERE (${folderId}::text IS NULL OR folder_id=${folderId})
+        AND (${status}::text IS NULL OR status=${status})
+        AND (${includeArchived} OR archived=FALSE)
+        AND (${includeCompleted} OR status <> 'done')
+        AND (${allowed}::text[] IS NULL OR folder_id=ANY(${allowed}::text[]))
+      ORDER BY folder_id COLLATE "C",position_key COLLATE "C",id`;
   }
   async listCompletedCards(params: CompletedCardQuery) {
     const rows = await this.sql<(CardRow & { cursor_time: string })[]>`SELECT cards.*,completed_at::text AS cursor_time FROM cards
