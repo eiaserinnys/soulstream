@@ -15,7 +15,8 @@ beforeAll(async () => {
     ('o2','order-a','둘째','','b','review',NULL,'2026-10-02','2026-10-05'),
     ('o3','order-b','셋째','','a','review',NULL,'2026-10-03','2026-10-03'),
     ('q1','order-a','대기1','','c','queued','b','2026-10-01','2026-10-09'),
-    ('q2','order-a','대기2','','d','queued','a','2026-10-01','2026-10-02')`;
+    ('q2','order-a','대기2','','d','queued','a','2026-10-01','2026-10-02'),
+    ('bl','order-a','한도 막힘','','e','blocked','a','2026-10-01','2026-10-02')`;
 }, 60_000);
 afterAll(async () => { await h?.cleanup(); });
 
@@ -37,7 +38,7 @@ it("getToday는 attention·queued 안에서 상태 변경 시각순을 쓴다", 
   await h.sql`INSERT INTO pages(id,title,daily_date,version) VALUES ('order-day','데일리','2026-10-10',1)`;
   const planner = new PlannerRepository({ resolveSql: async () => h.liveSql, close: async () => {} });
   const today = (await planner.getToday("2026-10-10"))!;
-  expect(today.attention.filter(c => String(c.id).startsWith("o")).map(c => c.id)).toEqual(["o2", "o3", "o1"]);
+  expect(today.attention.filter(c => ["o1", "o2", "o3", "bl"].includes(String(c.id))).map(c => c.id)).toEqual(["o2", "o3", "bl", "o1"]);
   expect(today.queued.filter(c => String(c.id).startsWith("q")).map(c => c.id)).toEqual(["q2", "q1"]);
 });
 
