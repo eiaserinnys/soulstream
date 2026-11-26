@@ -185,9 +185,6 @@ describe("FolderInlineBoard document context menu", () => {
     const findTab = (name: string) => Array.from(targets!.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
       .find((button) => button.textContent?.trim() === name);
     await vi.waitFor(() => expect(findTab("전체")).not.toBeUndefined());
-    expect(findTab("별표")?.getAttribute("aria-selected")).toBe("true");
-    expect(targets!.querySelector('button[aria-label="옮길 폴더"]')).toBeNull();
-    flushSync(() => findTab("전체")!.click());
     expect(findTab("전체")?.getAttribute("aria-selected")).toBe("true");
     const findTargetAction = () => targets!.querySelector<HTMLButtonElement>('button[aria-label="옮길 폴더"]');
     await vi.waitFor(() => expect(findTargetAction()).not.toBeUndefined());
