@@ -212,6 +212,9 @@ if ($null -eq $service) {
         $acl = @(Invoke-Native "icacls.exe" @($pgTemp, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "*${me}:(OI)(CI)F"))
         $aclResult = $acl | Where-Object { "$_".Trim() } | Select-Object -Last 1
         Write-Host "   PostgreSQL installer temporary folder: $pgTemp (icacls: $aclResult)"
+        # Until the ACL above was set, the inherited %ProgramData% ACL let other users add entries to the new folder.
+        $planted = @(Get-ChildItem -LiteralPath $pgTemp -Force | ForEach-Object { $_.Name })
+        if ($planted.Count -gt 0) { throw "The temporary folder $pgTemp was not empty after its ACL was set ($($planted -join ', ')). Run the installer again." }
         $env:TEMP = $pgTemp
         $env:TMP = $pgTemp
         Install-WithWinget "PostgreSQL.PostgreSQL.17" @("--override", $override)
@@ -224,7 +227,10 @@ if ($null -eq $service) {
             Copy-Item -LiteralPath $pgLog.FullName -Destination (Join-Path $logsDir "postgresql-install.log") -Force
             Write-Host "   PostgreSQL installer log: $(Join-Path $logsDir "postgresql-install.log")"
         }
-        Remove-Item -LiteralPath $pgTemp -Recurse -Force -ErrorAction SilentlyContinue
+        # rmdir /s removes a junction itself instead of following it into its target.
+        $removeError = $null
+        try { Invoke-Native "cmd.exe" @("/d", "/c", "rmdir", "/s", "/q", $pgTemp) } catch { $removeError = $_.Exception.Message }
+        if (Test-Path -LiteralPath $pgTemp) { Write-Warning "Could not remove the PostgreSQL installer temporary folder $pgTemp ($removeError). You can delete it later." }
     }
     $installedPath = (Get-CimInstance Win32_Service -Filter "Name='$PG_SERVICE'").PathName
     if ($installedPath -notmatch '-D\s+"([^"]+)"') { throw "Cannot find the PostgreSQL data folder from the $PG_SERVICE service." }
