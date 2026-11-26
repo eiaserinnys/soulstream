@@ -142,7 +142,7 @@ agents:
 ```
 
 - Required fields: `id`, `name`, `backend`, `workspace_dir`.
-- Optional fields: `default_preset` (a model catalog preset id; when empty the node default model is used and startup logs a warning that recommends setting it), `max_turns`, `allowed_tools`, `disallowed_tools`, `portrait_path`, `context_scope` (`full` by default; `minimal` omits folder-inherited `page_context`, folder `atom_context`, `board_workspace`, `running_sessions`, and `cogito_context`), `claude_auto_memory_enabled` (Claude-only; `false` disables reading and writing `MEMORY.md`), `mcp_profile`, `atom_contexts`, and `env`. The old `model` field is deprecated: startup warns, and the model belongs in the catalog and is chosen with `default_preset`.
+- Optional fields: `default_preset` (a model catalog preset id; when empty, no preset is chosen: the agent runs on the backend's own default model (Claude or Codex), and startup logs a warning that recommends setting it), `max_turns`, `allowed_tools`, `disallowed_tools`, `portrait_path`, `context_scope` (`full` by default; `minimal` omits folder-inherited `page_context`, folder `atom_context`, `board_workspace`, `running_sessions`, and `cogito_context`), `claude_auto_memory_enabled` (Claude-only; `false` disables reading and writing `MEMORY.md`), `mcp_profile`, `atom_contexts`, and `env`. The `model` field is deprecated: it is still accepted and applied, but startup logs a warning, so use `default_preset` instead.
 - For Claude sessions, the runner always adds `Monitor` to `disallowed_tools` to block this background task entry point.
 
 ### Profiles created by the Linux installer

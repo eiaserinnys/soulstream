@@ -9,9 +9,9 @@
 # 필수 필드: id, name, backend (claude|codex|antigravity|opencode), workspace_dir
 # 선택 필드: default_preset, max_turns, allowed_tools, disallowed_tools, portrait_path, context_scope,
 #            claude_auto_memory_enabled
-#   default_preset: 모델 카탈로그(packages/model-catalog/data/model-catalog.yaml)의 프리셋 id. 비우면 노드 기본 모델을 쓰고 시작 때 default_preset 설정을 권하는 경고가 나온다.
+#   default_preset: 모델 카탈로그(packages/model-catalog/data/model-catalog.yaml)의 프리셋 id. 비우면 프리셋 없이 백엔드(claude, codex)의 자체 기본 모델로 돌고, 시작 때 default_preset 설정을 권하는 경고가 나온다.
 #   claude_auto_memory_enabled: Claude 전용. false면 자동 기억(MEMORY.md)을 읽지도 쓰지도 않음. 없으면 SDK 기본.
-#   model 필드는 폐기 예정이라 쓰지 않는다. 모델은 default_preset으로 고른다.
+#   model은 폐기 예정이다. 넣으면 아직 적용되지만 시작 때 경고가 나오니 default_preset을 쓴다.
 
 agents:
   - id: claude-default
