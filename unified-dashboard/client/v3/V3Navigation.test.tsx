@@ -93,6 +93,15 @@ describe("V3Navigation frame contract", () => {
         onLoadMoreStarredFolders={vi.fn()}
         onReorderStarredFolders={vi.fn(async () => undefined)}
         onSelectDate={vi.fn()}
+        onSelectFolder={vi.fn()}
+        onSelectStarredFolder={vi.fn()}
+        onCompleteFolder={vi.fn(async () => undefined)}
+        onToggleFolderToday={vi.fn(async () => undefined)}
+        onMoveFolderToParent={vi.fn()}
+        onCreateProject={vi.fn(async (title, parentFolderId) => ({ status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
+        onRenameProject={vi.fn(async () => undefined)}
+        onDeleteProject={vi.fn(async () => undefined)}
+        onReorderProjects={vi.fn(async () => undefined)}
         projectHasContents={vi.fn(async () => false)}
       />,
     );
