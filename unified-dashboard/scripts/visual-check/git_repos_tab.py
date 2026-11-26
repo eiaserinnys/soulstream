@@ -33,6 +33,7 @@ from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
+from git_repos_real_modal import SSH_STATUS, check_ssh_status, run as run_real_modal
 from provider_panel import THEMES, install_page, settle
 
 WIDTHS = (1280, 360)
@@ -220,8 +221,10 @@ def capture_matrix(playwright, base: str, out: Path) -> None:
                 tag = f"{scene} {width}px {theme}"
                 if scene in ("ssh-ok", "ssh-failed"):
                     scoped(page, scene).get_by_role("button", name="연결 확인").click()
-                    scoped(page, scene).locator('[role="status"]:has-text("Hi example")' if scene == "ssh-ok" else ".v3-error-notice").first.wait_for(state="visible")
+                    scoped(page, scene).locator('[role="status"]' if scene == "ssh-ok" else ".v3-error-notice").first.wait_for(state="visible")
                     page.wait_for_timeout(200)
+                    if scene == "ssh-ok":
+                        check_ssh_status(check, f"반려 3 {tag}", page.evaluate(SSH_STATUS, '[data-review-scene="ssh-ok"]'))
                 shot(page, out, scene, width, theme, state)
                 layout_checks(page, scene, tag, expect_truncation=scene == "worst")
                 if scene in ("ready", "worst", "unset-no-key"):
@@ -284,7 +287,7 @@ def operation_checks(playwright, base: str) -> None:
     check("14번: 연결 확인이 도는 동안 단추가 aria-disabled이고 초점이 그대로 단추에 있음", busy["ariaDisabled"] == "true" and busy["label"] == "연결 확인", busy)
     page.keyboard.press("Enter")
     page.wait_for_timeout(100)
-    page.wait_for_selector('[role="status"]:has-text("Hi example")', timeout=8000)
+    page.wait_for_selector('[role="status"]:has-text("연결됨")', timeout=8000)
     check("14번: 도는 동안 다시 눌러도 요청이 겹치지 않고 응답이 오면 aria-disabled가 풀림", page.evaluate(FOCUS_SCRIPT)["ariaDisabled"] is None)
 
     # 줄 안 편집: Enter로 제출하고 초점은 입력 칸에 남는다.
@@ -295,7 +298,7 @@ def operation_checks(playwright, base: str) -> None:
     after_save = page.evaluate(FOCUS_SCRIPT)
     page.get_by_label("호스트", exact=True).focus()
     page.keyboard.press("Enter")
-    page.wait_for_selector('[role="status"]:has-text("Hi example")', timeout=8000)
+    page.wait_for_selector('[role="status"]:has-text("연결됨")', timeout=8000)
     after_check = page.evaluate(FOCUS_SCRIPT)
     page.get_by_label("원격 주소", exact=True).fill("https://github.com/example/new.git")
     page.keyboard.press("Enter")
@@ -373,6 +376,16 @@ def write_reports(out: Path, base: str) -> None:
             items = [item for item in CHECKS if "가로 넘침, 0폭" in item["check"] or "말줄임과 title" in item["check"]]
             verdict, count = ("통과" if items and all(item["ok"] for item in items) else "실패"), f"{len(items)}개 단언"
         rows.append(f"| {number} {text} | {verdict} | {notes[number]} ({count}) |")
+    for prefix, text, note in (
+        ("실제 설정창", "반려 1·3 실제 설정창", "설정창 안에서 입력 줄 괘선 0px, 줄 여백이 검수 창과 같음, 묶음 상자 안에 가로선 없음, 연결됨 상태와 단추의 세로 중심 1px 이내, 영어 원문은 접힌 기술 상세"),
+        ("반려 3", "반려 3 검수 창 ssh-ok", "검수 창 ssh-ok 장면의 같은 단언"),
+        ("반려 2", "반려 2 가져오기 진행 조회 실패", "504 뒤 오류 안내와 「다시 확인」, 다시 확인하면 「가져왔습니다」와 목록 갱신"),
+        ("설정창 사용자 탭", "사용자 탭 500", "빈 목록 문구 미노출, 오류 안내와 다시 불러오기, 다시 불러오면 목록"),
+        ("설정창 카드 실행 탭", "카드 실행 탭 500", "「불러오는 중…」 멈춤, 오류 안내와 다시 불러오기, 다시 불러오면 입력 칸"),
+        ("불변", "코딩 에이전트 연결 불변", "기준 빌드와 창, 목록, 상세, 줄 수치가 같음"),
+    ):
+        verdict, count = result(prefix)
+        rows.append(f"| {text} | {verdict} | {note} ({count}) |")
     lines = [
         "# 카드 #1909 「Git과 저장소」 설정 탭 조작 결과", "", "## 14번부터 18번", "",
         "| 항목 | 결과 | 근거 |", "| --- | --- | --- |", *rows, "",
@@ -382,6 +395,7 @@ def write_reports(out: Path, base: str) -> None:
         "## 실행 명령과 산출물", "",
         f"- 준비: `VITE_API_BASE=http://127.0.0.1:9 pnpm --dir unified-dashboard exec vite --host 127.0.0.1 --port 5173 --strictPort`",
         f"- 실행: `python3 unified-dashboard/scripts/visual-check/git_repos_tab.py {base} <캡처 폴더>`",
+        f"- 한 호출(570초)에 다 못 돌리면 `--only review-window`로 먼저, 이어서 `--only real-modal --baseline-dist <이 PR 이전 빌드의 dist>`로 돌린다. 두 번째 실행은 첫 실행의 단언과 캡처 목록(state.json)을 이어 받아 이 파일을 다시 쓴다.",
         f"- 산출물: {out}",
         "- 캡처에서는 검수 창 뒤의 WebGL 유리 배경 캔버스만 가렸다(소프트웨어 GL에서 한 장에 8초가 걸린다). 노드 목록과 상세 틀은 그대로다.", "", "## 실측 단언", "",
         *[f"- {'통과' if item['ok'] else '실패'}: {item['check']}" for item in CHECKS],
@@ -392,16 +406,50 @@ def write_reports(out: Path, base: str) -> None:
     (out / "checks.json").write_text(json.dumps(CHECKS, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+STATE_FILE = "state.json"
+
+
+def load_state(out: Path) -> None:
+    """한쪽 장면만 돌릴 때 앞서 돌린 쪽의 단언과 캡처 목록을 이어 받는다(같은 이름은 새 값으로 바꾼다)."""
+    path = out / STATE_FILE
+    if not path.exists():
+        return
+    state = json.loads(path.read_text(encoding="utf-8"))
+    CHECKS.extend(state["checks"])
+    INDEX.extend(tuple(item) for item in state["index"])
+    DIALOG_ROWS.extend(state["dialog_rows"])
+
+
+def save_state(out: Path) -> None:
+    (out / STATE_FILE).write_text(json.dumps({"checks": CHECKS, "index": INDEX, "dialog_rows": DIALOG_ROWS}, ensure_ascii=False), encoding="utf-8")
+
+
+def dedupe() -> None:
+    names = {item["check"]: item for item in CHECKS}
+    CHECKS[:] = list(names.values())
+    files = {item[0]: item for item in INDEX}
+    INDEX[:] = list(files.values())
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="설정창 Git과 저장소 탭 시각 검수")
     parser.add_argument("base_url", help="대시보드 dev 서버 주소 (예: http://127.0.0.1:5173)")
     parser.add_argument("output_dir", help="캡처와 보고 파일을 둘 폴더")
+    parser.add_argument("--baseline-dist", help="이 PR 이전 빌드의 dist 폴더. 주면 「코딩 에이전트 연결」 배치가 그대로인지 견준다")
+    parser.add_argument("--only", choices=("review-window", "real-modal"), help="한쪽 장면만 돌린다(오래 걸려 한 호출에 다 못 돌릴 때). 없으면 둘 다")
     args = parser.parse_args()
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
+    if args.only:
+        load_state(out)
     with sync_playwright() as playwright:
-        capture_matrix(playwright, args.base_url, out)
-        operation_checks(playwright, args.base_url)
+        if args.only != "real-modal":
+            capture_matrix(playwright, args.base_url, out)
+            operation_checks(playwright, args.base_url)
+        if args.only != "review-window":
+            run_real_modal(playwright, args.base_url, out, check, lambda *item: INDEX.append(item), Path(args.baseline_dist) if args.baseline_dist else None)
+    dedupe()
+    save_state(out)
     write_reports(out, args.base_url)
     failed = [item for item in CHECKS if not item["ok"]]
     print(f"단언 {len(CHECKS)}개 중 실패 {len(failed)}개")

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Edit, Plus, Trash2 } from "lucide-react";
+import { V3ErrorNotice } from "../v3/V3ErrorNotice";
 import {
   Badge,
   Button,
@@ -67,6 +68,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
   const [form, setForm] = useState<UserFormState>(EMPTY_FORM);
@@ -79,6 +81,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
   const load = async () => {
     setLoading(true);
     setError(null);
+    setLoadError(null);
     try {
       const res = await request("/api/admin/users", { credentials: "same-origin" });
       if (!res.ok) throw new Error(await readError(res));
@@ -86,7 +89,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
       setUsers(data.users ?? []);
       setFolders(data.folders ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "사용자 목록을 불러오지 못했습니다");
+      setLoadError(err instanceof Error ? err.message : "사용자 목록을 불러오지 못했습니다");
     } finally {
       setLoading(false);
     }
@@ -195,7 +198,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
         </div>
       )}
 
-      <div
+      {loadError !== null ? <V3ErrorNotice message="사용자 목록을 불러오지 못했습니다." detail={loadError} onRetry={() => { void load(); }} /> : <div
         data-testid="user-management-table-scroll"
         className="overflow-x-auto rounded-floor border border-border"
       >
@@ -253,7 +256,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
             ))}
           </TableBody>
         </Table>
-      </div>
+      </div>}
 
       <Dialog open={editorOpen} onOpenChange={(next) => { if (!saveInFlight.current) setEditorOpen(next); }}>
         <DialogPopup className="approved-dialog max-w-xl" closeProps={{ disabled: saving }}>

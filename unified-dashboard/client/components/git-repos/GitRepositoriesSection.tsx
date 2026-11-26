@@ -48,12 +48,14 @@ function cloneFailureText(job: NodeGitCloneJob): string {
   return job.error?.code === "auth_failed" && job.url.startsWith("https://") ? `${base} ${HTTPS_PRIVATE_HINT}` : base;
 }
 
-function ReadyProjects({ nodeId, request, snapshot, onReload, root, repos }: NodeGitSectionProps & { onReload(): void; root: string; repos: NodeGitRepoSummary[] }) {
+function ReadyProjects({ nodeId, request, snapshot, onSnapshot, onReload, root, repos }: NodeGitSectionProps & { onReload(): void; root: string; repos: NodeGitRepoSummary[] }) {
   const [url, setUrl] = useState("");
   const [repoName, setRepoName] = useState("");
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<NodeGitRequestError | null>(null);
-  const [cloneId, setCloneId] = useState<string | null>(snapshot.clone?.state === "running" ? snapshot.clone.clone_id : null);
+  const runningCloneId = snapshot.clone?.state === "running" ? snapshot.clone.clone_id : null;
+  const [cloneId, setCloneId] = useState<string | null>(runningCloneId);
+  if (cloneId === null && runningCloneId !== null) setCloneId(runningCloneId);
 
   const poll = useQuery({
     queryKey: ["node-git-clone", nodeId, cloneId],
@@ -63,7 +65,8 @@ function ReadyProjects({ nodeId, request, snapshot, onReload, root, repos }: Nod
     retry: false,
   });
   const job = poll.data ?? null;
-  const running = starting || (cloneId !== null && !poll.isError && (job === null || job.state === "running"));
+  const pollFailed = poll.isError && !poll.isFetching;
+  const running = starting || (cloneId !== null && !pollFailed && (job === null || job.state === "running"));
 
   useEffect(() => {
     if (job?.state === "done") onReload();
@@ -77,6 +80,7 @@ function ReadyProjects({ nodeId, request, snapshot, onReload, root, repos }: Nod
     try {
       const started = await startNodeGitClone(request, nodeId, { url, ...(repoName.trim() ? { repo_name: repoName.trim() } : {}) });
       setCloneId(started.clone_id);
+      onSnapshot({ ...snapshot, clone: started });
       setUrl("");
       setRepoName("");
     } catch (caught) {
@@ -97,7 +101,7 @@ function ReadyProjects({ nodeId, request, snapshot, onReload, root, repos }: Nod
         ? <p className="text-sm text-muted-foreground">저장소 없음</p>
         : <ul className="space-y-2">{repos.map((repo) => <RepoRow key={repo.name} repo={repo} />)}</ul>}
     </SettingsGroupBox>
-    <form onSubmit={(event) => { void start(event); }}>
+    <form className="space-y-4" onSubmit={(event) => { void start(event); }}>
       <SettingFieldWidget field={URL_FIELD} value={url} onChange={setUrl} statusSlot={fieldError("url")} />
       <SettingFieldWidget field={REPO_NAME_FIELD} value={repoName} onChange={setRepoName} statusSlot={<div className="flex flex-wrap items-center gap-2">
         <Button type="submit" size="sm" aria-disabled={running || undefined} className={busyButtonClassName}>가져오기</Button>
@@ -107,6 +111,7 @@ function ReadyProjects({ nodeId, request, snapshot, onReload, root, repos }: Nod
         {startError && !startError.field ? <p role="alert" data-v3-selectable-content="true" className="text-xs text-destructive-foreground">{nodeGitErrorText(startError)}</p> : null}
       </div>} />
     </form>
+    {pollFailed ? <V3ErrorNotice message="가져오기 진행 상태를 확인하지 못했습니다." detail={poll.error?.message} retryLabel="다시 확인" onRetry={() => { void poll.refetch(); }} /> : null}
     {job?.state === "failed" ? <V3ErrorNotice message={cloneFailureText(job)} detail={job.error?.detail ?? null} /> : null}
   </div>;
 }

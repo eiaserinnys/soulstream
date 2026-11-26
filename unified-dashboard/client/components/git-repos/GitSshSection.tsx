@@ -85,7 +85,7 @@ function ReadyKey({ nodeId, request, publicKey, keyPath, focusCopy }: NodeGitSec
     }
   };
 
-  return <div className="space-y-2">
+  return <div className="space-y-4">
     <SettingFieldWidget
       field={gitTextField("public_key", "공개키", keyPath)}
       value={publicKey}
@@ -104,10 +104,16 @@ function ReadyKey({ nodeId, request, publicKey, keyPath, focusCopy }: NodeGitSec
         field={gitTextField("host", "호스트")}
         value={host}
         onChange={setHost}
-        statusSlot={<Button type="submit" size="sm" variant="outline" aria-disabled={busy || undefined} className={busyButtonClassName}>연결 확인</Button>}
+        statusSlot={<div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" size="sm" variant="outline" aria-disabled={busy || undefined} className={busyButtonClassName}>연결 확인</Button>
+          {result?.ok ? <span role="status" className="inline-flex items-center gap-1 break-keep text-xs text-muted-foreground"><Check className="size-4" aria-hidden="true" /> 연결됨</span> : null}
+        </div>}
       />
     </form>
-    {result?.ok ? <p role="status" data-v3-selectable-content="true" className="text-sm">{result.output}</p> : null}
+    {result?.ok ? <details className="text-xs text-muted-foreground">
+      <summary className="cursor-pointer">기술 상세</summary>
+      <pre data-v3-selectable-content="true" className="mt-1 whitespace-pre-wrap break-words">{result.output}</pre>
+    </details> : null}
     {result && !result.ok ? <V3ErrorNotice message={result.reason === "connected" ? "연결을 확인하지 못했습니다." : SSH_CHECK_REASON_TEXT[result.reason]} detail={result.output} /> : null}
     {error ? <V3ErrorNotice message={nodeGitErrorText(error)} detail={error.message} /> : null}
   </div>;

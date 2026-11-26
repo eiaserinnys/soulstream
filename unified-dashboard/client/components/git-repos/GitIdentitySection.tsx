@@ -38,7 +38,7 @@ export function GitIdentitySection({ nodeId, request, snapshot, onSnapshot }: No
   };
 
   return <SettingsGroupBox title="Git 사용자">
-    <form onSubmit={(event) => { void save(event); }}>
+    <form className="space-y-4" onSubmit={(event) => { void save(event); }}>
       <SettingFieldWidget field={NAME_FIELD} value={name} onChange={setName} statusSlot={<FieldError error={error?.field === "name" ? error : null} />} />
       <SettingFieldWidget field={EMAIL_FIELD} value={email} onChange={setEmail} statusSlot={<div className="flex flex-wrap items-center gap-2">
         <Button type="submit" size="sm" aria-disabled={busy || undefined} className={busyButtonClassName}>저장</Button>

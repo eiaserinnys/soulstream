@@ -167,18 +167,23 @@ describe("GitReposTab", () => {
     vi.unstubAllGlobals();
   });
 
-  it("checks the connection and shows the first output line, or the failure with its detail", async () => {
+  it("checks the connection and shows a short status with the raw output folded away, or the failure with its detail", async () => {
     await render(nodes(node("n1")));
     expect(input("호스트").value).toBe("github.com");
     responder = () => json({ host: "github.com", ok: true, reason: "connected", output: "Hi soyoung! You've successfully authenticated" });
     await press("연결 확인");
     expect(calls.at(-1)).toEqual({ method: "POST", path: "/api/nodes/n1/git/ssh-check", body: { host: "github.com" } });
-    expect(text()).toContain("Hi soyoung! You've successfully authenticated");
+    expect(host.querySelector('[role="status"]')?.textContent?.trim()).toBe("연결됨");
+    expect(host.querySelector("details summary")?.textContent).toBe("기술 상세");
+    expect(host.querySelector("details")?.hasAttribute("open")).toBe(false);
+    expect(host.querySelector("details pre")?.textContent).toBe("Hi soyoung! You've successfully authenticated");
+    expect(host.querySelector('[role="status"]')?.textContent).not.toContain("Hi soyoung!");
     responder = () => json({ host: "github.com", ok: false, reason: "auth_failed", output: "git@github.com: Permission denied (publickey)." });
     await press("연결 확인");
     expect(text()).toContain("공개키가 저장소 서비스에 등록되어 있지 않습니다.");
     expect(host.querySelector(".v3-error-notice pre")?.textContent).toBe("git@github.com: Permission denied (publickey).");
     expect(text()).not.toContain("Hi soyoung!");
+    expect(host.querySelector('[role="status"]')).toBeNull();
   });
 
   it("clones, polls until done, then reads the status again and lists the new repository", async () => {
@@ -199,6 +204,55 @@ describe("GitReposTab", () => {
     expect(host.querySelector('[data-slot="frame-loading"]')).toBeNull();
     expect(reads("/api/nodes/n1/git")).toBe(2);
     expect([...host.querySelectorAll("li")].map((row) => row.textContent)).toEqual(["newrepomain"]);
+  });
+
+  it("shows an error with a retry when the clone status read fails, and finishes after the retry succeeds", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await render(nodes(node("n1")));
+    let statusFails = true;
+    responder = (call) => {
+      if (call.method === "POST") return json(cloneJob(), 202);
+      if (call.path.endsWith("/clones/clone-1")) return statusFails ? json({ code: "node_command_timeout", message: "timeout" }, 504) : json(cloneJob({ state: "done", finished_at: "2026-11-27T00:00:05.000Z" }));
+      return json(snapshot({ projects: { state: "ready", root: "/r", repos: [{ name: "newrepo", origin_url: null, branch: "main", dirty: false }] } }));
+    };
+    await type("원격 주소", "git@github.com:o/newrepo.git");
+    await press("가져오기");
+    await settle(50);
+    const notice = host.querySelector(".v3-error-notice");
+    expect(notice?.textContent).toContain("가져오기 진행 상태를 확인하지 못했습니다.");
+    expect(host.querySelector('[data-slot="frame-loading"]')).toBeNull();
+    expect(notice?.querySelector("button")?.textContent).toBe("다시 확인");
+    statusFails = false;
+    await press("다시 확인");
+    await settle(50);
+    expect(host.querySelector(".v3-error-notice")).toBeNull();
+    expect(text()).toContain("가져왔습니다: newrepo");
+    expect([...host.querySelectorAll("li")].map((row) => row.textContent)).toEqual(["newrepomain"]);
+  });
+
+  it("keeps the clone in progress when the user looks at another node and comes back", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await render(nodes(node("n1"), node("n2")));
+    let finished = false;
+    responder = (call) => {
+      if (call.method === "POST") return json(cloneJob(), 202);
+      if (call.path.endsWith("/clones/clone-1")) return json(finished ? cloneJob({ state: "done", finished_at: "2026-11-27T00:00:05.000Z" }) : cloneJob());
+      if (call.path === "/api/nodes/n1/git" && finished) return json(snapshot({ projects: { state: "ready", root: "/r", repos: [{ name: "newrepo", origin_url: null, branch: "main", dirty: false }] } }));
+      return json(snapshot());
+    };
+    await type("원격 주소", "git@github.com:o/newrepo.git");
+    await press("가져오기");
+    const row = (name: string) => [...host.querySelectorAll<HTMLButtonElement>("aside button")].find((item) => item.textContent?.startsWith(name))!;
+    await act(async () => row("n2").click());
+    await settle();
+    expect(host.querySelector('[data-slot="frame-loading"]')).toBeNull();
+    await act(async () => row("n1").click());
+    await settle();
+    expect(host.querySelector('[data-slot="frame-loading"]')?.textContent).toContain("가져오는 중…");
+    finished = true;
+    for (let step = 0; step < 3; step += 1) await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+    expect(text()).toContain("가져왔습니다: newrepo");
+    expect([...host.querySelectorAll("li")].map((item) => item.textContent)).toEqual(["newrepomain"]);
   });
 
   it("sends the folder name when given and shows a failed clone with its code text and detail", async () => {
