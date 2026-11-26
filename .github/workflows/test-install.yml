@@ -567,19 +567,53 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install Soulstream
+      # The folder name is built from code points so no Korean text has to survive the workflow file.
+      - name: Choose an install folder with Korean letters and spaces
         shell: pwsh
         run: |
-          .\install\install-windows.ps1 `
-            -NonInteractive `
-            -Ref $env:INSTALL_REF `
-            -PostgresPassword root
+          $name = -join [char[]](0xC18C, 0xC6B8, 0x20, 0xC2A4, 0xD2B8, 0xB9BC, 0x20, 0xC2DC, 0xD5D8)
+          $root = Join-Path $env:LOCALAPPDATA $name
+          [IO.File]::AppendAllText($env:GITHUB_ENV, "SOULSTREAM_TEST_ROOT=$root`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "InstallRoot: $root"
+
+      - name: Refuse a folder the installer did not create (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Restricted -Force
+          $foreign = Join-Path $env:RUNNER_TEMP "not-soulstream"
+          New-Item -ItemType Directory -Force -Path $foreign | Out-Null
+          Set-Content -LiteralPath (Join-Path $foreign "keep.txt") -Value "keep" -Encoding ASCII
+          foreach ($script in @("install-windows.ps1", "uninstall-windows.ps1")) {
+            $source = Get-Content -Raw -Encoding UTF8 (Join-Path ".\install" $script)
+            $refused = $false
+            try { & ([scriptblock]::Create($source)) -NonInteractive -PostgresPassword root -InstallRoot $foreign } catch {
+              $refused = $true
+              Write-Host "$script refused the folder: $($_.Exception.Message)"
+            }
+            if (-not $refused) { throw "$script accepted a folder without the installer marker." }
+            $left = @(Get-ChildItem -LiteralPath $foreign -Force | ForEach-Object { $_.Name })
+            if (($left -join ",") -ne "keep.txt" -or (Get-Content -LiteralPath (Join-Path $foreign "keep.txt")) -ne "keep") {
+              throw "$script changed the folder: $($left -join ', ')"
+            }
+          }
+          Write-Host "Marker check: both scripts refused $foreign and left keep.txt alone."
+
+      - name: Install Soulstream (Windows PowerShell 5.1, Restricted policy)
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Restricted -Force
+          Write-Host "Shell: Windows PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition)), execution policy $(Get-ExecutionPolicy)"
+          $installer = Get-Content -Raw -Encoding UTF8 .\install\install-windows.ps1
+          & ([scriptblock]::Create($installer)) -NonInteractive -Ref $env:INSTALL_REF -PostgresPassword root -InstallRoot $env:SOULSTREAM_TEST_ROOT
 
       - name: Check the running installation
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $root = Join-Path $env:LOCALAPPDATA "Soulstream"
+          $root = $env:SOULSTREAM_TEST_ROOT
+          $folder = Get-Item -LiteralPath $root
+          Write-Host "Install folder: $($folder.FullName) (name code points: $(($folder.Name.ToCharArray() | ForEach-Object { '{0:X4}' -f [int]$_ }) -join ' '))"
+          if (-not (Test-Path -LiteralPath (Join-Path $root ".soulstream-windows-install"))) { throw "The install marker is missing." }
           $soul = Join-Path $root "soulstream"
           $installedCommit = git -C $soul rev-parse HEAD
           if ($installedCommit -ne $env:INSTALL_REF) { throw "Installed $installedCommit, expected $env:INSTALL_REF" }
@@ -596,7 +630,7 @@ jobs:
           $bearer = (Select-String -LiteralPath (Join-Path $soul ".env.orch") -Pattern "^AUTH_BEARER_TOKEN=(.+)$").Matches[0].Groups[1].Value
           $nodes = Invoke-RestMethod -Uri "http://127.0.0.1:5200/api/nodes" -Headers @{ Authorization = "Bearer $bearer" }
           if (@($nodes.nodes | Where-Object { $_.nodeId -eq "local" -and $_.connected }).Count -ne 1) { throw "The local node is not connected." }
-          if (-not (Get-ScheduledTask -TaskName "Soulstream" -ErrorAction SilentlyContinue)) { throw "The Soulstream logon task is missing." }
+          if (-not (Get-ScheduledTask -TaskName "SoulstreamServer" -ErrorAction SilentlyContinue)) { throw "The SoulstreamServer logon task is missing." }
           if (Test-Path (Join-Path $root "runner.pid")) { Write-Host "Haniel start path: direct start (the logon task did not start it)" } else { Write-Host "Haniel start path: logon task" }
           $workerLog = Join-Path $root "logs\worker.log"
           foreach ($line in @("Claude Code executable path resolved", "Codex CLI path resolved")) {
@@ -615,7 +649,7 @@ jobs:
         if: failure()
         shell: pwsh
         run: |
-          $logs = Join-Path $env:LOCALAPPDATA "Soulstream\logs"
+          $logs = Join-Path $env:SOULSTREAM_TEST_ROOT "logs"
           if (Test-Path $logs) {
             foreach ($file in Get-ChildItem -LiteralPath $logs -File -Recurse) {
               Write-Host "=== $($file.FullName) (last 200 lines) ==="
@@ -625,13 +659,15 @@ jobs:
             Write-Host "(no log folder)"
           }
 
-      - name: Uninstall Soulstream
-        shell: pwsh
+      - name: Uninstall Soulstream (Windows PowerShell 5.1, Restricted policy)
+        shell: powershell
         run: |
-          $ErrorActionPreference = "Stop"
-          .\install\uninstall-windows.ps1 -NonInteractive -PostgresPassword root
-          if (Get-ScheduledTask -TaskName "Soulstream" -ErrorAction SilentlyContinue) { throw "The logon task is still registered." }
-          if (Test-Path (Join-Path $env:LOCALAPPDATA "Soulstream")) { throw "The install folder is still there." }
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Restricted -Force
+          Write-Host "Shell: Windows PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition)), execution policy $(Get-ExecutionPolicy)"
+          $uninstaller = Get-Content -Raw -Encoding UTF8 .\install\uninstall-windows.ps1
+          & ([scriptblock]::Create($uninstaller)) -NonInteractive -PostgresPassword root -InstallRoot $env:SOULSTREAM_TEST_ROOT
+          if (Get-ScheduledTask -TaskName "SoulstreamServer" -ErrorAction SilentlyContinue) { throw "The logon task is still registered." }
+          if (Test-Path -LiteralPath $env:SOULSTREAM_TEST_ROOT) { throw "The install folder is still there." }
           foreach ($port in @(5200, 4200, 4205)) {
             if (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue) { throw "Port $port is still listening." }
           }

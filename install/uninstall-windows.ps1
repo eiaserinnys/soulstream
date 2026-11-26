@@ -1,5 +1,6 @@
 # Removes what install-windows.ps1 installed: the logon task, the processes it recorded, the soulstream and atom
 # databases and the soulstream role, and the install folder. PostgreSQL and the coding agent CLIs stay.
+# Only a folder with the installer's marker file is touched; anything else stops before a change.
 #
 # Usage, from an elevated PowerShell:
 #   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall-windows.ps1)))
@@ -12,17 +13,35 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$TASK_NAME = "Soulstream"
+$TASK_NAME = "SoulstreamServer"
+$INSTALL_MARKER = ".soulstream-windows-install"
 $PG_SERVICE = "postgresql-x64-17"
 
 function Write-Step { param([string]$Message) Write-Host ""; Write-Host "== $Message" -ForegroundColor Cyan }
+
+# Windows PowerShell 5.1 turns native stderr into error records that stop the script under "Stop"; the exit code decides.
+function Invoke-Native {
+    param([string]$File, [string[]]$Arguments)
+    $ErrorActionPreference = "Continue"
+    & $File @Arguments 2>&1 | ForEach-Object { "$_" }
+    if ($LASTEXITCODE -ne 0) { throw "$File $($Arguments -join ' ') failed with exit code $LASTEXITCODE." }
+}
+
+function Get-NativeOutput {
+    param([string]$File, [string[]]$Arguments)
+    $ErrorActionPreference = "Continue"
+    & $File @Arguments 2>$null
+}
 
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw "Run this script from an elevated PowerShell (Run as administrator)."
 }
-if ([string]::IsNullOrWhiteSpace($InstallRoot)) { $InstallRoot = Join-Path $env:LOCALAPPDATA "Soulstream" }
+if ([string]::IsNullOrWhiteSpace($InstallRoot)) { $InstallRoot = Join-Path $env:LOCALAPPDATA "SoulstreamServer" }
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
+if (-not (Test-Path -LiteralPath (Join-Path $InstallRoot $INSTALL_MARKER))) {
+    throw "$InstallRoot has no $INSTALL_MARKER file, so it is not a folder install-windows.ps1 created. Nothing was removed."
+}
 
 Write-Step "Stopping Soulstream"
 if (Get-ScheduledTask -TaskName $TASK_NAME -ErrorAction SilentlyContinue) {
@@ -36,7 +55,9 @@ foreach ($name in @("haniel.pid", "runner.pid")) {
     if ($recorded -match "^\d+$") {
         # A recorded PID can be reused after a reboot: only a process that was started from this folder is stopped.
         $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$recorded" -ErrorAction SilentlyContinue
-        if ($owner -and $owner.CommandLine -and $owner.CommandLine.Contains($InstallRoot)) { & taskkill.exe /PID $recorded /T /F 2>&1 | Out-Null }
+        if ($owner -and $owner.CommandLine -and $owner.CommandLine.Contains($InstallRoot)) {
+            $null = Get-NativeOutput "taskkill.exe" @("/PID", $recorded, "/T", "/F")
+        }
     }
 }
 
@@ -61,8 +82,7 @@ if ($null -eq $service) {
     $env:PGPASSWORD = $PostgresPassword
     try {
         foreach ($sql in @("DROP DATABASE IF EXISTS soulstream WITH (FORCE)", "DROP DATABASE IF EXISTS atom WITH (FORCE)", "DROP ROLE IF EXISTS soulstream")) {
-            & $psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c $sql
-            if ($LASTEXITCODE -ne 0) { throw "psql failed for: $sql" }
+            Invoke-Native $psql @("-h", "127.0.0.1", "-p", "5432", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-q", "-c", $sql)
         }
     } finally {
         Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue

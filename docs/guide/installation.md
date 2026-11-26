@@ -176,7 +176,7 @@ Install on a dedicated server or VM that holds no other data, and do not put cre
 
 ## Windows full installer
 
-The PowerShell installer ([`install/install-windows.ps1`](../../install/install-windows.ps1)) installs the whole stack natively on one Windows machine, with no Docker and no WSL: the orchestrator, a local worker, atom, and the dashboard. It needs Windows 10 or 11 on x64 and an elevated PowerShell (Run as administrator). Allow about 4 GB of free RAM and 10 GB of disk.
+The PowerShell installer ([`install/install-windows.ps1`](../../install/install-windows.ps1)) installs the whole stack natively on one Windows machine, with no Docker and no WSL: the orchestrator, a local worker, atom, and the dashboard. It needs Windows 10 or 11 on x64 and an elevated PowerShell (Run as administrator); Windows PowerShell 5.1 and PowerShell 7 both work, under any execution policy. Allow about 4 GB of free RAM and 10 GB of disk.
 
 ```powershell
 irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install-windows.ps1 | iex
@@ -192,7 +192,7 @@ The installer follows the `main` channel of Soulstream and atom.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `-InstallRoot` | `%LOCALAPPDATA%\Soulstream` | Install folder |
+| `-InstallRoot` | `%LOCALAPPDATA%\SoulstreamServer` | Install folder. A folder that is not empty and was not created by this installer is refused |
 | `-WorkerPort` | `4205` | Worker port. The internal MCP port is the next one |
 | `-Backends` | `claude,codex` | Coding agents to set up. Antigravity is not supported on Windows |
 | `-Ref`, `-AtomRef` | `main` | Branch, tag, or commit of Soulstream and atom |
@@ -213,7 +213,7 @@ After it finishes, open `http://127.0.0.1:5200` and sign in with the administrat
 
 To connect a coding agent, open **Settings > Coding agents** (`설정 > 코딩 에이전트`) in the dashboard. For Claude, expand the row and choose Add account (`계정 추가`). For Codex, open the URL the dashboard shows and enter the one-time code.
 
-Soulstream starts from a scheduled task named `Soulstream` that runs at your logon. It does not store your Windows password, so it runs only while you are signed in. The installer starts the task right away. If the task does not start in that session, the installer starts Soulstream directly and says so; the task takes over at your next logon.
+Soulstream starts from a scheduled task named `SoulstreamServer` that runs at your logon. It does not store your Windows password, so it runs only while you are signed in. The installer starts the task right away. If the task does not start in that session, the installer starts Soulstream directly and says so; the task takes over at your next logon.
 
 Run the same command again to rebuild: the secrets, the administrator password, and the databases stay, the configuration is rewritten, and the services restart. Files you edited under `config\` are kept, and the new version is written next to them as `.installer-new`. The installer does not upgrade an existing database. If the database is behind the version you install, it stops and says so.
 
@@ -225,7 +225,7 @@ To remove it, run this in an elevated PowerShell. Add `-InstallRoot <folder>` if
 & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall-windows.ps1')))
 ```
 
-This stops and deletes the task and its processes, drops the `soulstream` and `atom` databases and the `soulstream` role, and deletes the install folder. PostgreSQL and the coding agent CLIs stay installed.
+This stops and deletes the task and its processes, drops the `soulstream` and `atom` databases and the `soulstream` role, and deletes the install folder. PostgreSQL and the coding agent CLIs stay installed. The installer marks its folder with a `.soulstream-windows-install` file; without that file the uninstaller removes nothing, so the Soulstream desktop app in `%LOCALAPPDATA%\Soulstream` is never touched.
 
 Logs are in `<InstallRoot>\logs`: `haniel.log`, `haniel.out.log`, `haniel.err.log`, and one file per service (`atom.log`, `orch.log`, `worker.log`). When a step fails, the installer prints the end of the relevant log.
 

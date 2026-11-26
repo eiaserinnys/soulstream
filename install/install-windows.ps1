@@ -21,10 +21,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+# A host without a console (a scheduled run, some CI hosts) rejects the setter on Windows PowerShell 5.1.
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $OutputEncoding = [System.Text.Encoding]::UTF8
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$TASK_NAME = "Soulstream"
+$TASK_NAME = "SoulstreamServer"
+$INSTALL_MARKER = ".soulstream-windows-install"
 $PNPM_VERSION = "10.32.1"
 $MINIMUM_NODE_VERSION = [version]"22.5.0"
 $HANIEL_COMMIT = "d143f0d8f7afffa4656f4ed10349a376cef585a1"
@@ -35,10 +38,21 @@ function Write-Step { param([string]$Message) Write-Host ""; Write-Host "== $Mes
 function Write-Ok { param([string]$Message) Write-Host "   $Message" -ForegroundColor Green }
 function Write-Warn { param([string]$Message) Write-Host "   WARNING: $Message" -ForegroundColor Yellow }
 
+# Windows PowerShell 5.1 turns native stderr into error records, which stop the script under
+# $ErrorActionPreference = "Stop" whenever stderr is redirected or the host output is captured. Every native command
+# runs through these two with the preference relaxed; the exit code decides.
 function Invoke-Native {
     param([string]$File, [string[]]$Arguments)
-    & $File @Arguments
+    $ErrorActionPreference = "Continue"
+    & $File @Arguments 2>&1 | ForEach-Object { "$_" }
     if ($LASTEXITCODE -ne 0) { throw "$File $($Arguments -join ' ') failed with exit code $LASTEXITCODE." }
+}
+
+# Standard output only; the caller checks $LASTEXITCODE when it matters.
+function Get-NativeOutput {
+    param([string]$File, [string[]]$Arguments)
+    $ErrorActionPreference = "Continue"
+    & $File @Arguments 2>$null
 }
 
 function Test-CommandExists { param([string]$Command) $null -ne (Get-Command $Command -ErrorAction SilentlyContinue) }
@@ -59,7 +73,7 @@ function Install-WithWinget {
 function Find-Python {
     foreach ($cmd in @("py", "python", "python3")) {
         if (-not (Test-CommandExists $cmd)) { continue }
-        $version = & $cmd --version 2>&1
+        $version = Get-NativeOutput $cmd @("--version")
         if ("$version" -match "Python (\d+)\.(\d+)") {
             if ([int]$Matches[1] -gt 3 -or ([int]$Matches[1] -eq 3 -and [int]$Matches[2] -ge 11)) { return $cmd }
         }
@@ -88,7 +102,7 @@ function Stop-Soulstream {
             if ($recorded -match "^\d+$") {
                 # A recorded PID can be reused after a reboot: only a process that was started from this folder is stopped.
                 $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$recorded" -ErrorAction SilentlyContinue
-                if ($owner -and $owner.CommandLine -and $owner.CommandLine.Contains($Root)) { & taskkill.exe /PID $recorded /T /F 2>&1 | Out-Null }
+                if ($owner -and $owner.CommandLine -and $owner.CommandLine.Contains($Root)) { $null = Get-NativeOutput "taskkill.exe" @("/PID", $recorded, "/T", "/F") }
             }
             Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
         }
@@ -108,8 +122,14 @@ $architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 }
 if ($architecture -ne "AMD64" -or [Environment]::OSVersion.Version.Major -lt 10) {
     throw "Windows 10 or 11 on x64 is required."
 }
-if ([string]::IsNullOrWhiteSpace($InstallRoot)) { $InstallRoot = Join-Path $env:LOCALAPPDATA "Soulstream" }
+$defaultInstallRoot = Join-Path $env:LOCALAPPDATA "SoulstreamServer"
+if ([string]::IsNullOrWhiteSpace($InstallRoot)) { $InstallRoot = $defaultInstallRoot }
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
+# Never take over a folder another program uses (the Soulstream desktop app lives in %LOCALAPPDATA%\Soulstream).
+$marker = Join-Path $InstallRoot $INSTALL_MARKER
+if ((Test-Path -LiteralPath $InstallRoot) -and -not (Test-Path -LiteralPath $marker) -and (Get-ChildItem -LiteralPath $InstallRoot -Force | Select-Object -First 1)) {
+    throw "$InstallRoot is not empty and was not created by this installer. Choose another folder with -InstallRoot."
+}
 $requestedBackends = $Backends.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ }
 foreach ($backend in $requestedBackends) {
     if ($backend -notin @("claude", "codex")) { throw "-Backends accepts claude and codex. '$backend' is not supported on Windows." }
@@ -120,6 +140,7 @@ $atomDir = Join-Path $InstallRoot "atom"
 $logsDir = Join-Path $InstallRoot "logs"
 $venvDir = Join-Path $InstallRoot "venv"
 New-Item -ItemType Directory -Force -Path $InstallRoot, $logsDir | Out-Null
+if (-not (Test-Path -LiteralPath $marker)) { Set-Content -LiteralPath $marker -Value "Soulstream server installed by install-windows.ps1" -Encoding ASCII }
 Write-Ok "Install folder: $InstallRoot"
 
 # ---- 1. what a previous run left running ----
@@ -138,24 +159,24 @@ Write-Ok "Ports 5200, 4200, $WorkerPort and $($WorkerPort + 1) are free."
 Write-Step "Checking tools"
 if (-not (Test-CommandExists "git")) { Write-Host "   Installing Git..."; Install-WithWinget "Git.Git" }
 if (-not (Test-CommandExists "git")) { throw "Git was installed but is not on PATH. Open a new elevated PowerShell and run this script again." }
-$nodeOk = $false
-if (Test-CommandExists "node") {
-    $nodeOk = ([version](((node --version) -replace "v", "")) -ge $MINIMUM_NODE_VERSION)
-}
+# npm, pnpm and codex also install .ps1 shims, which Restricted execution policy blocks; call the .cmd files.
+function Get-NodeVersion { [version]((Get-NativeOutput "node.exe" @("--version")) -replace "v", "") }
+$nodeOk = (Test-CommandExists "node.exe") -and ((Get-NodeVersion) -ge $MINIMUM_NODE_VERSION)
 if (-not $nodeOk) { Write-Host "   Installing Node.js..."; Install-WithWinget "OpenJS.NodeJS.LTS" }
-if (-not (Test-CommandExists "node") -or ([version](((node --version) -replace "v", "")) -lt $MINIMUM_NODE_VERSION)) {
+if (-not (Test-CommandExists "node.exe") -or ((Get-NodeVersion) -lt $MINIMUM_NODE_VERSION)) {
     throw "Node.js 22.5 or newer is required."
 }
 $pythonCmd = Find-Python
 if ($null -eq $pythonCmd) { Write-Host "   Installing Python..."; Install-WithWinget "Python.Python.3.12"; $pythonCmd = Find-Python }
 if ($null -eq $pythonCmd) { throw "Python 3.11 or newer is required." }
-$pnpmVersion = if (Test-CommandExists "pnpm") { ((pnpm --version) | Select-Object -First 1).Trim() } else { "" }
+$pnpmVersion = if (Test-CommandExists "pnpm.cmd") { "$(Get-NativeOutput "pnpm.cmd" @("--version") | Select-Object -First 1)".Trim() } else { "" }
 if (-not $pnpmVersion.StartsWith("10.")) {
     Write-Host "   Installing pnpm $PNPM_VERSION..."
-    Invoke-Native "npm" @("install", "-g", "pnpm@$PNPM_VERSION")
+    Invoke-Native "npm.cmd" @("install", "-g", "pnpm@$PNPM_VERSION")
     Update-SessionPath
+    $pnpmVersion = "$(Get-NativeOutput "pnpm.cmd" @("--version") | Select-Object -First 1)".Trim()
 }
-Write-Ok "git, node $(node --version), python, pnpm $(pnpm --version)"
+Write-Ok "git, node $(Get-NativeOutput "node.exe" @("--version")), python, pnpm $pnpmVersion"
 
 # ---- 3. PostgreSQL 17 ----
 Write-Step "Preparing PostgreSQL 17"
@@ -165,7 +186,7 @@ if ($null -eq $service) {
     Write-Host "   Installing PostgreSQL 17 (this takes a few minutes)..."
     $generated = -join ((1..24) | ForEach-Object { "{0:x}" -f (Get-Random -Maximum 16) })
     Set-Content -LiteralPath $passwordFile -Value $generated -Encoding ASCII
-    & icacls.exe $passwordFile /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null
+    $null = Get-NativeOutput "icacls.exe" @($passwordFile, "/inheritance:r", "/grant:r", "$([Security.Principal.WindowsIdentity]::GetCurrent().Name):F")
     $override = "--mode unattended --unattendedmodeui minimal --superpassword $generated --serverport $PG_PORT --servicename $PG_SERVICE"
     Install-WithWinget "PostgreSQL.PostgreSQL.17" @("--override", $override)
     $installedPath = (Get-CimInstance Win32_Service -Filter "Name='$PG_SERVICE'").PathName
@@ -189,11 +210,11 @@ $env:SOULSTREAM_PG_PASSWORD = $PostgresPassword
 $env:PGPASSWORD = $PostgresPassword
 $ready = $false
 for ($i = 0; $i -lt 30 -and -not $ready; $i++) {
-    & (Join-Path $pgBin "pg_isready.exe") -h 127.0.0.1 -p $PG_PORT | Out-Null
+    $null = Get-NativeOutput (Join-Path $pgBin "pg_isready.exe") @("-h", "127.0.0.1", "-p", "$PG_PORT")
     if ($LASTEXITCODE -eq 0) { $ready = $true } else { Start-Sleep -Seconds 2 }
 }
 if (-not $ready) { throw "PostgreSQL does not accept connections on 127.0.0.1:$PG_PORT." }
-$answer = & (Join-Path $pgBin "psql.exe") -h 127.0.0.1 -p $PG_PORT -U postgres -d postgres -tAc "SELECT 1"
+$answer = Get-NativeOutput (Join-Path $pgBin "psql.exe") @("-h", "127.0.0.1", "-p", "$PG_PORT", "-U", "postgres", "-d", "postgres", "-tAc", "SELECT 1")
 if ("$answer".Trim() -ne "1") { throw "Could not sign in to PostgreSQL as postgres. Check -PostgresPassword." }
 Remove-Item Env:\PGPASSWORD
 Write-Ok "PostgreSQL 17 is running on 127.0.0.1:$PG_PORT."
@@ -205,12 +226,13 @@ $claudeLocal = Join-Path $env:USERPROFILE ".local\bin\claude.exe"
 try {
     if ($requestedBackends -contains "claude" -and -not (Test-CommandExists "claude") -and -not (Test-Path -LiteralPath $claudeLocal)) {
         Write-Host "   Installing Claude Code..."
-        Invoke-RestMethod "https://claude.ai/install.ps1" | Invoke-Expression
+        # The official installer runs in its own scope with the default preference, as it would from a plain prompt.
+        & { $ErrorActionPreference = "Continue"; Invoke-RestMethod -UseBasicParsing "https://claude.ai/install.ps1" | Invoke-Expression }
         Update-SessionPath
     }
-    if ($requestedBackends -contains "codex" -and -not (Test-CommandExists "codex")) {
+    if ($requestedBackends -contains "codex" -and -not (Test-CommandExists "codex.cmd")) {
         Write-Host "   Installing Codex CLI..."
-        Invoke-Native "npm" @("install", "-g", "@openai/codex")
+        Invoke-Native "npm.cmd" @("install", "-g", "@openai/codex")
         Update-SessionPath
     }
 } catch {
@@ -222,7 +244,7 @@ Write-Step "Fetching sources"
 function Sync-Repository {
     param([string]$Url, [string]$Directory, [string]$Revision)
     if (Test-Path (Join-Path $Directory ".git")) {
-        $dirty = & git -C $Directory status --porcelain --untracked-files=no
+        $dirty = Get-NativeOutput "git" @("-C", $Directory, "status", "--porcelain", "--untracked-files=no")
         if ($dirty) { throw "$Directory has local changes. Commit or discard them, then run this script again." }
     } else {
         Invoke-Native "git" @("clone", "--no-checkout", $Url, $Directory)
@@ -232,7 +254,7 @@ function Sync-Repository {
 }
 Sync-Repository -Url $RepositoryUrl -Directory $soulDir -Revision $Ref
 Sync-Repository -Url $AtomRepositoryUrl -Directory $atomDir -Revision $AtomRef
-Write-Ok "soulstream $(git -C $soulDir rev-parse --short=12 HEAD), atom $(git -C $atomDir rev-parse --short=12 HEAD)"
+Write-Ok "soulstream $(Get-NativeOutput "git" @("-C", $soulDir, "rev-parse", "--short=12", "HEAD")), atom $(Get-NativeOutput "git" @("-C", $atomDir, "rev-parse", "--short=12", "HEAD"))"
 
 # ---- 6. set up and build (Node) ----
 $setup = Join-Path $soulDir "install\windows\setup.mjs"
@@ -244,21 +266,28 @@ Remove-Item Env:\SOULSTREAM_PG_PASSWORD
 
 # ---- 7. Haniel in its own virtual environment ----
 Write-Step "Installing Haniel"
+$env:PYTHONUTF8 = "1"
 if (-not (Test-Path (Join-Path $venvDir "Scripts\python.exe"))) { Invoke-Native $pythonCmd @("-m", "venv", $venvDir) }
 Invoke-Native (Join-Path $venvDir "Scripts\python.exe") @("-m", "pip", "install", "--disable-pip-version-check", "git+https://github.com/eiaserinnys/haniel.git@$HANIEL_COMMIT")
 Invoke-Native "node" (@($setup, "haniel-config") + $common)
 
 # ---- 8. logon task ----
 Write-Step "Registering the logon task"
-$haniel = Join-Path $venvDir "Scripts\haniel.exe"
+$venvPython = Join-Path $venvDir "Scripts\python.exe"
 $hanielYaml = Join-Path $InstallRoot "haniel.yaml"
 $runner = Join-Path $InstallRoot "run-haniel.ps1"
+# The runner is UTF-16 with a byte order mark so Windows PowerShell 5.1 reads non-ASCII paths (a profile folder with
+# Korean letters); its UTF8 is written without one by PowerShell 7 and read as the ANSI code page by 5.1.
+# PYTHONUTF8: Haniel decodes the services' UTF-8 output with the locale code page (cp949 on Korean Windows), and its
+# log reader stops at the first line it cannot decode. In UTF-8 mode Haniel also decodes netstat and taskkill output
+# as UTF-8; only the "ready: port:" and self-update paths call those, and haniel.yaml here uses "ready: http:".
 @"
 `$ErrorActionPreference = 'Stop'
-`$process = Start-Process -FilePath '$haniel' -ArgumentList @('run', '"$hanielYaml"') -WorkingDirectory '$InstallRoot' -WindowStyle Hidden -PassThru -RedirectStandardOutput '$logsDir\haniel.out.log' -RedirectStandardError '$logsDir\haniel.err.log'
+`$env:PYTHONUTF8 = '1'
+`$process = Start-Process -FilePath '$venvPython' -ArgumentList @('-m', 'haniel', 'run', '"$hanielYaml"') -WorkingDirectory '$InstallRoot' -WindowStyle Hidden -PassThru -RedirectStandardOutput '$logsDir\haniel.out.log' -RedirectStandardError '$logsDir\haniel.err.log'
 Set-Content -LiteralPath '$InstallRoot\haniel.pid' -Value `$process.Id -Encoding ASCII
 `$process.WaitForExit()
-"@ | Set-Content -LiteralPath $runner -Encoding ASCII
+"@ | Set-Content -LiteralPath $runner -Encoding Unicode
 $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$runner`""
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
@@ -283,7 +312,7 @@ if ($started) {
 
 # ---- 9. wait and finish (Node) ----
 Invoke-Native "node" (@($setup, "finish") + $common)
-$uninstallArguments = if ($InstallRoot -eq (Join-Path $env:LOCALAPPDATA "Soulstream")) { "" } else { " -InstallRoot '$InstallRoot'" }
+$uninstallArguments = if ($InstallRoot -eq $defaultInstallRoot) { "" } else { " -InstallRoot '$InstallRoot'" }
 Write-Host ""
 Write-Host "To remove it, run in an elevated PowerShell:" -ForegroundColor DarkGray
 Write-Host "  & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall-windows.ps1')))$uninstallArguments" -ForegroundColor DarkGray
