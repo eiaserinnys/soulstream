@@ -4,7 +4,7 @@ import { cardServerEvidenceReader } from './card_server_evidence_reader.js';
 import type { ServerCardCommand } from './state/card_server_command.js';
 import { decideCardTransition } from './state/card_decision.js';
 import { decodeCardDecision, type DecodedCardWrite } from './state/card_decision_decoder.js';
-import { formatCardDecisionFailure } from './state/card_decision_errors.js';
+import { CARD_FAILURES, formatCardDecisionFailure } from './state/card_decision_errors.js';
 import { humanCardEvidence } from './state/card_human_evidence.js';
 import { assertCardCommandEntrance } from './state/card_command_entrance.js';
 import type { CardBindingValues } from './state/card_write_intent.js';
@@ -516,7 +516,7 @@ export class CardControlPlaneService {
         const locked=(await tx<CardRow[]>`SELECT * FROM cards WHERE id=${card.id} FOR UPDATE`)[0];
         if (!locked) throw Object.assign(new Error("Card not found"),{statusCode:404});
         if (params.expectedVersion!==undefined && locked.version!==params.expectedVersion)
-          throw new CardVersionConflict("card",card.id,params.expectedVersion,locked.version);
+          throw new CardVersionConflict("card",card.id,params.expectedVersion,locked.version,locked.number);
         previousStatus=locked.status;
         questionChanged=await this.applyAddCommentTx(tx,locked,eventId,payload,params,params.commentId,prepared.kind,prepared.external,prepared.reply,entrance);
       },
@@ -592,7 +592,7 @@ export class CardControlPlaneService {
       const fields=writes.find(write=>write.kind==='questionAnswer')!.fields;
       const rows=await sql`UPDATE card_questions SET answer=${fields.answer},selected_option=${fields.selected_option == null ? null : String(fields.selected_option)},answered_at=NOW(),answered_by=${fields.answered_by}
         WHERE id=${params.questionId} AND card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL RETURNING id`;
-      if (!rows.length) throw invalid("Open question not found in card");
+      if (!rows.length) throw invalid(CARD_FAILURES.openQuestion!.message);
       await this.patchDecisionWrites(sql,card,writes,params,eventId);
     });
   }
@@ -607,7 +607,7 @@ export class CardControlPlaneService {
       const fields=writes.find(write=>write.kind==='questionWithdraw')!.fields;
       const rows=await sql`UPDATE card_questions SET withdrawn_at=NOW(),withdrawn_by_session_id=${fields.withdrawn_by_session_id},withdrawal_reason=${fields.withdrawal_reason}
         WHERE id=${params.questionId} AND card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL RETURNING id`;
-      if (!rows.length) throw invalid("Question not found in card");
+      if (!rows.length) throw invalid(CARD_FAILURES.withdraw_missing!.message);
       await this.patchDecisionWrites(sql,card,writes,params,eventId);
     });
   }
@@ -747,7 +747,7 @@ export class CardControlPlaneService {
       apply:async (sql,eventId) => {
         const locked=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${card.id} FOR UPDATE`)[0];
         if (!locked) throw Object.assign(new Error("Card not found"),{ statusCode:404 });
-        if (params.expectedVersion !== undefined && locked.version !== params.expectedVersion) throw new CardVersionConflict("card",card.id,params.expectedVersion,locked.version);
+        if (params.expectedVersion !== undefined && locked.version !== params.expectedVersion) throw new CardVersionConflict("card",card.id,params.expectedVersion,locked.version,locked.number);
         previousStatus=locked.status;
         previousCard={now:locked.now,title:locked.title,archived:locked.archived,number:locked.number};
         previousAssigneeSessionId=locked.assignee_session_id;

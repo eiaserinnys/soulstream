@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { callerSessionIdSchema } from "./folder_shared.js";
+import { callerSessionIdSchema, IDEMPOTENCY_KEY_HINT } from "./folder_shared.js";
 
 const id = z.string().min(1);
 
@@ -10,7 +10,7 @@ const id = z.string().min(1);
  */
 export const cardMaintenanceTools = {
   update_unstarted_card: { name: "update_unstarted_card", strictInputSchema: true, config: {
-    description: "아직 시작하지 않은 카드의 제목, 요청, 인계와 담당 에이전트·모델·노드를 고칩니다. depends_on은 선행 카드 전체를 교체하며 빈 배열은 모두 지웁니다. 보관되지 않았고 사람 담당이나 담당 세션이 없으며 todo·queued·on_hold 상태이고 실행 결과 확인 중이 아닌 카드만 됩니다. 변경할 필드를 하나 이상 지정하세요. agent_id를 주면 그 에이전트가 담당이 됩니다. 상태와 대기열 순서는 유지합니다. 담당 세션이 있는 카드의 후속 지시와 담당 교체는 dispatch_work를 쓰세요. idempotency_key를 재사용하면 중복 변경을 막습니다.",
+    description: "아직 시작하지 않은 카드의 제목, 요청, 인계와 담당 에이전트·모델·노드를 고칩니다. depends_on은 선행 카드 전체를 교체하며 빈 배열은 모두 지웁니다. 보관되지 않았고 사람 담당이나 담당 세션이 없으며 todo·queued·on_hold 상태이고 실행 결과 확인 중이 아닌 카드만 됩니다. 변경할 필드를 하나 이상 지정하세요. agent_id를 주면 그 에이전트가 담당이 됩니다. 상태와 대기열 순서는 유지합니다. 담당 세션이 있는 카드의 후속 지시와 담당 교체는 dispatch_work를 쓰세요. idempotency_key를 재사용하면 중복 변경을 막습니다. expected_version은 생략할 수 있고, 주면 get_card의 card.version 값과 같아야 합니다." + ` ${IDEMPOTENCY_KEY_HINT}`,
     inputSchema: {
       card_id: id,
       title: id.optional(),

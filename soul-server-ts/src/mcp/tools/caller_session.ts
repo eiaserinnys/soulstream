@@ -5,7 +5,6 @@ import type { CallerInfo } from "../../task/task_models.js";
 import {
   getCurrentMcpCallerSessionId,
   getCurrentMcpPrincipal,
-  SOULSTREAM_AGENT_SESSION_HEADER,
 
 } from "../request_context.js";
 import type { McpRuntime } from "../runtime.js";
@@ -55,7 +54,7 @@ export function requireMcpMutationActor(
   const actor = resolveMcpMutationActor(explicitCallerSessionId);
   if (actor) return actor;
   throw new Error(
-    `caller session id is required for ${operation}. Send ${SOULSTREAM_AGENT_SESSION_HEADER}.`,
+    `${operation}에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요.`,
   );
 }
 

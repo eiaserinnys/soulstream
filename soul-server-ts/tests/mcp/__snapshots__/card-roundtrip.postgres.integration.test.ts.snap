@@ -193,11 +193,11 @@ exports[`card orchestrator MCP roundtrip > preserves internal no session 1`] = `
   "content": [
     {
       "type": "text",
-      "text": "caller session id is required for card mutation. Send x-soulstream-agent-session-id."
+      "text": "카드 변경에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요."
     }
   ],
   "structuredContent": {
-    "error": "caller session id is required for card mutation. Send x-soulstream-agent-session-id."
+    "error": "카드 변경에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요."
   },
   "isError": true
 }"
@@ -564,11 +564,11 @@ exports[`card orchestrator MCP roundtrip > preserves work no execution 1`] = `
   "content": [
     {
       "type": "text",
-      "text": "Current work execution required; orchestration purpose cannot start work"
+      "text": "이 세션에는 카드 실행 신원이 없어 start_card_work를 쓸 수 없습니다. 카드 실행으로 뜬 담당 세션만 부를 수 있으니, 상태만 바꾸려면 set_card_status(running)를 쓰세요."
     }
   ],
   "structuredContent": {
-    "error": "Current work execution required; orchestration purpose cannot start work"
+    "error": "이 세션에는 카드 실행 신원이 없어 start_card_work를 쓸 수 없습니다. 카드 실행으로 뜬 담당 세션만 부를 수 있으니, 상태만 바꾸려면 set_card_status(running)를 쓰세요."
   },
   "isError": true
 }"

@@ -14,9 +14,12 @@ export class CardVersionConflict extends Error {
     public readonly targetId: string,
     public readonly expectedVersion: number,
     public readonly actualVersion: number,
+    cardNumber?: number | null,
   ) {
     super(
-      `folder ${targetKind} version conflict: ${targetId} expected version ${expectedVersion}, actual version ${actualVersion}`,
+      targetKind === "card"
+        ? `카드 ${cardNumber == null ? targetId : `#${cardNumber}`}의 판이 바뀌었습니다(읽은 판 ${expectedVersion}, 지금 판 ${actualVersion}). get_card로 다시 읽고 새 version으로 다시 부르세요.`
+        : `folder ${targetKind} version conflict: ${targetId} expected version ${expectedVersion}, actual version ${actualVersion}`,
     );
     this.name = "CardVersionConflict";
   }

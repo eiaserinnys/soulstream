@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { STATUS_CODES } from "node:http";
-import { callWithReferenceTranslation, errorResultFromError, jsonResult, readOrchErrorEnvelopeText, type CallToolResult, type cardTools } from "@soulstream/mcp-contract";
+import { START_CARD_WORK_EXECUTION_REQUIRED, callWithReferenceTranslation, errorResultFromError, jsonResult, readOrchErrorEnvelopeText, type CallToolResult, type cardTools } from "@soulstream/mcp-contract";
 import { allowed, readCardRouteBody, mutateCardRouteBody, cardRouteErrorResponse } from "../cards/card_route_body.js";
 import type { DispatchWorkInput } from "../cards/card_work_dispatch_service.js";
 import type { CardMcpGetInput, CardMcpListInput, CardMcpSearchInput } from "../cards/card_mcp_read.js";
@@ -68,7 +68,9 @@ export const cardHandlers = {
     } else if (/^[a-fA-F0-9]{8}$/.test(cardId)) {
       throw Object.assign(new Error("card_id는 전체 UUID나 카드 번호(#785)를 받습니다. 모르면 search_cards로 찾으세요."), { statusCode: 400 });
     }
-    return service.mcpRead.getCard(cardId, getReadInput(a), allowedFolderIds);
+    const { include, withEvidence } = splitItemsEvidence(a.include);
+    const result = await service.mcpRead.getCard(cardId, getReadInput({ ...a, include }), allowedFolderIds);
+    return withEvidence ? result : summarizeItemsEvidence(result);
   })),
   update_card_brief: (o, a, c) => append(o.cards, "update_card_brief", a, c, { brief: a.brief }, true),
   add_card_report: (o, a, c) => append(o.cards, "add_card_report", a, c, { title: a.title, format: a.format, body: a.body }),
@@ -144,7 +146,7 @@ export const cardHandlers = {
     if (c.principal === "external") throw new Error("card mutation requires an agent session");
     matchingHeader(a, c);
     const actor = agent(a, c, true);
-    if (!c.execution) throw new Error("Current work execution required; orchestration purpose cannot start work");
+    if (!c.execution) throw new Error(START_CARD_WORK_EXECUTION_REQUIRED);
     return compactMutation(await mutation(o.cards, "start_card_work", String(a.card_id), {
       expectedVersion: a.expected_version, idempotencyKey: a.idempotency_key, reason: a.reason, execution: c.execution,
     }, actor));
@@ -192,7 +194,7 @@ function agent(args: Args, context: McpCallContext, headerFirst = false) {
   if (context.principal === "external") return { actorKind: "llm" as const, actorSessionId: null };
   const explicit = typeof args.caller_session_id === "string" ? args.caller_session_id.trim() : "";
   const actorSessionId = headerFirst ? context.callerSessionId ?? (explicit || undefined) : explicit || context.callerSessionId;
-  if (!actorSessionId) throw new Error("caller session id is required for card mutation. Send x-soulstream-agent-session-id.");
+  if (!actorSessionId) throw new Error("카드 변경에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요.");
   return { actorKind: "agent" as const, actorSessionId };
 }
 type MutationProjector = (result: Args) => Args;
@@ -212,6 +214,20 @@ function searchReadInput(args: Args): CardMcpSearchInput {
   if (typeof args.status === "string") input.status = args.status as NonNullable<CardMcpSearchInput["status"]>;
   if (typeof args.limit === "number") input.limit = args.limit;
   return input;
+}
+/** include의 items_evidence는 이 층이 처리하는 값이라 읽기 서비스에는 넘기지 않는다. */
+function splitItemsEvidence(include: unknown): { include: unknown; withEvidence: boolean } {
+  if (!Array.isArray(include)) return { include, withEvidence: false };
+  return { include: include.filter(kind => kind !== "items_evidence"), withEvidence: include.includes("items_evidence") };
+}
+/** 기본 get_card 응답의 항목 증거는 type, label, attachment_id만 남긴다. */
+function summarizeItemsEvidence<T extends Args>(result: T): T {
+  const card = result.card as Args | undefined;
+  if (!Array.isArray(card?.items)) return result;
+  const items = (card.items as Args[]).map(item => !Array.isArray(item.evidence) ? item : { ...item,
+    evidence: (item.evidence as Args[]).map(({ type, label, attachment_id }) =>
+      attachment_id === undefined ? { type, label } : { type, label, attachment_id }) });
+  return { ...result, card: { ...card, items } };
 }
 function getReadInput(args: Args): CardMcpGetInput {
   const input: CardMcpGetInput = {};

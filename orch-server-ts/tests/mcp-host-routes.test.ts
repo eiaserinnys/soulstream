@@ -1,6 +1,7 @@
 import { unusedClusterDependencies } from "./mcp-cluster-unused-fixture.js";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { START_CARD_WORK_EXECUTION_REQUIRED } from "@soulstream/mcp-contract";
 import { registerMcpHostRoutes } from "../src/mcp/mcp_host_routes.js";
 
 
@@ -53,7 +54,7 @@ describe("MCP service host boundary", () => {
         context: { principal: "internal", caller_session_id: "session", node_id: "node" } } });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ isError: true, structuredContent: {
-      error: "Current work execution required; orchestration purpose cannot start work",
+      error: START_CARD_WORK_EXECUTION_REQUIRED,
     } });
     expect(cardServiceProvider).not.toHaveBeenCalled();
   });

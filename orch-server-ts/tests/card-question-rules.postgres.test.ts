@@ -64,7 +64,7 @@ describe("card question answers and author withdrawal", () => {
     const {cardId,questionId}=await ask(true);
     const version=(await cards.getCard(cardId))!.card.version;
     await expect(cards.answerQuestion({actorKind:'agent',actorSessionId:'author',cardId,questionId,
-      expectedVersion:version-1,answer:'진행'})).rejects.toMatchObject({statusCode:422,code:'INVALID_CARD_REQUEST',message:'Only a human may answer card questions'});
+      expectedVersion:version-1,answer:'진행'})).rejects.toMatchObject({statusCode:422,code:'INVALID_CARD_REQUEST',message:'카드 질문에는 사람만 답할 수 있습니다. 질문을 올린 뒤 이 턴을 끝내고 사용자의 답을 기다리세요.'});
     expect((await cards.getCard(cardId))!.card.version).toBe(version);
     expect((await cards.getCard(cardId))!.questions[0]!.answer).toBeNull();
   });

@@ -41,6 +41,7 @@ function permission(report:CardPromiseReport,c:CardDecisionCommand,actor:string,
 export function generateCardStateDocument(report:CardPromiseReport=checkCardPromises()){
  const charts=renderCardCharts(report);
  const lines=['# 카드 상태 결정 규칙','',
+ '이 문서는 규칙을 검증하려고 생성한 상세 문서다. 카드 상태와 expected_version을 처음 익히려면 docs/guide/concepts.md를 먼저 읽는다.','',
  '이 문서는 결정 기계와 검증 세계에서 만든 생성물이다. 동작 기준 커밋은 c8b9c745a, 구조 전환 시작 기준은 52fb382d5다. 기준 위의 결정 정의로 그림, 권한, 규칙과 검사를 함께 생성한다. 사람과 질문, 서버, 유지보수와 담당 교체의 모든 명령을 운영 서비스에 연결했다. 독립 CLAIM 사건은 없으며 담당 확보는 각 명령의 claiming 효과다.','',
  '저장 영역은 status, question, reservation, assignee, archive다. verdict는 목표 없는 전이로 허용, 무변경, 거절을 고른다. 담당 세션 생존과 감독 PAS, 다른 장 수와 내린 기록은 검증 세계의 환경이다. 원래 담당과 교체 담당의 생존 상태, 질문 작성자 관계, limitedOwner는 저장 상태 그림에서 제거했다. 작성자와 담당 관계는 사건 사실로, 생존은 환경으로 옮겼으며 예약 담당 불일치는 DB CHECK가 금지한다.','',
  `도달 세계 ${report.configurationCount}개. 유한 사실은 명령별 값 목록을 전부 열거하고 사실 일관성만 걸러 BFS로 탐색한다. 권한 표는 도달 세계에서 실제 선택한 verdict와 거절 가드 결과다. 같은 결정 값과 환경 담당 상태의 판정은 재사용한다.`,

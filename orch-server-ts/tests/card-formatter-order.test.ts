@@ -28,7 +28,7 @@ const human:CardMutationParams={cardId:'card',actorKind:'user',actorSessionId:nu
 const other:CardMutationParams={cardId:'card',actorKind:'agent',actorSessionId:'other'};
 const wakeAt=()=>new Date(Date.now()+3600000).toISOString();
 const identifier='식별자는 노트에 적으세요(add_card_note). 링크는 증거에 다세요';
-const owner='Only the current assignee session may change card status. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work. A card without an assignee session can be moved to todo, queued, on_hold or cancelled by any internal agent session.';
+const owner='담당 세션만 카드 상태를 바꿀 수 있습니다. 담당이 아니면 내부 에이전트 세션이 transfer_card_assignee로 담당을 맡은 뒤 다시 부르세요. 인계는 담당만 바꾸고 작업을 시작하거나 멈추지 않습니다. 담당 세션이 없는 카드는 내부 에이전트 세션 누구나 todo, queued, on_hold, cancelled로 옮길 수 있습니다.';
 
 describe('baseline a564fb0 formatter/validation order',()=>{
   it('returns owner 403 before formatting another agent verification reason',async()=>{
@@ -57,7 +57,7 @@ describe('baseline a564fb0 formatter/validation order',()=>{
   });
   it('keeps the version fence before review ask validation',async()=>{
     await expect(harness().service.requestCardReview({...other,expectedVersion:1,ask:'file.ts'}))
-      .rejects.toMatchObject({statusCode:409,message:'folder card version conflict: card expected version 1, actual version 2'});
+      .rejects.toMatchObject({statusCode:409,message:'카드 card의 판이 바뀌었습니다(읽은 판 1, 지금 판 2). get_card로 다시 읽고 새 version으로 다시 부르세요.'});
   });
   it('keeps wake_at format validation at the original pre-transaction boundary',async()=>{
     await expect(harness().service.setCardStatus({...human,expectedVersion:1,status:'done',wakeAt:'invalid'}))

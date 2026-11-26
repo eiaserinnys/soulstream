@@ -56,7 +56,7 @@ exports[`pages/live/skills MCP host roundtrip > preserves markdown ids 1`] = `"{
 
 exports[`pages/live/skills MCP host roundtrip > preserves markdown missing 1`] = `"{"content":[{"type":"text","text":"page Yjs host get-page failed: page not found: missing"}],"structuredContent":{"error":"page Yjs host get-page failed: page not found: missing","code":"PAGE_NOT_FOUND","details":{}},"isError":true}"`;
 
-exports[`pages/live/skills MCP host roundtrip > preserves missing actor 1`] = `"{"content":[{"type":"text","text":"caller session id is required for page mutation tools. Send x-soulstream-agent-session-id."}],"structuredContent":{"error":"caller session id is required for page mutation tools. Send x-soulstream-agent-session-id."},"isError":true}"`;
+exports[`pages/live/skills MCP host roundtrip > preserves missing actor 1`] = `"{"content":[{"type":"text","text":"페이지 변경 도구에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요."}],"structuredContent":{"error":"페이지 변경 도구에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요."},"isError":true}"`;
 
 exports[`pages/live/skills MCP host roundtrip > preserves skill API failure 1`] = `"{"content":[{"type":"text","text":"Skill search failed"}],"structuredContent":{"error":"Skill search failed"},"isError":true}"`;
 

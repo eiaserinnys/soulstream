@@ -65,10 +65,15 @@ async function run(fn: () => Promise<unknown>) {
   catch (error) { return errorResult(error instanceof Error ? error.message : String(error)); }
 }
 const node = (operation: "agents" | "model-presets" | "plan" | "apply" | "snapshots" | "rollback", suffix: string, method: "GET" | "POST", body: (a: Args) => Args = () => ({})): Handler => (o, a) => run(async () => {
-  await o.cluster.sessions.router.waitForNode(String(a.node_id));
+  const nodeId = String(a.node_id);
+  await o.cluster.sessions.router.waitForNode(nodeId);
   return request(method,
-    `/api/nodes/${encodeURIComponent(String(a.node_id))}/${suffix}`,
-    () => executeNodeAgentProfileRoute(o.cluster.nodeAgentProfiles, operation, String(a.node_id), JSON.parse(JSON.stringify(body(a)))));
+    `/api/nodes/${encodeURIComponent(nodeId)}/${suffix}`,
+    async () => {
+      const response = await executeNodeAgentProfileRoute(o.cluster.nodeAgentProfiles, operation, nodeId, JSON.parse(JSON.stringify(body(a))));
+      if (response.status === 404) throw new Error(`노드 '${nodeId}'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요.`);
+      return response;
+    });
 });
 const profileBody = (a: Args) => ({ profile: a.profile, create_if_missing: a.create_if_missing ?? false, include_text_diff: a.include_text_diff ?? a.includeTextDiff ?? false });
 
@@ -207,7 +212,7 @@ export const clusterHandlers = {
   create_remote_agent_session: async (o, a, c) => {
     const explicit = typeof a.caller_session_id === "string" ? a.caller_session_id.trim() : "";
     const callerSessionId = c.principal === "external" ? undefined : explicit || c.callerSessionId || undefined;
-    if (c.principal !== "external" && !callerSessionId) return errorResult("caller_session_id is required for create_remote_agent_session. Pass the current soulstream_session.agent_session_id or send x-soulstream-agent-session-id.");
+    if (c.principal !== "external" && !callerSessionId) return errorResult("create_remote_agent_session에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요.");
     const body: Args = { prompt: a.prompt, nodeId: a.node_id };
     if (a.agent_id !== undefined) body.profile = a.agent_id;
     if (a.model_preset !== undefined) body.model_preset = a.model_preset;

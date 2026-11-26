@@ -144973,7 +144973,7 @@
         "value": null,
         "statusCode": 403,
         "code": null,
-        "message": "Only the current assignee session may change card status. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work. A card without an assignee session can be moved to todo, queued, on_hold or cancelled by any internal agent session."
+        "message": "담당 세션만 카드 상태를 바꿀 수 있습니다. 담당이 아니면 내부 에이전트 세션이 transfer_card_assignee로 담당을 맡은 뒤 다시 부르세요. 인계는 담당만 바꾸고 작업을 시작하거나 멈추지 않습니다. 담당 세션이 없는 카드는 내부 에이전트 세션 누구나 todo, queued, on_hold, cancelled로 옮길 수 있습니다."
       }
     },
     {
@@ -149642,7 +149642,7 @@
         "value": null,
         "statusCode": 422,
         "code": "INVALID_CARD_REQUEST",
-        "message": "Only a human may answer card questions"
+        "message": "카드 질문에는 사람만 답할 수 있습니다. 질문을 올린 뒤 이 턴을 끝내고 사용자의 답을 기다리세요."
       }
     },
     {
@@ -150301,7 +150301,7 @@
         "value": null,
         "statusCode": 403,
         "code": null,
-        "message": "Only the question author or current assignee session may withdraw a card question."
+        "message": "질문을 올린 세션이나 현재 담당 세션만 질문을 철회할 수 있습니다. 담당 세션에서 다시 부르세요."
       }
     },
     {
@@ -150961,7 +150961,7 @@
         "value": null,
         "statusCode": 422,
         "code": "INVALID_CARD_REQUEST",
-        "message": "Open question not found in card"
+        "message": "답할 수 있는 열린 질문을 이 카드에서 찾을 수 없습니다. 이미 답했거나 철회됐을 수 있으니 get_card로 질문을 다시 읽고 question_id를 확인하세요."
       }
     },
     {
@@ -153319,7 +153319,7 @@
         "value": null,
         "statusCode": 422,
         "code": "INVALID_CARD_REQUEST",
-        "message": "Open question not found in card"
+        "message": "답할 수 있는 열린 질문을 이 카드에서 찾을 수 없습니다. 이미 답했거나 철회됐을 수 있으니 get_card로 질문을 다시 읽고 question_id를 확인하세요."
       }
     },
     {
@@ -154064,7 +154064,7 @@
         "value": null,
         "statusCode": 403,
         "code": null,
-        "message": "Only the question author or current assignee session may withdraw a card question."
+        "message": "질문을 올린 세션이나 현재 담당 세션만 질문을 철회할 수 있습니다. 담당 세션에서 다시 부르세요."
       }
     },
     {
@@ -157503,7 +157503,7 @@
         "value": null,
         "statusCode": 403,
         "code": null,
-        "message": "Only the question author or current assignee session may withdraw a card question."
+        "message": "질문을 올린 세션이나 현재 담당 세션만 질문을 철회할 수 있습니다. 담당 세션에서 다시 부르세요."
       }
     },
     {
@@ -159994,7 +159994,7 @@
         "value": null,
         "statusCode": 422,
         "code": "INVALID_CARD_WORK",
-        "message": "Only the current assignee session may start work. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work."
+        "message": "담당 세션만 작업을 시작할 수 있습니다. 담당이 아니면 내부 에이전트 세션이 transfer_card_assignee로 담당을 맡은 뒤 다시 부르세요. 인계는 담당만 바꾸고 작업을 시작하거나 멈추지 않습니다."
       }
     },
     {
@@ -160825,7 +160825,7 @@
         "value": null,
         "statusCode": 422,
         "code": "INVALID_CARD_WORK",
-        "message": "Current execution is missing, stale or orchestration purpose"
+        "message": "이 세션의 카드 실행 신원이 없거나 낡았거나 자동 배정용 세션이라 작업을 착수할 수 없습니다. 상태만 바꾸려면 set_card_status(running)를 쓰세요."
       }
     },
     {

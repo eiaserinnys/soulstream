@@ -1,6 +1,6 @@
 /** Existing boundary error contracts. The selected guard supplies the identifier. */
-const STATUS_OWNER='Only the current assignee session may change card status. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work. A card without an assignee session can be moved to todo, queued, on_hold or cancelled by any internal agent session.';
-const WORK_OWNER='Only the current assignee session may start work. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.';
+const STATUS_OWNER='담당 세션만 카드 상태를 바꿀 수 있습니다. 담당이 아니면 내부 에이전트 세션이 transfer_card_assignee로 담당을 맡은 뒤 다시 부르세요. 인계는 담당만 바꾸고 작업을 시작하거나 멈추지 않습니다. 담당 세션이 없는 카드는 내부 에이전트 세션 누구나 todo, queued, on_hold, cancelled로 옮길 수 있습니다.';
+const WORK_OWNER='담당 세션만 작업을 시작할 수 있습니다. 담당이 아니면 내부 에이전트 세션이 transfer_card_assignee로 담당을 맡은 뒤 다시 부르세요. 인계는 담당만 바꾸고 작업을 시작하거나 멈추지 않습니다.';
 export const CARD_FAILURES:Record<string,{statusCode:number|null;code:string|null;message:string}>={
  statusOwner:{statusCode:403,code:null,message:STATUS_OWNER},
  verificationOwner:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'검증 대기는 담당 세션이 있는 카드만 설정할 수 있습니다'},
@@ -15,17 +15,17 @@ export const CARD_FAILURES:Record<string,{statusCode:number|null;code:string|nul
  edit_missing:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'고칠 질문을 이 카드에서 찾을 수 없습니다. 열린 질문의 question_id인지 확인하세요'},
  edit_answered:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'이미 답한 질문은 고칠 수 없습니다'},
  edit_withdrawn:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'철회된 질문은 고칠 수 없습니다'},
- humanAnswer:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Only a human may answer card questions'},
+ humanAnswer:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'카드 질문에는 사람만 답할 수 있습니다. 질문을 올린 뒤 이 턴을 끝내고 사용자의 답을 기다리세요.'},
  withdrawnAnswer:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'철회된 질문에는 답할 수 없습니다'},
- openQuestion:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Open question not found in card'},
- withdrawOwner:{statusCode:403,code:null,message:'Only the question author or current assignee session may withdraw a card question.'},
- withdraw_missing:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Question not found in card'},
- withdraw_answered:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Answered questions cannot be withdrawn'},
- withdraw_withdrawn:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Question already withdrawn'},
- commentTrustedMode:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Only trusted session actors may select a comment mode'},
- commentTrustedSpoken:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Only trusted session actors may add spoken comments'},
+ openQuestion:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'답할 수 있는 열린 질문을 이 카드에서 찾을 수 없습니다. 이미 답했거나 철회됐을 수 있으니 get_card로 질문을 다시 읽고 question_id를 확인하세요.'},
+ withdrawOwner:{statusCode:403,code:null,message:'질문을 올린 세션이나 현재 담당 세션만 질문을 철회할 수 있습니다. 담당 세션에서 다시 부르세요.'},
+ withdraw_missing:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'철회할 열린 질문을 이 카드에서 찾을 수 없습니다. get_card로 질문을 다시 읽고 question_id를 확인하세요.'},
+ withdraw_answered:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'이미 답이 달린 질문은 철회할 수 없습니다. 답을 확인하고 다음 일을 이어가세요.'},
+ withdraw_withdrawn:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'이미 철회된 질문입니다. 새로 물을 것이 있으면 ask_card_question으로 올리세요.'},
+ commentTrustedMode:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'mode는 신뢰된 세션만 고를 수 있습니다. 이 호출에서는 mode를 생략하세요.'},
+ commentTrustedSpoken:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'spoken 커멘트는 신뢰된 세션만 남길 수 있습니다. 진행은 add_card_note에 적으세요.'},
  commentMode:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'mode를 spoken 또는 reply로 지정하세요'},
- replyOwner:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Only the current assignee session may reply to a card comment. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.'},
+ replyOwner:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'담당 세션만 카드 커멘트에 답할 수 있습니다. 담당이 아니면 내부 에이전트 세션이 transfer_card_assignee로 담당을 맡은 뒤 다시 부르세요. 인계는 담당만 바꾸고 작업을 시작하거나 멈추지 않습니다.'},
  replyLength:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'reply은 1200자까지입니다. 지금 {length}자입니다'},
  replyUserInput:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'이미 답했습니다. 진행은 노트에 적으세요(add_card_note)'},
  itemMissing:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'항목을 찾을 수 없습니다'},
@@ -34,8 +34,8 @@ export const CARD_FAILURES:Record<string,{statusCode:number|null;code:string|nul
  questionItem:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'질문 글타래에는 항목을 함께 줄 수 없습니다'},
  questionSpoken:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'질문 글타래에는 spoken을 쓸 수 없습니다'},
  workOwner:{statusCode:422,code:'INVALID_CARD_WORK',message:WORK_OWNER},
- workExecution:{statusCode:422,code:'INVALID_CARD_WORK',message:'Current execution is missing, stale or orchestration purpose'},
- workAdmission:{statusCode:422,code:'INVALID_CARD_WORK',message:'Automatic work requires a valid fenced admission for its assignee'},
+ workExecution:{statusCode:422,code:'INVALID_CARD_WORK',message:'이 세션의 카드 실행 신원이 없거나 낡았거나 자동 배정용 세션이라 작업을 착수할 수 없습니다. 상태만 바꾸려면 set_card_status(running)를 쓰세요.'},
+ workAdmission:{statusCode:422,code:'INVALID_CARD_WORK',message:'자동 배정 실행은 담당 세션에 대한 유효한 배정 승인이 있어야 착수할 수 있습니다. get_card로 카드 상태를 확인하고, 상태만 바꾸려면 set_card_status(running)를 쓰세요.'},
  executionMatches:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'실행 세션과 카드 담당이 일치하지 않습니다.'},
  queued:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Only queued cards may dispatch'},
  pending:{statusCode:409,code:'CARD_EXECUTION_PENDING',message:'실행 결과 확인 중입니다. 같은 요청의 결과를 확인하세요.'},
