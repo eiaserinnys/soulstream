@@ -20,6 +20,7 @@ import {
 } from "./release_artifacts.js";
 import {
   verifyReleaseManifest,
+  type ReleaseManifestBuildInput,
   type ReleaseManifestV1,
 } from "./release_manifest.js";
 
@@ -38,7 +39,7 @@ export async function loadAndVerifyReleaseManifest(input: {
     await readFile(input.manifestPath, "utf8"),
   ) as unknown);
   const runnerArtifactHash = await hashArtifactSet(input.runnerArtifactDirectory);
-  verifyReleaseManifest(manifest, {
+  const current: ReleaseManifestBuildInput = {
     sourceCommit: manifest.source_commit,
     hostBundleHash: await hashReleaseFileSet(
       input.hostBundleDirectory,
@@ -63,8 +64,28 @@ export async function loadAndVerifyReleaseManifest(input: {
     ...(manifest.model_catalog_path === undefined
       ? {}
       : { modelCatalogPath: manifest.model_catalog_path }),
-  });
+  };
+  try {
+    verifyReleaseManifest(manifest, current);
+  } catch (error) {
+    throw withRebuildHint(error);
+  }
   return manifest;
+}
+
+/**
+ * The manifest is written at build time from `.env.soul-server-ts` and the checkout, so a
+ * source run that edited either afterwards fails here until it is rebuilt.
+ */
+function withRebuildHint(error: unknown): unknown {
+  if (!(error instanceof Error) || !error.message.startsWith("release manifest mismatch")) {
+    return error;
+  }
+  return new Error(
+    `${error.message} (when running from source, rebuild after editing .env.soul-server-ts `
+    + "or updating the checkout: pnpm --dir soul-server-ts build)",
+    { cause: error },
+  );
 }
 
 /**

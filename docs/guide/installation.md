@@ -262,14 +262,11 @@ Installer defaults and flags:
 
 Run all workspace commands from the repository root.
 
-1. Enable Corepack, install dependencies, and build the active TypeScript packages:
+1. Enable Corepack and install dependencies:
 
 ```bash
 corepack enable
 pnpm install --frozen-lockfile
-pnpm --dir unified-dashboard build
-pnpm --dir orch-server-ts build
-pnpm --dir soul-server-ts build
 ```
 
 2. Copy the example agent registry for the local worker:
@@ -278,7 +275,7 @@ pnpm --dir soul-server-ts build
 cp soul-server-ts/config/agents.yaml.example soul-server-ts/config/agents.yaml
 ```
 
-3. Create `.env.soul-server-ts` in the repository root for the worker:
+3. Create `.env.soul-server-ts` in the repository root for the worker. Write it before building: the build records a fingerprint of this file in the release manifest, and the worker refuses to start (`release manifest mismatch: deployment_env_identity`) when the file no longer matches.
 
 ```dotenv
 SOULSTREAM_NODE_ID=local-worker
@@ -291,31 +288,42 @@ MCP_INTERNAL_PORT=4206
 ENVIRONMENT=development
 ```
 
+4. Build the active TypeScript packages:
+
+```bash
+pnpm --dir unified-dashboard build
+pnpm --dir orch-server-ts build
+pnpm --dir soul-server-ts build
+```
+
+If you edit `.env.soul-server-ts` or pull new commits later, run `pnpm --dir soul-server-ts build` again before starting the worker.
+
 ## Fresh database initialization
 
 Initialize a fresh, empty PostgreSQL database once before starting `orch-server-ts`. The `fresh-install` command also verifies an already-current database and fails closed when an existing database requires pending migrations through the Haniel release path:
 
 ```bash
 export DATABASE_URL=postgresql://user:password@127.0.0.1:5432/soulstream
-node packages/db-schema/scripts/migrate.mjs fresh-install
+SOULSTREAM_RELEASE_ID=local-1 node packages/db-schema/scripts/migrate.mjs fresh-install
 ```
 
-Start the orchestrator (`CLAUDE_OAUTH_CLIENT_ID` must contain a valid OAuth application client ID, and `CLAUDE_OAUTH_CALLBACK_URL` must be registered with that application):
+`SOULSTREAM_RELEASE_ID` is a name for this installation's release; any non-empty value works, and the command fails without it. The command prints one JSON result line, and it may leave an untracked `.haniel/` folder (the database backup journal) in the repository root, which Git ignores.
+
+Start the orchestrator:
 
 ```bash
-export CLAUDE_OAUTH_CLIENT_ID=your-client-id
-export CLAUDE_OAUTH_CALLBACK_URL=http://127.0.0.1:5200/api/nodes/claude-auth/callback
-
 ENVIRONMENT=development \
 HOST=127.0.0.1 \
 PORT=5200 \
 DATABASE_URL="$DATABASE_URL" \
 SOULSTREAM_PUBLIC_URL="http://127.0.0.1:5200" \
 DASHBOARD_DIR="$PWD/unified-dashboard/dist" \
-CLAUDE_OAUTH_CLIENT_ID="$CLAUDE_OAUTH_CLIENT_ID" \
-CLAUDE_OAUTH_CALLBACK_URL="$CLAUDE_OAUTH_CALLBACK_URL" \
 pnpm --dir orch-server-ts start
 ```
+
+`CLAUDE_OAUTH_CLIENT_ID` and `CLAUDE_OAUTH_CALLBACK_URL` are optional. Leave them out and only the browser flow that connects a Claude account is turned off; the orchestrator starts and everything else works. If you do have an OAuth application, set both variables on the command above, and register the callback URL (for example `http://127.0.0.1:5200/api/nodes/claude-auth/callback`) with that application.
+
+Leave `DASHBOARD_DIR` empty and the orchestrator does not serve the dashboard: `GET /` answers `404`. Build the dashboard first (step 4) and point `DASHBOARD_DIR` at `unified-dashboard/dist`.
 
 In a second terminal, start the worker from the repository root so it loads `.env.soul-server-ts`:
 
@@ -332,8 +340,8 @@ pnpm --dir soul-server-ts dev
 Default local endpoints:
 
 - Web dashboard: `http://127.0.0.1:5200/`
-- Orchestrator health check: `http://127.0.0.1:5200/api/health`
-- Worker health check: `http://127.0.0.1:4205/health`
+- Orchestrator health check: `http://127.0.0.1:5200/api/health` (the orchestrator has no `/health` JSON route; with `DASHBOARD_DIR` set, `/health` returns the dashboard page)
+- Worker health check: `http://127.0.0.1:4205/health`. Its `source_commit` is the `HEAD` of the checkout at build time, so after a `git pull` it shows the old commit until you rebuild.
 - Node-local internal MCP endpoint: `http://127.0.0.1:4206/mcp/internal` (bound to `127.0.0.1`; the public worker listener has no MCP route)
 
 ## Dashboard dev server

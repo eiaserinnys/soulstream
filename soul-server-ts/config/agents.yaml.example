@@ -7,26 +7,29 @@
 # AgentProfile.env와 키 호환 — 운영자가 같은 양식으로 관리 가능.
 #
 # 필수 필드: id, name, backend (claude|codex|antigravity|opencode), workspace_dir
-# 선택 필드: model, max_turns, allowed_tools, disallowed_tools, portrait_path, context_scope,
+# 선택 필드: default_preset, max_turns, allowed_tools, disallowed_tools, portrait_path, context_scope,
 #            claude_auto_memory_enabled
+#   default_preset: 모델 카탈로그(packages/model-catalog/data/model-catalog.yaml)의 프리셋 id. 없으면 노드 기본값.
 #   claude_auto_memory_enabled: Claude 전용. false면 자동 기억(MEMORY.md)을 읽지도 쓰지도 않음. 없으면 SDK 기본.
+#   model 필드는 폐기 예정이라 쓰지 않는다. 모델은 default_preset으로 고른다.
 
 agents:
+  - id: claude-default
+    name: Claude Default
+    backend: claude
+    workspace_dir: /tmp/claude-default
+    # default_preset: <모델 카탈로그의 claude 프리셋 id>
+    # max_turns: 50
+    # claude_auto_memory_enabled: false
+
   - id: codex-default
     name: Codex Default
     backend: codex
     workspace_dir: /tmp/codex-default
-    # model: gpt-5.5
+    # default_preset: <모델 카탈로그의 codex 프리셋 id>
     # max_turns: 50
     # allowed_tools:
     #   - bash
     #   - read
     # portrait_path: /var/lib/soulstream/portraits/codex-default.png
     # context_scope: minimal  # 폴더에서 물려받는 자료와 목록(page_context, 폴더 몫 atom_context, board_workspace, running_sessions, cogito_context)을 붙이지 않는다. 기본은 full
-
-  - id: zombie-labyrinth-bot
-    name: Zombie Labyrinth Bot
-    backend: codex
-    workspace_dir: /tmp/zombie-labyrinth-bot
-    # Codex CLI 0.137.0 `codex debug models` 기준: ultra-fast catalog model.
-    model: gpt-5.3-codex-spark

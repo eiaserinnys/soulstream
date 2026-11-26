@@ -20,6 +20,7 @@ node_modules/
 
 # Local data
 .env.soul-server-ts
+.haniel/
 .vite-cache/
 /config/agents.yaml
 /config/mcp-registry.yaml*

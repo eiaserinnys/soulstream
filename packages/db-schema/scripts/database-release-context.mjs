@@ -37,7 +37,7 @@ export async function resolveDatabaseReleaseContext(options, command) {
   const needsSql = databaseCommand
     && !options.inventoryRead && !options.planRead && !options.migrationRun;
   const sql = options.sql ?? (needsSql ? postgres(readDatabaseUrl(env), {
-    max: 1, idle_timeout: 1, connect_timeout: 5,
+    max: 1, idle_timeout: 1, connect_timeout: 5, onnotice: () => {},
   }) : null);
   return {
     env,

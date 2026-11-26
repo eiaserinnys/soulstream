@@ -77,6 +77,14 @@ cleanup_temp_files() {
 
 usage() {
   printf 'Usage: install.sh [--backends claude,codex,antigravity] [--ref git-ref] [--atom-ref git-ref] [--admin-password-file path | --set-admin-password] [--tailscale [--tailscale-auth-key-file path] [--tailscale-user login]] [--help]\n'
+  printf '  --backends  comma-separated list of claude, codex, antigravity (default: claude,codex)\n'
+}
+
+# Prints the cause on stderr, then the usage, and stops with the argument-error status.
+arg_error() {
+  printf 'install.sh: %s\n' "$1" >&2
+  usage >&2
+  exit 2
 }
 
 validate_admin_password() {
@@ -139,7 +147,7 @@ parse_args() {
       --tailscale) TAILSCALE=true; shift ;;
       --set-admin-password) SET_ADMIN_PASSWORD=true; shift ;;
       --backends|--ref|--atom-ref|--admin-password-file|--tailscale-auth-key|--tailscale-auth-key-file|--tailscale-user)
-        if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then usage >&2; exit 2; fi
+        if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then arg_error "$1 needs a value"; fi
         case "$1" in
           --ref) REF=$2; REF_SET=true ;;
           --atom-ref) ATOM_REF=$2; ATOM_REF_SET=true ;;
@@ -150,17 +158,17 @@ parse_args() {
           --tailscale-user) TAILSCALE_USER=${2,,} ;;
         esac
         shift 2 ;;
-      *) usage >&2; exit 2 ;;
+      *) arg_error "unknown option: $1" ;;
     esac
   done
-  if [[ "$SET_ADMIN_PASSWORD" == true && -n "$ADMIN_PASSWORD_FILE" ]]; then usage >&2; exit 2; fi
+  if [[ "$SET_ADMIN_PASSWORD" == true && -n "$ADMIN_PASSWORD_FILE" ]]; then arg_error "--set-admin-password and --admin-password-file cannot be used together"; fi
   if [[ -n "$ADMIN_PASSWORD_FILE" ]]; then
     # The installer changes to / before anything else runs, so the file is read now, from the caller's directory.
     [[ "$ADMIN_PASSWORD_FILE" == /* ]] || ADMIN_PASSWORD_FILE=$PWD/$ADMIN_PASSWORD_FILE
     read_admin_password_file "$ADMIN_PASSWORD_FILE" || exit 2
   fi
-  if [[ "$TAILSCALE" != true && ( -n "$TAILSCALE_AUTH_KEY" || -n "$TAILSCALE_AUTH_KEY_FILE" || -n "$TAILSCALE_USER" ) ]]; then usage >&2; exit 2; fi
-  if [[ -n "$TAILSCALE_AUTH_KEY" && -n "$TAILSCALE_AUTH_KEY_FILE" ]]; then usage >&2; exit 2; fi
+  if [[ "$TAILSCALE" != true && ( -n "$TAILSCALE_AUTH_KEY" || -n "$TAILSCALE_AUTH_KEY_FILE" || -n "$TAILSCALE_USER" ) ]]; then arg_error "--tailscale-auth-key, --tailscale-auth-key-file and --tailscale-user need --tailscale"; fi
+  if [[ -n "$TAILSCALE_AUTH_KEY" && -n "$TAILSCALE_AUTH_KEY_FILE" ]]; then arg_error "--tailscale-auth-key and --tailscale-auth-key-file cannot be used together"; fi
   if [[ -n "$TAILSCALE_AUTH_KEY_FILE" ]]; then
     if [[ ! -f "$TAILSCALE_AUTH_KEY_FILE" || ! -r "$TAILSCALE_AUTH_KEY_FILE" ]]; then printf 'Tailscale auth key file is not readable.\n' >&2; exit 2; fi
     # The installer changes to / before Tailscale starts, so keep the path absolute.
@@ -169,7 +177,7 @@ parse_args() {
   local item normalized= remaining=$BACKENDS
   while :; do
     item=${remaining%%,*}
-    case "$item" in claude|codex|antigravity) ;; *) usage >&2; exit 2 ;; esac
+    case "$item" in claude|codex|antigravity) ;; *) arg_error "invalid --backends value \"$BACKENDS\": \"$item\" is not one of claude, codex, antigravity" ;; esac
     if [[ ",$normalized," != *",$item,"* ]]; then normalized=${normalized:+$normalized,}$item; fi
     [[ "$remaining" == *,* ]] || break
     remaining=${remaining#*,}

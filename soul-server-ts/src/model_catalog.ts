@@ -75,6 +75,11 @@ export type EffortCapabilities = Partial<
   Record<ModelPreset["backend"], readonly ReasoningEffort[]>
 >;
 
+interface NarrowedPreset {
+  preset: ModelPreset;
+  narrowed: boolean;
+}
+
 export interface ModelCatalogOptions {
   logger?: ModelCatalogLogger;
   effortCapabilities?: EffortCapabilities;
@@ -92,6 +97,7 @@ export interface ModelCatalogOptions {
  */
 export class ModelCatalog {
   private readonly enabledGroups: readonly string[];
+  private warnedNarrowedPresets = "";
 
   constructor(
     private readonly store: ModelCatalogFileStore,
@@ -101,9 +107,11 @@ export class ModelCatalog {
   }
 
   list(): ModelPreset[] {
-    return selectModelPresets(this.store.snapshot(), this.enabledGroups)
+    const presets = selectModelPresets(this.store.snapshot(), this.enabledGroups)
       .filter((preset) => !this.options.enabledBackends || this.options.enabledBackends.includes(preset.backend))
       .map((preset) => this.narrowEfforts(preset));
+    this.warnNarrowedEfforts(presets);
+    return presets.map(({ preset }) => preset);
   }
 
   /** Full catalogue snapshot, ignoring this node's group selection. */
@@ -118,27 +126,33 @@ export class ModelCatalog {
    * A `default_effort` outside that intersection is rejected by the load-time
    * validation hook, so this only ever narrows the supported list.
    */
-  private narrowEfforts(preset: ModelPreset): ModelPreset {
+  private narrowEfforts(preset: ModelPreset): NarrowedPreset {
     const capability = this.options.effortCapabilities?.[preset.backend];
-    if (!capability || !preset.supported_efforts) return preset;
+    if (!capability || !preset.supported_efforts) return { preset, narrowed: false };
     const supported = preset.supported_efforts.filter((effort) =>
       capability.includes(effort),
     );
-    if (supported.length === preset.supported_efforts.length) return preset;
+    if (supported.length === preset.supported_efforts.length) return { preset, narrowed: false };
 
-    const dropped = preset.supported_efforts.filter(
-      (effort) => !capability.includes(effort),
-    );
-    this.options.logger?.warn?.(
-      { presetId: preset.id, backend: preset.backend, dropped },
-      "Model preset advertises efforts the active transport cannot carry",
-    );
     const narrowed = toAdvertisedEfforts(supported);
     const { supported_efforts: _s, ...rest } = preset;
     return {
-      ...rest,
-      ...(narrowed ? { supported_efforts: narrowed } : {}),
+      preset: { ...rest, ...(narrowed ? { supported_efforts: narrowed } : {}) },
+      narrowed: true,
     };
+  }
+
+  /** One summary line per distinct set, so a catalogue read on every call stays quiet. */
+  private warnNarrowedEfforts(presets: readonly NarrowedPreset[]): void {
+    const ids = presets.filter(({ narrowed }) => narrowed).map(({ preset }) => preset.id);
+    const summary = ids.join(", ");
+    if (ids.length === 0 || summary === this.warnedNarrowedPresets) return;
+    this.warnedNarrowedPresets = summary;
+    this.options.logger?.warn?.(
+      { presetIds: ids },
+      `${ids.length} model presets advertise efforts the active transport cannot carry; `
+      + `the unsupported levels are hidden: ${summary}`,
+    );
   }
 
   resolve(presetId: string): ModelPreset {
@@ -146,7 +160,7 @@ export class ModelCatalog {
       .find((candidate) => candidate.id === presetId
         && (!this.options.enabledBackends || this.options.enabledBackends.includes(candidate.backend)));
     if (!preset) throw new UnknownModelPresetError(presetId);
-    return this.narrowEfforts(preset);
+    return this.narrowEfforts(preset).preset;
   }
 
   advertise(
