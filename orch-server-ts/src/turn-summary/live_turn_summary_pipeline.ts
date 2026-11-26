@@ -110,11 +110,12 @@ export function createLiveTurnSummaryPipeline(options: {
       "Codex turn-summary provider disabled: CLI path was not resolved from CODEX_CLI_PATH, PATH, or HOME",
     );
   }
+  const codexExec = new CodexExecTurnSummarizer({
+    ...(codexPath === undefined ? {} : { codexPath }),
+    processEnv,
+  });
   const codexSummarizer = new UsageLimitFallbackTurnSummarizer({
-    primary: new CodexExecTurnSummarizer({
-      ...(codexPath === undefined ? {} : { codexPath }),
-      processEnv,
-    }),
+    primary: codexExec,
     ...(options.fallbackExecutor === undefined
       ? {}
       : { fallback: options.fallbackExecutor }),
@@ -131,7 +132,7 @@ export function createLiveTurnSummaryPipeline(options: {
   const storyFolder = new SessionStoryFoldService({
     repository: storyRepository,
     configService,
-    generator: codexSummarizer,
+    generator: codexExec,
     logger: options.logger,
   });
   const persistentInstructionExtractor = createPersistentInstructionExtractor({

@@ -86,6 +86,7 @@ const CONFIG: TurnSummaryConfig = {
   storyCompletionSweepIntervalMs: 60_000,
   storyNarrativeMaxChars: 1_500,
   storyTimeoutMs: 90_000,
+  fallbackTimeoutMs: 90_000,
   storyFoldFailureCooldownMs: 900_000,
   catchUpIntervalMs: 900_000,
   catchUpWindowHours: 72,
@@ -391,6 +392,7 @@ describe("TurnSummaryConfigService", () => {
       storyCompletionSweepIntervalMs: 60_000,
       storyNarrativeMaxChars: 1_500,
       storyTimeoutMs: 90_000,
+      fallbackTimeoutMs: 90_000,
       storyFoldFailureCooldownMs: 900_000,
       catchUpIntervalMs: 900_000,
       catchUpWindowHours: 72,
@@ -453,7 +455,7 @@ describe("TurnSummaryConfigService", () => {
     writeFileSync(path, yamlConfig("gpt-5.6-terra", false), "utf8");
     writeFileSync(
       join(dir, "turn-summary.local.yaml"),
-      "enabled: true\nmodel: gpt-5.4-mini\nstory_fold_threshold: 12\nstory_timeout_ms: 45000\nstory_fold_failure_cooldown_ms: 60000\n",
+      "enabled: true\nmodel: gpt-5.4-mini\nstory_fold_threshold: 12\nstory_timeout_ms: 45000\nfallback_timeout_ms: 60000\nstory_fold_failure_cooldown_ms: 60000\n",
       "utf8",
     );
 
@@ -465,6 +467,7 @@ describe("TurnSummaryConfigService", () => {
       codexConcurrencyLimit: 2,
       storyFoldThreshold: 12,
       storyTimeoutMs: 45_000,
+      fallbackTimeoutMs: 60_000,
       storyFoldFailureCooldownMs: 60_000,
     });
   });
@@ -578,6 +581,29 @@ describe("turn summary Codex usage limit fallback", () => {
     expect(result).toMatchObject({ content: "대체 요약", model: "gemini-3.8-flash" });
     const [invocation] = agyExecute.mock.calls[0] as unknown as [{ args: string[] }];
     expect(invocation.args).toEqual(expect.arrayContaining(["--effort", "low"]));
+  });
+
+  it("calls the fallback once with the fallback time limit instead of the request time limit", async () => {
+    const generate = vi.fn(async (request: { model: string }) => ({
+      content: "대체 요약", model: request.model, latencyMs: 1, attempts: 1, spawnDurationMs: 1, peakConcurrentSpawns: 1,
+    }));
+    const summarizer = new UsageLimitFallbackTurnSummarizer({
+      primary: new CodexExecTurnSummarizer({
+        codexPath: "codex",
+        processPort: { execute: vi.fn(async () => { throw usageLimit(); }) },
+        processEnv: {},
+      }),
+      fallback: { generate },
+    });
+    const config = { ...fallbackConfig, timeoutMs: 30_000, maxAttempts: 2, fallbackTimeoutMs: 75_000 };
+
+    await summarizer.summarize(input, config);
+    await summarizer.generate("접기 프롬프트", config, { maxAttempts: 2 });
+
+    expect(generate).toHaveBeenCalledTimes(2);
+    for (const [request] of generate.mock.calls as unknown as [{ timeoutMs: number; maxAttempts: number }][]) {
+      expect(request).toMatchObject({ timeoutMs: 75_000, maxAttempts: 1 });
+    }
   });
 
   it("does not use the fallback for Codex failures other than the usage limit", async () => {
@@ -1045,6 +1071,7 @@ function yamlConfig(model: string, enabled: boolean): string {
     `story_completion_sweep_interval_ms: ${CONFIG.storyCompletionSweepIntervalMs}`,
     `story_narrative_max_chars: ${CONFIG.storyNarrativeMaxChars}`,
     `story_timeout_ms: ${CONFIG.storyTimeoutMs}`,
+    `fallback_timeout_ms: ${CONFIG.fallbackTimeoutMs}`,
     `story_fold_failure_cooldown_ms: ${CONFIG.storyFoldFailureCooldownMs}`,
     `catch_up_interval_ms: ${CONFIG.catchUpIntervalMs}`,
     `catch_up_window_hours: ${CONFIG.catchUpWindowHours}`,
