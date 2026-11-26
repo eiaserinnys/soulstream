@@ -382,12 +382,11 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
           },
         },
       });
-      const getCatalog = vi.fn().mockResolvedValue({
-        folders: [{
+      const getAllFolders = vi.fn().mockResolvedValue([{
           id: "folder-1",
           name: "Legacy Folder",
-          sortOrder: 0,
-          parentFolderId: null,
+          sort_order: 0,
+          parent_folder_id: null,
           settings: {
             folderPrompt: "legacy folder prompt",
             atomContextNode: {
@@ -395,9 +394,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
               depth: 2,
             },
           },
-        }],
-        sessions: {},
-      });
+        }]);
       const listRunningSessionsSummary = vi.fn().mockResolvedValue({
         sessions: [{
           session_id: "other",
@@ -442,7 +439,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
         {
           getSession,
           getFolderById,
-          getCatalog,
+          getAllFolders,
           listRunningSessionsSummary,
           getPrimarySessionBoardItem,
         } as unknown as Partial<SessionDB>,
@@ -491,16 +488,13 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
           sort_order: 0,
           settings: { folderPrompt: "folder prompt" },
         }),
-        getCatalog: vi.fn().mockResolvedValue({
-          folders: [{
+        getAllFolders: vi.fn().mockResolvedValue([{
             id: "folder-1",
             name: "Folder",
-            sortOrder: 0,
-            parentFolderId: null,
+            sort_order: 0,
+            parent_folder_id: null,
             settings: { folderPrompt: "folder prompt" },
-          }],
-          sessions: {},
-        }),
+          }]),
       } as unknown as Partial<SessionDB>;
       const baseline = await makeBuilder(db).build(makeTask({ systemPrompt: "task" }), codexAgent);
       const explicitNoAnchor = await makeBuilder(
@@ -563,33 +557,30 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       parent_folder_id: "middle",
       settings: { folderPrompt: "leaf prompt" },
     });
-    const getCatalog = vi.fn().mockResolvedValue({
-      folders: [
+    const getAllFolders = vi.fn().mockResolvedValue([
         {
           id: "root",
           name: "Root",
-          sortOrder: 0,
-          parentFolderId: null,
+          sort_order: 0,
+          parent_folder_id: null,
           settings: { folderPrompt: "root prompt" },
         },
         {
           id: "middle",
           name: "Middle",
-          sortOrder: 1,
-          parentFolderId: "root",
+          sort_order: 1,
+          parent_folder_id: "root",
           settings: { folderPrompt: "" },
         },
         {
           id: "leaf",
           name: "Leaf",
-          sortOrder: 2,
-          parentFolderId: "middle",
+          sort_order: 2,
+          parent_folder_id: "middle",
           settings: { folderPrompt: "leaf prompt" },
         },
-      ],
-      sessions: {},
-    });
-    const cb = makeBuilder({ getSession, getFolderById, getCatalog } as Partial<SessionDB>);
+      ]);
+    const cb = makeBuilder({ getSession, getFolderById, getAllFolders } as Partial<SessionDB>);
 
     const ctx = await cb.build(
       makeTask({ systemPrompt: "task system" }),
@@ -597,6 +588,32 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     );
 
     expect(ctx.effectiveSystemPrompt).toBe("root prompt\n\nleaf prompt\n\ntask system");
+  });
+
+  it("폴더 조상 사슬은 폴더 목록만으로 루트부터 만들고 세션 카탈로그를 받지 않는다", async () => {
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "leaf" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "leaf",
+      name: "Leaf",
+      sort_order: 3,
+      parent_folder_id: "middle",
+      settings: { folderPrompt: "leaf prompt" },
+    });
+    const getAllFolders = vi.fn().mockResolvedValue([
+      { id: "other", name: "Other", sort_order: 0, parent_folder_id: "root", settings: { folderPrompt: "other prompt" } },
+      { id: "leaf", name: "Leaf", sort_order: 3, parent_folder_id: "middle", settings: { folderPrompt: "leaf prompt" } },
+      { id: "middle", name: "Middle", sort_order: 2, parent_folder_id: "root", settings: { folderPrompt: "middle prompt" } },
+      { id: "root", name: "Root", sort_order: 1, parent_folder_id: null, settings: { folderPrompt: "root prompt" } },
+    ]);
+    const getCatalog = vi.fn().mockRejectedValue(new Error("session catalog must not be fetched"));
+    const cb = makeBuilder({ getSession, getFolderById, getAllFolders, getCatalog } as Partial<SessionDB>);
+
+    const ctx = await cb.build(makeTask({ systemPrompt: "task system" }), codexAgent);
+
+    expect(ctx.effectiveSystemPrompt).toBe(
+      "root prompt\n\nmiddle prompt\n\nleaf prompt\n\ntask system",
+    );
+    expect(getCatalog).not.toHaveBeenCalled();
   });
 
   it("folderPrompt 상속은 동일 텍스트 중복을 한 번만 유지한다", async () => {
@@ -608,33 +625,30 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       parent_folder_id: "middle",
       settings: { folderPrompt: "shared prompt" },
     });
-    const getCatalog = vi.fn().mockResolvedValue({
-      folders: [
+    const getAllFolders = vi.fn().mockResolvedValue([
         {
           id: "root",
           name: "Root",
-          sortOrder: 0,
-          parentFolderId: null,
+          sort_order: 0,
+          parent_folder_id: null,
           settings: { folderPrompt: "shared prompt" },
         },
         {
           id: "middle",
           name: "Middle",
-          sortOrder: 1,
-          parentFolderId: "root",
+          sort_order: 1,
+          parent_folder_id: "root",
           settings: { folderPrompt: "middle prompt" },
         },
         {
           id: "leaf",
           name: "Leaf",
-          sortOrder: 2,
-          parentFolderId: "middle",
+          sort_order: 2,
+          parent_folder_id: "middle",
           settings: { folderPrompt: "shared prompt" },
         },
-      ],
-      sessions: {},
-    });
-    const cb = makeBuilder({ getSession, getFolderById, getCatalog } as Partial<SessionDB>);
+      ]);
+    const cb = makeBuilder({ getSession, getFolderById, getAllFolders } as Partial<SessionDB>);
 
     const ctx = await cb.build(
       makeTask({ systemPrompt: "task system" }),
@@ -653,26 +667,23 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       parent_folder_id: "parent",
       settings: { folderPrompt: "leaf prompt" },
     });
-    const getCatalog = vi.fn().mockResolvedValue({
-      folders: [
+    const getAllFolders = vi.fn().mockResolvedValue([
         {
           id: "parent",
           name: "Parent",
-          sortOrder: 0,
-          parentFolderId: "leaf",
+          sort_order: 0,
+          parent_folder_id: "leaf",
           settings: { folderPrompt: "parent prompt" },
         },
         {
           id: "leaf",
           name: "Leaf",
-          sortOrder: 1,
-          parentFolderId: "parent",
+          sort_order: 1,
+          parent_folder_id: "parent",
           settings: { folderPrompt: "leaf prompt" },
         },
-      ],
-      sessions: {},
-    });
-    const cb = makeBuilder({ getSession, getFolderById, getCatalog } as Partial<SessionDB>);
+      ]);
+    const cb = makeBuilder({ getSession, getFolderById, getAllFolders } as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask(), codexAgent);
 
@@ -1068,13 +1079,12 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
         },
       },
     });
-    const getCatalog = vi.fn().mockResolvedValue({
-      folders: [
+    const getAllFolders = vi.fn().mockResolvedValue([
         {
           id: "root",
           name: "Root",
-          sortOrder: 0,
-          parentFolderId: null,
+          sort_order: 0,
+          parent_folder_id: null,
           settings: {
             atomContextNode: {
               nodeId: "11111111-2222-3333-4444-555555555555",
@@ -1086,8 +1096,8 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
         {
           id: "leaf",
           name: "Leaf",
-          sortOrder: 2,
-          parentFolderId: "root",
+          sort_order: 2,
+          parent_folder_id: "root",
           settings: {
             atomContextNode: {
               nodeId: "22222222-3333-4444-5555-666666666666",
@@ -1096,10 +1106,8 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
             },
           },
         },
-      ],
-      sessions: {},
-    });
-    const cb = makeBuilder({ getSession, getFolderById, getCatalog } as Partial<SessionDB>, undefined, true);
+      ]);
+    const cb = makeBuilder({ getSession, getFolderById, getAllFolders } as Partial<SessionDB>, undefined, true);
 
     const ctx = await cb.build(makeTask(), codexAgent);
 
@@ -1139,13 +1147,12 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
         },
       },
     });
-    const getCatalog = vi.fn().mockResolvedValue({
-      folders: [
+    const getAllFolders = vi.fn().mockResolvedValue([
         {
           id: "root",
           name: "Root",
-          sortOrder: 0,
-          parentFolderId: null,
+          sort_order: 0,
+          parent_folder_id: null,
           settings: {
             atomContextNode: {
               nodeId: "11111111-2222-3333-4444-555555555555",
@@ -1157,8 +1164,8 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
         {
           id: "leaf",
           name: "Leaf",
-          sortOrder: 1,
-          parentFolderId: "root",
+          sort_order: 1,
+          parent_folder_id: "root",
           settings: {
             atomContextNode: {
               nodeId: "11111111-2222-3333-4444-555555555555",
@@ -1167,10 +1174,8 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
             },
           },
         },
-      ],
-      sessions: {},
-    });
-    const cb = makeBuilder({ getSession, getFolderById, getCatalog } as Partial<SessionDB>, undefined, true);
+      ]);
+    const cb = makeBuilder({ getSession, getFolderById, getAllFolders } as Partial<SessionDB>, undefined, true);
 
     const ctx = await cb.build(makeTask(), codexAgent);
 
@@ -1364,31 +1369,30 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
       sort_order: 0,
       settings: {},
     });
-    const listSessionsSummary = vi.fn().mockResolvedValue({
-      sessions: [
-        {
-          session_id: "sess-direct",
-          display_name: "Direct Session",
-          updated_at: new Date("2026-06-07T04:00:00.000Z"),
-        },
-      ],
-      total: 1,
+    const listSessionsSummary = vi.fn().mockImplementation(async (params: { folderId?: string }) => {
+      if (params.folderId === "root") {
+        return {
+          sessions: [
+            {
+              session_id: "sess-direct",
+              display_name: "Direct Session",
+              updated_at: new Date("2026-06-07T04:00:00.000Z"),
+            },
+          ],
+          total: 1,
+        };
+      }
+      return { sessions: [], total: params.folderId === "child" ? 1 : 0 };
     });
-    const getCatalog = vi.fn().mockResolvedValue({
-      folders: [
-        { id: "root", name: "Root", sortOrder: 0, settings: {}, parentFolderId: null },
-        { id: "child", name: "Child", sortOrder: 1, settings: {}, parentFolderId: "root" },
-        { id: "grandchild", name: "Grandchild", sortOrder: 2, settings: {}, parentFolderId: "child" },
-      ],
-      sessions: {
-        "sess-direct": { folderId: "root", displayName: "Direct Session" },
-        "sess-nested": { folderId: "child", displayName: "Nested Session" },
-      },
-    });
+    const getAllFolders = vi.fn().mockResolvedValue([
+        { id: "root", name: "Root", sort_order: 0, settings: {}, parent_folder_id: null },
+        { id: "child", name: "Child", sort_order: 1, settings: {}, parent_folder_id: "root" },
+        { id: "grandchild", name: "Grandchild", sort_order: 2, settings: {}, parent_folder_id: "child" },
+      ]);
     const cb = makeBuilder({
       getSession,
       getFolderById,
-      getCatalog,
+      getAllFolders,
       listSessionsSummary,
     } as Partial<SessionDB>);
 
@@ -1511,17 +1515,9 @@ describe("ExecutionContextBuilder.build — board_workspace/running_sessions con
       sort_order: 0,
       settings: {},
     });
-    const getCatalog = vi.fn().mockResolvedValue({
-      folders: [
-        { id: "root", name: "Root", sortOrder: 0, settings: {}, parentFolderId: null },
-      ],
-      sessions: Object.fromEntries(
-        Array.from({ length: 16 }, (_, idx) => [
-          `sess-${idx}`,
-          { folderId: "root", displayName: `Catalog ${idx}` },
-        ]),
-      ),
-    });
+    const getAllFolders = vi.fn().mockResolvedValue([
+        { id: "root", name: "Root", sort_order: 0, settings: {}, parent_folder_id: null },
+      ]);
     const rows = Array.from({ length: 15 }, (_, idx) => ({
       session_id: `sess-${idx}`,
       display_name: `Recent ${idx}`,
@@ -1537,7 +1533,7 @@ describe("ExecutionContextBuilder.build — board_workspace/running_sessions con
     const cb = makeBuilder({
       getSession,
       getFolderById,
-      getCatalog,
+      getAllFolders,
       listSessionsSummary,
     } as unknown as Partial<SessionDB>);
 
@@ -1573,12 +1569,9 @@ describe("ExecutionContextBuilder.build — board_workspace/running_sessions con
         sort_order: 0,
         settings: {},
       });
-      const getCatalog = vi.fn().mockResolvedValue({
-        folders: [
-          { id: "root", name: "Root", sortOrder: 0, settings: {}, parentFolderId: null },
-        ],
-        sessions: {},
-      });
+      const getAllFolders = vi.fn().mockResolvedValue([
+          { id: "root", name: "Root", sort_order: 0, settings: {}, parent_folder_id: null },
+        ]);
       const sessions = Array.from({ length: total }, (_, idx) => ({
         session_id: `sess-${idx}`,
         display_name: `Session ${idx}`,
@@ -1594,7 +1587,7 @@ describe("ExecutionContextBuilder.build — board_workspace/running_sessions con
       const cb = makeBuilder({
         getSession,
         getFolderById,
-        getCatalog,
+        getAllFolders,
         listSessionsSummary,
       } as unknown as Partial<SessionDB>);
       const ctx = await cb.build(makeTask(), codexAgent);
@@ -1984,12 +1977,12 @@ describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 contex
       sort_order: 0,
       settings: { folderPrompt: "폴더 프롬프트" },
     });
-    const getCatalog = vi.fn().mockResolvedValue({ folders: [], sessions: [] });
+    const getAllFolders = vi.fn().mockResolvedValue([]);
     const listRunningSessionsSummary = vi.fn().mockResolvedValue({ sessions: [], total: 0 });
     const cb = makeBuilder({
       getSession,
       getFolderById,
-      getCatalog,
+      getAllFolders,
       listRunningSessionsSummary,
     } as Partial<SessionDB>);
 
@@ -2368,25 +2361,22 @@ describe("ExecutionContextBuilder.buildSystemPrompt — Claude resume system pro
       parent_folder_id: "root",
       settings: { folderPrompt: "leaf prompt" },
     });
-    const getCatalog = vi.fn().mockResolvedValue({
-      folders: [
+    const getAllFolders = vi.fn().mockResolvedValue([
         {
           id: "root",
           name: "Root",
-          sortOrder: 0,
-          parentFolderId: null,
+          sort_order: 0,
+          parent_folder_id: null,
           settings: { folderPrompt: "root prompt" },
         },
         {
           id: "leaf",
           name: "Leaf",
-          sortOrder: 2,
-          parentFolderId: "root",
+          sort_order: 2,
+          parent_folder_id: "root",
           settings: { folderPrompt: "leaf prompt" },
         },
-      ],
-      sessions: {},
-    });
+      ]);
     const agent: AgentProfile = {
       ...codexAgent,
       atom_contexts: [
@@ -2398,7 +2388,7 @@ describe("ExecutionContextBuilder.buildSystemPrompt — Claude resume system pro
       ],
     };
     const cb = makeBuilder(
-      { getSession, getFolderById, getCatalog } as Partial<SessionDB>,
+      { getSession, getFolderById, getAllFolders } as Partial<SessionDB>,
       new AgentRegistry([agent]),
       true,
     );
@@ -2885,16 +2875,13 @@ describe("ExecutionContextBuilder — context_scope minimal", () => {
         sort_order: 0,
         settings: folderSettings,
       }),
-      getCatalog: vi.fn().mockResolvedValue({
-        folders: [{
+      getAllFolders: vi.fn().mockResolvedValue([{
           id: "folder-1",
           name: "Legacy Folder",
-          sortOrder: 0,
-          parentFolderId: null,
+          sort_order: 0,
+          parent_folder_id: null,
           settings: folderSettings,
-        }],
-        sessions: {},
-      }),
+        }]),
       listRunningSessionsSummary,
       getPrimarySessionBoardItem: vi.fn().mockResolvedValue({
         id: "session:sess-1",

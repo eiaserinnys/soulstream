@@ -72,7 +72,7 @@ export async function createBoardRoundtripHarness() {
         actor: { actorKind: "system" }, idempotencyKey });
     }, async (item) => { await broadcastCatalogDelta(folderProvider, broadcaster, { boardItemsDelta: { [item.id]: item } }); });
   const projectionHost = host.customViews;
-  const folders = { serviceProvider: async () => new FolderControlPlaneService(sql, () => host.reads.getBoardItems()),
+  const folders = { serviceProvider: async () => new FolderControlPlaneService(sql),
     cardServiceProvider: async () => cards, identity, authBearerToken: "service-token", nodeCredentials: null };
   const sessionReads = new SessionReadRepository(h.sql);
   const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn(), trace: vi.fn() } as never;

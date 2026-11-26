@@ -53,8 +53,8 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
 
 function createFolderHostedDb(sql: SqlClient): SessionDB {
   const db = new SessionDB();
-  const reads = configureTestBoardProjectionReadHost(db, sql);
-  db.configureFolderHost(new FolderControlPlaneService(sql as never, () => reads.getBoardItems()) as never);
+  configureTestBoardProjectionReadHost(db, sql);
+  db.configureFolderHost(new FolderControlPlaneService(sql as never) as never);
   return db;
 }
 
@@ -82,7 +82,7 @@ describe("SessionDB folder ops (B-5)", () => {
     expect(await createFolderHostedDb(emptySql).getDefaultFolder("missing")).toBeNull();
   });
 
-  it("getCatalog → 평면 저장소에서 boardItems를 읽는다", async () => {
+  it("getCatalog → 폴더와 세션 배정만 돌려주고 보드 항목은 읽지 않는다", async () => {
     const createdAt = new Date("2026-06-03T00:00:00.000Z");
     const folderRows = [
       {
@@ -113,29 +113,10 @@ describe("SessionDB folder ops (B-5)", () => {
       { session_id: "s1", folder_id: "f1", display_name: "Hello" },
       { session_id: "s2", folder_id: null, display_name: null },
     ];
-    const cachedBoardItems = [{
-      id: "session:s1",
-      folderId: "f1",
-      membershipKind: "primary",
-      itemType: "session",
-      itemId: "s1",
-      x: 0,
-      y: 0,
-      metadata: {},
-      createdAt: "2026-06-03T00:00:00.000Z",
-      updatedAt: "2026-06-03T00:00:00.000Z",
-    }];
     const { sql, calls } = createMockSql((call) => {
       const text = call.fragments.join("|");
       if (text.includes("folder_get_all")) return folderRows;
       if (text.includes("catalog_get_sessions")) return sessionRows;
-      if (text.includes("UNION ALL") && text.includes("FROM markdown_documents")) {
-        return cachedBoardItems.map(item => ({
-          id: item.id, folder_id: item.folderId, membership_kind: item.membershipKind,
-          item_type: item.itemType, item_id: item.itemId, x: item.x, y: item.y,
-          metadata: item.metadata, created_at: new Date(item.createdAt), updated_at: new Date(item.updatedAt),
-        }));
-      }
       if (text.includes("board_yjs_documents") || text.includes("board_yjs_updates")) {
         throw new Error("catalog must not decode or compact Yjs documents");
       }
@@ -146,7 +127,6 @@ describe("SessionDB folder ops (B-5)", () => {
     });
     const db = createFolderHostedDb(sql);
     const catalog = await db.getCatalog();
-    const secondCatalog = await db.getCatalog();
 
     expect(catalog.folders).toEqual([
       {
@@ -177,24 +157,11 @@ describe("SessionDB folder ops (B-5)", () => {
       s1: { folderId: "f1", displayName: "Hello" },
       s2: { folderId: null, displayName: null },
     });
-    expect(catalog.boardItems).toEqual([
-      {
-        id: "session:s1",
-        folderId: "f1",
-        membershipKind: "primary",
-        itemType: "session",
-        itemId: "s1",
-        x: 0,
-        y: 0,
-        metadata: {},
-        createdAt: "2026-06-03T00:00:00.000Z",
-        updatedAt: "2026-06-03T00:00:00.000Z",
-      },
-    ]);
-    expect(secondCatalog.boardItems).toEqual(catalog.boardItems);
-    expect(calls.filter((call) =>
-      call.fragments.join("|").includes("FROM markdown_documents")
-    )).toHaveLength(2);
+    expect(catalog).not.toHaveProperty("boardItems");
+    expect(calls.some((call) =>
+      call.fragments.join("|").includes("markdown_documents") ||
+      call.fragments.join("|").includes("board_items")
+    )).toBe(false);
     expect(calls.some((call) =>
       call.fragments.join("|").includes("board_yjs_documents") ||
       call.fragments.join("|").includes("board_yjs_updates")

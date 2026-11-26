@@ -107,7 +107,7 @@ describe("Phase 3 first-turn page context integration", () => {
     const db = {
       assignSessionToFolder: vi.fn(async () => { order.push("folder"); }),
       getFolderById: vi.fn(async () => ({ id: "folder-1" })),
-      getCatalog: vi.fn(async () => ({ folders: [], sessions: {} })),
+      getAllFolders: vi.fn(async () => []),
     } as unknown as SessionDB;
     const registerSession = vi.fn(async () => { order.push("register"); });
     const tasks = new Map<string, Task>();

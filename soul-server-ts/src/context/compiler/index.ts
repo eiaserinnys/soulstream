@@ -252,43 +252,48 @@ async function renderContextSources(
   sources: readonly ContextSource[],
   logger: ContextCompilerLogger,
 ): Promise<CompiledContextSection[]> {
-  const sections: CompiledContextSection[] = [];
-  for (const source of sources) {
-    const requestedMode = source.mode;
-    if (requestedMode !== undefined && !isContextRenderMode(requestedMode)) {
-      logger.warn(
-        { mode: requestedMode, nodeId: source.nodeId },
-        "[context compiler] unknown atom render mode — using legacy rendering",
-      );
-    }
-    if (isContextRenderMode(requestedMode)) {
-      const rendered = await renderExplicitAtomSource(
-        config,
-        source,
-        requestedMode,
-        logger,
-      );
-      sections.push({
-        source,
-        markdown: rendered.markdown,
-        status: rendered.status,
-        truncated: rendered.truncated,
-        anchorCount: rendered.anchorCount,
-        documents: rendered.documents,
-      });
-      continue;
-    }
-    const result = await fetchAtomMarkdownResult(config, source, logger);
-    sections.push({
-      source,
-      markdown: result.markdown,
-      status: result.status,
-      truncated: false,
-      anchorCount: 0,
-      documents: extractContextDocuments(result.markdown),
-    });
+  return await Promise.all(
+    sources.map((source) => renderContextSource(config, source, logger)),
+  );
+}
+
+async function renderContextSource(
+  config: AtomFetchConfig,
+  source: ContextSource,
+  logger: ContextCompilerLogger,
+): Promise<CompiledContextSection> {
+  const requestedMode = source.mode;
+  if (requestedMode !== undefined && !isContextRenderMode(requestedMode)) {
+    logger.warn(
+      { mode: requestedMode, nodeId: source.nodeId },
+      "[context compiler] unknown atom render mode — using legacy rendering",
+    );
   }
-  return sections;
+  if (isContextRenderMode(requestedMode)) {
+    const rendered = await renderExplicitAtomSource(
+      config,
+      source,
+      requestedMode,
+      logger,
+    );
+    return {
+      source,
+      markdown: rendered.markdown,
+      status: rendered.status,
+      truncated: rendered.truncated,
+      anchorCount: rendered.anchorCount,
+      documents: rendered.documents,
+    };
+  }
+  const result = await fetchAtomMarkdownResult(config, source, logger);
+  return {
+    source,
+    markdown: result.markdown,
+    status: result.status,
+    truncated: false,
+    anchorCount: 0,
+    documents: extractContextDocuments(result.markdown),
+  };
 }
 
 /** Phase B renderers annotate their own cut surfaces before this shared hook. */

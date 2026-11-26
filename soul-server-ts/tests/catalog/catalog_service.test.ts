@@ -43,9 +43,9 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
 
 function createSessionDb(sql: SqlClient): SessionDB {
   const db = new SessionDB();
-  const reads = configureTestBoardProjectionReadHost(db, sql);
+  configureTestBoardProjectionReadHost(db, sql);
   db.configureFolderHost(
-    new FolderControlPlaneService(sql as never, () => reads.getBoardItems()) as unknown as FolderHostClient,
+    new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,
   );
   return db;
 }

@@ -6,8 +6,6 @@ import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  fetchAtomContext,
-  fetchAtomContexts,
   fetchAtomMarkdownResult,
   formatAtomContext,
 } from "../../src/context/atom_context.js";
@@ -50,7 +48,7 @@ describe("formatAtomContext (Python format_atom_context 정본)", () => {
   });
 });
 
-describe("fetchAtomContext (Python fetch_atom_context 정본)", () => {
+describe("fetchAtomMarkdownResult", () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
@@ -63,45 +61,37 @@ describe("fetchAtomContext (Python fetch_atom_context 정본)", () => {
 
   it("atom 비활성 → fetch 호출 안 함, null 반환", async () => {
     const fetchMock = vi.mocked(globalThis.fetch);
-    const out = await fetchAtomContext(
+    const out = await fetchAtomMarkdownResult(
       { enabled: false, serverUrl: "https://atom", apiKey: "k" },
-      "node-1",
-      3,
-      false,
+      { nodeId: "node-1", depth: 3, titlesOnly: false },
       silentLogger,
     );
-    expect(out).toBeNull();
+    expect(out).toEqual({ status: "empty", markdown: null });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("serverUrl 빈 문자열 → fetch 호출 안 함, null 반환", async () => {
-    const out = await fetchAtomContext(
+    const out = await fetchAtomMarkdownResult(
       { enabled: true, serverUrl: "", apiKey: "k" },
-      "node-1",
-      3,
-      false,
+      { nodeId: "node-1", depth: 3, titlesOnly: false },
       silentLogger,
     );
-    expect(out).toBeNull();
+    expect(out).toEqual({ status: "empty", markdown: null });
   });
 
-  it("200 응답에 markdown 있으면 formatAtomContext 적용 반환", async () => {
+  it("200 응답에 markdown 있으면 그대로 반환", async () => {
     const fetchMock = vi.mocked(globalThis.fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ markdown: "## 노드\nplain" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
     );
-    const out = await fetchAtomContext(
+    const out = await fetchAtomMarkdownResult(
       { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
-      "n-1",
-      3,
-      true,
+      { nodeId: "n-1", depth: 3, titlesOnly: true },
       silentLogger,
     );
-    expect(out).not.toBeNull();
-    expect(out).toContain("## 노드");
-    expect(out!.startsWith("# atom 트리")).toBe(true);
+    expect(out).toEqual({ status: "ok", markdown: "## 노드\nplain" });
 
     // URL 정합
     const callUrl = fetchMock.mock.calls[0]?.[0]?.toString() ?? "";
@@ -124,54 +114,43 @@ describe("fetchAtomContext (Python fetch_atom_context 정본)", () => {
         return new Response(JSON.stringify({ markdown: `compiled-${limit}` }), { status: 200 });
       });
 
-    const limitedToOne = await fetchAtomContext(
+    const limitedToOne = await fetchAtomMarkdownResult(
       { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
-      "n-1",
-      1,
-      false,
+      { nodeId: "n-1", depth: 1, titlesOnly: false, limit: 1 },
       silentLogger,
-      1,
     );
-    const limitedToThree = await fetchAtomContext(
+    const limitedToThree = await fetchAtomMarkdownResult(
       { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
-      "n-3",
-      1,
-      false,
+      { nodeId: "n-3", depth: 1, titlesOnly: false, limit: 3 },
       silentLogger,
-      3,
     );
 
     expect(new URL(fetchMock.mock.calls[0]![0].toString()).searchParams.get("limit")).toBe("1");
     expect(new URL(fetchMock.mock.calls[1]![0].toString()).searchParams.get("limit")).toBe("3");
-    expect(limitedToOne).toContain("compiled-1");
-    expect(limitedToThree).toContain("compiled-3");
-    expect(limitedToOne).not.toBe(limitedToThree);
+    expect(limitedToOne.markdown).toBe("compiled-1");
+    expect(limitedToThree.markdown).toBe("compiled-3");
   });
 
   it("non-200 → null (graceful)", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
       new Response("err", { status: 503 }),
     );
-    const out = await fetchAtomContext(
+    const out = await fetchAtomMarkdownResult(
       { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
-      "n",
-      3,
-      false,
+      { nodeId: "n", depth: 3, titlesOnly: false },
       silentLogger,
     );
-    expect(out).toBeNull();
+    expect(out).toEqual({ status: "error", markdown: null });
   });
 
   it("network throw → null result", async () => {
     vi.mocked(globalThis.fetch).mockRejectedValueOnce(new Error("ECONNREFUSED"));
-    const out = await fetchAtomContext(
+    const out = await fetchAtomMarkdownResult(
       { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
-      "n",
-      3,
-      false,
+      { nodeId: "n", depth: 3, titlesOnly: false },
       silentLogger,
     );
-    expect(out).toBeNull();
+    expect(out).toEqual({ status: "error", markdown: null });
   });
 
   it("lets a single request return a normal 6-second response before its deadline", async () => {
@@ -259,54 +238,11 @@ describe("fetchAtomContext (Python fetch_atom_context 정본)", () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({}), { status: 200 }),
     );
-    const out = await fetchAtomContext(
+    const out = await fetchAtomMarkdownResult(
       { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
-      "n",
-      3,
-      false,
+      { nodeId: "n", depth: 3, titlesOnly: false },
       silentLogger,
     );
-    expect(out).toBeNull();
-  });
-
-  it("여러 atom context를 한 시스템 프롬프트 블록으로 합성", async () => {
-    const fetchMock = vi.mocked(globalThis.fetch)
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ markdown: "# A" }), { status: 200 }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ markdown: "# B" }), { status: 200 }),
-      );
-    const out = await fetchAtomContexts(
-      { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
-      [
-        {
-          nodeId: "11111111-2222-3333-4444-555555555555",
-          depth: 1,
-          titlesOnly: true,
-          includeIds: false,
-          limit: 2,
-        },
-        {
-          nodeId: "66666666-7777-8888-9999-aaaaaaaaaaaa",
-          depth: 4,
-          titlesOnly: false,
-        },
-      ],
-      silentLogger,
-    );
-    expect(out).not.toBeNull();
-    expect(out!.startsWith("# atom 트리 | 드릴다운:")).toBe(true);
-    expect(out).toContain("## atom node: 11111111-2222-3333-4444-555555555555");
-    expect(out).toContain("depth=1, titles_only=true");
-    expect(out).toContain("## atom node: 66666666-7777-8888-9999-aaaaaaaaaaaa");
-    expect(out).toContain("depth=4, titles_only=false");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0]?.[0]?.toString()).toContain("titles_only=true");
-    expect(fetchMock.mock.calls[0]?.[0]?.toString()).toContain("include_ids=false");
-    expect(fetchMock.mock.calls[0]?.[0]?.toString()).toContain("limit=2");
-    expect(fetchMock.mock.calls[1]?.[0]?.toString()).toContain("include_ids=true");
-    expect(fetchMock.mock.calls[1]?.[0]?.toString()).not.toContain("titles_only=true");
-    expect(fetchMock.mock.calls[1]?.[0]?.toString()).not.toContain("limit=");
+    expect(out).toEqual({ status: "empty", markdown: null });
   });
 });

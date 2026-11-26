@@ -35,7 +35,7 @@ describe("folder object orchestrator MCP roundtrip", () => {
       createOperationId: () => `10000000-0000-4000-8000-${String(++operationSequence).padStart(12, "0")}`,
        hydratePage: async () => {},
     });
-    const options = { serviceProvider: async () => new FolderControlPlaneService(sql, async () => []),
+    const options = { serviceProvider: async () => new FolderControlPlaneService(sql),
       cardServiceProvider: async () => cards, identity, authBearerToken: "service-token" };
     app = Fastify();
     executionOptions = { ...unusedClusterDependencies, board: undefined as never, authBearerToken: options.authBearerToken, folders: options, cards: {

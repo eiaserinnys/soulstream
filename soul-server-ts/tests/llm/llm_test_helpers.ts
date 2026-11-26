@@ -32,7 +32,7 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
       settings: {},
       parent_folder_id: null,
     });
-  const getCatalog = vi.fn().mockResolvedValue({ folders: [], sessions: {} });
+  const getAllFolders = vi.fn().mockResolvedValue([]);
   const appendEvent = vi.fn().mockImplementation(async () => {
     throw new Error("worker publishers must not write session events directly");
   });
@@ -56,7 +56,7 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
   const db = {
     assignSessionToFolder,
     getFolderById,
-    getCatalog,
+    getAllFolders,
     appendEvent,
     updateLastMessage,
   } as unknown as SessionDB;
@@ -114,7 +114,7 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
       acknowledgeReview,
       assignSessionToFolder,
       getFolderById,
-      getCatalog,
+      getAllFolders,
       appendEvent,
       outboxAppend,
       waitForAcknowledgement,

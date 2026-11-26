@@ -97,67 +97,7 @@ export interface AtomFetchResult {
   markdown: string | null;
 }
 
-/**
- * atom API에서 subtree를 compile하여 마크다운을 반환 (Python `fetch_atom_context` 정본).
- *
- * 실패 시 기존 null 반환 계약을 유지한다. 단일 요청 deadline은 30초이며,
- * 첫 turn 입력 guard가 compiler manifest의 error 상태를 종료로 처리한다.
- */
-export async function fetchAtomContext(
-  config: AtomFetchConfig,
-  nodeId: string,
-  depth: number,
-  titlesOnly: boolean,
-  logger: AtomContextLogger,
-  limit?: number,
-  includeIds?: boolean,
-): Promise<string | null> {
-  const markdown = await fetchAtomMarkdown(
-    config,
-    {
-      nodeId,
-      depth,
-      titlesOnly,
-      ...(limit !== undefined ? { limit } : {}),
-      ...(includeIds !== undefined ? { includeIds } : {}),
-    },
-    logger,
-  );
-  return markdown === null ? null : formatAtomContext(markdown);
-}
-
-export async function fetchAtomContexts(
-  config: AtomFetchConfig,
-  specs: AtomContextSpec[],
-  logger: AtomContextLogger,
-): Promise<string | null> {
-  if (specs.length === 0) return null;
-  const sections: string[] = [];
-  for (const spec of specs) {
-    const markdown = await fetchAtomMarkdown(config, spec, logger);
-    if (!markdown) continue;
-    sections.push(
-      [
-        `## atom node: ${spec.nodeId}`,
-        `depth=${spec.depth}, titles_only=${spec.titlesOnly}`,
-        "",
-        formatAtomMarkdown(markdown),
-      ].join("\n"),
-    );
-  }
-  if (sections.length === 0) return null;
-  return `${ATOM_CONTEXT_HEADER}\n${sections.join("\n\n")}`;
-}
-
-export async function fetchAtomMarkdown(
-  config: AtomFetchConfig,
-  spec: AtomContextSpec,
-  logger: AtomContextLogger,
-): Promise<string | null> {
-  return (await fetchAtomMarkdownResult(config, spec, logger)).markdown;
-}
-
-/** Detailed observation for the context compiler; legacy callers keep the null-only API above. */
+/** atom API에서 subtree를 compile한 결과와 관찰 상태. 실패해도 던지지 않고 error 상태로 돌려준다. */
 export async function fetchAtomMarkdownResult(
   config: AtomFetchConfig,
   spec: AtomContextSpec,
