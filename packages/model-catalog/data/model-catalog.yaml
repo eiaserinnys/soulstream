@@ -11,6 +11,7 @@ task_defaults:
   turn_summary: {model_preset: codex-5.6-terra}
   turn_story: {model_preset: codex-5.6-terra}
   instruction_extraction: {model_preset: codex-6.2-sol}
+  turn_summary_fallback: {model_preset: gemini-3.8-flash}
 
 provider_model_prefixes:
   - {prefix: "kimi-", provider: kimi}

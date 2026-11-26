@@ -181,8 +181,11 @@ export class TurnSummaryConfigService {
         instruction_extraction_model: merged.instruction_extraction_model
           ?? resolveTaskModel(defaults.instruction_extraction.model_preset, "codex"),
       });
-      const result: TurnSummaryConfig = merged.fallback_model_preset
-        ? { ...config, fallbackModel: resolveFallbackModel(catalog, merged.fallback_model_preset) }
+      const fallbackPreset = merged.fallback_model_preset === undefined
+        ? defaults.turn_summary_fallback?.model_preset
+        : merged.fallback_model_preset;
+      const result: TurnSummaryConfig = fallbackPreset
+        ? { ...config, fallbackModel: resolveFallbackModel(catalog, fallbackPreset) }
         : config;
       this.lastSuccessful = result;
       return result;

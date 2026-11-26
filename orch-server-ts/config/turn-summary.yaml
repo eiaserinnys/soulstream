@@ -37,8 +37,6 @@ catch_up_interval_ms: 900000
 catch_up_window_hours: 72
 catch_up_max_jobs_per_round: 100
 provider: codex
-# codex가 CODEX_USAGE_LIMIT로 실패한 호출만 다시 돌릴 antigravity 모델 preset. 비우면 대체 없음.
-fallback_model_preset: gemini-3.8-flash
 reasoning_effort: high
 instruction_extraction_reasoning_effort: high
 timeout_ms: 30000

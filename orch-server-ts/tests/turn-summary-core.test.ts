@@ -301,14 +301,32 @@ describe("TurnSummaryConfigService", () => {
     expect(service.read()).toMatchObject({ model: "one", storyModel: "two", instructionExtractionModel: "three" });
   });
 
-  it("resolves the default fallback preset to its antigravity model and drops it when the key is emptied", () => {
+  it("resolves the catalog default fallback model for a config without the key and drops it for an empty override", () => {
     const dir = trackTempDir(join(tmpdir(), "turn-summary-fallback-"));
     const path = join(dir, "turn-summary.yaml");
     const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8");
+    expect(source).not.toContain("fallback_model_preset");
     writeFileSync(path, source, "utf8");
-    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog());
-    expect(service.read()).toMatchObject({ fallbackModel: "gemini-3.8-flash" });
+    const catalog = repositoryModelCatalog();
+    const snapshot = catalog.snapshot();
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, catalog);
+    expect(service.read()).toMatchObject({
+      fallbackModel: resolveModelPreset(snapshot, snapshot.task_defaults.turn_summary_fallback!.model_preset).model,
+    });
+    expect(service.read().fallbackModel).toBe("gemini-3.8-flash");
     writeFileSync(join(dir, "turn-summary.local.yaml"), 'fallback_model_preset: ""\n', "utf8");
+    expect(service.read().fallbackModel).toBeUndefined();
+  });
+
+  it("has no fallback when the catalog declares no fallback default", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-fallback-none-"));
+    const path = join(dir, "turn-summary.yaml");
+    writeFileSync(path, readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8"), "utf8");
+    const catalog = repositoryModelCatalog().snapshot();
+    const { turn_summary_fallback: _omitted, ...taskDefaults } = catalog.task_defaults;
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, {
+      snapshot: () => ({ ...catalog, task_defaults: taskDefaults }),
+    });
     expect(service.read().fallbackModel).toBeUndefined();
   });
 

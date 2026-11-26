@@ -219,6 +219,7 @@ export const ModelCatalogSchema = z.object({
     turn_summary: z.object({ model_preset: z.string().trim().min(1) }),
     turn_story: z.object({ model_preset: z.string().trim().min(1) }),
     instruction_extraction: z.object({ model_preset: z.string().trim().min(1) }),
+    turn_summary_fallback: z.object({ model_preset: z.string().trim().min(1) }).optional(),
   }),
   provider_model_prefixes: z.array(z.object({
     prefix: z.string().trim().min(1),
@@ -280,7 +281,7 @@ export const ModelCatalogSchema = z.object({
     }
   }
   for (const [task, value] of Object.entries(catalog.task_defaults)) {
-    if (presetIds.has(value.model_preset)) continue;
+    if (value === undefined || presetIds.has(value.model_preset)) continue;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["task_defaults", task, "model_preset"],
