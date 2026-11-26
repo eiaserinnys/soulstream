@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { isRecord } from "@soulstream/wire-schema/json-record";
 
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const EMAIL_RE = /^[^@\s]+@[^@\s]+$/;
 const ALLOWED_APPEARANCES = new Set(["system", "light", "dark"]);
 const ALLOWED_WALLPAPER_MODES = new Set(["bokeh", "metal", "photo", "plain"]);
 const ALLOWED_CHAT_FONT_SIZES = new Set([14, 15, 16, 17, 18]);

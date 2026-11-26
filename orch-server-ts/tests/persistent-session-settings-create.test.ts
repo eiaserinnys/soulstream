@@ -28,17 +28,23 @@ function buildApp(options: {
   /** Advertised presets that are not usable right now. */
   unavailablePresets?: readonly string[];
   defaultPasAgentId?: string | null;
+  /** Nodes connected to the orchestrator; defaults to the configured node only. */
+  connectedNodes?: readonly string[];
+  bootstrapEnabled?: boolean;
 } = {}): {
   app: FastifyInstance;
   createBodies: Json[];
   sentSettings: Json[];
   service: PersistentSessionSettingsService;
+  profileNodeCalls: string[];
 } {
+  const profileNodeCalls: string[] = [];
   const createBodies: Json[] = [];
   const sentSettings: Json[] = [];
   const rows = new Map<string, Json>();
   let created = 0;
   const service = new PersistentSessionSettingsService({ defaultExecutionNodeId:CONFIGURED_DEFAULT_NODE,
+    connectedNodeIds: () => options.connectedNodes ?? [CONFIGURED_DEFAULT_NODE],
     reads: async () => ({
       getSession: async (sessionId: string) => rows.get(sessionId) ?? null,
       listPersistentSessions: async () => [],
@@ -106,7 +112,7 @@ function buildApp(options: {
       },
     },
     profiles: { listAgentProfiles: async (nodeId: string) => {
-      expect(nodeId).toBe(CONFIGURED_DEFAULT_NODE);
+      profileNodeCalls.push(nodeId);
       return options.profiles === null
         ? undefined : options.profiles ?? { [PAS_AGENT]: { name: "서소영 (PAS)" } };
     } },
@@ -118,13 +124,14 @@ function buildApp(options: {
           ? defaults : { ...defaults, agent_id: options.agentId } };
       },
     },
+    ...(options.bootstrapEnabled === undefined ? {} : { bootstrapEnabled: options.bootstrapEnabled }),
     ...(options.defaultPasAgentId === undefined
       ? {}
       : { defaultPasAgentId: options.defaultPasAgentId }),
   } as never);
   const app = Fastify();
   registerPersistentSessionSettingsRoutes(app, { service });
-  return { app, createBodies, sentSettings, service };
+  return { app, createBodies, sentSettings, service, profileNodeCalls };
 }
 
 function ctxNodeId(body: Json): string {
@@ -177,6 +184,71 @@ describe("PAS create defaults from the catalog", () => {
   it("omits the preferred agent and its reason when the catalog does not set one", async () => {
     const { app, service } = buildApp({ agentId: null, profiles: null });
     expect(await service.createDefaults()).toMatchObject({ preferred_agent_id: null, unavailable_reason: null });
+    await app.close();
+  });
+});
+
+describe("PAS create defaults pick a connected node", () => {
+  it("keeps the configured node while it is connected", async () => {
+    const { app, service, profileNodeCalls } = buildApp({ connectedNodes: ["a-node", CONFIGURED_DEFAULT_NODE] });
+    expect(await service.createDefaults()).toMatchObject({ node_id: CONFIGURED_DEFAULT_NODE });
+    expect(profileNodeCalls).toEqual([CONFIGURED_DEFAULT_NODE]);
+    await app.close();
+  });
+
+  it("falls back to the first connected node when the configured node is not connected", async () => {
+    const { app, service, profileNodeCalls } = buildApp({ connectedNodes: ["a-node", "b-node"] });
+    expect(await service.createDefaults()).toMatchObject({ node_id: "a-node" });
+    expect(profileNodeCalls).toEqual(["a-node"]);
+    await app.close();
+  });
+
+  it("returns an empty node and asks no node for profiles when none is connected", async () => {
+    const { app, service, profileNodeCalls } = buildApp({ connectedNodes: [] });
+    expect(await service.createDefaults()).toMatchObject({
+      node_id: "", preferred_agent_id: null, unavailable_reason: null,
+    });
+    expect(profileNodeCalls).toEqual([]);
+    await app.close();
+  });
+});
+
+describe("POST /api/persistent-sessions creates on the node the form shows", () => {
+  const post = (app: FastifyInstance, payload: Json = createBody()) =>
+    app.inject({ method: "POST", url: "/api/persistent-sessions", payload });
+
+  it("creates on the first connected node when the configured node is not connected", async () => {
+    const { app, createBodies, profileNodeCalls } = buildApp({ connectedNodes: ["a-node"] });
+    const response = await post(app);
+    expect(response.statusCode).toBe(201);
+    expect(createBodies[0]).toMatchObject({ nodeId: "a-node" });
+    expect(new Set(profileNodeCalls)).toEqual(new Set(["a-node"]));
+    await app.close();
+  });
+
+  it("keeps the configured node while it is connected", async () => {
+    const { app, createBodies } = buildApp({ connectedNodes: ["a-node", CONFIGURED_DEFAULT_NODE] });
+    expect((await post(app)).statusCode).toBe(201);
+    expect(createBodies[0]).toMatchObject({ nodeId: CONFIGURED_DEFAULT_NODE });
+    await app.close();
+  });
+
+  it("refuses with 422 and asks no node for profiles when no node is connected", async () => {
+    const { app, createBodies, profileNodeCalls } = buildApp({ connectedNodes: [] });
+    const response = await post(app);
+    expect(response.statusCode).toBe(422);
+    expect(JSON.stringify(response.json())).toContain("연결된 노드가 없습니다. 노드를 연결한 뒤 다시 만드세요.");
+    expect(profileNodeCalls).toEqual([]);
+    expect(createBodies).toEqual([]);
+    await app.close();
+  });
+
+  it("keeps the bootstrap on the configured node instead of the first connected node", async () => {
+    const { app, createBodies, profileNodeCalls } = buildApp({ connectedNodes: ["a-node"], bootstrapEnabled: true });
+    const response = await app.inject({ method: "POST", url: "/api/persistent-sessions/bootstrap", payload: {} });
+    expect(response.statusCode).toBe(201);
+    expect(createBodies[0]).toMatchObject({ nodeId: CONFIGURED_DEFAULT_NODE });
+    expect(profileNodeCalls).not.toContain("a-node");
     await app.close();
   });
 });

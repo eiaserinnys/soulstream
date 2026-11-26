@@ -161,7 +161,7 @@ export async function buildPersistentSettingsApp(
       if (folderId === "f-hidden") throw new SessionResourceAccessError("SESSION_ACCESS_DENIED", "Folder access denied", 403);
     };
     const commands = { router, bridge, timeoutMs: 5_000 };
-    const service = new PersistentSessionSettingsService({ defaultExecutionNodeId:"eiaserinnys",
+    const service = new PersistentSessionSettingsService({ defaultExecutionNodeId:"eiaserinnys", connectedNodeIds: () => ["eiaserinnys"],
       modelCatalog: catalog,
       reads: async () => new SessionReadRepository(sql as unknown as SqlClient),
       access: {

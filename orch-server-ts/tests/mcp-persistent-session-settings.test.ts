@@ -56,7 +56,7 @@ function setup(modelCatalog: { snapshot: () => typeof CATALOG } = catalog) {
       buildPersistentSettingsMetadataEntry(currentSettings),
     ],
   });
-  const service = new PersistentSessionSettingsService({ defaultExecutionNodeId:"eiaserinnys",
+  const service = new PersistentSessionSettingsService({ defaultExecutionNodeId:"eiaserinnys", connectedNodeIds: () => ["eiaserinnys"],
     reads: async () => ({
       getSession: async (id: string) => rows.get(id) ?? null,
       listPersistentSessions: async () => [],

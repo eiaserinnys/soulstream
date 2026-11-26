@@ -49,6 +49,8 @@ import {
   requireObjectBody,
 } from "./persistent_session_instructions_service.js";
 
+const NO_CONNECTED_NODE_MESSAGE = "연결된 노드가 없습니다. 노드를 연결한 뒤 다시 만드세요.";
+
 export type PersistentCreateDefaults = {
   node_id: string;
   preferred_agent_id: string | null;
@@ -77,6 +79,8 @@ export type PersistentSessionSettingsServiceDeps = {
   modelCatalog: ModelCatalogSource;
   /** Node for a new PAS that names none; the orchestrator injects its configured value. */
   defaultExecutionNodeId: string;
+  /** Nodes connected right now; the create form's default node must be one of them. */
+  connectedNodeIds: () => readonly string[];
   /** Installer-chosen agent; null falls back to the catalog persistent default. */
   defaultPasAgentId?: string | null;
   /** PERSISTENT_SESSION_BOOTSTRAP; absent means off. */
@@ -117,6 +121,10 @@ export class PersistentSessionSettingsService {
   }
 
   async list(request: CallerRequest) {
+    return { ...(await this.listVisible(request)), create_defaults: await this.createDefaults() };
+  }
+
+  private async listVisible(request: CallerRequest) {
     const rows = await (await this.deps.reads()).listPersistentSessions();
     const visible = await this.accessibleRows(request, rows);
     const names = await this.agentNames(visible);
@@ -125,7 +133,6 @@ export class PersistentSessionSettingsService {
       sessions: visible.map((row) =>
         buildPersistentSessionResource(row, names.get(agentKey(row)) ?? null, fallbackModels)),
       total: visible.length,
-      create_defaults: await this.createDefaults(),
     };
   }
 
@@ -253,7 +260,22 @@ export class PersistentSessionSettingsService {
     };
   }
 
+  /** A user's create request lands on the node the create form shows (createDefaultsNodeId). */
   async create(
+    request: CallerRequest,
+    input: unknown,
+    logger: Pick<FastifyRequest["log"], "warn">,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    const nodeId = this.createDefaultsNodeId();
+    if (nodeId === "") {
+      parseCreateBody(input);
+      throw new PersistentSessionApiError(422, "INVALID_MODEL_PRESET", NO_CONNECTED_NODE_MESSAGE);
+    }
+    return this.createOnNode(nodeId, request, input, logger);
+  }
+
+  private async createOnNode(
+    nodeId: string,
     request: CallerRequest,
     input: unknown,
     logger: Pick<FastifyRequest["log"], "warn">,
@@ -265,10 +287,10 @@ export class PersistentSessionSettingsService {
     } | null = null;
     let defaultModel: PersistentModelSelection | null;
     if (body.default_model === undefined) {
-      catalogModels = this.resolveCatalogModels([]);
+      catalogModels = this.resolveCatalogModels(nodeId, []);
       defaultModel = catalogModels.default_model;
     } else {
-      defaultModel = this.normalizeModel(this.deps.defaultExecutionNodeId, body.default_model, {
+      defaultModel = this.normalizeModel(nodeId, body.default_model, {
         requireAvailable: false, allowLimitRejected: false, keepEffort: undefined,
       });
     }
@@ -277,16 +299,16 @@ export class PersistentSessionSettingsService {
     }
     const fallbackModels = body.fallback_models === undefined
       ? catalogModels === null
-        ? this.resolveCatalogFallbacks(defaultModel.model_preset)
+        ? this.resolveCatalogFallbacks(nodeId, defaultModel.model_preset)
         : catalogModels.fallback_models
       : body.fallback_models.map((model) => this.normalizeModel(
-        this.deps.defaultExecutionNodeId, model,
+        nodeId, model,
         { requireAvailable: false, allowLimitRejected: false, keepEffort: undefined },
       ));
     let initialCandidate: PersistentModelSelection | undefined;
-    let initialNodeId = this.deps.defaultExecutionNodeId;
+    let initialNodeId = nodeId;
     for (const candidate of [defaultModel, ...fallbackModels]) {
-      const candidateNodeId = candidate.node_id ?? this.deps.defaultExecutionNodeId;
+      const candidateNodeId = candidate.node_id ?? nodeId;
       try {
         const profileId = body.agent_id;
         const profiles = await this.deps.profiles.listAgentProfiles(candidateNodeId);
@@ -363,13 +385,14 @@ export class PersistentSessionSettingsService {
     request: FastifyRequest,
     logger: Pick<FastifyRequest["log"], "warn">,
   ): Promise<{ status: number; body: Record<string, unknown> }> {
-    const { sessions, create_defaults: defaults } = await this.list(request);
+    const { sessions } = await this.listVisible(request);
+    const defaults = await this.createDefaults(this.deps.defaultExecutionNodeId);
     const existing = sessions[0];
     if (existing !== undefined) return { status: 200, body: { created: false, session_id: existing.session_id } };
     const refusal = bootstrapRefusal(defaults);
     if (refusal !== null) throw refusal;
     const profiles = await this.deps.profiles.listAgentProfiles(defaults.node_id);
-    const created = await this.create(request, {
+    const created = await this.createOnNode(defaults.node_id, request, {
       display_name: bootstrapDisplayName(profiles?.[defaults.preferred_agent_id!]?.name),
       agent_id: defaults.preferred_agent_id,
       initial_instruction: defaults.initial_instruction,
@@ -529,7 +552,7 @@ export class PersistentSessionSettingsService {
   }
 
   /** Catalog models the execution node advertises, in catalog order. */
-  private advertisedCatalogModels(candidates: readonly PersistentModelSelection[]): {
+  private advertisedCatalogModels(nodeId: string, candidates: readonly PersistentModelSelection[]): {
     advertised: PersistentModelSelection[];
     unavailableReasons: string[];
   } {
@@ -537,12 +560,11 @@ export class PersistentSessionSettingsService {
     const unavailableReasons: string[] = [];
     for (const candidate of candidates) {
       try {
-        this.deps.presets.resolveStaticForNode(
-          this.deps.defaultExecutionNodeId, candidate.model_preset);
+        this.deps.presets.resolveStaticForNode(nodeId, candidate.model_preset);
         advertised.push(candidate);
       } catch (error) {
         if (!(error instanceof ModelPresetAvailabilityError)) throw error;
-        unavailableReasons.push(`기본 모델 ${candidate.model_preset}이(가) 노드 ${this.deps.defaultExecutionNodeId}에 없습니다.`);
+        unavailableReasons.push(`기본 모델 ${candidate.model_preset}이(가) 노드 ${nodeId}에 없습니다.`);
       }
     }
     return { advertised, unavailableReasons };
@@ -566,23 +588,21 @@ export class PersistentSessionSettingsService {
    * backend only, this yields that backend as the default instead of a preset
    * the node would reject on first use.
    */
-  private resolveCatalogModels(reasons: string[]): {
+  private resolveCatalogModels(nodeId: string, reasons: string[]): {
     default_model: PersistentModelSelection | null;
     fallback_models: PersistentModelSelection[];
   } {
     const { advertised, unavailableReasons } = this.advertisedCatalogModels(
-      this.catalogCandidates());
+      nodeId, this.catalogCandidates());
     for (const [index, candidate] of advertised.entries()) {
       try {
-        this.deps.presets.requireAvailable(
-          this.deps.defaultExecutionNodeId, candidate.model_preset);
+        this.deps.presets.requireAvailable(nodeId, candidate.model_preset);
       } catch (error) {
         if (!(error instanceof ModelPresetAvailabilityError)) throw error;
         unavailableReasons.push(`기본 모델 ${candidate.model_preset}을(를) 지금 쓸 수 없습니다.`);
         continue;
       }
-      const preset = this.deps.presets.resolveStaticForNode(
-        this.deps.defaultExecutionNodeId, candidate.model_preset);
+      const preset = this.deps.presets.resolveStaticForNode(nodeId, candidate.model_preset);
       return {
         default_model: {
           model_preset: preset.id,
@@ -596,38 +616,48 @@ export class PersistentSessionSettingsService {
   }
 
   /** Advertised catalog fallbacks, minus the explicitly requested default. */
-  private resolveCatalogFallbacks(excludePreset: string): PersistentModelSelection[] {
+  private resolveCatalogFallbacks(nodeId: string, excludePreset: string): PersistentModelSelection[] {
     const fallbacks = this.deps.modelCatalog.snapshot().persistent_defaults.fallback_models
       .map((model) => ({
         model_preset: model.model_preset,
         reasoning_effort: model.reasoning_effort ?? null,
       }));
-    return this.advertisedCatalogModels(fallbacks).advertised
+    return this.advertisedCatalogModels(nodeId, fallbacks).advertised
       .filter((model) => model.model_preset !== excludePreset);
   }
 
-  async createDefaults(): Promise<PersistentCreateDefaults> {
+  /** The configured node while it is connected, else the first connected node, else none. */
+  private createDefaultsNodeId(): string {
+    const connected = this.deps.connectedNodeIds();
+    return connected.includes(this.deps.defaultExecutionNodeId)
+      ? this.deps.defaultExecutionNodeId
+      : connected[0] ?? "";
+  }
+
+  async createDefaults(nodeId: string = this.createDefaultsNodeId()): Promise<PersistentCreateDefaults> {
     const reasons: string[] = [];
     const persistedDefaults = this.deps.modelCatalog.snapshot().persistent_defaults;
     const agentId = this.deps.defaultPasAgentId ?? persistedDefaults.agent_id;
     let preferredAgentId: string | null = null;
-    if (agentId !== undefined) {
-      const profiles = await this.deps.profiles.listAgentProfiles(this.deps.defaultExecutionNodeId);
+    if (agentId !== undefined && nodeId !== "") {
+      const profiles = await this.deps.profiles.listAgentProfiles(nodeId);
       if (profiles === undefined) {
-        reasons.push(`노드 ${this.deps.defaultExecutionNodeId}에 연결할 수 없어 프로필을 확인하지 못했습니다.`);
+        reasons.push(`노드 ${nodeId}에 연결할 수 없어 프로필을 확인하지 못했습니다.`);
       } else if (agentId in profiles) {
         preferredAgentId = agentId;
       } else {
-        reasons.push(`프로필 ${agentId}이(가) 노드 ${this.deps.defaultExecutionNodeId}에 없습니다.`);
+        reasons.push(`프로필 ${agentId}이(가) 노드 ${nodeId}에 없습니다.`);
       }
     }
-    const catalogModels = this.resolveCatalogModels(reasons);
+    const catalogModels = nodeId === ""
+      ? { default_model: null, fallback_models: [] }
+      : this.resolveCatalogModels(nodeId, reasons);
     const defaultModel: PersistentModelSelectionView = catalogModels.default_model ?? {
       model_preset: null,
       reasoning_effort: null,
     };
     return {
-      node_id: this.deps.defaultExecutionNodeId,
+      node_id: nodeId,
       preferred_agent_id: preferredAgentId,
       settings: {
         default_model: defaultModel,

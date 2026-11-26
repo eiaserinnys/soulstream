@@ -157,7 +157,7 @@ describe("Login password mode", () => {
         return Response.json({ authenticated: false, user: null });
       }
       if (url === "/api/auth/password-login") {
-        return Response.json({ detail: "Invalid password" }, { status: 401 });
+        return Response.json({ detail: "비밀번호가 맞지 않습니다" }, { status: 401 });
       }
       throw new Error(`Unexpected request: ${url}`);
     });
@@ -169,7 +169,7 @@ describe("Login password mode", () => {
     submitPassword();
 
     await vi.waitFor(() => {
-      expect(container.querySelector("[role=alert]")?.textContent).toBe("Invalid password");
+      expect(container.querySelector("[role=alert]")?.textContent).toBe("비밀번호가 맞지 않습니다");
     });
     expect(container.querySelector("[data-testid=dashboard]")).toBeNull();
   });

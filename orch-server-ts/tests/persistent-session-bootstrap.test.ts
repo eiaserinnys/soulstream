@@ -65,6 +65,7 @@ function buildApp(options: Options = {}): {
   let callerIdCalls = 0;
   const service = new PersistentSessionSettingsService({
     defaultExecutionNodeId: NODE,
+    connectedNodeIds: () => [NODE],
     defaultPasAgentId: PAS_AGENT,
     ...(options.enabled === undefined ? {} : { bootstrapEnabled: options.enabled }),
     resolveCallerId: async () => {

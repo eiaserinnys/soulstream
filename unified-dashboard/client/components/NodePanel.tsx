@@ -72,7 +72,7 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
           data-testid="node-card-list"
           className="flex min-h-28 flex-col items-center justify-center rounded-floor border border-border bg-muted/10 text-sm text-muted-foreground/40"
         >
-          No nodes
+          연결된 노드가 없습니다
         </div>
       ) : (
         <div data-testid="node-card-list" className="space-y-2">
