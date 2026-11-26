@@ -301,6 +301,7 @@ export async function runMigrations(
     max: 1,
     idle_timeout: 1,
     connect_timeout: 5,
+    onnotice: () => {},
   });
 
   try {

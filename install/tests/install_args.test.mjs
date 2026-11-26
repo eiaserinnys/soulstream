@@ -79,3 +79,13 @@ test('an auth key file reaches tailscale up by path only', () => {
     assert.ok(!(argv + result.stdout + result.stderr + readFileSync(log, 'utf8')).includes('SynthTsKeyContent7c1d'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('an invalid backend names the cause on stderr and help shows the default', () => {
+  const result = parse('--backends', 'foo');
+  assert.equal(result.status, 2);
+  const lines = result.stderr.trim().split('\n');
+  assert.ok(lines.some((line) => line.includes('--backends') && line.includes('foo')), result.stderr);
+  const help = parse('--help');
+  assert.equal(help.status, 0);
+  assert.match(help.stdout + help.stderr, /--backends[^\n]*claude,codex/);
+});

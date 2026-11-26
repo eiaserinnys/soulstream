@@ -13,7 +13,7 @@ Defined in [`orch-server-ts/.env.example`](../../orch-server-ts/.env.example):
 - `PORT`: HTTP listener port (defaults to `5200`).
 - `DATABASE_URL`: required PostgreSQL connection URL.
 - `SOULSTREAM_PUBLIC_URL`: required public HTTP origin for OAuth metadata and issuer (no path or query).
-- `DASHBOARD_DIR`: optional path to the built `unified-dashboard/dist` directory when serving the web UI from the orchestrator.
+- `DASHBOARD_DIR`: optional path to the built `unified-dashboard/dist` directory when serving the web UI from the orchestrator. Left empty, the orchestrator does not serve the dashboard and `GET /` answers `404`. Health checks use `/api/health` on the orchestrator and `/health` on a worker.
 - `NODE_NAME`: optional human-readable node label (required when external MCP ingress is enabled).
 - `DEFAULT_EXECUTION_NODE_ID`: node that runs cards, conversations, and persistent sessions that name no node (empty falls back to the built-in default node; the Linux installer sets `local`). It is separate from `NODE_NAME`, which only labels the external MCP ingress caller.
 - `PERSISTENT_SESSION_BOOTSTRAP`: `true` or `false`, default `false`. When `true`, `GET /api/persistent-sessions` reports `create_defaults.bootstrap_enabled: true`, and once the first coding agent is connected the dashboard calls `POST /api/persistent-sessions/bootstrap` to create one default persistent session. The call creates nothing when the signed-in user already sees a persistent session (it answers `200 {"created": false, "session_id": ...}`), answers `409` with code `bootstrap_disabled` when the switch is off and `bootstrap_unavailable` while no usable model or agent exists, and creates through the ordinary create path (`201 {"created": true, "session_id": ...}`). Overlapping calls from one user create one session. The session is not created during installation because its first turn runs immediately and needs a logged-in coding agent. The Linux installer sets `true`.
@@ -24,8 +24,8 @@ Board and attachment Cloudflare R2 storage settings are managed in the central P
 
 - `AUTH_BEARER_TOKEN`: shared service bearer token. Required in `production`; may be left empty in `development`.
 - `CORS_ALLOWED_ORIGINS`: explicit allowed CORS origins. Required in `production`.
-- `CLAUDE_OAUTH_CLIENT_ID`: required OAuth client ID for browser-initiated Claude node authentication.
-- `CLAUDE_OAUTH_CALLBACK_URL`: required OAuth callback URL registered with the Claude OAuth application.
+- `CLAUDE_OAUTH_CLIENT_ID`: optional OAuth client ID for browser-initiated Claude account connection. Empty turns off only that browser flow.
+- `CLAUDE_OAUTH_CALLBACK_URL`: optional OAuth callback URL registered with the Claude OAuth application. Set it together with the client ID.
 - `GOOGLE_CLIENT_ID`: optional Google OAuth client ID for dashboard login.
 - `GOOGLE_CLIENT_SECRET`: optional Google OAuth client secret.
 - `GOOGLE_CALLBACK_URL`: optional Google OAuth callback URL.
@@ -89,7 +89,7 @@ The worker build hashes `.env.soul-server-ts`, so the installer finalizes these 
 ### Local HTTP listener and auth
 
 - `HOST`: local HTTP bind address (defaults to `127.0.0.1`).
-- `PORT`: local HTTP port for health and node-local routes (defaults to `4205`).
+- `PORT`: local HTTP port for health and node-local routes (defaults to `4205`). The worker's `/health` reports `source_commit`, the `HEAD` of the checkout when `soul-server-ts` was last built; rebuild after pulling to refresh it.
 - `ENVIRONMENT`: runtime environment (`development`, `test`, or `production`).
 - `LOG_LEVEL`: logger verbosity (for example, `info`).
 - `AUTH_BEARER_TOKEN`: shared service bearer token (required when `ENVIRONMENT=production`).
@@ -132,21 +132,17 @@ Selected by `AGENTS_CONFIG_PATH` (see [`soul-server-ts/config/agents.yaml.exampl
 
 ```yaml
 agents:
-  - id: codex-default
-    name: Codex Default
-    backend: codex
-    workspace_dir: /tmp/codex-default
-    # model: <provider-model-id>
+  - id: claude-default
+    name: Claude Default
+    backend: claude
+    workspace_dir: /tmp/claude-default
+    # default_preset: <model catalog preset id>
     # max_turns: 50
-    # allowed_tools:
-    #   - bash
-    #   - read
-    # portrait_path: /var/lib/soulstream/portraits/codex-default.png
-    # context_scope: minimal
+    # claude_auto_memory_enabled: false
 ```
 
 - Required fields: `id`, `name`, `backend`, `workspace_dir`.
-- Optional fields: `model`, `default_preset`, `max_turns`, `allowed_tools`, `disallowed_tools`, `portrait_path`, `context_scope` (`full` by default; `minimal` omits folder-inherited `page_context`, folder `atom_context`, `board_workspace`, `running_sessions`, and `cogito_context`), `claude_auto_memory_enabled` (Claude-only; `false` disables reading and writing `MEMORY.md`), `mcp_profile`, `atom_contexts`, and `env`.
+- Optional fields: `default_preset` (a model catalog preset id; when empty, no preset is chosen: the agent runs on the backend's own default model (Claude or Codex), and startup logs a warning that recommends setting it), `max_turns`, `allowed_tools`, `disallowed_tools`, `portrait_path`, `context_scope` (`full` by default; `minimal` omits folder-inherited `page_context`, folder `atom_context`, `board_workspace`, `running_sessions`, and `cogito_context`), `claude_auto_memory_enabled` (Claude-only; `false` disables reading and writing `MEMORY.md`), `mcp_profile`, `atom_contexts`, and `env`. The `model` field is deprecated: it is still accepted and applied, but startup logs a warning, so use `default_preset` instead.
 - For Claude sessions, the runner always adds `Monitor` to `disallowed_tools` to block this background task entry point.
 
 ### Profiles created by the Linux installer

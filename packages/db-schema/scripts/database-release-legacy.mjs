@@ -17,7 +17,12 @@ export async function prepareLegacyInitializeEnvironment(options) {
     processEnv: env,
   });
   const releaseId = (env.HANIEL_RELEASE_ID ?? env.SOULSTREAM_RELEASE_ID)?.trim();
-  if (!releaseId) throw new Error("SOULSTREAM_RELEASE_ID is required for initialize");
+  if (!releaseId) {
+    throw new Error(
+      "SOULSTREAM_RELEASE_ID is required for initialize: name this installation's release, "
+      + "for example SOULSTREAM_RELEASE_ID=local-1 node packages/db-schema/scripts/migrate.mjs fresh-install",
+    );
+  }
   const targetHead = env.HANIEL_TARGET_HEAD?.trim() || execFileSync(
     "git", ["rev-parse", "HEAD"], { cwd: repositoryRoot, encoding: "utf8" },
   ).trim();

@@ -286,12 +286,15 @@ describe("release manifest startup verification", () => {
     );
 
     const drifted = { ...DECLARED_ENV, PORT: "4305" };
-    await expect(loadAndVerifyReleaseManifest({
+    const startup = loadAndVerifyReleaseManifest({
       manifestPath: join(root, "release-manifest.json"),
       hostBundleDirectory: root,
       runnerArtifactDirectory: runnerRoot,
       env: parseEnv({ ...LIVE_SERVICE_AMBIENT, ...drifted }),
       declaredEnv: drifted,
-    })).rejects.toThrow(/release manifest mismatch: deployment_env_identity/);
+    });
+    await expect(startup).rejects.toThrow(/release manifest mismatch: deployment_env_identity/);
+    // A first-time user who wrote the env file after building has to be told how to recover.
+    await expect(startup).rejects.toThrow(/pnpm --dir soul-server-ts build/);
   });
 });
