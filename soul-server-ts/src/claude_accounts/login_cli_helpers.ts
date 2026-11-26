@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 
+import { commandShellSpawn } from "@soulstream/executable-path";
 import type { ClaudeAuthError, ClaudeAuthLoginFlow } from "@soulstream/wire-schema";
 import { parseProfileIdentity } from "@soulstream/wire-schema/claude-oauth";
 
@@ -374,9 +375,11 @@ export async function runClaudeAuthStatusProcess(input: {
 }): Promise<ParsedAuthStatus> {
   let child: ChildProcess;
   try {
-    child = spawn(input.cli, ["auth", "status", "--json"], {
+    const target = commandShellSpawn(input.cli, ["auth", "status", "--json"]);
+    child = spawn(target.command, target.args, {
       env: input.env,
       stdio: ["ignore", "pipe", "pipe"],
+      ...target.options,
     });
   } catch {
     return { loggedIn: false, accountUuid: null, email: null, plan: null };

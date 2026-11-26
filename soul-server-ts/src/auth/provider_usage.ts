@@ -70,6 +70,8 @@ export interface ProviderUsageServiceConfig {
   claudeAccounts?: Pick<ClaudeAccountService, "getAccountListWithBestProjection">;
   modelCatalog?: Pick<ModelCatalog, "list">;
   homeDir?: string;
+  /** Codex's own folder (auth.json, sessions). Defaults to `<homeDir>/.codex`. */
+  codexHome?: string;
   fetchImpl?: typeof fetch;
   logger?: ProviderUsageLogger;
   requestTimeoutMs?: number;
@@ -77,9 +79,13 @@ export interface ProviderUsageServiceConfig {
   codexPrimaryRequestTimeoutMs?: number;
   codexRecoveryRequestTimeoutMs?: number;
   codexRuntimeLimitsImpl?: (
-    homeDir: string,
+    codexHome: string,
     metrics: CodexRuntimeScanMetrics,
   ) => ProviderLimits;
+}
+
+export function codexHomeDir(env: NodeJS.ProcessEnv): string {
+  return env.CODEX_HOME?.trim() || join(homedir(), ".codex");
 }
 
 // wham is the only currently viable headless endpoint. The challenged routes
@@ -135,7 +141,7 @@ function isRefreshableCodexAuthError(error: unknown): boolean {
 export class ProviderUsageService implements ProviderUsageCommandHandler {
   private antigravitySucceeded = false;
   private readonly antigravityChildren = new AntigravityUsageChildren();
-  private readonly homeDir: string;
+  private readonly codexHome: string;
   private readonly fetchImpl: typeof fetch;
   private readonly requestTimeoutMs: number;
   private readonly slowRequestThresholdMs: number;
@@ -143,12 +149,12 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
   private readonly codexRecoveryRequestTimeoutMs: number;
   private readonly codexMinimumAttemptBudgetMs: number;
   private readonly codexRuntimeLimitsImpl: (
-    homeDir: string,
+    codexHome: string,
     metrics: CodexRuntimeScanMetrics,
   ) => ProviderLimits;
 
   constructor(private readonly config: ProviderUsageServiceConfig = {}) {
-    this.homeDir = config.homeDir ?? homedir();
+    this.codexHome = config.codexHome ?? join(config.homeDir ?? homedir(), ".codex");
     this.fetchImpl = config.fetchImpl ?? globalThis.fetch;
     this.requestTimeoutMs = config.requestTimeoutMs ?? PROVIDER_USAGE_REQUEST_TIMEOUT_MS;
     this.slowRequestThresholdMs =
@@ -373,7 +379,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     deadlineAtMs: number,
     attempts: ProviderUsageAttempt[],
   ): Promise<ProviderLimits> {
-    const auth = readJson(join(this.homeDir, ".codex", "auth.json"));
+    const auth = readJson(join(this.codexHome, "auth.json"));
     if (!isRecord(auth)) {
       this.logCodexFallback("oauth_not_configured", false);
       return this.readCodexRuntimeLimits(attempts);
@@ -571,7 +577,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     const startedAtMs = Date.now();
     let result = "error";
     try {
-      const limits = this.codexRuntimeLimitsImpl(this.homeDir, metrics);
+      const limits = this.codexRuntimeLimitsImpl(this.codexHome, metrics);
       result = limits.status;
       return limits;
     } finally {
@@ -805,10 +811,10 @@ export function codexLimitsFromUsageResponse(
 }
 
 function codexRuntimeLimits(
-  homeDir: string,
+  codexHome: string,
   metrics: CodexRuntimeScanMetrics,
 ): ProviderLimits {
-  const sessionsDir = join(homeDir, ".codex", "sessions");
+  const sessionsDir = join(codexHome, "sessions");
   const files = findFiles(
     sessionsDir,
     (path) => path.endsWith(".jsonl") && path.includes("rollout-"),

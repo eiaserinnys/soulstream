@@ -176,6 +176,22 @@ describe("Claude executable startup preflight", () => {
     }
   });
 
+  it("win32에서 PATH 뒤 공식 설치기 위치(USERPROFILE\\.local\\bin)를 찾는다", () => {
+    addVirtualFile("C:\\Users\\Jane Doe\\.local\\bin\\claude.exe");
+    const env: Record<string, string | undefined> = {
+      PATH: "C:\\npm",
+      PATHEXT: ".EXE;.CMD",
+      USERPROFILE: "C:\\Users\\Jane Doe",
+    };
+
+    expect(configureClaudeExecutablePath(env, "win32", { error: vi.fn() }))
+      .toBe("C:\\Users\\Jane Doe\\.local\\bin\\claude.exe");
+
+    addVirtualFile("C:\\npm\\claude.cmd");
+    expect(configureClaudeExecutablePath({ ...env, CLAUDE_CODE_EXECPATH: undefined }, "win32", { error: vi.fn() }))
+      .toBe("C:\\npm\\claude.cmd");
+  });
+
   it("darwin에서 HOME이 없으면 Homebrew 접두사를 계속 찾는다", () => {
     addVirtualFile("/opt/homebrew/bin/claude");
     addVirtualFile("/usr/local/bin/claude");

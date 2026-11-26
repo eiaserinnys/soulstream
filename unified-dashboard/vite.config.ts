@@ -1,6 +1,6 @@
 import { defineConfig, loadEnv, type ConfigEnv, type Plugin } from "vite";
 import { resolve } from "path";
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
@@ -9,6 +9,18 @@ import { DASHBOARD_PWA_OPTIONS } from "./pwa-config";
 import { version as dashboardVersion } from "./package.json";
 import {dashboardBuildIdentity,dashboardBuildManifest} from "./build-identity";
 import { handleRollupWarning } from "./rollup-warning";
+
+// Node 22의 fs 재귀 복사는 Windows에서 경로에 한글 같은 비ASCII 글자가 있으면
+// 네이티브 경로 검사에서 프로세스째 죽는다(0xC0000409, nodejs/node #54476). 그래서 손으로 복사한다.
+function copyTree(source: string, target: string): void {
+  mkdirSync(target, { recursive: true });
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    const from = resolve(source, entry.name);
+    const to = resolve(target, entry.name);
+    if (entry.isDirectory()) copyTree(from, to);
+    else copyFileSync(from, to);
+  }
+}
 
 /** 로고는 JS 그래프와 서비스 워커 밖의 정적 자산으로만 제공한다. */
 function brandIcons(): Plugin {
@@ -27,7 +39,7 @@ function brandIcons(): Plugin {
     writeBundle(options) {
       const destination = resolve(options.dir ?? resolve(__dirname, "dist"), "brand-icons");
       mkdirSync(destination, { recursive: true });
-      cpSync(resolve(root, "icons"), resolve(destination, "icons"), { recursive: true });
+      copyTree(resolve(root, "icons"), resolve(destination, "icons"));
       writeFileSync(resolve(destination, "index.json"), index());
     },
   };

@@ -3,7 +3,7 @@ import { antigravityEnvironment } from "../engine/antigravity_env.js";
 import { composeAgentLoginService } from "../agent_login/index.js";
 import { AgentConfigService } from "../agent_config_service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
-import { ProviderUsageService } from "../auth/provider_usage.js";
+import { codexHomeDir, ProviderUsageService } from "../auth/provider_usage.js";
 import { CatalogService } from "../catalog/catalog_service.js";
 import { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "../context/cogito_context.js";
@@ -83,7 +83,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   const claudeLoginService = claudeAccounts ? composeClaudeLoginService({ accounts: claudeAccounts, claudeAuth, logger }) : undefined;
   const agentLoginService = composeAgentLoginService({ logger, codexCliPath: env.CODEX_CLI_PATH, fetchUsage: (provider) => providerUsage.fetchProvider(provider) });
   const providerUsage = new ProviderUsageService({
-    claudeAuth, claudeAccounts, modelCatalog, logger, enabledBackends: env.SOULSTREAM_BACKENDS, opencodeGo: { apiKey: process.env.OPENCODE_GO_API_KEY },
+    claudeAuth, claudeAccounts, modelCatalog, logger, enabledBackends: env.SOULSTREAM_BACKENDS, codexHome: codexHomeDir(process.env), opencodeGo: { apiKey: process.env.OPENCODE_GO_API_KEY },
     antigravity: {
       cliPath: antigravityCliPath?.path,
       environment: antigravityEnvironment(process.env),

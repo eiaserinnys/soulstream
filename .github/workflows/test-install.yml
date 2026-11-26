@@ -545,3 +545,251 @@ jobs:
           if (Test-Path $dataDir) {
             pg_ctl -D $dataDir stop -m fast
           }
+
+  windows-full-install:
+    runs-on: windows-latest
+    timeout-minutes: 75
+
+    env:
+      INSTALL_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # The folder name is built from code points so no Korean text has to survive the workflow file.
+      - name: Choose an install folder with Korean letters and spaces
+        shell: pwsh
+        run: |
+          $name = -join [char[]](0xC18C, 0xC6B8, 0x20, 0xC2A4, 0xD2B8, 0xB9BC, 0x20, 0xC2DC, 0xD5D8)
+          $root = Join-Path $env:LOCALAPPDATA $name
+          [IO.File]::AppendAllText($env:GITHUB_ENV, "SOULSTREAM_TEST_ROOT=$root`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "InstallRoot: $root"
+
+      - name: Refuse a folder the installer did not create (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Restricted -Force
+          $foreign = Join-Path $env:RUNNER_TEMP "not-soulstream"
+          New-Item -ItemType Directory -Force -Path $foreign | Out-Null
+          Set-Content -LiteralPath (Join-Path $foreign "keep.txt") -Value "keep" -Encoding ASCII
+          foreach ($script in @("install-windows.ps1", "uninstall-windows.ps1")) {
+            $source = Get-Content -Raw -Encoding UTF8 (Join-Path ".\install" $script)
+            $refused = $false
+            try { & ([scriptblock]::Create($source)) -NonInteractive -PostgresPassword root -InstallRoot $foreign } catch {
+              $refused = $true
+              Write-Host "$script refused the folder: $($_.Exception.Message)"
+            }
+            if (-not $refused) { throw "$script accepted a folder without the installer marker." }
+            $left = @(Get-ChildItem -LiteralPath $foreign -Force | ForEach-Object { $_.Name })
+            if (($left -join ",") -ne "keep.txt" -or (Get-Content -LiteralPath (Join-Path $foreign "keep.txt")) -ne "keep") {
+              throw "$script changed the folder: $($left -join ', ')"
+            }
+          }
+          Write-Host "Marker check: both scripts refused $foreign and left keep.txt alone."
+
+      - name: Install the Claude Code CLI first, as on a PC that already has it
+        shell: powershell
+        run: |
+          Invoke-RestMethod -UseBasicParsing "https://claude.ai/install.ps1" | Invoke-Expression
+          $claude = Join-Path $env:USERPROFILE ".local\bin\claude.exe"
+          if (-not (Test-Path -LiteralPath $claude)) { throw "The official installer did not put claude.exe at $claude." }
+          Write-Host "Claude Code CLI installed beforehand: $claude"
+
+      - name: Put stand-in user logins in the user's home and record the user's Claude files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $claudeDir = Join-Path $env:USERPROFILE ".claude"
+          $codexDir = Join-Path $env:USERPROFILE ".codex"
+          New-Item -ItemType Directory -Force -Path $claudeDir, $codexDir | Out-Null
+          Set-Content -LiteralPath (Join-Path $claudeDir ".credentials.json") -Encoding ascii -Value '{"claudeAiOauth":{"accessToken":"user-claude-access","refreshToken":"user-claude-refresh","expiresAt":4102444800000}}'
+          Set-Content -LiteralPath (Join-Path $codexDir "auth.json") -Encoding ascii -Value '{"tokens":{"access_token":"user-codex-access","refresh_token":"user-codex-refresh","account_id":"user-account"}}'
+          $claudeDir = Join-Path $env:USERPROFILE ".claude"
+          $userJson = Join-Path $env:USERPROFILE ".claude.json"
+          $snapshot = @(Get-ChildItem -LiteralPath $claudeDir -Recurse -Force | Sort-Object FullName | ForEach-Object {
+            $name = $_.FullName.Substring($claudeDir.Length + 1)
+            if ($_.PSIsContainer) { "$name`t<dir>" } else { "$name`t$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash)" }
+          })
+          if (Test-Path -LiteralPath $userJson) { $snapshot += "..\.claude.json`t$((Get-FileHash -Algorithm SHA256 -LiteralPath $userJson).Hash)" }
+          $snapshot | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "user-claude-before.txt") -Encoding utf8
+          $codexHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $codexDir "auth.json")).Hash
+          Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "user-codex-before.txt") -Value $codexHash -Encoding ascii
+          Write-Host "Recorded $($snapshot.Count) entries under $claudeDir (with .claude.json if present); .codex\auth.json $codexHash"
+
+      # The image ships PostgreSQL 17; removing it makes the installer take the winget path a fresh PC takes.
+      - name: Remove the image's PostgreSQL 17
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $service = "postgresql-x64-17"
+          $base = "C:\Program Files\PostgreSQL\17"
+          if (Get-Service -Name $service -ErrorAction SilentlyContinue) { Stop-Service -Name $service -Force }
+          $uninstaller = Join-Path $base "uninstall-postgresql.exe"
+          if (Test-Path -LiteralPath $uninstaller) {
+            Start-Process -FilePath $uninstaller -ArgumentList @("--mode", "unattended") -Wait
+          }
+          if (Get-Service -Name $service -ErrorAction SilentlyContinue) { & sc.exe delete $service | Out-Null }
+          Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath "HKLM:\SOFTWARE\PostgreSQL\Installations\$service" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath "HKLM:\SOFTWARE\PostgreSQL\Services\$service" -Recurse -Force -ErrorAction SilentlyContinue
+          for ($i = 0; $i -lt 30 -and (Get-Service -Name $service -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Seconds 2 }
+          if (Get-Service -Name $service -ErrorAction SilentlyContinue) { throw "$service is still registered." }
+          if (Test-Path -LiteralPath $base) { throw "$base is still there." }
+          $winget = Get-Command winget -ErrorAction SilentlyContinue
+          Write-Host "Removed the image's PostgreSQL 17. winget: $(if ($winget) { $winget.Source } else { 'not found' })"
+
+      # TEMP and TMP get Korean letters and a space, as under a profile folder like C:\Users\김주복; the runner's ANSI code page is 1252.
+      - name: Install Soulstream (Windows PowerShell 5.1, Restricted policy, Korean TEMP)
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Restricted -Force
+          Write-Host "Shell: Windows PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition)), execution policy $(Get-ExecutionPolicy)"
+          $temp = Join-Path $env:RUNNER_TEMP (-join [char[]](0xC784, 0xC2DC, 0x20, 0xD3F4, 0xB354))
+          New-Item -ItemType Directory -Force -Path $temp | Out-Null
+          $env:TEMP = $temp
+          $env:TMP = $temp
+          Write-Host "TEMP and TMP: $temp (ANSI code page $([Text.Encoding]::Default.CodePage))"
+          $installer = Get-Content -Raw -Encoding UTF8 .\install\install-windows.ps1
+          & ([scriptblock]::Create($installer)) -NonInteractive -Ref $env:INSTALL_REF -InstallRoot $env:SOULSTREAM_TEST_ROOT
+
+      - name: Check the running installation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = $env:SOULSTREAM_TEST_ROOT
+          $folder = Get-Item -LiteralPath $root
+          Write-Host "Install folder: $($folder.FullName) (name code points: $(($folder.Name.ToCharArray() | ForEach-Object { '{0:X4}' -f [int]$_ }) -join ' '))"
+          if (-not (Test-Path -LiteralPath (Join-Path $root ".soulstream-windows-install"))) { throw "The install marker is missing." }
+          $soul = Join-Path $root "soulstream"
+          $installedCommit = git -C $soul rev-parse HEAD
+          if ($installedCommit -ne $env:INSTALL_REF) { throw "Installed $installedCommit, expected $env:INSTALL_REF" }
+          foreach ($url in @("http://127.0.0.1:5200/api/health", "http://127.0.0.1:4200/api/health", "http://127.0.0.1:4205/health")) {
+            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
+            if ($response.StatusCode -ne 200) { throw "$url answered $($response.StatusCode)" }
+            Write-Host "$url OK"
+          }
+          $password = (Get-Content -LiteralPath (Join-Path $soul ".admin-password") | Select-Object -First 1).Trim()
+          $login = @{ password = $password } | ConvertTo-Json -Compress
+          $null = Invoke-WebRequest -Uri "http://127.0.0.1:5200/api/auth/password-login" -Method Post -ContentType "application/json" -Body $login -SessionVariable session -UseBasicParsing
+          $folders = Invoke-RestMethod -Uri "http://127.0.0.1:5200/api/folders" -WebSession $session
+          if (@($folders.folders | Where-Object { $_.name -eq "작업실" }).Count -ne 1) { throw "The workspace folder is missing." }
+          $bearer = (Select-String -LiteralPath (Join-Path $soul ".env.orch") -Pattern "^AUTH_BEARER_TOKEN=(.+)$").Matches[0].Groups[1].Value
+          $nodes = Invoke-RestMethod -Uri "http://127.0.0.1:5200/api/nodes" -Headers @{ Authorization = "Bearer $bearer" }
+          if (@($nodes.nodes | Where-Object { $_.nodeId -eq "local" -and $_.connected }).Count -ne 1) { throw "The local node is not connected." }
+          if (-not (Get-ScheduledTask -TaskName "SoulstreamServer" -ErrorAction SilentlyContinue)) { throw "The SoulstreamServer logon task is missing." }
+          if (Test-Path (Join-Path $root "runner.pid")) { Write-Host "Haniel start path: direct start (the logon task did not start it)" } else { Write-Host "Haniel start path: logon task" }
+          $workerLog = Join-Path $root "logs\worker.log"
+          foreach ($line in @("Claude Code executable path resolved", "Codex CLI path resolved")) {
+            $found = Select-String -LiteralPath $workerLog -SimpleMatch $line | Select-Object -Last 1
+            if (-not $found) { throw "The worker log has no '$line' line." }
+            Write-Host $found.Line
+          }
+          Write-Host "Soulstream is up with the local node connected and both backends found."
+          $atomPage = Invoke-WebRequest -Uri "http://127.0.0.1:4200/" -UseBasicParsing -TimeoutSec 10
+          if ($atomPage.StatusCode -ne 200 -or "$($atomPage.Headers['Content-Type'])" -notmatch "text/html") {
+            throw "The atom dashboard answered $($atomPage.StatusCode) $($atomPage.Headers['Content-Type'])"
+          }
+          Write-Host "The atom dashboard serves HTML."
+
+      - name: Check that the user's own logins were left alone
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $claudeDir = Join-Path $env:USERPROFILE ".claude"
+          $userJson = Join-Path $env:USERPROFILE ".claude.json"
+          $snapshot = @(Get-ChildItem -LiteralPath $claudeDir -Recurse -Force | Sort-Object FullName | ForEach-Object {
+            $name = $_.FullName.Substring($claudeDir.Length + 1)
+            if ($_.PSIsContainer) { "$name`t<dir>" } else { "$name`t$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash)" }
+          })
+          if (Test-Path -LiteralPath $userJson) { $snapshot += "..\.claude.json`t$((Get-FileHash -Algorithm SHA256 -LiteralPath $userJson).Hash)" }
+          $before = @(Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "user-claude-before.txt"))
+          $differences = @(Compare-Object -ReferenceObject $before -DifferenceObject $snapshot | ForEach-Object {
+            "$(if ($_.SideIndicator -eq '=>') { 'now' } else { 'before' }): $($_.InputObject)"
+          })
+          if ($differences.Count -ne 0) {
+            $differences | ForEach-Object { Write-Host "  $_" }
+            throw "The user's Claude files changed ($($differences.Count) lines above)."
+          }
+          Write-Host "User Claude files unchanged: $($snapshot.Count) entries under $claudeDir (with .claude.json if present) have the same names and hashes."
+          $codexHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $env:USERPROFILE ".codex\auth.json")).Hash
+          if ($codexHash -ne (Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "user-codex-before.txt"))) { throw ".codex\auth.json changed: $codexHash" }
+          Write-Host "User Codex login unchanged: .codex\auth.json $codexHash"
+          $userPool = Join-Path $env:USERPROFILE ".claude-accounts"
+          if (Test-Path -LiteralPath $userPool) { throw "$userPool was created." }
+          Write-Host "No user account pool: $userPool does not exist."
+          $agentPool = Join-Path $env:SOULSTREAM_TEST_ROOT "agent-home\.claude-accounts"
+          $accountsFile = Join-Path $agentPool "accounts.json"
+          $accounts = if (Test-Path -LiteralPath $accountsFile) { @((Get-Content -Raw -LiteralPath $accountsFile | ConvertFrom-Json)) } else { @() }
+          $accountCount = @($accounts | ForEach-Object { if ($_.PSObject.Properties["accounts"]) { $_.accounts } else { $_ } } | Where-Object { $_ }).Count
+          $copies = @(Get-ChildItem -LiteralPath $agentPool -Recurse -Force -File -Filter ".credentials.json" -ErrorAction SilentlyContinue)
+          if ($accountCount -ne 0 -or $copies.Count -ne 0) { throw "The agent-home pool has $accountCount accounts and $($copies.Count) credential files." }
+          Write-Host "Agent-home pool is empty: $accountCount accounts, no credential copies in $agentPool."
+
+      - name: Dump logs on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $logs = Join-Path $env:SOULSTREAM_TEST_ROOT "logs"
+          if (Test-Path $logs) {
+            foreach ($file in Get-ChildItem -LiteralPath $logs -File -Recurse) {
+              Write-Host "=== $($file.FullName) (last 200 lines) ==="
+              Get-Content -LiteralPath $file.FullName -Tail 200 -ErrorAction Continue
+            }
+          } else {
+            Write-Host "(no log folder)"
+          }
+          foreach ($file in Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Recurse -File -Force -Include "install-postgresql.log", "bitrock_installer*.log", "installbuilder_installer*.log" -ErrorAction SilentlyContinue) {
+            Write-Host "=== $($file.FullName) (last 80 lines) ==="
+            Get-Content -LiteralPath $file.FullName -Tail 80 -ErrorAction Continue
+          }
+
+      - name: Link a folder outside the install folder into the workspace
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $outside = Join-Path $env:RUNNER_TEMP "outside-target"
+          New-Item -ItemType Directory -Force -Path $outside | Out-Null
+          Set-Content -LiteralPath (Join-Path $outside "keep.txt") -Value "keep" -Encoding ASCII
+          $workspace = Join-Path $env:SOULSTREAM_TEST_ROOT "workspace"
+          New-Item -ItemType Directory -Force -Path $workspace | Out-Null
+          $link = New-Item -ItemType Junction -Path (Join-Path $workspace "outside-link") -Target $outside
+          Write-Host "Junction: $($link.FullName) -> $outside"
+
+      - name: Uninstall Soulstream (Windows PowerShell 5.1, Restricted policy)
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Restricted -Force
+          Write-Host "Shell: Windows PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition)), execution policy $(Get-ExecutionPolicy)"
+          $uninstaller = Get-Content -Raw -Encoding UTF8 .\install\uninstall-windows.ps1
+          & ([scriptblock]::Create($uninstaller)) -NonInteractive -InstallRoot $env:SOULSTREAM_TEST_ROOT
+          if (Get-ScheduledTask -TaskName "SoulstreamServer" -ErrorAction SilentlyContinue) { throw "The logon task is still registered." }
+          if (Test-Path -LiteralPath $env:SOULSTREAM_TEST_ROOT) { throw "The install folder is still there." }
+          foreach ($port in @(5200, 4200, 4205)) {
+            if (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue) { throw "Port $port is still listening." }
+          }
+          $outsideKeep = Join-Path $env:RUNNER_TEMP "outside-target\keep.txt"
+          if (-not (Test-Path -LiteralPath $outsideKeep) -or (Get-Content -LiteralPath $outsideKeep) -ne "keep") {
+            throw "The uninstaller deleted $outsideKeep through the workspace junction."
+          }
+          Write-Host "Junction check: $outsideKeep is still there after the uninstall."
+          Write-Host "Soulstream is removed."
+
+      - name: Remove the stand-in user logins
+        if: always()
+        shell: pwsh
+        run: |
+          foreach ($file in @(".claude\.credentials.json", ".codex\auth.json")) {
+            Remove-Item -LiteralPath (Join-Path $env:USERPROFILE $file) -Force -ErrorAction SilentlyContinue
+          }
+          Write-Host "Removed the stand-in user logins."

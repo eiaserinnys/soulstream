@@ -1,4 +1,3 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { resolveAntigravityCliPath, resolveCodexCliPath } from "@soulstream/executable-path";
@@ -7,6 +6,7 @@ import type { Logger } from "pino";
 import { buildSanitizedCliEnv } from "../claude_accounts/login_cli_helpers.js";
 import { antigravityEnvironment } from "../engine/antigravity_env.js";
 import type { ProviderLimits } from "../auth/provider_limits.js";
+import { codexHomeDir } from "../auth/provider_usage.js";
 import type { AgentLoginActivity } from "./activity.js";
 import { createAntigravityDriver, findScriptExecutable } from "./antigravity_driver.js";
 import { createCodexDriver } from "./codex_driver.js";
@@ -54,7 +54,7 @@ export function composeAgentLoginService(input: ComposeAgentLoginInput): AgentLo
       codex: createCodexDriver({
         resolveCliPath: () => resolveCodexCliPath(input.codexCliPath, env)?.path,
         buildEnv: () => loginCliEnv(env, {}),
-        authFilePath: () => join(env.CODEX_HOME?.trim() || join(env.HOME?.trim() || homedir(), ".codex"), "auth.json"),
+        authFilePath: () => join(codexHomeDir(env), "auth.json"),
         verifyUsage: verifyUsage("codex"),
       }),
       antigravity: createAntigravityDriver({

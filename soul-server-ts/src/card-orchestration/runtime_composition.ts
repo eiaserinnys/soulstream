@@ -1,11 +1,11 @@
 import type { AuthorizeOrchestrationWorker } from '../upstream/task_runtime_commands.js';
 import { readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Logger } from 'pino';
 import type { AgentRegistry } from '../agent_registry.js';
 import type { NewSessionAgentProfileSource } from '../agent_profile_source.js';
 import { FileClaudeAuthTokenStore } from '../auth/claude_auth.js';
+import { codexHomeDir } from '../auth/provider_usage.js';
 import type { SessionMutationHost } from '../control_plane/persistence_host_clients.js';
 import { fetchOrchResponse } from '../control_plane/persistence_host_transport.js';
 import type { EventPersistence } from '../db/event_persistence.js';
@@ -65,13 +65,13 @@ export function composePurposeDecisionRunner(params: {
 
 /** Reads OAuth only in the host. Never returns an auth file, refresh token, profile env or API key. */
 export async function readDecisionCredential(backend: 'claude' | 'codex',
-  claudeAuthTokenPath?: string, codexHome: string = homedir()): Promise<DecisionCredential | undefined> {
+  claudeAuthTokenPath?: string, codexHome: string = codexHomeDir(process.env)): Promise<DecisionCredential | undefined> {
   try {
     if (backend === 'claude') {
       const oauthToken = new FileClaudeAuthTokenStore(claudeAuthTokenPath).read()?.accessToken;
       return oauthToken ? { backend, oauthToken } : undefined;
     }
-    const auth: unknown = JSON.parse(await readFile(join(codexHome, '.codex', 'auth.json'), 'utf8'));
+    const auth: unknown = JSON.parse(await readFile(join(codexHome, 'auth.json'), 'utf8'));
     if (!isRecord(auth)) return undefined;
     const tokens = isRecord(auth.tokens) ? auth.tokens : auth;
     const oauthToken = typeof tokens.access_token === 'string' ? tokens.access_token : undefined;

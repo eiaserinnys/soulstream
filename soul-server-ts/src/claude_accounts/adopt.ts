@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
+import { commandShellSpawn } from "@soulstream/executable-path";
 import { resolveClaudeExecutableFromPath } from "../engine/claude_executable_path.js";
 import { ClaudeAccountStore, ensureProfileSharedSymlinks } from "./store.js";
 import type { ClaudeAccountRecord } from "./types.js";
@@ -33,9 +34,11 @@ async function defaultExecAuthStatus(
   env: NodeJS.ProcessEnv,
   claudeCliPath: string,
 ): Promise<string> {
-  const { stdout } = await execFileAsync(claudeCliPath, ["auth", "status", "--json"], {
+  const target = commandShellSpawn(claudeCliPath, ["auth", "status", "--json"]);
+  const { stdout } = await execFileAsync(target.command, target.args, {
     env,
     timeout: 15_000,
+    ...target.options,
   });
   return stdout;
 }

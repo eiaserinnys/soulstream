@@ -143,6 +143,8 @@ export const EnvSchema = z
       .transform((v) => v === "true"),
     /** Optional absolute node-local path; defaults to ~/.claude-accounts when the pool is enabled. */
     CLAUDE_ACCOUNTS_DIR: z.string().optional(),
+    /** Optional absolute home whose .claude holds the pool profiles' shared projects and history; defaults to the OS home. */
+    CLAUDE_SHARED_HOME_DIR: z.string().optional(),
     /**
      * Persistent Query + exactly-once delivery runtime.
      * Enabled cluster-wide by default after the migration/canary hardening
@@ -335,6 +337,13 @@ export const EnvSchema = z
           code: z.ZodIssueCode.custom,
           path: ["CLAUDE_ACCOUNTS_DIR"],
           message: "CLAUDE_ACCOUNTS_DIR must be an absolute path when account pool is enabled",
+        });
+      }
+      if (env.CLAUDE_SHARED_HOME_DIR !== undefined && !isAbsolute(env.CLAUDE_SHARED_HOME_DIR)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["CLAUDE_SHARED_HOME_DIR"],
+          message: "CLAUDE_SHARED_HOME_DIR must be an absolute path when account pool is enabled",
         });
       }
     }
