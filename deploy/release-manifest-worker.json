@@ -20,6 +20,7 @@
     ".gitignore",
     ".gitattributes",
     ".easignore",
+    "scripts/visual-check/*",
     ".env.soul-server-ts.example",
     "unified-dashboard/[!p]*",
     "orch-server-ts/[!p]*",
