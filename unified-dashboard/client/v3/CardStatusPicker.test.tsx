@@ -66,8 +66,17 @@ it("shows an awaiting verification card without offering it as a manual destinat
  expect(options).toHaveLength(8);
  expect(options.some(option=>option.textContent==="검증 대기")).toBe(false);
  expect(options.some(option=>option.getAttribute("aria-pressed")==="true")).toBe(false);
+ const notice=document.querySelector<HTMLElement>('[data-card-status-picker] p[data-v3-selectable-content]');
+ expect(notice?.textContent).toBe("지금 상태는 검증 대기입니다. 담당이 정한 시각에 다시 확인하며, 아래에서 다른 상태로 바꿀 수 있습니다.");
+ expect(notice?.nextElementSibling?.getAttribute("aria-label")).toBe("카드 상태 목록");
  await click("보류");
  expect(change).toHaveBeenCalledWith(d.card,"on_hold",undefined);
+});
+it("does not show the current-state notice when the status is one of the choices",async()=>{
+ await render();
+ await click("카드 상태 변경");
+ expect(document.querySelector('[data-card-status-picker] p[data-v3-selectable-content]')).toBeNull();
+ expect(document.querySelector('[data-card-status-picker]')?.textContent).not.toContain("지금 상태는");
 });
 it("aligns the status popup to the chip start edge",async()=>{
  await render();

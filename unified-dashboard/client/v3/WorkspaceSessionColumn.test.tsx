@@ -48,3 +48,24 @@ it("opens the selected session's files from the chat header",()=>{
  expect(button).toBeDefined();flushSync(()=>button!.click());expect(toggle).toHaveBeenCalledOnce();
  flushSync(()=>root.unmount());
 });
+
+function renderEmpty(extra:Record<string,unknown>){
+ const container=document.createElement("div");document.body.append(container);const root=createRoot(container);
+ flushSync(()=>root.render(createElement(WorkspaceSessionColumn,{
+  activeSession:undefined,chatClassName:"",chatTestId:"chat",resizeClassName:"",resizeTestId:"resize",onResize:()=>{},
+  chatInputDisabled:false,historyEnabled:true,sessionStreamActive:false,sessionConnectionStatus:"disconnected" as any,reconnectSession:()=>{},onAcknowledgedReview:()=>{},
+  ...extra,
+ } as any)));
+ const text=container.querySelector(".v3-chat-empty strong")?.textContent;
+ flushSync(()=>root.unmount());
+ return text;
+}
+
+it("says no session has started when the card has none",()=>{
+ expect(renderEmpty({cardSessionCount:0})).toBe("아직 시작된 세션이 없습니다.");
+});
+
+it("keeps the selection prompt when the card has sessions or the screen is not a card",()=>{
+ expect(renderEmpty({cardSessionCount:2})).toBe("위임 관계에서 세션을 선택하세요.");
+ expect(renderEmpty({})).toBe("위임 관계에서 세션을 선택하세요.");
+});

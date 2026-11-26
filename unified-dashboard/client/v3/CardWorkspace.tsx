@@ -5,6 +5,7 @@ import { useSessionFilesToggle } from "./use-session-files-toggle";
 import { CardDetailPane } from "./CardDetailPane";
 import { WorkspaceSessionColumn } from "./WorkspaceSessionColumn";
 import { DragHandle } from "@seosoyoung/soul-ui";
+import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { cardWorkspaceLayout, cardWorkspaceLayoutForKey, resizeCardWorkspace, type CardWorkspaceLayout } from "./card-workspace-layout";
 import { readV3CardWorkspaceLayout, writeV3CardWorkspaceLayout } from "./v3-session-panel-width";
 import { V3_PANEL_GAP_PX } from "./v3-layout-metrics";
@@ -17,8 +18,11 @@ export function CardWorkspace({cardId,folders,onClose,onCloseChat,onOpenSession,
  sampleExecution?:ComponentProps<typeof CardDetailPane>["sampleExecution"];
  sampleDetail?:ComponentProps<typeof CardDetailPane>["sampleDetail"];
  onSampleChange?:ComponentProps<typeof CardDetailPane>["onSampleChange"];
-} & Omit<ComponentProps<typeof WorkspaceSessionColumn>,"chatClassName"|"chatTestId"|"resizeClassName"|"resizeTestId"|"onResize"|"onResizeKeyDown">) {
+} & Omit<ComponentProps<typeof WorkspaceSessionColumn>,"chatClassName"|"chatTestId"|"resizeClassName"|"resizeTestId"|"onResize"|"onResizeKeyDown"|"cardSessionCount">) {
  const files=useSessionFilesToggle();
+ const storedDetail=useCardStore(s=>s.details[cardId]);
+ const cardDetail=sampleDetail??storedDetail;
+ const cardSessionCount=cardDetail?new Set([initialSessionId,cardDetail.card.assigneeSessionId,...cardDetail.sessions.map(session=>session.sessionId)].filter(Boolean)).size:undefined;
  const workspace=useRef<HTMLDivElement>(null);
  const workspaceWidthRef=useRef(0);
  const [workspaceWidth,setWorkspaceWidth]=useState(0);
@@ -59,7 +63,7 @@ export function CardWorkspace({cardId,folders,onClose,onCloseChat,onOpenSession,
  const panes=<>
   <div className={files.open && chat.activeSession ? "v3-files-detail-hidden" : "v3-files-detail-visible"}><CardDetailPane cardId={cardId} folders={folders} onClose={onClose} onOpenSession={onOpenSession} initialSessionId={initialSessionId} sampleDetail={sampleDetail} sampleExecution={sampleExecution} onSampleChange={onSampleChange}/></div>
   {files.open && chat.activeSession && <SessionFilesPane sessionId={chat.activeSession.agentSessionId} storeScope={chat.storeScope} onClose={files.close} scrollTop={files.readScroll(chat.activeSession.agentSessionId)} onScroll={position=>files.saveScroll(chat.activeSession!.agentSessionId,position)} initiallyExpanded={files.readExpanded(chat.activeSession.agentSessionId)} onExpandedChange={value=>files.saveExpanded(chat.activeSession!.agentSessionId,value)} initiallySessionOpen={files.readSection(chat.activeSession!.agentSessionId, "session")} initiallyOtherOpen={files.readSection(chat.activeSession!.agentSessionId, "other")} onSectionChange={(section,value)=>files.saveSection(chat.activeSession!.agentSessionId,section,value)}/>}
-  <WorkspaceSessionColumn filesOpen={files.open} onToggleFiles={files.toggle} {...chat} onClose={mobileMode?onCloseChat:undefined} chatClassName="" chatTestId="v3-card-session-chat" resizeClassName="v3-workspace-divider" resizeTestId="v3-card-workspace-divider" onResize={delta=>drag(delta,"middle")} onResizeKeyDown={event=>key(event,"middle")}
+  <WorkspaceSessionColumn cardSessionCount={cardSessionCount} filesOpen={files.open} onToggleFiles={files.toggle} {...chat} onClose={mobileMode?onCloseChat:undefined} chatClassName="" chatTestId="v3-card-session-chat" resizeClassName="v3-workspace-divider" resizeTestId="v3-card-workspace-divider" onResize={delta=>drag(delta,"middle")} onResizeKeyDown={event=>key(event,"middle")}
    separatorAria={{"aria-valuenow":resolved.cardWidth,"aria-valuemin":resolved.minimum,"aria-valuemax":resolved.totalWidth-resolved.gap-resolved.minimum,"aria-valuetext":`카드 ${Math.round(resolved.cardWidth)}픽셀, 대화 ${Math.round(resolved.chatWidth)}픽셀`}}/>
  </>;
  const content=<div className="v3-workspace-scrim is-chat-open" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}

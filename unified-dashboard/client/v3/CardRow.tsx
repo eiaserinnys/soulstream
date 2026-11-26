@@ -65,7 +65,7 @@ export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,comp
   title={<strong title={card.title}>{card.title}</strong>}
   agentLine={<>{folderLabel?<span>{folderLabel}</span>:null}<span>{name}</span><span>{nodeId??"노드 미상"}</span><span>{assignee?.modelLabel??card.modelPreset??"모델 미지정"}</span></>}
   preview={preview??""}
-  status={{label:`카드 ${card.status==="running"?"진행 중":cardStatusLabel(card)}`,tone:card.status==="blocked"&&card.blockedKind==="question"?"question":card.status}}
+  status={{label:`카드 ${cardStatusLabel(card)}`,tone:card.status==="blocked"&&card.blockedKind==="question"?"question":card.status}}
   timestamp={{display:cardElapsed(card.updatedAt),raw:card.updatedAt}}
   cardSummary={hasItems?<CardProgressSummary summary={itemSummary}/>:undefined} cardTurn={dependency?<span className={dependency.tone==="error"?"v3-card-error":undefined}>{dependency.text}</span>:cardTurn}
   actions={card.status==="review" ? completion?[{kind:"complete",label:"완료",pending:completion.pending,onAction:completion.onComplete}]:undefined : [{kind:"open",label:"카드 열기",onAction:onOpen}]}
