@@ -18,7 +18,7 @@ export interface FolderPickerProps {
 
 export function FolderPicker({ folders, starredFolderIds, disabledFolderIds, selectedFolderId, pending, onSelect }: FolderPickerProps) {
   const id = useId();
-  const [tab, setTab] = useState<"starred" | "all">("starred");
+  const [chosenTab, setChosenTab] = useState<"starred" | "all" | null>(null);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const normalized = query.trim().toLocaleLowerCase();
@@ -33,6 +33,8 @@ export function FolderPicker({ folders, starredFolderIds, disabledFolderIds, sel
   }, [normalized, roots]);
   const starred = starredFolderIds.map((id) => folders.find((folder) => folder.id === id))
     .filter((folder): folder is CatalogFolder => Boolean(folder && !folder.archived && folder.name.toLocaleLowerCase().includes(normalized)));
+  const hasStars = starredFolderIds.some((id) => folders.some((folder) => folder.id === id && !folder.archived));
+  const tab = chosenTab ?? (hasStars ? "starred" : "all");
   const toggle = (folderId: string) => setExpanded((current) => {
     const next = new Set(current);
     if (next.has(folderId)) next.delete(folderId); else next.add(folderId);
@@ -59,7 +61,7 @@ export function FolderPicker({ folders, starredFolderIds, disabledFolderIds, sel
     </div>;
   };
   return <div className="v3-shell v3-folder-picker" style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px` } as CSSProperties}>
-    <DetailTabs<"starred"|"all"> id={id} label="폴더 목록" panelId={`${id}-folders`} tabs={[["starred","별표"],["all","전체"]]} value={tab} disabled={pending} onChange={setTab}/>
+    <DetailTabs<"starred"|"all"> id={id} label="폴더 목록" panelId={`${id}-folders`} tabs={[["starred","별표"],["all","전체"]]} value={tab} disabled={pending} onChange={setChosenTab}/>
     <Input type="search" aria-label="이동할 폴더 검색" placeholder="폴더 검색…" value={query}
       disabled={pending} onChange={(event) => setQuery(event.target.value)} />
     <div id={`${id}-folders`} role="tabpanel" aria-labelledby={`${id}-${tab}`} className="v3-navigation-scroll v3-folder-picker-scroll">

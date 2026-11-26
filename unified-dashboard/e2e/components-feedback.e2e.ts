@@ -178,7 +178,7 @@ for (const width of [1440, 390]) {
     expect.soft(initial.caps).toHaveLength(2);
     for (const cap of initial.caps) { expect.soft(cap!.w).toBe(32); expect.soft(cap!.h).toBe(32); }
     expect.soft(initial.caps[0]?.y).toBe(initial.caps[1]?.y);
-    expect.soft(initial.chips.some(chip => chip.text?.includes("카드 진행 중"))).toBe(true);
+    expect.soft(initial.chips.some(chip => chip.text?.includes("카드 실행 중"))).toBe(true);
     expect.soft(initial.chips.some(chip => chip.text?.includes("세션 #1 실행 중"))).toBe(true);
     expect.soft(initial.headTitle!.font).toBe("16px");
     expect.soft(initial.headItem).not.toBeNull();

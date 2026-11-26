@@ -970,7 +970,7 @@ function ChatViewContent({
           />
           {history.blockedReason === null && (
             <div className="p-5 text-center text-muted-foreground text-sm">
-              대화를 기다리는 중
+              {chatStatus === "error" ? "세션이 오류로 끝나 남은 대화가 없습니다." : "대화를 기다리는 중"}
             </div>
           )}
         </>

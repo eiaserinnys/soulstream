@@ -1417,6 +1417,23 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(virtuosoMock.notifyViewportGeometry).toHaveBeenCalled();
   });
 
+  it("error 세션의 0행에는 오류로 끝났다는 문구를 표시한다", async () => {
+    useDashboardStore.getState().setActiveSessionSummary({ status: "error" } as any);
+    ({ container, root } = await renderChatView());
+
+    expect(container.querySelector('[data-testid="virtuoso"]')).toBeNull();
+    expect(container.textContent).toContain("세션이 오류로 끝나 남은 대화가 없습니다.");
+    expect(container.textContent).not.toContain("대화를 기다리는 중");
+  });
+
+  it("completed 세션의 0행에는 기다리는 중 문구를 그대로 표시한다", async () => {
+    useDashboardStore.getState().setActiveSessionSummary({ status: "completed" } as any);
+    ({ container, root } = await renderChatView());
+
+    expect(container.textContent).toContain("대화를 기다리는 중");
+    expect(container.textContent).not.toContain("오류로 끝나");
+  });
+
   it("채워진 화면의 mount-time startReached는 요청 없이 실제 위스크롤을 기다린다", async () => {
     useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
     ({ container, root } = await renderChatView());

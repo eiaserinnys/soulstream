@@ -5,6 +5,7 @@ import {CardExecutionSettingsDialog} from "./CardExecutionSettings";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo, useImperativeHandle, useSyncExternalStore, type Ref } from "react";
 import { Check, MoreHorizontal } from "lucide-react";
 import { CARD_COLORS, CARD_COLOR_KEYS, type CardColor } from "../../../packages/wire-schema/src/card_colors";
+import { CARD_STATUS_LABELS } from "../../../packages/wire-schema/src/card_status_labels";
 import type { CardStatus } from "../../../packages/wire-schema/generated/typescript/index";
 import { type CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { Button, DashboardIconCap, FrameLoading, useDashboardStore, Popover, PopoverPopup, PopoverTrigger, AlertDialog, AlertDialogPopup, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter } from "@seosoyoung/soul-ui";
@@ -46,6 +47,8 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
   }});
   const {open,view,changeOpen,detail,loading,busy,error,refresh,unavailable,change,changeColor,showColors,showStatuses}=state;
   const currentColor=detail?.card.color??card.color??"yellow";
+  const currentStatus=detail?.card.status??card.status;
+  const statusOutsideChoices=(cardStatusChoices as readonly CardStatus[]).includes(currentStatus)?null:currentStatus;
   const colorButtonRef=(color:CardColor)=>{
     let callback=colorButtonRefCallbacks.current.get(color);
     if(!callback){callback=node=>{if(node)colorButtonRefs.current.set(color,node);else colorButtonRefs.current.delete(color);};colorButtonRefCallbacks.current.set(color,callback);}
@@ -100,6 +103,7 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
         {loading ? <FrameLoading inline label="불러오는 중…" /> : null}
         {error ? <><p data-v3-selectable-content="true" role={error.startsWith("실행 결과")?"status":"alert"}>{error}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void refresh()}>{detail ? "갱신 후 재시도" : "다시 불러오기"}</Button></> : null}
         {view==="status"?<>
+          {statusOutsideChoices?<p data-v3-selectable-content="true">지금 상태는 {CARD_STATUS_LABELS[statusOutsideChoices]}입니다. 담당이 정한 시각에 다시 확인하며, 아래에서 다른 상태로 바꿀 수 있습니다.</p>:null}
           <div aria-label="카드 상태 목록">{cardStatusChoices.map(status => <Button key={status} variant="menu"
             aria-pressed={status === (detail?.card.status ?? card.status)} disabled={unavailable}
             onClick={() => void change(status)}>{cardStatusLabel({...card, status,blockedKind:null,blockedDetail:null})}</Button>)}</div>

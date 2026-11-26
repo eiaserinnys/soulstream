@@ -48,21 +48,42 @@ describe("FolderPicker", () => {
     expect(localStorage.getItem("soulstream:folder-tree:expanded:v1:root")).toBeNull();
   });
 
-  it("starts on stars even when empty and keeps stars as their data arrives", () => {
+  it("opens on all folders when there are no stars", () => {
+    render([], []);
+    expect(tab("전체").getAttribute("aria-selected")).toBe("true");
+    expect(rows()).toEqual(["other", "root"]);
+  });
+
+  it("opens on stars when a starred folder exists", () => {
+    render(["other"], []);
+    expect(tab("별표").getAttribute("aria-selected")).toBe("true");
+    expect(rows()).toEqual(["other"]);
+  });
+
+  it("follows late-arriving stars until the person picks a tab", () => {
     const onSelect = vi.fn();
     render([], [], onSelect);
-    expect(tab("별표").getAttribute("aria-selected")).toBe("true");
-    expect(rows()).toEqual([]);
+    expect(tab("전체").getAttribute("aria-selected")).toBe("true");
     render(["other"], [], onSelect);
     expect(tab("별표").getAttribute("aria-selected")).toBe("true");
     expect(rows()).toEqual(["other"]);
     click(row("other").querySelector("button")!);
     expect(onSelect).toHaveBeenCalledWith(folders[3]);
     click(tab("전체"));
-    expect(rows()).toEqual(["other", "root"]);
-    flushSync(() => root.unmount());
-    root = createRoot(container);
     render([], [], onSelect);
+    render(["other"], [], onSelect);
+    expect(tab("전체").getAttribute("aria-selected")).toBe("true");
+    expect(rows()).toEqual(["other", "root"]);
+  });
+
+  it("keeps the star tab a person picked even while no star exists", () => {
+    render([], []);
+    click(tab("별표"));
+    expect(rows()).toEqual([]);
+    render(["other"], []);
+    expect(tab("별표").getAttribute("aria-selected")).toBe("true");
+    expect(rows()).toEqual(["other"]);
+    render([], []);
     expect(tab("별표").getAttribute("aria-selected")).toBe("true");
   });
 

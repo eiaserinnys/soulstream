@@ -58,7 +58,7 @@ it("small session rows omit only the preview while retaining the default text an
 it("keeps card state in the status slot and only the title in the title line",()=>{
  container.innerHTML=renderToStaticMarkup(<CardRowView card={card} detail={detail} onOpen={()=>{}}/>);
  expect(container.querySelector(".v3-run-title-line")?.textContent).toBe(card.title);
- expect(container.querySelector('.v3-run-trailing [data-slot="status-chip"]')?.textContent).toBe("카드 진행 중");
+ expect(container.querySelector('.v3-run-trailing [data-slot="status-chip"]')?.textContent).toBe("카드 실행 중");
 });
 
 it("does not reserve a mode slot for the card's empty icon",async()=>{

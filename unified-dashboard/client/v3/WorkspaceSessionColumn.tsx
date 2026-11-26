@@ -16,7 +16,7 @@ export function WorkspaceSessionColumn({
   onResize, onResizeKeyDown, onClose, chatInputDisabled, fileUploadUrl,
   historyEnabled, sessionStreamActive, sessionConnectionStatus, reconnectSession,
   onAcknowledgedReview,separatorAria,
-  storeScope,onSessionChange,loadDisplaySettings,filesOpen,onToggleFiles,
+  storeScope,onSessionChange,loadDisplaySettings,filesOpen,onToggleFiles,cardSessionCount,
 }: {
   activeSession: SessionSummary | undefined;
   chatClassName: string; chatTestId: string;
@@ -33,6 +33,8 @@ export function WorkspaceSessionColumn({
   onSessionChange?(sessionId: string): void;
   loadDisplaySettings?: boolean;
   filesOpen?: boolean; onToggleFiles?(): void;
+  /** 카드 화면에서만 넘긴다. 0이면 세션이 아직 하나도 없는 카드다. */
+  cardSessionCount?: number;
   separatorAria?:Pick<AriaAttributes,"aria-valuenow"|"aria-valuemin"|"aria-valuemax"|"aria-valuetext">;
 }) {
   const chatSurfaceRef = useRef<HTMLElement>(null);
@@ -57,7 +59,7 @@ export function WorkspaceSessionColumn({
       {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview}/> : null}
       <div className="v3-chat-content">
         {activeSession ? <PersistentSessionChatView sessionId={activeSession.agentSessionId} storeScope={storeScope} onSessionChange={onSessionChange} loadDisplaySettings={loadDisplaySettings} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}/> :
-          <div className="v3-chat-empty"><span className="v3-emoji" aria-hidden="true">💬</span><strong>위임 관계에서 세션을 선택하세요.</strong><p>채팅은 보드와 문서 편집 중에도 이 자리에 유지됩니다.</p></div>}
+          <div className="v3-chat-empty"><span className="v3-emoji" aria-hidden="true">💬</span><strong>{cardSessionCount===0?"아직 시작된 세션이 없습니다.":"위임 관계에서 세션을 선택하세요."}</strong><p>채팅은 보드와 문서 편집 중에도 이 자리에 유지됩니다.</p></div>}
       </div>
     </section>
   </>;
