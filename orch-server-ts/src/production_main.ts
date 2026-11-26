@@ -8,6 +8,7 @@ import {
 
 import { loadOrchServerEnvironment } from "./config.js";
 import { createProductionOrchestrator } from "./production.js";
+import { StartupPreflightError, checkDatabaseReady } from "./runtime/startup_preflight.js";
 import { HandoverPostgres } from "./runtime/handover_postgres.js";
 import { OrchestratorHandover } from "./runtime/orchestrator_handover.js";
 
@@ -82,8 +83,26 @@ export function installProductionProcessErrorHandlers(
   };
 }
 
+export function reportStartupFailure(
+  error: unknown,
+  options: {
+    readonly logger?: Pick<Console, "error">;
+    readonly exit?: (code: number) => void;
+  } = {},
+): void {
+  const logger = options.logger ?? console;
+  if (error instanceof StartupPreflightError) {
+    logger.error(error.message);
+    (options.exit ?? ((code: number) => process.exit(code)))(1);
+    return;
+  }
+  logger.error("Failed to start soulstream-orch-server-ts", error);
+  process.exitCode = 1;
+}
+
 export async function runProductionMain(): Promise<void> {
   const config = loadOrchServerEnvironment();
+  await checkDatabaseReady(config.database_url);
   // The repository's canonical catalogue file is the only source of presets,
   // rates and display names. A failed first load stops startup instead of
   // serving stale built-in data.
@@ -175,8 +194,5 @@ function isDirectEntrypoint(): boolean {
 
 if (isDirectEntrypoint()) {
   installProductionProcessErrorHandlers();
-  runProductionMain().catch((error: unknown) => {
-    console.error("Failed to start soulstream-orch-server-ts", error);
-    process.exitCode = 1;
-  });
+  runProductionMain().catch((error: unknown) => reportStartupFailure(error));
 }

@@ -378,6 +378,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     nodeId: env.SOULSTREAM_NODE_ID,
     logger,
     releaseActivationState: params.releaseActivationState,
+    upstreamStatus: () => upstreamAdapter?.upstreamStatus() ?? { connected: false, last_error: null },
     mcp: buildMcpServerOptions(env, mcpRuntime),
     notificationDlq: { notifications: sessionDeliveryHost.notifications },
     cogito: { runtime: mcpRuntime },

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer, type WebSocket as WSServerWebSocket } from "ws";
 import pino from "pino";
 import type { AddressInfo } from "node:net";
+import { createServer, type Server as HttpServer } from "node:http";
 
 import { AgentRegistry } from "../src/agent_registry.js";
 import type { AgentProfile } from "@soulstream/agent-profile-contract";
@@ -1509,5 +1510,56 @@ describe("isConnectionError", () => {
     expect(isConnectionError("string error")).toBe(false);
     expect(isConnectionError(null)).toBe(false);
     expect(isConnectionError(undefined)).toBe(false);
+  });
+});
+
+describe("UpstreamAdapter orch 401 거절 안내", () => {
+  let rejecting: HttpServer;
+  let rejectedHandshakes = 0;
+  const logLines: string[] = [];
+
+  beforeEach(async () => {
+    rejectedHandshakes = 0;
+    logLines.length = 0;
+    rejecting = createServer();
+    rejecting.on("upgrade", (_req, socket) => {
+      socket.on("error", () => undefined);
+      rejectedHandshakes += 1;
+      socket.end("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    });
+    await new Promise<void>((resolve) => rejecting.listen(0, "127.0.0.1", resolve));
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => rejecting.close(() => resolve()));
+  });
+
+  it("401로 거절되면 AUTH_BEARER_TOKEN 확인 안내를 연속 실패 동안 한 번만 찍는다", async () => {
+    const port = (rejecting.address() as AddressInfo).port;
+    const logger = pino({ level: "info" }, { write: (line: string) => { logLines.push(line); } });
+    const adapter = new UpstreamAdapter(
+      {
+        url: `ws://127.0.0.1:${port}/ws/node`,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "wrong-token",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      logger,
+      makeDeps({ reconnectPolicy: new RecordingReconnectPolicy() }),
+    );
+    void adapter.run();
+    await waitFor(() => rejectedHandshakes >= 3);
+    await adapter.shutdown();
+
+    const hints = logLines.filter((line) => line.includes("AUTH_BEARER_TOKEN"));
+    expect(hints).toHaveLength(1);
+    expect(hints[0]).toContain("orch");
+    expect(hints[0]).not.toContain("wrong-token");
+    expect(adapter.upstreamStatus().connected).toBe(false);
+    expect(adapter.upstreamStatus().last_error).toContain("401");
   });
 });

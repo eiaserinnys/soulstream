@@ -105,4 +105,61 @@ describe("buildServer (Phase B-1 hotfix F1 회귀 차단)", () => {
 
     await server.close();
   });
+
+  it("GET /health 본문에 upstream 연결 상태가 실리고 상류가 끊겨도 200 ready 그대로다", async () => {
+    const logger = pino({ level: "silent" });
+    let upstream = { connected: false, last_error: "Unexpected server response: 401" as string | null };
+    const manifest = buildReleaseManifest({
+      sourceCommit: "commit",
+      hostBundleHash: "host",
+      runnerReleaseId: "runner",
+      runnerArtifactHash: "runner",
+      schemaGeneration: "schema",
+      wireGeneration: "wire",
+      nodeVersion: process.versions.node,
+      platform: process.platform,
+      arch: process.arch,
+      deploymentEnvIdentity: "env",
+      claudeExecutable: { kind: "claude", path: null, identity: null },
+      codexExecutable: { kind: "codex", path: null, identity: null },
+    });
+    const releaseActivationState = new ReleaseActivationState(manifest, {
+      registrationIdempotencyKey: "registration-key",
+    });
+    releaseActivationState.markPrewarmed({
+      host: "verified",
+      runner: "verified",
+      env: "verified",
+      executable: "verified",
+    });
+    releaseActivationState.acceptReceipt({
+      manifest_id: manifest.manifest_id,
+      activation_generation: 1,
+      activated_at: "2026-08-19T09:00:01.000Z",
+      registration_idempotency_key: "registration-key",
+    });
+    const server = await buildServer({
+      host: "127.0.0.1",
+      port: 0,
+      nodeId: "test-node",
+      logger,
+      releaseActivationState,
+      upstreamStatus: () => upstream,
+    });
+
+    const down = await server.inject({ method: "GET", url: "/health" });
+    expect(down.statusCode).toBe(200);
+    expect(down.json()).toMatchObject({
+      status: "ok",
+      ready: true,
+      upstream: { connected: false, last_error: "Unexpected server response: 401" },
+    });
+
+    upstream = { connected: true, last_error: null };
+    const up = await server.inject({ method: "GET", url: "/health" });
+    expect(up.statusCode).toBe(200);
+    expect(up.json()).toMatchObject({ ready: true, upstream: { connected: true, last_error: null } });
+
+    await server.close();
+  });
 });
