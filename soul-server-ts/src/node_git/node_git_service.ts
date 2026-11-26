@@ -270,6 +270,7 @@ export class NodeGitService {
         ...this.options.env,
         ...input.env,
         GIT_TERMINAL_PROMPT: "0",
+        GIT_OPTIONAL_LOCKS: "0",
         GCM_INTERACTIVE: "never",
         LC_ALL: "C",
       },

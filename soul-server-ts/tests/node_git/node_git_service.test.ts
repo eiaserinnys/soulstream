@@ -198,7 +198,7 @@ describe("SSH 연결 확인", () => {
       "BatchMode=yes", "StrictHostKeyChecking=accept-new", "git@github.com",
     ]));
     expect(calls[0]!.args).not.toContain("-i");
-    expect(calls[0]!.env).toMatchObject({ GIT_TERMINAL_PROMPT: "0", LC_ALL: "C" });
+    expect(calls[0]!.env).toMatchObject({ GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" });
   });
 
   it("종료 코드 255는 사유를 가려 성공 응답 안의 ok:false로 돌려준다", async () => {
