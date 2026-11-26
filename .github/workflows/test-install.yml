@@ -627,13 +627,41 @@ jobs:
           Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "user-codex-before.txt") -Value $codexHash -Encoding ascii
           Write-Host "Recorded $($snapshot.Count) entries under $claudeDir (with .claude.json if present); .codex\auth.json $codexHash"
 
-      - name: Install Soulstream (Windows PowerShell 5.1, Restricted policy)
+      # The image ships PostgreSQL 17; removing it makes the installer take the winget path a fresh PC takes.
+      - name: Remove the image's PostgreSQL 17
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $service = "postgresql-x64-17"
+          $base = "C:\Program Files\PostgreSQL\17"
+          if (Get-Service -Name $service -ErrorAction SilentlyContinue) { Stop-Service -Name $service -Force }
+          $uninstaller = Join-Path $base "uninstall-postgresql.exe"
+          if (Test-Path -LiteralPath $uninstaller) {
+            Start-Process -FilePath $uninstaller -ArgumentList @("--mode", "unattended") -Wait
+          }
+          if (Get-Service -Name $service -ErrorAction SilentlyContinue) { & sc.exe delete $service | Out-Null }
+          Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath "HKLM:\SOFTWARE\PostgreSQL\Installations\$service" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath "HKLM:\SOFTWARE\PostgreSQL\Services\$service" -Recurse -Force -ErrorAction SilentlyContinue
+          for ($i = 0; $i -lt 30 -and (Get-Service -Name $service -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Seconds 2 }
+          if (Get-Service -Name $service -ErrorAction SilentlyContinue) { throw "$service is still registered." }
+          if (Test-Path -LiteralPath $base) { throw "$base is still there." }
+          $winget = Get-Command winget -ErrorAction SilentlyContinue
+          Write-Host "Removed the image's PostgreSQL 17. winget: $(if ($winget) { $winget.Source } else { 'not found' })"
+
+      # TEMP and TMP get Korean letters and a space, as under a profile folder like C:\Users\김주복; the runner's ANSI code page is 1252.
+      - name: Install Soulstream (Windows PowerShell 5.1, Restricted policy, Korean TEMP)
         shell: powershell
         run: |
           Set-ExecutionPolicy -Scope Process -ExecutionPolicy Restricted -Force
           Write-Host "Shell: Windows PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition)), execution policy $(Get-ExecutionPolicy)"
+          $temp = Join-Path $env:RUNNER_TEMP (-join [char[]](0xC784, 0xC2DC, 0x20, 0xD3F4, 0xB354))
+          New-Item -ItemType Directory -Force -Path $temp | Out-Null
+          $env:TEMP = $temp
+          $env:TMP = $temp
+          Write-Host "TEMP and TMP: $temp (ANSI code page $([Text.Encoding]::Default.CodePage))"
           $installer = Get-Content -Raw -Encoding UTF8 .\install\install-windows.ps1
-          & ([scriptblock]::Create($installer)) -NonInteractive -Ref $env:INSTALL_REF -PostgresPassword root -InstallRoot $env:SOULSTREAM_TEST_ROOT
+          & ([scriptblock]::Create($installer)) -NonInteractive -Ref $env:INSTALL_REF -InstallRoot $env:SOULSTREAM_TEST_ROOT
 
       - name: Check the running installation
         shell: pwsh
@@ -721,6 +749,10 @@ jobs:
           } else {
             Write-Host "(no log folder)"
           }
+          foreach ($file in Get-ChildItem -LiteralPath $env:RUNNER_TEMP, $env:ProgramData -Recurse -File -Force -Include "install-postgresql.log", "bitrock_installer*.log", "installbuilder_installer*.log" -ErrorAction SilentlyContinue) {
+            Write-Host "=== $($file.FullName) (last 80 lines) ==="
+            Get-Content -LiteralPath $file.FullName -Tail 80 -ErrorAction Continue
+          }
 
       - name: Link a folder outside the install folder into the workspace
         shell: powershell
@@ -740,7 +772,7 @@ jobs:
           Set-ExecutionPolicy -Scope Process -ExecutionPolicy Restricted -Force
           Write-Host "Shell: Windows PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition)), execution policy $(Get-ExecutionPolicy)"
           $uninstaller = Get-Content -Raw -Encoding UTF8 .\install\uninstall-windows.ps1
-          & ([scriptblock]::Create($uninstaller)) -NonInteractive -PostgresPassword root -InstallRoot $env:SOULSTREAM_TEST_ROOT
+          & ([scriptblock]::Create($uninstaller)) -NonInteractive -InstallRoot $env:SOULSTREAM_TEST_ROOT
           if (Get-ScheduledTask -TaskName "SoulstreamServer" -ErrorAction SilentlyContinue) { throw "The logon task is still registered." }
           if (Test-Path -LiteralPath $env:SOULSTREAM_TEST_ROOT) { throw "The install folder is still there." }
           foreach ($port in @(5200, 4200, 4205)) {
