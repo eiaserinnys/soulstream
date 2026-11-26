@@ -58,6 +58,7 @@ import { UsageLogTab } from "./UsageLogTab";
 import { RecurringJobsTab } from "./RecurringJobsTab";
 import { PersistentSessionsTab } from "./PersistentSessionsTab";
 import { CodingAgentsTab } from "./CodingAgentsTab";
+import { GitReposTab } from "./GitReposTab";
 import { UsageStatsTab } from "./usage-stats/UsageStatsTab";
 
 export interface ConfigModalApi {
@@ -196,6 +197,8 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
                 <CardDispatchTab api={api?.cards} orchestration={api?.orchestration} />
               ) : selectedDefinition?.id === "coding_agents" ? (
                 <CodingAgentsTab request={api?.request} sampleNodes={api?.nodes} />
+              ) : selectedDefinition?.id === "git_repos" ? (
+                <GitReposTab request={api?.request} sampleNodes={api?.nodes} />
               ) : selectedDefinition?.id === "persistent_defaults" ? (
                 <PersistentDefaultsSettingsForm />
               ) : selectedDefinition?.id === "mcp" ? (
