@@ -47,7 +47,7 @@ async function prepare(ctx, options) {
   step('Preparing databases');
   setupDatabases(ctx, secrets);
   step('Building atom');
-  buildAtom(ctx);
+  const atomNotes = buildAtom(ctx);
   step('Initializing atom');
   initAtom(ctx, secrets);
   step('Issuing the atom API key and loading atom instructions');
@@ -67,7 +67,7 @@ async function prepare(ctx, options) {
   pnpm(['--dir', join(ctx.soulDir, 'unified-dashboard'), 'run', 'build']);
   step('Initializing schema');
   setupSchema(ctx, secrets);
-  writeFileSync(join(ctx.soulDir, '.local', 'install-notes.json'), `${JSON.stringify({ warnings: [...rendered.warnings, ...rendered.seedWarnings, ...seedWarnings] })}\n`);
+  writeFileSync(join(ctx.soulDir, '.local', 'install-notes.json'), `${JSON.stringify({ warnings: [...atomNotes, ...rendered.warnings, ...rendered.seedWarnings, ...seedWarnings] })}\n`);
 }
 
 async function finish(ctx) {

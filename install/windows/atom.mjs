@@ -1,5 +1,5 @@
 // atom: build, environment file, migration, a temporary server for the API key and the seed, and the key itself.
-import { closeSync, existsSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { atomSchemaReady } from './database.mjs';
@@ -8,12 +8,19 @@ import { ATOM_API_KEY_RE, mergeEnv } from './render_config.mjs';
 
 export const atomUrl = (ctx) => `http://127.0.0.1:${ctx.ports.atom}`;
 
+// Returns notes for the end screen. The atom dashboard is a convenience: when it does not build, atom still serves its API.
 export function buildAtom(ctx) {
   run('npm', ['--prefix', ctx.atomDir, 'ci', '--include=dev'], { env: { NODE_ENV: 'development' } });
   run('npm', ['--prefix', ctx.atomDir, 'run', 'build']);
   const dashboard = join(ctx.atomDir, 'dashboard');
-  run('pnpm', ['install', '--frozen-lockfile', '--prod=false'], { cwd: dashboard });
-  run('pnpm', ['run', 'build'], { cwd: dashboard });
+  try {
+    run('pnpm', ['install', '--frozen-lockfile', '--prod=false'], { cwd: dashboard });
+    run('pnpm', ['run', 'build'], { cwd: dashboard });
+  } catch (error) {
+    mkdirSync(join(dashboard, 'dist'), { recursive: true });
+    return [`The atom dashboard did not build (${error.message}). Atom serves its API only; the Soulstream dashboard is not affected.`];
+  }
+  return [];
 }
 
 export function initAtom(ctx, secrets) {
