@@ -49,6 +49,8 @@ import {
   requireObjectBody,
 } from "./persistent_session_instructions_service.js";
 
+const NO_CONNECTED_NODE_MESSAGE = "연결된 노드가 없습니다. 노드를 연결한 뒤 다시 만드세요.";
+
 export type PersistentCreateDefaults = {
   node_id: string;
   preferred_agent_id: string | null;
@@ -119,6 +121,10 @@ export class PersistentSessionSettingsService {
   }
 
   async list(request: CallerRequest) {
+    return { ...(await this.listVisible(request)), create_defaults: await this.createDefaults() };
+  }
+
+  private async listVisible(request: CallerRequest) {
     const rows = await (await this.deps.reads()).listPersistentSessions();
     const visible = await this.accessibleRows(request, rows);
     const names = await this.agentNames(visible);
@@ -127,7 +133,6 @@ export class PersistentSessionSettingsService {
       sessions: visible.map((row) =>
         buildPersistentSessionResource(row, names.get(agentKey(row)) ?? null, fallbackModels)),
       total: visible.length,
-      create_defaults: await this.createDefaults(),
     };
   }
 
@@ -255,7 +260,22 @@ export class PersistentSessionSettingsService {
     };
   }
 
+  /** A user's create request lands on the node the create form shows (createDefaultsNodeId). */
   async create(
+    request: CallerRequest,
+    input: unknown,
+    logger: Pick<FastifyRequest["log"], "warn">,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    const nodeId = this.createDefaultsNodeId();
+    if (nodeId === "") {
+      parseCreateBody(input);
+      throw new PersistentSessionApiError(422, "INVALID_MODEL_PRESET", NO_CONNECTED_NODE_MESSAGE);
+    }
+    return this.createOnNode(nodeId, request, input, logger);
+  }
+
+  private async createOnNode(
+    nodeId: string,
     request: CallerRequest,
     input: unknown,
     logger: Pick<FastifyRequest["log"], "warn">,
@@ -267,10 +287,10 @@ export class PersistentSessionSettingsService {
     } | null = null;
     let defaultModel: PersistentModelSelection | null;
     if (body.default_model === undefined) {
-      catalogModels = this.resolveCatalogModels(this.deps.defaultExecutionNodeId, []);
+      catalogModels = this.resolveCatalogModels(nodeId, []);
       defaultModel = catalogModels.default_model;
     } else {
-      defaultModel = this.normalizeModel(this.deps.defaultExecutionNodeId, body.default_model, {
+      defaultModel = this.normalizeModel(nodeId, body.default_model, {
         requireAvailable: false, allowLimitRejected: false, keepEffort: undefined,
       });
     }
@@ -279,16 +299,16 @@ export class PersistentSessionSettingsService {
     }
     const fallbackModels = body.fallback_models === undefined
       ? catalogModels === null
-        ? this.resolveCatalogFallbacks(defaultModel.model_preset)
+        ? this.resolveCatalogFallbacks(nodeId, defaultModel.model_preset)
         : catalogModels.fallback_models
       : body.fallback_models.map((model) => this.normalizeModel(
-        this.deps.defaultExecutionNodeId, model,
+        nodeId, model,
         { requireAvailable: false, allowLimitRejected: false, keepEffort: undefined },
       ));
     let initialCandidate: PersistentModelSelection | undefined;
-    let initialNodeId = this.deps.defaultExecutionNodeId;
+    let initialNodeId = nodeId;
     for (const candidate of [defaultModel, ...fallbackModels]) {
-      const candidateNodeId = candidate.node_id ?? this.deps.defaultExecutionNodeId;
+      const candidateNodeId = candidate.node_id ?? nodeId;
       try {
         const profileId = body.agent_id;
         const profiles = await this.deps.profiles.listAgentProfiles(candidateNodeId);
@@ -365,13 +385,14 @@ export class PersistentSessionSettingsService {
     request: FastifyRequest,
     logger: Pick<FastifyRequest["log"], "warn">,
   ): Promise<{ status: number; body: Record<string, unknown> }> {
-    const { sessions, create_defaults: defaults } = await this.list(request);
+    const { sessions } = await this.listVisible(request);
+    const defaults = await this.createDefaults(this.deps.defaultExecutionNodeId);
     const existing = sessions[0];
     if (existing !== undefined) return { status: 200, body: { created: false, session_id: existing.session_id } };
     const refusal = bootstrapRefusal(defaults);
     if (refusal !== null) throw refusal;
     const profiles = await this.deps.profiles.listAgentProfiles(defaults.node_id);
-    const created = await this.create(request, {
+    const created = await this.createOnNode(defaults.node_id, request, {
       display_name: bootstrapDisplayName(profiles?.[defaults.preferred_agent_id!]?.name),
       agent_id: defaults.preferred_agent_id,
       initial_instruction: defaults.initial_instruction,
@@ -595,13 +616,13 @@ export class PersistentSessionSettingsService {
   }
 
   /** Advertised catalog fallbacks, minus the explicitly requested default. */
-  private resolveCatalogFallbacks(excludePreset: string): PersistentModelSelection[] {
+  private resolveCatalogFallbacks(nodeId: string, excludePreset: string): PersistentModelSelection[] {
     const fallbacks = this.deps.modelCatalog.snapshot().persistent_defaults.fallback_models
       .map((model) => ({
         model_preset: model.model_preset,
         reasoning_effort: model.reasoning_effort ?? null,
       }));
-    return this.advertisedCatalogModels(this.deps.defaultExecutionNodeId, fallbacks).advertised
+    return this.advertisedCatalogModels(nodeId, fallbacks).advertised
       .filter((model) => model.model_preset !== excludePreset);
   }
 
@@ -613,9 +634,8 @@ export class PersistentSessionSettingsService {
       : connected[0] ?? "";
   }
 
-  async createDefaults(): Promise<PersistentCreateDefaults> {
+  async createDefaults(nodeId: string = this.createDefaultsNodeId()): Promise<PersistentCreateDefaults> {
     const reasons: string[] = [];
-    const nodeId = this.createDefaultsNodeId();
     const persistedDefaults = this.deps.modelCatalog.snapshot().persistent_defaults;
     const agentId = this.deps.defaultPasAgentId ?? persistedDefaults.agent_id;
     let preferredAgentId: string | null = null;
