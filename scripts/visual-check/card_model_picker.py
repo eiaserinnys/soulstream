@@ -27,6 +27,8 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from playwright.sync_api import expect, sync_playwright  # noqa: E402
@@ -38,40 +40,53 @@ WIDTHS = (1440, 360)
 HOME_PREFERENCES = {"openOnStart": False, "lastSessionId": None, "showWeeklyUsage": False, "weeklyUsageNodeSelection": None}
 OVERFLOW = "() => document.documentElement.scrollWidth <= window.innerWidth"
 RESETS_AT = "2026-11-28T03:20:00.000Z"
+MONTH_RESETS_AT = "2026-12-20T00:00:00.000Z"
 NO_MODELS = "쓸 수 있는 모델이 없습니다. 설정의 「코딩 에이전트 연결」에서 이 노드의 로그인을 확인하세요."
-REFUSAL = "Model preset 'codex-6.2-sol' is unavailable on node eiaserinnys: 미인증"
 MAIN_NODE, BARE_NODE = "eiaserinnys", "eias-linegames"
+CATALOG = Path(__file__).resolve().parents[2] / "packages" / "model-catalog" / "data" / "model-catalog.yaml"
 
 
-def preset(preset_id, label, backend, **extra):
-    return {"id": preset_id, "label": label, "backend": backend, "available": True, "reason": None, "reason_label": None,
-            "resets_at": None, "usage_warning": False, **extra}
+def preset(source, **extra):
+    return {"id": source["id"], "label": source["label"], "backend": source["backend"], "available": True, "reason": None,
+            "reason_label": None, "resets_at": None, "usage_warning": False, **extra}
 
 
-def exhausted(preset_id, label, backend, reason_label, resets_at=RESETS_AT):
-    return preset(preset_id, label, backend, reason="quota_exhausted", reason_label=reason_label, resets_at=resets_at)
+def exhausted(source, reason_label, resets_at):
+    return preset(source, reason="quota_exhausted", reason_label=reason_label, resets_at=resets_at)
 
 
+def by_backend(catalog, backend, count):
+    return [item for item in catalog if item["backend"] == backend and "(" not in item["label"]][:count]
+
+
+# 이름은 코드에 적지 않고 카탈로그(정본)에서 읽는다. 앞쪽 프리셋을 backend별로 골라 쓴다.
+_CATALOG = yaml.safe_load(CATALOG.read_text(encoding="utf-8"))["presets"]
+CLAUDE = by_backend(_CATALOG, "claude", 4)
+CODEX = by_backend(_CATALOG, "codex", 3)
+ANTIGRAVITY = by_backend(_CATALOG, "antigravity", 1)
 MAIN_PRESETS = [
-    preset("claude-haiku", "Claude - Haiku", "claude"),
-    preset("claude-sonnet", "Claude - Sonnet", "claude"),
-    preset("claude-opus", "Claude - Opus", "claude"),
-    exhausted("codex-6.2-sol", "Codex - 6.2 Sol", "codex", "7일 사용량 제한"),
-    exhausted("codex-6.2-astra", "Codex - 6.2 Astra", "codex", "7일 사용량 제한"),
-    preset("codex-6.1-terra", "Codex - 6.1 Terra", "codex"),
-    exhausted("deepseek-flash-4.1", "DeepSeek - Flash 4.1", "claude", "월 사용량 제한", "2026-12-20T00:00:00.000Z"),
-    preset("gemini-4-carbon", "Gemini - 4 Carbon", "antigravity"),
+    *(preset(item) for item in CLAUDE[:3]),
+    exhausted(CODEX[0], "7일 사용량 제한", RESETS_AT),
+    exhausted(CODEX[1], "7일 사용량 제한", RESETS_AT),
+    preset(CODEX[2]),
+    exhausted(CLAUDE[3], "월 사용량 제한", MONTH_RESETS_AT),
+    preset(ANTIGRAVITY[0]),
 ]
 BARE_PRESETS = [
     {**item, "available": False, "reason": "not_authenticated", "reason_label": "미인증", "resets_at": None}
     for item in MAIN_PRESETS
 ]
+LABELS = [item["label"] for item in MAIN_PRESETS]
+CODEX_FIRST = [item["label"] for item in MAIN_PRESETS if item["backend"] == "codex"]
+CLAUDE_FIRST = [item["label"] for item in MAIN_PRESETS if item["backend"] == "claude"]
+CODEX_ORDER = CODEX_FIRST + [label for label in LABELS if label not in CODEX_FIRST]
 AGENTS = [
-    {"id": "roselin", "name": "로젤린", "backend": "codex", "default_preset": "codex-6.2-sol"},
+    {"id": "roselin", "name": "로젤린", "backend": "codex", "default_preset": CODEX[0]["id"]},
     {"id": "claude-default", "name": "Claude Default", "backend": "claude", "default_preset": ""},
     {"id": "codex-default", "name": "Codex Default", "backend": "codex", "default_preset": ""},
 ]
 PRESETS_BY_NODE = {MAIN_NODE: MAIN_PRESETS, BARE_NODE: BARE_PRESETS}
+REFUSAL = f"Model preset '{CODEX[0]['id']}' is unavailable on node {MAIN_NODE}: 미인증"
 CARD_NOW = "2026-11-26T09:00:00Z"
 
 
@@ -168,11 +183,11 @@ def scene_picker(browser, base, out: Path, prefix: str, width: int, current: boo
     context, page, popup = open_picker(browser, base, fake, width)
     pick(popup, "에이전트", "로젤린")
     if current:
-        sol = popup.locator('section[aria-label="모델"] button', has_text="Codex - 6.2 Sol")
+        sol = popup.locator('section[aria-label="모델"] button', has_text=CODEX[0]["label"])
         reason = sol.locator(".v3-card-execution-reason").inner_text()
         check(f"실행 조합 {width}px: 한도를 다 쓴 모델에 사유와 해제 시각", "7일 사용량 제한 · " in reason and reason.endswith("해제") and "11/28" in reason, reason)
         check(f"실행 조합 {width}px: 한도를 다 쓴 모델도 고를 수 있음", sol.is_enabled(), None)
-        month = popup.locator('section[aria-label="모델"] button', has_text="DeepSeek - Flash 4.1").locator(".v3-card-execution-reason").inner_text()
+        month = popup.locator('section[aria-label="모델"] button', has_text=CLAUDE[3]["label"]).locator(".v3-card-execution-reason").inner_text()
         check(f"실행 조합 {width}px: 월 한도 사유", month.startswith("월 사용량 제한 · ") and "12/20" in month, month)
         check(f"실행 조합 {width}px: 가로 넘침 없음", page.evaluate(OVERFLOW), width)
     shot(popup, out, prefix, "a-quota-rows", width)
@@ -180,15 +195,13 @@ def scene_picker(browser, base, out: Path, prefix: str, width: int, current: boo
     pick(popup, "에이전트", "Claude Default")
     if current:
         check(f"실행 조합 {width}px: 모델을 고르기 전 확인이 꺼짐", confirm_disabled(popup), None)
-        check(f"실행 조합 {width}px: claude 모델이 앞", model_names(popup)[:3] == ["Claude - Haiku", "Claude - Sonnet", "Claude - Opus"], model_names(popup))
+        check(f"실행 조합 {width}px: claude 모델이 앞", model_names(popup)[:3] == CLAUDE_FIRST[:3], model_names(popup))
     shot(popup, out, prefix, "b-model-unchosen", width)
 
     pick(popup, "에이전트", "Codex Default")
     if current:
         names = model_names(popup)
-        check(f"실행 조합 {width}px: codex 모델이 앞, 나머지는 카탈로그 순서", names == [
-            "Codex - 6.2 Sol", "Codex - 6.2 Astra", "Codex - 6.1 Terra", "Claude - Haiku", "Claude - Sonnet", "Claude - Opus",
-            "DeepSeek - Flash 4.1", "Gemini - 4 Carbon"], names)
+        check(f"실행 조합 {width}px: codex 모델이 앞, 나머지는 카탈로그 순서", names == CODEX_ORDER, names)
         check(f"실행 조합 {width}px: Codex Default도 모델 전에는 확인이 꺼짐", confirm_disabled(popup), None)
     shot(popup, out, prefix, "f-codex-order", width)
 
@@ -242,7 +255,7 @@ def scene_modal(browser, base, out: Path, prefix: str, width: int, current: bool
     (out / f"{prefix}menu-left-behind-{width}.json").write_text(json.dumps({"statusMenuPopupsBehindModal": menu_left_behind, "saveAndRunDisabled": save.is_disabled()}), encoding="utf-8")
     shot(page, out, prefix, "c-modal-unchosen", width)
 
-    choose_model(page, dialog, "Codex - 6.2 Sol")
+    choose_model(page, dialog, CODEX[0]["label"])
     if current:
         check(f"설정 모달 {width}px: 모델을 고르면 「저장 후 실행」이 켜짐", save.is_enabled(), None)
     save.click()
