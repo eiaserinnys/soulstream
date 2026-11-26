@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+
 /**
  * Normalize user input to a valid HTTP(S) URL.
  * - Preserves an explicit `http://` or `https://` scheme
@@ -14,27 +16,88 @@ export function normalizeUrl(input: string): string {
   return fullUrl;
 }
 
-/**
- * Check if a server URL is reachable.
- * Uses no-cors HEAD request — only verifies network reachability,
- * not HTTP status (opaque response limitation).
- */
-export async function checkReachability(
+/** Result of the Rust `check_server` command (`src-tauri/src/server_check.rs`). */
+export type ServerCheckResult =
+  | { kind: "ok" }
+  | { kind: "unreachable" }
+  | { kind: "http_status"; status: number }
+  | { kind: "not_soulstream" };
+
+export class ServerCheckError extends Error {}
+
+export function describeServerCheck(
   url: string,
-  timeoutMs: number = 5000,
-): Promise<void> {
+  result: ServerCheckResult,
+): string | null {
+  switch (result.kind) {
+    case "ok":
+      return null;
+    case "unreachable":
+      return `${url} 에 연결할 수 없습니다. 주소와 네트워크를 확인하세요.`;
+    case "http_status":
+      return `${url} 가 ${result.status} 로 응답했습니다. 소울스트림 서버 주소인지 확인하세요.`;
+    case "not_soulstream":
+      return `${url} 는 소울스트림 서버가 아닙니다. 주소를 확인하세요.`;
+  }
+}
+
+/** Message to show for an error thrown while checking or entering a server. */
+export function describeError(error: unknown): string {
+  if (error instanceof ServerCheckError) return error.message;
+  return `연결을 준비하지 못했습니다. (${String(error)})`;
+}
+
+/**
+ * Whether the webview itself can reach `url`. no-cors HEAD: only network failure is
+ * visible, not the HTTP status. The Rust check does not follow the OS proxy, so this
+ * keeps users behind one from getting worse than before.
+ */
+async function webviewCanReach(url: string, timeoutMs: number): Promise<boolean> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    // no-cors: opaque response, we can only detect network failure / DNS failure.
-    // A proper /health endpoint with CORS would be more reliable, but this is
-    // sufficient for initial connectivity checks.
     await fetch(url, {
       method: "HEAD",
       mode: "no-cors",
       signal: controller.signal,
     });
+    return true;
+  } catch {
+    return false;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * Check that `url` is a Soulstream server.
+ * The webview cannot read the status of a cross-origin response unless the server's
+ * CORS allow-list contains the app origin, so the Rust `check_server` command calls
+ * `GET /api/health` and classifies the answer. Only when Rust cannot connect
+ * (`unreachable`) the webview gets one more chance with its own no-cors HEAD, and
+ * a success there lets the user in without a server verdict. `http_status` and
+ * `not_soulstream` are answers from a server and are never re-checked.
+ * Worst case wait is 2 x `timeoutMs` (Rust, then webview).
+ * @throws ServerCheckError with the user-facing message when the server is not usable
+ */
+export async function checkReachability(
+  url: string,
+  timeoutMs: number = 5000,
+): Promise<void> {
+  let result: ServerCheckResult;
+  try {
+    result = await invoke<ServerCheckResult>("check_server", {
+      url,
+      timeoutMs,
+    });
+  } catch (error) {
+    throw new ServerCheckError(
+      `서버를 확인하지 못했습니다. (${String(error)})`,
+    );
+  }
+  if (result.kind === "unreachable" && (await webviewCanReach(url, timeoutMs))) {
+    return;
+  }
+  const message = describeServerCheck(url, result);
+  if (message) throw new ServerCheckError(message);
 }

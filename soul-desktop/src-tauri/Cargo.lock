@@ -3108,6 +3108,10 @@ name = "soul-desktop"
 version = "0.2.5"
 dependencies = [
  "open",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-process",

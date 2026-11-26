@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { normalizeUrl, checkReachability } from "../utils/url";
+import { normalizeUrl, checkReachability, describeError } from "../utils/url";
 
 interface SetupProps {
   onConnect: (url: string) => void;
@@ -27,8 +27,8 @@ export default function Setup({ onConnect, onSettings }: SetupProps) {
     try {
       await checkReachability(fullUrl, 5000);
       onConnect(fullUrl);
-    } catch {
-      setError("서버에 연결할 수 없습니다. URL을 확인해 주세요.");
+    } catch (e) {
+      setError(describeError(e));
       setConnecting(false);
     }
   }
@@ -51,21 +51,19 @@ export default function Setup({ onConnect, onSettings }: SetupProps) {
             >
               서버 URL
             </label>
-            <div className="flex">
-              <span className="inline-flex items-center px-3 rounded-l-floor border border-r-0 border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] text-sm">
-                https://
-              </span>
-              <input
-                id="server-url"
-                type="text"
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                placeholder="your-server.example.com"
-                className="flex-1 px-3 py-2 rounded-r-floor border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
-                disabled={connecting}
-                autoFocus
-              />
-            </div>
+            <input
+              id="server-url"
+              type="text"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              placeholder="https://soul.example.com"
+              className="w-full px-3 py-2 rounded-floor border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+              disabled={connecting}
+              autoFocus
+            />
+            <p className="mt-1.5 text-sm text-[var(--color-text-muted)]">
+              http:// 나 https:// 를 붙여 적습니다. 빼면 https:// 로 연결합니다.
+            </p>
           </div>
 
           {error && (

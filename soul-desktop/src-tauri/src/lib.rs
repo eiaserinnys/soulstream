@@ -1,4 +1,6 @@
 mod external_nav;
+mod server_check;
+mod settings_menu;
 
 use std::sync::{Arc, Mutex};
 
@@ -110,7 +112,12 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(origin_state)
-        .invoke_handler(tauri::generate_handler![set_dashboard_origin])
+        .menu(settings_menu::build_menu)
+        .on_menu_event(settings_menu::handle_menu_event)
+        .invoke_handler(tauri::generate_handler![
+            set_dashboard_origin,
+            server_check::check_server
+        ])
         .setup(move |app| {
             // Navigation 정책:
             //  - Tauri app URL(`tauri:` 또는 `http://tauri.localhost`)은 내부 앱으로 허용.

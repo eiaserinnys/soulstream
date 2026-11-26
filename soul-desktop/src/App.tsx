@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Update } from "@tauri-apps/plugin-updater";
 import { getServerUrl, setServerUrl } from "./utils/config";
-import { checkReachability } from "./utils/url";
+import { checkReachability, describeError } from "./utils/url";
+import { decideStartup } from "./utils/launch";
 import { registerDashboardOrigin } from "./utils/origin";
 import { checkForUpdate } from "./utils/updater";
 import Setup from "./pages/Setup";
@@ -27,13 +28,17 @@ function App() {
   async function loadConfig(updateCheck: Promise<Update | null>) {
     try {
       const url = await getServerUrl();
-      if (url) {
-        setSavedUrl(url);
-        const availableUpdate = await updateCheck;
-        if (!availableUpdate) navigateToServer(url);
-      } else {
-        setState("setup");
-      }
+      setSavedUrl(url);
+      const search = window.location.search;
+      const availableUpdate = url ? await updateCheck : null;
+      const action = decideStartup({
+        savedUrl: url,
+        search,
+        updateAvailable: availableUpdate !== null,
+      });
+      if (action === "setup") setState("setup");
+      else if (action === "settings") setState("settings");
+      else if (action === "navigate" && url) navigateToServer(url);
     } catch {
       setState("setup");
     }
@@ -48,12 +53,11 @@ function App() {
       // dashboard에 진입하면 SPA 라우팅까지 외부로 분류되어 OS 브라우저로 빠져나간다
       // (design-principles §4 명시적 실패).
       await registerDashboardOrigin(url);
-      // Navigate the entire WebView to the server URL.
-      // This unloads the React app — there's no programmatic way back.
-      // TODO(phase-1): Add native menu item (Cmd+, / Settings) to return to bundled UI.
+      // Navigate the entire WebView to the server URL. This unloads the React app;
+      // the native "서버 주소 설정…" menu (src-tauri/src/settings_menu.rs) brings it back.
       window.location.href = url;
-    } catch {
-      setErrorMessage(`${url} 에 연결할 수 없습니다.`);
+    } catch (e) {
+      setErrorMessage(describeError(e));
       setState("error");
     }
   }
@@ -82,7 +86,7 @@ function App() {
 
   function handleUpdateDismiss() {
     setUpdateDismissed(true);
-    if (savedUrl) navigateToServer(savedUrl);
+    if (savedUrl && state === "loading") navigateToServer(savedUrl);
   }
 
   function handleOpenSettings() {

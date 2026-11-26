@@ -8,6 +8,7 @@
     "store:default",
     "updater:default",
     "process:default",
-    "allow-set-dashboard-origin"
+    "allow-set-dashboard-origin",
+    "allow-check-server"
   ]
 }
