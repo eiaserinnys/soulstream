@@ -1,4 +1,5 @@
 import {
+  executableCandidatesInDirectory,
   executableCandidatesInPath,
   findSpawnableExecutable,
   inspectExecutablePath,
@@ -69,6 +70,16 @@ function claudePathCandidates(
 ): string[] {
   const candidates = executableCandidatesInPath("claude", env, platform, "PATH")
     .map((candidate) => candidate.path);
+  if (platform === "win32") {
+    // The official Windows installer puts claude.exe in %USERPROFILE%\.local\bin without adding it to PATH.
+    const userProfile = nonEmpty(env.USERPROFILE);
+    if (userProfile) {
+      candidates.push(...executableCandidatesInDirectory(
+        joinExecutablePath(userProfile, ".local", "bin"), "claude", "USERPROFILE_LOCAL_BIN", env.PATHEXT, platform,
+      ).map((candidate) => candidate.path));
+    }
+    return candidates;
+  }
   if (platform !== "darwin") return candidates;
   // macOS launches do not inherit an interactive shell PATH. Keep PATH first,
   // then the npm and Homebrew install locations used by the GUI launch path.

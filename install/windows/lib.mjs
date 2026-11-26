@@ -1,5 +1,5 @@
 // Small helpers shared by the Windows installer steps. Built-in modules only: these run before any dependency is installed.
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
 export const isWindows = process.platform === 'win32';
@@ -91,11 +91,6 @@ export function killTree(pid) {
   try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ }
 }
 
-export function startDetached(command, args, { cwd, env, outFile }) {
-  const child = spawn(command, args, { cwd, env, stdio: ['ignore', outFile, outFile], windowsHide: true });
-  return child;
-}
-
 export async function httpRequest(url, { method = 'GET', headers = {}, body, timeoutMs = 30000 } = {}) {
   const response = await fetch(url, {
     method,
@@ -111,15 +106,35 @@ export async function httpRequest(url, { method = 'GET', headers = {}, body, tim
   return { status: response.status, json, text, cookie };
 }
 
-// Polls fn until it returns a truthy value or the deadline passes; a thrown error counts as not ready.
+// Polls fn until it returns a truthy value or the deadline passes. A network error counts as not ready; an error the
+// installer raised itself (fail) stops the wait at once.
 export async function waitFor(description, fn, { timeoutMs, intervalMs = 2000 }) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
       const value = await fn();
       if (value) return value;
-    } catch { /* not ready */ }
+    } catch (error) {
+      if (error?.installerMessage) throw error;
+    }
     if (Date.now() >= deadline) throw fail(`Timed out waiting for ${description}.`);
     await sleep(intervalMs);
+  }
+}
+
+// The last lines of each log file that exists, for an error message.
+export function logTails(files, lines = 40) {
+  return files.filter((file) => existsSync(file)).map((file) => {
+    const tail = readFileSync(file, 'utf8').replace(/\s+$/, '').split('\n').slice(-lines).join('\n');
+    return `\n--- last ${lines} lines of ${file} ---\n${tail}`;
+  }).join('');
+}
+
+// Runs fn; when it throws, the error message gets the tails of the given log files.
+export async function withLogTails(files, fn) {
+  try {
+    return await fn();
+  } catch (error) {
+    throw fail(`${error.message}${logTails(files)}`);
   }
 }

@@ -206,28 +206,28 @@ What it installs:
 - PostgreSQL 17. An existing `postgresql-x64-17` service is used and set to start automatically. If there is none, the installer installs it on `localhost` only and keeps the superuser password in `<InstallRoot>\.postgres-superuser-password`.
 - The `soulstream` and `atom` databases and the `soulstream` role.
 - Soulstream and atom under `<InstallRoot>\soulstream` and `<InstallRoot>\atom`, built from source. The agent workspace is `<InstallRoot>\workspace`.
-- The Claude Code CLI (official Windows installer) and the Codex CLI (`npm install -g @openai/codex`) if you selected them and they are missing. Existing CLIs and their settings in your user folder are not touched.
+- The Claude Code CLI (official Windows installer) and the Codex CLI (`npm install -g @openai/codex`) if you selected them and they are missing. Existing CLIs and their settings in your user folder are not touched. The Claude installer puts `claude.exe` in `%USERPROFILE%\.local\bin` without adding it to `PATH`; the worker finds it there, and your `PATH` is not changed. If a selected CLI is still missing, the installer stops and tells you how to install it or leave it out with `-Backends`.
 - [Haniel](https://github.com/eiaserinnys/haniel) in `<InstallRoot>\venv`, running atom (`4200`), the orchestrator (`5200`), and the worker as three services. Everything listens on `127.0.0.1` only. If a port is taken, the installer tells you which program holds it and stops.
 
-After it finishes, open `http://127.0.0.1:5200` and sign in with the administrator password. The password is printed at the end and saved in `<InstallRoot>\soulstream\.admin-password`. Atom is at `http://127.0.0.1:4200` with the same password.
+After it finishes, open `http://127.0.0.1:5200` and sign in with the administrator password. The password is printed at the end and saved in `<InstallRoot>\soulstream\.admin-password`. Atom is at `http://127.0.0.1:4200` with the same password. If the atom dashboard does not build, atom still serves its API, the dashboard hides its atom link, and the installer lists this under Notes.
 
 To connect a coding agent, open **Settings > Coding agents** (`설정 > 코딩 에이전트`) in the dashboard. For Claude, expand the row and choose Add account (`계정 추가`). For Codex, open the URL the dashboard shows and enter the one-time code.
 
-Soulstream starts from a scheduled task named `Soulstream` that runs at your logon. It does not store your Windows password, so it runs only while you are signed in. It starts right after the installation.
+Soulstream starts from a scheduled task named `Soulstream` that runs at your logon. It does not store your Windows password, so it runs only while you are signed in. The installer starts the task right away. If the task does not start in that session, the installer starts Soulstream directly and says so; the task takes over at your next logon.
 
 Run the same command again to rebuild: the secrets, the administrator password, and the databases stay, the configuration is rewritten, and the services restart. Files you edited under `config\` are kept, and the new version is written next to them as `.installer-new`. The installer does not upgrade an existing database. If the database is behind the version you install, it stops and says so.
 
 Limits on Windows: session isolation is off, and sessions run in the worker process instead of separate runner processes. Antigravity and Tailscale are not supported.
 
-To remove it, from an elevated PowerShell:
+To remove it, run this in an elevated PowerShell. Add `-InstallRoot <folder>` if you installed somewhere else, and `-PostgresPassword <password>` if the installer did not install PostgreSQL itself (otherwise it asks):
 
 ```powershell
-.\install\uninstall-windows.ps1
+& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall-windows.ps1')))
 ```
 
 This stops and deletes the task and its processes, drops the `soulstream` and `atom` databases and the `soulstream` role, and deletes the install folder. PostgreSQL and the coding agent CLIs stay installed.
 
-Logs are in `<InstallRoot>\logs`: `haniel.out.log`, `haniel.err.log`, and one file per service.
+Logs are in `<InstallRoot>\logs`: `haniel.log`, `haniel.out.log`, `haniel.err.log`, and one file per service (`atom.log`, `orch.log`, `worker.log`). When a step fails, the installer prints the end of the relevant log.
 
 ## Windows worker installer
 

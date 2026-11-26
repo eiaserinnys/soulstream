@@ -1,7 +1,7 @@
 // After the services are up: wait for them, create the default workspace folder, refresh the model presets.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, httpRequest, log, readEnvValue, sleep, waitFor } from './lib.mjs';
+import { fail, httpRequest, log, readEnvValue, sleep, waitFor, withLogTails } from './lib.mjs';
 
 const WORKSPACE_FOLDER = '작업실';
 
@@ -21,12 +21,13 @@ const folderCount = async (ctx, headers) => {
 
 export async function waitAndCreateWorkspace(ctx) {
   const bearer = { Authorization: `Bearer ${readEnvValue(join(ctx.soulDir, '.env.orch'), 'AUTH_BEARER_TOKEN')}` };
-  await waitFor('Soulstream, the worker and the local node', async () => {
+  const serviceLogs = ['haniel.err.log', 'haniel.log', 'atom.log', 'orch.log', 'worker.log'].map((name) => join(ctx.logsDir, name));
+  await withLogTails(serviceLogs, () => waitFor('Soulstream, the worker and the local node', async () => {
     if ((await httpRequest(`${orchUrl(ctx)}/api/health`, { timeoutMs: 3000 })).status !== 200) return false;
     if ((await httpRequest(`http://127.0.0.1:${ctx.ports.worker}/health`, { timeoutMs: 3000 })).status !== 200) return false;
     const nodes = await httpRequest(`${orchUrl(ctx)}/api/nodes`, { headers: bearer, timeoutMs: 3000 });
     return (nodes.json?.nodes ?? []).some((node) => node.nodeId === 'local' && node.connected === true);
-  }, { timeoutMs: 180000 });
+  }, { timeoutMs: 180000 }));
   const session = await adminSession(ctx);
   if ((await folderCount(ctx, session)) === 0) {
     const created = await httpRequest(`${orchUrl(ctx)}/api/folders`, {

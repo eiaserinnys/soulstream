@@ -1,14 +1,15 @@
 // atom: build, environment file, migration, a temporary server for the API key and the seed, and the key itself.
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { atomSchemaReady } from './database.mjs';
-import { fail, httpRequest, killTree, log, parseEnvFile, run, waitFor } from './lib.mjs';
+import { fail, httpRequest, killTree, log, parseEnvFile, run, waitFor, withLogTails } from './lib.mjs';
 import { ATOM_API_KEY_RE, mergeEnv } from './render_config.mjs';
 
 export const atomUrl = (ctx) => `http://127.0.0.1:${ctx.ports.atom}`;
 
-// Returns notes for the end screen. The atom dashboard is a convenience: when it does not build, atom still serves its API.
+// The atom dashboard is a convenience: when it does not build, atom still serves its API and the installer goes on
+// without DASHBOARD_DIR (atom refuses to start when that folder has no index.html).
 export function buildAtom(ctx) {
   run('npm', ['--prefix', ctx.atomDir, 'ci', '--include=dev'], { env: { NODE_ENV: 'development' } });
   run('npm', ['--prefix', ctx.atomDir, 'run', 'build']);
@@ -17,20 +18,22 @@ export function buildAtom(ctx) {
     run('pnpm', ['install', '--frozen-lockfile', '--prod=false'], { cwd: dashboard });
     run('pnpm', ['run', 'build'], { cwd: dashboard });
   } catch (error) {
-    mkdirSync(join(dashboard, 'dist'), { recursive: true });
-    return [`The atom dashboard did not build (${error.message}). Atom serves its API only; the Soulstream dashboard is not affected.`];
+    return {
+      dashboard: false,
+      notes: [`The atom dashboard did not build (${error.message}). Atom serves its API only, and the dashboard hides its atom link; the Soulstream dashboard is not affected.`],
+    };
   }
-  return [];
+  return { dashboard: true, notes: [] };
 }
 
-export function initAtom(ctx, secrets) {
+export function initAtom(ctx, secrets, dashboard) {
   mergeEnv(join(ctx.atomDir, '.env'), [
     'NODE_ENV=production',
     'API_HOST=127.0.0.1',
     `API_PORT=${ctx.ports.atom}`,
     `DATABASE_URL=postgresql://soulstream:${secrets.dbPassword}@127.0.0.1:${ctx.ports.postgres}/atom`,
     `JWT_SECRET=${secrets.atomJwt}`,
-    `DASHBOARD_DIR=${join(ctx.atomDir, 'dashboard', 'dist')}`,
+    ...(dashboard ? [`DASHBOARD_DIR=${join(ctx.atomDir, 'dashboard', 'dist')}`] : []),
     `FRONTEND_URL=${atomUrl(ctx)}`,
     `DASHBOARD_ADMIN_PASSWORD=${secrets.adminPassword}`,
   ], 'NODE_ENV API_HOST API_PORT DATABASE_URL JWT_SECRET DASHBOARD_ADMIN_PASSWORD DASHBOARD_DIR FRONTEND_URL'.split(' '), ctx.platform === 'win32');
@@ -51,10 +54,10 @@ export async function withTemporaryAtom(ctx, fn) {
   let exited = false;
   child.on('exit', () => { exited = true; });
   try {
-    await waitFor('atom to answer /api/health', async () => {
-      if (exited) throw fail('atom exited during startup; see logs\\atom-install.log.');
+    await withLogTails([join(ctx.logsDir, 'atom-install.log')], () => waitFor('atom to answer /api/health', async () => {
+      if (exited) throw fail('atom exited during startup.');
       return (await httpRequest(`${atomUrl(ctx)}/api/health`, { timeoutMs: 3000 })).status === 200;
-    }, { timeoutMs: 60000 });
+    }, { timeoutMs: 60000 }));
     return await fn();
   } finally {
     killTree(child.pid);

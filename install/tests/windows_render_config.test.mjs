@@ -102,4 +102,10 @@ test('the win32 render uses Windows paths, no process runner and no agy', () => 
   assert.ok(worker.includes(`CLAUDE_AUTH_TOKEN_PATH=${home}\\.claude\\.credentials.json`));
   assert.ok(orch.includes(`DASHBOARD_DIR=${root}\\unified-dashboard\\dist`));
   assert.ok(![...orch, ...worker].some((line) => /AGY|SOUL_RUNNER_(STATE|ARTIFACT|RELEASES)/.test(line)));
+  assert.ok(orch.includes('ATOM_PUBLIC_URL=http://127.0.0.1:4200'));
+  const withoutAtomDashboard = renderEnvFiles({
+    platform: 'win32', home, root, workspace, path: win32, ports: PORTS, atomDashboard: false,
+    secrets: { bearer: 'b', jwt: 'j', dbPassword: 'd', adminPassword: 'adminpass1' }, atomApiKey: 'k', backends: ['claude'], nodes: {},
+  });
+  assert.ok(withoutAtomDashboard.orch.includes('ATOM_PUBLIC_URL='));
 });

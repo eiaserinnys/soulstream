@@ -157,7 +157,7 @@ export function renderEnvFiles(o) {
     `DOMAIN_CATALOG_NODE_ID=${nodes.domain_catalog ?? ''}`,
     `SOULSTREAM_PUBLIC_URL=http://127.0.0.1:${ports.orch}`,
     `CORS_ALLOWED_ORIGINS=http://127.0.0.1:${ports.orch},http://localhost:${ports.orch}`,
-    `ATOM_PUBLIC_URL=http://127.0.0.1:${ports.atom}`,
+    `ATOM_PUBLIC_URL=${o.atomDashboard === false ? '' : `http://127.0.0.1:${ports.atom}`}`,
     `DASHBOARD_ADMIN_PASSWORD=${secrets.adminPassword}`,
   ];
   if (!win && backends.includes('antigravity')) orch.push(`AGY_CLI_PATH=${home}/.local/bin/agy`);
@@ -268,7 +268,8 @@ function linkClaudeMd({ platform, workspace, path, previousAgentsMd }) {
 
 /**
  * options: platform, home (user home), root (soulstream checkout), workspace, backends (array), ports
- * {orch, atom, worker, mcp, postgres}, secrets {bearer, jwt, dbPassword, adminPassword}. Returns { warnings, seedWarnings }.
+ * {orch, atom, worker, mcp, postgres}, secrets {bearer, jwt, dbPassword, adminPassword}, atomDashboard (false leaves
+ * ATOM_PUBLIC_URL empty so the dashboard shows no atom link). Returns { warnings, seedWarnings }.
  */
 export function renderConfig(options) {
   const platform = options.platform;

@@ -200,8 +200,10 @@ Write-Ok "PostgreSQL 17 is running on 127.0.0.1:$PG_PORT."
 
 # ---- 4. coding agent CLIs ----
 Write-Step "Checking coding agent CLIs"
+# The official Claude installer puts claude.exe here without adding it to PATH; the worker looks here too.
+$claudeLocal = Join-Path $env:USERPROFILE ".local\bin\claude.exe"
 try {
-    if ($requestedBackends -contains "claude" -and -not (Test-CommandExists "claude")) {
+    if ($requestedBackends -contains "claude" -and -not (Test-CommandExists "claude") -and -not (Test-Path -LiteralPath $claudeLocal)) {
         Write-Host "   Installing Claude Code..."
         Invoke-RestMethod "https://claude.ai/install.ps1" | Invoke-Expression
         Update-SessionPath
@@ -212,7 +214,7 @@ try {
         Update-SessionPath
     }
 } catch {
-    Write-Warn "A coding agent CLI could not be installed: $($_.Exception.Message) Install it later; the dashboard shows how to connect it."
+    Write-Warn "A coding agent CLI could not be installed: $($_.Exception.Message)"
 }
 
 # ---- 5. sources ----
@@ -270,14 +272,18 @@ for ($i = 0; $i -lt 60 -and -not $started; $i++) {
     $started = Test-Path (Join-Path $InstallRoot "haniel.pid")
     if (-not $started -and $i -ge 15 -and (Get-ScheduledTask -TaskName $TASK_NAME).State -ne "Running") { break }
 }
-if (-not $started) {
-    Write-Warn "The logon task did not start in this session; starting Haniel directly for now. It starts at your next logon."
+if ($started) {
+    Write-Ok "Task '$TASK_NAME' registered; Haniel was started by the logon task."
+} else {
+    Write-Warn "The logon task did not start Haniel within $i seconds in this session (task state: $((Get-ScheduledTask -TaskName $TASK_NAME).State))."
     $direct = Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$runner`"") -WindowStyle Hidden -PassThru
     Set-Content -LiteralPath (Join-Path $InstallRoot "runner.pid") -Value $direct.Id -Encoding ASCII
+    Write-Ok "Task '$TASK_NAME' registered; Haniel was started directly (PID $($direct.Id)) and the task starts it at your next logon."
 }
-Write-Ok "Task '$TASK_NAME' registered and started."
 
 # ---- 9. wait and finish (Node) ----
 Invoke-Native "node" (@($setup, "finish") + $common)
+$uninstallArguments = if ($InstallRoot -eq (Join-Path $env:LOCALAPPDATA "Soulstream")) { "" } else { " -InstallRoot '$InstallRoot'" }
 Write-Host ""
-Write-Host "Remove it with: install\uninstall-windows.ps1 (or the same script from the repository's install folder)." -ForegroundColor DarkGray
+Write-Host "To remove it, run in an elevated PowerShell:" -ForegroundColor DarkGray
+Write-Host "  & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall-windows.ps1')))$uninstallArguments" -ForegroundColor DarkGray

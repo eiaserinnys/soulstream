@@ -597,7 +597,19 @@ jobs:
           $nodes = Invoke-RestMethod -Uri "http://127.0.0.1:5200/api/nodes" -Headers @{ Authorization = "Bearer $bearer" }
           if (@($nodes.nodes | Where-Object { $_.nodeId -eq "local" -and $_.connected }).Count -ne 1) { throw "The local node is not connected." }
           if (-not (Get-ScheduledTask -TaskName "Soulstream" -ErrorAction SilentlyContinue)) { throw "The Soulstream logon task is missing." }
-          Write-Host "Soulstream is up with the local node connected."
+          if (Test-Path (Join-Path $root "runner.pid")) { Write-Host "Haniel start path: direct start (the logon task did not start it)" } else { Write-Host "Haniel start path: logon task" }
+          $workerLog = Join-Path $root "logs\worker.log"
+          foreach ($line in @("Claude Code executable path resolved", "Codex CLI path resolved")) {
+            $found = Select-String -LiteralPath $workerLog -SimpleMatch $line | Select-Object -Last 1
+            if (-not $found) { throw "The worker log has no '$line' line." }
+            Write-Host $found.Line
+          }
+          Write-Host "Soulstream is up with the local node connected and both backends found."
+          $atomPage = Invoke-WebRequest -Uri "http://127.0.0.1:4200/" -UseBasicParsing -TimeoutSec 10
+          if ($atomPage.StatusCode -ne 200 -or "$($atomPage.Headers['Content-Type'])" -notmatch "text/html") {
+            throw "The atom dashboard answered $($atomPage.StatusCode) $($atomPage.Headers['Content-Type'])"
+          }
+          Write-Host "The atom dashboard serves HTML."
 
       - name: Dump logs on failure
         if: failure()

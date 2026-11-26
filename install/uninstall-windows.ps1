@@ -2,7 +2,8 @@
 # databases and the soulstream role, and the install folder. PostgreSQL and the coding agent CLIs stay.
 #
 # Usage, from an elevated PowerShell:
-#   .\install\uninstall-windows.ps1 [-InstallRoot <folder>] [-PostgresPassword <password>] [-NonInteractive]
+#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall-windows.ps1)))
+#   options: [-InstallRoot <folder>] [-PostgresPassword <password>] [-NonInteractive]
 
 param(
     [string]$InstallRoot = "",
