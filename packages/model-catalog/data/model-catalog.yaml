@@ -27,6 +27,7 @@ presets:
     model: haiku
     env:
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+      BASH_DEFAULT_TIMEOUT_MS: "600000"
   - id: claude-sonnet
     label: Claude - Sonnet
     backend: claude
@@ -35,6 +36,7 @@ presets:
     default_effort: xhigh
     env:
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+      BASH_DEFAULT_TIMEOUT_MS: "600000"
   - id: claude-sonnet-trusted
     label: Claude - Sonnet (상자 안으로 되돌림)
     backend: claude
@@ -43,6 +45,7 @@ presets:
     default_effort: xhigh
     env:
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+      BASH_DEFAULT_TIMEOUT_MS: "600000"
     # 카드 #1292 디렉터 결정(261113)으로 배달원과 운영 조사 자리에 쓰던 상자 밖 Sonnet이었다.
     # 카드 #1899(261126)에서 #1897 조사원 세션이 맡은 일 밖의 운영 worker를 종료시켜 되돌림 조항대로 trusted_execution을 거뒀다.
     # 지금은 claude-sonnet과 같이 상자 안에서 돈다. 이 id를 적은 지침과 예약이 깨지지 않게 항목은 남긴다.
@@ -55,6 +58,7 @@ presets:
     trusted_execution: true
     env:
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+      BASH_DEFAULT_TIMEOUT_MS: "600000"
   - id: claude-opus-lean
     label: Claude - Opus (담당 시범, 압축 25만)
     backend: claude
@@ -69,6 +73,7 @@ presets:
       CLAUDE_CODE_AUTO_COMPACT_WINDOW: "250000"
       ENABLE_TOOL_SEARCH: "auto:10"
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+      BASH_DEFAULT_TIMEOUT_MS: "600000"
   - id: claude-fable
     label: Claude - Fable 5.1
     backend: claude
@@ -79,6 +84,7 @@ presets:
     trusted_execution: true
     env:
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+      BASH_DEFAULT_TIMEOUT_MS: "600000"
   - id: claude-fable-5.2
     label: Claude - Fable 5.2
     backend: claude
@@ -89,6 +95,7 @@ presets:
     trusted_execution: true
     env:
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+      BASH_DEFAULT_TIMEOUT_MS: "600000"
   - id: codex-6.2-astra
     label: Codex - 6.2 Astra
     backend: codex
@@ -169,6 +176,7 @@ presets:
       ANTHROPIC_API_KEY: "${KIMI_API_KEY}"
       CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144"
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+      BASH_DEFAULT_TIMEOUT_MS: "600000"
   - id: kimi-3
     label: Kimi - 3
     backend: claude
@@ -184,6 +192,7 @@ presets:
       ANTHROPIC_API_KEY: "${KIMI_API_KEY}"
       CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144"
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+      BASH_DEFAULT_TIMEOUT_MS: "600000"
   - id: kimi-3.1-pro
     label: Kimi - 3.1 Pro
     backend: claude
@@ -198,6 +207,7 @@ presets:
       ANTHROPIC_API_KEY: "${KIMI_API_KEY}"
       CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144"
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+      BASH_DEFAULT_TIMEOUT_MS: "600000"
   - id: deepseek-flash-4.1
     label: DeepSeek - Flash 4.1
     backend: claude
@@ -224,6 +234,7 @@ presets:
       ANTHROPIC_DEFAULT_OPUS_MODEL: deepseek-v4.1-flash
       CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144"
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+      BASH_DEFAULT_TIMEOUT_MS: "600000"
   - id: gemini-3.8-flash
     label: Gemini - 3.8 Flash
     backend: antigravity

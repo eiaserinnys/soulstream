@@ -116,6 +116,7 @@ describe("isolatedCacheEnvironment", () => {
 
     expect(env).toEqual({
       npm_config_store_dir: join(cacheRoot, "pnpm-store"),
+      pnpm_config_store_dir: join(cacheRoot, "pnpm-store"),
       npm_config_cache: join(cacheRoot, "npm"),
       XDG_CACHE_HOME: join(cacheRoot, "xdg"),
       COREPACK_HOME: join(cacheRoot, "corepack"),

@@ -462,6 +462,7 @@ describe("prepareIsolationPlan", () => {
     );
     // §9 격리 캐시 env는 세션 추가분에 들어간다.
     expect(prepared.env.npm_config_store_dir).toBe(join(cacheRoot, "pnpm-store"));
+    expect(prepared.env.pnpm_config_store_dir).toBe(join(cacheRoot, "pnpm-store"));
     expect(prepared.env.XDG_CACHE_HOME).toBe(join(cacheRoot, "xdg"));
     expect(prepared.env.COREPACK_HOME).toBe(join(cacheRoot, "corepack"));
     expect(prepared.env.PIP_CACHE_DIR).toBe(join(cacheRoot, "pip"));

@@ -130,7 +130,7 @@ type PresetExpectation = {
 
 const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const CODEX_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"];
-const CLAUDE_ENV = { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1" };
+const CLAUDE_ENV = { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1", BASH_DEFAULT_TIMEOUT_MS: "600000" };
 const KIMI_ENV = {
   ANTHROPIC_BASE_URL: "https://api.kimi.com/coding/",
   ANTHROPIC_API_KEY: "${KIMI_API_KEY}",
@@ -437,6 +437,12 @@ describe("repository model catalogue data", () => {
   it("disables background tasks for every Claude backend preset", () => {
     for (const preset of catalog.presets.filter((entry) => entry.backend === "claude")) {
       expect(preset.env?.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS, preset.id).toBe("1");
+    }
+  });
+
+  it("raises the default Bash timeout to the 600s cap for every Claude backend preset", () => {
+    for (const preset of catalog.presets.filter((entry) => entry.backend === "claude")) {
+      expect(preset.env?.BASH_DEFAULT_TIMEOUT_MS, preset.id).toBe("600000");
     }
   });
 
