@@ -62,7 +62,7 @@
 }
 
 .v3-run-open:disabled { cursor: default; }
-.v3-run-row[data-has-actions] .v3-run-open { grid-template-columns: auto minmax(0, 1fr) fit-content(30%) auto; }
+.v3-run-row[data-has-actions] .v3-run-open { grid-template-columns: auto minmax(0, 1fr) fit-content(36%) auto; }
 .v3-run-row[data-row-lines="2"] .v3-run-open { grid-template-rows: auto auto; }
 
 .v3-run-row-actions {

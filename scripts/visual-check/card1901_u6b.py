@@ -37,6 +37,8 @@ def captures_for(scene: str, width: int):
         return [("running-card-session-list", [
             probe(ROW_AGENT, ["세션 턴 종료"], ["세션 완료"], ["세션 완료"], ["턴 종료"]),
             probe(ROW_LLM, ["세션 완료"], ["턴 종료"], ["세션 완료"], ["턴 종료"]),
+            probe(f"{ROW_AGENT} .v3-run-row[data-has-actions]", [], [], [], []),
+            probe(f"{ROW_LLM} .v3-run-row[data-has-actions]", [], [], [], []),
         ], None)]
     if scene == "b":
         return [("completed-chat-header", [
@@ -126,12 +128,16 @@ def main() -> int:
                             viewport: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth,
                             clippedLabels: [...document.querySelectorAll('.v3-status-label, [role=tab], .v3-chat-status')]
                               .filter(e => e.scrollWidth > e.clientWidth + 1).map(e => e.textContent.trim()),
+                            rowOverflow: [...document.querySelectorAll('.v3-run-row')].filter(row => {
+                              const right = row.getBoundingClientRect().right + 1;
+                              return [...row.querySelectorAll('*')].some(el => el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().right > right);
+                            }).map(row => row.querySelector('strong')?.textContent.trim() ?? ''),
                         })""")
                         page.screenshot(path=str(args.output / f"{args.phase}-{name}-{width}.png"), animations="disabled")
                         overflow = metrics["scrollWidth"] > metrics["viewport"] + 1
                         result = {"scene": scene, "name": name, "phase": args.phase, "width": width, **metrics,
                                   "horizontalOverflow": overflow, "probes": probe_results, "errors": errors,
-                                  "pass": all(item["ok"] for item in probe_results) and not overflow and not metrics["clippedLabels"] and not errors}
+                                  "pass": all(item["ok"] for item in probe_results) and not overflow and not metrics["clippedLabels"] and not metrics["rowOverflow"] and not errors}
                     except Exception as error:  # noqa: BLE001
                         result = {"scene": scene, "name": name, "phase": args.phase, "width": width, "failure": str(error), "errors": errors, "pass": False}
                     finally:
