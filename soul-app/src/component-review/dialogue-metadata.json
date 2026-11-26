@@ -49,7 +49,7 @@
       "source": "../navigation/PersistentSessionContext.tsx"
     },
     "owned-agents": {
-      "label": "내 에이전트",
+      "label": "외부 에이전트",
       "source": "settings/OwnedAgentsSettingsSection.tsx"
     },
     "task-output": {

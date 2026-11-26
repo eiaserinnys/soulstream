@@ -18,13 +18,13 @@ OPERATIONS: list[tuple[str, str, str]] = []
 DIALOG_ROWS: list[str] = []
 
 ADMIN_TOC = [
-    ("개인 환경", ["화면과 읽기", "내 에이전트", "접속 링크", "웹훅"]),
+    ("개인 환경", ["화면과 읽기", "외부 에이전트", "접속 링크", "웹훅"]),
     ("세션과 작업", ["영구 에이전트 세션", "영구 세션 기본 모델", "카드 실행", "반복 작업"]),
     ("에이전트와 노드", ["에이전트 프로필", "MCP", "스킬과 카탈로그", "코딩 에이전트 연결", "노드"]),
     ("기록과 관리", ["세션 통계", "사용 로그", "요청 검수", "사용자", "파일 저장소", "런타임"]),
 ]
 MEMBER_TOC = [
-    ("개인 환경", ["화면과 읽기", "내 에이전트", "접속 링크", "웹훅"]),
+    ("개인 환경", ["화면과 읽기", "외부 에이전트", "접속 링크", "웹훅"]),
     ("세션과 작업", ["영구 에이전트 세션", "반복 작업"]),
     ("에이전트와 노드", ["노드"]),
     ("기록과 관리", ["세션 통계", "사용 로그", "런타임"]),
@@ -118,7 +118,7 @@ def capture_settings_toc(browser, base, out: Path, prefix: str):
                 check(f"{who} {width}px: 열기 단추 이름이 창 제목과 같은 「설정」", opener_name == "설정" and opener.get_attribute("title") in (None, "설정"), opener_name)
                 if admin:
                     icons = {i["label"]: i["icon"] for g in toc for i in g["items"]}
-                    check(f"{who} {width}px: 내 에이전트와 영구 세션 기본 모델에 자기 아이콘", icons["내 에이전트"] == "lucide-key-round" and icons["영구 세션 기본 모델"] == "lucide-sparkles", icons)
+                    check(f"{who} {width}px: 외부 에이전트와 영구 세션 기본 모델에 자기 아이콘", icons["외부 에이전트"] == "lucide-key-round" and icons["영구 세션 기본 모델"] == "lucide-sparkles", icons)
                 dims = nav.evaluate("e => ({scroll: e.scrollHeight, client: e.clientHeight, sw: e.scrollWidth, cw: e.clientWidth, doc: document.documentElement.scrollWidth, inner: window.innerWidth})")
                 check(f"{who} {width}px: 목차 전체가 한 장에 들어옴", dims["scroll"] <= dims["client"] + 1, {**dims, **stretch})
                 check(f"{who} {width}px: 가로 넘침 없음", dims["sw"] <= dims["cw"] and dims["doc"] <= dims["inner"], dims)

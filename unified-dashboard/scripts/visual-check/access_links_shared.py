@@ -45,7 +45,7 @@ try:
                     if attempt == 29: raise
                     time.sleep(1)
         go('')
-        page.get_by_role('button', name='내 에이전트', exact=True).click(timeout=30000)
+        page.get_by_role('button', name='외부 에이전트', exact=True).click(timeout=30000)
         page.get_by_role('button', name='기존 연결 등록').click()
         page.get_by_role('button', name='새 키 발급').click()
         page.get_by_text('새 연결 키', exact=True).wait_for()

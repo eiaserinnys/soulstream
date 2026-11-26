@@ -68,9 +68,9 @@ function OwnedAgentsPanel({ flattened, api }: { flattened: boolean; api: OwnedAg
     </GlassButton>;
   }
   const existing = data?.existingConnection;
-  return <SettingsSection id="owned-agents" title="내 에이전트" flattened={flattened}>
+  return <SettingsSection id="owned-agents" title="외부 에이전트" flattened={flattened}>
     <View style={s.block}>
-      <Text style={s.body}>내 에이전트의 이름과 활성 상태, 연결 키를 관리합니다.</Text>
+      <Text style={s.body}>외부 에이전트의 이름과 활성 상태, 연결 키를 관리합니다.</Text>
       {action('에이전트 추가', () => { setEditorError(null); setEditor({ id: null, name: '' }); }, !api)}
       {loading && <FrameLoading testID="owned-agents-loading" accessibilityLabel="불러오는 중" inline />}
       {error && <><Text accessibilityRole="alert" style={s.error}>{error}</Text>{action('다시 시도', () => void load())}</>}
