@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+import { isCodexUsageLimitError } from "../src/llm/codex_ephemeral_executor.js";
 import { parsePersistentInstructionsApplyPayload } from
   "@soulstream/wire-schema/persistent-session-instructions";
 
@@ -218,6 +219,7 @@ describe("live persistent instruction extractor wiring", () => {
       storyCompletionSweepIntervalMs: 100,
       storyNarrativeMaxChars: 100,
       storyTimeoutMs: 90_000,
+      fallbackTimeoutMs: 90_000,
       storyFoldFailureCooldownMs: 900_000,
       catchUpIntervalMs: 900_000,
       catchUpWindowHours: 72,
@@ -272,6 +274,7 @@ describe("live usage limit fallback wiring", () => {
     storyCompletionSweepIntervalMs: 100,
     storyNarrativeMaxChars: 100,
     storyTimeoutMs: 90_000,
+    fallbackTimeoutMs: 90_000,
     storyFoldFailureCooldownMs: 900_000,
     catchUpIntervalMs: 900_000,
     catchUpWindowHours: 72,
@@ -291,7 +294,7 @@ describe("live usage limit fallback wiring", () => {
     excludedFolderIds: [],
   };
 
-  it("sends story folds and persistent instruction extraction to the fallback executor on a usage limit", async () => {
+  it("sends summaries and persistent instruction extraction, but not story folds, to the fallback executor on a usage limit", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       answers: { long_term_correction: { noul: 0.8 } },
     }), { status: 200 })));
@@ -338,10 +341,10 @@ describe("live usage limit fallback wiring", () => {
     const { generator } = liveFactoryMocks.storyDeps as {
       generator: { generate: (...args: unknown[]) => Promise<{ model: string }> };
     };
-    await expect(generator.generate("접기", fallbackConfig, { maxAttempts: 1 })).resolves.toMatchObject({ model: "gemini-3.8-flash" });
+    await expect(generator.generate("접기", fallbackConfig, { maxAttempts: 1 })).rejects.toSatisfy(isCodexUsageLimitError);
     await expect(dependencies.summarizer.summarize(
       { userText: "u", assistantText: "a", previousSummaries: [] }, fallbackConfig,
     )).resolves.toMatchObject({ model: "gemini-3.8-flash" });
-    expect(fallbackGenerate).toHaveBeenCalledTimes(3);
+    expect(fallbackGenerate).toHaveBeenCalledTimes(2);
   });
 });
