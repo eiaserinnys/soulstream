@@ -45,7 +45,8 @@ from isolation_harness_payload_common import (
 
 def case_probe(args: dict) -> None:
     scratch = os.environ.get("SCRATCH_WORKSPACE_DIR", "")
-    store = os.environ.get("npm_config_store_dir", "")
+    store_keys = ("npm_config_store_dir", "pnpm_config_store_dir")
+    stores = [os.environ.get(key, "") for key in store_keys]
     emit(
         "probe",
         pid=os.getpid(),
@@ -58,7 +59,9 @@ def case_probe(args: dict) -> None:
         env_keys=sorted(os.environ),
         checks={
             "scratch_matches_expected": scratch == args.get("scratch_expected", ""),
-            "store_dir_matches_expected": store == args.get("store_expected", ""),
+            "store_dir_matches_expected": all(
+                store == args.get("store_expected", "") for store in stores
+            ),
             "auth_bearer_is_ssr1": os.environ.get("AUTH_BEARER_TOKEN", "").startswith("ssr1."),
             "database_url_absent": "DATABASE_URL" not in os.environ,
             "test_database_url_absent": "TEST_DATABASE_URL" not in os.environ,

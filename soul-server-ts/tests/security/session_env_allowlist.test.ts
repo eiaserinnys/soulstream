@@ -6,10 +6,17 @@ import { restrictedSessionEnvKeys } from
 import {
   buildRestrictedSessionEnv,
   isRestrictedBaseEnvKeyAllowed,
+  selectRestrictedBaseEnv,
 } from "../../src/runner/session_env.js";
 import type { Task } from "../../src/task/task_models.js";
 
 describe("restricted base env allowlist", () => {
+  it("passes the Bash default timeout but not shell-injecting BASH_ names", () => {
+    expect(
+      selectRestrictedBaseEnv({ BASH_DEFAULT_TIMEOUT_MS: "600000", BASH_ENV: "/tmp/x" }),
+    ).toEqual({ BASH_DEFAULT_TIMEOUT_MS: "600000" });
+  });
+
   it("keeps fixed names and the allowed prefixes", () => {
     for (const key of [
       "PATH",

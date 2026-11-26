@@ -52,6 +52,7 @@ export const RESTRICTED_ENV_BASE_ALLOWED_KEYS = [
   "AGENT_COMMON_FILES_DIR",
   "LOG_LEVEL",
   "WSL_DISTRO_NAME",
+  "BASH_DEFAULT_TIMEOUT_MS",
 ] as const;
 
 /** 접두어로 허용하는 이름. 아래 금지 조각이 든 이름은 접두어가 맞아도 뺀다. */

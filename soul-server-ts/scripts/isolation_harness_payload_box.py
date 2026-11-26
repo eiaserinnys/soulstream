@@ -17,7 +17,7 @@ IMPORT_SNIPPET = (
 
 def case_cache(args: dict) -> None:
     project = args["project"]
-    store = os.environ.get("npm_config_store_dir", "")
+    stores = [os.environ.get(key, "") for key in ("npm_config_store_dir", "pnpm_config_store_dir")]
     install = run(
         ["pnpm", *args["pnpm_args"], "--reporter=silent"],
         cwd=project, timeout=args.get("timeout", 300),
@@ -26,7 +26,7 @@ def case_cache(args: dict) -> None:
         "cache_install",
         rc=install["rc"],
         err=head(install["err"], 400) if install["rc"] != 0 else "",
-        store_dir_matches=store == args["expected_store"],
+        store_dir_matches=all(store == args["expected_store"] for store in stores),
     )
     imported = run(["node", "--input-type=module", "-e", IMPORT_SNIPPET], cwd=project, timeout=60)
     emit("cache_import", rc=imported["rc"], err=head(imported["err"]) if imported["rc"] else "")
