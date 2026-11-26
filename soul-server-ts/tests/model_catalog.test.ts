@@ -411,7 +411,6 @@ it("advertises the Antigravity usage provider for all five account presets", () 
 
 describe("model preset trusted execution", () => {
   const trustedPresetIds = [
-    "claude-sonnet-trusted",
     "claude-opus",
     "claude-opus-lean",
     "claude-fable",
@@ -427,7 +426,7 @@ describe("model preset trusted execution", () => {
     "gemini-4-neon",
   ];
 
-  it("marks exactly the fourteen trusted presets in the repository catalog", () => {
+  it("marks exactly the thirteen trusted presets in the repository catalog", () => {
     const catalog = openRepositoryCatalog();
     expect(
       catalog.list()

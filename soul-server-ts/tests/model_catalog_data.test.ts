@@ -150,12 +150,11 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     env: CLAUDE_ENV,
   },
   "claude-sonnet-trusted": {
-    label: "Claude - Sonnet (상자 밖, 배달과 운영 조사)",
+    label: "Claude - Sonnet (상자 안으로 되돌림)",
     backend: "claude",
     model: "sonnet",
     supported_efforts: CLAUDE_EFFORTS,
     default_effort: "xhigh",
-    trusted_execution: true,
     env: CLAUDE_ENV,
   },
   "claude-opus": {
