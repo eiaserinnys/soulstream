@@ -11,6 +11,21 @@ from test_service_restart_filters import (
     ROOT, protected_paths, repository_files, violations, workspace_packages,
 )
 
+PR_2370_CHANGED_FILES = (
+    "scripts/visual-check/settings_toolbar.py",
+    "scripts/visual-check/settings_toolbar_fakes.py",
+    "scripts/visual-check/settings_toolbar_r2.py",
+    "unified-dashboard/client/components/claude-accounts/ClaudePoolRow.test.tsx",
+    "unified-dashboard/client/components/claude-accounts/ClaudePoolRow.tsx",
+    "unified-dashboard/client/v3/ClaudeAccountPoolReviewSample.tsx",
+    "unified-dashboard/client/v3/ComponentsReviewPage.tsx",
+    "unified-dashboard/client/v3/PersistentSessionEmptyState.tsx",
+    "unified-dashboard/client/v3/PersistentSessionScreen.test.tsx",
+    "unified-dashboard/client/v3/SettingsToolbarReviewSamples.tsx",
+    "unified-dashboard/client/v3/persistent-session-screen.css",
+    "unified-dashboard/scripts/visual-check/provider_panel.py",
+)
+
 
 class WorkerChangeIgnorePathsTest(unittest.TestCase):
     @classmethod
@@ -54,11 +69,13 @@ class WorkerChangeIgnorePathsTest(unittest.TestCase):
             "soul-app/src/x.ts", "soul-app/package.json",
             "soul-app/modules/soul-app-search-commands/package.json",
             "docs/x.md", ".github/workflows/soul-app.yml",
+            "scripts/visual-check/settings_toolbar.py", "scripts/visual-check/sub/x.py",
         )
         for path in ignored:
             with self.subTest(path=path):
                 self.assertTrue(paths_all_ignored([path], self.patterns))
         self.assertTrue(paths_all_ignored(list(ignored), self.patterns))
+        self.assertTrue(paths_all_ignored(list(PR_2370_CHANGED_FILES), self.patterns))
         for path in (
             "soul-server-ts/src/x.ts",
             "packages/wire-schema/src/x.ts",
@@ -68,6 +85,8 @@ class WorkerChangeIgnorePathsTest(unittest.TestCase):
             "unified-dashboard/package.json",
             "pnpm-lock.yaml",
             "deploy/release-manifest-worker.json",
+            "scripts/verify-bundle-load.mjs",
+            "scripts/check-ui-css.mjs",
         ):
             with self.subTest(path=path):
                 self.assertFalse(paths_all_ignored([path], self.patterns))

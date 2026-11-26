@@ -83,7 +83,7 @@ def protected_paths(
         path
         for path in files
         if any(path.startswith(directory + "/") and not is_test_file(path, directory) for directory in package_dirs)
-        or path.startswith(("plugins/", "patches/", "deploy/", "scripts/"))
+        or (path.startswith(("plugins/", "patches/", "deploy/", "scripts/")) and not path.startswith("scripts/visual-check/"))  # 시각 검사 스크립트는 워커 빌드와 실행에 쓰이지 않는다
         or (path in workspace_manifests if workspace_package_manifests_only else Path(path).name == "package.json")
         or path in {"pnpm-lock.yaml", "pnpm-workspace.yaml"}
     }
