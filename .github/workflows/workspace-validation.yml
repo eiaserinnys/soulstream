@@ -76,9 +76,18 @@ jobs:
           - name: orch-server-ts unit tests
             package: orch-server-ts
             kind: unit
-          - name: orch-server-ts PostgreSQL tests
+          - name: orch-server-ts PostgreSQL tests (1/3)
             package: orch-server-ts
             kind: postgres
+            shard: 1/3
+          - name: orch-server-ts PostgreSQL tests (2/3)
+            package: orch-server-ts
+            kind: postgres
+            shard: 2/3
+          - name: orch-server-ts PostgreSQL tests (3/3)
+            package: orch-server-ts
+            kind: postgres
+            shard: 3/3
           - name: soul-ui tests
             package: packages/soul-ui
             kind: unit
@@ -147,6 +156,7 @@ jobs:
             done
             corepack pnpm --dir orch-server-ts exec vitest run \
               "${postgres_tests[@]}" \
+              --shard=${{ matrix.shard }} \
               --minWorkers=1 --maxWorkers=1 --no-file-parallelism
           elif [[ "${{ matrix.package }}" == "orch-server-ts" ]]; then
             corepack pnpm --dir orch-server-ts exec vitest run \
