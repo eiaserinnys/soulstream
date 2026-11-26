@@ -250,6 +250,8 @@ def scene_modal(browser, base, out: Path, prefix: str, width: int, current: bool
     run_label = save.inner_text()
     if current:
         check(f"설정 모달 {width}px: 모델을 고르기 전 「저장 후 실행」이 꺼짐", run_label == "저장 후 실행" and save.is_disabled(), run_label)
+        summary = dialog.locator("details summary").first.inner_text()
+        check(f"설정 모달 {width}px: 실행 환경 요약이 「모델 선택」이고 선택 확인 표시가 붙음", "모델 선택" in summary and "기본 모델" not in summary and "선택을 확인하세요" in summary, summary)
         check(f"설정 모달 {width}px: 모달 뒤에 상태 메뉴 팝업이 남지 않음", menu_left_behind == 0, menu_left_behind)
         check(f"설정 모달 {width}px: 가로 넘침 없음", page.evaluate(OVERFLOW), width)
     (out / f"{prefix}menu-left-behind-{width}.json").write_text(json.dumps({"statusMenuPopupsBehindModal": menu_left_behind, "saveAndRunDisabled": save.is_disabled()}), encoding="utf-8")

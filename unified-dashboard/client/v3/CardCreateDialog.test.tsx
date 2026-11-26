@@ -186,6 +186,21 @@ it('keeps 저장 후 실행 off until a model is chosen',async()=>{
  expect(unchosen.button().disabled).toBe(true);
 });
 
+it('shows 모델 선택 and marks the 실행 환경 invalid when 저장 후 실행 has no model',async()=>{
+ await renderExecutionSettings({startAfterSave:true});
+ const summary=document.querySelector('details summary')!;
+ expect(summary.textContent).toContain('모델 선택');
+ expect(summary.textContent).not.toContain('기본 모델');
+ expect(summary.textContent).toContain('선택을 확인하세요');
+});
+
+it('keeps 기본 모델 and no invalid mark when the settings are only saved',async()=>{
+ await renderExecutionSettings({startAfterSave:false});
+ const summary=document.querySelector('details summary')!;
+ expect(summary.textContent).toContain('기본 모델');
+ expect(summary.textContent).not.toContain('선택을 확인하세요');
+});
+
 it('turns 저장 후 실행 on once the card has a usable model',async()=>{
  const chosen=await renderExecutionSettings({startAfterSave:true,modelPreset:'sol'});
  expect(chosen.button().disabled).toBe(false);
