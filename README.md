@@ -108,13 +108,13 @@ Run the same install command again to [update](docs/guide/installation.md#updati
 
 ### Other options
 
-To add a worker on Windows, see the [Windows worker installer](docs/guide/installation.md#windows-worker-installer). To run from source (Node.js 22.5 or newer, pnpm 10.32.1, and PostgreSQL), see [Running from source](docs/guide/installation.md#running-from-source).
+To run the whole stack on Windows without Docker, run `irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install-windows.ps1 | iex` in an elevated PowerShell; see the [Windows full installer](docs/guide/installation.md#windows-full-installer). To add a worker on Windows, see the [Windows worker installer](docs/guide/installation.md#windows-worker-installer). To run from source (Node.js 22.5 or newer, pnpm 10.32.1, and PostgreSQL), see [Running from source](docs/guide/installation.md#running-from-source).
 
 ## Documentation
 
 - [Concepts](docs/guide/concepts.md): folders, cards, sessions, persistent assistant sessions, agents, model presets, and nodes. Start with the [feature overview](docs/guide/concepts.md#feature-overview).
 - [Architecture](docs/guide/architecture.md): system diagram, control plane and worker roles, multi-node routing, backends, and repository layout.
-- [Installation](docs/guide/installation.md): Linux one-line installer, updates, Tailscale Serve, uninstalling, Windows worker installer, source build, database initialization, and local dev servers.
+- [Installation](docs/guide/installation.md): Linux one-line installer, updates, Tailscale Serve, uninstalling, Windows full installer, Windows worker installer, source build, database initialization, and local dev servers.
 - [Configuration](docs/guide/configuration.md): orchestrator and worker environment variables, `agents.yaml`, installer-managed files, atom settings, the model catalog data file, and secret handling.
 - [Agents and tools](docs/guide/agents-and-tools.md): skill catalog (`load_skill`), MCP tool groups, worktrees, pages, recurring jobs, custom views, attachments, and usage stats.
 - [Development](docs/guide/development.md): package typecheck and test scripts, Playwright suites, screenshot regeneration, and internal architecture references.

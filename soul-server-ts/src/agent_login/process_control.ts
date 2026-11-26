@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 
+import { commandShellSpawn } from "@soulstream/executable-path";
+
 import type { ChildExit } from "../claude_accounts/login_cli_helpers.js";
 
 export function shellQuote(value: string): string {
@@ -9,11 +11,13 @@ export function shellQuote(value: string): string {
 
 /** 자기 프로세스 그룹으로 띄운다. 끝낼 때 그룹 전체를 끝내려는 것이다. */
 export function spawnInOwnGroup(command: string, args: string[], env: NodeJS.ProcessEnv): ChildProcess {
-  return spawn(command, args, {
+  const target = commandShellSpawn(command, args);
+  return spawn(target.command, target.args, {
     env,
     detached: process.platform !== "win32",
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
+    ...target.options,
   });
 }
 

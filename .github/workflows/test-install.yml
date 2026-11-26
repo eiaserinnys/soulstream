@@ -545,3 +545,82 @@ jobs:
           if (Test-Path $dataDir) {
             pg_ctl -D $dataDir stop -m fast
           }
+
+  windows-full-install:
+    runs-on: windows-latest
+    timeout-minutes: 75
+
+    env:
+      INSTALL_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install Soulstream
+        shell: pwsh
+        run: |
+          .\install\install-windows.ps1 `
+            -NonInteractive `
+            -Ref $env:INSTALL_REF `
+            -PostgresPassword root
+
+      - name: Check the running installation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:LOCALAPPDATA "Soulstream"
+          $soul = Join-Path $root "soulstream"
+          $installedCommit = git -C $soul rev-parse HEAD
+          if ($installedCommit -ne $env:INSTALL_REF) { throw "Installed $installedCommit, expected $env:INSTALL_REF" }
+          foreach ($url in @("http://127.0.0.1:5200/api/health", "http://127.0.0.1:4200/api/health", "http://127.0.0.1:4205/health")) {
+            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
+            if ($response.StatusCode -ne 200) { throw "$url answered $($response.StatusCode)" }
+            Write-Host "$url OK"
+          }
+          $password = (Get-Content -LiteralPath (Join-Path $soul ".admin-password") | Select-Object -First 1).Trim()
+          $login = @{ password = $password } | ConvertTo-Json -Compress
+          $null = Invoke-WebRequest -Uri "http://127.0.0.1:5200/api/auth/password-login" -Method Post -ContentType "application/json" -Body $login -SessionVariable session -UseBasicParsing
+          $folders = Invoke-RestMethod -Uri "http://127.0.0.1:5200/api/folders" -WebSession $session
+          if (@($folders.folders | Where-Object { $_.name -eq "작업실" }).Count -ne 1) { throw "The workspace folder is missing." }
+          $bearer = (Select-String -LiteralPath (Join-Path $soul ".env.orch") -Pattern "^AUTH_BEARER_TOKEN=(.+)$").Matches[0].Groups[1].Value
+          $nodes = Invoke-RestMethod -Uri "http://127.0.0.1:5200/api/nodes" -Headers @{ Authorization = "Bearer $bearer" }
+          if (@($nodes.nodes | Where-Object { $_.nodeId -eq "local" -and $_.connected }).Count -ne 1) { throw "The local node is not connected." }
+          if (-not (Get-ScheduledTask -TaskName "Soulstream" -ErrorAction SilentlyContinue)) { throw "The Soulstream logon task is missing." }
+          Write-Host "Soulstream is up with the local node connected."
+
+      - name: Dump logs on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $logs = Join-Path $env:LOCALAPPDATA "Soulstream\logs"
+          if (Test-Path $logs) {
+            foreach ($file in Get-ChildItem -LiteralPath $logs -File -Recurse) {
+              Write-Host "=== $($file.FullName) (last 200 lines) ==="
+              Get-Content -LiteralPath $file.FullName -Tail 200 -ErrorAction Continue
+            }
+          } else {
+            Write-Host "(no log folder)"
+          }
+
+      - name: Uninstall Soulstream
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\install\uninstall-windows.ps1 -NonInteractive -PostgresPassword root
+          if (Get-ScheduledTask -TaskName "Soulstream" -ErrorAction SilentlyContinue) { throw "The logon task is still registered." }
+          if (Test-Path (Join-Path $env:LOCALAPPDATA "Soulstream")) { throw "The install folder is still there." }
+          foreach ($port in @(5200, 4200, 4205)) {
+            if (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue) { throw "Port $port is still listening." }
+          }
+          Write-Host "Soulstream is removed."

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
+import { commandShellSpawn } from "@soulstream/executable-path";
 import type { ClaudeAuthError, ClaudeAuthLoginFlow } from "@soulstream/wire-schema";
 import type { Logger } from "pino";
 
@@ -239,9 +240,11 @@ export class ClaudeLoginService {
 
     let child: ChildProcess;
     try {
-      child = spawn(this.resolveExecutable(), ["auth", "login"], {
+      const target = commandShellSpawn(this.resolveExecutable(), ["auth", "login"]);
+      child = spawn(target.command, target.args, {
         env: flow.childEnv,
         stdio: ["pipe", "pipe", "pipe"],
+        ...target.options,
       });
     } catch {
       void this.failFlow(flow, {

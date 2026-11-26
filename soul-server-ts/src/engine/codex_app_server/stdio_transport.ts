@@ -4,6 +4,7 @@ import {
   type SpawnOptionsWithoutStdio,
 } from "node:child_process";
 
+import { commandShellSpawn } from "@soulstream/executable-path";
 import { isRecord } from "@soulstream/wire-schema/json-record";
 import { terminateWindowsProcessTree } from "../../process/terminate_windows_process_tree.js";
 import type { RunnerIsolationChildConfig } from "../../runner/runner_isolation_config.js";
@@ -110,11 +111,12 @@ class StdioAppServerTransport implements AppServerTransport {
         this.finishClose(failure);
       });
     } else {
-      this.child = spawnProcess(command, args, {
+      const target = commandShellSpawn(command, args, platform);
+      this.child = spawnProcess(target.command, target.args, {
         cwd: options.cwd,
         env: options.env,
         stdio: "pipe",
-        ...(needsWindowsCommandShell(command, platform) ? { shell: true } : {}),
+        ...target.options,
       });
     }
     const applyOomScore = options.applyOomScore ?? ((pid: number | undefined) => {
@@ -274,15 +276,6 @@ function defaultSpawnProcess(
   options: SpawnOptionsWithoutStdio,
 ): AppServerChildProcess {
   return spawn(command, args, options);
-}
-
-function needsWindowsCommandShell(
-  command: string,
-  platform: NodeJS.Platform,
-): boolean {
-  if (platform !== "win32") return false;
-  const lower = command.toLowerCase();
-  return lower.endsWith(".cmd") || lower.endsWith(".bat");
 }
 
 function exitError(code: number | null, signal: NodeJS.Signals | null): Error | undefined {

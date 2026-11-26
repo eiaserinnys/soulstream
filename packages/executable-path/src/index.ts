@@ -268,3 +268,40 @@ function nonEmpty(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
 }
+
+export interface CommandShellSpawn {
+  command: string;
+  args: string[];
+  options: { shell: true } | Record<string, never>;
+}
+
+const CMD_SPECIAL = /[\s&|<>^%()!,;=]/;
+
+export function needsWindowsCommandShell(command: string, platform: NodeJS.Platform): boolean {
+  if (platform !== "win32") return false;
+  const lower = command.toLowerCase();
+  return lower.endsWith(".cmd") || lower.endsWith(".bat");
+}
+
+function quoteForCmd(token: string): string {
+  if (token.includes('"') || /[\r\n]/.test(token)) {
+    throw new Error(`Cannot pass a quote or line break through the Windows command shell: ${JSON.stringify(token)}`);
+  }
+  return token.length > 0 && !CMD_SPECIAL.test(token) ? token : `"${token}"`;
+}
+
+/**
+ * Node 22 refuses to spawn .cmd and .bat files without a shell (EINVAL). With a shell Node joins the
+ * command line without quoting, so a path or argument with a space must be quoted here.
+ * Anything else, including every non-Windows platform, is returned unchanged.
+ */
+export function commandShellSpawn(
+  command: string,
+  args: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+): CommandShellSpawn {
+  if (!needsWindowsCommandShell(command, platform)) {
+    return { command, args: [...args], options: {} };
+  }
+  return { command: quoteForCmd(command), args: args.map(quoteForCmd), options: { shell: true } };
+}
