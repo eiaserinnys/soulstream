@@ -128,7 +128,7 @@ export function DialoguesSamples({
         error={null}
         starredFolderIds={stars}
         onClose={onClose}
-        onMove={() => done("프로젝트 이동")}
+        onMove={() => done("폴더 이동")}
       />
     );
   if (id === "session-move" || id === "document-move")

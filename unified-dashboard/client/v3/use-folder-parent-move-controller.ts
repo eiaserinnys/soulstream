@@ -43,7 +43,7 @@ export function useFolderParentMoveController({
     void moveFolder(task, target).then(() => {
       setFolder(null);
     }).catch((cause: unknown) => {
-      setError(`프로젝트 이동 실패 · ${errorText(cause)}`);
+      setError(`폴더 이동 실패 · ${errorText(cause)}`);
     }).finally(() => {
       setPending(false);
     });

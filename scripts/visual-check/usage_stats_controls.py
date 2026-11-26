@@ -11,13 +11,13 @@
      카드 시작선과 1px 이하, 세그먼트 묶음은 컨트롤 단위로만 갈라진다(컨트롤 하나가 두 줄이 되지 않는다).
      줄 폭과의 차이가 ±1px 안이면 어느 쪽이어도 되지만, 그린 모양의 위치 단언은 그대로 지킨다
   3) 모든 폭에서 컨트롤 라벨 getClientRects().length == 1, 말줄임·잘림 없음, 겹침 없음, 가로 스크롤 없음
-  4) 피커 폭이 가장 긴 선택지의 내용 폭과 같고, 같은 뷰포트와 테마에서 「모델별」과 「프로젝트별」의
+  4) 피커 폭이 가장 긴 선택지의 내용 폭과 같고, 같은 뷰포트와 테마에서 「모델별」과 「폴더별」의
      피커 폭 차이가 1px 이하다(남은 폭으로 늘어나지 않는다)
   5) 뷰포트 가운데 적어도 하나에서 1)의 한 줄 경우가, 적어도 하나에서 2)의 넘어간 경우가 나온다.
      320(작은 iPhone의 확대 표시 폭)이 넘어간 경우를 보장한다
   6) 같은 뷰포트와 테마에서 두 보기가 둘 다 한 줄이거나 둘 다 넘어간 모양이고,
      차트(usage-stats-*-chart-chart) 위쪽 끝 차이가 1px 이하다
-  7) 조작 단언: 한 페이지에서 「모델별」→「프로젝트별」→「모델별」로 바꾸며 차트 위쪽 끝과 묶음 위치를
+  7) 조작 단언: 한 페이지에서 「모델별」→「폴더별」→「모델별」로 바꾸며 차트 위쪽 끝과 묶음 위치를
      전후로 재어 차이가 1px 이하다(320, 360, 390)
   8) 320, 360, 390에서 첫 진입과 기간 「주간」→「월간」 동안 layout-shift를 걸어, 출처에
      usage-stats-view-measure-bundle, 차트(usage-stats-*-chart-chart), 제어 줄이 든 이동이 0건이다.
@@ -44,7 +44,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DIST_ROOT = REPO_ROOT / "unified-dashboard" / "dist"
 VIEWPORTS = ((320, 700), (360, 800), (376, 812), (390, 844), (430, 932), (820, 1180))
 THEMES = ("light", "dark")
-PICKERS = (("model", "모델별"), ("project", "프로젝트별"))
+PICKERS = (("model", "모델별"), ("project", "폴더별"))
 TOLERANCE = 1.0
 FIXED_NOW = "2026-10-18T12:00:00+09:00"
 # 9) 세그먼트마다 (보이는 글자, 접근성 이름).
@@ -312,7 +312,7 @@ def compare_views(measurements: dict[str, dict], failures: list[str]) -> None:
             project_line = judge(project)[1]["oneLine"]
             if model_line != project_line:
                 failures.append(f"{width}-{theme}: 6) 보기에 따라 줄 모양이 다르다"
-                                f"(「모델별」 한 줄={model_line}, 「프로젝트별」 한 줄={project_line})")
+                                f"(「모델별」 한 줄={model_line}, 「폴더별」 한 줄={project_line})")
             chart_tops = {view: (m.get("chart") or {}).get("top") for view, m in pair.items()}
             if chart_tops["model"] is None or chart_tops["project"] is None:
                 failures.append(f"{width}-{theme}: 6) 차트를 찾지 못했다")
@@ -360,10 +360,10 @@ def run_interactions(browser, base: str, out_dir: Path, failures: list[str], sto
         install_routes(page, urllib.parse.urlsplit(base).netloc)
         page.clock.set_fixed_time(FIXED_NOW)
         open_usage_stats(page, base)
-        choose_view(page, "프로젝트별")
+        choose_view(page, "폴더별")
 
         # 14) Tab 순서는 피커 다음이 측정 세그먼트다.
-        page.get_by_label("보기: 프로젝트별", exact=True).focus()
+        page.get_by_label("보기: 폴더별", exact=True).focus()
         page.keyboard.press("Tab")
         focus = page.evaluate(FOCUS_SCRIPT)
         store[f"interaction-{width}-focus-after-tab"] = focus
@@ -371,7 +371,7 @@ def run_interactions(browser, base: str, out_dir: Path, failures: list[str], sto
             failures.append(f"15) {width}: 피커 다음 Tab이 측정 세그먼트가 아니라 {focus['testID'] or focus['tag']}에 있다")
 
         # 15) Esc로 시트가 닫힌다. 닫기 뒤 초점은 공용 Modal이 정하므로 잰 값만 남긴다.
-        page.get_by_label("보기: 프로젝트별", exact=True).click()
+        page.get_by_label("보기: 폴더별", exact=True).click()
         page.get_by_label("보기 검색", exact=True).wait_for()
         page.keyboard.press("Escape")
         page.get_by_label("보기 검색", exact=True).wait_for(state="detached")
@@ -421,9 +421,9 @@ def run_view_switch(browser, base: str, failures: list[str], store: dict) -> Non
         page.clock.set_fixed_time(FIXED_NOW)
         open_usage_stats(page, base)
         states: list[dict] = []
-        for label in ("모델별", "프로젝트별", "모델별"):
+        for label in ("모델별", "폴더별", "모델별"):
             choose_view(page, label)
-            page.get_by_test_id("usage-stats-project-chart-chart" if label == "프로젝트별"
+            page.get_by_test_id("usage-stats-project-chart-chart" if label == "폴더별"
                                 else "usage-stats-model-chart-chart").wait_for()
             page.wait_for_timeout(200)
             measurement = page.evaluate(MEASURE_SCRIPT)

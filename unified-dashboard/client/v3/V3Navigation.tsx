@@ -150,7 +150,7 @@ export function V3Navigation({
     try {
       await onReorderProjects(items);
     } catch (cause) {
-      setError(`프로젝트 이동 실패 · ${errorText(cause)}`);
+      setError(`폴더 이동 실패 · ${errorText(cause)}`);
     }
   }, [folders, onReorderProjects, setProjectExpanded]);
 
@@ -278,7 +278,7 @@ export function V3Navigation({
         </div>
       </DashboardDndProvider>
 
-      <h2>전체 프로젝트</h2>
+      <h2>전체 폴더</h2>
       <div className="v3-nav-list" data-testid="v3-all-projects">
         <ProjectNavigationTree
           folders={visibleFolders}
@@ -293,7 +293,7 @@ export function V3Navigation({
           onReorder={reorderProjects}
         />
         {catalogLoadError ? <p className="v3-project-star-error" role="alert">{catalogLoadError}</p> : null}
-        {!catalogLoadError && visibleFolders.length === 0 ? <p>프로젝트가 없습니다.</p> : null}
+        {!catalogLoadError && visibleFolders.length === 0 ? <p>폴더가 없습니다.</p> : null}
         <DashboardIconCap
           label="새 폴더"
           className="v3-new-project-trigger"

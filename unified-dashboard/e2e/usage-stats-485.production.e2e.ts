@@ -112,7 +112,7 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
   expect(requests[1]?.query).toContainEqual(["provider", "unknown"]);
   expect(requests[1]?.query).toContainEqual(["model", "vendor/team:model:v2"]);
 
-  await chooseStatsOption(dialog, page, "프로젝트", "소울스트림");
+  await chooseStatsOption(dialog, page, "폴더", "소울스트림");
   await expect(stats.locator(".usage-stats-share-list").filter({ hasText: "vendor/team:model:v2" })).toContainText("vendor/team:model:v2");
   await expectCacheReadToggle(stats, "캐시 포함");
   await expectCacheSplitSummary(stats);
@@ -120,9 +120,9 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
   expect(requests[2]?.query).toContainEqual(["project_ids", "folder-amber"]);
 
   const filterRequestCount = requests.length;
-  await chooseStatsOption(dialog, page, "그래프 보기", "프로젝트별");
+  await chooseStatsOption(dialog, page, "그래프 보기", "폴더별");
   await expectCacheReadToggle(stats, "캐시 포함");
-  const projectChart = stats.locator('.usage-stats-chart[aria-label="프로젝트별 사용량"]');
+  const projectChart = stats.locator('.usage-stats-chart[aria-label="폴더별 사용량"]');
   await expect(projectChart).toHaveCount(1);
   const projectSegment = projectChart.locator(".usage-stats-stack-segment").first();
   expect(await projectSegment.evaluate(element => (element as HTMLElement).style.backgroundColor))
@@ -137,7 +137,7 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
   await expect(stats.locator(".usage-stats-axis-label")).toHaveText("$4.80");
   expect(requests).toHaveLength(filterRequestCount);
   await expect(stats.getByRole("combobox", { name: "모델" })).toContainText("원문 모델");
-  await expect(stats.getByRole("combobox", { name: "프로젝트" })).toContainText("소울스트림");
+  await expect(stats.getByRole("combobox", { name: "폴더" })).toContainText("소울스트림");
   const dayButton = stats.locator('[data-bucket-index="1"]');
   await expect(dayButton).toBeEnabled();
   await dayButton.click();

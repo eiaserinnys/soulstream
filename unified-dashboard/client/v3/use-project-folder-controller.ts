@@ -45,7 +45,7 @@ export function useProjectFolderController() {
         project: null,
         message: errorText(error),
       });
-      input.notify("프로젝트를 열지 못했습니다.");
+      input.notify("폴더를 열지 못했습니다.");
     }
   }, []);
 
@@ -86,7 +86,7 @@ export function useProjectFolderController() {
     parentFolderId: string | null = null,
   ) => {
     const folder = await createFolder(title, parentFolderId);
-    if (!folder) throw new Error("프로젝트 폴더를 생성하지 못했습니다");
+    if (!folder) throw new Error("폴더를 생성하지 못했습니다");
     await openFolder(api, folder, knownPages, notify);
     return folder;
   }, [openFolder]);
