@@ -853,6 +853,10 @@ export async function createLiveProductionApplication(
   const ephemeralCodexPath = overrides.turnSummaryCodexPath ??
     resolveCodexCliPath(config.codex_cli_path, ephemeralProcessEnv)?.path;
   const ephemeralAntigravityPath = resolveAntigravityCliPath(config.antigravity_cli_path, ephemeralProcessEnv)?.path;
+  const antigravityEphemeralExecutor = new AntigravityEphemeralExecutor({
+    ...(ephemeralAntigravityPath === undefined ? {} : { agyPath: ephemeralAntigravityPath }),
+    processEnv: ephemeralProcessEnv,
+  });
   const ephemeralLlmRoutes: EphemeralLlmRouteOptions = {
     authBearerToken: appConfig.authBearerToken,
     nodeCredentials: nodeCredentialStore,
@@ -860,10 +864,7 @@ export async function createLiveProductionApplication(
       ...(ephemeralCodexPath === undefined ? {} : { codexPath: ephemeralCodexPath }),
       processEnv: ephemeralProcessEnv,
     }),
-    antigravityGenerator: new AntigravityEphemeralExecutor({
-      ...(ephemeralAntigravityPath === undefined ? {} : { agyPath: ephemeralAntigravityPath }),
-      processEnv: ephemeralProcessEnv,
-    }),
+    antigravityGenerator: antigravityEphemeralExecutor,
   };
   const ownedAgentRepository = new SqlOwnedAgentRepository(sqlResolver);
   const ownedAgentService = new OwnedAgentService(ownedAgentRepository,
@@ -1253,6 +1254,7 @@ export async function createLiveProductionApplication(
     sessionBroadcaster: runtimeServices.sessionBroadcaster,
     logger: app.log,
     warn: context.warn,
+    fallbackExecutor: antigravityEphemeralExecutor,
     overrides,
   });
   const childSessionCheck = new ChildSessionCheckService({

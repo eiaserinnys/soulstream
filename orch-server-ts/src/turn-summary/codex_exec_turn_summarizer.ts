@@ -1,4 +1,5 @@
 import type { TurnSummaryConfig } from "./turn_summary_config.js";
+import { TurnSummaryExecutionError } from "./turn_summary_execution_error.js";
 import {
   buildTurnSummaryPrompt,
   type TurnSummarizer,
@@ -11,6 +12,8 @@ import {
   CodexEphemeralExecutor,
   type CodexEphemeralExecutorOptions,
 } from "../llm/codex_ephemeral_executor.js";
+
+export { TurnSummaryExecutionError } from "./turn_summary_execution_error.js";
 
 export {
   buildCodexExecInvocation,
@@ -25,19 +28,6 @@ export interface CodexExecTurnSummarizerOptions
 
 export interface CodexExecGenerateOptions extends TurnSummaryOptions {
   readonly maxAttempts?: number;
-}
-
-export class TurnSummaryExecutionError extends Error {
-  constructor(
-    readonly attempts: number,
-    readonly latencyMs: number,
-    readonly spawnDurationMs: number,
-    readonly peakConcurrentSpawns: number,
-    cause: unknown,
-  ) {
-    super(`turn summary failed after ${attempts} attempts`, { cause });
-    this.name = "TurnSummaryExecutionError";
-  }
 }
 
 export class CodexExecTurnSummarizer implements TurnSummarizer {

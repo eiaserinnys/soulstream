@@ -18,6 +18,10 @@ import {
   parseCodexJsonl,
 } from "../src/turn-summary/codex_exec_turn_summarizer.js";
 import { resolveCodexCliPath } from "@soulstream/executable-path";
+import { AntigravityEphemeralExecutor } from "../src/llm/antigravity_ephemeral_executor.js";
+import { isCodexUsageLimitError } from "../src/llm/codex_ephemeral_executor.js";
+import { UsageLimitFallbackTurnSummarizer } from
+  "../src/turn-summary/turn_summary_usage_limit_fallback.js";
 import { resolveModelPreset } from "@soulstream/model-catalog";
 import {
   OpenAiApiTurnSummarizer,
@@ -297,6 +301,45 @@ describe("TurnSummaryConfigService", () => {
     expect(service.read()).toMatchObject({ model: "one", storyModel: "two", instructionExtractionModel: "three" });
   });
 
+  it("resolves the catalog default fallback model for a config without the key and drops it for an empty override", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-fallback-"));
+    const path = join(dir, "turn-summary.yaml");
+    const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8");
+    expect(source).not.toContain("fallback_model_preset");
+    writeFileSync(path, source, "utf8");
+    const catalog = repositoryModelCatalog();
+    const snapshot = catalog.snapshot();
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, catalog);
+    expect(service.read()).toMatchObject({
+      fallbackModel: resolveModelPreset(snapshot, snapshot.task_defaults.turn_summary_fallback!.model_preset).model,
+    });
+    expect(service.read().fallbackModel).toBe("gemini-3.8-flash");
+    writeFileSync(join(dir, "turn-summary.local.yaml"), 'fallback_model_preset: ""\n', "utf8");
+    expect(service.read().fallbackModel).toBeUndefined();
+  });
+
+  it("has no fallback when the catalog declares no fallback default", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-fallback-none-"));
+    const path = join(dir, "turn-summary.yaml");
+    writeFileSync(path, readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8"), "utf8");
+    const catalog = repositoryModelCatalog().snapshot();
+    const { turn_summary_fallback: _omitted, ...taskDefaults } = catalog.task_defaults;
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, {
+      snapshot: () => ({ ...catalog, task_defaults: taskDefaults }),
+    });
+    expect(service.read().fallbackModel).toBeUndefined();
+  });
+
+  it("rejects a fallback preset whose backend is not antigravity", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-fallback-backend-"));
+    const path = join(dir, "turn-summary.yaml");
+    const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8");
+    writeFileSync(path, source, "utf8");
+    writeFileSync(join(dir, "turn-summary.local.yaml"), "fallback_model_preset: codex-5.6-terra\n", "utf8");
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog());
+    expect(() => service.read()).toThrow(/antigravity/);
+  });
+
   it("resolves changed task defaults from the supplied catalog", () => {
     const dir = trackTempDir(join(tmpdir(), "turn-summary-changed-catalog-"));
     const path = join(dir, "turn-summary.yaml");
@@ -488,6 +531,78 @@ describe("TurnSummaryConfigService", () => {
     writeFileSync(path, "provider: invalid", "utf8");
     expect(service.read().model).toBe("gpt-5.4-mini");
     expect(warnings).toHaveLength(1);
+  });
+});
+
+describe("turn summary Codex usage limit fallback", () => {
+  const input = { userText: "요청", assistantText: "응답", previousSummaries: [] };
+  const fallbackConfig = { ...CONFIG, fallbackModel: "gemini-3.8-flash", reasoningEffort: "xhigh" as const };
+  const usageLimit = () => Object.assign(
+    new Error("codex exec exited 1: You've hit your usage limit."),
+    { code: "CODEX_USAGE_LIMIT" },
+  );
+  const agySuccess = (model?: string) => [
+    ...(model === undefined ? [] : [JSON.stringify({ event: "init", init: { model } })]),
+    JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "대체 요약", structured_output: "대체 요약" } }),
+  ].join("\n");
+
+  function build(codexError: Error, agyStdout = agySuccess()) {
+    const codexExecute = vi.fn(async () => { throw codexError; });
+    const agyExecute = vi.fn(async () => ({ stdout: agyStdout, stderr: "", exitCode: 0 }));
+    const info = vi.fn();
+    const summarizer = new UsageLimitFallbackTurnSummarizer({
+      primary: new CodexExecTurnSummarizer({ codexPath: "codex", processPort: { execute: codexExecute }, processEnv: {} }),
+      fallback: new AntigravityEphemeralExecutor({ agyPath: "agy", processPort: { execute: agyExecute }, processEnv: { PATH: "/bin" } }),
+      info,
+    });
+    return { summarizer, codexExecute, agyExecute, info };
+  }
+
+  it("reruns the same prompt on the fallback model with the mapped effort and reports its model id", async () => {
+    const { summarizer, agyExecute, info } = build(usageLimit(), agySuccess("gemini-3.8-flash"));
+    const schema = { type: "object", properties: { a: { type: "string" } } };
+
+    const result = await summarizer.summarize(input, fallbackConfig, { outputSchema: schema });
+
+    expect(result).toMatchObject({ content: JSON.stringify("대체 요약"), model: "gemini-3.8-flash" });
+    expect(agyExecute).toHaveBeenCalledTimes(1);
+    const [invocation, stdin] = agyExecute.mock.calls[0] as unknown as [{ args: string[] }, string];
+    expect(JSON.parse(stdin).message.content).toBe(buildTurnSummaryPrompt(input, CONFIG));
+    expect(invocation.args).toEqual(expect.arrayContaining(["--json-schema", "--model", "gemini-3.8-flash", "--effort", "high"]));
+    expect(info).toHaveBeenCalledWith(expect.stringContaining("gemini-3.8-flash"));
+  });
+
+  it("also covers generate() used by story folds and persistent instruction extraction", async () => {
+    const { summarizer, agyExecute } = build(usageLimit());
+    const result = await summarizer.generate("접기 프롬프트", { ...fallbackConfig, reasoningEffort: "minimal" }, { maxAttempts: 1 });
+    expect(result).toMatchObject({ content: "대체 요약", model: "gemini-3.8-flash" });
+    const [invocation] = agyExecute.mock.calls[0] as unknown as [{ args: string[] }];
+    expect(invocation.args).toEqual(expect.arrayContaining(["--effort", "low"]));
+  });
+
+  it("does not use the fallback for Codex failures other than the usage limit", async () => {
+    const failure = Object.assign(new Error("codex exec exited 1: websocket failed"), { code: "CODEX_EXEC_FAILED" });
+    const { summarizer, agyExecute, info } = build(failure);
+    await expect(summarizer.summarize(input, fallbackConfig)).rejects.toMatchObject({
+      name: "TurnSummaryExecutionError",
+      cause: expect.objectContaining({ name: "CodexEphemeralExecutionError" }),
+    });
+    expect(agyExecute).not.toHaveBeenCalled();
+    expect(info).not.toHaveBeenCalled();
+  });
+
+  it("keeps the usage limit in the error chain when the fallback fails too", async () => {
+    const { summarizer } = build(usageLimit(), "broken NDJSON");
+    const error = await summarizer.summarize(input, fallbackConfig).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ name: "TurnSummaryExecutionError" });
+    expect(isCodexUsageLimitError(error)).toBe(true);
+  });
+
+  it("keeps today's behaviour when no fallback model is configured", async () => {
+    const { summarizer, agyExecute } = build(usageLimit());
+    const error = await summarizer.summarize(input, CONFIG).catch((caught: unknown) => caught);
+    expect(isCodexUsageLimitError(error)).toBe(true);
+    expect(agyExecute).not.toHaveBeenCalled();
   });
 });
 

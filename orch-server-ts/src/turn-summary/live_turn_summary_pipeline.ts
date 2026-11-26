@@ -22,6 +22,10 @@ import type {
 import { resolveCodexCliPath } from "@soulstream/executable-path";
 import { CodexExecTurnSummarizer } from
   "./codex_exec_turn_summarizer.js";
+import {
+  UsageLimitFallbackTurnSummarizer,
+  type TurnSummaryFallbackExecutor,
+} from "./turn_summary_usage_limit_fallback.js";
 import { createPersistentInstructionExtractor } from
   "./persistent_instruction_extractor.js";
 import {
@@ -85,6 +89,7 @@ export function createLiveTurnSummaryPipeline(options: {
   >;
   readonly logger: TurnSummaryLogger;
   readonly warn: (message: string) => void;
+  readonly fallbackExecutor?: TurnSummaryFallbackExecutor;
   readonly overrides?: LiveTurnSummaryProductionOverrides;
 }): LiveTurnSummaryPipeline {
   if (options.overrides?.turnSummaryPipeline !== undefined) {
@@ -105,9 +110,15 @@ export function createLiveTurnSummaryPipeline(options: {
       "Codex turn-summary provider disabled: CLI path was not resolved from CODEX_CLI_PATH, PATH, or HOME",
     );
   }
-  const codexSummarizer = new CodexExecTurnSummarizer({
-    ...(codexPath === undefined ? {} : { codexPath }),
-    processEnv,
+  const codexSummarizer = new UsageLimitFallbackTurnSummarizer({
+    primary: new CodexExecTurnSummarizer({
+      ...(codexPath === undefined ? {} : { codexPath }),
+      processEnv,
+    }),
+    ...(options.fallbackExecutor === undefined
+      ? {}
+      : { fallback: options.fallbackExecutor }),
+    info: (message) => options.logger.info?.(message),
   });
   const summarizer = createTurnSummaryProviderRouter({
     codex: codexSummarizer,
