@@ -53,12 +53,33 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
   );
   const updateLastMessage = vi.fn().mockResolvedValue(undefined);
 
+  const readEvents = vi.fn(
+    async (
+      sessionId: string,
+      afterId: number,
+      limit: number,
+      eventTypes?: string[],
+      _period?: unknown,
+      _metadataTypes?: string[],
+      order?: "asc" | "desc",
+    ) => {
+      const rows = outboxAppend.mock.calls
+        .map(([input], index) => ({ id: index + 1, ...input }) as Record<string, unknown> & { id: number })
+        .filter((row) =>
+          row.session_id === sessionId
+          && row.id > afterId
+          && (eventTypes === undefined || eventTypes.includes(row.event_type as string)));
+      return (order === "desc" ? rows.reverse() : rows).slice(0, limit);
+    },
+  );
+
   const db = {
     assignSessionToFolder,
     getFolderById,
     getAllFolders,
     appendEvent,
     updateLastMessage,
+    readEvents,
   } as unknown as SessionDB;
 
   const sent: unknown[] = [];
@@ -117,6 +138,7 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
       getAllFolders,
       appendEvent,
       outboxAppend,
+      readEvents,
       waitForAcknowledgement,
       waitForAcknowledgementResult,
       updateLastMessage,
@@ -198,7 +220,7 @@ function makeAppliedTransitionAcknowledgement(
 
 export class MockLlmAdapter implements LlmAdapter {
   readonly complete = vi.fn(
-    async (): Promise<LlmResult> => ({
+    async (_params: Parameters<LlmAdapter["complete"]>[0]): Promise<LlmResult> => ({
       content: "Mock response",
       inputTokens: 10,
       outputTokens: 5,

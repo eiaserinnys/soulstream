@@ -4,30 +4,20 @@ import type { Logger } from "pino";
 
 import { buildSystemCallerInfo } from "../caller_info.js";
 import type { EventPersistence } from "../db/event_persistence.js";
-import type { SSEEventPayload } from "../engine/protocol.js";
 import type { TaskManager } from "../task/task_manager.js";
-import type { Task } from "../task/task_models.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
-import type {
-  LlmAdapter,
-  LlmCompletionRequest,
-  LlmCompletionResponse,
-  LlmProvider,
-  LlmResult,
-} from "./types.js";
-
-export class ProviderNotConfiguredError extends Error {
-  constructor(provider: LlmProvider) {
-    super(
-      `Provider '${provider}' is not configured. Set LLM_${provider.toUpperCase()}_API_KEY environment variable.`,
-    );
-    this.name = "ProviderNotConfiguredError";
-  }
-}
+import {
+  buildLlmUserMessageEvent,
+  completeLlmTurn,
+  enqueueLlmEvent,
+  requireLlmAdapter,
+  type LlmAdapters,
+} from "./llm_turn.js";
+import type { LlmCompletionRequest, LlmCompletionResponse } from "./types.js";
 
 export interface LlmExecutorParams {
-  adapters: Partial<Record<LlmProvider, LlmAdapter>>;
+  adapters: LlmAdapters;
   taskManager: TaskManager;
   persistence: EventPersistence;
   broadcaster: SessionBroadcaster;
@@ -39,15 +29,11 @@ export class LlmExecutor {
   constructor(private readonly params: LlmExecutorParams) {}
 
   async execute(request: LlmCompletionRequest): Promise<LlmCompletionResponse> {
-    const adapter = this.params.adapters[request.provider];
-    if (!adapter) {
-      throw new ProviderNotConfiguredError(request.provider);
-    }
+    const adapter = requireLlmAdapter(this.params.adapters, request.provider);
 
-    const agentSessionId = generateLlmSessionId();
     const callerInfo = request.caller_info ?? buildSystemCallerInfo(this.params.nodeId);
     const task = await this.params.taskManager.createTask({
-      agentSessionId,
+      agentSessionId: generateLlmSessionId(),
       prompt: request.messages.at(-1)?.content ?? "",
       clientId: request.client_id,
       sessionType: "llm",
@@ -56,105 +42,13 @@ export class LlmExecutor {
       callerInfo,
     });
 
-    await this.enqueueEvent(task, {
-      type: "user_message",
-      timestamp: Date.now() / 1000,
-      user: request.client_id ?? "llm",
-      text: request.messages.at(-1)?.content ?? "",
-      messages: request.messages,
-      provider: request.provider,
-      model: request.model,
-      max_tokens: request.max_tokens,
-      client_id: request.client_id,
-      caller_info: callerInfo,
-    });
-
-    try {
-      const result = await adapter.complete({
-        model: request.model,
-        messages: request.messages,
-        maxTokens: request.max_tokens,
-        temperature: request.temperature,
-      });
-      const usage = toUsage(result);
-
-      await this.enqueueEvent(task, {
-        type: "assistant_message",
-        timestamp: Date.now() / 1000,
-        content: result.content,
-        usage,
-        model: request.model,
-        provider: request.provider,
-      });
-
-      await this.params.taskManager.finalizeTask({
-        agentSessionId,
-        result: result.content,
-        llmUsage: usage,
-      });
-
-      this.params.logger.info(
-        {
-          sessionId: agentSessionId,
-          provider: request.provider,
-          model: request.model,
-          inputTokens: usage.input_tokens,
-          outputTokens: usage.output_tokens,
-        },
-        "LLM completion finished",
-      );
-
-      return {
-        session_id: agentSessionId,
-        content: result.content,
-        usage,
-        model: request.model,
-        provider: request.provider,
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await this.enqueueEvent(task, {
-        type: "error",
-        timestamp: Date.now() / 1000,
-        message,
-        provider: request.provider,
-        model: request.model,
-      });
-      await this.params.taskManager.finalizeTask({
-        agentSessionId,
-        error: message,
-      });
-      this.params.logger.error(
-        { err, sessionId: agentSessionId, provider: request.provider, model: request.model },
-        "LLM completion failed",
-      );
-      throw err;
-    }
-  }
-
-  private async enqueueEvent(
-    task: Task,
-    event: Record<string, unknown>,
-  ): Promise<void> {
-    const registrationId = task.executionRegistration?.registrationId;
-    if (registrationId === undefined) {
-      await this.params.persistence.enqueueEvent(
-        task.agentSessionId,
-        event as SSEEventPayload,
-      );
-    } else {
-      await this.params.persistence.enqueueEvent(
-        task.agentSessionId,
-        event as SSEEventPayload,
-        undefined,
-        registrationId,
-      );
-    }
-    await this.params.persistence.handleSideEffects(
-      task.agentSessionId,
-      event as SSEEventPayload,
+    await enqueueLlmEvent(
+      this.params.persistence,
       task,
+      buildLlmUserMessageEvent(request, callerInfo),
     );
+
+    return await completeLlmTurn(this.params, task, adapter, request);
   }
 }
 
@@ -164,11 +58,4 @@ function generateLlmSessionId(): string {
     .replace(/[-:T.Z]/g, "")
     .slice(0, 14);
   return `llm-${timestamp}-${randomBytes(4).toString("hex")}`;
-}
-
-function toUsage(result: LlmResult): { input_tokens: number; output_tokens: number } {
-  return {
-    input_tokens: result.inputTokens,
-    output_tokens: result.outputTokens,
-  };
 }

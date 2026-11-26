@@ -19,6 +19,7 @@ import {
 import { assertGenericTaskExecution, assertOrchestrationCreation, isOrchestrationDecisionTask } from "./task_orchestration_purpose.js";
 import type { Task } from "./task_models.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
+import type { LlmContinuation } from "./task_llm_continuation.js";
 import { createEvictedTaskLoader } from "./task_evicted_hydration.js";
 import { TaskLifecycleTransition, type TerminationCleanupPorts } from "./task_lifecycle_transition.js";
 import { TaskRunnerRecovery } from "./task_runner_recovery.js";
@@ -695,6 +696,11 @@ export class TaskManager {
     const task = await this.resolveNotificationTask(params.agentSessionId);
     if (task) assertGenericTaskExecution(task);
     return this.interventionRoute.ensureRunning(params, onResume);
+  }
+
+  /** 끝난 llm 세션에 글을 보내면 claude 엔진 대신 이 이어 쓰기가 같은 세션을 재개한다. */
+  attachLlmContinuation(continuation: LlmContinuation): void {
+    this.autoResumeTransition.attachLlmContinuation(continuation);
   }
 
   private async resolveNotificationTask(sessionId: string): Promise<Task | null> {

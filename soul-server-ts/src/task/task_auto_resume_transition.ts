@@ -43,6 +43,7 @@ import {
   buildDeliveryInputDedupeKey,
 } from "./delivery_identity.js";
 import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
+import type { LlmContinuation, LlmContinuationTurn } from "./task_llm_continuation.js";
 
 const persistedResumeInputs = new WeakMap<Task, Set<string>>();
 
@@ -76,7 +77,24 @@ export interface AutoResumeTransitionDeps {
  * so a closed host WebSocket cannot lose the transition.
  */
 export class AutoResumeTransition {
+  private llmContinuation?: LlmContinuation;
+
   constructor(private readonly deps: AutoResumeTransitionDeps) {}
+
+  /** llm 세션은 claude 엔진 대신 이 이어 쓰기로 재개한다. */
+  attachLlmContinuation(continuation: LlmContinuation): void {
+    this.llmContinuation = continuation;
+  }
+
+  private async prepareLlmTurn(
+    task: Task,
+    message: InterventionMessage,
+  ): Promise<LlmContinuationTurn> {
+    if (!this.llmContinuation) {
+      throw new Error(`Cannot auto-resume ${task.agentSessionId}: llm continuation is not configured`);
+    }
+    return await this.llmContinuation.prepare(task, message);
+  }
 
   private async settle(task: Task, verdict: NodeResponseVerdict): Promise<NodeResponseVerdict> {
     return await this.deps.settleRejection?.(task, verdict) ?? verdict;
@@ -118,7 +136,11 @@ export class AutoResumeTransition {
         `auto-resume running transition rejected for ${task.agentSessionId}`,
       );
     }
-    this.requireResumableProfile(task);
+    // llm 갈래는 profileId 검사와 claude 엔진 시작보다 앞선다. 거절은 어떤 이벤트도 쓰기 전에 던진다.
+    const llmTurn = task.sessionType === "llm"
+      ? await this.prepareLlmTurn(task, message)
+      : undefined;
+    if (!llmTurn) this.requireResumableProfile(task);
     let originalTerminalEventId = task.terminalEventId;
     const activation = createExecutionActivation();
     // The executor settles this exact delivery if preparation fails before a turn.
@@ -154,21 +176,24 @@ export class AutoResumeTransition {
         : undefined;
       const userMessageEvent = options.publishUserMessage === false
         ? null
-        : buildUserMessageEvent({
-          text: message.text,
-          conversationText: message.conversationText,
-          inputId: message.deliveryId
-            ? buildDeliveryInputUuid(message.deliveryId)
-            : undefined,
-          dedupeKey,
-          user: message.user,
-          callerInfo: message.callerInfo ?? task.callerInfo,
-          attachmentPaths: message.attachmentPaths,
-          attachmentIds: message.attachmentIds,
-          attachmentBindings: message.attachmentBindings,
-          contextItems: message.context,
-          purpose: message.purpose,
-        });
+        : {
+          ...buildUserMessageEvent({
+            text: message.text,
+            conversationText: message.conversationText,
+            inputId: message.deliveryId
+              ? buildDeliveryInputUuid(message.deliveryId)
+              : undefined,
+            dedupeKey,
+            user: message.user,
+            callerInfo: message.callerInfo ?? task.callerInfo,
+            attachmentPaths: message.attachmentPaths,
+            attachmentIds: message.attachmentIds,
+            attachmentBindings: message.attachmentBindings,
+            contextItems: message.context,
+            purpose: message.purpose,
+          }),
+          ...llmTurn?.userMessageFields,
+        };
       const resumedReviewState = reviewStateAfterFollowup(
         task.reviewState ?? "not_required",
       );
@@ -263,6 +288,13 @@ export class AutoResumeTransition {
             "persistent Jev candidate observation skipped",
           );
         }
+      }
+      if (llmTurn) {
+        resetTaskForResumedTurn(task, message, "running");
+        task.executionActivation = undefined;
+        activation.resolve();
+        void llmTurn.run();
+        return { autoResumed: true };
       }
       prepareTaskForAutoResume(task, message, "initializing");
       onResume(task, activation);
@@ -444,8 +476,17 @@ export function prepareTaskForAutoResume(
   message: InterventionMessage,
   status: "initializing" | "running",
 ): void {
-  task.prompt = message.text;
   task.clientId = message.user;
+  resetTaskForResumedTurn(task, message, status);
+  enqueueInterventionOnce(task, message);
+}
+
+function resetTaskForResumedTurn(
+  task: Task,
+  message: InterventionMessage,
+  status: "initializing" | "running",
+): void {
+  task.prompt = message.text;
   if (message.callerInfo !== undefined) {
     task.callerInfo = message.callerInfo;
   }
@@ -468,5 +509,4 @@ export function prepareTaskForAutoResume(
   task.terminationEventRecorded = false;
   task.terminalEventId = undefined;
   task.terminalDedupeIdentity = undefined;
-  enqueueInterventionOnce(task, message);
 }

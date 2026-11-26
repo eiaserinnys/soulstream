@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { LlmExecutor, ProviderNotConfiguredError } from "../../src/llm/executor.js";
+import { LlmExecutor } from "../../src/llm/executor.js";
+import { ProviderNotConfiguredError } from "../../src/llm/llm_turn.js";
 
 import { FailingLlmAdapter, makeLlmHarness, silentLogger } from "./llm_test_helpers.js";
 

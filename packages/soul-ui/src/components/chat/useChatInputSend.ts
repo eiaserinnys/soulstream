@@ -2,18 +2,13 @@
  * useChatInputSend — ChatInput 의 submit 디스패처 훅.
  *
  * 일반 세션 메시지는 dashboard store의 세션별 pending 칸으로 상태를 관리한다.
- * LLM continuation은 기존 전송·취소 동작을 유지한다.
  */
 
-import { useCallback, useRef, useState } from "react";
-import type { EventTreeNode } from "@shared/types";
-import type { FlattenTreeCache } from "../../lib/flatten-tree";
+import { useCallback, useState } from "react";
 import type { PendingChatSend, PendingChatSendAttachment } from "../../stores/dashboard-store-types";
-import { useAuth } from "../../providers/AuthProvider";
 import { appendAttachmentPathNotes } from "@soulstream/wire-schema/attachment-path-notes";
 import { submitIntervention, SubmitInterventionHttpError } from "./submitIntervention";
 import { submitResume } from "./submitResume";
-import { submitLlmContinuation } from "./submitLlmContinuation";
 import type { ReportSendContext } from '../../shared/persistent-report';
 
 /** Soul 서버의 MAX_MESSAGE_LENGTH과 일치 (인터벤션 메시지의 최대 길이) */
@@ -21,13 +16,7 @@ export const MAX_MESSAGE_LENGTH = 50_000;
 
 export interface UseChatInputSendArgs {
   activeSessionKey: string | null;
-  tree: EventTreeNode | null | undefined;
-  flattenMessages?: FlattenTreeCache["flattenTree"];
   isFinished: boolean;
-  isLlmFinished: boolean;
-  llmProvider?: string;
-  llmModel?: string;
-  clientId?: string;
   fileUploadUrl?: string;
   uploadedPaths: string[];
   uploadedAttachments: PendingChatSendAttachment[];
@@ -41,8 +30,6 @@ export interface UseChatInputSendArgs {
   onAfterSend: () => void;
   /** 실패 응답의 사용 로그를 유지한다. 입력창 복원에는 사용하지 않는다. */
   onSendFailure?: () => void;
-  /** LLM continuation 실패는 기존 입력창 복원 동작을 유지한다. */
-  onSendError?: (text: string) => void;
   onRetry?: (sessionId: string, pending: PendingChatSend) => void;
   getMessageContext?: (text: string) => ReportSendContext;
 }
@@ -50,7 +37,7 @@ export interface UseChatInputSendArgs {
 export interface UseChatInputSendResult {
   sending: boolean;
   error: string | null;
-  /** 세션 전환 시 LLM continuation만 취소한다. 메시지 요청은 세션별 칸에 남긴다. */
+  /** 세션 전환 시 입력 오류를 지운다. 메시지 요청은 세션별 칸에 남긴다. */
   reset: () => void;
   send: (rawText: string) => Promise<void>;
   retry: (sessionId: string, pending: PendingChatSend) => Promise<void>;
@@ -70,17 +57,12 @@ function getFailureReason(error: unknown): string {
 }
 
 export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendResult {
-  const { isAuthenticated, user } = useAuth();
-  const [llmSendingSessionKey, setLlmSendingSessionKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const llmSendingSessionRef = useRef<string | null>(null);
 
   const activePending = args.activeSessionKey
     ? args.getPendingChatSend(args.activeSessionKey)
     : undefined;
-  const sending = activePending?.status === "sending" ||
-    (args.activeSessionKey !== null && llmSendingSessionKey === args.activeSessionKey);
+  const sending = activePending?.status === "sending";
 
   const submitPending = useCallback(async (sessionId: string, pending: PendingChatSend) => {
     try {
@@ -130,52 +112,12 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
   const send = useCallback(
     async (rawText: string) => {
       const sessionId = args.activeSessionKey;
-      const attachmentPaths = args.isLlmFinished || !args.fileUploadUrl ? [] : [...args.uploadedPaths];
+      const attachmentPaths = args.fileUploadUrl ? [...args.uploadedPaths] : [];
       if (!sessionId || (!rawText.trim() && attachmentPaths.length === 0)) return;
 
       const trimmed = rawText.trim();
       if (trimmed.length > MAX_MESSAGE_LENGTH) {
         setError(`메시지가 너무 깁니다 (${trimmed.length}/${MAX_MESSAGE_LENGTH})`);
-        return;
-      }
-
-      if (args.isLlmFinished) {
-        if (llmSendingSessionRef.current !== null) return;
-        const controller = new AbortController();
-        abortRef.current = controller;
-        llmSendingSessionRef.current = sessionId;
-        setLlmSendingSessionKey(sessionId);
-        setError(null);
-        args.clearDraft(sessionId);
-        args.onBeforeSend?.(trimmed);
-        try {
-          const caller = isAuthenticated && user
-            ? { email: user.email, name: user.name, picture: user.picture }
-            : undefined;
-          const result = await submitLlmContinuation({
-            tree: args.tree,
-            flattenMessages: args.flattenMessages,
-            text: trimmed,
-            provider: args.llmProvider,
-            model: args.llmModel,
-            clientId: args.clientId,
-            caller,
-            signal: controller.signal,
-          });
-          args.onAfterSend();
-          if (result.sessionId) args.setActiveSession(result.sessionId);
-        } catch (requestError) {
-          if (requestError instanceof DOMException && requestError.name === "AbortError") return;
-          args.onSendFailure?.();
-          args.onSendError?.(trimmed);
-          setError(requestError instanceof Error ? requestError.message : "보내지 못했습니다");
-        } finally {
-          if (llmSendingSessionRef.current === sessionId) {
-            llmSendingSessionRef.current = null;
-            abortRef.current = null;
-            setLlmSendingSessionKey(null);
-          }
-        }
         return;
       }
 
@@ -198,7 +140,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
       args.onBeforeSend?.(messageText);
       await submitPending(sessionId, pending);
     },
-    [args, isAuthenticated, user, submitPending],
+    [args, submitPending],
   );
 
   const retry = useCallback(async (sessionId: string, pending: PendingChatSend) => {
@@ -224,7 +166,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
     sessionId: string,
     message: { text: string; attachmentPaths: readonly string[] },
   ) => {
-    if (sessionId !== args.activeSessionKey || args.isLlmFinished) return;
+    if (sessionId !== args.activeSessionKey) return;
     if (args.getPendingChatSend(sessionId)) return;
     const text = message.text.trim();
     const attachmentPaths = [...message.attachmentPaths];
@@ -249,10 +191,6 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
   }, [args, submitPending]);
 
   const reset = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    llmSendingSessionRef.current = null;
-    setLlmSendingSessionKey(null);
     setError(null);
   }, []);
 

@@ -8,7 +8,6 @@ import { formatAssignedCardContextSnapshot } from "./assigned-card-context-conte
 import { formatWorkspaceTime } from "./format-workspace-time";
 import { createNodeFromEvent } from "../stores/node-factory";
 import { flattenTree } from "./flatten-tree";
-import { buildLlmHistory } from "../components/chat/buildLlmHistory";
 import type { EventTreeNode, SoulSSEEvent } from "../shared/types";
 
 interface Item {
@@ -136,7 +135,6 @@ it("maps prepared-card snapshots without adding them to model history", () => {
     content: "",
     completed: false,
   } as EventTreeNode;
-  expect(buildLlmHistory(root)).toEqual([{ role: "user", content: "외부 카드 알림" }]);
   expect(flattenTree(root).find(message => message.treeNodeType === "assigned_card_context"))
     .toMatchObject({ assignedCardCount: 1 });
 });
