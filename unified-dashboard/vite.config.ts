@@ -88,7 +88,7 @@ export default defineConfig(({ command, mode, isPreview }: ConfigEnv) => {
         "@dnd-kit/core": resolve(__dirname, "../packages/soul-ui/node_modules/@dnd-kit/core"),
         "@dnd-kit/sortable": resolve(__dirname, "../packages/soul-ui/node_modules/@dnd-kit/sortable"),
         "@dnd-kit/utilities": resolve(__dirname, "../packages/soul-ui/node_modules/@dnd-kit/utilities"),
-        // zod: soul-ui FolderDialog/FolderSettingsDialog에서 사용 (@hookform/resolvers 포함)
+        // zod: soul-ui FolderDialog에서 사용 (@hookform/resolvers 포함)
         // pnpm 모듈 해석 경로 불일치로 zod/v4/core를 못 찾는 문제 해결
         "zod": resolve(__dirname, "../packages/soul-ui/node_modules/zod"),
       },
@@ -101,24 +101,11 @@ export default defineConfig(({ command, mode, isPreview }: ConfigEnv) => {
         onwarn: handleRollupWarning,
         output: {
           manualChunks(id) {
-            if (id.includes("/packages/soul-ui/src/components/MarkdownCodeMirrorEditor.tsx")) {
-              return "markdown-editor";
-            }
             if (id.includes("/packages/soul-ui/src/")) {
               return "soul-ui";
             }
             if (!id.includes("/node_modules/")) {
               return undefined;
-            }
-            if (
-              id.includes("/@codemirror/") ||
-              id.includes("/@lezer/") ||
-              id.includes("/y-codemirror.next/") ||
-              id.includes("/crelt/") ||
-              id.includes("/style-mod/") ||
-              id.includes("/w3c-keyname/")
-            ) {
-              return "vendor-markdown-editor";
             }
             if (id.includes("/@tanstack/")) {
               return "vendor-tanstack";
@@ -128,7 +115,6 @@ export default defineConfig(({ command, mode, isPreview }: ConfigEnv) => {
             }
             if (
               id.includes("/@base-ui/") ||
-              id.includes("/radix-ui/") ||
               id.includes("/@floating-ui/")
             ) {
               return "vendor-ui";

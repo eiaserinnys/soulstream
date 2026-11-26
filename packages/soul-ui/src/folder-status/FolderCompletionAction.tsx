@@ -41,10 +41,6 @@ export function normalizeFolderStatus(
   return status === "completed" ? "completed" : "open";
 }
 
-export function isFolderCompleted(status: FolderStatus | null | undefined): boolean {
-  return normalizeFolderStatus(status) === "completed";
-}
-
 export function createFolderLifecycleIdempotencyKey(
   folderId: string,
   status: FolderStatus,

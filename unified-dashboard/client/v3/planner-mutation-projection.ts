@@ -52,23 +52,6 @@ export function movePlannerSession(
   return changed ? next : tasks;
 }
 
-export function movePlannerFolderProject(
-  tasks: PlannerFolder[],
-  task: PlannerFolder,
-  targetFolderId: string | null,
-  visibleFolderId: string,
-): PlannerFolder[] {
-  if (visibleFolderId !== targetFolderId) {
-    const next = tasks.filter((candidate) => candidate.page.id !== task.page.id);
-    return next.length === tasks.length ? tasks : next;
-  }
-  const projected = { ...task, parentFolderId: targetFolderId };
-  if (!tasks.some((candidate) => candidate.page.id === task.page.id)) {
-    return [...tasks, projected];
-  }
-  return replacePlannerFolder(tasks, task.page.id, () => projected);
-}
-
 function sameIds(first: readonly string[], second: readonly string[]): boolean {
   return first.length === second.length && first.every((value, index) => value === second[index]);
 }

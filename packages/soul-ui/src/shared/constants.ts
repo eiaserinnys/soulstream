@@ -11,11 +11,6 @@ export const SYSTEM_FOLDER_IDS = {
 export type SystemFolderKey = keyof typeof SYSTEM_FOLDER_IDS;
 export type SystemFolderId = (typeof SYSTEM_FOLDER_IDS)[SystemFolderKey];
 
-export const SYSTEM_FOLDERS = {
-  claude: '⚙️ 클로드 코드 세션',
-  llm: '⚙️ LLM 세션',
-} as const satisfies Readonly<Record<SystemFolderKey, string>>;
-
 export const DEFAULT_FOLDER_KEY = 'claude' as const;
 export const DEFAULT_FOLDER_ID = SYSTEM_FOLDER_IDS[DEFAULT_FOLDER_KEY];
 

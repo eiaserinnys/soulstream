@@ -98,7 +98,7 @@ describe("orchestrator runtime composition harness", () => {
     });
     await runtime.app.ready();
     expect(runtime.routeOptions.pageYjsRoutes).toBe(routeOptions);
-    expect(runtime.app.hasRoute({ method: "GET", url: "/yjs/page/:pageId" })).toBe(true);
+    expect(runtime.app.hasRoute({ method: "POST", url: "/api/page-yjs/host/:operation" })).toBe(true);
     expect(runtime.app.hasRoute({ method: "GET", url: "/api/pages" })).toBe(true);
 
     const response = await runtime.app.inject({
@@ -535,8 +535,6 @@ function pageServiceDouble() {
     getDailyPage: vi.fn().mockResolvedValue({ page: result.page, created: false }),
     searchBrowserPages: vi.fn().mockResolvedValue({ items: [] }),
     getBrowserBacklinks: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
-    handleConnection: vi.fn(),
-    assertWebsocketAuthConfigured: vi.fn(),
     close: vi.fn().mockResolvedValue(undefined),
   } as unknown as PageYjsService & PageBrowserReads & {
     createPage: ReturnType<typeof vi.fn>;

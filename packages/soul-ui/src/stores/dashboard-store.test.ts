@@ -121,7 +121,7 @@ describe("persistent session display settings", () => {
     expect(useDashboardStore.getState().persistentSessionDisplaySettings?.showWorkDetails).toBe(false);
   });
 });
-import { filterSessionsInFolder, type SessionPage } from "../hooks/session-stream-helpers";
+import type { SessionPage } from "../hooks/session-stream-helpers";
 import type {
   TextStartEvent,
   TextDeltaEvent,
@@ -896,7 +896,7 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().activeSessionSummary?.nodeId).toBeUndefined();
     });
 
-    it("should place session in correct folder via catalog assignment and filterSessionsInFolder", () => {
+    it("should place session in correct folder via catalog assignment", () => {
       const catalog: CatalogState = {
         folders: [{ status: "open", version: 1, archived: false, id: "folder-1", name: "Test Folder", sortOrder: 0 }],
         sessions: {},
@@ -908,15 +908,9 @@ describe("dashboard-store", () => {
       seedQueryClient(qc, []);
       useDashboardStore.getState().addOptimisticSession(qc, "sess-in-folder", "hi", "folder-1");
       const updatedCatalog = useDashboardStore.getState().catalog;
-      const querySessions = getQuerySessions(qc);
 
-      // filterSessionsInFolder로 폴더 기준 필터링 확인
-      const inFolder = filterSessionsInFolder(querySessions, updatedCatalog, "folder-1");
-      const inUncategorized = filterSessionsInFolder(querySessions, updatedCatalog, null);
-
-      expect(inFolder).toHaveLength(1);
-      expect(inFolder[0].agentSessionId).toBe("sess-in-folder");
-      expect(inUncategorized).toHaveLength(0);
+      expect(updatedCatalog?.sessions["sess-in-folder"]?.folderId).toBe("folder-1");
+      expect(getQuerySessions(qc).map((s) => s.agentSessionId)).toContain("sess-in-folder");
     });
 
     it("should switch selectedFolderId to the new session's folder", () => {

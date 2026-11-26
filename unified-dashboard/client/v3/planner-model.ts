@@ -1,13 +1,9 @@
-import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import type { BlockDto, PageDto } from "../../../packages/page-model/src/types";
 import type {
   CatalogFolder,
   PlannerFolderStatus,
   SessionSummary,
 } from "@seosoyoung/soul-ui";
-import type {
-  FolderSnapshot,
-} from "@seosoyoung/soul-ui/stores/folder-card-store";
 
 const STATUS_PRESENTATION = {
   open: { icon: "○", label: "Open" },
@@ -15,14 +11,6 @@ const STATUS_PRESENTATION = {
   review: { icon: "◆", label: "검수" },
   completed: { icon: "✓", label: "완료" },
 } as const satisfies Record<PlannerFolderStatus, { icon: string; label: string }>;
-
-export function parseSingleMountTitle(
-  block: Pick<BlockDto, "block_type" | "text">,
-): string | null {
-  if (block.block_type !== "paragraph") return null;
-  const match = /^\[\[([^\[\]]+)\]\]$/.exec(block.text.trim());
-  return match ? nonEmptyString(match[1]) : null;
-}
 
 export function derivePlannerFolderStatus(snapshot: {
   folder: { status: "open" | "completed" };
@@ -38,25 +26,10 @@ export function plannerStatusPresentation(status: PlannerFolderStatus) {
   return STATUS_PRESENTATION[status];
 }
 
-export function plannerProgress(snapshot: FolderSnapshot | null): number | null {
-  if (!snapshot || snapshot.cards.length === 0) return null;
-  const completed = snapshot.cards.filter((item) => item.status === "done").length;
-  return Math.round((completed / snapshot.cards.length) * 100);
-}
-
 export function folderContextCount(blocks: readonly BlockDto[]): number {
   return blocks.filter((block) => (
     block.block_type !== "paragraph" && block.block_type !== "folder_ref"
   )).length;
-}
-
-export function folderAssignee(snapshot: FolderSnapshot | null): string {
-  if (!snapshot) return "담당 미확인";
-  const item = preferredAssigneeItem(snapshot.cards);
-  if (!item) return "담당 미지정";
-  return item.assigneeAgentId
-    ?? item.assigneeUserId
-    ?? (item.assigneeSessionId ? "세션 담당" : "담당 미지정");
 }
 
 export function latestRun(
@@ -78,20 +51,8 @@ export function resolveProjectFolderId(
   return folders.find((folder) => folder.projectPageId === page.id)?.id ?? null;
 }
 
-function preferredAssigneeItem(items: readonly CardRow[]): CardRow | null {
-  const active = items.find((item) => item.status === "running")
-    ?? items.find((item) => item.status === "review")
-    ?? items.find((item) => item.status === "todo")
-    ?? items[0];
-  return active ?? null;
-}
-
 function timestamp(session: SessionSummary): number {
   const value = session.updatedAt ?? session.createdAt;
   const parsed = value ? Date.parse(value) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function nonEmptyString(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
 }

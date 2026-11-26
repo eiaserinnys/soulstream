@@ -3,7 +3,6 @@ import type { PageDto } from "../../../packages/page-model/src/types";
 
 import type { PlannerFolder } from "./planner-data";
 import {
-  movePlannerFolderProject,
   movePlannerSession,
   removePlannerSessions,
   replacePlannerFolder,
@@ -85,30 +84,6 @@ describe("planner mutation projection", () => {
     expect(movePlannerSession(targetFolders, "session-moving", "target"))
       .toBe(targetFolders);
   });
-
-  it("projects a project move into the visible source or target without broad replacement", () => {
-    const moving = { ...task("moving", []), parentFolderId: "project-source" };
-    const untouched = { ...task("untouched", []), parentFolderId: "project-source" };
-
-    const source = movePlannerFolderProject(
-      [moving, untouched],
-      moving,
-      "project-target",
-      "project-source",
-    );
-    expect(source).toEqual([untouched]);
-    expect(source[0]).toBe(untouched);
-
-    const target = movePlannerFolderProject(
-      [untouched],
-      moving,
-      "project-target",
-      "project-target",
-    );
-    expect(target).toEqual([untouched, { ...moving, parentFolderId: "project-target" }]);
-    expect(target[0]).toBe(untouched);
-  });
-
 });
 
 function task(id: string, sessionIds: string[]): PlannerFolder {

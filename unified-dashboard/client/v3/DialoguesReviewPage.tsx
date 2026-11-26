@@ -27,7 +27,7 @@ export function DialoguesReviewPage() {
         src: native ? undefined : `/dialogues?sample=${encodeURIComponent(id)}`,
         onOpen: native ? () => openNativeConfirm(id) : undefined,
         description: native ? "브라우저 기본 확인창은 나란히 표시할 수 없습니다. 버튼으로 실제 창을 엽니다." : item.component,
-        mobile: ["v3-sheet", "folder-sheet", "session-sheet"].includes(id),
+        mobile: ["v3-sheet", "session-sheet"].includes(id),
       };
     }),
   }));

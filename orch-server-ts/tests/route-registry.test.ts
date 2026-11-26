@@ -47,14 +47,12 @@ describe("route registry", () => {
     ]);
 
     const websocketRoutes = getRoutesByMethod(registry, "WEBSOCKET");
-    expect(websocketRoutes).toHaveLength(2);
+    expect(websocketRoutes).toHaveLength(1);
     expect(websocketRoutes.find((route) => route.path === "/ws/node")).toMatchObject({
       key: "WEBSOCKET /ws/node",
       family: "control_plane",
       authRequired: false,
     });
-    expect(websocketRoutes.find((route) => route.path === "/yjs/page/{pageId}"))
-      .toMatchObject({ family: "page_yjs", authRequired: false });
   });
 
   it("detects duplicate method+path keys before route registration exists", () => {
@@ -137,7 +135,6 @@ describe("route registry", () => {
       ["POST", "/api/execute", "control_plane"],
       ["POST", "/internal/folder-content/{operation}", "folder_content"],
       ["POST", "/api/page-yjs/host/{operation}", "page_yjs"],
-      ["WEBSOCKET", "/yjs/page/{pageId}", "page_yjs"],
       ["GET", "/api/folders/{folder_id}", "folder"],
       ["GET", "/api/admin/users", "admin_or_user"],
       ["GET", "/api/sessions/{session_id}/messages", "session"],

@@ -30,7 +30,6 @@ const CLIENT_PAGE_API_INVENTORY = {
 
 const PAGE_YDOC_INFRASTRUCTURE = [
   ["POST", "/api/page-yjs/host/{operation}"],
-  ["WEBSOCKET", "/yjs/page/{pageId}"],
 ] as const;
 
 describe("active Page API client inventory", () => {
@@ -48,7 +47,7 @@ describe("active Page API client inventory", () => {
     },
   );
 
-  it("keeps the canonical Page Y.Doc mutation and synchronization routes", () => {
+  it("keeps the canonical Page Y.Doc host mutation route", () => {
     for (const [method, path] of PAGE_YDOC_INFRASTRUCTURE) {
       expect(getRouteByKey(registry, method, path)).toMatchObject({ family: "page_yjs" });
     }

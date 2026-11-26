@@ -15,6 +15,10 @@ export const DASHBOARD_PWA_OPTIONS = {
       "**/sw-update-migration.js",
       "**/characters/seosoyoung/**",
       "**/brand-icons/**",
+      "**/vendor-heic2any-*.js",
+      "**/ComponentsReviewLayout-*.js",
+      "**/DialoguesReviewPage-*.js",
+      "**/IosComponentsReviewPage-*.js",
     ],
     runtimeCaching: [
       {

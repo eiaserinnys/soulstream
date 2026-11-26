@@ -2,10 +2,6 @@ import type { PageDto } from "../../../packages/page-model/src/types";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import type { PageStructureOperation } from "@seosoyoung/soul-ui/page/page-structure-operation";
 
-import {
-  buildContextBlockOperations,
-  type ContextPickerSelection,
-} from "./context-picker-model";
 import { buildDescriptionMutation } from "./folder-workspace-run-model";
 import type { SessionPageAnchor } from "./session-succession-model";
 
@@ -125,30 +121,6 @@ export async function saveFolderDescription(
   });
 }
 
-export async function addFolderContextBlocks(
-  api: PageApiClient,
-  pageId: string,
-  selections: readonly ContextPickerSelection[],
-): Promise<{ blocks: Awaited<ReturnType<PageApiClient["getPage"]>>["blocks"] }> {
-  const current = await api.getPage(pageId);
-  const operations = buildContextBlockOperations({
-    selections,
-    afterBlockId: [...current.blocks].reverse().find((block) => block.parent_id === null)?.id ?? null,
-    createTempId: () => `v3-context-${crypto.randomUUID()}`,
-  });
-  if (operations.length === 0) {
-    return { blocks: current.blocks };
-  }
-  const result = await api.applyOperations(pageId, {
-    expectedVersion: current.page.version,
-    expectedStateVector: decodeBase64(current.state_vector),
-    idempotencyKey: `v3-context-apply-${crypto.randomUUID()}`,
-    reason: "v3 folder context picker apply",
-    operations,
-  });
-  return { blocks: result.blocks };
-}
-
 export async function createFolderPageAnchor(
   api: PageApiClient,
   pageId: string,
@@ -174,64 +146,6 @@ export async function createFolderPageAnchor(
   const blockId = result.temp_id_mapping[tempId];
   if (!blockId) throw new Error("새 세션 page anchor 블록 ID를 받지 못했습니다");
   return { pageId, blockId, expectedVersion: result.page.version };
-}
-
-export async function promoteMountedDocument(
-  api: PageApiClient,
-  folderPageId: string,
-  projectPageId: string,
-  mountBlockId: string,
-): Promise<void> {
-  const [task, project] = await Promise.all([
-    api.getPage(folderPageId),
-    api.getPage(projectPageId),
-  ]);
-  if (!task.blocks.some((block) => block.id === mountBlockId)) {
-    throw new Error("승격할 문서 마운트를 찾을 수 없습니다");
-  }
-  const lastProjectRoot = [...project.blocks]
-    .reverse()
-    .find((block) => block.parent_id === null)?.id ?? null;
-  // This uses the same transferBlocks primitive as usePageBlockTransfers.extractExisting.
-  // extractExisting itself always adds a source mount; promotion must remove the task mount
-  // instead of replacing it with a mount back to the project page.
-  await api.transferBlocks({
-    source: {
-      pageId: folderPageId,
-      expectedVersion: task.page.version,
-      expectedStateVector: decodeBase64(task.state_vector),
-      blockIds: [mountBlockId],
-    },
-    target: {
-      kind: "existing",
-      pageId: projectPageId,
-      expectedVersion: project.page.version,
-      expectedStateVector: decodeBase64(project.state_vector),
-      parentId: null,
-      afterBlockId: lastProjectRoot,
-    },
-    idempotencyKey: `v3-promote-document-${crypto.randomUUID()}`,
-    reason: "promote task document to project",
-  });
-}
-
-export async function unmountFolderDocument(
-  api: PageApiClient,
-  folderPageId: string,
-  mountBlockId: string,
-  idFactory: () => string = () => `v3-document-unmount-${crypto.randomUUID()}`,
-): Promise<void> {
-  const current = await api.getPage(folderPageId);
-  if (!current.blocks.some((block) => block.id === mountBlockId)) {
-    throw new Error("해제할 문서 마운트를 찾을 수 없습니다");
-  }
-  await api.applyOperations(folderPageId, {
-    expectedVersion: current.page.version,
-    expectedStateVector: decodeBase64(current.state_vector),
-    idempotencyKey: idFactory(),
-    reason: "v3 folder document unmount",
-    operations: [{ op: "delete_block_subtree", block_id: mountBlockId }],
-  });
 }
 
 function decodeBase64(value: string): Uint8Array {

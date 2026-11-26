@@ -9,10 +9,6 @@ export function getChildFolders(
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 }
 
-export function getRootFolders(folders: readonly CatalogFolder[]): CatalogFolder[] {
-  return getChildFolders(folders, null);
-}
-
 export function getFolderBreadcrumbs(
   folders: readonly CatalogFolder[],
   folderId: string | null,

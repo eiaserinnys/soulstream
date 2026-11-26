@@ -24,7 +24,6 @@ describe("PR-CB visual contracts", () => {
     const workspace = read("./FolderWorkspace.tsx");
     const sessionColumn = read("./WorkspaceSessionColumn.tsx");
     const sharedHeaders = read("./WorkspacePanelHeaders.tsx");
-    const documentOverlay = read("./FolderDocumentOverlay.tsx");
     const css = read("./v3-folder-workspace.css");
 
     expect(workspace.match(/<SessionPanelHeader\b/g)).toHaveLength(2);
@@ -34,7 +33,6 @@ describe("PR-CB visual contracts", () => {
     expect(sharedHeaders).toContain("sessionPanelTitle(session)");
     expect(sharedHeaders).toContain("<SessionModelPresetBadge session={session}/>");
     expect(workspace).not.toContain("{projectTitle} › {visibleTitle}");
-    expect(documentOverlay).toContain("{projectTitle} › {folderTitle}");
     expect(css).toMatch(/\.v3-chat-session-title\s*\{[\s\S]*align-items:\s*center;[\s\S]*font-size:\s*var\(--font-size-base\);/);
   });
 });

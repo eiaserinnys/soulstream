@@ -87,7 +87,6 @@ export const EXPECTED_PUBLIC_ROUTE_KEYS = [
   "POST /api/auth/google/native",
   "POST /api/auth/logout",
   "WEBSOCKET /ws/node",
-  "WEBSOCKET /yjs/page/{pageId}",
 ] as const satisfies readonly RouteKey[];
 
 const KNOWN_STATIC_BEFORE_DYNAMIC_HAZARDS: StaticBeforeDynamicHazard[] = [
@@ -506,8 +505,7 @@ export function classifyRouteFamily(path: string): RouteFamily {
     path === "/api/pages" ||
     path.startsWith("/api/pages/") ||
     path.startsWith("/api/planner/") ||
-    path.startsWith("/api/page-yjs/") ||
-    path.startsWith("/yjs/page/")
+    path.startsWith("/api/page-yjs/")
   ) {
     return "page_yjs";
   }

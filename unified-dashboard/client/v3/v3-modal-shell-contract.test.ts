@@ -35,9 +35,7 @@ const sharedV3DialogConsumers = [
 const soulUiDialogConsumers = [
   "../../../packages/soul-ui/src/components/AttachmentViewer.tsx",
   "../../../packages/soul-ui/src/components/FileAttachmentPreview.tsx",
-  "../../../packages/soul-ui/src/components/FolderContextMenu.tsx",
   "../../../packages/soul-ui/src/components/FolderDialog.tsx",
-  "../../../packages/soul-ui/src/components/FolderSettingsDialog.tsx",
   "../../../packages/soul-ui/src/components/MarkdownDeleteDialog.tsx",
   "../../../packages/soul-ui/src/components/RenameSessionDialog.tsx",
   "../../../packages/soul-ui/src/components/SessionContextMenu.tsx",
@@ -85,7 +83,6 @@ describe("v3 modal shell contract", () => {
 
   it("keeps only mobile context menus on the explicit bottom-sheet exception", () => {
     expect(read("./V3ContextMenu.tsx")).toContain("bottomStickOnMobile");
-    expect(read("../../../packages/soul-ui/src/components/FolderContextMenu.tsx")).toContain("bottomStickOnMobile");
     expect(read("../../../packages/soul-ui/src/components/SessionContextMenu.tsx")).toContain("bottomStickOnMobile");
   });
 

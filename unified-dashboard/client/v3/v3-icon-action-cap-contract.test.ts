@@ -89,14 +89,6 @@ describe("v3 icon action cap contract", () => {
     expect(headers).toContain('{onClose ? <DashboardIconCap label="채팅 닫기" onClick={onClose}');
   });
 
-  it("keeps the document overlay height toggle on its shared cap", () => {
-    const overlay = read("./FolderDocumentOverlay.tsx");
-
-    expect(overlay).toContain('label={expanded ? "문서 편집기 높이 축소" : "문서 편집기 높이 확장"}');
-    expect(overlay).toContain("aria-pressed={expanded}");
-    expect(overlay).toContain("onClick={onToggleExpanded}");
-  });
-
   it("forwards review acknowledgement through the shared row action owner", () => {
     const panel = read("./V3SessionPanel.tsx");
     const richRow = read("./RichSessionRow.tsx");

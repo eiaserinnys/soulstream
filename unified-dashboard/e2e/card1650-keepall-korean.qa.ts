@@ -814,119 +814,6 @@ async function followToggle(browser: Browser, width: number, press: boolean) {
   }
 }
 
-async function documentPanel(browser: Browser) {
-  const { context, page } = await ctx(browser, 1440, 1000);
-  try {
-    await installV3VisualQaRoutes(page, {});
-    // 샘플 문서는 네트워크를 타지 않는다. 받는 모듈에서 기본 제목·빈 본문 상태를 만든다.
-    await page.route("**/client/v3/dialogues-api.ts*", async route => {
-      const response = await route.fetch();
-      const body = (await response.text()).replace(
-        "value = document;",
-        'value = { ...document, title: "제목 없는 문서", body: "" };',
-      );
-      await route.fulfill({ response, body });
-    });
-    await page.goto(`${baseUrl}/dialogues?sample=document-overlay`, { waitUntil: "domcontentloaded" });
-    const titleInput = page.locator('input[aria-label="문서 제목"]').first();
-    await titleInput.waitFor({ state: "visible", timeout: 30_000 });
-    const titleValue = await titleInput.inputValue();
-    const titlePlaceholder = await titleInput.getAttribute("placeholder");
-    const body = page.locator('[data-testid="markdown-read-body"]').first();
-    await body.waitFor({ state: "visible", timeout: 30_000 });
-    const bodyText = (await body.textContent())?.trim() ?? null;
-    const deleteButton = page.locator('button[title="문서 삭제"]').first();
-    await deleteButton.waitFor({ state: "attached", timeout: 10_000 });
-    const deleteTitle = await deleteButton.getAttribute("title");
-    const deleteAria = await deleteButton.getAttribute("aria-label");
-    const deleteDisabled = await deleteButton.isDisabled();
-    await page.screenshot({ path: path.join(output, `document-panel-1440-${suffix}.png`), animations: "disabled" });
-    const headerBox = await titleInput.evaluate(el => {
-      const header = el.parentElement?.getBoundingClientRect();
-      return header ? { x: header.x, y: header.y, width: header.width, height: header.height } : null;
-    });
-    if (headerBox) {
-      await page.screenshot({
-        path: path.join(output, `document-panel-header-1440-${suffix}.png`),
-        animations: "disabled",
-        clip: {
-          x: Math.max(0, headerBox.x - 8),
-          y: Math.max(0, headerBox.y - 8),
-          width: Math.min(1440 - Math.max(0, headerBox.x - 8), headerBox.width + 16),
-          height: headerBox.height + 16,
-        },
-      });
-    }
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.waitForTimeout(500);
-    await page.screenshot({ path: path.join(output, `document-panel-390-${suffix}.png`), animations: "disabled" });
-    if (!baseline) {
-      assert(titleValue === "제목 없는 문서", `기본 제목 불일치: ${titleValue}`);
-      assert(titlePlaceholder === "제목 없는 문서", `제목 자리표시 불일치: ${titlePlaceholder}`);
-      assert(bodyText?.includes("빈 문서") === true, `빈 본문 문구 불일치: ${bodyText}`);
-      assert(deleteTitle === "문서 삭제", `삭제 단추 툴팁 불일치: ${deleteTitle}`);
-      assert(deleteAria === "문서 삭제", `삭제 단추 접근 이름 불일치: ${deleteAria}`);
-      assert(deleteDisabled === false, "삭제 단추가 비활성");
-    }
-    return { titleValue, titlePlaceholder, bodyText, deleteTitle, deleteAria, deleteDisabled };
-  } finally {
-    await context.close();
-  }
-}
-
-async function documentLoading(browser: Browser) {
-  const { context, page } = await ctx(browser, 1440, 1000);
-  try {
-    await installV3VisualQaRoutes(page, {});
-    await page.route("**/client/v3/dialogues-api.ts*", async route => {
-      const response = await route.fetch();
-      const body = (await response.text()).replace(
-        "value = document;",
-        "await new Promise((resolve) => setTimeout(resolve, 4000)); value = document;",
-      );
-      await route.fulfill({ response, body });
-    });
-    await page.goto(`${baseUrl}/dialogues?sample=document-overlay`, { waitUntil: "domcontentloaded" });
-    const loading = page.locator('[data-slot="frame-loading"]').first();
-    await loading.waitFor({ state: "visible", timeout: 20_000 });
-    const label = (await loading.textContent())?.trim() ?? null;
-    await page.screenshot({ path: path.join(output, `document-loading-1440-${suffix}.png`), animations: "disabled" });
-    if (!baseline) assert(label?.includes("불러오는 중") === true, `문서 로딩 문구 불일치: ${label}`);
-    return { label };
-  } finally {
-    await context.close();
-  }
-}
-
-async function editorLoading(browser: Browser) {
-  const { context, page } = await ctx(browser, 1440, 1000);
-  try {
-    await installV3VisualQaRoutes(page, {});
-    await page.route("**/MarkdownCodeMirrorEditor.tsx*", async route => {
-      await new Promise(resolve => setTimeout(resolve, 8_000));
-      await route.fallback();
-    });
-    await page.goto(`${baseUrl}/dialogues?sample=document-overlay`, { waitUntil: "domcontentloaded" });
-    const edit = page.getByTestId("markdown-edit-start");
-    await edit.waitFor({ state: "visible", timeout: 30_000 });
-    await edit.click();
-    const loading = page.locator('[data-slot="frame-loading"]').first();
-    await loading.waitFor({ state: "visible", timeout: 15_000 });
-    const label = (await loading.textContent())?.trim() ?? null;
-    await page.screenshot({ path: path.join(output, `editor-loading-1440-${suffix}.png`), animations: "disabled" });
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.waitForTimeout(400);
-    const stillLoading = await loading.isVisible().catch(() => false);
-    if (stillLoading) {
-      await page.screenshot({ path: path.join(output, `editor-loading-390-${suffix}.png`), animations: "disabled" });
-    }
-    if (!baseline) assert(label?.includes("편집기를 불러오는 중") === true, `편집기 로딩 문구 불일치: ${label}`);
-    return { label, stillLoading };
-  } finally {
-    await context.close();
-  }
-}
-
 async function fullContentLoading(browser: Browser, width: number) {
   const { context, page } = await ctx(browser, width, width < 500 ? 844 : 1000);
   try {
@@ -1034,9 +921,6 @@ const result = await runPlaywrightLifecycle({
       measured[`follow${width}${press ? "Pressed" : "Control"}`] = await followToggle(browser, width, press);
     }
   }
-  measured.documentPanel = await documentPanel(browser);
-  measured.documentLoading = await documentLoading(browser);
-  measured.editorLoading = await editorLoading(browser);
   measured.fullContent1440 = await fullContentLoading(browser, 1440);
   measured.fullContent390 = await fullContentLoading(browser, 390);
   return measured;

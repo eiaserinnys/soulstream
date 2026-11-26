@@ -1,11 +1,9 @@
 // 500줄 예외: 페이지 문서와 연결의 수명주기를 한 서비스에서 소유한다.
 import { randomUUID } from "node:crypto";
 import type { HandoverGate } from "../runtime/handover_gate.js";
-import type { IncomingMessage } from "node:http";
 
 import { Hocuspocus } from "@hocuspocus/server";
 import type { FastifyBaseLogger } from "fastify";
-import type WebSocket from "ws";
 import * as Y from "yjs";
 import type {
   BacklinkDto,
@@ -14,7 +12,6 @@ import type {
   PageListDto,
 } from "@soulstream/page-model";
 
-import type { SocketAuthConfig } from "../auth/socket_auth.js";
 import { PageMutationCore, type CreatePageMutationInput, type PageMutationInput } from "./page_mutation_core.js";
 import type {
   CommitPageMutationInput,
@@ -45,17 +42,11 @@ import {
   type PageBlockTransferResult,
 } from "./page_block_transfer_service.js";
 import { PageAsyncMutex } from "./page_async_mutex.js";
-import { createPageYjsAuthExtension } from "./page_yjs_auth_extension.js";
 import {
   notifyPageUpdates,
   type PageUpdatedObserver,
 } from "./page_update_notifications.js";
 import { syncCommittedPageSnapshot } from "./page_committed_snapshot_sync.js";
-
-import {
-  NODE_CREDENTIAL_REVOKED_CLOSE_CODE,
-  NODE_CREDENTIAL_REVOKED_REASON,
-} from "../node_credentials/revocation.js";
 
 export interface PageServiceRepository extends PageYjsPersistenceRepository {
   getPageMutationByIdempotencyKey(
@@ -92,7 +83,6 @@ export interface PageYjsServiceConfig {
   createOperationId?: () => string;
   createPageId?: () => string;
   now?: () => Date;
-  auth?: SocketAuthConfig;
   logger?: FastifyBaseLogger;
   onPageUpdated?: PageUpdatedObserver;
   mutateFolderIdentity?: (
@@ -122,7 +112,6 @@ export interface PageServiceDailyResult {
 }
 
 export class PageYjsService {
-  private readonly sockets = new Set<WebSocket>();
   private closePromise: Promise<void> | undefined;
   private readonly mutationCore: PageMutationCore;
   private readonly createOperationId: () => string;
@@ -165,13 +154,7 @@ export class PageYjsService {
       quiet: true,
       debounce: config.storeDebounceMs ?? 500,
       maxDebounce: config.storeMaxDebounceMs ?? 5_000,
-      extensions: [
-        ...(config.auth === undefined
-          ? []
-          : [createPageYjsAuthExtension(config.auth, config.logger)]),
-        this.persistence.updateCollector,
-        this.persistence.database,
-      ],
+      extensions: [this.persistence.updateCollector, this.persistence.database],
     });
   }
 
@@ -336,41 +319,6 @@ export class PageYjsService {
     });
   }
 
-  handleConnection(socket: WebSocket, request: IncomingMessage, pageId: string): void {
-    this.sockets.add(socket);
-    socket.once("close", () => this.sockets.delete(socket));
-    socket.pause();
-    void (this.config.documentGate
-      ? this.config.documentGate.run(() => this.openConnection(socket, request, pageId))
-      : this.openConnection(socket, request, pageId)).catch(() => socket.close(1012, "orchestrator_handover"));
-  }
-
-  /**
-   * Close every live Yjs connection authenticated by a revoked node credential.
-   * The credential id is stamped into the Hocuspocus connection context by the
-   * auth extension. Returns the number of connections closed.
-   */
-  closeConnectionsForCredential(credentialId: string): number {
-    let closed = 0;
-    for (const document of this.hocuspocus.documents.values()) {
-      for (const connection of document.getConnections()) {
-        const context = connection.context as { credentialId?: unknown } | undefined;
-        if (context?.credentialId !== credentialId) continue;
-        connection.close({
-          code: NODE_CREDENTIAL_REVOKED_CLOSE_CODE,
-          reason: NODE_CREDENTIAL_REVOKED_REASON,
-        });
-        closed += 1;
-      }
-    }
-    return closed;
-  }
-  assertWebsocketAuthConfigured(): void {
-    if (this.config.auth === undefined) {
-      throw new Error("Page Yjs websocket authentication is not configured");
-    }
-  }
-
   decodeSnapshot(snapshot: Uint8Array): Y.Doc {
     const document = new Y.Doc();
     Y.applyUpdate(document, snapshot);
@@ -384,12 +332,6 @@ export class PageYjsService {
 
   async closeForHandover(): Promise<void> {
     await this.config.documentGate?.close();
-    await Promise.all([...this.sockets].map(socket => new Promise<void>(resolve => {
-      if (socket.readyState === socket.CLOSED) { resolve(); return; }
-      const timer = setTimeout(() => socket.terminate(), 1_500);
-      socket.once("close", () => { clearTimeout(timer); resolve(); });
-      socket.close(1012, "orchestrator_handover");
-    })));
     await this.close();
   }
 
@@ -411,27 +353,6 @@ export class PageYjsService {
     });
   }
 
-  private async openConnection(
-    socket: WebSocket,
-    request: IncomingMessage,
-    pageId: string,
-  ): Promise<void> {
-    try {
-      const documentName = getPageYjsDocumentName(pageId);
-      const snapshot = await this.config.repository.getPageYjsSnapshot(documentName);
-      if (!snapshot) throw new Error(`page snapshot missing: ${pageId}`);
-      readPageYDocReplica(pageId, this.decodeSnapshot(snapshot));
-      this.hocuspocus.handleConnection(socket, request, { pageId, documentName });
-      socket.resume();
-    } catch (error) {
-      this.config.logger?.error(
-        { err: error, pageId },
-        "Page Yjs websocket rejected invalid document",
-      );
-      socket.resume();
-      socket.close(1008, "invalid page document");
-    }
-  }
   private async resolveIdempotent(
     idempotencyKey: string,
   ): Promise<PageServiceMutationResult | null> {

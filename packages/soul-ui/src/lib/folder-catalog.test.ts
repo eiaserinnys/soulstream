@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CatalogState } from "../shared/types";
-import { getChildFolders, getFolderBreadcrumbs, getRootFolders } from "./folder-catalog";
+import { getChildFolders, getFolderBreadcrumbs } from "./folder-catalog";
 
 const catalog: CatalogState = {
   folders: [
@@ -19,13 +19,6 @@ describe("folder catalog helpers", () => {
     expect(getChildFolders(catalog.folders, "root-a").map((f) => f.id)).toEqual([
       "child-a",
       "child-b",
-    ]);
-  });
-
-  it("getRootFolders excludes nested folders", () => {
-    expect(getRootFolders(catalog.folders).map((f) => f.id)).toEqual([
-      "root-a",
-      "root-b",
     ]);
   });
 
