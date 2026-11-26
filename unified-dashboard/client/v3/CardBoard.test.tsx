@@ -61,3 +61,20 @@ it("shows one empty-board message when every lane is hidden", () => {
   expect(html).toContain("카드가 없습니다");
   expect(html).not.toMatch(/data-board-column=/);
 });
+
+it("puts the most recently changed review card first and keeps queued cards in queue order", () => {
+  const cards = [
+    {...reviewCard,id:"review-old",status:"review" as const,positionKey:"a",statusChangedAt:"2026-10-01T00:00:00Z"},
+    {...reviewCard,id:"review-new",status:"review" as const,positionKey:"c",statusChangedAt:"2026-10-05T00:00:00Z"},
+    {...reviewCard,id:"review-mid",status:"review" as const,positionKey:"b",statusChangedAt:"2026-10-03T00:00:00Z"},
+    {...reviewCard,id:"queued-b",status:"queued" as const,queuePositionKey:"b",statusChangedAt:"2026-10-09T00:00:00Z"},
+    {...reviewCard,id:"queued-a",status:"queued" as const,queuePositionKey:"a",statusChangedAt:"2026-10-02T00:00:00Z"},
+  ];
+  const html = renderToStaticMarkup(createElement(CardBoard, {cards, renderCard: card => createElement("span", {"data-sample":card.id}, card.id)}));
+  const lane = (status: string) => {
+    const section = html.split(`data-board-column="${status}"`)[1].split("</section>")[0];
+    return [...section.matchAll(/data-sample="([^"]+)"/g)].map(match => match[1]);
+  };
+  expect(lane("review")).toEqual(["review-new","review-mid","review-old"]);
+  expect(lane("queued")).toEqual(["queued-a","queued-b"]);
+});

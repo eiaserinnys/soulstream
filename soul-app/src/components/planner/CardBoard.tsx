@@ -13,6 +13,7 @@ import { useCardTransition } from '../../hooks/useCardTransition';
 import type { CompletedBrowser } from '../../hooks/useCompletedCards';
 import { CompletedCardFilters } from './CompletedCardFilters';
 import { boardVisibleColumns, boardDropStatus, boardLaneGeometry, boardLaneOffset, boardSnapOffsets, boardNearestLane, type BoardFrame, type BoardPosition } from '../../lib/card-board-layout';
+import { sortCardsInStatus } from '../../../../packages/soul-ui/src/cards/card-order';
 import { HomeComposerSpacer } from './HomeComposerSpacer';
 import { FrameLoading } from '../FrameLoading';
 export { BOARD_COLUMNS } from '../../lib/card-board-layout';
@@ -189,7 +190,8 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
         <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>
       </View> : null}
       {columns.map(([status, label],laneIndex) => {
-        const items = active.filter((card) => card.status === status);
+        const lane = active.filter((card) => card.status === status);
+        const items = status === 'done' ? lane : sortCardsInStatus(lane);
         const renderItem=(card:CardDto)=><BoardDragCard api={api} card={card} alignPaper={alignTablet}
           dragging={drag?.card.id === card.id} onOpen={(target)=>{if(pan.canPress()){if(target===undefined)onOpen(card.id);else onOpen(card.id,target);}}}
           canPress={pan.canPress} onStart={event=>start(card,event)}

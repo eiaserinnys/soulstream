@@ -3,7 +3,7 @@ import { cardRequest, confirmCardItem, createCardInput, groupCards, queueAfterId
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { useCardStore as worktreeCardStore } from "../../../packages/soul-ui/src/cards/card-store";
 
-const card = <T extends Record<string, unknown> = Record<string, never>,>(id: string, status: string, extra: T = {} as T) => ({ id, folderId: "folder", title: id, status, version: 2, archived: false, ...extra });
+const card = <T extends Record<string, unknown> = Record<string, never>,>(id: string, status: string, extra: T = {} as T) => ({ id, folderId: "folder", title: id, status, version: 2, archived: false, updatedAt: "2026-10-01T00:00:00Z", ...extra });
 afterEach(() => { vi.unstubAllGlobals(); useCardStore.getState().reset(); });
 describe("card web contracts", () => {
   it("preserves the full request and uses the first line as title with selected execution fields", () => {
@@ -11,11 +11,19 @@ describe("card web contracts", () => {
       .toEqual({ folderId:"folder", title:"첫 요청", request:"첫 요청\n둘째 요청", assignee:{kind:"agent",agentId:"agent"},nodeId:"node",modelPreset:"sol",queue:true,idempotencyKey:"create-1" });
     expect(createCardInput("가".repeat(90), {folderId:"f",nodeId:"n",agentId:"a",modelPreset:"m"},"k").title).toHaveLength(60);
   });
-  it("includes every blocked kind and orders only queued cards by their server keys", () => {
+  it("includes every blocked kind, orders queued cards by queue key and the rest by status change", () => {
     const grouped = groupCards([card("no", "blocked", {blockedKind:"no_report"}), card("limit", "blocked", {blockedKind:"limit"}), card("q", "blocked", {blockedKind:"question"}),card("rev","review"),card("b","queued",{queuePositionKey:"b"}),card("a","queued",{queuePositionKey:"a"}),card("run","running"),card("done","done")]);
-    expect(grouped.attention.map(c=>c.id)).toEqual(["no","limit","q","rev"]);
+    expect(grouped.attention.map(c=>c.id)).toEqual(["rev","q","no","limit"]);
     expect(grouped.queued.map(c=>c.id)).toEqual(["a","b"]);
     expect(grouped.running.map(c=>c.id)).toEqual(["run"]);
+    const byChange = groupCards([
+      card("old-review","review",{updatedAt:"2026-10-09T00:00:00Z",statusChangedAt:"2026-10-01T00:00:00Z"}),
+      card("new-blocked","blocked",{updatedAt:"2026-10-02T00:00:00Z",statusChangedAt:"2026-10-05T00:00:00Z"}),
+      card("run-old","running",{updatedAt:"2026-10-03T00:00:00Z",statusChangedAt:"2026-10-03T00:00:00Z"}),
+      card("run-new","running",{updatedAt:"2026-10-02T00:00:00Z",statusChangedAt:"2026-10-04T00:00:00Z"}),
+    ]);
+    expect(byChange.attention.map(c=>c.id)).toEqual(["new-blocked","old-review"]);
+    expect(byChange.running.map(c=>c.id)).toEqual(["run-new","run-old"]);
     expect(queueAfterId(["b","a"],"b")).toBeNull();
     expect(queueAfterId(["b","a"],"a")).toBe("b");
   });

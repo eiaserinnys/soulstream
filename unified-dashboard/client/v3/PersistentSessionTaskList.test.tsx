@@ -242,15 +242,18 @@ describe("persistent session task list", () => {
       .not.toContain("cancelled");
   });
 
-  it("sorts queued cards by queue position and other groups by position", () => {
+  it("sorts queued cards by queue position and other groups by status change time", () => {
+    const changed = (card: CardRow, statusChangedAt: string): CardRow => ({ ...card, statusChangedAt });
     const cards = [
-      baseCard("running-z", "running", "z"), baseCard("running-a", "running", "a"),
-      baseCard("queued-z", "queued", "a", "z"), baseCard("queued-a", "queued", "z", "a"),
+      changed(baseCard("running-old", "running", "a"), "2026-10-02T00:00:00Z"),
+      changed(baseCard("running-new", "running", "z"), "2026-10-05T00:00:00Z"),
+      changed(baseCard("queued-z", "queued", "a", "z"), "2026-10-09T00:00:00Z"),
+      changed(baseCard("queued-a", "queued", "z", "a"), "2026-10-03T00:00:00Z"),
     ];
     const groups = groupPersistentSessionTasks(cards);
 
     expect(groups.find(group => group.status === "running")?.cards.map(card => card.id))
-      .toEqual(["running-a", "running-z"]);
+      .toEqual(["running-new", "running-old"]);
     expect(groups.find(group => group.status === "queued")?.cards.map(card => card.id))
       .toEqual(["queued-a", "queued-z"]);
   });

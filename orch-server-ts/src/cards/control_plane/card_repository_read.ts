@@ -42,14 +42,17 @@ export class CardRepositoryRead {
         AND (${params.includeArchived ?? false} OR archived=FALSE) AND id NOT IN ('claude','llm')
       ORDER BY sort_order,name,id LIMIT ${params.limit ?? 100} OFFSET ${params.offset ?? 0}`;
   }
-  async listCards(params: { folderId?: string | null; status?: string | null; includeArchived?: boolean; includeCompleted?: boolean; allowedFolderIds?: readonly string[] | null } = {}) {
+  async listCards(params: { folderId?: string | null; status?: string | null; includeArchived?: boolean; includeCompleted?: boolean; allowedFolderIds?: readonly string[] | null; order?: "position" | "status_changed" } = {}) {
+    const order = params.order === "status_changed"
+      ? this.sql`status_changed_at DESC,id COLLATE "C" DESC`
+      : this.sql`folder_id COLLATE "C",position_key COLLATE "C",id`;
     return await this.sql<CardRow[]>`SELECT * FROM cards
       WHERE (${params.folderId ?? null}::text IS NULL OR folder_id=${params.folderId ?? null})
         AND (${params.status ?? null}::text IS NULL OR status=${params.status ?? null})
         AND (${params.includeArchived ?? false} OR archived=FALSE)
         AND (${params.includeCompleted ?? true} OR status <> 'done')
         AND (${params.allowedFolderIds ?? null}::text[] IS NULL OR folder_id=ANY(${params.allowedFolderIds ?? null}::text[]))
-      ORDER BY folder_id COLLATE "C",position_key COLLATE "C",id`;
+      ORDER BY ${order}`;
   }
   async listCompletedCards(params: CompletedCardQuery) {
     const rows = await this.sql<(CardRow & { cursor_time: string })[]>`SELECT cards.*,completed_at::text AS cursor_time FROM cards
@@ -72,7 +75,7 @@ export class CardRepositoryRead {
       SELECT cards.*,
         CASE status WHEN 'todo' THEN 1 WHEN 'queued' THEN 2 WHEN 'running' THEN 3 WHEN 'blocked' THEN 4
           WHEN 'review' THEN 5 WHEN 'on_hold' THEN 6 WHEN 'done' THEN 7 WHEN 'cancelled' THEN 8 ELSE 9 END AS status_rank,
-        updated_at::text AS cursor_time
+        status_changed_at::text AS cursor_time
       FROM cards
       WHERE archived=FALSE
         AND (${params.folderId ?? null}::text IS NULL OR folder_id=${params.folderId ?? null})
@@ -86,8 +89,8 @@ export class CardRepositoryRead {
     ) ranked
     WHERE (${params.after?.rank ?? null}::int IS NULL OR status_rank > ${params.after?.rank ?? null}::int
       OR (status_rank = ${params.after?.rank ?? null}::int
-        AND (updated_at,id COLLATE "C") < (${params.after?.time ?? null}::text::timestamptz,${params.after?.id ?? null}::text COLLATE "C")))
-    ORDER BY status_rank ASC,updated_at DESC,id COLLATE "C" DESC LIMIT ${params.limit + 1}`;
+        AND (status_changed_at,id COLLATE "C") < (${params.after?.time ?? null}::text::timestamptz,${params.after?.id ?? null}::text COLLATE "C")))
+    ORDER BY status_rank ASC,status_changed_at DESC,id COLLATE "C" DESC LIMIT ${params.limit + 1}`;
     const page = rows.slice(0,params.limit), last = page.at(-1);
     const nextCursor = rows.length > params.limit && last ? pagedCardCursor(Number(last.status_rank),last.cursor_time,last.id) : null;
     const cards = page.map(({ status_rank: _statusRank, cursor_time: _cursorTime, ...card }) => card as CardRow);

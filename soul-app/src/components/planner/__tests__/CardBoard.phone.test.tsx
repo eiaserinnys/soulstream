@@ -130,3 +130,19 @@ test('취소 레인도 숨길 때 가장 가까운 보류 칸으로 되돌아간
  screen.rerender(<CardBoard {...props} includeCompleted={false}/>);
  expect(saved.mock.calls.at(-1)[0].lane).toBe('on_hold');
 });
+
+test('review lane puts the most recently changed card first while queued keeps queue order', async () => {
+  const cards = [
+    cardFixture({ id: 'review-old', status: 'review', positionKey: 'a', statusChangedAt: '2026-10-01T00:00:00Z' }),
+    cardFixture({ id: 'review-new', status: 'review', positionKey: 'c', statusChangedAt: '2026-10-05T00:00:00Z' }),
+    cardFixture({ id: 'queued-b', status: 'queued', queuePositionKey: 'b', statusChangedAt: '2026-10-09T00:00:00Z' }),
+    cardFixture({ id: 'queued-a', status: 'queued', queuePositionKey: 'a', statusChangedAt: '2026-10-02T00:00:00Z' }),
+  ];
+  const screen = render(<CardBoard phone api={null} cards={cards} onOpen={() => {}} />);
+  fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 390, height: 600 } } });
+  const ids = (status: string) => screen.getByTestId(`card-board-column-${status}`).findAll((node) =>
+    typeof node.type === 'string' && /^postit-card-/.test(String(node.props.testID))).map((node) => node.props.testID);
+  expect(ids('review')).toEqual(['postit-card-review-new', 'postit-card-review-old']);
+  expect(ids('queued')).toEqual(['postit-card-queued-a', 'postit-card-queued-b']);
+  await settleTimers();
+});

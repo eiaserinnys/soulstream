@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject, useMemo } from 'react';
+import { compareStatusChange } from '../../../packages/soul-ui/src/cards/card-order';
 import type { ApiClient } from '../api/client';
 import type { FolderSnapshot } from '../api/cardTypes';
 import { mergeCardRows, useCardStore } from '../store/cardStore';
@@ -94,7 +95,7 @@ export function usePlannerFolder(
   const rowSeq = useCardStore((state) => state.rowSeq);
   const data = useMemo(() => current.data ? { ...current.data,
     cards: mergeCardRows(current.data.cards, rows, { seq: current.snapshotSeq, rowSeq }).filter((card) => card.folderId === folderId && (includeCompleted||card.status!=='done'))
-      .sort((a, b) => a.positionKey < b.positionKey ? -1 : a.positionKey > b.positionKey ? 1 : 0),
+      .sort(compareStatusChange),
   } : undefined, [current.data, current.snapshotSeq, rows, rowSeq, folderId,includeCompleted]);
   return {
     data,

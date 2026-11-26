@@ -86,6 +86,7 @@ export interface CardRow extends CardAssigneeFields {
   completed_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  status_changed_at?: Date;
 }
 
 export interface FolderOperationRow extends Record<string, unknown> {

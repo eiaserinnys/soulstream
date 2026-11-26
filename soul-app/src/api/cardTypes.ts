@@ -88,6 +88,7 @@ export interface CardDto {
   version: number;
   createdAt: string;
   updatedAt: string;
+  statusChangedAt?: string;
   completedAt?: string | null;
   /** 검증 대기 카드가 스스로 다시 확인하는 시각. Older responses omit it. */
   wakeAt?: string | null;

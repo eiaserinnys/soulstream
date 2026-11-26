@@ -66,7 +66,7 @@ it("keeps authorized list results and detail/store refresh contracts additive", 
   });
   try {
     const result = (await app.inject('/api/cards')).json();
-    expect(result.cards.map((c: {id:string}) => c.id)).toEqual(['a','b','c']);
+    expect(result.cards.map((c: {id:string}) => c.id)).toEqual(['c','b','a']);
     expect(result.cards[0]).toMatchObject({ request: '최초 원문', latestActivity: {body:'최초 원문'} });
     expect((await app.inject('/api/cards/secret')).statusCode).toBe(403);
     expect((await app.inject('/api/cards/a')).json().card.latestActivity).toEqual(result.cards[0].latestActivity);
