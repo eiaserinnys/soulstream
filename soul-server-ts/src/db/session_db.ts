@@ -190,7 +190,6 @@ export class SessionDB {
   async getCatalog(): Promise<{
     folders: CatalogFolderRow[];
     sessions: Record<string, { folderId: string | null; displayName: string | null }>;
-    boardItems: CatalogBoardItemRow[];
   }> {
     return await this.requireFolderHost().getCatalog();
   }

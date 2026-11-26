@@ -1,7 +1,6 @@
 import type { Logger } from "pino";
 
 import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
-import type { CatalogBoardItemRow } from "@soulstream/wire-schema/catalog";
 import type {
   CatalogFolderRow,
   CatalogSessionAssignmentRow,
@@ -58,7 +57,6 @@ export class FolderHostClient {
   getCatalog(): Promise<{
     folders: CatalogFolderRow[];
     sessions: Record<string, { folderId: string | null; displayName: string | null }>;
-    boardItems: CatalogBoardItemRow[];
   }> {
     return this.request("get_catalog", {});
   }

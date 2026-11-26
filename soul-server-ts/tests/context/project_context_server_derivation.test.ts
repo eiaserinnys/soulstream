@@ -71,28 +71,25 @@ function db(): SessionDB {
         atomContextNode: { nodeId: "folder-node", depth: 3 },
       },
     }),
-    getCatalog: vi.fn().mockResolvedValue({
-      folders: [
+    getAllFolders: vi.fn().mockResolvedValue([
         {
           id: "root",
           name: "Root",
-          parentFolderId: null,
-          projectPageId: "page-root",
+          parent_folder_id: null,
+          project_page_id: "page-root",
           settings: { folderPrompt: "root prompt" },
         },
         {
           id: "leaf",
           name: "Leaf",
-          parentFolderId: "root",
-          projectPageId: "page-leaf",
+          parent_folder_id: "root",
+          project_page_id: "page-leaf",
           settings: {
             folderPrompt: "leaf prompt",
             atomContextNode: { nodeId: "folder-node", depth: 3 },
           },
         },
-      ],
-      sessions: {},
-    }),
+      ]),
   } as unknown as SessionDB;
 }
 
@@ -257,16 +254,13 @@ describe("project context server derivation contract", () => {
         atomContextNode: { nodeId: "shared-node", depth: 4, titlesOnly: true },
       },
     } as never);
-    vi.mocked(database.getCatalog).mockResolvedValue({
-      folders: [{
+    vi.mocked(database.getAllFolders).mockResolvedValue([{
         id: "leaf",
         name: "Leaf",
-        parentFolderId: null,
-        projectPageId: "page-leaf",
+        parent_folder_id: null,
+        project_page_id: "page-leaf",
         settings: { atomContextNode: { nodeId: "shared-node", depth: 4, titlesOnly: true } },
-      }],
-      sessions: {},
-    } as never);
+      }] as never);
 
     const resolve = vi.fn(async (...args: unknown[]) => {
       const excluded = new Set((args[3] as { excludedAtomNodeIds?: string[] } | undefined)?.excludedAtomNodeIds);

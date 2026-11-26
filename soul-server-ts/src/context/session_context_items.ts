@@ -11,7 +11,7 @@ import {
 import {
   BOARD_WORKSPACE_SESSION_LIMIT,
   buildBoardWorkspaceContextItem,
-  type BoardWorkspaceSessionSummary,
+  type BoardWorkspaceFolderSessions,
 } from "./board_workspace_item.js";
 
 export async function fetchBoardWorkspaceContextItem(
@@ -22,27 +22,33 @@ export async function fetchBoardWorkspaceContextItem(
 ): Promise<ContextItem | null> {
   if (!folderId) return null;
   try {
-    const catalog = await db.getCatalog();
-    const folderSessions = preloaded
-      ? {
-          sessions: preloaded.sessions.map((session) => ({
-            sessionId: session.session_id,
-            displayName: session.display_name,
-          })),
-          total: preloaded.total,
-        }
-      : await fetchBoardWorkspaceFolderSessions(db, logger, folderId);
-    return buildBoardWorkspaceContextItem(folderId, catalog, {
-      ...(folderSessions
+    const [folders, folderSessions] = await Promise.all([
+      db.getAllFolders(),
+      preloaded
         ? {
-            folderSessions: folderSessions.sessions,
-            folderSessionTotal: folderSessions.total,
+            sessions: preloaded.sessions.map((session) => ({
+              sessionId: session.session_id,
+              displayName: session.display_name,
+            })),
+            total: preloaded.total,
           }
-        : {}),
-    });
+        : fetchBoardWorkspaceFolderSessions(db, folderId),
+    ]);
+    const childFolders = await Promise.all(
+      folders
+        .filter((folder) => folder.parent_folder_id === folderId)
+        .map(async (child) => ({
+          id: child.id,
+          name: child.name,
+          directChildCount:
+            folders.filter((folder) => folder.parent_folder_id === child.id).length +
+            (await countFolderSessions(db, child.id)),
+        })),
+    );
+    return buildBoardWorkspaceContextItem(folderId, childFolders, folderSessions);
   } catch (err) {
     if (isSessionDataHostError(err)) throw err;
-    logger.warn({ err, folderId }, "fetchBoardWorkspaceContextItem: getCatalog failed");
+    logger.warn({ err, folderId }, "fetchBoardWorkspaceContextItem: folder lookup failed");
     return null;
   }
 }
@@ -290,28 +296,23 @@ export async function resolveFollowupRunningSessionsContext(
 
 async function fetchBoardWorkspaceFolderSessions(
   db: SessionDB,
-  logger: Logger,
   folderId: string,
-): Promise<{ sessions: BoardWorkspaceSessionSummary[]; total: number } | null> {
-  try {
-    const result = await db.listSessionsSummary({
-      limit: BOARD_WORKSPACE_SESSION_LIMIT,
-      offset: 0,
-      folderId,
-    });
-    return {
-      sessions: result.sessions.map((session) => ({
-        sessionId: session.session_id,
-        displayName: session.display_name,
-      })),
-      total: result.total,
-    };
-  } catch (err) {
-    if (isSessionDataHostError(err)) throw err;
-    logger.warn(
-      { err, folderId },
-      "fetchBoardWorkspaceFolderSessions: listSessionsSummary failed",
-    );
-    return null;
-  }
+): Promise<BoardWorkspaceFolderSessions> {
+  const result = await db.listSessionsSummary({
+    limit: BOARD_WORKSPACE_SESSION_LIMIT,
+    offset: 0,
+    folderId,
+  });
+  return {
+    sessions: result.sessions.map((session) => ({
+      sessionId: session.session_id,
+      displayName: session.display_name,
+    })),
+    total: result.total,
+  };
+}
+
+async function countFolderSessions(db: SessionDB, folderId: string): Promise<number> {
+  const result = await db.listSessionsSummary({ limit: 1, offset: 0, folderId });
+  return result.total;
 }

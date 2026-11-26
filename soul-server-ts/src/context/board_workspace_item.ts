@@ -1,10 +1,4 @@
 import type { ContextItem } from "@soulstream/wire-schema";
-import type { CatalogFolderRow } from "../db/session_db.js";
-
-interface BoardWorkspaceCatalog {
-  folders: CatalogFolderRow[];
-  sessions: Record<string, { folderId: string | null; displayName: string | null }>;
-}
 
 export const BOARD_WORKSPACE_SESSION_LIMIT = 15;
 
@@ -13,31 +7,31 @@ export interface BoardWorkspaceSessionSummary {
   displayName: string | null;
 }
 
-export interface BoardWorkspaceContextOptions {
-  folderSessions?: BoardWorkspaceSessionSummary[];
-  folderSessionTotal?: number;
+export interface BoardWorkspaceChildFolder {
+  id: string;
+  name: string;
+  directChildCount: number;
+}
+
+export interface BoardWorkspaceFolderSessions {
+  sessions: BoardWorkspaceSessionSummary[];
+  total: number;
 }
 
 export function buildBoardWorkspaceContextItem(
-  folderId: string | null | undefined,
-  catalog: BoardWorkspaceCatalog,
-  options: BoardWorkspaceContextOptions = {},
-): ContextItem | null {
-  if (!folderId) return null;
-
-  const folders = catalog.folders
-    .filter((folder) => folder.parentFolderId === folderId)
-    .map((folder) => ({
-      id: folder.id,
-      name: folder.name,
-      direct_child_count: countDirectChildren(catalog, folder.id),
-    }));
-
-  const folderSessions = options.folderSessions ?? fallbackFolderSessions(catalog, folderId);
-  const sessions = folderSessions
+  folderId: string,
+  childFolders: readonly BoardWorkspaceChildFolder[],
+  folderSessions: BoardWorkspaceFolderSessions,
+): ContextItem {
+  const folders = childFolders.map((folder) => ({
+    id: folder.id,
+    name: folder.name,
+    direct_child_count: folder.directChildCount,
+  }));
+  const sessions = folderSessions.sessions
     .slice(0, BOARD_WORKSPACE_SESSION_LIMIT)
     .map(toFolderSessionContext);
-  const totalSessionCount = options.folderSessionTotal ?? folderSessions.length;
+  const totalSessionCount = folderSessions.total;
   const sessionsTruncated = totalSessionCount > sessions.length;
 
   return {
@@ -60,26 +54,6 @@ export function buildBoardWorkspaceContextItem(
       sessions,
     },
   };
-}
-
-function countDirectChildren(catalog: BoardWorkspaceCatalog, folderId: string): number {
-  const folderCount = catalog.folders.filter((folder) => folder.parentFolderId === folderId).length;
-  const sessionCount = Object.values(catalog.sessions).filter(
-    (assignment) => assignment.folderId === folderId,
-  ).length;
-  return folderCount + sessionCount;
-}
-
-function fallbackFolderSessions(
-  catalog: BoardWorkspaceCatalog,
-  folderId: string,
-): BoardWorkspaceSessionSummary[] {
-  return Object.entries(catalog.sessions)
-    .filter(([, assignment]) => assignment.folderId === folderId)
-    .map(([agentSessionId, assignment]) => ({
-      sessionId: agentSessionId,
-      displayName: assignment.displayName,
-    }));
 }
 
 function toFolderSessionContext(session: BoardWorkspaceSessionSummary): Record<string, unknown> {

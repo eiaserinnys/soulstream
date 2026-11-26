@@ -8,8 +8,8 @@ import {
   type ContextFilterParameters,
 } from "../../src/context/compiler/index.js";
 import {
-  fetchAtomContext,
-  fetchAtomContexts,
+  ATOM_CONTEXT_HEADER,
+  formatAtomContext,
   type AtomContextSpec,
   type AtomFetchConfig,
 } from "../../src/context/atom_context.js";
@@ -37,44 +37,38 @@ describe("context compiler golden parity", () => {
     globalThis.fetch = originalFetch;
   });
 
-  const cases: Array<{ name: string; spec: AtomContextSpec; expectedQuery: string }> = [
+  const cases: Array<{ name: string; spec: AtomContextSpec; expectedQuery: string; expectedMarkdown: string }> = [
     {
       name: "depth full",
       spec: { nodeId: "node-full", depth: 5, titlesOnly: false },
       expectedQuery: "depth=5",
+      expectedMarkdown: "compiled:?depth=5&max_chars=50000&include_ids=true",
     },
     {
       name: "titles_only",
       spec: { nodeId: "node-titles", depth: 2, titlesOnly: true },
       expectedQuery: "titles_only=true",
+      expectedMarkdown: "compiled:?depth=2&max_chars=50000&include_ids=true&titles_only=true",
     },
     {
       name: "include_ids false",
       spec: { nodeId: "node-no-ids", depth: 3, titlesOnly: false, includeIds: false },
       expectedQuery: "include_ids=false",
+      expectedMarkdown: "compiled:?depth=3&max_chars=50000&include_ids=false",
     },
     {
       name: "limit",
       spec: { nodeId: "node-limited", depth: 1, titlesOnly: false, limit: 7 },
       expectedQuery: "limit=7",
+      expectedMarkdown: "compiled:?depth=1&max_chars=50000&include_ids=true&limit=7",
     },
   ];
 
   for (const golden of cases) {
-    it(`preserves legacy output for ${golden.name}`, async () => {
-      const legacy = await fetchAtomContext(
-        config,
-        golden.spec.nodeId,
-        golden.spec.depth,
-        golden.spec.titlesOnly,
-        silentLogger,
-        golden.spec.limit,
-        golden.spec.includeIds,
-      );
-
+    it(`keeps the assembled bytes for ${golden.name}`, async () => {
       const compiled = await compileContexts(config, [golden.spec], silentLogger);
 
-      expect(compiled.assembled).toBe(legacy);
+      expect(compiled.assembled).toBe(formatAtomContext(golden.expectedMarkdown));
       expect(compiled.materialParts?.reduce(
         (sum, part) => sum + (part.raw_chars_utf16 ?? 0),
         0,
@@ -104,7 +98,7 @@ describe("context compiler golden parity", () => {
         })],
       });
       expect(compiled.manifest.spec_hash).toMatch(/^[0-9a-f]{64}$/);
-      const compilerUrl = vi.mocked(globalThis.fetch).mock.calls[1]?.[0]?.toString() ?? "";
+      const compilerUrl = vi.mocked(globalThis.fetch).mock.calls[0]?.[0]?.toString() ?? "";
       expect(compilerUrl).toContain(golden.expectedQuery);
     });
   }
@@ -122,10 +116,15 @@ describe("context compiler golden parity", () => {
       { nodeId: "node-ok", depth: 2, titlesOnly: true, includeIds: false },
     ];
 
-    const legacy = await fetchAtomContexts(config, specs, silentLogger);
     const compiled = await compileContexts(config, specs, silentLogger);
 
-    expect(compiled.assembled).toBe(legacy);
+    expect(compiled.assembled).toBe([
+      `${ATOM_CONTEXT_HEADER}`,
+      "## atom node: node-ok",
+      "depth=2, titles_only=true",
+      "",
+      "# surviving source",
+    ].join("\n"));
     expect(compiled.materialParts?.reduce(
       (sum, part) => sum + (part.raw_chars_utf16 ?? 0),
       0,
@@ -137,6 +136,36 @@ describe("context compiler golden parity", () => {
     expect(compiled.sections).toHaveLength(2);
     expect(compiled.sections[0]?.markdown).toBeNull();
     expect(compiled.sections[1]?.markdown).toBe("# surviving source");
+  });
+
+  it("requests all sources together and keeps array order when they finish out of order", async () => {
+    const delays: Record<string, number> = { "node-a": 40, "node-b": 20, "node-c": 0 };
+    const started: string[] = [];
+    const finished: string[] = [];
+    vi.mocked(globalThis.fetch).mockImplementation(async (input) => {
+      const nodeId = new URL(input.toString()).pathname.split("/")[3]!;
+      started.push(nodeId);
+      await new Promise((resolve) => setTimeout(resolve, delays[nodeId]));
+      finished.push(nodeId);
+      return new Response(JSON.stringify({ markdown: `# ${nodeId}` }), { status: 200 });
+    });
+    const specs: AtomContextSpec[] = [
+      { nodeId: "node-a", depth: 1, titlesOnly: false },
+      { nodeId: "node-b", depth: 1, titlesOnly: false },
+      { nodeId: "node-c", depth: 1, titlesOnly: false },
+    ];
+
+    const compiled = await compileContexts(config, specs, silentLogger);
+
+    expect(started).toEqual(["node-a", "node-b", "node-c"]);
+    expect(finished).toEqual(["node-c", "node-b", "node-a"]);
+    expect(compiled.sections.map((section) => section.markdown)).toEqual([
+      "# node-a",
+      "# node-b",
+      "# node-c",
+    ]);
+    expect(compiled.assembled?.indexOf("# node-a")).toBeLessThan(compiled.assembled!.indexOf("# node-b"));
+    expect(compiled.assembled?.indexOf("# node-b")).toBeLessThan(compiled.assembled!.indexOf("# node-c"));
   });
 
   it("records ok, empty, and error observations without changing fallback output", async () => {

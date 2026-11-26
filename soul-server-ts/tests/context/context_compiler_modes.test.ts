@@ -5,7 +5,7 @@ import {
   compileContexts,
 } from "../../src/context/compiler/index.js";
 import {
-  fetchAtomContext,
+  formatAtomContext,
   type AtomContextSpec,
   type AtomFetchConfig,
 } from "../../src/context/atom_context.js";
@@ -267,7 +267,7 @@ describe("context compiler Phase B render modes", () => {
     expect(compiled.assembled?.match(/# Root/g)).toHaveLength(2);
   });
 
-  it("warns and preserves legacy bytes for an unknown mode", async () => {
+  it("warns and keeps legacy-format bytes for an unknown mode", async () => {
     const spec: AtomContextSpec = {
       nodeId: ROOT,
       depth: 1,
@@ -275,18 +275,9 @@ describe("context compiler Phase B render modes", () => {
       includeIds: false,
       mode: "future-mode",
     };
-    const legacy = await fetchAtomContext(
-      config,
-      spec.nodeId,
-      spec.depth,
-      spec.titlesOnly,
-      logger,
-      spec.limit,
-      spec.includeIds,
-    );
     const compiled = await compileContexts(config, [spec], logger);
 
-    expect(compiled.assembled).toBe(legacy);
+    expect(compiled.assembled).toBe(formatAtomContext(renderTree(new URL("https://atom.test/?depth=1&titles_only=true"))));
     expect(logger.warn).toHaveBeenCalledWith(
       { mode: "future-mode", nodeId: ROOT },
       "[context compiler] unknown atom render mode — using legacy rendering",

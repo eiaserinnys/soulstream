@@ -303,7 +303,7 @@ function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRunti
   smokeSql = sql;
   smokeProjection = configureTestBoardProjectionReadHost(db, sql);
   db.configureFolderHost(
-    new FolderControlPlaneService(sql as never, () => smokeProjection.getBoardItems()) as unknown as FolderHostClient,
+    new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,
   );
   const broadcaster = {
     emitCatalogUpdated: vi.fn().mockResolvedValue(undefined),
@@ -412,7 +412,7 @@ describe("MCP SDK client smoke", () => {
     orch = Fastify();
     const cards = new CardControlPlaneService(createFolderContentSqlAdapter(smokeSql as never), { appendEventTx: async () => 1 }, { emitFolderUpdated: async () => {}, emitCardUpdated: async () => {} });
     registerMcpHostRoutes(orch, { ...unusedClusterDependencies, authBearerToken: "smoke-token", nodeCredentials: null, folders: {
-      authBearerToken: "smoke-token", nodeCredentials: null, serviceProvider: async () => new FolderControlPlaneService(smokeSql as never, () => smokeProjection.getBoardItems()),
+      authBearerToken: "smoke-token", nodeCredentials: null, serviceProvider: async () => new FolderControlPlaneService(smokeSql as never),
       cardServiceProvider: async () => cards, identity: { create: vi.fn(), mutateFromFolder: renameFolder as unknown as NonNullable<NonNullable<Parameters<typeof registerMcpHostRoutes>[1]["folders"]>["identity"]>["mutateFromFolder"] },
     }, cards: undefined as never, board: { host: { reads: smokeProjection } as never,
       getSession: async () => null, listAgentProfiles: async () => ({ "codex-default": { name: "Codex" } }),

@@ -438,20 +438,20 @@ export class ExecutionContextBuilder {
         settings: asRecord(folderRow.settings) ?? {},
       },
     ];
-    const getCatalog = (this.db as unknown as {
-      getCatalog?: SessionDB["getCatalog"];
-    }).getCatalog;
-    if (typeof getCatalog !== "function") return fallback;
+    const getAllFolders = (this.db as unknown as {
+      getAllFolders?: SessionDB["getAllFolders"];
+    }).getAllFolders;
+    if (typeof getAllFolders !== "function") return fallback;
 
     try {
-      const catalog = await getCatalog.call(this.db);
+      const folders = await getAllFolders.call(this.db);
       const byId = new Map(
-        catalog.folders.map((folder) => [
+        folders.map((folder) => [
           folder.id,
           {
             id: folder.id,
-            parentFolderId: folder.parentFolderId,
-            projectPageId: folder.projectPageId ?? null,
+            parentFolderId: folder.parent_folder_id,
+            projectPageId: folder.project_page_id ?? null,
             settings: asRecord(folder.settings) ?? {},
           },
         ]),
@@ -466,7 +466,7 @@ export class ExecutionContextBuilder {
       }
       return path.length > 0 ? path.reverse() : fallback;
     } catch (err) {
-      this.logger.warn({ err, folderId: folderRow.id }, "_resolveFolderChain: getCatalog failed");
+      this.logger.warn({ err, folderId: folderRow.id }, "_resolveFolderChain: getAllFolders failed");
       return fallback;
     }
   }

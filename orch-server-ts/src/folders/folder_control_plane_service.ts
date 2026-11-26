@@ -1,5 +1,4 @@
 import type { FolderContentSql } from "../board/folder_content_sql.js";
-import type { CatalogBoardItemRow } from "@soulstream/wire-schema/catalog";
 
 interface FolderRow {
   id: string;
@@ -17,7 +16,7 @@ interface FolderRow {
 type FolderDbRow = Omit<FolderRow, "settings"> & { settings: unknown; archived?: boolean };
 
 export class FolderControlPlaneService {
-  constructor(private readonly sql: FolderContentSql, private readonly getBoardItems: () => Promise<CatalogBoardItemRow[]>) {}
+  constructor(private readonly sql: FolderContentSql) {}
 
   async assignSessionToFolder(sessionId: string, folderId: string | null): Promise<void> {
     await this.sql`SELECT session_assign_folder(${sessionId}, ${folderId})`;
@@ -71,7 +70,6 @@ export class FolderControlPlaneService {
       sessions[row.session_id] = { folderId: row.folder_id, displayName: row.display_name };
     }
 
-    const boardItems = await this.getBoardItems();
     return {
       folders: folders.map((folder) => ({
         id: folder.id,
@@ -85,7 +83,6 @@ export class FolderControlPlaneService {
         ...(folder.created_at ? { createdAt: new Date(folder.created_at).toISOString() } : {}),
       })),
       sessions,
-      boardItems,
     };
   }
 }
