@@ -4,10 +4,6 @@ type HostService = RunnerHostCall["service"];
 
 const OPERATION_MUTABILITY = {
   claude_accounts: { select: true, reject: true, reportAuthFailure: true, release: true },
-  snapshot: {
-    persistRunState: true,
-    persistSessionItems: true,
-  },
   claude_runtime: { observe: true },
   detached_event: { publish: true },
   event_archive: { register: true },

@@ -275,25 +275,12 @@ function spawnInput(
   return {
     stateDirectory,
     sessionId: "session-e2e",
-    backend: "openai-agents" as const,
+    backend: "codex" as const,
     agent: {
       id: "agent-e2e",
       name: "Agent E2E",
-      backend: "openai-agents" as const,
+      backend: "codex" as const,
       workspace_dir: controlDirectory,
-      agents_sdk: {
-        entry_agent: "root",
-        agents: [{
-          id: "root",
-          name: "Root",
-          instructions: "Runner process E2E fixture",
-          handoffs: [],
-          tools: [],
-          hosted_tools: [],
-          mcp_servers: [],
-        }],
-        guardrails: { input_blocklist: [], output_blocklist: [] },
-      },
     },
     codeSha: "e2e-sha",
     snapshotPath,

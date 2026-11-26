@@ -23,7 +23,6 @@ const EVENT_LABELS: Partial<Record<string, string>> = {
   session_notification: '완료 알림',
   system: '시스템',
   realtime_status: '음성',
-  guardrail_tripwire: '가드레일',
 };
 
 function asNumber(value: unknown): number | null {

@@ -835,8 +835,8 @@ describe("runner process registry", () => {
     });
     await outbox.recordHostCallApplied({
       correlationId: "host:orphaned",
-      service: "snapshot",
-      operation: "persistRunState",
+      service: "detached_event",
+      operation: "publish",
       createdAt: "2026-08-11T00:00:01.000Z",
     });
     outbox.close();

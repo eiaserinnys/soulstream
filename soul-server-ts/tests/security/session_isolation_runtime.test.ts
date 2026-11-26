@@ -308,11 +308,8 @@ describe("restricted auth classification", () => {
     });
   });
 
-  it("marks antigravity and unknown backends unavailable", () => {
+  it("marks antigravity unavailable", () => {
     expect(classifyIsolatedAuth({ ...common, backend: "antigravity" })).toEqual({
-      kind: "unavailable",
-    });
-    expect(classifyIsolatedAuth({ ...common, backend: "openai-agents" })).toEqual({
       kind: "unavailable",
     });
   });

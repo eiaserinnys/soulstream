@@ -1,4 +1,3 @@
-import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
 import { formatContextItemsWithMaterial } from "../context/prompt_assembler.js";
 import {
@@ -14,11 +13,9 @@ import { splitAttachmentPaths } from "./attachment_context.js";
 import { hasPendingClaudeRuntimeWork } from "./claude_runtime_state.js";
 import { dequeueNextTurnInterventions } from "./task_intervention_queue.js";
 import type { Task, InterventionMessage } from "./task_models.js";
-import { effectiveTaskBackend } from "./task_model_preset.js";
 
 export type TurnLoopTransitionDecision =
   | { kind: "stop" }
-  | { kind: "awaiting_approval" }
   | { kind: "awaiting_runtime" }
   | {
       kind: "continue";
@@ -29,16 +26,9 @@ export type TurnLoopTransitionDecision =
 
 export function resolveTurnLoopTransition(
   task: Task,
-  agent: AgentProfile,
 ): TurnLoopTransitionDecision {
   if (task.status !== "running") {
     return { kind: "stop" };
-  }
-  if (
-    effectiveTaskBackend(task, agent) === "openai-agents"
-    && isOpenAiAgentsApprovalPending(task)
-  ) {
-    return { kind: "awaiting_approval" };
   }
   if (hasPendingClaudeRuntimeWork(task) && !hasDetachedClaudeRuntime(task)) {
     return { kind: "awaiting_runtime" };
@@ -64,14 +54,6 @@ function hasDetachedClaudeRuntime(task: Task): boolean {
     | (NonNullable<Task["runner"]>["engine"] & Partial<SupportsDetachedClaudeRuntime>)
     | undefined;
   return engine?.detachedClaudeRuntime === true;
-}
-
-export function isOpenAiAgentsApprovalPending(task: Task): boolean {
-  return Boolean(
-    task.status === "running" &&
-      task.agentsRunState &&
-      task.agentsPendingApprovalId,
-  );
 }
 
 export function composeInterventionTurnPrompt(messages: readonly InterventionMessage[]): {

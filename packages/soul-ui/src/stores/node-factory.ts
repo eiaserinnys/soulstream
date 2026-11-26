@@ -25,10 +25,6 @@ import type {
   CompactEvent,
   InputRequestEvent,
   ToolApprovalRequestedEvent,
-  AgentUpdatedEvent,
-  HandoffRequestedEvent,
-  HandoffOccurredEvent,
-  GuardrailTripwireEvent,
   AssistantMessageEvent,
   AssistantErrorEvent,
   AwaySummaryEvent,
@@ -388,44 +384,6 @@ export function createNodeFromEvent(
         timestamp: e.timestamp,
         resolved: false,
       });
-    }
-
-    case "agent_updated": {
-      const e = event as AgentUpdatedEvent;
-      return makeNode(`agent-updated-${eventId}`, "system_message", `활성 에이전트: ${e.agent_name}`, {
-        completed: true,
-        timestamp: e.timestamp,
-      });
-    }
-
-    case "handoff_requested": {
-      const e = event as HandoffRequestedEvent;
-      return makeNode(
-        `handoff-requested-${eventId}`,
-        "system_message",
-        `인계 요청: ${e.source_agent} -> ${e.target_agent}`,
-        { completed: true, timestamp: e.timestamp },
-      );
-    }
-
-    case "handoff_occurred": {
-      const e = event as HandoffOccurredEvent;
-      return makeNode(
-        `handoff-occurred-${eventId}`,
-        "system_message",
-        `Handoff: ${e.source_agent} -> ${e.target_agent}`,
-        { completed: true, timestamp: e.timestamp },
-      );
-    }
-
-    case "guardrail_tripwire": {
-      const e = event as GuardrailTripwireEvent;
-      return makeNode(
-        `guardrail-${eventId}`,
-        "error",
-        `${e.guardrail_name}: ${e.message}`,
-        { completed: true, isError: true, timestamp: e.timestamp },
-      );
     }
 
     case "assistant_message": {

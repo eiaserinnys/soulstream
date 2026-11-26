@@ -20,7 +20,7 @@ describe("RunnerHostRequestClient", () => {
       async () => {},
     );
 
-    await expect(client.call("snapshot", "persistRunState", [{}], {
+    await expect(client.call("detached_event", "publish", [{}], {
       timeoutMs: 50,
       deadlineMs: 50,
       retryDelayMs: 0,
@@ -62,7 +62,7 @@ describe("RunnerHostRequestClient", () => {
         () => ({ request, send } as never),
       );
 
-      const result = client.call("snapshot", "persistRunState", [{}], {
+      const result = client.call("detached_event", "publish", [{}], {
         timeoutMs: 10,
         retryDelayMs: 5,
       });
@@ -90,7 +90,7 @@ describe("RunnerHostRequestClient", () => {
       }));
     const client = new RunnerHostRequestClient(() => undefined, delay);
 
-    const request = client.call("snapshot", "persistSessionItems", [{}], {
+    const request = client.call("detached_event", "publish", [{}], {
       timeoutMs: 50,
       deadlineMs: 10,
       retryDelayMs: 1,
@@ -104,7 +104,7 @@ describe("RunnerHostRequestClient", () => {
     const delay = vi.fn(async () => {});
     const client = new RunnerHostRequestClient(() => undefined, delay);
 
-    const request = client.call("snapshot", "persistSessionItems", [{}], {
+    const request = client.call("detached_event", "publish", [{}], {
       timeoutMs: 10,
       attempts: 3,
       retryDelayMs: 1,
@@ -119,7 +119,7 @@ describe("RunnerHostRequestClient", () => {
     const delay = vi.fn(async () => controller.abort(new Error("runner stopping")));
     const client = new RunnerHostRequestClient(() => undefined, delay);
 
-    await expect(client.call("snapshot", "persist", [{}], {
+    await expect(client.call("detached_event", "publish", [{}], {
       signal: controller.signal,
       timeoutMs: 10,
       attempts: 3,
@@ -136,7 +136,7 @@ describe("RunnerHostRequestClient", () => {
       }));
     const client = new RunnerHostRequestClient(() => ({ request } as never));
 
-    const requestResult = client.call("snapshot", "persistRunState", [{}], {
+    const requestResult = client.call("detached_event", "publish", [{}], {
       timeoutMs: 10,
       attempts: 61,
       retryDelayMs: 1,

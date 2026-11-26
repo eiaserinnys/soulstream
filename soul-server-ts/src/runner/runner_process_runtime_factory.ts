@@ -14,8 +14,6 @@ import type {
   ClaudeAccountSelectionOptions,
 } from "../claude_accounts/types.js";
 import type {
-  EngineRunStateSnapshot,
-  EngineSessionItemsSnapshot,
 } from "../engine/protocol.js";
 import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 import { restoreRunnerEngineEventMetadata } from "./engine_event_stream.js";
@@ -25,10 +23,7 @@ import {
 import type { AntigravityCliPathResolution, CodexCliPathResolution } from "@soulstream/executable-path";
 import type { McpConfigService } from "../mcp_config_service.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
-import type {
-  RunnerProcessRuntimeFactory,
-  RunnerSnapshotPersistence,
-} from "../task/task_executor.js";
+import type { RunnerProcessRuntimeFactory } from "../task/task_executor.js";
 import type { Task } from "../task/task_models.js";
 import type { ExecutionRegistration } from "../task/execution_registration.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
@@ -151,7 +146,6 @@ export function createRunnerProcessRuntimeFactory(
     task: Task,
     agent: import("@soulstream/agent-profile-contract").AgentProfile,
     backend: import("../engine/protocol.js").BackendId,
-    snapshots: RunnerSnapshotPersistence,
     spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>,
     runnerProcess: SpawnedRunnerProcess | Promise<SpawnedRunnerProcess> | null,
     recoveryMode?: "adopt" | "replay" | "offline",
@@ -170,7 +164,6 @@ export function createRunnerProcessRuntimeFactory(
       handleHostCall: async (call, registerPostResponse) => await applyRunnerHostCall(
         call,
         task,
-        snapshots,
         options,
         registerPostResponse,
         call.service === "claude_accounts"
@@ -189,7 +182,7 @@ export function createRunnerProcessRuntimeFactory(
     return createTaskRunnerRuntime(engine, dispatcher, "runner");
   };
 
-  const factory = ((task, agent, backend, snapshots) => {
+  const factory = ((task, agent, backend) => {
     const runtimeMcpConfig = resolveRuntimeMcpConfig(options, agent);
     const childProcessEnv = options.buildChildProcessEnv();
     const codexHome = backend === "codex"
@@ -254,14 +247,13 @@ export function createRunnerProcessRuntimeFactory(
     });
     const spawnedProcess = spawnInput.then(async (input) => await spawner.spawn(input));
     void spawnedProcess.catch(() => undefined); // 준비 실패 시 디스패처가 못 받는 거부를 관측만 한다.
-    return createRuntime(task, agent, backend, snapshots, spawnInput, spawnedProcess);
+    return createRuntime(task, agent, backend, spawnInput, spawnedProcess);
   }) as RunnerProcessRuntimeFactory;
   // Adoption, live terminal replay, and offline replay reuse the registered
   // child/config rather than resolving current profile MCP settings.
   factory.recover = (
     task,
     registration,
-    snapshots,
     mode = "adopt",
     phaseObservation,
   ) => {
@@ -285,7 +277,6 @@ export function createRunnerProcessRuntimeFactory(
       task,
       config.agent,
       config.backend,
-      snapshots,
       spawnInput,
       mode === "offline"
         ? null
@@ -451,16 +442,6 @@ async function resolveRestrictedClaudeAccountContext(
 export async function applyRunnerHostCall(
   call: RunnerHostCall,
   task: Task,
-  snapshots: {
-    persistRunState(
-      snapshot: EngineRunStateSnapshot,
-      idempotencyKey?: string,
-    ): Promise<void>;
-    persistSessionItems(
-      snapshot: EngineSessionItemsSnapshot,
-      idempotencyKey?: string,
-    ): Promise<void>;
-  },
   options: RunnerProcessRuntimeFactoryOptions,
   registerPostResponse: (continuation: () => Promise<void>) => void = () => undefined,
   restrictedClaudeAccount?: RestrictedClaudeAccountContext,
@@ -541,23 +522,6 @@ export async function applyRunnerHostCall(
   const sessionId = asString(call.args[0], "runner host session id");
   if (sessionId !== expectedSessionId) {
     throw new Error(`runner host session mismatch: ${sessionId}`);
-  }
-  if (call.service === "snapshot") {
-    if (call.operation === "persistRunState") {
-      await snapshots.persistRunState(
-        call.args[1] as EngineRunStateSnapshot,
-        call.correlationId,
-      );
-      return null;
-    }
-    if (call.operation === "persistSessionItems") {
-      await snapshots.persistSessionItems(
-        call.args[1] as EngineSessionItemsSnapshot,
-        call.correlationId,
-      );
-      return null;
-    }
-    throw new Error(`unsupported snapshot host operation: ${call.operation}`);
   }
   const event = call.args[1] as ClaudeClientEvent;
   restoreRunnerEngineEventMetadata(event, call.args[2]);

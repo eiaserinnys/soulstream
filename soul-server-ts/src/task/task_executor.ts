@@ -74,7 +74,6 @@ import { ExecutionAdmissionInFlightError } from "./execution_admission_errors.js
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
 import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
-import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistence.js";
 import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
 import type { TransientEventLogAggregator } from "./transient_event_log_aggregator.js";
 import { TaskEngineTurnRunner } from "./task_engine_turn_runner.js";
@@ -128,7 +127,6 @@ import {
   sortInterventionsByPriority,
 } from "./task_intervention_queue.js";
 import {
-  isOpenAiAgentsApprovalPending,
   resolveTurnLoopTransition,
   type TurnLoopTransitionDecision,
 } from "./task_turn_loop_transition.js";
@@ -211,7 +209,6 @@ export interface RunnerProcessRuntimeFactory {
     task: Task,
     agent: AgentProfile,
     backend: BackendId,
-    snapshots: RunnerSnapshotPersistence,
   ): TaskRunnerRuntime;
   /**
    * 이 팩토리가 restricted 실행을 실제로 준비할 수 있는지. 미설정/false면
@@ -222,7 +219,6 @@ export interface RunnerProcessRuntimeFactory {
   recover?(
     task: Task,
     registration: RunnerRegistration,
-    snapshots: RunnerSnapshotPersistence,
     mode?: "adopt" | "replay" | "offline",
     phaseObservation?: RunnerPhaseObservation,
   ): TaskRunnerRuntime;
@@ -298,17 +294,6 @@ function isolateGateFailure(error: unknown): Error {
   }
 }
 
-export interface RunnerSnapshotPersistence {
-    persistRunState(
-      snapshot: import("../engine/protocol.js").EngineRunStateSnapshot,
-      idempotencyKey?: string,
-    ): Promise<void>;
-    persistSessionItems(
-      snapshot: import("../engine/protocol.js").EngineSessionItemsSnapshot,
-      idempotencyKey?: string,
-    ): Promise<void>;
-}
-
 export interface WorktreeExecutionResolver {
   resolveExecutionWorkspace(worktreeId: string): Promise<string>;
 }
@@ -377,7 +362,6 @@ export class TaskExecutor {
   private readonly lifecycleTransition: TaskLifecycleTransition;
   private readonly executorFinalizer: TaskExecutorFinalizer;
   private readonly initialMessagePublisher: TaskInitialMessagePublisher;
-  private readonly agentsSnapshotPersistence: TaskAgentsSnapshotPersistence;
   private readonly engineTurnRunner: TaskEngineTurnRunner;
   private readonly turnInputBuilder: TaskTurnInputBuilder;
   private readonly deliveryConsumption?: TaskDeliveryConsumption;
@@ -474,12 +458,7 @@ export class TaskExecutor {
         ? { waitForAttachmentRefs: this.waitForAttachmentRefs }
         : {}),
     });
-    this.agentsSnapshotPersistence = new TaskAgentsSnapshotPersistence({
-      persistence,
-      logger: this.logger,
-    });
     this.engineTurnRunner = new TaskEngineTurnRunner({
-      snapshotPersistence: this.agentsSnapshotPersistence,
       scheduleToolHandler,
       modelCatalog: this.modelCatalog,
       claudeAccountPoolEnabled: this.claudeAccountPoolEnabled,
@@ -1076,7 +1055,7 @@ export class TaskExecutor {
       );
     }
     let runner = reusableRunner ?? (this.runnerProcessFactory
-      ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
+      ? this.runnerProcessFactory(task, agent, backend)
       : createInProcessTaskRunnerRuntime(
           this.engineFactory(agent, backend, task.agentSessionId),
         ));
@@ -1543,7 +1522,6 @@ export class TaskExecutor {
     const runner = this.runnerProcessFactory?.recover?.(
       task,
       registration,
-      this.snapshotPersistenceFor(task),
       "adopt",
     );
     if (!runner) throw new Error("runner process recovery factory unavailable");
@@ -1830,7 +1808,6 @@ export class TaskExecutor {
     const runner = this.runnerProcessFactory?.recover?.(
       task,
       registration,
-      this.snapshotPersistenceFor(task),
       mode,
       phaseObservation,
     );
@@ -2111,23 +2088,6 @@ export class TaskExecutor {
     }
   }
 
-  private snapshotPersistenceFor(task: Task): RunnerSnapshotPersistence {
-    return {
-      persistRunState: async (snapshot, idempotencyKey) =>
-        await this.agentsSnapshotPersistence.persistRunStateSnapshot(
-          task,
-          snapshot,
-          idempotencyKey,
-        ),
-      persistSessionItems: async (snapshot, idempotencyKey) =>
-        await this.agentsSnapshotPersistence.persistSessionItemsSnapshot(
-          task,
-          snapshot,
-          idempotencyKey,
-        ),
-    };
-  }
-
   /**
    * Turn 시퀀스 drain (B-4 multi-turn). 분석 캐시
    * `20260517-1410-codex-ts-folder-resume-intervene.md` §D-3 상태도.
@@ -2205,9 +2165,7 @@ export class TaskExecutor {
       await task.interruptRequest?.catch(() => false);
       throw error;
     } finally {
-      if (!isOpenAiAgentsApprovalPending(task)) {
-        if (task.terminationEventRecorded !== true) task.completedAt = new Date();
-      }
+      if (task.terminationEventRecorded !== true) task.completedAt = new Date();
       await this._finalize(
         task,
         () => this.settleEndedTurnReceipts(task, endedTurnReceipts),
@@ -2359,7 +2317,7 @@ export class TaskExecutor {
             currentTurnInterventions,
           );
           const transition = disposition === "continue_with_accepted_successor"
-            ? resolveTurnLoopTransition(task, agent) : undefined;
+            ? resolveTurnLoopTransition(task) : undefined;
           const acceptedMidTurnSuccessor = transition?.kind === "continue";
           if (terminalEvent) {
             const acknowledgedId = runner.eventPersistence === "runner"
@@ -2544,7 +2502,7 @@ export class TaskExecutor {
         );
         continue;
       }
-      const transition = resolveTurnLoopTransition(task, agent);
+      const transition = resolveTurnLoopTransition(task);
       if (transition.kind === "awaiting_runtime") {
         await this.publishPendingClaudeRuntimeAfterTurnError(task);
       }
@@ -2857,7 +2815,7 @@ export class TaskExecutor {
         }
       }
       if (!recoveryFailed) {
-        const transition = resolveTurnLoopTransition(task, agent);
+        const transition = resolveTurnLoopTransition(task);
         if (transition.kind === "awaiting_runtime") {
           await this.publishPendingClaudeRuntimeAfterTurnError(task);
         } else if (transition.kind === "continue") {

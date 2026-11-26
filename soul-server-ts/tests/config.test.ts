@@ -30,8 +30,6 @@ describe("parseEnv", () => {
     expect(env.LOG_LEVEL).toBe("info");
     expect(env.DASH_USER_NAME).toBe("");
     expect(env.DASH_USER_PORTRAIT).toBe("");
-    expect(env.LLM_OPENAI_API_KEY).toBeUndefined();
-    expect(env.LLM_ANTHROPIC_API_KEY).toBeUndefined();
     expect(env).not.toHaveProperty("TYPESAFE_API_KEY");
     expect(env).not.toHaveProperty("SKILL_CATALOG_NODE_ID");
     expect(env).not.toHaveProperty("MCP_STATELESS_TRANSPORT_ENABLED");
@@ -125,16 +123,6 @@ describe("parseEnv", () => {
 
   it("LOG_LEVEL이 enum 범위 외면 거부", () => {
     expect(() => parseEnv({ ...minimal, LOG_LEVEL: "verbose" })).toThrow(ZodError);
-  });
-
-  it("LLM provider API key는 optional이며 명시 값만 보존한다", () => {
-    const env = parseEnv({
-      ...minimal,
-      LLM_OPENAI_API_KEY: "openai-key",
-      LLM_ANTHROPIC_API_KEY: "anthropic-key",
-    });
-    expect(env.LLM_OPENAI_API_KEY).toBe("openai-key");
-    expect(env.LLM_ANTHROPIC_API_KEY).toBe("anthropic-key");
   });
 
   it("워커 설정은 DATABASE_URL 없이 성립한다", () => {

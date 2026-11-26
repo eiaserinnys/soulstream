@@ -442,20 +442,6 @@ export interface QueuedToolApprovalDecision {
   options?: ToolApprovalDeliveryOptions;
 }
 
-export interface EngineRunStateSnapshot {
-  backendId: BackendId;
-  serialized: string | null;
-  pendingApprovalId?: string | null;
-  previousResponseId?: string | null;
-  conversationId?: string | null;
-  schemaVersion?: string | null;
-}
-
-export interface EngineSessionItemsSnapshot {
-  backendId: BackendId;
-  items: unknown[];
-}
-
 export interface SupportsToolApproval {
   deliverToolApproval(
     approvalId: string,

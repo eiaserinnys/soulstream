@@ -16,7 +16,6 @@ const PERSISTENT_PUBLISHER_SURFACES = {
   response: ["task/task_response_event_publisher.ts"],
   sessionNotification: ["task/task_session_notification.ts"],
   terminalLifecycle: ["task/task_lifecycle_transition.ts"],
-  llmProxy: ["llm/executor.ts"],
   realtime: ["realtime/realtime_broker.ts"],
   schedule: ["schedule/schedule_service.ts"],
 } as const;
@@ -41,8 +40,8 @@ const FORBIDDEN_SESSION_MUTATION_PROCEDURES = [
 ] as const;
 
 describe("persistent publisher inventory", () => {
-  it("keeps all nine publisher surfaces on the durable outbox ingress", () => {
-    expect(Object.keys(PERSISTENT_PUBLISHER_SURFACES)).toHaveLength(9);
+  it("keeps all eight publisher surfaces on the durable outbox ingress", () => {
+    expect(Object.keys(PERSISTENT_PUBLISHER_SURFACES)).toHaveLength(8);
 
     for (const paths of Object.values(PERSISTENT_PUBLISHER_SURFACES)) {
       for (const path of paths) {

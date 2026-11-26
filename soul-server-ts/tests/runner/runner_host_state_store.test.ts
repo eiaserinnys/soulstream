@@ -66,8 +66,8 @@ describe("RunnerHostStateStore", () => {
     first.recordHostCallApplied({
       sessionId: "session-a",
       correlationId: "host:1",
-      service: "snapshot",
-      operation: "persistRunState",
+      service: "detached_event",
+      operation: "publish",
       createdAt: "2026-08-13T00:00:00.000Z",
     });
     first.close();
@@ -75,8 +75,8 @@ describe("RunnerHostStateStore", () => {
     const second = RunnerHostStateStore.open(path);
     expect(second.readHostCallApplied("session-a", "host:1")).toEqual({
       correlationId: "host:1",
-      service: "snapshot",
-      operation: "persistRunState",
+      service: "detached_event",
+      operation: "publish",
     });
     second.acknowledgeHostCall("session-a", "host:1");
     expect(second.readHostCallApplied("session-a", "host:1")).toBeNull();

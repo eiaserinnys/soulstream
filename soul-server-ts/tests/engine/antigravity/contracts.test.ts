@@ -9,21 +9,14 @@ import { ModelCatalog, nodeEffortCapabilities } from "../../../src/model_catalog
 import { createEngineFactory } from "../../../src/runtime/engine_factory.js";
 import { createRunnerChildEngine } from "../../../src/runner/runner_child_engine_factory.js";
 import { parseRunnerChildConfig } from "../../../src/runner/runner_child_config.js";
-import { requiresBackendSessionId } from "../../../src/runner/runner_child_runtime_helpers.js";
 import { runnerProcessPaths } from "../../../src/runner/runner_process_paths.js";
 import { McpConfigService } from "../../../src/mcp_config_service.js";
-import { RunnerEventFrameSchema } from "../../../src/runner/frame_protocol.js";
 import { join } from "node:path";
 import { makeTempDirSync } from "../../helpers/temp_dir.js";
 
 it("uses the shared backend schema at catalog, frame and child-config boundaries", () => {
   expect(AgentBackendSchema.parse("antigravity")).toBe("antigravity");
-  expect(requiresBackendSessionId("antigravity")).toBe(true);
   expect(AgentBackendSchema.parse("opencode")).toBe("opencode");
-  expect(requiresBackendSessionId("opencode")).toBe(true);
-  for (const kind of ["run_state_snapshot", "session_items_snapshot"]) {
-    expect(RunnerEventFrameSchema.safeParse({ protocolVersion: 1, channel: "event", kind, snapshot: { backendId: "antigravity", serialized: null, items: [] } }).success).toBe(true);
-  }
 });
 const REPOSITORY_CATALOG_PATH = fileURLToPath(
   new URL("../../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url),

@@ -12,7 +12,6 @@ import type {
 
 import { join } from "node:path";
 
-import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
 import { AntigravityEngineAdapter } from "../engine/antigravity/adapter.js";
 import { OpenCodeEngineAdapter } from "../engine/opencode/adapter.js";
 import {
@@ -137,14 +136,6 @@ function createRunnerChildEnginePort(
       codexPathOverride: config.codexCliPath,
     }, logger);
   }
-  if (config.backend === "openai-agents") {
-    return new AgentsEngineAdapter({
-      workspaceDir: config.agent.workspace_dir,
-      profile: config.agent,
-      processEnv: process.env,
-    }, logger);
-  }
-
   if (config.backend !== "claude") {
     throw new Error(`Unsupported backend "${config.backend}" in runner child`);
   }

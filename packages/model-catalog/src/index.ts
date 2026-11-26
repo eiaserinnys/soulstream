@@ -12,7 +12,6 @@ export {
 export const MODEL_BACKENDS = [
   "claude",
   "codex",
-  "openai-agents",
   "antigravity",
   "opencode",
 ] as const;

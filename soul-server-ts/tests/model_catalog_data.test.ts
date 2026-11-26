@@ -499,7 +499,6 @@ describe("repository model catalogue data", () => {
     expect(providers.get("codex-6.1-sol")).toBe("codex");
     expect(providers.get("gemini-4-argon")).toBe("antigravity");
     expect(resolvePresetProvider({ backend: "opencode" })).toBe("unknown");
-    expect(resolvePresetProvider({ backend: "openai-agents" })).toBe("unknown");
   });
 
   it("parses the node group selection and rejects undeclared groups", () => {

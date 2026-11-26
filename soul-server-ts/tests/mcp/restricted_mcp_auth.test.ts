@@ -21,8 +21,6 @@ import {
   type McpRestrictedAuthConfig,
 } from "../../src/mcp/auth.js";
 import type { McpAuthConfig } from "@soulstream/mcp-contract";
-import { buildServer } from "../../src/server.js";
-import { makeLlmHarness, silentLogger } from "../llm/llm_test_helpers.js";
 
 const KEY = "test-bearer-key-0001";
 const SESSION_A = "11111111-1111-4111-8111-111111111111";
@@ -235,45 +233,6 @@ describe("resolveMcpPrincipal", () => {
       const serialized = JSON.stringify(result);
       expect(serialized).not.toContain(token);
       expect(serialized).not.toContain(KEY);
-    }
-  });
-});
-
-describe("same-listener REST rejects ssr1", () => {
-  it("returns 401 on /llm/completions for a restricted token", async () => {
-    const harness = makeLlmHarness();
-    const { LlmExecutor } = await import("../../src/llm/executor.js");
-    const executor = new LlmExecutor({
-      adapters: { openai: harness.adapter },
-      taskManager: harness.taskManager,
-      persistence: harness.persistence,
-      broadcaster: harness.broadcaster,
-      nodeId: "test-node",
-      logger: silentLogger,
-    });
-    const server = await buildServer({
-      host: "127.0.0.1",
-      port: 0,
-      nodeId: "test-node",
-      logger: silentLogger,
-      llm: { executor, authBearerToken: KEY, isProduction: false, logger: silentLogger },
-    });
-    try {
-      const token = createRestrictedMcpToken(SESSION_A, KEY);
-      const res = await server.inject({
-        method: "POST",
-        url: "/llm/completions",
-        headers: { authorization: `Bearer ${token}` },
-        payload: {
-          provider: "openai",
-          model: "gpt-4o-mini",
-          messages: [{ role: "user", content: "Hello" }],
-        },
-      });
-      expect(res.statusCode).toBe(401);
-      expect(res.json()).toMatchObject({ detail: { error: { code: "UNAUTHORIZED" } } });
-    } finally {
-      await server.close();
     }
   });
 });

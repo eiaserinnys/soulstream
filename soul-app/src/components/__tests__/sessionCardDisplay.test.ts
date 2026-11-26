@@ -75,7 +75,6 @@ describe('resolveSessionModelLabel', () => {
   it.each([
     ['claude', 'Claude'],
     ['codex', 'Codex'],
-    ['openai-agents', 'OpenAI Agents'],
   ])('formats the supported backend %s as %s while the server field is absent', (
     backend,
     expected,

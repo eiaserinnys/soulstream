@@ -7,7 +7,7 @@ Soulstream organizes ongoing agent work around folders, cards, sessions, and nod
 - **Long-lived agent sessions** with live streaming output, follow-up messages, mid-turn intervention, file attachments, and resumable history.
 - **Structured work cards** inside hierarchical folders, tracking the request, check items with evidence, a one-line status (`now`), user questions, and review completion.
 - **Persistent assistant sessions** with a live report board, active task lists, session monitoring, and weekly quota headroom.
-- **Five execution backends** configured through node-local agent profiles and model presets: Claude, Codex, OpenAI Agents, Antigravity, and OpenCode.
+- **Four execution backends** configured through node-local agent profiles and model presets: Claude, Codex, Antigravity, and OpenCode.
 - **Multi-node routing** where the TypeScript orchestrator (`orch-server-ts`) dispatches authenticated WebSocket commands to TypeScript workers (`soul-server-ts`).
 - **Built-in MCP tools** for service reflection, session search, git worktrees, on-demand skill loading (`load_skill`), recurring jobs, and card or folder management. See [Agents and tools](agents-and-tools.md).
 - **Release-safe operations** with [Haniel](https://github.com/eiaserinnys/haniel) manifests that keep PostgreSQL migration authority on the central orchestrator while remote workers stay database-free. See [Deployment](deployment.md).

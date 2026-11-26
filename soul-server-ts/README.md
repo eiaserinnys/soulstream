@@ -20,7 +20,7 @@ Dot ingress, subscriptions, and outbound delivery are owned by the orchestrator.
   boundary.
 - Keep a node-local semantic event retry outbox in `EVENT_OUTBOX_DIR`.
 - Expose `GET /health` and configured worker-local HTTP surfaces such as MCP,
-  LLM proxy, Cogito search, task or board mutations, and context preview.
+  Cogito search, task or board mutations, and context preview.
 
 The worker does not expose the public bot HTTP API, own the shared database, or
 apply shared cluster migrations. Bot clients call the orchestrator API described

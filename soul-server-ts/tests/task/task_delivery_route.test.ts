@@ -58,7 +58,7 @@ function makeSubject(
   };
   const agentRegistry = {
     get: vi.fn((id: string) => {
-      if (id === "agent-openai") return { backend: "openai-agents" };
+      if (id === "agent-openai") return { backend: "codex" };
       if (id === "agent-codex") return { backend: "codex" };
       return undefined;
     }),
@@ -232,7 +232,7 @@ describe("TaskDeliveryRoute.deliverToolApproval", () => {
     const deliverToolApproval = vi.fn().mockResolvedValue({ status: "delivered" });
     const task = makeTask({
       runner: createInProcessTaskRunnerRuntime({
-        ...makeBaseEngine({ backendId: "openai-agents" }),
+        ...makeBaseEngine({ backendId: "codex" }),
         deliverToolApproval,
       } as EnginePort & SupportsToolApproval),
     });
@@ -264,7 +264,7 @@ describe("TaskDeliveryRoute.deliverToolApproval", () => {
     const task = makeTask({
       profileId: "agent-openai",
       runner: createInProcessTaskRunnerRuntime(
-        makeBaseEngine({ backendId: "openai-agents" }),
+        makeBaseEngine({ backendId: "codex" }),
       ),
     });
     const { route, toolApprovalRecovery, responseEventPublisher } = makeSubject([task]);
@@ -300,7 +300,7 @@ describe("TaskDeliveryRoute.deliverToolApproval", () => {
       status: "not_supported",
       approvalId: "approval-2",
       decision: "rejected",
-      backend: "openai-agents",
+      backend: "codex",
     });
   });
 
@@ -309,7 +309,7 @@ describe("TaskDeliveryRoute.deliverToolApproval", () => {
     const failingTask = makeTask({
       agentSessionId: "sess-failure",
       runner: createInProcessTaskRunnerRuntime({
-        ...makeBaseEngine({ backendId: "openai-agents" }),
+        ...makeBaseEngine({ backendId: "codex" }),
         deliverToolApproval: vi.fn().mockResolvedValue({
           status: "already_resolved",
           message: "already done",

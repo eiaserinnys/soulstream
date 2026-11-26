@@ -3,7 +3,6 @@ import type { Logger } from "pino";
 import type { Env } from "../config.js";
 import { AntigravityEngineAdapter } from "../engine/antigravity/adapter.js";
 import { OpenCodeEngineAdapter } from "../engine/opencode/adapter.js";
-import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
 import { ClaudeEngineAdapter } from "../engine/claude_adapter.js";
 import type { ClaudeSessionClientRegistry } from
   "../engine/claude_session_client_registry.js";
@@ -201,12 +200,6 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
             ? { stateDirectory: env.SOUL_RUNNER_STATE_DIR }
             : {}),
         },
-        logger,
-      );
-    }
-    if (backend === "openai-agents") {
-      return new AgentsEngineAdapter(
-        { workspaceDir: agent.workspace_dir, profile: agent },
         logger,
       );
     }

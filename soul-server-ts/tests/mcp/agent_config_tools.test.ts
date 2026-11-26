@@ -31,7 +31,7 @@ describe("get_agents_config", () => {
     const yamlProfile = {
       id: "roselin",
       name: "YAML Roselin",
-      backend: "openai-agents",
+      backend: "codex",
       workspace_dir: "/tmp/roselin",
       mcp_profile: "roselin-mcp",
       agents_sdk: yamlAgentsSdk,

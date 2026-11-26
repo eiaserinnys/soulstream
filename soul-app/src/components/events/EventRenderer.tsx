@@ -224,7 +224,6 @@ function EventMessage({
     // 오류·시스템 공지 같은 의미 있는 시스템 이벤트는 유지.
     case 'system':
     case 'realtime_status':
-    case 'guardrail_tripwire':
     case 'error':
       return <SystemEvent event={event} {...(presentation === 'manuscript' ? { presentation } : {})} />;
     // history_sync는 SSE 연결 직후 baseline 메타 이벤트일 뿐 사용자 메시지가 아니다.

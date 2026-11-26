@@ -33,9 +33,9 @@ describe("RunnerHostCallIdempotency", () => {
     });
     const call = {
       correlationId: "host:mutation-one",
-      service: "snapshot" as const,
-      operation: "persistRunState",
-      args: ["session-a", { backendId: "openai-agents" }],
+      service: "detached_event" as const,
+      operation: "publish",
+      args: ["session-a", { type: "session" }],
     };
 
     vi.spyOn(firstStore, "recordHostCallApplied")
@@ -57,12 +57,10 @@ describe("RunnerHostCallIdempotency", () => {
   });
 
   it("enumerates mutating and read-only host operations without an implicit fallback", () => {
-    expect(isMutatingRunnerHostCall("snapshot", "persistRunState")).toBe(true);
-    expect(isMutatingRunnerHostCall("snapshot", "persistSessionItems")).toBe(true);
     expect(isMutatingRunnerHostCall("claude_runtime", "observe")).toBe(true);
     expect(isMutatingRunnerHostCall("detached_event", "publish")).toBe(true);
     expect(isMutatingRunnerHostCall("event_archive", "register")).toBe(true);
-    expect(() => isMutatingRunnerHostCall("snapshot", "unknown"))
+    expect(() => isMutatingRunnerHostCall("detached_event", "unknown"))
       .toThrow("unsupported runner host call inventory");
   });
 });

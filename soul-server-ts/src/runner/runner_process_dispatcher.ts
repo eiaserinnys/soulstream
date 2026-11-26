@@ -109,7 +109,6 @@ export interface RunnerHostCall {
     | "claude_accounts"
     | "claude_runtime"
     | "detached_event"
-    | "snapshot"
     | "event_archive";
   operation: string;
   args: unknown[];

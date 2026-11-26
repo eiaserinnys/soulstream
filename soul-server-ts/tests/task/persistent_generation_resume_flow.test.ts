@@ -576,7 +576,6 @@ describe("retained runner backend selection after persistent rollover", () => {
       task,
       AGENT,
       "antigravity",
-      expect.anything(),
     );
     expect(fixture.dispatcher.executeFrames).not.toHaveBeenCalled();
     expect(fixture.executed).toHaveLength(1);
@@ -602,7 +601,6 @@ describe("retained runner backend selection after persistent rollover", () => {
       task,
       AGENT,
       "antigravity",
-      expect.anything(),
     );
     expect(fixture.dispatcher.close).toHaveBeenCalledOnce();
     expect(fixture.dispatcher.executeFrames).not.toHaveBeenCalled();

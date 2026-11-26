@@ -444,12 +444,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventTextSnapshot",
         "SSEEventToolStart",
         "SSEEventToolResult",
-        "SSEEventAgentUpdated",
-        "SSEEventHandoffRequested",
-        "SSEEventHandoffOccurred",
         "SSEEventToolApprovalRequested",
         "SSEEventToolApprovalResolved",
-        "SSEEventGuardrailTripwire",
         "SSEEventRealtimeStatus",
         "SSEEventRealtimeTranscript",
         "SSEEventResult",
@@ -483,8 +479,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventTurnSummary",
         "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 60, (
-        "SSE event $defs 60종."
+    assert len(sse_types) == 56, (
+        "SSE event $defs 56종."
     )
 
     expected = wire_types | sse_types
@@ -512,7 +508,7 @@ def test_every_persisted_event_has_an_explicit_durability_class() -> None:
         if name.startswith("SSEEvent")
     }
 
-    assert len(sse_event_types) == 64
+    assert len(sse_event_types) == 60
     assert persistence_only_event_types == {"metadata"}
     assert persistence_only_event_types.isdisjoint(sse_event_types)
     assert set(durability) == sse_event_types | persistence_only_event_types
@@ -924,12 +920,8 @@ def test_known_sse_event_types_completeness() -> None:
         "text_snapshot",
         "tool_start",
         "tool_result",
-        "agent_updated",
-        "handoff_requested",
-        "handoff_occurred",
         "tool_approval_requested",
         "tool_approval_resolved",
-        "guardrail_tripwire",
         "realtime_status",
         "realtime_transcript",
         "result",
