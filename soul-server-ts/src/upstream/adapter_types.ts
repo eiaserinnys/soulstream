@@ -1,4 +1,5 @@
 import type { AgentLoginCommandHandler } from "./agent_login_commands.js";
+import type { NodeGitCommandHandler } from "./node_git_commands.js";
 import type { AuthorizeOrchestrationWorker } from "./task_runtime_commands.js";
 import type { AgentConfigService } from "../agent_config_service.js";
 import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
@@ -53,6 +54,7 @@ export interface UpstreamDependencies {
   claudeAccounts?: ClaudeAccountsCommandHandler;
   claudeLoginService?: ClaudeLoginCommandHandler;
   agentLoginService?: AgentLoginCommandHandler;
+  nodeGitService?: NodeGitCommandHandler;
   claudeAccountPoolEnabled?: boolean;
   sessionDb?: SessionDB;
   realtimeBroker?: RealtimeBroker;

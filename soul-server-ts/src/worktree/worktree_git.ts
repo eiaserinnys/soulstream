@@ -7,6 +7,7 @@ import { basename, isAbsolute, join, relative, resolve, win32 } from "node:path"
 
 import { canonicalWorktreePath } from "./worktree_canonical_path.js";
 import { GitProcessError, runBoundedProcess } from "./worktree_process.js";
+import { isPathInside, listRepositoryIds } from "./worktree_repository_scan.js";
 import { removeIgnoredWorktreePaths } from "./worktree_ignored_cleanup.js";
 import { newTrashPath } from "./worktree_trash.js";
 import {
@@ -194,25 +195,7 @@ export class WorktreeGit {
   }
 
   listRepositoryIds(): string[] {
-    return readdirSync(this.projectsRoot, { withFileTypes: true })
-      .filter((entry) => {
-        const entryPath = join(this.projectsRoot, entry.name);
-        if (entry.isSymbolicLink()) {
-          try {
-            const target = realpathSync(entryPath);
-            if (!statSync(target).isDirectory() || isPathInside(target, this.projectsRoot)) return false;
-            const gitPath = join(target, ".git");
-            return lstatSync(gitPath).isDirectory() && !existsSync(join(gitPath, "commondir"));
-          } catch {
-            return false;
-          }
-        }
-        if (!entry.isDirectory()) return false;
-        const gitPath = join(entryPath, ".git");
-        return existsSync(gitPath) && lstatSync(gitPath).isDirectory();
-      })
-      .map((entry) => entry.name)
-      .sort();
+    return listRepositoryIds(this.projectsRoot);
   }
 
   async adopt(input: {
@@ -1046,11 +1029,6 @@ function lstatIfPresent(path: string): Stats | undefined {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
-}
-
-function isPathInside(root: string, candidate: string): boolean {
-  const rel = relative(root, candidate);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
 export function samePath(

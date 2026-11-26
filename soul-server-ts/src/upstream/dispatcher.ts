@@ -1,4 +1,6 @@
 import { AgentLoginCommands, type AgentLoginCommandHandler } from "./agent_login_commands.js";
+import { NodeGitCommands, type NodeGitCommandHandler } from "./node_git_commands.js";
+import { createNodeGitCommandFamily } from "./node_git_command_family.js";
 import { McpConfigCommands, type PreviewContext } from "./mcp_config_commands.js";
 import { createMcpConfigCommandFamily } from "./mcp_config_command_family.js";
 import { CentralMcpNotSyncedError } from "../mcp_central/state.js";
@@ -85,6 +87,7 @@ export interface CommandDispatcherOptions {
   claudeAccounts?: ClaudeAccountsCommandHandler;
   claudeLoginService?: ClaudeLoginCommandHandler;
   agentLoginService?: AgentLoginCommandHandler;
+  nodeGitService?: NodeGitCommandHandler;
   claudeAccountPoolEnabled?: boolean;
   /** Missing wiring becomes an explicit command error instead of a silent fallback. */
   sessionDb?: SessionDB;
@@ -132,6 +135,7 @@ export class CommandDispatcher {
       claudeAccounts,
       claudeLoginService,
       agentLoginService,
+      nodeGitService,
       claudeAccountPoolEnabled,
       sessionDb,
       realtimeBroker,
@@ -220,6 +224,7 @@ export class CommandDispatcher {
         agentLoginCommands: new AgentLoginCommands({ agentLoginService }),
         providerUsageCommands,
       }),
+      ...createNodeGitCommandFamily({ send, nodeGitCommands: new NodeGitCommands({ nodeGitService }) }),
       ...createMcpConfigCommandFamily({ send, commands: new McpConfigCommands(
         reflectionRuntime?.mcpConfigService,
         agentProfileSource?.rebuild?.bind(agentProfileSource),

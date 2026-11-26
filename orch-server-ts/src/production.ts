@@ -1934,6 +1934,11 @@ export function buildProductionRouteOptions(
       usageSummary,
       adminAccess: providers.adminUsersRoutes.provider,
     },
+    nodeGitSetupRoutes: {
+      registry: runtime.registry,
+      bridge: runtime.sessionBridge,
+      adminAccess: providers.adminUsersRoutes.provider,
+    },
     nodeSnapshotRoutes: providers.runtime.nodeSnapshotRoutes,
     ...(nodePairing ? { nodePairRoutes: { service: nodePairing } } : {}),
     nodeWsRoute: providers.runtime.nodeWsRoute,

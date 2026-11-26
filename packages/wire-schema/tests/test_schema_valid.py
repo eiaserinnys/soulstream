@@ -837,6 +837,12 @@ def test_oneof_covers_all_wire_messages() -> None:
         "AgentLoginStatus",
         "AgentLoginSubmitCode",
         "AgentLoginCancel",
+        "NodeGitStatus",
+        "NodeGitIdentitySet",
+        "NodeGitSshKeyCreate",
+        "NodeGitSshCheck",
+        "NodeGitCloneStart",
+        "NodeGitCloneStatus",
         "ClaudeCentralPoolSync",
         "McpCentralSync",
         "McpTestServer",
@@ -1185,3 +1191,68 @@ def test_mcp_central_sync_requires_both_snapshots_and_no_mode() -> None:
         with pytest.raises(jsonschema.ValidationError):
             validator.validate(invalid)
     assert "mcp_local_export" not in schema["x-soulstream-control-command-types"]
+
+
+NODE_GIT_COMMANDS = {
+    "node_git_status": ("NodeGitStatus", "NodeGitSetupSnapshot"),
+    "node_git_identity_set": ("NodeGitIdentitySet", "NodeGitSetupSnapshot"),
+    "node_git_ssh_key_create": ("NodeGitSshKeyCreate", "NodeGitSetupSnapshot"),
+    "node_git_ssh_check": ("NodeGitSshCheck", "NodeGitSshCheckResult"),
+    "node_git_clone_start": ("NodeGitCloneStart", "NodeGitCloneJob"),
+    "node_git_clone_status": ("NodeGitCloneStatus", "NodeGitCloneJob"),
+}
+
+_CLONE_JOB = {
+    "clone_id": "c1",
+    "repo_name": "repo",
+    "url": "git@github.com:a/b.git",
+    "state": "running",
+    "error": None,
+    "started_at": "2026-11-27T00:00:00.000Z",
+    "finished_at": None,
+}
+_SNAPSHOT = {
+    "identity": {"name": None, "email": None},
+    "ssh": {"state": "missing", "key_path": "/home/u/.ssh/id_ed25519", "public_key": None},
+    "projects": {"state": "ready", "root": "/p", "repos": [
+        {"name": "repo", "origin_url": None, "branch": None, "dirty": False}
+    ]},
+    "clone": _CLONE_JOB,
+}
+
+
+def test_node_git_command_contracts() -> None:
+    schema = _load_schema()
+    validator = jsonschema.Draft202012Validator(schema)
+    assert set(NODE_GIT_COMMANDS) <= set(schema["x-soulstream-control-command-types"])
+    capabilities = schema["$defs"]["NodeRegister"]["properties"]["capabilities"]["properties"]
+    assert capabilities["node_git_setup_v1"]["type"] == "boolean"
+
+    requests = {
+        "node_git_status": {},
+        "node_git_identity_set": {"name": "A", "email": "a@b.c"},
+        "node_git_ssh_key_create": {},
+        "node_git_ssh_check": {"host": "github.com"},
+        "node_git_clone_start": {"url": "git@github.com:a/b.git", "repo_name": "b"},
+        "node_git_clone_status": {"clone_id": "c1"},
+    }
+    ssh_result = {"host": "github.com", "ok": True, "reason": "connected", "output": "Hi x!"}
+    data = {"NodeGitSetupSnapshot": _SNAPSHOT, "NodeGitSshCheckResult": ssh_result,
+            "NodeGitCloneJob": _CLONE_JOB}
+    for command_type, (def_name, data_name) in NODE_GIT_COMMANDS.items():
+        request = {"type": command_type, "requestId": "r", **requests[command_type]}
+        assert validator.is_valid(request), command_type
+        success = {**request, "success": True, "data": data[data_name]}
+        assert validator.is_valid(success), command_type
+        failure = {**request, "success": False,
+                   "error": {"code": "invalid_request", "message": "m", "field": "name"}}
+        assert validator.is_valid(failure), command_type
+        assert schema["$defs"][def_name]["properties"]["type"] == {"const": command_type}
+        assert not validator.is_valid({**success, "data": {"unknown": 1}}), command_type
+        assert not validator.is_valid({**failure, "error": {"code": "x", "message": "m", "field": "bad"}})
+
+    for command_type, missing in [("node_git_identity_set", "email"), ("node_git_ssh_check", "host"),
+                                  ("node_git_clone_start", "url"), ("node_git_clone_status", "clone_id")]:
+        request = {"type": command_type, "requestId": "r", **requests[command_type]}
+        request.pop(missing)
+        assert not validator.is_valid(request), (command_type, missing)
