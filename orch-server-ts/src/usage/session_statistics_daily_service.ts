@@ -7,6 +7,11 @@ import { resolveSessionStatisticsDay } from "./session_statistics_period.js";
 import { SessionStatisticsService } from "./session_statistics_service.js";
 import type { SessionStatisticsReadRequest, SessionStatisticsReadResult, SessionStatisticsRepositoryPort } from "./session_statistics_types.js";
 
+/** Same shape as the event ingress warn sink: structured fields first, a sentence second. */
+export type SessionStatisticsWarnSink = (fields: Record<string, unknown>, message: string) => void;
+
+const MAX_FAILURE_MESSAGE_CHARS = 200;
+
 type LiveEntry = { value?: SessionStatisticsDailyState; refreshing?: Promise<SessionStatisticsDailyState> };
 
 /** Persistence + a 60-second stale-while-revalidate live tail; public DTOs stay unchanged. */
@@ -20,7 +25,8 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
 
   constructor(private readonly dailyRepositoryProvider: () => Promise<SessionStatisticsRepositoryPort>,
     modelCatalog: ModelCatalogSource,
-    private readonly now: () => Date = () => new Date()) {
+    private readonly now: () => Date = () => new Date(),
+    private readonly warn: SessionStatisticsWarnSink = (fields) => console.warn(fields)) {
     super(dailyRepositoryProvider, modelCatalog);
   }
 
@@ -54,9 +60,9 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
       this.startCalculator(input);
       const repository = await this.dailyRepositoryProvider();
       const today = statisticsLiveDays(this.now().toISOString()).at(-1)!;
-      void this.liveOverviewDay(repository, input, today).catch(() => this.reportFailure());
-    } catch {
-      this.reportFailure();
+      void this.liveOverviewDay(repository, input, today).catch(error => this.reportFailure("start_overview", error));
+    } catch (error) {
+      this.reportFailure("start", error);
     }
   }
 
@@ -121,7 +127,7 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
         target.value = value;
         return value;
       }).finally(() => { target.refreshing = undefined; });
-      if (target.value) void target.refreshing.catch(() => this.reportFailure());
+      if (target.value) void target.refreshing.catch(error => this.reportFailure("overview_live", error));
     }
     return target.value ? Promise.resolve(target.value) : target.refreshing!;
   }
@@ -142,7 +148,7 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
         .then(read => { const value = createSessionStatisticsDailyState(read, day, this.modelCatalog.snapshot());
           target.value = value; return value; })
         .finally(() => { target.refreshing = undefined; });
-      if (target.value) void target.refreshing.catch(() => this.reportFailure());
+      if (target.value) void target.refreshing.catch(error => this.reportFailure("day_live", error));
     }
     return target.value ? Promise.resolve(target.value) : target.refreshing!;
   }
@@ -157,8 +163,8 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
       try {
         computed = await calculateSessionStatisticsDay(await this.dailyRepositoryProvider(), {
           ...input, day: null, asOf: this.now().toISOString(),
-        }, this.modelCatalog.snapshot(), quiet);
-      } catch { this.reportFailure(); }
+        }, this.modelCatalog.snapshot(), quiet, error => this.reportFailure("probe", error));
+      } catch (error) { this.reportFailure("tick", error); }
       if (!this.closed) {
         this.timer = setTimeout(run, computed ? 0 : 60_000);
         this.timer.unref();
@@ -169,7 +175,17 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
     this.timer.unref();
   }
 
-  private reportFailure(): void {
-    console.warn({ cause_code: "SESSION_STATISTICS_DAILY_REFRESH_FAILED" });
+  /** One warning per failure; never the query text, bound values, or the stack. */
+  private reportFailure(site: string, error: unknown): void {
+    const code = error !== null && typeof error === "object" && "code" in error && typeof error.code === "string"
+      ? error.code.slice(0, 32) : undefined;
+    const message = error instanceof Error ? error.message : String(error);
+    this.warn({
+      cause_code: "SESSION_STATISTICS_DAILY_REFRESH_FAILED",
+      site,
+      error_name: error instanceof Error ? error.name : typeof error,
+      error_code: code,
+      message: message.slice(0, MAX_FAILURE_MESSAGE_CHARS),
+    }, "session statistics daily refresh failed");
   }
 }
