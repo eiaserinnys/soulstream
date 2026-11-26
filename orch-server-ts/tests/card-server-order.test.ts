@@ -136,10 +136,10 @@ it('baseline 50f25bbfc start rejects actor before the card lock and version',asy
  expect(h.queries).toHaveLength(0);
 });
 for(const [name,options,count,message] of [
- ['execution',{},2,'Current execution is missing, stale or orchestration purpose'],
- ['owner',{execution:true},4,'Only the current assignee session may start work.'],
- ['receipt',{execution:true,active:true},5,'Only the current assignee session may start work.'],
- ['admission',{execution:true,active:true,receipt:true},5,'Automatic work requires a valid fenced admission for its assignee'],
+ ['execution',{},2,'이 세션의 카드 실행 신원이 없거나 낡았거나 자동 배정용 세션이라 작업을 착수할 수 없습니다. 상태만 바꾸려면 set_card_status(running)를 쓰세요.'],
+ ['owner',{execution:true},4,'담당 세션만 작업을 시작할 수 있습니다.'],
+ ['receipt',{execution:true,active:true},5,'담당 세션만 작업을 시작할 수 있습니다.'],
+ ['admission',{execution:true,active:true,receipt:true},5,'자동 배정 실행은 담당 세션에 대한 유효한 배정 승인이 있어야 착수할 수 있습니다. get_card로 카드 상태를 확인하고, 상태만 바꾸려면 set_card_status(running)를 쓰세요.'],
 ] as const)it(`baseline 50f25bbfc start: ${name} SQL prefix`,async()=>{
  const h=harness('queued',options,{assignee_kind:'session',assignee_session_id:'other'});
  await expect(h.service.startCardWork({cardId:'card',actorKind:'agent',actorSessionId:'worker-session',execution:{registrationId:'r',executionCommandId:'c'}})).rejects.toThrow(message);

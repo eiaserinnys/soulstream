@@ -7,7 +7,7 @@ it('keeps actor-only answer rejection in the entry table and outside machine gua
   expect(CARD_COMMAND_ENTRANCES.ANSWER_QUESTION).toEqual(['human']);
   expect(cardDecisionMachine.implementations.guards).not.toHaveProperty('reject.ANSWER_QUESTION.humanAnswer');
   expect(()=>assertCardCommandEntrance('ANSWER_QUESTION',{}, {kind:'agent',sessionId:'owner'})).toThrowError(
-    expect.objectContaining({statusCode:422,code:'INVALID_CARD_REQUEST',message:'Only a human may answer card questions'}));
+    expect.objectContaining({statusCode:422,code:'INVALID_CARD_REQUEST',message:'카드 질문에는 사람만 답할 수 있습니다. 질문을 올린 뒤 이 턴을 끝내고 사용자의 답을 기다리세요.'}));
   expect(()=>assertCardCommandEntrance('ANSWER_QUESTION',{}, {kind:'user',sessionId:null})).not.toThrow();
 });
 

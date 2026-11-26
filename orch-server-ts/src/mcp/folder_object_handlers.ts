@@ -56,7 +56,7 @@ function mutationActor(args: Args, context: McpCallContext) {
   if (context.principal === "external") return { actorKind: "llm", actorSessionId: null };
   const explicit = typeof args.caller_session_id === "string" ? args.caller_session_id.trim() : "";
   const actorSessionId = explicit || context.callerSessionId?.trim();
-  if (!actorSessionId) throw new Error("caller session id is required for folder mutation tools. Send x-soulstream-agent-session-id.");
+  if (!actorSessionId) throw new Error("폴더 변경 도구에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요.");
   return { actorKind: "agent", actorSessionId };
 }
 

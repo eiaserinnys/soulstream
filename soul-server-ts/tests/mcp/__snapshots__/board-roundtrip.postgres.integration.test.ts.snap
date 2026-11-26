@@ -1119,11 +1119,11 @@ exports[`folder-board-custom-view MCP roundtrip > preserves internal no session 
   "content": [
     {
       "type": "text",
-      "text": "caller session id is required for custom view mutation tools. Send x-soulstream-agent-session-id."
+      "text": "커스텀 뷰 변경 도구에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요."
     }
   ],
   "structuredContent": {
-    "error": "caller session id is required for custom view mutation tools. Send x-soulstream-agent-session-id."
+    "error": "커스텀 뷰 변경 도구에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요."
   },
   "isError": true
 }"

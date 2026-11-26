@@ -229,7 +229,7 @@ describe("folder object orchestrator MCP roundtrip", () => {
   }, 60_000);
   it("preserves the missing internal actor error", async () => {
     const result = await roundtrip("rename_folder", { ...mutation, name: "이름" }, {});
-    expect(result.content[0]).toMatchObject({ text: "caller session id is required for folder mutation tools. Send x-soulstream-agent-session-id." });
+    expect(result.content[0]).toMatchObject({ text: "폴더 변경 도구에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요." });
   });
   it("prefers the trimmed argument session over the header", async () => {
     const result = await roundtrip("rename_folder", { ...mutation, name: "이름", caller_session_id: " argument-session " });

@@ -204,7 +204,7 @@ function actor(args: Args, context: McpCallContext) {
   if (context.principal === "external") return { actorKind: "llm" as const, actorSessionId: null };
   const explicit = typeof args.caller_session_id === "string" ? args.caller_session_id.trim() : "";
   const actorSessionId = explicit || context.callerSessionId?.trim();
-  if (!actorSessionId) throw new Error("caller session id is required for custom view mutation tools. Send x-soulstream-agent-session-id.");
+  if (!actorSessionId) throw new Error("커스텀 뷰 변경 도구에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요.");
   return { actorKind: "agent" as const, actorSessionId };
 }
 function services(options: McpHostOptions, context: McpCallContext) {

@@ -204,11 +204,11 @@ describe("card question withdrawal", () => {
 
     await expect(withdraw({ ...input, actorSessionId: "other" })).rejects.toMatchObject({
       statusCode: 403,
-      message: "Only the question author or current assignee session may withdraw a card question.",
+      message: "질문을 올린 세션이나 현재 담당 세션만 질문을 철회할 수 있습니다. 담당 세션에서 다시 부르세요.",
     });
     await expect(withdraw({ ...input, actorKind: "user", actorSessionId: null, actorUserId: "director" })).rejects.toMatchObject({
       statusCode: 403,
-      message: "Only the question author or current assignee session may withdraw a card question.",
+      message: "질문을 올린 세션이나 현재 담당 세션만 질문을 철회할 수 있습니다. 담당 세션에서 다시 부르세요.",
     });
     await expect(withdraw({ ...input, reason: "  " })).rejects.toMatchObject({ statusCode: expect.any(Number) });
     await expect(withdraw({ ...input, reason: "가".repeat(201) })).rejects.toMatchObject({
@@ -216,12 +216,12 @@ describe("card question withdrawal", () => {
       message: expect.stringContaining("200"),
     });
     await expect(withdraw({ ...input, questionId: "missing-question" })).rejects.toMatchObject({
-      statusCode: expect.any(Number), message: "Question not found in card",
+      statusCode: expect.any(Number), message: "철회할 열린 질문을 이 카드에서 찾을 수 없습니다. get_card로 질문을 다시 읽고 question_id를 확인하세요.",
     });
 
     await cards.answerQuestion({ ...human, cardId, questionId, answer: "이미 답함", idempotencyKey: key() });
     await expect(withdraw(input)).rejects.toMatchObject({
-      statusCode: expect.any(Number), message: "Answered questions cannot be withdrawn",
+      statusCode: expect.any(Number), message: "이미 답이 달린 질문은 철회할 수 없습니다. 답을 확인하고 다음 일을 이어가세요.",
     });
 
     await cards.askQuestion({ actorKind: "agent", actorSessionId: "owner", cardId, text: "철회 질문", options: ["진행"] });
@@ -229,7 +229,7 @@ describe("card question withdrawal", () => {
     const withdrawnInput = { ...input, questionId: withdrawnId };
     await withdraw(withdrawnInput);
     await expect(withdraw(withdrawnInput)).rejects.toMatchObject({
-      statusCode: expect.any(Number), message: "Question already withdrawn",
+      statusCode: expect.any(Number), message: "이미 철회된 질문입니다. 새로 물을 것이 있으면 ask_card_question으로 올리세요.",
     });
   });
 });

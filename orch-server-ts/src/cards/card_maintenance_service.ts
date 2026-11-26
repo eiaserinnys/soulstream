@@ -174,7 +174,7 @@ export class CardMaintenanceService {
       const command={...params,type:'UPDATE_UNSTARTED'} as const;
       const decision=await this.decide(sql,locked,command,params);
       if (params.expectedVersion !== undefined && locked.version !== params.expectedVersion)
-        throw new CardVersionConflict("card", locked.id, params.expectedVersion, locked.version);
+        throw new CardVersionConflict("card", locked.id, params.expectedVersion, locked.version, locked.number);
 
       const previousStatus = locked.status;
       const previousAssigneeSessionId = locked.assignee_session_id;

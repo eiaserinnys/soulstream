@@ -35,6 +35,28 @@ Each card tracks:
 - **Status and review**: cards move through active work (`start_card_work`), review (`request_card_review`), and completion (`set_card_status`). In the dashboard and mobile app, reviewing a card shows all check items and evidence, with support for completing the card and an undo countdown gauge if a card is closed by mistake.
 - **Linked sessions**: every card tracks its assignee session (`assignee`) and any delegated member sessions (`member`) attached to the work.
 
+### Card statuses
+
+A card is always in one of nine statuses:
+
+| Status | Meaning |
+| --- | --- |
+| `todo` | Draft (shown as "할 일"). Nothing has started. |
+| `queued` | Waiting in the queue; the system runs it when its turn comes. |
+| `running` | An assignee session is working on it. |
+| `blocked` | Work stopped because of a usage limit, an open question, or a missing report. |
+| `awaiting_verification` | The assignee is waiting for something outside the session and wakes at a set time (`wake_at`). |
+| `review` | The work is done and waits for the user to check it. |
+| `on_hold` | Set aside; neither finished nor cancelled. |
+| `done` | Completed. |
+| `cancelled` | Closed without completing. |
+
+### Changing a card safely (`expected_version`)
+
+Every card has a `version` that goes up each time the card changes. Tools that change the card status or assignee (`set_card_status`, `start_card_work`, `transfer_card_assignee`) require `expected_version`: pass the `card.version` you just read with `get_card`. If another session changed the card first, the call is rejected with a message that the card's version changed. Read the card again with `get_card` and call once more with the new `card.version`. `idempotency_key` is any string you choose; reuse the same value when you resend the same request so it is applied only once.
+
+The full decision rules behind these statuses are in [card-state.md](../cards/card-state.md). That file is generated and meant for verification, so start here.
+
 ## Sessions and live intervention
 
 A session is a durable agent execution stream bound to a specific node, agent profile, and model preset.

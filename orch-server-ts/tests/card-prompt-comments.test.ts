@@ -47,6 +47,6 @@ describe("card comment prompt and reporting guidance", () => {
         { id: "c1", folder_id: "f1", number: 1, title: "자기 자신" },
         { id: "c2", folder_id: "f2", number: null, title: "다른 폴더" },
       ] });
-    expect(prompt).toBe("[카드 실행] 이 세션은 카드 c1 「현재」(폴더 실험)을 맡았다.\n\n## 요청 원문\n원문\n\n## 인계 요약 (지금까지)\n경과");
+    expect(prompt).toBe("[카드 실행] 이 세션은 카드 c1 「현재」(폴더 실험)을 맡았다.\n\n## 카드 도구를 쓸 때\n판 충돌(카드의 판이 바뀌었다는 거절)이 나면 get_card로 card.version을 다시 읽고 한 번 더 부른다.\n\n## 요청 원문\n원문\n\n## 인계 요약 (지금까지)\n경과");
   });
 });

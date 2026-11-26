@@ -2495,7 +2495,7 @@
     "name": "create_recurring_job"
   },
   {
-    "description": "다른 노드에 새 에이전트 세션을 생성한다. caller_info(v1)를 자동 조립하여 원격 노드로 전파. 결과를 기다리는 위임은 notify_completion=true로 설정한다. 완료 알림을 받을 필요가 없을 때만 false를 사용한다.",
+    "description": "다른 노드에 새 에이전트 세션을 생성한다. caller_info(v1)를 자동 조립하여 원격 노드로 전파. 결과를 기다리는 위임은 notify_completion=true로 설정한다. 완료 알림을 받을 필요가 없을 때만 false를 사용한다. folder_id를 생략하면 호출 세션의 폴더를 물려받고, null을 주면 폴더 없이 만든다. 이 도구로는 워크트리를 붙일 수 없다. 원격 노드에서 워크트리를 쓰려면 이 도구로 그 노드에 세션을 띄우고, 그 세션이 자기 노드에서 create_worktree로 워크트리를 만든 뒤 create_agent_session의 worktree_id로 작업 세션을 만든다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -3010,7 +3010,7 @@
     "name": "get_backlinks"
   },
   {
-    "description": "card_id에 전체 UUID, 카드 번호(#785) 또는 숫자 문자열(785)을 넣습니다. 기본은 카드 현황, 저장된 결과와 근거, 미답 질문, 전문별 이용 가능 수와 changeToken만 반환합니다. include로 필요한 종류만 펼치고 limit/text_limit/cursors로 페이지를 읽습니다. since가 같으면 unchanged만 반환하고, 바뀐 종류는 현재값으로 교체(replace)됩니다.",
+    "description": "card_id에 전체 UUID, 카드 번호(#785) 또는 숫자 문자열(785)을 넣습니다. 기본은 카드 현황, 저장된 결과와 근거, 미답 질문, 전문별 이용 가능 수와 changeToken만 반환합니다. include로 필요한 종류만 펼치고 limit/text_limit/cursors로 페이지를 읽습니다. since가 같으면 unchanged만 반환하고, 바뀐 종류는 현재값으로 교체(replace)됩니다. 항목(items)의 증거는 기본으로 type, label, attachment_id만 싣고, 주소와 descriptor까지 전부 받으려면 include에 items_evidence를 넣는다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -3045,7 +3045,8 @@
               "reports",
               "sessions",
               "now_history",
-              "questions_history"
+              "questions_history",
+              "items_evidence"
             ],
             "type": "string"
           },
@@ -8132,7 +8133,7 @@
     "name": "set_card_items"
   },
   {
-    "description": "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다. 보류(on_hold)는 완료도 취소도 아닌 채 검수 대기와 PAS 판에서 내려 두는 상태다. 담당 세션이 없는 카드(드래프트, 대기)는 담당이 아닌 에이전트 세션도 할 일, 대기, 보류, 취소로 옮길 수 있다. 검수 대기 카드는 그 카드를 감독하는 퍼시스턴트 세션도 완료로 옮길 수 있다. 검증 대기(awaiting_verification)는 담당이 작업을 끝내기 전에 스스로 기다리는 상태다. 배포 뒤 실제 사용 확인이나 정한 시각의 재측정처럼 담당이 그 시각에 다시 확인할 때 쓴다. 이 상태에는 wake_at과 waiting_for가 모두 필수이고 다른 상태에는 둘 다 주지 않는다. 서버는 wake_at이 지나면 담당을 깨워 실행 중으로 되돌리고, 담당이 없거나 깨우지 못하면 막힘으로 옮긴다. 검증 대기는 PAS 판에 장을 만들지 않고 실행 중으로 세지 않는다. 남이 풀어 줄 일은 막힘, 사용자 판단은 ask_card_question이다. status=done으로 스스로 완료할 때 report에 결과 보고를 적으면 카드 커멘트로 남습니다(담당 세션만, 2000자까지). done이 아니면 report를 주지 않습니다.",
+    "description": "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다. 보류(on_hold)는 완료도 취소도 아닌 채 검수 대기와 PAS 판에서 내려 두는 상태다. 담당 세션이 없는 카드(드래프트, 대기)는 담당이 아닌 에이전트 세션도 할 일, 대기, 보류, 취소로 옮길 수 있다. 검수 대기 카드는 그 카드를 감독하는 퍼시스턴트 세션도 완료로 옮길 수 있다. 검증 대기(awaiting_verification)는 담당이 작업을 끝내기 전에 스스로 기다리는 상태다. 배포 뒤 실제 사용 확인이나 정한 시각의 재측정처럼 담당이 그 시각에 다시 확인할 때 쓴다. 이 상태에는 wake_at과 waiting_for가 모두 필수이고 다른 상태에는 둘 다 주지 않는다. 서버는 wake_at이 지나면 담당을 깨워 실행 중으로 되돌리고, 담당이 없거나 깨우지 못하면 막힘으로 옮긴다. 검증 대기는 PAS 판에 장을 만들지 않고 실행 중으로 세지 않는다. 남이 풀어 줄 일은 막힘, 사용자 판단은 ask_card_question이다. status=done으로 스스로 완료할 때 report에 결과 보고를 적으면 카드 커멘트로 남습니다(담당 세션만, 2000자까지). done이 아니면 report를 주지 않습니다. expected_version에는 get_card 응답의 card.version 값을 넣는다. 다른 세션이 먼저 카드를 바꿔 판이 달라졌다는 거절이 나면 get_card로 다시 읽고 새 값으로 한 번 더 부른다. idempotency_key에는 임의 문자열을 넣고, 같은 요청을 다시 보낼 때는 같은 값을 쓴다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -8569,7 +8570,7 @@
     "title": "Soulstream 실시간 카드 보기"
   },
   {
-    "description": "현재 담당 카드의 작업 착수를 명시합니다. 수동 착수는 모든 상태에서 가능하며 사유는 선택입니다. 실제 자동배정 실행일 때만 배정 승인과 해당 실행의 전달 소비를 확인합니다. 실행 신원은 런타임에서 제공합니다.",
+    "description": "현재 담당 카드의 작업 착수를 명시합니다. 수동 착수는 모든 상태에서 가능하며 사유는 선택입니다. 실제 자동배정 실행일 때만 배정 승인과 해당 실행의 전달 소비를 확인합니다. 실행 신원은 런타임에서 제공하며, 카드 실행으로 뜬 담당 세션처럼 실행 신원이 있는 세션만 부를 수 있습니다. 그 밖의 세션에서 상태만 바꾸려면 set_card_status(running)를 쓰세요. expected_version에는 get_card 응답의 card.version 값을 넣는다. 다른 세션이 먼저 카드를 바꿔 판이 달라졌다는 거절이 나면 get_card로 다시 읽고 새 값으로 한 번 더 부른다. idempotency_key에는 임의 문자열을 넣고, 같은 요청을 다시 보낼 때는 같은 값을 쓴다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -8661,7 +8662,7 @@
     "title": "Summarize turn usage"
   },
   {
-    "description": "공식 카드 PATCH와 같은 카드 변경 권한을 가진 인증된 내부 작업 세션이 호출하며, 현재 담당 여부와 무관하게 카드 담당을 지정 세션으로 명시적으로 변경한다. 호출자와 지정 담당 세션을 이력에 구분해 기록한다. 카드 상태나 실행 프로세스는 바꾸지 않으며, 지정 세션은 별도로 start_card_work를 호출해야 한다.",
+    "description": "공식 카드 PATCH와 같은 카드 변경 권한을 가진 인증된 내부 작업 세션이 호출하며, 현재 담당 여부와 무관하게 카드 담당을 지정 세션으로 명시적으로 변경한다. 호출자와 지정 담당 세션을 이력에 구분해 기록한다. 카드 상태나 실행 프로세스는 바꾸지 않으며, 지정 세션은 별도로 start_card_work를 호출해야 한다. expected_version에는 get_card 응답의 card.version 값을 넣는다. 다른 세션이 먼저 카드를 바꿔 판이 달라졌다는 거절이 나면 get_card로 다시 읽고 새 값으로 한 번 더 부른다. idempotency_key에는 임의 문자열을 넣고, 같은 요청을 다시 보낼 때는 같은 값을 쓴다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -10402,7 +10403,7 @@
     "name": "update_recurring_job"
   },
   {
-    "description": "아직 시작하지 않은 카드의 제목, 요청, 인계와 담당 에이전트·모델·노드를 고칩니다. depends_on은 선행 카드 전체를 교체하며 빈 배열은 모두 지웁니다. 보관되지 않았고 사람 담당이나 담당 세션이 없으며 todo·queued·on_hold 상태이고 실행 결과 확인 중이 아닌 카드만 됩니다. 변경할 필드를 하나 이상 지정하세요. agent_id를 주면 그 에이전트가 담당이 됩니다. 상태와 대기열 순서는 유지합니다. 담당 세션이 있는 카드의 후속 지시와 담당 교체는 dispatch_work를 쓰세요. idempotency_key를 재사용하면 중복 변경을 막습니다.",
+    "description": "아직 시작하지 않은 카드의 제목, 요청, 인계와 담당 에이전트·모델·노드를 고칩니다. depends_on은 선행 카드 전체를 교체하며 빈 배열은 모두 지웁니다. 보관되지 않았고 사람 담당이나 담당 세션이 없으며 todo·queued·on_hold 상태이고 실행 결과 확인 중이 아닌 카드만 됩니다. 변경할 필드를 하나 이상 지정하세요. agent_id를 주면 그 에이전트가 담당이 됩니다. 상태와 대기열 순서는 유지합니다. 담당 세션이 있는 카드의 후속 지시와 담당 교체는 dispatch_work를 쓰세요. idempotency_key를 재사용하면 중복 변경을 막습니다. expected_version은 생략할 수 있고, 주면 get_card의 card.version 값과 같아야 합니다. idempotency_key에는 임의 문자열을 넣고, 같은 요청을 다시 보낼 때는 같은 값을 쓴다.",
     "execution": {
       "taskSupport": "forbidden"
     },

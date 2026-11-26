@@ -1,7 +1,7 @@
 import { CARD_STATUSES } from "@soulstream/wire-schema";
 import { z } from "zod";
 import { cardMaintenanceTools } from "./card_maintenance_tools.js";
-import { assigneeSchema, callerSessionIdSchema } from "./folder_shared.js";
+import { assigneeSchema, callerSessionIdSchema, EXPECTED_VERSION_HINT, IDEMPOTENCY_KEY_HINT } from "./folder_shared.js";
 
 const id = z.string().min(1);
 const scope = { card_id: id, caller_session_id: callerSessionIdSchema };
@@ -83,6 +83,9 @@ export const cardVerificationWakeAtSchema = z.string().regex(CARD_VERIFICATION_W
 export const cardVerificationWaitingForSchema = z.string()
   .refine((value) => { const length = [...value.trim()].length; return length >= 1 && length <= 36; }, "waiting_for는 공백을 뺀 한 줄 1~36자입니다")
   .describe("무엇을 기다리는지 한 줄. 공백을 뺀 36자까지.");
+/** start_card_work를 실행 신원 없이 부른 호출에 돌려주는 거절 문구. orch와 worker가 함께 쓴다. */
+export const START_CARD_WORK_EXECUTION_REQUIRED =
+  "이 세션에는 카드 실행 신원이 없어 start_card_work를 쓸 수 없습니다. 카드 실행으로 뜬 담당 세션만 부를 수 있으니, 상태만 바꾸려면 set_card_status(running)를 쓰세요.";
 const itemId = z.number().int().positive();
 const itemEvidence = cardEvidenceSchema;
 export const cardTools = {
@@ -117,8 +120,8 @@ export const cardTools = {
       caller_session_id: callerSessionIdSchema },
   }, audience: "all" },
   get_card: { name: "get_card", config: {
-    description: "card_id에 전체 UUID, 카드 번호(#785) 또는 숫자 문자열(785)을 넣습니다. 기본은 카드 현황, 저장된 결과와 근거, 미답 질문, 전문별 이용 가능 수와 changeToken만 반환합니다. include로 필요한 종류만 펼치고 limit/text_limit/cursors로 페이지를 읽습니다. since가 같으면 unchanged만 반환하고, 바뀐 종류는 현재값으로 교체(replace)됩니다.",
-    inputSchema: { ...scope, include: z.array(z.enum(["request", "brief", "attachments", "comments", "notes", "reports", "sessions", "now_history", "questions_history"])).optional(),
+    description: "card_id에 전체 UUID, 카드 번호(#785) 또는 숫자 문자열(785)을 넣습니다. 기본은 카드 현황, 저장된 결과와 근거, 미답 질문, 전문별 이용 가능 수와 changeToken만 반환합니다. include로 필요한 종류만 펼치고 limit/text_limit/cursors로 페이지를 읽습니다. since가 같으면 unchanged만 반환하고, 바뀐 종류는 현재값으로 교체(replace)됩니다. 항목(items)의 증거는 기본으로 type, label, attachment_id만 싣고, 주소와 descriptor까지 전부 받으려면 include에 items_evidence를 넣는다.",
+    inputSchema: { ...scope, include: z.array(z.enum(["request", "brief", "attachments", "comments", "notes", "reports", "sessions", "now_history", "questions_history", "items_evidence"])).optional(),
       limit: z.number().int().min(1).max(50).optional().describe("각 목록 페이지의 항목 수. 정수 1~50, 생략 시 20."), text_limit: z.number().int().min(1).max(4000).optional().describe("텍스트 전문 한 페이지의 문자 수. 정수 1~4000, 생략 시 4000. 다음 페이지는 해당 전문의 nextCursor를 cursors에 넣어 읽는다."),
       cursors: z.record(z.string(), id).optional(), since: id.optional() },
   }, audience: "all" },
@@ -134,16 +137,16 @@ export const cardTools = {
     inputSchema: { ...scope, text: id, mode: z.enum(["spoken", "reply"]).optional(), item_id:itemId.optional(), question_id:id.optional() },
   }, audience: "all" },
   set_card_status: { name: "set_card_status", config: {
-    description: "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다. 보류(on_hold)는 완료도 취소도 아닌 채 검수 대기와 PAS 판에서 내려 두는 상태다. 담당 세션이 없는 카드(드래프트, 대기)는 담당이 아닌 에이전트 세션도 할 일, 대기, 보류, 취소로 옮길 수 있다. 검수 대기 카드는 그 카드를 감독하는 퍼시스턴트 세션도 완료로 옮길 수 있다. 검증 대기(awaiting_verification)는 담당이 작업을 끝내기 전에 스스로 기다리는 상태다. 배포 뒤 실제 사용 확인이나 정한 시각의 재측정처럼 담당이 그 시각에 다시 확인할 때 쓴다. 이 상태에는 wake_at과 waiting_for가 모두 필수이고 다른 상태에는 둘 다 주지 않는다. 서버는 wake_at이 지나면 담당을 깨워 실행 중으로 되돌리고, 담당이 없거나 깨우지 못하면 막힘으로 옮긴다. 검증 대기는 PAS 판에 장을 만들지 않고 실행 중으로 세지 않는다. 남이 풀어 줄 일은 막힘, 사용자 판단은 ask_card_question이다. status=done으로 스스로 완료할 때 report에 결과 보고를 적으면 카드 커멘트로 남습니다(담당 세션만, 2000자까지). done이 아니면 report를 주지 않습니다.",
+    description: "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다. 보류(on_hold)는 완료도 취소도 아닌 채 검수 대기와 PAS 판에서 내려 두는 상태다. 담당 세션이 없는 카드(드래프트, 대기)는 담당이 아닌 에이전트 세션도 할 일, 대기, 보류, 취소로 옮길 수 있다. 검수 대기 카드는 그 카드를 감독하는 퍼시스턴트 세션도 완료로 옮길 수 있다. 검증 대기(awaiting_verification)는 담당이 작업을 끝내기 전에 스스로 기다리는 상태다. 배포 뒤 실제 사용 확인이나 정한 시각의 재측정처럼 담당이 그 시각에 다시 확인할 때 쓴다. 이 상태에는 wake_at과 waiting_for가 모두 필수이고 다른 상태에는 둘 다 주지 않는다. 서버는 wake_at이 지나면 담당을 깨워 실행 중으로 되돌리고, 담당이 없거나 깨우지 못하면 막힘으로 옮긴다. 검증 대기는 PAS 판에 장을 만들지 않고 실행 중으로 세지 않는다. 남이 풀어 줄 일은 막힘, 사용자 판단은 ask_card_question이다. status=done으로 스스로 완료할 때 report에 결과 보고를 적으면 카드 커멘트로 남습니다(담당 세션만, 2000자까지). done이 아니면 report를 주지 않습니다." + ` ${EXPECTED_VERSION_HINT} ${IDEMPOTENCY_KEY_HINT}`,
     inputSchema: {...scope,status:z.enum(CARD_STATUSES),expected_version:z.number().int().positive(),idempotency_key:id,reason:z.string().optional(),
       wake_at:cardVerificationWakeAtSchema.optional(),waiting_for:cardVerificationWaitingForSchema.optional(),report:z.string().optional()},
   }, audience: "all" },
   transfer_card_assignee: { name: "transfer_card_assignee", config: {
-    description: "공식 카드 PATCH와 같은 카드 변경 권한을 가진 인증된 내부 작업 세션이 호출하며, 현재 담당 여부와 무관하게 카드 담당을 지정 세션으로 명시적으로 변경한다. 호출자와 지정 담당 세션을 이력에 구분해 기록한다. 카드 상태나 실행 프로세스는 바꾸지 않으며, 지정 세션은 별도로 start_card_work를 호출해야 한다.",
+    description: "공식 카드 PATCH와 같은 카드 변경 권한을 가진 인증된 내부 작업 세션이 호출하며, 현재 담당 여부와 무관하게 카드 담당을 지정 세션으로 명시적으로 변경한다. 호출자와 지정 담당 세션을 이력에 구분해 기록한다. 카드 상태나 실행 프로세스는 바꾸지 않으며, 지정 세션은 별도로 start_card_work를 호출해야 한다." + ` ${EXPECTED_VERSION_HINT} ${IDEMPOTENCY_KEY_HINT}`,
     inputSchema: {...scope,target_session_id:id,expected_version:z.number().int().positive(),idempotency_key:id,reason:z.string().optional()},
   }, audience: "internal" },
   start_card_work: { name: "start_card_work", config: {
-    description: "현재 담당 카드의 작업 착수를 명시합니다. 수동 착수는 모든 상태에서 가능하며 사유는 선택입니다. 실제 자동배정 실행일 때만 배정 승인과 해당 실행의 전달 소비를 확인합니다. 실행 신원은 런타임에서 제공합니다.",
+    description: "현재 담당 카드의 작업 착수를 명시합니다. 수동 착수는 모든 상태에서 가능하며 사유는 선택입니다. 실제 자동배정 실행일 때만 배정 승인과 해당 실행의 전달 소비를 확인합니다. 실행 신원은 런타임에서 제공하며, 카드 실행으로 뜬 담당 세션처럼 실행 신원이 있는 세션만 부를 수 있습니다. 그 밖의 세션에서 상태만 바꾸려면 set_card_status(running)를 쓰세요." + ` ${EXPECTED_VERSION_HINT} ${IDEMPOTENCY_KEY_HINT}`,
     inputSchema: {...scope,expected_version:z.number().int().positive(),idempotency_key:id,reason:id.optional()},
   }, audience: "internal" },
   request_card_review: { name: "request_card_review", config: {

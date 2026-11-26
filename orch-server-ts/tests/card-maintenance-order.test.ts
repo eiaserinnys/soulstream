@@ -48,7 +48,7 @@ it('baseline 54476b489 unstarted pending check precedes version conflict',async(
 });
 it('baseline 54476b489 unstarted version check follows pending before formatting attachments',async()=>{
  const h=harness();await expect(update(h,{expectedVersion:1,request:'https://invalid.example'})).rejects.toMatchObject({statusCode:409,
-  message:'folder card version conflict: card expected version 1, actual version 2'});
+  message:'카드 #1의 판이 바뀌었습니다(읽은 판 1, 지금 판 2). get_card로 다시 읽고 새 version으로 다시 부르세요.'});
  expect(h.queries).toHaveLength(5);expect(h.queries[4]).toContain('card_execution_requests');
 });
 for(const [label,overrides,options,count,message] of [

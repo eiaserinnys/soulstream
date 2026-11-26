@@ -129,7 +129,7 @@ export const clusterTools = {
     } },
   create_remote_agent_session: { name: "create_remote_agent_session", audience: "all", timeoutMs: 45000, config: {
       description:
-        "다른 노드에 새 에이전트 세션을 생성한다. caller_info(v1)를 자동 조립하여 원격 노드로 전파. 결과를 기다리는 위임은 notify_completion=true로 설정한다. 완료 알림을 받을 필요가 없을 때만 false를 사용한다.",
+        "다른 노드에 새 에이전트 세션을 생성한다. caller_info(v1)를 자동 조립하여 원격 노드로 전파. 결과를 기다리는 위임은 notify_completion=true로 설정한다. 완료 알림을 받을 필요가 없을 때만 false를 사용한다. folder_id를 생략하면 호출 세션의 폴더를 물려받고, null을 주면 폴더 없이 만든다. 이 도구로는 워크트리를 붙일 수 없다. 원격 노드에서 워크트리를 쓰려면 이 도구로 그 노드에 세션을 띄우고, 그 세션이 자기 노드에서 create_worktree로 워크트리를 만든 뒤 create_agent_session의 worktree_id로 작업 세션을 만든다.",
       inputSchema: {
         node_id: z.string().min(1),
         agent_id: z.string().optional(),

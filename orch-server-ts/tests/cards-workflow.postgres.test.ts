@@ -67,7 +67,7 @@ describe("cards storage, HTTP and planner", () => {
     await cards.addReport({ ...agent,cardId:id,title:'작업 보고',format:'markdown',body:'보고',idempotencyKey:key() });
     expect((await cards.getCard(id))!.card.status).toBe('blocked');
     const q=(await cards.getCard(id))!.questions;
-    await expect(cards.answerQuestion({ ...agent,cardId:id,questionId:String(q[0]!.id),answer:'진행',idempotencyKey:key() })).rejects.toThrow(/human/i);
+    await expect(cards.answerQuestion({ ...agent,cardId:id,questionId:String(q[0]!.id),answer:'진행',idempotencyKey:key() })).rejects.toThrow(/사람/);
     await cards.answerQuestion({ ...human,cardId:id,questionId:String(q[0]!.id),answer:'진행',idempotencyKey:key() });
     expect((await cards.getCard(id))!.card.status).toBe('blocked');
     await cards.answerQuestion({ ...human,cardId:id,questionId:String(q[1]!.id),answer:'확인',idempotencyKey:key() });

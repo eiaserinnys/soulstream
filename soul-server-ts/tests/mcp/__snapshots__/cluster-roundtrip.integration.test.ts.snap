@@ -9,11 +9,11 @@ exports[`cluster MCP roundtrip > preserves apply_remote_agent_profile_update abs
   "content": [
     {
       "type": "text",
-      "text": "orch POST /api/nodes/missing/agents/config/apply-profile-update failed: 404 Not Found Node missing not connected"
+      "text": "노드 'missing'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요."
     }
   ],
   "structuredContent": {
-    "error": "orch POST /api/nodes/missing/agents/config/apply-profile-update failed: 404 Not Found Node missing not connected"
+    "error": "노드 'missing'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요."
   },
   "isError": true
 }"
@@ -466,11 +466,11 @@ exports[`cluster MCP roundtrip > preserves list_node_agents absent resource > re
   "content": [
     {
       "type": "text",
-      "text": "orch GET /api/nodes/missing/agents failed: 404 Not Found Node missing not connected"
+      "text": "노드 'missing'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요."
     }
   ],
   "structuredContent": {
-    "error": "orch GET /api/nodes/missing/agents failed: 404 Not Found Node missing not connected"
+    "error": "노드 'missing'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요."
   },
   "isError": true
 }"
@@ -485,11 +485,11 @@ exports[`cluster MCP roundtrip > preserves list_node_model_presets absent resour
   "content": [
     {
       "type": "text",
-      "text": "orch GET /api/nodes/missing/model-presets failed: 404 Not Found Node missing not connected"
+      "text": "노드 'missing'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요."
     }
   ],
   "structuredContent": {
-    "error": "orch GET /api/nodes/missing/model-presets failed: 404 Not Found Node missing not connected"
+    "error": "노드 'missing'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요."
   },
   "isError": true
 }"
@@ -523,11 +523,11 @@ exports[`cluster MCP roundtrip > preserves list_remote_agents_config_snapshots a
   "content": [
     {
       "type": "text",
-      "text": "orch GET /api/nodes/missing/agents/config/snapshots failed: 404 Not Found Node missing not connected"
+      "text": "노드 'missing'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요."
     }
   ],
   "structuredContent": {
-    "error": "orch GET /api/nodes/missing/agents/config/snapshots failed: 404 Not Found Node missing not connected"
+    "error": "노드 'missing'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요."
   },
   "isError": true
 }"
@@ -951,11 +951,11 @@ exports[`cluster MCP roundtrip > preserves plan_remote_agent_profile_update abse
   "content": [
     {
       "type": "text",
-      "text": "orch POST /api/nodes/missing/agents/config/plan-profile-update failed: 404 Not Found Node missing not connected"
+      "text": "노드 'missing'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요."
     }
   ],
   "structuredContent": {
-    "error": "orch POST /api/nodes/missing/agents/config/plan-profile-update failed: 404 Not Found Node missing not connected"
+    "error": "노드 'missing'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요."
   },
   "isError": true
 }"
@@ -1444,11 +1444,11 @@ exports[`cluster MCP roundtrip > preserves remote missing caller > result 1`] = 
   "content": [
     {
       "type": "text",
-      "text": "caller_session_id is required for create_remote_agent_session. Pass the current soulstream_session.agent_session_id or send x-soulstream-agent-session-id."
+      "text": "create_remote_agent_session에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요."
     }
   ],
   "structuredContent": {
-    "error": "caller_session_id is required for create_remote_agent_session. Pass the current soulstream_session.agent_session_id or send x-soulstream-agent-session-id."
+    "error": "create_remote_agent_session에는 caller_session_id가 필요합니다. 현재 세션의 soulstream_session.agent_session_id 값을 넘기세요."
   },
   "isError": true
 }"
@@ -1585,11 +1585,11 @@ exports[`cluster MCP roundtrip > preserves rollback_remote_agents_config absent 
   "content": [
     {
       "type": "text",
-      "text": "orch POST /api/nodes/missing/agents/config/rollback failed: 404 Not Found Node missing not connected"
+      "text": "노드 'missing'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요."
     }
   ],
   "structuredContent": {
-    "error": "orch POST /api/nodes/missing/agents/config/rollback failed: 404 Not Found Node missing not connected"
+    "error": "노드 'missing'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요."
   },
   "isError": true
 }"
