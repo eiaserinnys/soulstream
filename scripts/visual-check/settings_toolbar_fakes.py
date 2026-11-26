@@ -56,7 +56,7 @@ SUMMARY = {"agentSessionId": SESSION_ID, "displayName": "검수 PAS", "status": 
 NODE = {"nodeId": "eiaserinnys", "host": "localhost", "port": 3105, "status": "connected", "capabilities": {}, "connectedAt": 0, "sessionCount": 1}
 MODEL_PRESETS = [{"id": "sample-sol", "label": "Sol", "backend": "codex", "available": True, "reason": None, "reason_label": None, "resets_at": None, "usage_warning": False}]
 CREATE_DEFAULTS = {"node_id": "eiaserinnys", "preferred_agent_id": "roselin", "settings": SETTINGS, "initial_instruction": "새 영구 에이전트 세션입니다."}
-UNAVAILABLE = "기본 모델 gemini-4-neon이(가) 노드 local에 없습니다. 기본 모델 claude-opus을(를) 지금 쓸 수 없습니다. 기본 모델 codex-6.2-sol을(를) 지금 쓸 수 없습니다."
+UNAVAILABLE = "기본 모델 sample-neon이(가) 노드 local에 없습니다. 기본 모델 sample-opus을(를) 지금 쓸 수 없습니다. 기본 모델 sample-sol을(를) 지금 쓸 수 없습니다."
 
 
 def quota(qid, label, window, percent):
@@ -263,7 +263,7 @@ def check(label, condition, detail):
 
 
 # 서버가 보내는 사유 문장의 조각. 어느 것도 화면에 그려지면 안 된다.
-UNAVAILABLE_FRAGMENTS = ("gemini-4-neon", "claude-opus", "codex-6.2-sol", "지금 쓸 수 없습니다", "에 없습니다", "unavailable")
+UNAVAILABLE_FRAGMENTS = ("sample-neon", "sample-opus", "sample-sol", "지금 쓸 수 없습니다", "에 없습니다", "unavailable")
 
 CONNECT_GUIDE_MEASURE = """() => {
     const root = document.querySelector('[data-testid="persistent-empty-unavailable"]');

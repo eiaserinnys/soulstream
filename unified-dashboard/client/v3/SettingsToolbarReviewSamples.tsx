@@ -114,8 +114,8 @@ const emptyDefaults = (patch: Partial<PersistentCreateDefaults>): PersistentCrea
   ...patch,
 });
 
-/** 클린 설치에서 서버가 실제로 보내는 사유. 사유가 있어도 화면에 나오지 않음을 보이려고 일부러 긴 문장을 쓴다. */
-const UNAVAILABLE_REASON = "기본 모델 gemini-4-neon이(가) 노드 local에 없습니다. 기본 모델 claude-opus을(를) 지금 쓸 수 없습니다. 기본 모델 codex-6.2-sol을(를) 지금 쓸 수 없습니다.";
+/** 클린 설치에서 서버가 보내는 꼴의 사유. 사유가 있어도 화면에 나오지 않음을 보이려고 일부러 긴 문장을 쓴다. */
+const UNAVAILABLE_REASON = "기본 모델 sample-neon이(가) 노드 local에 없습니다. 기본 모델 sample-opus을(를) 지금 쓸 수 없습니다. 기본 모델 sample-sol을(를) 지금 쓸 수 없습니다.";
 
 export function PersistentEmptyStateReviewSamples() {
   const pending = { bootstrap: () => new Promise<{ created: boolean; session_id: string }>(() => undefined) };
