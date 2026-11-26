@@ -194,13 +194,24 @@ if ($null -eq $service) {
     # The EDB installer passes its %TEMP% paths to powershell.exe in the ANSI code page, so a profile folder with Korean
     # letters in its name turns into "???" and the install stops. winget and the installer it starts inherit this
     # process's TEMP and TMP, so they point at an ASCII folder for this one install.
-    $pgTemp = Join-Path $env:ProgramData "SoulstreamServer-postgres-temp"
-    Remove-Item -LiteralPath $pgTemp -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Force -Path $pgTemp | Out-Null
-    Write-Host "   PostgreSQL installer temporary folder: $pgTemp"
+    # Any user can add folders under %ProgramData%, so the folder gets an unguessable new name (an existing one is never
+    # reused or deleted) and, before anything runs from it, an ACL that only Administrators, SYSTEM and this user can write.
+    $random = New-Object byte[] 8
+    $pgTemp = $null
+    $createError = $null
+    for ($attempt = 0; $attempt -lt 5 -and -not $pgTemp; $attempt++) {
+        [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($random)
+        $candidate = Join-Path $env:ProgramData ("SoulstreamServer-postgres-" + (($random | ForEach-Object { $_.ToString("x2") }) -join ""))
+        try { New-Item -ItemType Directory -Path $candidate -ErrorAction Stop | Out-Null; $pgTemp = $candidate } catch { $createError = $_.Exception.Message }
+    }
+    if (-not $pgTemp) { throw "Could not create a temporary folder for the PostgreSQL installer under $env:ProgramData ($createError)." }
     $savedTemp = $env:TEMP
     $savedTmp = $env:TMP
     try {
+        $me = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $acl = @(Invoke-Native "icacls.exe" @($pgTemp, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "*${me}:(OI)(CI)F"))
+        $aclResult = $acl | Where-Object { "$_".Trim() } | Select-Object -Last 1
+        Write-Host "   PostgreSQL installer temporary folder: $pgTemp (icacls: $aclResult)"
         $env:TEMP = $pgTemp
         $env:TMP = $pgTemp
         Install-WithWinget "PostgreSQL.PostgreSQL.17" @("--override", $override)
