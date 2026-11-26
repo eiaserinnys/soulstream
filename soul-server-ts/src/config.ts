@@ -44,6 +44,9 @@ export const EnvSchema = z
     DASH_USER_PORTRAIT: z.string().default(""),
     GOOGLE_CLIENT_ID: z.string().optional(),
     JWT_SECRET: z.string().optional(),
+    /** LLM proxy provider keys. Optional — route mounts only for configured providers. */
+    LLM_OPENAI_API_KEY: z.string().optional(),
+    LLM_ANTHROPIC_API_KEY: z.string().optional(),
     /**
      * Codex API 키 (Phase B-2). optional — 미설정 시 Codex SDK가 ~/.codex/auth.json
      * (ChatGPT 구독 OAuth) fallback. production strict 미요구 — credential default
