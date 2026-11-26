@@ -207,24 +207,25 @@ export function formatModelPresetLabel(
   preset: ModelPresetAvailability,
   includeUsageWarning = true,
 ): string {
-  if (preset.reason === 'quota_exhausted') return preset.label;
-  const unavailableReason = preset.reason === 'limit_rejected'
-    ? formatModelPresetUnavailableReason(preset)
-    : null;
-  const availability = !preset.available && preset.reason_label
-    ? `${preset.label} (${preset.reason_label})`
-    : preset.label;
-  if (unavailableReason && preset.reason_label) {
-    return `${availability}${unavailableReason.slice(preset.reason_label.length)}`;
-  }
+  return `${preset.label}${formatModelPresetDetail(preset, includeUsageWarning)}`;
+}
+
+export function formatModelPresetDetail(
+  preset: ModelPresetAvailability,
+  includeUsageWarning = true,
+): string {
+  const exhausted = preset.reason === 'quota_exhausted';
+  const reason = (!preset.available || exhausted) && preset.reason_label
+    ? ` (${preset.reason_label})`
+    : '';
   const resetTime = preset.resets_at
     ? formatLocalResetTime(preset.resets_at)
     : null;
-  if (resetTime) return `${availability} · ${resetTime} 해제`;
-  if (includeUsageWarning && preset.available && preset.usage_warning) {
-    return `${availability} (사용량 확인 지연)`;
+  if (resetTime) return `${reason} · ${resetTime} 해제`;
+  if (includeUsageWarning && preset.available && !exhausted && preset.usage_warning) {
+    return `${reason} (사용량 확인 지연)`;
   }
-  return availability;
+  return reason;
 }
 
 export function formatModelPresetUnavailableReason(

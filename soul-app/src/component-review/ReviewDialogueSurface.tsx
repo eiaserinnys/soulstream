@@ -25,7 +25,10 @@ import { type DialogueSample } from './dialogue-inventory';
 import { ReviewDialogueOwners } from './ReviewDialogueOwners';
 import { ReviewPersistentEntry } from './ReviewPersistentEntry';
 
-const assignment = { folderId: 'public-project', nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-model' };
+const exhaustedSample = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('exhausted');
+const assignment = exhaustedSample === 'auto'
+  ? { folderId: 'public-project', nodeId: 'public-node', agentId: 'public-exhausted-agent', modelPreset: null }
+  : { folderId: 'public-project', nodeId: 'public-node', agentId: 'public-agent', modelPreset: exhaustedSample === 'direct' ? 'public-exhausted-model' : 'public-model' };
 
 // Both the section and single-frame preview mount the same original owners.
 export function ReviewDialogueSurface({ opened, onClose, onResult, preview = false }: {
