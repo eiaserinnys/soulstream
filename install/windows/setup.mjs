@@ -29,6 +29,7 @@ function buildContext(options, env = process.env) {
     soulDir: join(installRoot, 'soulstream'),
     atomDir: join(installRoot, 'atom'),
     workspace: join(installRoot, 'workspace'),
+    agentHome: join(installRoot, 'agent-home'),
     logsDir: join(installRoot, 'logs'),
     home: options['user-home'] ?? homedir(),
     backends: BACKENDS.filter((name) => requested.includes(name)),
@@ -43,6 +44,7 @@ const step = (name) => log(`\n  ${name}`);
 async function prepare(ctx, options) {
   mkdirSync(ctx.logsDir, { recursive: true });
   mkdirSync(join(ctx.soulDir, 'config'), { recursive: true });
+  for (const dir of ['.claude', '.claude-accounts', '.codex']) mkdirSync(join(ctx.agentHome, dir), { recursive: true });
   step('Finding the coding agent CLIs');
   for (const [name, path] of Object.entries(requireClis(ctx.backends))) log(`${name}: ${path}`);
   step('Preparing secrets');
@@ -60,7 +62,7 @@ async function prepare(ctx, options) {
   });
   step('Writing configuration');
   const rendered = renderConfig({
-    platform: ctx.platform, home: ctx.home, root: ctx.soulDir, workspace: ctx.workspace, backends: ctx.backends, ports: ctx.ports, secrets,
+    platform: ctx.platform, home: ctx.home, root: ctx.soulDir, workspace: ctx.workspace, agentHome: ctx.agentHome, backends: ctx.backends, ports: ctx.ports, secrets,
     atomDashboard: atom.dashboard,
   });
   step('Building Soulstream');

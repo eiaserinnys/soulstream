@@ -211,7 +211,7 @@ What it installs:
 
 After it finishes, open `http://127.0.0.1:5200` and sign in with the administrator password. The password is printed at the end and saved in `<InstallRoot>\soulstream\.admin-password`. Atom is at `http://127.0.0.1:4200` with the same password. If the atom dashboard does not build, atom still serves its API, the dashboard hides its atom link, and the installer lists this under Notes.
 
-To connect a coding agent, open **Settings > Coding agents** (`설정 > 코딩 에이전트`) in the dashboard. For Claude, expand the row and choose Add account (`계정 추가`). For Codex, open the URL the dashboard shows and enter the one-time code.
+Soulstream keeps its own Claude and Codex logins in `<InstallRoot>\agent-home` and does not use or change the logins of your Claude Code and Codex CLIs. So after installing, sign in once in the dashboard. To connect a coding agent, open **Settings > Coding agents** (`설정 > 코딩 에이전트`) in the dashboard. For Claude, expand the row and choose Add account (`계정 추가`). For Codex, open the URL the dashboard shows and enter the one-time code.
 
 Soulstream starts from a scheduled task named `SoulstreamServer` that runs at your logon. It does not store your Windows password, so it runs only while you are signed in. The installer starts the task right away. If the task does not start in that session, the installer starts Soulstream directly and says so; the task takes over at your next logon.
 

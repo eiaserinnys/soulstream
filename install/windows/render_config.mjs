@@ -15,6 +15,7 @@ const BACKEND_RULES = { claude: 'claude_common_rules:5', codex: 'codex_rules:5' 
 
 const ORCH_KEYS = 'ENVIRONMENT HOST PORT DEFAULT_EXECUTION_NODE_ID DEFAULT_PAS_AGENT_ID PERSISTENT_SESSION_BOOTSTRAP DATABASE_URL DASHBOARD_DIR SOULSTREAM_PUBLIC_URL CORS_ALLOWED_ORIGINS AUTH_BEARER_TOKEN JWT_SECRET DASHBOARD_ADMIN_PASSWORD TAILSCALE_AUTH_ENABLED TAILSCALE_ALLOWED_LOGIN ATOM_ENABLED ATOM_SERVER_URL ATOM_PUBLIC_URL ATOM_API_KEY SKILL_CATALOG_NODE_ID DOMAIN_CATALOG_NODE_ID AGY_CLI_PATH'.split(' ');
 const WORKER_KEYS = 'ENVIRONMENT SOULSTREAM_NODE_ID SOULSTREAM_UPSTREAM_URL SOULSTREAM_BACKENDS AUTH_BEARER_TOKEN JWT_SECRET PORTABLE_LOCAL_MCP_AUTHORIZATION HOST PORT MCP_INTERNAL_PORT MCP_ENABLED MCP_PATH MCP_REQUIRE_AUTH MCP_ALLOWED_HOSTS AGENTS_CONFIG_PATH EVENT_OUTBOX_DIR INCOMING_FILE_DIR SOUL_RUNNER_PROCESS_ENABLED SOUL_RUNNER_STATE_DIR SOUL_RUNNER_ARTIFACT_DIR SOUL_RUNNER_RELEASES_DIR WORKTREE_MCP_ENABLED WORKTREE_PROJECTS_ROOT SESSION_ISOLATION_MODE CLAUDE_ACCOUNT_POOL_ENABLED ATOM_ENABLED ATOM_SERVER_URL ATOM_API_KEY CLAUDE_AUTH_TOKEN_PATH CODEX_ADAPTER_MODE CLAUDE_CODE_EXECPATH CODEX_CLI_PATH AGY_CLI_PATH DISABLE_AUTOUPDATER'.split(' ');
+const WIN_AGENT_HOME_KEYS = ['CLAUDE_ACCOUNTS_DIR', 'CLAUDE_SHARED_HOME_DIR', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME'];
 
 const AGENTS_MD = `# Soulstream workspace
 
@@ -193,7 +194,20 @@ export function renderEnvFiles(o) {
     `ATOM_SERVER_URL=http://127.0.0.1:${ports.atom}`,
     `ATOM_API_KEY=${atomApiKey}`,
   ];
-  if (backends.includes('claude')) worker.push(`CLAUDE_AUTH_TOKEN_PATH=${path.join(home, '.claude', '.credentials.json')}`);
+  if (win) {
+    // The Windows worker runs as the signed-in user, so its logins and session history live in agent-home and
+    // the user's own ~/.claude, ~/.claude.json, ~/.claude-accounts and ~/.codex stay untouched.
+    const { agentHome } = o;
+    worker.push(
+      `CLAUDE_ACCOUNTS_DIR=${path.join(agentHome, '.claude-accounts')}`,
+      `CLAUDE_SHARED_HOME_DIR=${agentHome}`,
+      `CLAUDE_CONFIG_DIR=${path.join(agentHome, '.claude')}`,
+      `CLAUDE_AUTH_TOKEN_PATH=${path.join(agentHome, '.claude', '.credentials.json')}`,
+      `CODEX_HOME=${path.join(agentHome, '.codex')}`,
+    );
+  } else if (backends.includes('claude')) {
+    worker.push(`CLAUDE_AUTH_TOKEN_PATH=${path.join(home, '.claude', '.credentials.json')}`);
+  }
   if (backends.includes('codex')) worker.push('CODEX_ADAPTER_MODE=app-server');
   return { orch, worker };
 }
@@ -267,7 +281,8 @@ function linkClaudeMd({ platform, workspace, path, previousAgentsMd }) {
 }
 
 /**
- * options: platform, home (user home), root (soulstream checkout), workspace, backends (array), ports
+ * options: platform, home (user home), root (soulstream checkout), workspace, agentHome (win32: the folder that holds
+ * the worker's own Claude and Codex logins), backends (array), ports
  * {orch, atom, worker, mcp, postgres}, secrets {bearer, jwt, dbPassword, adminPassword}, atomDashboard (false leaves
  * ATOM_PUBLIC_URL empty so the dashboard shows no atom link). Returns { warnings, seedWarnings }.
  */
@@ -286,7 +301,7 @@ export function renderConfig(options) {
   const env = renderEnvFiles(o);
   const win = platform === 'win32';
   mergeEnv(path.join(root, '.env.orch'), env.orch, ORCH_KEYS, win);
-  mergeEnv(path.join(root, '.env.soul-server-ts'), env.worker, WORKER_KEYS, win);
+  mergeEnv(path.join(root, '.env.soul-server-ts'), env.worker, win ? [...WORKER_KEYS, ...WIN_AGENT_HOME_KEYS] : WORKER_KEYS, win);
   const agentsMdPath = path.join(workspace, 'AGENTS.md');
   const previousAgentsMd = existsSync(agentsMdPath) ? readFileSync(agentsMdPath) : null;
   const warnings = writeManaged(path.join(root, 'config', '.installer-managed.sha256'), [

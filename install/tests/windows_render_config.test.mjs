@@ -90,8 +90,9 @@ test('the win32 render uses Windows paths, no process runner and no agy', () => 
   const root = 'C:\\Users\\Jane Doe\\AppData\\Local\\Soulstream\\soulstream';
   const workspace = 'C:\\Users\\Jane Doe\\AppData\\Local\\Soulstream\\workspace';
   const home = 'C:\\Users\\Jane Doe';
+  const agentHome = 'C:\\Users\\Jane Doe\\AppData\\Local\\Soulstream\\agent-home';
   const { orch, worker } = renderEnvFiles({
-    platform: 'win32', home, root, workspace, path: win32, ports: { ...PORTS, worker: 4305, mcp: 4306 },
+    platform: 'win32', home, root, workspace, agentHome, path: win32, ports: { ...PORTS, worker: 4305, mcp: 4306 },
     secrets: { bearer: 'b', jwt: 'j', dbPassword: 'd', adminPassword: 'adminpass1' }, atomApiKey: 'k', backends: ['claude', 'codex'], nodes: {},
   });
   assert.ok(worker.includes('SESSION_ISOLATION_MODE=off'));
@@ -99,12 +100,19 @@ test('the win32 render uses Windows paths, no process runner and no agy', () => 
   assert.ok(worker.includes('PORT=4305') && worker.includes('MCP_INTERNAL_PORT=4306'));
   assert.ok(worker.includes(`AGENTS_CONFIG_PATH=${root}\\config\\agents.yaml`));
   assert.ok(worker.includes(`WORKTREE_PROJECTS_ROOT=${workspace}\\.projects`));
-  assert.ok(worker.includes(`CLAUDE_AUTH_TOKEN_PATH=${home}\\.claude\\.credentials.json`));
+  for (const line of [
+    `CLAUDE_ACCOUNTS_DIR=${agentHome}\\.claude-accounts`,
+    `CLAUDE_SHARED_HOME_DIR=${agentHome}`,
+    `CLAUDE_CONFIG_DIR=${agentHome}\\.claude`,
+    `CLAUDE_AUTH_TOKEN_PATH=${agentHome}\\.claude\\.credentials.json`,
+    `CODEX_HOME=${agentHome}\\.codex`,
+  ]) assert.ok(worker.includes(line), line);
+  assert.ok(!worker.some((line) => line.includes(`=${home}\\.`)), 'no worker path points into the user home');
   assert.ok(orch.includes(`DASHBOARD_DIR=${root}\\unified-dashboard\\dist`));
   assert.ok(![...orch, ...worker].some((line) => /AGY|SOUL_RUNNER_(STATE|ARTIFACT|RELEASES)/.test(line)));
   assert.ok(orch.includes('ATOM_PUBLIC_URL=http://127.0.0.1:4200'));
   const withoutAtomDashboard = renderEnvFiles({
-    platform: 'win32', home, root, workspace, path: win32, ports: PORTS, atomDashboard: false,
+    platform: 'win32', home, root, workspace, agentHome, path: win32, ports: PORTS, atomDashboard: false,
     secrets: { bearer: 'b', jwt: 'j', dbPassword: 'd', adminPassword: 'adminpass1' }, atomApiKey: 'k', backends: ['claude'], nodes: {},
   });
   assert.ok(withoutAtomDashboard.orch.includes('ATOM_PUBLIC_URL='));

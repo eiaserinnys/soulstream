@@ -598,6 +598,23 @@ jobs:
           }
           Write-Host "Marker check: both scripts refused $foreign and left keep.txt alone."
 
+      - name: Put stand-in user logins in the user's home
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $claudeDir = Join-Path $env:USERPROFILE ".claude"
+          $codexDir = Join-Path $env:USERPROFILE ".codex"
+          New-Item -ItemType Directory -Force -Path $claudeDir, $codexDir | Out-Null
+          Set-Content -LiteralPath (Join-Path $claudeDir ".credentials.json") -Encoding ascii -Value '{"claudeAiOauth":{"accessToken":"user-claude-access","refreshToken":"user-claude-refresh","expiresAt":4102444800000}}'
+          Set-Content -LiteralPath (Join-Path $codexDir "auth.json") -Encoding ascii -Value '{"tokens":{"access_token":"user-codex-access","refresh_token":"user-codex-refresh","account_id":"user-account"}}'
+          $snapshot = [ordered]@{
+            claude = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $claudeDir ".credentials.json")).Hash
+            codex = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $codexDir "auth.json")).Hash
+            claudeEntries = @(Get-ChildItem -LiteralPath $claudeDir -Force | ForEach-Object { $_.Name })
+          }
+          $snapshot | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "user-logins.json") -Encoding utf8
+          Write-Host "Stand-in logins: .claude\.credentials.json $($snapshot.claude), .codex\auth.json $($snapshot.codex)"
+
       - name: Install Soulstream (Windows PowerShell 5.1, Restricted policy)
         shell: powershell
         run: |
@@ -645,6 +662,31 @@ jobs:
           }
           Write-Host "The atom dashboard serves HTML."
 
+      - name: Check that the user's own logins were left alone
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $before = Get-Content -Raw -LiteralPath (Join-Path $env:RUNNER_TEMP "user-logins.json") | ConvertFrom-Json
+          $claudeDir = Join-Path $env:USERPROFILE ".claude"
+          $claudeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $claudeDir ".credentials.json")).Hash
+          $codexHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $env:USERPROFILE ".codex\auth.json")).Hash
+          if ($claudeHash -ne $before.claude -or $codexHash -ne $before.codex) { throw "A user login file changed: claude $claudeHash, codex $codexHash" }
+          Write-Host "User logins unchanged: .claude\.credentials.json $claudeHash, .codex\auth.json $codexHash"
+          $userPool = Join-Path $env:USERPROFILE ".claude-accounts"
+          if (Test-Path -LiteralPath $userPool) { throw "$userPool was created." }
+          Write-Host "No user account pool: $userPool does not exist."
+          $agentPool = Join-Path $env:SOULSTREAM_TEST_ROOT "agent-home\.claude-accounts"
+          $accountsFile = Join-Path $agentPool "accounts.json"
+          $accounts = if (Test-Path -LiteralPath $accountsFile) { @((Get-Content -Raw -LiteralPath $accountsFile | ConvertFrom-Json)) } else { @() }
+          $accountCount = @($accounts | ForEach-Object { if ($_.PSObject.Properties["accounts"]) { $_.accounts } else { $_ } } | Where-Object { $_ }).Count
+          $copies = @(Get-ChildItem -LiteralPath $agentPool -Recurse -Force -File -Filter ".credentials.json" -ErrorAction SilentlyContinue)
+          if ($accountCount -ne 0 -or $copies.Count -ne 0) { throw "The agent-home pool has $accountCount accounts and $($copies.Count) credential files." }
+          Write-Host "Agent-home pool is empty: $accountCount accounts, no credential copies in $agentPool."
+          $shared = @("projects", "file-history", "tasks", "plans", "session-env", "agent-memory")
+          $added = @(Get-ChildItem -LiteralPath $claudeDir -Force | ForEach-Object { $_.Name } | Where-Object { $_ -notin @($before.claudeEntries) })
+          if (@($added | Where-Object { $_ -in $shared }).Count -ne 0) { throw "New folders under $claudeDir`: $($added -join ', ')" }
+          Write-Host "No new pool folders under $claudeDir (other new entries: $(if ($added.Count) { $added -join ', ' } else { 'none' }))."
+
       - name: Dump logs on failure
         if: failure()
         shell: pwsh
@@ -689,3 +731,12 @@ jobs:
           }
           Write-Host "Junction check: $outsideKeep is still there after the uninstall."
           Write-Host "Soulstream is removed."
+
+      - name: Remove the stand-in user logins
+        if: always()
+        shell: pwsh
+        run: |
+          foreach ($file in @(".claude\.credentials.json", ".codex\auth.json")) {
+            Remove-Item -LiteralPath (Join-Path $env:USERPROFILE $file) -Force -ErrorAction SilentlyContinue
+          }
+          Write-Host "Removed the stand-in user logins."

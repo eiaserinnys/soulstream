@@ -291,6 +291,18 @@ describe("parseEnv", () => {
     });
   });
 
+  it("Claude shared home is optional and must be absolute", () => {
+    expect(parseEnv(minimal).CLAUDE_SHARED_HOME_DIR).toBeUndefined();
+    expect(() => parseEnv({
+      ...minimal,
+      CLAUDE_SHARED_HOME_DIR: "relative/agent-home",
+    })).toThrow(/CLAUDE_SHARED_HOME_DIR must be an absolute path/);
+    expect(parseEnv({
+      ...minimal,
+      CLAUDE_SHARED_HOME_DIR: "/srv/soulstream/agent-home",
+    }).CLAUDE_SHARED_HOME_DIR).toBe("/srv/soulstream/agent-home");
+  });
+
   it("Claude runtime v2 defaults to a ten-minute inactivity gap and explicit kill-switch", () => {
     const defaults = parseEnv(minimal);
     expect(defaults.CLAUDE_SESSION_RUNTIME_V2_ENABLED).toBe(true);

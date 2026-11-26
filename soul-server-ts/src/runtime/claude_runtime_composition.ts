@@ -32,14 +32,14 @@ import { ClaudeRuntimeStartupRecovery } from
   "./claude_runtime_startup_recovery.js";
 
 export function composeClaudeAccountServices(
-  env: Pick<Env, "CLAUDE_AUTH_TOKEN_PATH" | "CLAUDE_ACCOUNT_POOL_ENABLED" | "CLAUDE_ACCOUNTS_DIR">,
+  env: Pick<Env, "CLAUDE_AUTH_TOKEN_PATH" | "CLAUDE_ACCOUNT_POOL_ENABLED" | "CLAUDE_ACCOUNTS_DIR" | "CLAUDE_SHARED_HOME_DIR">,
   logger: Logger,
 ): {
   claudeAuth: ClaudeAuthService;
   claudeAccounts: ClaudeAccountService | undefined;
 } {
   const claudeAccounts = env.CLAUDE_ACCOUNT_POOL_ENABLED && env.CLAUDE_ACCOUNTS_DIR
-    ? new ClaudeAccountService({ accountsDir: env.CLAUDE_ACCOUNTS_DIR, credentialRenewer: new ClaudeCliCredentialRenewer({ logger }), logger })
+    ? new ClaudeAccountService({ accountsDir: env.CLAUDE_ACCOUNTS_DIR, homeDir: env.CLAUDE_SHARED_HOME_DIR, credentialRenewer: new ClaudeCliCredentialRenewer({ logger }), logger })
     : undefined;
   // 카드 #1734: 재시작 직후 로컬 계정이 사용량 관측 없이 idle로 보여 중앙이 이기지 않게
   // 조성 직후 로컬 사용량을 한 번 잰다(기다리지 않는다).
