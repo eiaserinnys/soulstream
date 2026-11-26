@@ -202,6 +202,9 @@ export interface DashboardState {
   /** 대시보드 배경 설정. 정본 localStorage 키: soul-wallpaper */
   wallpaper: WallpaperSettings;
 
+  /** 서버에 올려 둔 내 배경 사진 주소. 없으면 null. 설정 동기화가 서버 응답으로 채운다. */
+  uploadedBackgroundUrl: string | null;
+
   /** 리퀴드 글래스 설정. 계정 preferences glass가 정본이다. */
   liquidGlass: LiquidGlassSettings;
 
@@ -405,6 +408,7 @@ export interface DashboardActions {
   // 배경 설정
   setWallpaper: (settings: WallpaperSettings) => void;
   setWallpaperMode: (mode: WallpaperMode) => void;
+  setUploadedBackgroundUrl: (url: string | null) => void;
   setWallpaperCustomImage: (file: File) => Promise<void>;
 
   // 리퀴드 글래스 설정

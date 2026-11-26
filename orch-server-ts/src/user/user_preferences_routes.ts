@@ -154,7 +154,7 @@ export function serializePreferences(row: UserPreferencesRecord): Record<string,
     if (timestamp !== null) {
       backgroundUrl = `${backgroundUrl}?v=${timestamp}`;
     }
-    if (prefs.wallpaper.mode === "photo") {
+    if (prefs.wallpaper.mode === "photo" && !isBundledWallpaperPath(prefs.wallpaper.customImage)) {
       prefs.wallpaper = {
         ...prefs.wallpaper,
         customImage: backgroundUrl,
@@ -308,8 +308,15 @@ function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
+const BUNDLED_WALLPAPER_PATH = /^\/wallpapers\/[a-z0-9-]+\.webp$/;
+
+function isBundledWallpaperPath(value: string | undefined): boolean {
+  return value !== undefined && BUNDLED_WALLPAPER_PATH.test(value);
+}
+
 function isSafeBackgroundUrl(value: string): boolean {
   return (
+    isBundledWallpaperPath(value) ||
     value.startsWith("/api/user/background") ||
     value.startsWith("data:image/") ||
     value.startsWith("https://") ||

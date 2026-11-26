@@ -94,6 +94,7 @@ export function normalizeAppWallpaperSettings(value: unknown): WallpaperSettings
 function isAllowedImageUri(value: string): boolean {
   return (
     value.startsWith('/api/user/background') ||
+    value.startsWith('/wallpapers/') ||
     value.startsWith('http://') ||
     value.startsWith('https://') ||
     value.startsWith('file://') ||

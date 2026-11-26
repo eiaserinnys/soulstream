@@ -16,6 +16,7 @@ jest.mock('../../services/pushNotifications', () => ({
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolveBackgroundImageSource } from '../../lib/wallpaper-source';
+import { normalizeUserPreferences } from '../../api/preferencesEndpoints';
 
 describe('resolveBackgroundImageSource', () => {
   test('same-origin custom photo에는 JWT Bearer header를 붙인다', () => {
@@ -48,6 +49,17 @@ describe('resolveBackgroundImageSource', () => {
     expect(resolveBackgroundImageSource('', '/api/user/background', 'jwt-token'))
       .toBeNull();
   });
+});
+
+test('서버가 준 번들 기본 그림 경로를 앱이 버리지 않고 서버 주소에 붙여 그린다', () => {
+  const { wallpaper } = normalizeUserPreferences({
+    appearance: 'dark',
+    wallpaper: { mode: 'photo', customImage: '/wallpapers/dawn-ridge.webp' },
+  });
+
+  expect(wallpaper).toEqual({ mode: 'photo', customImage: '/wallpapers/dawn-ridge.webp' });
+  expect(resolveBackgroundImageSource('https://soul.example.com/', wallpaper.customImage, null))
+    .toEqual({ uri: 'https://soul.example.com/wallpapers/dawn-ridge.webp' });
 });
 
 test('루트 배경은 appearance와 wallpaper store를 직접 구독해 변경 즉시 다시 계산한다', () => {

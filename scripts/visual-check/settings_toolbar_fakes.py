@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import functools
 import http.server
+import io
 import json
+import re
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -59,6 +61,23 @@ CREATE_DEFAULTS = {"node_id": "eiaserinnys", "preferred_agent_id": "roselin", "s
 UNAVAILABLE = "기본 모델 sample-neon이(가) 노드 local에 없습니다. 기본 모델 sample-opus을(를) 지금 쓸 수 없습니다. 기본 모델 sample-sol을(를) 지금 쓸 수 없습니다."
 
 
+def uploaded_photo_png() -> bytes:
+    """사용자가 올린 사진 대역. 번들 그림과 겹치지 않게 따뜻한 색 가로 줄무늬로 그린다."""
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (480, 270))
+    draw = ImageDraw.Draw(image)
+    for y in range(270):
+        draw.line([(0, y), (480, y)], fill=(230 - y // 4, 150 + y // 6, 90 + y // 3))
+    draw.ellipse([300, 40, 380, 120], fill=(255, 236, 190))
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+BUNDLED_WALLPAPER = re.compile(r"^/wallpapers/[a-z0-9-]+\.webp$")
+
+
 def quota(qid, label, window, percent):
     return {"id": qid, "label": label, "window": window, "model": None, "remainingPercent": percent, "resetAt": 1_900_000_000}
 
@@ -97,7 +116,7 @@ def flow(provider_id, state, **patch):
 class Fake:
     """한 페이지가 부르는 API의 가짜 응답. 장면별 값은 속성으로 바꾼다."""
 
-    def __init__(self, atom=True, sessions="one", login_supported=True, admin=True, nodes="one", hold_usage=False, bootstrap="hold", hold_login_post=False, login_post_error=None, agent_name="로젤린", defaults_node="eiaserinnys"):
+    def __init__(self, atom=True, sessions="one", login_supported=True, admin=True, nodes="one", hold_usage=False, bootstrap="hold", hold_login_post=False, login_post_error=None, agent_name="로젤린", defaults_node="eiaserinnys", user_prefs=None):
         self.atom = atom
         self.sessions = sessions  # one | two | manual | unavailable | bootstrap
         self.login_supported = login_supported
@@ -111,6 +130,8 @@ class Fake:
         self.login_post_error = login_post_error  # (status, code)
         self.agent_name = agent_name
         self.defaults_node = defaults_node  # 영구 세션 만들기 기본 노드. 연결된 노드가 없으면 서버가 빈 값을 준다
+        # None이면 /api/user/preferences를 가짜로 받지 않는다. 딕셔너리면 {"wallpaper": {...}, "uploaded": bool}로 서버 저장값을 흉내 낸다.
+        self.user_prefs = user_prefs
         self.flows: dict[str, dict] = {}
         self.calls: list[tuple[str, str]] = []
         self.held_bootstrap = None
@@ -129,6 +150,10 @@ class Fake:
             return route.fulfill(json={"authenticated": True, "user": {"email": "qa@example.test", "name": "QA", "isAdmin": self.admin}})
         if path == "/api/auth/config":
             return route.fulfill(json={"authEnabled": True, "devModeEnabled": False})
+        if self.user_prefs is not None and path == "/api/user/preferences":
+            return self.user_preferences(route, method, request)
+        if self.user_prefs is not None and path == "/api/user/background" and method == "GET":
+            return route.fulfill(body=uploaded_photo_png(), content_type="image/png")
         if path == "/api/persistent-sessions" and method == "GET":
             defaults = {**CREATE_DEFAULTS, "node_id": self.defaults_node, "unavailable_reason": UNAVAILABLE if self.sessions == "unavailable" else None}
             if self.sessions in ("unavailable", "bootstrap"):
@@ -184,6 +209,20 @@ class Fake:
         if "agent-logins" in parts:
             return self.agent_login(route, method, parts)
         return route.continue_()
+
+    def user_preferences(self, route, method, request):
+        """서버 serializePreferences와 같은 꼴: 올린 그림이 있어도 번들 경로의 customImage는 덮어쓰지 않는다."""
+        state = self.user_prefs
+        if method == "PUT":
+            body = request.post_data_json or {}
+            state["wallpaper"] = body.get("wallpaper", state["wallpaper"])
+            if body.get("clearBackground"):
+                state["uploaded"] = False
+        background = "/api/user/background?v=1" if state["uploaded"] else None
+        wallpaper = dict(state["wallpaper"])
+        if background and wallpaper.get("mode") == "photo" and not BUNDLED_WALLPAPER.match(wallpaper.get("customImage", "")):
+            wallpaper["customImage"] = background
+        return route.fulfill(json={"email": "qa@example.test", "preferences": {"appearance": "system", "wallpaper": wallpaper}, "hasBackground": state["uploaded"], "backgroundUrl": background, "updatedAt": None})
 
     def agent_login(self, route, method, parts):
         tail = parts[parts.index("agent-logins") + 1:]

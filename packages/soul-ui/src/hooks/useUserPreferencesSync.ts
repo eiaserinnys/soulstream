@@ -26,6 +26,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
   const liquidGlass = useDashboardStore((state) => state.liquidGlass);
   const chatFontSize = useDashboardStore((state) => state.chatFontSize);
   const setWallpaper = useDashboardStore((state) => state.setWallpaper);
+  const setUploadedBackgroundUrl = useDashboardStore((state) => state.setUploadedBackgroundUrl);
   const setLiquidGlass = useDashboardStore((state) => state.setLiquidGlass);
   const setChatFontSize = useDashboardStore((state) => state.setChatFontSize);
   const hydratedAccountRef = useRef<string | null>(null);
@@ -50,6 +51,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
       .then((response) => {
         if (cancelled) return;
         hasServerBackgroundRef.current = response.hasBackground;
+        setUploadedBackgroundUrl(response.backgroundUrl);
         applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef);
         writeCachedUserPreferences(accountKey, response.preferences);
         hydratedAccountRef.current = accountKey;
@@ -63,7 +65,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     return () => {
       cancelled = true;
     };
-  }, [accountKey, setChatFontSize, setLiquidGlass, setWallpaper]);
+  }, [accountKey, setChatFontSize, setLiquidGlass, setUploadedBackgroundUrl, setWallpaper]);
 
   useEffect(() => {
     if (!accountKey || hydratedAccountRef.current !== accountKey) return;
@@ -85,6 +87,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
         .then((response) => {
           if (saveSeqRef.current !== saveSeq) return;
           hasServerBackgroundRef.current = response.hasBackground;
+          setUploadedBackgroundUrl(response.backgroundUrl);
           applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef);
           writeCachedUserPreferences(accountKey, response.preferences);
         })
@@ -94,7 +97,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [accountKey, appearance, chatFontSize, liquidGlass, wallpaper, setChatFontSize, setLiquidGlass, setWallpaper]);
+  }, [accountKey, appearance, chatFontSize, liquidGlass, wallpaper, setChatFontSize, setLiquidGlass, setUploadedBackgroundUrl, setWallpaper]);
 }
 
 async function persistSnapshot(
