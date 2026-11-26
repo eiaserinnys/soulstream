@@ -55,6 +55,9 @@ function Get-NativeOutput {
     & $File @Arguments 2>$null
 }
 
+# A PowerShell single-quoted literal: a quote inside is written twice, so C:\Users\O'Brien stays one string.
+function ConvertTo-SingleQuoted { param([string]$Value) "'" + $Value.Replace("'", "''") + "'" }
+
 function Test-CommandExists { param([string]$Command) $null -ne (Get-Command $Command -ErrorAction SilentlyContinue) }
 
 function Update-SessionPath {
@@ -276,6 +279,12 @@ Write-Step "Registering the logon task"
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 $hanielYaml = Join-Path $InstallRoot "haniel.yaml"
 $runner = Join-Path $InstallRoot "run-haniel.ps1"
+$runnerPython = ConvertTo-SingleQuoted $venvPython
+$runnerYaml = ConvertTo-SingleQuoted "`"$hanielYaml`""
+$runnerRoot = ConvertTo-SingleQuoted $InstallRoot
+$runnerOut = ConvertTo-SingleQuoted (Join-Path $logsDir "haniel.out.log")
+$runnerErr = ConvertTo-SingleQuoted (Join-Path $logsDir "haniel.err.log")
+$runnerPid = ConvertTo-SingleQuoted (Join-Path $InstallRoot "haniel.pid")
 # The runner is UTF-16 with a byte order mark so Windows PowerShell 5.1 reads non-ASCII paths (a profile folder with
 # Korean letters); its UTF8 is written without one by PowerShell 7 and read as the ANSI code page by 5.1.
 # PYTHONUTF8: Haniel decodes the services' UTF-8 output with the locale code page (cp949 on Korean Windows), and its
@@ -284,8 +293,8 @@ $runner = Join-Path $InstallRoot "run-haniel.ps1"
 @"
 `$ErrorActionPreference = 'Stop'
 `$env:PYTHONUTF8 = '1'
-`$process = Start-Process -FilePath '$venvPython' -ArgumentList @('-m', 'haniel', 'run', '"$hanielYaml"') -WorkingDirectory '$InstallRoot' -WindowStyle Hidden -PassThru -RedirectStandardOutput '$logsDir\haniel.out.log' -RedirectStandardError '$logsDir\haniel.err.log'
-Set-Content -LiteralPath '$InstallRoot\haniel.pid' -Value `$process.Id -Encoding ASCII
+`$process = Start-Process -FilePath $runnerPython -ArgumentList @('-m', 'haniel', 'run', $runnerYaml) -WorkingDirectory $runnerRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $runnerOut -RedirectStandardError $runnerErr
+Set-Content -LiteralPath $runnerPid -Value `$process.Id -Encoding ASCII
 `$process.WaitForExit()
 "@ | Set-Content -LiteralPath $runner -Encoding Unicode
 $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -312,7 +321,7 @@ if ($started) {
 
 # ---- 9. wait and finish (Node) ----
 Invoke-Native "node" (@($setup, "finish") + $common)
-$uninstallArguments = if ($InstallRoot -eq $defaultInstallRoot) { "" } else { " -InstallRoot '$InstallRoot'" }
+$uninstallArguments = if ($InstallRoot -eq $defaultInstallRoot) { "" } else { " -InstallRoot $(ConvertTo-SingleQuoted $InstallRoot)" }
 Write-Host ""
 Write-Host "To remove it, run in an elevated PowerShell:" -ForegroundColor DarkGray
 Write-Host "  & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/uninstall-windows.ps1')))$uninstallArguments" -ForegroundColor DarkGray

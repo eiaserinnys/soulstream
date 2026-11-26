@@ -92,11 +92,15 @@ if ($null -eq $service) {
 
 Write-Step "Removing the install folder"
 if (Test-Path $InstallRoot) {
+    # Windows PowerShell 5.1's Remove-Item -Recurse walks into junctions and symbolic links (pnpm makes junctions, and
+    # agents can leave links in the workspace) and deletes what they point to. rmdir /s removes only the link.
+    # rmdir's exit code does not say whether everything went, so the folder's presence decides.
     for ($attempt = 1; $attempt -le 5; $attempt++) {
-        try { Remove-Item -LiteralPath $InstallRoot -Recurse -Force; break } catch {
-            if ($attempt -eq 5) { throw }
-            Start-Sleep -Seconds 2
-        }
+        $lastError = $null
+        try { Invoke-Native "cmd.exe" @("/d", "/c", "rmdir", "/s", "/q", $InstallRoot) } catch { $lastError = $_.Exception.Message }
+        if (-not (Test-Path -LiteralPath $InstallRoot)) { break }
+        if ($attempt -eq 5) { throw "Could not remove $InstallRoot ($lastError). Close programs that use files in it and run this script again." }
+        Start-Sleep -Seconds 2
     }
 }
 Write-Host ""

@@ -659,6 +659,18 @@ jobs:
             Write-Host "(no log folder)"
           }
 
+      - name: Link a folder outside the install folder into the workspace
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $outside = Join-Path $env:RUNNER_TEMP "outside-target"
+          New-Item -ItemType Directory -Force -Path $outside | Out-Null
+          Set-Content -LiteralPath (Join-Path $outside "keep.txt") -Value "keep" -Encoding ASCII
+          $workspace = Join-Path $env:SOULSTREAM_TEST_ROOT "workspace"
+          New-Item -ItemType Directory -Force -Path $workspace | Out-Null
+          $link = New-Item -ItemType Junction -Path (Join-Path $workspace "outside-link") -Target $outside
+          Write-Host "Junction: $($link.FullName) -> $outside"
+
       - name: Uninstall Soulstream (Windows PowerShell 5.1, Restricted policy)
         shell: powershell
         run: |
@@ -671,4 +683,9 @@ jobs:
           foreach ($port in @(5200, 4200, 4205)) {
             if (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue) { throw "Port $port is still listening." }
           }
+          $outsideKeep = Join-Path $env:RUNNER_TEMP "outside-target\keep.txt"
+          if (-not (Test-Path -LiteralPath $outsideKeep) -or (Get-Content -LiteralPath $outsideKeep) -ne "keep") {
+            throw "The uninstaller deleted $outsideKeep through the workspace junction."
+          }
+          Write-Host "Junction check: $outsideKeep is still there after the uninstall."
           Write-Host "Soulstream is removed."
