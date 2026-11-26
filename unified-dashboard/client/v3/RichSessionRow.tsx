@@ -2,7 +2,7 @@ import type { MouseEvent } from "react";
 import {
   getSessionActivityTimestamp,
   ProfileAvatar,
-  STATUS_CONFIG,
+  getSessionStatusLabel,
   useAgentPortraitUrlResolver,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
@@ -42,7 +42,7 @@ export function RichSessionRow({
     ? "조회 실패"
     : nodeOffline
       ? "노드 오프라인"
-      : (STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown).label;
+      : getSessionStatusLabel(session.status, session.sessionType);
   const presentationStatus = failed ? "failed" : nodeOffline ? "offline" : session.status;
   const modelLabel = failed ? null : sessionModelLabel(session);
   const resolvePortrait = useAgentPortraitUrlResolver();

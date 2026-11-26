@@ -10,7 +10,7 @@ export async function renameProjectFolder(
 ): Promise<void> {
   await rename(folder.id, title);
   if (readFolders().find((candidate) => candidate.id === folder.id)?.name !== title) {
-    throw new Error("프로젝트 이름 변경이 서버에서 거절되었습니다");
+    throw new Error("폴더 이름 변경이 서버에서 거절되었습니다");
   }
 }
 
@@ -21,7 +21,7 @@ export async function archiveProjectFolder(
 ): Promise<void> {
   await remove(folder.id);
   if (!readFolders().find((candidate) => candidate.id === folder.id)?.archived) {
-    throw new Error("프로젝트 보관이 서버에서 거절되었습니다");
+    throw new Error("폴더 보관이 서버에서 거절되었습니다");
   }
 }
 
@@ -38,5 +38,5 @@ export async function reorderProjectFolders(
       || (folder.parentFolderId ?? null) !== (item.parentFolderId ?? null)
       || folder.sortOrder !== item.sortOrder;
   });
-  if (rejected) throw new Error("프로젝트 이동이 서버에서 거절되었습니다");
+  if (rejected) throw new Error("폴더 이동이 서버에서 거절되었습니다");
 }

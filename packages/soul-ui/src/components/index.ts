@@ -34,7 +34,7 @@ export type {
   SessionContextMenuProps,
   SessionContextMenuState,
 } from "./SessionContextMenu";
-export { STATUS_CONFIG } from "./SessionItem";
+export { STATUS_CONFIG, getSessionStatusLabel } from "./SessionItem";
 export type { StatusConfig } from "./SessionItem";
 export { CustomViewIframe } from "../custom-view/CustomViewRenderer";
 export type {

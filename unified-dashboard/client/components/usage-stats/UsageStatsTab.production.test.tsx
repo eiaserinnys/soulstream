@@ -273,7 +273,7 @@ it("switches only graph and comparison values between cache-excluded and include
   expect(comparisonValues()).toEqual(["$2.00", "$3.00"]);
   expect(comparisonShares()).toEqual(["40%", "60%"]);
   await act(async () => cacheToggle("캐시 포함").click());
-  await chooseTabOption("그래프 보기", "프로젝트별");
+  await chooseTabOption("그래프 보기", "폴더별");
   expect(request).toHaveBeenCalledTimes(1);
   expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("true");
   expect(chartAxis()).toBe("$12.00");
@@ -550,13 +550,13 @@ it("keeps real model and project selections through pending requests and replace
 
   if (!resolveFilteredOverview) throw new Error("The filtered overview request was not registered.");
   await act(async () => { resolveFilteredOverview!(jsonResponse(optionsOverview(20))); await Promise.resolve(); });
-  await chooseTabOption("프로젝트", "현재 프로젝트");
+  await chooseTabOption("폴더", "현재 프로젝트");
   expect(request).toHaveBeenCalledTimes(3);
   expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("true");
   expect(responseQuery(2).get("provider")).toBe("unknown");
   expect(responseQuery(2).get("model")).toBe("vendor/team:model:v2");
   expect(responseQuery(2).get("project_ids")).toBe("folder-current");
-  expect(selectTrigger("프로젝트").textContent).toContain("현재 프로젝트");
+  expect(selectTrigger("폴더").textContent).toContain("현재 프로젝트");
 
   if (!resolveProjectOverview) throw new Error("The project overview request was not registered.");
   await act(async () => { resolveProjectOverview!(jsonResponse(optionsOverview(30))); await Promise.resolve(); });
@@ -569,7 +569,7 @@ it("keeps real model and project selections through pending requests and replace
   expect(responseQuery(3).get("model")).toBe("vendor/team:model:v2");
   expect(responseQuery(3).get("project_ids")).toBe("folder-current");
   expect(selectTrigger("모델").textContent).toContain("원문 모델");
-  expect(selectTrigger("프로젝트").textContent).toContain("현재 프로젝트");
+  expect(selectTrigger("폴더").textContent).toContain("현재 프로젝트");
   expect(request).toHaveBeenCalledTimes(4);
 
   if (!resolveMonthOverview) throw new Error("The month overview request was not registered.");
@@ -578,9 +578,9 @@ it("keeps real model and project selections through pending requests and replace
   const modelOptions = activeSelectOptionLabels("모델");
   expect(modelOptions).toEqual(["모든 모델", "공급자 미확인", "공급자 미확인 · 새 기간 모델", "공급자 미확인 · 원문 모델"]);
   await act(async () => selectTrigger("모델").click());
-  await act(async () => selectTrigger("프로젝트").click());
-  const projectOptions = activeSelectOptionLabels("프로젝트");
-  expect(projectOptions).toEqual(["모든 프로젝트", "새 기간 프로젝트", "미분류", "현재 프로젝트"]);
+  await act(async () => selectTrigger("폴더").click());
+  const projectOptions = activeSelectOptionLabels("폴더");
+  expect(projectOptions).toEqual(["모든 폴더", "새 기간 프로젝트", "미분류", "현재 프로젝트"]);
   expect(projectOptions).not.toContain("이전 프로젝트");
   expect(modelOptions).not.toContain("이전 모델");
   expect([...document.querySelectorAll<HTMLElement>(".usage-stats-share-row")]
@@ -595,7 +595,7 @@ it("keeps real model and project selections through pending requests and replace
   await act(async () => document.querySelector<HTMLButtonElement>('[data-bucket-index="19"]')!.click());
   expect(request).toHaveBeenCalledTimes(5);
   expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("true");
-  await chooseTabOption("그래프 보기", "프로젝트별");
+  await chooseTabOption("그래프 보기", "폴더별");
   expect(request).toHaveBeenCalledTimes(5);
   expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("true");
 });
@@ -609,7 +609,7 @@ it("clears displayed selections and data and disables both filters after an over
 
   await act(async () => root.render(<UsageStatsTab request={request} />));
   await chooseTabOption("모델", "공급자 미확인 · 원문 모델");
-  await chooseTabOption("프로젝트", "현재 프로젝트");
+  await chooseTabOption("폴더", "현재 프로젝트");
 
   expect(request).toHaveBeenCalledTimes(3);
   expect(document.body.textContent).toContain("이 통계를 볼 권한이 없습니다.");
@@ -617,11 +617,11 @@ it("clears displayed selections and data and disables both filters after an over
   expect(document.querySelector(".usage-stats-share-list")).toBeNull();
   expect(document.querySelector(".usage-stats-input-material")).toBeNull();
   expect(selectTrigger("모델").textContent).toContain("모든 모델");
-  expect(selectTrigger("프로젝트").textContent).toContain("모든 프로젝트");
+  expect(selectTrigger("폴더").textContent).toContain("모든 폴더");
   expect(selectTrigger("모델").disabled).toBe(true);
-  expect(selectTrigger("프로젝트").disabled).toBe(true);
+  expect(selectTrigger("폴더").disabled).toBe(true);
   await act(async () => selectTrigger("모델").click());
-  await act(async () => selectTrigger("프로젝트").click());
+  await act(async () => selectTrigger("폴더").click());
   expect(request).toHaveBeenCalledTimes(3);
 });
 
@@ -636,7 +636,7 @@ it("removes successful day details and selection labels after a later day 403", 
 
   await act(async () => root.render(<UsageStatsTab request={request} />));
   await chooseTabOption("모델", "공급자 미확인 · 원문 모델");
-  await chooseTabOption("프로젝트", "현재 프로젝트");
+  await chooseTabOption("폴더", "현재 프로젝트");
   await act(async () => document.querySelector<HTMLButtonElement>('[data-bucket-index="1"]')!.click());
   expect(document.querySelector(".usage-stats-input-material")?.textContent).toContain("툴 호출");
   const inputRows = [...document.querySelectorAll(".usage-stats-input-material .usage-stats-share-row")];
@@ -652,11 +652,11 @@ it("removes successful day details and selection labels after a later day 403", 
   expect(document.querySelector(".usage-stats-share-list")).toBeNull();
   expect(document.querySelector(".usage-stats-input-material")).toBeNull();
   expect(selectTrigger("모델").textContent).toContain("모든 모델");
-  expect(selectTrigger("프로젝트").textContent).toContain("모든 프로젝트");
+  expect(selectTrigger("폴더").textContent).toContain("모든 폴더");
   expect(selectTrigger("모델").disabled).toBe(true);
-  expect(selectTrigger("프로젝트").disabled).toBe(true);
+  expect(selectTrigger("폴더").disabled).toBe(true);
   await act(async () => selectTrigger("모델").click());
-  await act(async () => selectTrigger("프로젝트").click());
+  await act(async () => selectTrigger("폴더").click());
   expect(request).toHaveBeenCalledTimes(5);
 });
 

@@ -153,7 +153,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
     return built;
   }, [overview, filter, forbidden]);
   const projectOptions = useMemo(() => {
-    const allProjects = { value: "all", label: "모든 프로젝트" };
+    const allProjects = { value: "all", label: "모든 폴더" };
     if (forbidden) return [allProjects];
     const built = [
       allProjects,
@@ -168,8 +168,8 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
     ? ALL_USAGE_STATS_FILTER.label
     : modelOptions.find(option => option.id === filter.id)?.label ?? filter.label;
   const selectedProjectLabel = forbidden
-    ? "모든 프로젝트"
-    : projectOptions.find(option => option.value === (projectId ?? "all"))?.label ?? selectedProject?.label ?? "모든 프로젝트";
+    ? "모든 폴더"
+    : projectOptions.find(option => option.value === (projectId ?? "all"))?.label ?? selectedProject?.label ?? "모든 폴더";
   const displayedAggregate = selectedDate ? detail?.totals ?? null : overviewReady ? overview?.totals ?? null : null;
   const displayedModels = selectedDate ? detail?.by_model ?? [] : overviewReady ? overview?.by_model ?? [] : [];
   const displayedProjects = selectedDate ? detail?.by_project ?? [] : overviewReady ? overview?.by_project ?? [] : [];
@@ -289,8 +289,8 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
         />
         <CatalogSelectionField
           key={forbidden ? "project:forbidden" : "project:active"}
-          label="프로젝트"
-          ariaLabel="프로젝트"
+          label="폴더"
+          ariaLabel="폴더"
           value={forbidden ? "all" : projectId ?? "all"}
           selectedLabel={selectedProjectLabel}
           options={projectOptions}
@@ -328,8 +328,8 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
               label="보기"
               ariaLabel="그래프 보기"
               value={view}
-              options={[{ value: "model", label: "모델별" }, { value: "project", label: "프로젝트별" }]}
-              selectedLabel={view === "model" ? "모델별" : "프로젝트별"}
+              options={[{ value: "model", label: "모델별" }, { value: "project", label: "폴더별" }]}
+              selectedLabel={view === "model" ? "모델별" : "폴더별"}
               onValueChange={value => setView(value as "model" | "project")}
             />
             <div className="usage-stats-chart-heading-controls">
@@ -344,7 +344,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
             </div>
           </div>
           <UsageStackedBars
-            label={view === "model" ? "모델별 사용량" : "프로젝트별 사용량"}
+            label={view === "model" ? "모델별 사용량" : "폴더별 사용량"}
             kind={view === "model" ? "provider" : "project"}
             period={period}
             range={range}

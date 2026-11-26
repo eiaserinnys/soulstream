@@ -51,7 +51,7 @@ for (const viewport of [
     await expect(child.getByText("진행 중", { exact: true })).toBeVisible();
     await page.screenshot({ path: path.join(output, `${viewport.name}.png`), animations: "disabled", fullPage: true });
     await page.getByText("이름 변경", { exact: true }).click();
-    await expect(page.getByRole("dialog").getByRole("heading", { name: "프로젝트 설정" })).toBeVisible();
+    await expect(page.getByRole("dialog").getByRole("heading", { name: "폴더 설정" })).toBeVisible();
     await page.keyboard.press("Escape");
 
     await manage.click();

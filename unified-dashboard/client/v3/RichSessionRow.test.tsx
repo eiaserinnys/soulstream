@@ -29,6 +29,24 @@ describe("RichSessionRow model label", () => {
   });
 });
 
+describe("RichSessionRow status", () => {
+  const statusLabel = (overrides: Partial<SessionSummary>) => {
+    const container = document.createElement("div");
+    container.innerHTML = renderToStaticMarkup(<RichSessionRow session={session(overrides)} onOpen={vi.fn()} />);
+    return container.querySelector(".v3-run-row")?.textContent ?? "";
+  };
+
+  it("says 세션 턴 종료 for a completed agent session", () => {
+    expect(statusLabel({ status: "completed", sessionType: "claude" })).toContain("세션 턴 종료");
+    expect(statusLabel({ status: "completed" })).toContain("세션 턴 종료");
+  });
+
+  it("keeps 세션 완료 for a completed llm session and 세션 실행 중 while running", () => {
+    expect(statusLabel({ status: "completed", sessionType: "llm" })).toContain("세션 완료");
+    expect(statusLabel({ status: "running", sessionType: "claude" })).toContain("세션 실행 중");
+  });
+});
+
 describe("RichSessionRow preview", () => {
   const first = `${EXECUTE_INSTRUCTION_PROMPT}\n${PERSISTENT_INITIAL_INSTRUCTION}`;
   const stored = (preview: string) => ({ type: "assistant_message" as const, preview, timestamp: "2026-11-25T00:00:00Z" });

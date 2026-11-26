@@ -10,7 +10,8 @@ vi.mock("@seosoyoung/soul-ui",()=>({
  DashboardIconCap:({label,...props}:HTMLAttributes<HTMLButtonElement>&{label:string})=>createElement("button",{...props,"aria-label":label}),
  DragHandle:()=>null,SessionModelPresetBadge:()=>null,SessionStoryDisclosure:()=>null,
  SessionHeaderPill:({children,...props}:any)=>createElement("button",props,children),
- STATUS_CONFIG:{completed:{label:"완료"},unknown:{label:"알 수 없음"}},useGlassSurface:()=>false,useSessionMenu:()=>vi.fn(),
+ STATUS_CONFIG:{completed:{label:"완료"},unknown:{label:"알 수 없음"}},
+ getSessionStatusLabel:(status:string,sessionType?:string)=>status==="completed"?(sessionType==="llm"?"완료":"턴 종료"):"알 수 없음",useGlassSurface:()=>false,useSessionMenu:()=>vi.fn(),
 }));
 vi.mock("./V3SessionReviewBanner",()=>({V3SessionReviewBanner:()=>null}));
 vi.mock("./SessionStreamStatus",()=>({SessionStreamStatus:()=>null}));
@@ -47,6 +48,23 @@ it("opens the selected session's files from the chat header",()=>{
  const button=[...container.querySelectorAll('button')].find(item=>item.textContent?.includes('파일'));
  expect(button).toBeDefined();flushSync(()=>button!.click());expect(toggle).toHaveBeenCalledOnce();
  flushSync(()=>root.unmount());
+});
+
+function headerStatus(sessionType?:string){
+ const container=document.createElement("div");document.body.append(container);const root=createRoot(container);
+ flushSync(()=>root.render(createElement(WorkspaceSessionColumn,{
+  activeSession:{agentSessionId:"s",displayName:"작업",status:"completed",sessionType} as any,
+  chatClassName:"",chatTestId:"chat",resizeClassName:"",resizeTestId:"resize",onResize:()=>{},
+  chatInputDisabled:false,historyEnabled:true,sessionStreamActive:true,sessionConnectionStatus:"connected" as any,reconnectSession:()=>{},onAcknowledgedReview:()=>{},
+ } as any)));
+ const text=container.querySelector(".v3-chat-status")?.textContent;
+ flushSync(()=>root.unmount());
+ return text;
+}
+
+it("labels a completed agent session 턴 종료 and a completed llm session 완료 in the chat header",()=>{
+ expect(headerStatus("claude")).toBe("턴 종료");
+ expect(headerStatus("llm")).toBe("완료");
 });
 
 function renderEmpty(extra:Record<string,unknown>){

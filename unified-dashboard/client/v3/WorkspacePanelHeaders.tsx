@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import {
-  useSessionMenu, DashboardIconCap, SessionModelPresetBadge, SessionStoryDisclosure, SessionHeaderPill, STATUS_CONFIG,
+  useSessionMenu, DashboardIconCap, SessionModelPresetBadge, SessionStoryDisclosure, SessionHeaderPill, STATUS_CONFIG, getSessionStatusLabel,
   type SessionProviderConnectionStatus, type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { ArrowLeft, FolderOpen, X } from "lucide-react";
@@ -36,7 +36,7 @@ export function SessionPanelHeader({ session, emptyTitle = "선택된 세션 없
     </div>
     <SessionModelPresetBadge session={session}/>
     <span className={`v3-chat-status v3-chat-status--${session?.status ?? "unknown"}`}>
-      {session ? (STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown).label : STATUS_CONFIG.unknown.label}
+      {session ? getSessionStatusLabel(session.status, session.sessionType) : STATUS_CONFIG.unknown.label}
     </span>
     {session ? <SessionStreamStatus active={streamActive} status={connectionStatus} reconnect={reconnect}/> : null}
     {session ? <SessionStoryDisclosure sessionId={session.agentSessionId}/> : null}

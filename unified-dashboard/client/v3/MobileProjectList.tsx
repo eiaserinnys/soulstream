@@ -13,10 +13,10 @@ export function MobileProjectList({
   const projects = useMemo(() => flattenProjectFolders(folders.filter((folder) => !folder.archived)), [folders]);
 
   return (
-    <section className="v3-mobile-projects border border-glass-border glass-strong glass-chrome lg-rim" aria-label="프로젝트 목록">
+    <section className="v3-mobile-projects border border-glass-border glass-strong glass-chrome lg-rim" aria-label="폴더 목록">
       <header>
         <span className="v3-emoji" aria-hidden="true">📁</span>
-        <div><small>프로젝트</small><h1>전체 프로젝트</h1></div>
+        <div><small>폴더</small><h1>전체 폴더</h1></div>
       </header>
       <div className="v3-mobile-project-list" data-testid="v3-mobile-project-list">
         {projects.map(({ folder, depth }) => (
@@ -30,7 +30,7 @@ export function MobileProjectList({
             <strong>{folder.name}</strong>
           </button>
         ))}
-        {projects.length === 0 ? <p>프로젝트가 없습니다.</p> : null}
+        {projects.length === 0 ? <p>폴더가 없습니다.</p> : null}
       </div>
     </section>
   );

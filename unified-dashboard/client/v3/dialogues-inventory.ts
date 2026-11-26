@@ -43,7 +43,7 @@ export const dialoguesInventory = [
   {
     section: "folders",
     id: "parent-move",
-    name: "다른 프로젝트로 이동",
+    name: "다른 폴더로 이동",
     component: "FolderParentMoveDialog",
   },
   {

@@ -78,6 +78,40 @@ describe("V3Navigation frame contract", () => {
     expect(html).toContain("새 폴더");
   });
 
+  it("labels the folder list and its empty state as folders", () => {
+    const html = renderToStaticMarkup(
+      <V3Navigation
+        dates={[{ date: "2026-07-15", label: "오늘" }]}
+        selectedDate="2026-07-15"
+        folders={[]}
+        selectedFolderId={null}
+        starredFolders={[]}
+        starredFoldersHasMore={false}
+        starredFoldersLoading={false}
+        todayFolderIds={new Set()}
+        completedFolderIds={new Set()}
+        onLoadMoreStarredFolders={vi.fn()}
+        onReorderStarredFolders={vi.fn(async () => undefined)}
+        onSelectDate={vi.fn()}
+        onSelectFolder={vi.fn()}
+        onSelectStarredFolder={vi.fn()}
+        onCompleteFolder={vi.fn(async () => undefined)}
+        onToggleFolderToday={vi.fn(async () => undefined)}
+        onMoveFolderToParent={vi.fn()}
+        onCreateProject={vi.fn(async (title, parentFolderId) => ({ status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
+        onRenameProject={vi.fn(async () => undefined)}
+        onDeleteProject={vi.fn(async () => undefined)}
+        onReorderProjects={vi.fn(async () => undefined)}
+        projectHasContents={vi.fn(async () => false)}
+      />,
+    );
+
+    expect(html).toContain("<h2>전체 폴더</h2>");
+    expect(html).toContain("<p>폴더가 없습니다.</p>");
+    expect(html).not.toContain("전체 프로젝트");
+    expect(html).not.toContain("프로젝트가 없습니다.");
+  });
+
   it("keeps task opening separate from an accessible drag handle", () => {
     const html = renderToStaticMarkup(
       <V3Navigation
@@ -120,7 +154,7 @@ describe("V3Navigation frame contract", () => {
     expect(html).toContain('aria-label="중요 작업 중요 작업 A 순서 변경"');
     expect(html).toContain('data-testid="v3-load-more-starred-tasks"');
     expect(html).toContain('role="alert">목록 불러오기 실패</p>');
-    expect(html).not.toContain("프로젝트가 없습니다.");
+    expect(html).not.toContain("폴더가 없습니다.");
   });
 
   it("opens the folder context menu from the drag handle", () => {

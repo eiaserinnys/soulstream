@@ -72,7 +72,7 @@ describe("ProjectDialog shared form", () => {
       mode: "edit",
       folder: { status: "open" as const, version: 1, archived: false, id: "existing", name: "기존 프로젝트", sortOrder: 0, projectPageId: "existing" },
     });
-    await vi.waitFor(() => expect(document.body.textContent).toContain("프로젝트 설정을 불러오지 못했습니다"));
+    await vi.waitFor(() => expect(document.body.textContent).toContain("폴더 설정을 불러오지 못했습니다"));
     expect(document.body.querySelector('[data-testid="v3-project-dialog-form"]')).toBeNull();
     expect(button("저장").disabled).toBe(true);
   });
