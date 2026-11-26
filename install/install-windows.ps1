@@ -191,7 +191,30 @@ if ($null -eq $service) {
     Set-Content -LiteralPath $passwordFile -Value $generated -Encoding ASCII
     $null = Get-NativeOutput "icacls.exe" @($passwordFile, "/inheritance:r", "/grant:r", "$([Security.Principal.WindowsIdentity]::GetCurrent().Name):F")
     $override = "--mode unattended --unattendedmodeui minimal --superpassword $generated --serverport $PG_PORT --servicename $PG_SERVICE"
-    Install-WithWinget "PostgreSQL.PostgreSQL.17" @("--override", $override)
+    # The EDB installer passes its %TEMP% paths to powershell.exe in the ANSI code page, so a profile folder with Korean
+    # letters in its name turns into "???" and the install stops. winget and the installer it starts inherit this
+    # process's TEMP and TMP, so they point at an ASCII folder for this one install.
+    $pgTemp = Join-Path $env:ProgramData "SoulstreamServer-postgres-temp"
+    Remove-Item -LiteralPath $pgTemp -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $pgTemp | Out-Null
+    Write-Host "   PostgreSQL installer temporary folder: $pgTemp"
+    $savedTemp = $env:TEMP
+    $savedTmp = $env:TMP
+    try {
+        $env:TEMP = $pgTemp
+        $env:TMP = $pgTemp
+        Install-WithWinget "PostgreSQL.PostgreSQL.17" @("--override", $override)
+    } finally {
+        $env:TEMP = $savedTemp
+        $env:TMP = $savedTmp
+        $pgLog = Get-ChildItem -LiteralPath $pgTemp -Recurse -File -Include "install-postgresql.log", "bitrock_installer*.log", "installbuilder_installer*.log" -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime | Select-Object -Last 1
+        if ($pgLog) {
+            Copy-Item -LiteralPath $pgLog.FullName -Destination (Join-Path $logsDir "postgresql-install.log") -Force
+            Write-Host "   PostgreSQL installer log: $(Join-Path $logsDir "postgresql-install.log")"
+        }
+        Remove-Item -LiteralPath $pgTemp -Recurse -Force -ErrorAction SilentlyContinue
+    }
     $installedPath = (Get-CimInstance Win32_Service -Filter "Name='$PG_SERVICE'").PathName
     if ($installedPath -notmatch '-D\s+"([^"]+)"') { throw "Cannot find the PostgreSQL data folder from the $PG_SERVICE service." }
     Add-Content -LiteralPath (Join-Path $Matches[1] "postgresql.conf") -Value "`nlisten_addresses = 'localhost'"

@@ -749,7 +749,7 @@ jobs:
           } else {
             Write-Host "(no log folder)"
           }
-          foreach ($file in Get-ChildItem -LiteralPath $env:RUNNER_TEMP, $env:ProgramData -Recurse -File -Force -Include "install-postgresql.log", "bitrock_installer*.log", "installbuilder_installer*.log" -ErrorAction SilentlyContinue) {
+          foreach ($file in Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Recurse -File -Force -Include "install-postgresql.log", "bitrock_installer*.log", "installbuilder_installer*.log" -ErrorAction SilentlyContinue) {
             Write-Host "=== $($file.FullName) (last 80 lines) ==="
             Get-Content -LiteralPath $file.FullName -Tail 80 -ErrorAction Continue
           }
