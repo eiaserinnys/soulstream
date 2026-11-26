@@ -598,7 +598,15 @@ jobs:
           }
           Write-Host "Marker check: both scripts refused $foreign and left keep.txt alone."
 
-      - name: Put stand-in user logins in the user's home
+      - name: Install the Claude Code CLI first, as on a PC that already has it
+        shell: powershell
+        run: |
+          Invoke-RestMethod -UseBasicParsing "https://claude.ai/install.ps1" | Invoke-Expression
+          $claude = Join-Path $env:USERPROFILE ".local\bin\claude.exe"
+          if (-not (Test-Path -LiteralPath $claude)) { throw "The official installer did not put claude.exe at $claude." }
+          Write-Host "Claude Code CLI installed beforehand: $claude"
+
+      - name: Put stand-in user logins in the user's home and record the user's Claude files
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -607,13 +615,17 @@ jobs:
           New-Item -ItemType Directory -Force -Path $claudeDir, $codexDir | Out-Null
           Set-Content -LiteralPath (Join-Path $claudeDir ".credentials.json") -Encoding ascii -Value '{"claudeAiOauth":{"accessToken":"user-claude-access","refreshToken":"user-claude-refresh","expiresAt":4102444800000}}'
           Set-Content -LiteralPath (Join-Path $codexDir "auth.json") -Encoding ascii -Value '{"tokens":{"access_token":"user-codex-access","refresh_token":"user-codex-refresh","account_id":"user-account"}}'
-          $snapshot = [ordered]@{
-            claude = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $claudeDir ".credentials.json")).Hash
-            codex = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $codexDir "auth.json")).Hash
-            claudeEntries = @(Get-ChildItem -LiteralPath $claudeDir -Force | ForEach-Object { $_.Name })
-          }
-          $snapshot | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "user-logins.json") -Encoding utf8
-          Write-Host "Stand-in logins: .claude\.credentials.json $($snapshot.claude), .codex\auth.json $($snapshot.codex)"
+          $claudeDir = Join-Path $env:USERPROFILE ".claude"
+          $userJson = Join-Path $env:USERPROFILE ".claude.json"
+          $snapshot = @(Get-ChildItem -LiteralPath $claudeDir -Recurse -Force | Sort-Object FullName | ForEach-Object {
+            $name = $_.FullName.Substring($claudeDir.Length + 1)
+            if ($_.PSIsContainer) { "$name`t<dir>" } else { "$name`t$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash)" }
+          })
+          if (Test-Path -LiteralPath $userJson) { $snapshot += "..\.claude.json`t$((Get-FileHash -Algorithm SHA256 -LiteralPath $userJson).Hash)" }
+          $snapshot | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "user-claude-before.txt") -Encoding utf8
+          $codexHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $codexDir "auth.json")).Hash
+          Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "user-codex-before.txt") -Value $codexHash -Encoding ascii
+          Write-Host "Recorded $($snapshot.Count) entries under $claudeDir (with .claude.json if present); .codex\auth.json $codexHash"
 
       - name: Install Soulstream (Windows PowerShell 5.1, Restricted policy)
         shell: powershell
@@ -666,12 +678,25 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $before = Get-Content -Raw -LiteralPath (Join-Path $env:RUNNER_TEMP "user-logins.json") | ConvertFrom-Json
           $claudeDir = Join-Path $env:USERPROFILE ".claude"
-          $claudeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $claudeDir ".credentials.json")).Hash
+          $userJson = Join-Path $env:USERPROFILE ".claude.json"
+          $snapshot = @(Get-ChildItem -LiteralPath $claudeDir -Recurse -Force | Sort-Object FullName | ForEach-Object {
+            $name = $_.FullName.Substring($claudeDir.Length + 1)
+            if ($_.PSIsContainer) { "$name`t<dir>" } else { "$name`t$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash)" }
+          })
+          if (Test-Path -LiteralPath $userJson) { $snapshot += "..\.claude.json`t$((Get-FileHash -Algorithm SHA256 -LiteralPath $userJson).Hash)" }
+          $before = @(Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "user-claude-before.txt"))
+          $differences = @(Compare-Object -ReferenceObject $before -DifferenceObject $snapshot | ForEach-Object {
+            "$(if ($_.SideIndicator -eq '=>') { 'now' } else { 'before' }): $($_.InputObject)"
+          })
+          if ($differences.Count -ne 0) {
+            $differences | ForEach-Object { Write-Host "  $_" }
+            throw "The user's Claude files changed ($($differences.Count) lines above)."
+          }
+          Write-Host "User Claude files unchanged: $($snapshot.Count) entries under $claudeDir (with .claude.json if present) have the same names and hashes."
           $codexHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $env:USERPROFILE ".codex\auth.json")).Hash
-          if ($claudeHash -ne $before.claude -or $codexHash -ne $before.codex) { throw "A user login file changed: claude $claudeHash, codex $codexHash" }
-          Write-Host "User logins unchanged: .claude\.credentials.json $claudeHash, .codex\auth.json $codexHash"
+          if ($codexHash -ne (Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "user-codex-before.txt"))) { throw ".codex\auth.json changed: $codexHash" }
+          Write-Host "User Codex login unchanged: .codex\auth.json $codexHash"
           $userPool = Join-Path $env:USERPROFILE ".claude-accounts"
           if (Test-Path -LiteralPath $userPool) { throw "$userPool was created." }
           Write-Host "No user account pool: $userPool does not exist."
@@ -682,10 +707,6 @@ jobs:
           $copies = @(Get-ChildItem -LiteralPath $agentPool -Recurse -Force -File -Filter ".credentials.json" -ErrorAction SilentlyContinue)
           if ($accountCount -ne 0 -or $copies.Count -ne 0) { throw "The agent-home pool has $accountCount accounts and $($copies.Count) credential files." }
           Write-Host "Agent-home pool is empty: $accountCount accounts, no credential copies in $agentPool."
-          $shared = @("projects", "file-history", "tasks", "plans", "session-env", "agent-memory")
-          $added = @(Get-ChildItem -LiteralPath $claudeDir -Force | ForEach-Object { $_.Name } | Where-Object { $_ -notin @($before.claudeEntries) })
-          if (@($added | Where-Object { $_ -in $shared }).Count -ne 0) { throw "New folders under $claudeDir`: $($added -join ', ')" }
-          Write-Host "No new pool folders under $claudeDir (other new entries: $(if ($added.Count) { $added -join ', ' } else { 'none' }))."
 
       - name: Dump logs on failure
         if: failure()
