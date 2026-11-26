@@ -96,7 +96,7 @@ describe("PR-CL v3 visual system contract", () => {
     expect(componentReview).toContain('name="작업 목록"');
     expect(cardRow).toContain('<RunRowFrame variant="card"');
     expect(runRows).toMatch(/\.v3-run-open\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) fit-content\(30%\)/s);
-    expect(runRows).toMatch(/\.v3-run-row\[data-has-actions\]\s+\.v3-run-open\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) fit-content\(30%\) auto/s);
+    expect(runRows).toMatch(/\.v3-run-row\[data-has-actions\]\s+\.v3-run-open\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) fit-content\(36%\) auto/s);
     expect(css).toContain('grid-template-columns: var(--v3-tree-toggle-column) var(--v3-tree-drag-column) var(--v3-tree-icon-column) minmax(0, 1fr)');
     expect(css).toContain('padding-left: calc(var(--v3-project-depth, 0) * var(--v3-tree-indent-step))');
     expect(css).toMatch(/\.v3-progress > i[^{]*\{[^}]*background:\s*var\(--v3-accent\)/s);
