@@ -127,6 +127,24 @@ BOXES = """() => {
   });
 }"""
 
+ALIGN = """() => {
+  const tab = document.querySelector('[data-testid="git-repos-tab"]');
+  const sections = [...tab.querySelectorAll(':scope > div > .space-y-4 > .rounded-floor.border')];
+  const round = (value) => Math.round(value * 10) / 10;
+  const framed = (el) => { while (parseFloat(getComputedStyle(el).borderRightWidth) === 0) el = el.parentElement; return el; };
+  const textLeft = (el) => { const range = document.createRange(); range.selectNodeContents(el); return round(range.getBoundingClientRect().left); };
+  return sections.map((box) => {
+    const style = getComputedStyle(box); const b = box.getBoundingClientRect();
+    const rows = [...box.querySelectorAll('[data-testid="config-field-row"]')];
+    return { title: box.querySelector('p')?.textContent, titleLeft: textLeft(box.querySelector('p')),
+      contentRight: round(b.right - parseFloat(style.borderRightWidth) - parseFloat(style.paddingRight)),
+      labels: rows.map((row) => textLeft(row.querySelector('span'))),
+      inputs: rows.map((row) => row.querySelector('input, textarea')).filter(Boolean).map((input) => round(framed(input).getBoundingClientRect().right)),
+      lists: [...box.querySelectorAll('ul')].map((list) => round(list.closest('.rounded-floor.border').getBoundingClientRect().right)) };
+  });
+}"""
+
+
 SSH_STATUS = """(root) => {
   const tab = document.querySelector(root ?? '[data-testid="git-repos-tab"]');
   const button = [...tab.querySelectorAll('button')].find((b) => b.textContent.trim() === '연결 확인');
@@ -201,9 +219,12 @@ def git_scenes(page: Page, out: Path, check: Check, record: Record, fake: RealFa
     geometry = page.evaluate(GEOMETRY)
     boxes = page.evaluate(BOXES)
     check(f"실제 설정창 {tag}: 입력 줄(config-field-row)의 아래 괘선이 0px", all(row["border"] == "0px" for row in geometry["rows"]) and len(geometry["rows"]) >= 6, geometry["rows"])
-    check(f"실제 설정창 {tag}: 입력 줄의 안쪽 여백이 검수 창과 같은 6px 4px", all(row["padding"] == "6px 4px" for row in geometry["rows"]), geometry["rows"])
+    check(f"실제 설정창 {tag}: 입력 줄의 안쪽 여백이 위아래 6px, 좌우 0px", all(row["padding"] == "6px 0px" for row in geometry["rows"]), geometry["rows"])
     check(f"실제 설정창 {tag}: 묶음 상자 안에 저장소 목록 상자 말고 다른 가로선이 없음", len(boxes) == 3 and all(not box["rules"] for box in boxes), boxes)
     check(f"실제 설정창 {tag}: 마지막 줄 아래부터 상자 테두리까지가 상자 안쪽 여백 하나", all(abs(box["lastToBorder"] - box["inner"]) <= 1 for box in boxes), boxes)
+    align = page.evaluate(ALIGN)
+    check(f"반려 4 {tag}: 세 묶음 상자 모두 이름표 시작선이 상자 제목과 1px 이내", len(align) == 3 and all(box["labels"] and all(abs(left - box["titleLeft"]) <= 1 for left in box["labels"]) for box in align), align)
+    check(f"반려 4 {tag}: 세 묶음 상자 모두 입력 칸과 저장소 목록의 오른쪽 끝이 상자 내용 끝과 1px 이내", len(align) == 3 and any(box["inputs"] for box in align) and all(abs(right - box["contentRight"]) <= 1 for box in align for right in box["inputs"] + box["lists"]), align)
     check(f"실제 설정창 {tag}: 가로 넘침이 없음", geometry["docOverflow"] <= 0 and (geometry["detailOverflow"] or 0) <= 0, geometry)
 
     page.get_by_role("button", name="연결 확인").click()
