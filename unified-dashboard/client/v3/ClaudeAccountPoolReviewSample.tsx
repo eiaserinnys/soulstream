@@ -119,12 +119,16 @@ function sampleAccounts(): ClaudeAccountList {
 
 const LEGACY_ACCOUNTS: ClaudeAccountList = { mode: "legacy", accounts: [], pool: null, fable_pool: null };
 
-export type ProviderPanelReviewState = "pool" | "legacy" | "codex";
+const EMPTY_POOL = { available_count: 0, total_count: 0, best_weekly_remaining_percent: null, best_weekly_resets_at: null, earliest_available_at: null };
+const EMPTY_POOL_ACCOUNTS: ClaudeAccountList = { mode: "pool", accounts: [], pool: EMPTY_POOL, fable_pool: EMPTY_POOL };
+
+export type ProviderPanelReviewState = "pool" | "legacy" | "codex" | "none";
 
 const NODE_BY_STATE: Record<ProviderPanelReviewState, string> = {
   pool: "sample-provider-pool",
   legacy: "sample-provider-legacy",
   codex: "sample-provider-codex",
+  none: "sample-provider-none",
 };
 
 const CLAUDE_QUOTAS = (): UsageSummaryQuota[] => [
@@ -151,7 +155,9 @@ const ANTIGRAVITY_QUOTAS = (): UsageSummaryQuota[] => [
 function summaryNode(state: ProviderPanelReviewState): UsageSummaryNode {
   const nodeId = NODE_BY_STATE[state];
   const poolList = sampleAccounts();
-  const claude: UsageSummaryProvider = state === "pool"
+  const claude: UsageSummaryProvider = state === "none"
+    ? usageFixtureProvider([], { status: "not_configured", mode: "pool", accounts: [], pool: EMPTY_POOL, fable_pool: EMPTY_POOL })
+    : state === "pool"
     ? usageFixtureProvider(CLAUDE_QUOTAS(), {
       mode: "pool",
       accounts: poolList.accounts,
@@ -170,11 +176,15 @@ function summaryNode(state: ProviderPanelReviewState): UsageSummaryNode {
       shortResetAt: resetSoon,
     });
 
-  const opencodeGo = state === "legacy"
-    ? usageFixtureProvider([], { status: "not_configured" })
-    : usageFixtureProvider(OPENCODE_QUOTAS());
+  const opencodeGo = state === "none"
+    ? null
+    : state === "legacy"
+      ? usageFixtureProvider([], { status: "not_configured" })
+      : usageFixtureProvider(OPENCODE_QUOTAS());
 
-  const codex = state === "pool"
+  const codex = state === "none"
+    ? usageFixtureProvider([], { status: "not_configured", login_supported: true })
+    : state === "pool"
     ? usageFixtureProvider(CODEX_ONLY_WEEKLY())
     : state === "legacy"
       ? null
@@ -183,7 +193,9 @@ function summaryNode(state: ProviderPanelReviewState): UsageSummaryNode {
         usageFixtureQuota("codex:weekly", "7일", "168h", 80, resetWeek),
       ]);
 
-  const antigravity = state === "pool"
+  const antigravity = state === "none"
+    ? usageFixtureProvider([], { status: "not_configured", login_supported: true })
+    : state === "pool"
     ? usageFixtureProvider(ANTIGRAVITY_QUOTAS())
     : state === "legacy"
       ? usageFixtureProvider([], { status: "error" })
@@ -223,7 +235,7 @@ export function createProviderPanelReviewRequest(
 ): typeof fetch {
   const nodeId = NODE_BY_STATE[state];
   const basePath = `/api/nodes/${nodeId}/claude-auth`;
-  let list = state === "pool" ? sampleAccounts() : LEGACY_ACCOUNTS;
+  let list = state === "pool" ? sampleAccounts() : state === "none" ? EMPTY_POOL_ACCOUNTS : LEGACY_ACCOUNTS;
   let snapshot = summarySnapshot(state);
   let flow: ClaudeAuthLoginFlow | null = null;
   let hasToken = true;
@@ -674,6 +686,7 @@ const REVIEW_STATES: Array<{ state: ProviderPanelReviewState; title: string }> =
   { state: "pool", title: "Claude 계정 풀 · 기본 접힘 · 계정 펼치기" },
   { state: "legacy", title: "레거시 Claude · 미설정 · 조회 오류 · 수집 지연" },
   { state: "codex", title: "Codex 5시간·7일 두 칸" },
+  { state: "none", title: "Claude 계정 0개 · 미설정 · 연결 · Codex와 Antigravity 미설정 · 연결" },
 ];
 
 export function ClaudeAccountPoolReviewSample({ state, loading = false }: { state?: ProviderPanelReviewState | null; loading?: boolean } = {}) {

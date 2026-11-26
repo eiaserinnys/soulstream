@@ -179,7 +179,7 @@ export function ComponentsReviewPage() {
   if (sampleParams.get('sample') === 'claude-accounts') return <div className="v3-detail-pane v3-detail-pane--inline" data-testid="claude-accounts-review">
     <p className="v3-components-label">NodeProvidersPanel · 실제 노드 패널 · 가짜 API</p>
     <ClaudeAccountPoolReviewSample
-      state={sampleParams.get('state') as 'pool' | 'legacy' | 'codex' | null}
+      state={sampleParams.get('state') as 'pool' | 'legacy' | 'codex' | 'none' | null}
       loading={sampleParams.get('loading') === '1'}
     />
   </div>;
