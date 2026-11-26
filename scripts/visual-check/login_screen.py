@@ -100,7 +100,7 @@ class LoginRequestHandler(http.server.BaseHTTPRequestHandler):
             if password == PASSWORD:
                 self._json(200, {"success": True})
             else:
-                self._json(401, {"detail": "Invalid password"})
+                self._json(401, {"detail": "비밀번호가 맞지 않습니다"})
             return
         if path == "/api/auth/logout":
             self._json(200, {"success": True})
@@ -215,7 +215,7 @@ def capture_password(page: Page, output: Path) -> dict[str, object]:
     alert = page.locator("[role=alert]")
     alert_text = alert.inner_text().strip()
     results["errorText"] = alert_text
-    if alert_text != "Invalid password":
+    if alert_text != "비밀번호가 맞지 않습니다":
         raise AssertionError(f"unexpected error text: {alert_text!r}")
     if page.locator("[data-testid=password-login-button]").is_disabled():
         raise AssertionError("retry button is disabled after a failed password")
@@ -229,6 +229,17 @@ def capture_password(page: Page, output: Path) -> dict[str, object]:
     results["errorLayout"] = error_layout
     assert_inside("alert", page.evaluate(
         "() => document.querySelector('[role=alert]')?.getBoundingClientRect().toJSON()"), wide["surface"])
+
+    # 오류 문구가 최소 폭 360에서도 카드 안에 들어오는지 같은 오류 상태로 잰다.
+    page.set_viewport_size(MINIMUM)
+    error_minimum = measure_layout(page)
+    results["errorMinimum"] = error_minimum
+    if error_minimum["scrollWidth"] > error_minimum["clientWidth"] + 1:
+        raise AssertionError(f"horizontal scroll with the error at 360px: {error_minimum['scrollWidth']}")
+    assert_inside("alert", page.evaluate(
+        "() => document.querySelector('[role=alert]')?.getBoundingClientRect().toJSON()"), error_minimum["surface"])
+    page.screenshot(path=str(output / "password-error-minimum.png"), full_page=True)
+    page.set_viewport_size(WIDE)
 
     # 오류 상태 캡처를 마친 뒤 깨끗한 화면으로 돌아가 좁은 폭을 찍는다.
     page.reload(wait_until="domcontentloaded")

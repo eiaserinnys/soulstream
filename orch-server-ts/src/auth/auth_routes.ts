@@ -7,6 +7,7 @@ import type { DashboardLoginMode } from "./login_mode.js";
 import { deleteCookie, extractCookieToken, parseCookies, serializeCookie } from "./auth_cookie.js";
 import { resolveTailscaleIdentity } from "./tailscale_identity.js";
 import { extractBearerToken } from "./service_bearer.js";
+import { LOCAL_OWNER_EMAIL, LOCAL_OWNER_NAME } from "./first_login_access.js";
 
 export const AUTH_COOKIE_NAME = "soul_dashboard_auth";
 export const OAUTH_STATE_COOKIE_NAME = "soul_oauth_state";
@@ -99,6 +100,12 @@ export type AuthUserPayloadExtra = (
   payload: AuthJwtPayload,
 ) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
+export type AuthLocalOwnerEnsurer = () => Promise<void>;
+
+export type AuthNoLoginUserResolver = (
+  request: FastifyRequest,
+) => Promise<AuthJwtPayload | null>;
+
 export type AuthRouteOptions = {
   configProvider: AuthRouteConfigProvider;
   resolveTokenAccess: AuthTokenResolver;
@@ -108,6 +115,8 @@ export type AuthRouteOptions = {
   generateState?: () => string;
   authorizeUser?: AuthUserAuthorizer;
   userPayloadExtra?: AuthUserPayloadExtra;
+  ensureLocalOwner?: AuthLocalOwnerEnsurer;
+  resolveNoLoginUser?: AuthNoLoginUserResolver;
 };
 
 export const authRouteAuthRequirements = {
@@ -242,7 +251,20 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
 
   app.get("/api/auth/status", async (request) => {
     const authConfig = await options.configProvider.getConfig();
-    if (authConfig.loginMode === "none") return { authenticated: true, user: null };
+    if (authConfig.loginMode === "none") {
+      const defaultUser = await options.resolveNoLoginUser?.(request);
+      if (!defaultUser) return { authenticated: true, user: null };
+      const payloadExtra = await options.userPayloadExtra?.(defaultUser);
+      return {
+        authenticated: true,
+        user: {
+          email: defaultUser.email,
+          name: defaultUser.name,
+          picture: defaultUser.picture ?? "",
+          ...(payloadExtra ?? {}),
+        },
+      };
+    }
 
     if (authConfig.loginMode === "tailscale") {
       const email = resolveTailscaleIdentity(request.headers, authConfig.tailscaleAllowedLogin ?? "");
@@ -333,10 +355,11 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
       return routeError(reply, 400, "Password is required");
     }
     if (!passwordMatches(password, authConfig.dashboardAdminPasswordSha256)) {
-      return routeError(reply, 401, "Invalid password");
+      return routeError(reply, 401, "비밀번호가 맞지 않습니다");
     }
 
-    const user = { email: "owner@local", name: "Owner", picture: "" };
+    const user = { email: LOCAL_OWNER_EMAIL, name: LOCAL_OWNER_NAME, picture: "" };
+    await options.ensureLocalOwner?.();
     const token = await options.jwt.issueToken(user);
     return reply
       .header(

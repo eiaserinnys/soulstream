@@ -288,7 +288,7 @@ async function createHarness() {
       results,
     };
   });
-  const service = new PersistentSessionSettingsService({ defaultExecutionNodeId:"eiaserinnys",
+  const service = new PersistentSessionSettingsService({ defaultExecutionNodeId:"eiaserinnys", connectedNodeIds: () => ["eiaserinnys"],
     modelCatalog: catalog,
     reads: async () => ({
       getSession: async (sessionId) => rows.get(sessionId) ?? null,

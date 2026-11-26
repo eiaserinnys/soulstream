@@ -10,6 +10,7 @@ import { createWorkerAttachmentAccess } from "../attachments/worker_attachment_a
 import { createWorkerAttachmentRead } from "../attachments/worker_attachment_read.js";
 import { createLiveWorkerAttachmentRepository } from "./live_worker_attachment_repository.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
+import { createLocalOwnerEnsurer } from "../auth/first_login_access.js";
 import { createAgentAttachmentRegistration } from "../attachments/agent_attachment_registration.js";
 import { createSessionOutputAttachmentValidation } from "../attachments/session_output_attachment_validation.js";
 import { createOwnedAttachmentCommitService } from "../attachments/attachment_commit_service.js";
@@ -162,6 +163,8 @@ export type LiveOrchestratorProviderBundle = {
     | "resolveTokenAccess"
     | "authorizeUser"
     | "userPayloadExtra"
+    | "ensureLocalOwner"
+    | "resolveNoLoginUser"
   >;
   readonly folderRoutes: Pick<
     FolderRouteOptions,
@@ -282,9 +285,13 @@ export function createLiveOrchestratorProviderBundle(
       oauthAccessTokenResolver ??= createOAuthAccessTokenResolver(sql, authorizeUser);
       return oauthAccessTokenResolver(token);
     };
+  const ensureLocalOwner = options.dbSqlResolver === undefined
+    ? undefined
+    : createLocalOwnerEnsurer(options.dbSqlResolver);
   const authenticatedUserResolvers = createLiveAuthenticatedUserResolvers({
     jwt: authJwt,
     configProvider: options.dependencies.configProvider,
+    ...(ensureLocalOwner === undefined ? {} : { ensureLocalOwner }),
     ...(resolveOAuthToken === undefined ? {} : { resolveOAuthToken }),
     isServiceBearer: async request => {
       const config = await options.dependencies.configProvider.getConfig();
@@ -534,6 +541,8 @@ export function createLiveOrchestratorProviderBundle(
       }),
       authorizeUser,
       userPayloadExtra: dashboardAccessProvider.userPayloadExtra,
+      ...(ensureLocalOwner === undefined ? {} : { ensureLocalOwner }),
+      resolveNoLoginUser: authenticatedUserResolvers.resolveUser,
     },
     folderRoutes: {
       provider: options.dependencies.dbCatalogRepository.folderRouteProvider,

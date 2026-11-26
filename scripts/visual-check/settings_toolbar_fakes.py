@@ -97,7 +97,7 @@ def flow(provider_id, state, **patch):
 class Fake:
     """한 페이지가 부르는 API의 가짜 응답. 장면별 값은 속성으로 바꾼다."""
 
-    def __init__(self, atom=True, sessions="one", login_supported=True, admin=True, nodes="one", hold_usage=False, bootstrap="hold", hold_login_post=False, login_post_error=None, agent_name="로젤린"):
+    def __init__(self, atom=True, sessions="one", login_supported=True, admin=True, nodes="one", hold_usage=False, bootstrap="hold", hold_login_post=False, login_post_error=None, agent_name="로젤린", defaults_node="eiaserinnys"):
         self.atom = atom
         self.sessions = sessions  # one | two | manual | unavailable | bootstrap
         self.login_supported = login_supported
@@ -110,6 +110,7 @@ class Fake:
         self.held_login_post = None
         self.login_post_error = login_post_error  # (status, code)
         self.agent_name = agent_name
+        self.defaults_node = defaults_node  # 영구 세션 만들기 기본 노드. 연결된 노드가 없으면 서버가 빈 값을 준다
         self.flows: dict[str, dict] = {}
         self.calls: list[tuple[str, str]] = []
         self.held_bootstrap = None
@@ -129,7 +130,7 @@ class Fake:
         if path == "/api/auth/config":
             return route.fulfill(json={"authEnabled": True, "devModeEnabled": False})
         if path == "/api/persistent-sessions" and method == "GET":
-            defaults = {**CREATE_DEFAULTS, "unavailable_reason": UNAVAILABLE if self.sessions == "unavailable" else None}
+            defaults = {**CREATE_DEFAULTS, "node_id": self.defaults_node, "unavailable_reason": UNAVAILABLE if self.sessions == "unavailable" else None}
             if self.sessions in ("unavailable", "bootstrap"):
                 defaults["bootstrap_enabled"] = True
             first = {**PAS, "agent_name": self.agent_name}

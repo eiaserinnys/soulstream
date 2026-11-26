@@ -1,3 +1,4 @@
+import { warnWhenProductionHasNoLogin } from "./auth/first_login_access.js";
 import { SkillLintReportStore } from "./skills/skill_lint_report_store.js";
 import { PersistentDefaultsSettings } from "./settings/persistent_defaults_settings.js";
 import { McpCentralSyncService } from "./mcp_central/sync_service.js";
@@ -441,6 +442,7 @@ export async function createLiveProductionApplication(
   const folderProjectIdentityRepository = new SqlFolderProjectIdentityRepository(sqlResolver);
   const plannerRepository = new PlannerRepository(sqlResolver);
 
+  warnWhenProductionHasNoLogin(config, context.warn);
   if (!config.typesafe_api_key) {
     context.warn("TYPESAFE_API_KEY is not configured; expanded session search will return partial results.");
   }
@@ -1753,6 +1755,7 @@ export function buildProductionRouteOptions(
     profiles: providers.nodeAgentProfileRoutes.provider,
     modelCatalog: providers.modelCatalog,
     defaultExecutionNodeId,
+    connectedNodeIds: () => runtime.registry.listConnectedNodes().map(node => node.nodeId),
     ...(defaultPasAgentId === undefined ? {} : { defaultPasAgentId }),
     ...(persistentSessionBootstrap === undefined ? {} : { bootstrapEnabled: persistentSessionBootstrap }),
     ...(providers.folderRoutes.resolveDashboardUserId === undefined

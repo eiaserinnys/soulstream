@@ -44,7 +44,7 @@ describe("conversation adoptable candidates", () => {
       },
       requireSessionAccess: async () => {},
     };
-    const settings = new PersistentSessionSettingsService({ defaultExecutionNodeId:"eiaserinnys",
+    const settings = new PersistentSessionSettingsService({ defaultExecutionNodeId:"eiaserinnys", connectedNodeIds: () => ["eiaserinnys"],
       modelCatalog: catalog,
       reads: async () => readRepo as never,
       access: access as never,

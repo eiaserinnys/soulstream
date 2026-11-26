@@ -623,10 +623,12 @@ describe("Auth route harness", () => {
       googleClientSecret: "",
       dashboardAdminPasswordSha256: sha256Hex("hunter2"),
     };
+    const ensureLocalOwner = vi.fn(async () => undefined);
     const app = createApp({
       config,
       authRoutes: createAuthRouteOptions({
         jwt,
+        ensureLocalOwner,
         configProvider: { getConfig: vi.fn(async () => passwordConfig) },
       }),
     });
@@ -643,7 +645,8 @@ describe("Auth route harness", () => {
       payload: { password: "wrong" },
     });
     expect(wrong.statusCode).toBe(401);
-    expect(wrong.json()).toEqual({ detail: "Invalid password" });
+    expect(wrong.json()).toEqual({ detail: "비밀번호가 맞지 않습니다" });
+    expect(ensureLocalOwner).not.toHaveBeenCalled();
 
     const malformed = await app.inject({
       method: "POST",
@@ -659,6 +662,7 @@ describe("Auth route harness", () => {
     });
     expect(success.statusCode).toBe(200);
     expect(success.json()).toEqual({ success: true });
+    expect(ensureLocalOwner).toHaveBeenCalledTimes(1);
     expect(jwt.issueToken).toHaveBeenCalledWith({
       email: "owner@local",
       name: "Owner",

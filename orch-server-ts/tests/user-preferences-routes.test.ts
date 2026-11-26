@@ -92,6 +92,18 @@ describe("user preferences route harness", () => {
       ]);
   });
 
+  it("reads preferences for the dotless local owner email", async () => {
+    const { app, calls } = createHarness({ email: "owner@local" });
+
+    const response = await app.inject({ method: "GET", url: "/api/user/preferences" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ email: "owner@local" });
+    expect(calls[0]).toEqual(["get", "owner@local"]);
+
+    await app.close();
+  });
+
   it("returns Python-compatible default preferences for an authenticated user", async () => {
     const { app, calls } = createHarness();
 

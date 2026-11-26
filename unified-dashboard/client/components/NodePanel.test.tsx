@@ -111,6 +111,14 @@ describe("NodePanel", () => {
     await settle();
   }
 
+  it("tells that no node is connected when the node list is empty", async () => {
+    const request = vi.fn(async () => data({}));
+
+    await mount(request as unknown as typeof fetch, new Map() as never);
+
+    expect(host.querySelector('[data-testid="node-card-list"]')?.textContent).toBe("연결된 노드가 없습니다");
+  });
+
   it("fetches the usage summary only after the node is expanded", async () => {
     const request = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);

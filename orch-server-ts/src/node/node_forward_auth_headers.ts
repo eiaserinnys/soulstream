@@ -7,7 +7,7 @@ export type NodeForwardRequestHeaders = Readonly<
 
 export type NodeForwardAuthUser = {
   readonly payload: { readonly email?: string; readonly name?: string };
-  readonly carrier: "cookie" | "bearer" | "tailscale";
+  readonly carrier: "cookie" | "bearer" | "tailscale" | "development";
 };
 
 /**

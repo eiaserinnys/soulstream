@@ -11,6 +11,12 @@ import {
 } from "../auth/auth_routes.js";
 import { extractBearerToken } from "../auth/service_bearer.js";
 import type { OAuthAccessTokenResolver, OAuthResourceAccess } from "../oauth/oauth_access.js";
+import {
+  LOCAL_OWNER_EMAIL,
+  LOCAL_OWNER_NAME,
+  isDevelopmentNoLoginRequest,
+  type EnsureLocalOwner,
+} from "../auth/first_login_access.js";
 
 export type DashboardAuthHeaders = FastifyRequest["headers"];
 
@@ -20,6 +26,8 @@ export type CreateLiveAuthenticatedUserResolversOptions = {
   readonly cookieName?: string;
   readonly resolveOAuthToken?: OAuthAccessTokenResolver;
   readonly isServiceBearer?: (request: FastifyRequest) => Promise<boolean>;
+  /** Guarantees the users row of the development default user (owner@local). */
+  readonly ensureLocalOwner?: EnsureLocalOwner;
 };
 
 export type LiveAuthenticatedUserResolver = (
@@ -69,7 +77,7 @@ export type LiveAuthenticatedUserResolvers = {
 
 export type AuthenticatedDashboardUser = {
   readonly payload: AuthJwtPayload;
-  readonly carrier: "cookie" | "bearer" | "tailscale";
+  readonly carrier: "cookie" | "bearer" | "tailscale" | "development";
 };
 
 export function createLiveAuthenticatedUserResolvers(
@@ -92,6 +100,15 @@ export function createLiveAuthenticatedUserResolvers(
     const verification = Promise.resolve(options.jwt.verifyToken(token));
     requestCache.set(token, verification);
     return await verification;
+  };
+  let developmentOwnerReady: Promise<void> | undefined;
+  const ensureDevelopmentOwner = async (): Promise<void> => {
+    if (options.ensureLocalOwner === undefined) return;
+    developmentOwnerReady ??= options.ensureLocalOwner().catch((error: unknown) => {
+      developmentOwnerReady = undefined;
+      throw error;
+    });
+    await developmentOwnerReady;
   };
   const resolveUserFromHeaders = async (
     headers: DashboardAuthHeaders,
@@ -120,6 +137,13 @@ export function createLiveAuthenticatedUserResolvers(
     if (bearerToken !== undefined && bearerToken !== cookieToken) {
       const payload = await verify(bearerToken);
       if (payload !== null) return { payload, carrier: "bearer" };
+    }
+    if (config && isDevelopmentNoLoginRequest(config, headers)) {
+      await ensureDevelopmentOwner();
+      return {
+        payload: { email: LOCAL_OWNER_EMAIL, name: LOCAL_OWNER_NAME, picture: "" },
+        carrier: "development",
+      };
     }
     return null;
   };
