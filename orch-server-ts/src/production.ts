@@ -263,6 +263,14 @@ export function createRunnerInventoryCommand(
   );
 }
 
+/**
+ * Handover overlaps the old and new listeners with SO_REUSEPORT. Windows has no such socket option and rejects the
+ * listen with ENOTSUP; there the handover still runs on the Postgres locks, the new listener just cannot overlap.
+ */
+export function handoverReusesPort(handover: boolean | undefined, platform: NodeJS.Platform): boolean {
+  return handover === true && platform !== "win32";
+}
+
 export async function createProductionOrchestrator(
   options: CreateProductionOrchestratorOptions,
 ): Promise<ProductionOrchestrator> {
@@ -309,7 +317,7 @@ export async function createProductionOrchestrator(
         return await application.app.listen({
           host: options.config.host,
           port: options.config.port,
-          ...(options.handover ? { reusePort: true } : {}),
+          ...(handoverReusesPort(options.handover, process.platform) ? { reusePort: true } : {}),
         } as FastifyListenOptions & { reusePort?: boolean });
       } catch (error) {
         if (options.handover) await pageGate.close();
