@@ -199,32 +199,37 @@ export function resolveSelectedModelPresetName(
     if (presetsFailed) return '모델 목록을 불러오지 못했습니다';
     return presetsLoaded ? '모델을 다시 선택해 주세요' : '불러오는 중…';
   }
-  const label = formatModelPresetLabel(preset, false);
-  return automatic ? `자동 (${label})` : label;
+  if (automatic) return `자동 (${preset.label})${formatModelPresetDetail(preset, false, true)}`;
+  return formatModelPresetLabel(preset, false);
 }
 
 export function formatModelPresetLabel(
   preset: ModelPresetAvailability,
   includeUsageWarning = true,
 ): string {
-  if (preset.reason === 'quota_exhausted') return preset.label;
-  const unavailableReason = preset.reason === 'limit_rejected'
-    ? formatModelPresetUnavailableReason(preset)
+  return `${preset.label}${formatModelPresetDetail(preset, includeUsageWarning)}`;
+}
+
+export function formatModelPresetDetail(
+  preset: ModelPresetAvailability,
+  includeUsageWarning = true,
+  automatic = false,
+): string {
+  const exhausted = preset.reason === 'quota_exhausted';
+  const reason = (!preset.available || exhausted) && preset.reason_label
+    ? preset.reason_label
     : null;
-  const availability = !preset.available && preset.reason_label
-    ? `${preset.label} (${preset.reason_label})`
-    : preset.label;
-  if (unavailableReason && preset.reason_label) {
-    return `${availability}${unavailableReason.slice(preset.reason_label.length)}`;
-  }
   const resetTime = preset.resets_at
     ? formatLocalResetTime(preset.resets_at)
     : null;
-  if (resetTime) return `${availability} · ${resetTime} 해제`;
-  if (includeUsageWarning && preset.available && preset.usage_warning) {
-    return `${availability} (사용량 확인 지연)`;
+  const reset = resetTime ? `${resetTime} 해제` : null;
+  if (automatic) return [reason, reset].map((part) => (part ? ` · ${part}` : '')).join('');
+  const reasonNote = reason ? ` (${reason})` : '';
+  if (reset) return `${reasonNote} · ${reset}`;
+  if (includeUsageWarning && preset.available && !exhausted && preset.usage_warning) {
+    return `${reasonNote} (사용량 확인 지연)`;
   }
-  return availability;
+  return reasonNote;
 }
 
 export function formatModelPresetUnavailableReason(
@@ -232,6 +237,18 @@ export function formatModelPresetUnavailableReason(
 ): string | null {
   if (!preset.reason_label) return null;
   if (preset.reason !== 'limit_rejected') return preset.reason_label;
+  return reasonWithResetTime(preset);
+}
+
+export function formatModelPresetMeta(
+  preset: ModelPresetAvailability,
+): string | null {
+  if (!preset.reason_label) return null;
+  if (preset.reason === 'quota_exhausted') return reasonWithResetTime(preset);
+  return preset.available ? null : formatModelPresetUnavailableReason(preset);
+}
+
+function reasonWithResetTime(preset: ModelPresetAvailability): string | null {
   const resetTime = preset.resets_at
     ? formatLocalResetTime(preset.resets_at)
     : null;

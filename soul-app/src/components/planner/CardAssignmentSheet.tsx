@@ -83,7 +83,7 @@ export function CardAssignmentSheet({ api, value, onClose, onSave, mode = 'assig
   const rows = [...(includeFolder || mode === 'move' ? [{ label: '폴더', value: selection.selectedFolderName, pick: pickFolder }] : []),
     ...(mode === 'move' || folderOnly ? [] : [{ label: '노드', value: selection.selectedNodeName, pick: pickNode },
       { label: '에이전트', value: selection.selectedAgentName, pick: pickAgent },
-      { label: '모델', value: <SelectedModelPresetName selection={selection} />, pick: pickModel }])];
+      { label: '모델', value: <SelectedModelPresetName selection={selection} />, valueLines: 2, pick: pickModel }])];
   if (pickingFolder) return <FolderSelectionSheet api={api} onClose={() => setPickingFolder(false)} onSelect={(id) => {
     if (mode !== 'assignment' || folderOnly) selection.setSelectedFolderId(id);
     else setPickedFolderId(id);
@@ -92,7 +92,7 @@ export function CardAssignmentSheet({ api, value, onClose, onSave, mode = 'assig
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Text style={styles.heading}>{folderOnly ? '폴더 선택' : mode === 'move' ? '폴더 이동' : '맡길 대상'}</Text>
       {rows.map((row) => <TouchableOpacity key={row.label} style={styles.row} disabled={pending} onPress={row.pick}>
-        <Text style={styles.body}>{row.label}</Text><Text style={[styles.body, { flex: 1, textAlign: 'right' }]} numberOfLines={1}>{row.value}</Text>
+        <Text style={styles.body}>{row.label}</Text><Text style={[styles.body, { flex: 1, textAlign: 'right' }]} numberOfLines={row.valueLines ?? 1}>{row.value}</Text>
       </TouchableOpacity>)}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {selection.modelPresetSelectionInvalid && mode !== 'move' && !folderOnly ? <Text style={styles.error}>선택한 모델을 이 노드에서 사용할 수 없습니다.</Text> : null}

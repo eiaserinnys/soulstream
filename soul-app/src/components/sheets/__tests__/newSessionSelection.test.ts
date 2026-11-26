@@ -4,6 +4,7 @@ import {
   buildModelPresetActionSheet,
   buildNodeActionSheet,
   formatModelPresetLabel,
+  formatModelPresetMeta,
   formatModelPresetUnavailableReason,
   resolveAgentActionSheetSelection,
   resolveFolderActionSheetSelection,
@@ -15,6 +16,7 @@ import {
   resolveSelectedNodeName,
   sortNewSessionFolders,
 } from '../newSessionSelection';
+import type { ModelPresetAvailability } from '../../../../../packages/soul-ui/src/lib/model-preset-availability';
 
 describe('newSessionSelection', () => {
   test('maps node ActionSheet options and selected labels without undefined entries', () => {
@@ -129,12 +131,12 @@ describe('newSessionSelection', () => {
     expect(resolveSelectedAgentName('null-name', agents)).toBe('(이름 없는 에이전트)');
   });
 
-  test('소진 모델은 이름만 빨강 표시하고 선택할 수 있다', () => {
+  test('소진 모델은 사유와 해제 시각을 붙여 빨강 표시하고 선택할 수 있다', () => {
     const preset = { id: 'sol', label: 'Codex - 6.1 Sol', backend: 'codex',
       available: true, reason: 'quota_exhausted', reason_label: '7일 사용량 제한',
-      resets_at: '2030-01-02T03:04:00.000Z', usage_warning: false };
+      resets_at: new Date(2030, 0, 2, 12, 4).toISOString(), usage_warning: false };
     const sheet = buildModelPresetActionSheet([preset]);
-    expect(sheet.options[1]).toBe(preset.label);
+    expect(sheet.options[1]).toBe('Codex - 6.1 Sol (7일 사용량 제한) · 1/2 12:04 해제');
     expect(sheet.destructiveButtonIndex).toEqual([1]);
     expect(sheet.disabledButtonIndices).toEqual([]);
     expect(resolveModelPresetActionSheetSelection(1, [preset], sheet.cancelButtonIndex))
@@ -206,11 +208,83 @@ describe('newSessionSelection', () => {
     expect(unavailableReason).toBe('5시간 한도 거부 중 · 1/2 03:04 해제');
     expect(formatModelPresetLabel(preset, false))
       .toBe('거부 중 모델 (5시간 한도 거부 중) · 1/2 03:04 해제');
-    expect(formatModelPresetLabel({
-      ...preset,
+  });
+
+  test('소진 모델 표기는 사유와 해제 시각이 있을 때, 사유만 있을 때, 둘 다 없을 때를 가른다', () => {
+    const exhausted = {
+      id: 'sol',
+      label: 'Sol',
+      backend: 'codex',
       available: true,
       reason: 'quota_exhausted',
-    }, false)).toBe('거부 중 모델');
+      reason_label: '7일 사용량 제한',
+      resets_at: new Date(2030, 10, 28, 12, 20).toISOString(),
+      usage_warning: false,
+    };
+
+    expect(formatModelPresetLabel(exhausted, false)).toBe('Sol (7일 사용량 제한) · 11/28 12:20 해제');
+    expect(formatModelPresetLabel({ ...exhausted, resets_at: null }, false)).toBe('Sol (7일 사용량 제한)');
+    expect(formatModelPresetLabel({ ...exhausted, reason_label: null, resets_at: null }, false)).toBe('Sol');
+    expect(formatModelPresetLabel({ ...exhausted, usage_warning: true, resets_at: null })).toBe('Sol (7일 사용량 제한)');
+  });
+
+  test('고른 모델 이름은 소진 모델의 사유와 해제 시각을 포함하고 자동일 때만 감싼다', () => {
+    const exhausted = {
+      id: 'sol',
+      label: 'Sol',
+      backend: 'codex',
+      available: true,
+      reason: 'quota_exhausted',
+      reason_label: '7일 사용량 제한',
+      resets_at: new Date(2030, 10, 28, 12, 20).toISOString(),
+      usage_warning: false,
+    };
+
+    expect(resolveSelectedModelPresetName('sol', [exhausted], true, false))
+      .toBe('Sol (7일 사용량 제한) · 11/28 12:20 해제');
+    expect(resolveSelectedModelPresetName('sol', [exhausted], true, false, true))
+      .toBe('자동 (Sol) · 7일 사용량 제한 · 11/28 12:20 해제');
+  });
+
+  test('자동 선택 글자는 괄호를 겹치지 않고 사유와 해제 시각을 가운뎃점으로 잇는다', () => {
+    const exhausted: ModelPresetAvailability = {
+      id: 'sol',
+      label: 'Sol',
+      backend: 'codex',
+      available: true,
+      reason: 'quota_exhausted',
+      reason_label: '7일 사용량 제한',
+      resets_at: new Date(2030, 10, 28, 12, 20).toISOString(),
+      usage_warning: false,
+    };
+    const auto = (preset: ModelPresetAvailability) =>
+      resolveSelectedModelPresetName('sol', [preset], true, false, true);
+
+    expect(auto({ ...exhausted, resets_at: null })).toBe('자동 (Sol) · 7일 사용량 제한');
+    expect(auto({ ...exhausted, reason_label: null })).toBe('자동 (Sol) · 11/28 12:20 해제');
+    expect(auto({ ...exhausted, reason_label: null, resets_at: null })).toBe('자동 (Sol)');
+    expect(auto({ ...exhausted, available: false, reason: 'limit_rejected', reason_label: '5시간 한도 거부 중' }))
+      .toBe('자동 (Sol) · 5시간 한도 거부 중 · 11/28 12:20 해제');
+  });
+
+  test('실행 조합 시트 메타 줄은 소진 모델의 사유와 해제 시각, 사용 불가 모델의 사유를 돌려준다', () => {
+    const exhausted = {
+      id: 'sol',
+      label: 'Sol',
+      backend: 'codex',
+      available: true,
+      reason: 'quota_exhausted',
+      reason_label: '7일 사용량 제한',
+      resets_at: new Date(2030, 10, 28, 12, 20).toISOString(),
+      usage_warning: false,
+    };
+
+    expect(formatModelPresetMeta(exhausted)).toBe('7일 사용량 제한 · 11/28 12:20 해제');
+    expect(formatModelPresetMeta({ ...exhausted, resets_at: null })).toBe('7일 사용량 제한');
+    expect(formatModelPresetMeta({ ...exhausted, reason_label: null })).toBeNull();
+    expect(formatModelPresetMeta({ ...exhausted, reason: null })).toBeNull();
+    expect(formatModelPresetMeta({ ...exhausted, available: false, reason: 'auth_not_configured', reason_label: '인증 미설정' }))
+      .toBe('인증 미설정');
   });
 
   test('reset 시각은 오늘이면 시각만, 다른 날이면 로컬 날짜와 시각을 표시한다', () => {
@@ -271,7 +345,7 @@ test('Antigravity uses existing warning, exhaustion and disabled model options w
   const exhausted = { ...preset, reason: 'quota_exhausted', reason_label: '7일 사용량 제한' };
   const unavailable = { ...preset, id: 'gemini-4-argon', label: 'Gemini - 4 Argon', available: false, reason: 'auth_not_configured', reason_label: '인증 미설정' };
   const sheet = buildModelPresetActionSheet([exhausted, unavailable]);
-  expect(sheet.options[1]).toBe('Gemini - 3.8 Flash');
+  expect(sheet.options[1]).toBe('Gemini - 3.8 Flash (7일 사용량 제한)');
   expect(sheet.options[2]).toBe('Gemini - 4 Argon (인증 미설정)');
   expect(sheet.destructiveButtonIndex).toEqual([1]);
   expect(sheet.disabledButtonIndices).toEqual([2]);

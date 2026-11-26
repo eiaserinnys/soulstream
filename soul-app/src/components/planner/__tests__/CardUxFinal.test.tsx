@@ -8,7 +8,7 @@ jest.mock('../PlannerMarkdownText', () => ({ PlannerMarkdownText: ({ markdown }:
 jest.mock('../FolderSessionHistory', () => ({ FolderSessionHistory: ({ sessionIds, onOpenSession }: any) => require('react').createElement(require('react-native').Text, { testID: 'sessions', onPress: () => onOpenSession(sessionIds[0]) }, sessionIds.join(',')) }));
 jest.mock('../CardAssignmentSheet', () => ({ CardAssignmentSheet: () => null }));
 import React from 'react';
-import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook, waitFor, within } from '@testing-library/react-native';
 import { StyleSheet, useWindowDimensions } from 'react-native';
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../../../theme';
 import { CardAssignmentSheet } from '../CardAssignmentSheet';
@@ -238,4 +238,19 @@ test.each(['phone', 'tabletLandscape'] as const)('%s 카드 행은 실제 자식
   expect(cap.height).toBe(44);
   expect(capTouch.minHeight).toBe(device === 'phone' ? 44 : 48);
   expect(renderedHeight).toBe(112);
+});
+
+test('실행 시트는 소진 모델의 사유와 해제 시각을 메타 줄에 보인다', async () => {
+  const api = { listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-1' }] }),
+    listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'roselin', name: '로젤린', default_preset: 'sol' }] }),
+    listModelPresets: jest.fn().mockResolvedValue({ model_presets: [
+      { id: 'sol', label: 'Sol', available: true, reason: 'quota_exhausted', reason_label: '7일 사용량 제한', resets_at: new Date(2030, 0, 2, 3, 4).toISOString() },
+      { id: 'luna', label: 'Luna', available: true, reason: 'quota_exhausted', reason_label: '월 사용량 제한', resets_at: null },
+      { id: 'terra', label: 'Terra', available: true, reason: null, reason_label: null, resets_at: null },
+    ] }) };
+  const screen = render(<ExecutionSelectionSheet api={api as any} value={{ folderId: 'folder-1', nodeId: 'node-1', agentId: 'roselin', modelPreset: 'sol' }} onSave={jest.fn()} onClose={jest.fn()} />);
+  expect(await screen.findByText('7일 사용량 제한 · 1/2 03:04 해제')).toBeTruthy();
+  expect(screen.getByText('월 사용량 제한')).toBeTruthy();
+  expect(screen.getByLabelText('모델 Sol').props.accessibilityState.disabled).toBe(false);
+  expect(within(screen.getByTestId('execution-model-terra')).queryByText(/제한/)).toBeNull();
 });

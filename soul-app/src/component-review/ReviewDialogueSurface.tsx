@@ -25,7 +25,15 @@ import { type DialogueSample } from './dialogue-inventory';
 import { ReviewDialogueOwners } from './ReviewDialogueOwners';
 import { ReviewPersistentEntry } from './ReviewPersistentEntry';
 
-const assignment = { folderId: 'public-project', nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-model' };
+const assignment = { folderId: 'public-project', nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-model' as string | null };
+const exhaustedSample = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('exhausted');
+const exhaustedAssignments: Record<string, typeof assignment> = {
+  direct: { ...assignment, modelPreset: 'public-exhausted-model' },
+  auto: { ...assignment, agentId: 'public-exhausted-agent', modelPreset: null },
+  'direct-long': { ...assignment, modelPreset: 'public-exhausted-long-model' },
+  'auto-long': { ...assignment, agentId: 'public-exhausted-long-agent', modelPreset: null },
+};
+const reviewAssignment = (exhaustedSample && exhaustedAssignments[exhaustedSample]) || assignment;
 
 // Both the section and single-frame preview mount the same original owners.
 export function ReviewDialogueSurface({ opened, onClose, onResult, preview = false }: {
@@ -38,9 +46,9 @@ export function ReviewDialogueSurface({ opened, onClose, onResult, preview = fal
   const saved = (message: string) => { setResult(message); close(); };
   return <>
       {opened === 'card-create' ? <CardCreateSheet api={api} folderId="public-project" onClose={close} /> : null}
-      {opened === 'assignment' ? <CardAssignmentSheet api={api} value={assignment} mode="edit" onClose={close} onSave={async value => saved('메모리 담당: ' + value.agentId)} /> : null}
+      {opened === 'assignment' ? <CardAssignmentSheet api={api} value={reviewAssignment} mode="edit" onClose={close} onSave={async value => saved('메모리 담당: ' + value.agentId)} /> : null}
       {opened === 'folder-picker' ? <FolderSelectionSheet api={api} onClose={close} onSelect={id => saved('선택: ' + id)} /> : null}
-      {opened === 'execution-picker' ? <ExecutionSelectionSheet api={api} value={assignment} onClose={close} onSave={value => saved('메모리 실행: ' + value.agentId)} /> : null}
+      {opened === 'execution-picker' ? <ExecutionSelectionSheet api={api} value={reviewAssignment} onClose={close} onSave={value => saved('메모리 실행: ' + value.agentId)} /> : null}
       {opened === 'folder-create' ? <NewFolderSheet visible api={api} folders={dialogueFolders} dailyDate="2026-10-03" defaultProjectPageId="public-page" onClose={close}
         onSubmit={async input => { const response = await createPlannerMutationPort(api).createFolder(input); setResult('메모리 폴더: ' + response.folder.name); return response; }} /> : null}
       {opened === 'session-create' ? <SessionSuccessionSheet visible api={api} folder={dialogueFolder} predecessorSessionId="public-idle" onClose={close} onCreated={id => setResult('메모리 세션: ' + id)} /> : null}

@@ -325,6 +325,8 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
     listNodeAgents: async () => read({ agents: state === 'empty' ? [] : [
       { id: 'public-agent', name: '공개 예시 에이전트', default_preset: 'public-model' },
       { id: 'public-other-agent', name: '다른 예시 에이전트', default_preset: 'public-model' },
+      { id: 'public-exhausted-agent', name: '소진 모델 예시 에이전트', default_preset: 'public-exhausted-model' },
+      { id: 'public-exhausted-long-agent', name: '긴 소진 모델 예시 에이전트', default_preset: 'public-exhausted-long-model' },
     ] }),
     listModelPresets: async () => read({ model_presets: state === 'empty' ? [] : [
     { id: "gemini-3.8-flash", label: "Gemini - 3.8 Flash", backend: "antigravity", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false, weekly_headroom: { status: "ok" as const, headroom: 1.4, remaining_percent: 99.7, window_remaining_percent: 98.3, resets_at: "2026-10-20T16:54:02Z", observed_at: "2026-10-14T00:00:00Z", quota_label: "7일" } },
@@ -332,7 +334,9 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
       { id: 'public-model', label: '사용 가능한 예시 모델', backend: 'codex', available: true,
         reason: null, reason_label: null, resets_at: null, usage_warning: false },
       { id: 'public-exhausted-model', label: '사용량 소진 예시 모델', backend: 'codex', available: true,
-        reason: 'quota_exhausted', reason_label: '7일 사용량 제한', resets_at: null, usage_warning: false },
+        reason: 'quota_exhausted', reason_label: '7일 사용량 제한', resets_at: new Date(2030, 10, 28, 12, 20).toISOString(), usage_warning: false },
+      { id: 'public-exhausted-long-model', label: 'Codex - 6.1 Sol', backend: 'codex', available: true,
+        reason: 'quota_exhausted', reason_label: '7일 사용량 제한', resets_at: new Date(2030, 10, 28, 12, 20).toISOString(), usage_warning: false },
       { id: 'public-rejected-model', label: '거부 중 예시 모델', backend: 'codex', available: false,
         reason: 'limit_rejected', reason_label: '5시간 한도 거부 중', resets_at: rejectedTodayResetAt, usage_warning: false },
       { id: 'public-rejected-weekly-model', label: 'Claude - Fable', backend: 'claude', available: false,
