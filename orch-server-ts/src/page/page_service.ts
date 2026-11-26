@@ -12,6 +12,7 @@ import type {
   PageListDto,
 } from "@soulstream/page-model";
 
+import { pageStaleUnloadGuard } from "./page_stale_unload_guard.js";
 import { PageMutationCore, type CreatePageMutationInput, type PageMutationInput } from "./page_mutation_core.js";
 import type {
   CommitPageMutationInput,
@@ -154,7 +155,7 @@ export class PageYjsService {
       quiet: true,
       debounce: config.storeDebounceMs ?? 500,
       maxDebounce: config.storeMaxDebounceMs ?? 5_000,
-      extensions: [this.persistence.updateCollector, this.persistence.database],
+      extensions: [this.persistence.updateCollector, this.persistence.database, pageStaleUnloadGuard],
     });
   }
 
