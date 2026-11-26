@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from playwright.sync_api import expect, sync_playwright  # noqa: E402
 
-from settings_toc import capture_settings_toc, measure_operations, write_operations as write_toc_operations  # noqa: E402
+from settings_toc import capture_settings_toc, measure_direct_open, measure_operations, write_operations as write_toc_operations  # noqa: E402
 from settings_toolbar_r2 import capture_r2, write_operations  # noqa: E402
 from settings_toolbar_r3 import capture_r3  # noqa: E402
 from settings_toolbar_fakes import CHECKS, INDEX, Fake, SESSION_ID, FAKE_PASTED_CODE, FAKE_USER_CODE, assert_no_secret_output, check, DIST, flow, listen, new_page, open_settings, serve, shot, soon, toolbar_metrics, wait_for_call  # noqa: E402
@@ -266,6 +266,7 @@ def main():
                 capture_settings_toc(browser, baseline_base, out, "baseline-")
                 capture_settings_toc(browser, base, out, "")
                 measure_operations(browser, base)
+                measure_direct_open(browser, base, out)
                 browser.close()
                 write_toc_operations(out)
                 (out / "checks.json").write_text(json.dumps(CHECKS, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -49,6 +49,14 @@ DIALOG_STRETCH = """(extra) => {
 FOCUS_STATE = """() => { const a = document.activeElement; return { label: a?.getAttribute('aria-label') || a?.textContent?.trim() || a?.tagName, inDialog: !!a?.closest('[data-slot="dialog-popup"]'), testid: a?.getAttribute('data-testid') }; }"""
 
 
+# 현재 칸(aria-current)이 목차 스크롤 영역 안에 다 보이는지와, 창과 페이지가 따로 스크롤되지 않았는지를 잰다.
+CURRENT_ROW = """() => { const e = document.querySelector('[data-testid="config-category-nav"] [aria-current="page"]'); const n = e?.closest('nav');
+  if (!e || !n) return null; const a = e.getBoundingClientRect(); const b = n.getBoundingClientRect();
+  const scrolled = [document.scrollingElement, document.querySelector('[data-slot="dialog-popup"]'), document.querySelector('.config-layout')].map(el => el ? el.scrollTop : 0);
+  return { label: e.textContent.trim(), top: Math.round(a.top - b.top), bottom: Math.round(a.bottom - b.top), nav: Math.round(b.height), fully: a.top >= b.top - 0.5 && a.bottom <= b.bottom + 0.5, navScroll: Math.round(n.scrollTop), outerScroll: scrolled.reduce((x, y) => x + y, 0) + window.scrollY }; }"""
+DIRECT_SIZES = ((1280, 800), (1366, 768), (1440, 900), (1920, 1080))
+
+
 def ops(number: str, result: str, note: str):
     OPERATIONS.append((number, result, note))
 
@@ -173,6 +181,53 @@ def measure_operations(browser, base):
     ops("16", "통과", "360px 관리자 목차에서 가로 스크롤과 말줄임, 줄바꿈으로 잘린 이름이 없음(capture_settings_toc의 단언)")
     ops("17", "해당 없음", "목차는 정적 정의라 실패 상태가 없다. 서버 카테고리를 못 받는 경우의 안내는 이번에 바꾸지 않았다")
     ops("18", "통과", "카드 실행을 연 채 360, 1280, 360px로 바꿔도 설정창이 열려 있고 가로 넘침 없이 같은 칸이 유지됨")
+    ops("14 바로 열기", "통과", "바로 열기(PAS 빈 상태의 코딩 에이전트 연결)에서도 목차의 현재 칸이 목차 영역 안에 다 보임(1280x800, 1366x768, 1440x900, 1920x1080). 툴바로 열면 목차가 맨 위, 목차를 직접 누르면 목차 스크롤 그대로, 창과 페이지는 스크롤되지 않음, MCP와 에이전트 프로필 사이 이동은 같은 속성 변경 경로라 ConfigCategoryNav.test.tsx가 잼(mcp_agent_panel.py는 이 커밋 전부터 가짜 응답이 맞지 않아 「연결된 노드가 없습니다」에서 멈춤)")
+
+
+def measure_direct_open(browser, base, out: Path):
+    """관리자 PAS 빈 상태에서 「코딩 에이전트 연결」로 바로 열면 목차의 현재 칸이 목차 안에 다 보인다(툴바로 열면 맨 위)."""
+    for width, height in DIRECT_SIZES:
+        fake = Fake(atom=True, sessions="unavailable", admin=True)
+        context, page = new_page(browser, base, fake, width, height=height)
+        page.route("**/api/config/settings", lambda route: route.fulfill(json=SERVER_CATEGORIES))
+        page.goto(base + "/persistent", wait_until="domcontentloaded")
+        expect(page.get_by_test_id("persistent-empty-unavailable")).to_be_visible(timeout=20000)
+        page.get_by_role("button", name="코딩 에이전트 연결").click()
+        expect(page.get_by_test_id("coding-agents-tab")).to_be_visible(timeout=15000)
+        page.wait_for_timeout(700)
+        row = page.evaluate(CURRENT_ROW)
+        check(f"바로 열기 {width}x{height}: 현재 칸(코딩 에이전트 연결)의 위아래 끝이 목차 영역 안에 다 들어옴", row["fully"] and row["label"] == "코딩 에이전트 연결", row)
+        check(f"바로 열기 {width}x{height}: 창과 페이지는 스크롤되지 않음", row["outerScroll"] == 0, row)
+        if (width, height) in ((1280, 800), (1366, 768)):
+            page.locator(DIALOG).screenshot(path=str(out / f"settings-toc-direct-coding-{width}x{height}.png"), animations="disabled")
+            INDEX.append((f"settings-toc-direct-coding-{width}x{height}.png", width, "관리자 PAS 빈 상태에서 코딩 에이전트 연결로 바로 연 설정창"))
+        if (width, height) == (1280, 800):
+            before = page.evaluate(CURRENT_ROW)["navScroll"]
+            page.get_by_role("button", name="스킬과 카탈로그", exact=True).click()
+            page.wait_for_timeout(400)
+            after = page.evaluate(CURRENT_ROW)
+            check("목차를 직접 누르면 목차 스크롤이 움직이지 않음", after["navScroll"] == before and after["outerScroll"] == 0, {"before": before, "after": after})
+        context.close()
+    context, page = open_dashboard(browser, base, True, 1280, 800)
+    open_settings(page)
+    expect(page.locator(NAV)).to_be_visible()
+    page.wait_for_timeout(500)
+    row = page.evaluate(CURRENT_ROW)
+    check("툴바로 열면 목차는 맨 위(화면과 읽기)에 있음", row["navScroll"] == 0 and row["label"] == "화면과 읽기" and row["outerScroll"] == 0, row)
+    page.locator(DIALOG).screenshot(path=str(out / "settings-toc-toolbar-1280x800.png"), animations="disabled")
+    INDEX.append(("settings-toc-toolbar-1280x800.png", 1280, "툴바로 연 관리자 설정창 목차"))
+    context.close()
+    context, page = new_page(browser, base, Fake(atom=True, sessions="unavailable", admin=True), 360, height=800)
+    page.route("**/api/config/settings", lambda route: route.fulfill(json=SERVER_CATEGORIES))
+    page.goto(base + "/persistent", wait_until="domcontentloaded")
+    expect(page.get_by_test_id("persistent-empty-unavailable")).to_be_visible(timeout=20000)
+    page.get_by_role("button", name="코딩 에이전트 연결").click()
+    expect(page.get_by_test_id("coding-agents-tab")).to_be_visible(timeout=15000)
+    page.get_by_role("button", name="모든 설정").click()
+    expect(page.locator(NAV)).to_be_visible()
+    row = page.evaluate(CURRENT_ROW)
+    check("360px: 본문이 바로 열리고 「모든 설정」으로 돌아오면 현재 칸 표시가 유지되며 가로 넘침이 없음", row["label"] == "코딩 에이전트 연결" and page.evaluate("() => document.documentElement.scrollWidth <= innerWidth"), row)
+    context.close()
 
 
 def write_operations(out: Path):
