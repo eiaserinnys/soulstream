@@ -24,7 +24,7 @@ function runListLane(path: string, lane: ListLane) {
   const batch = [...lane.waiters];
   lane.waiters.clear();
   sendCardRequest<unknown>(path, "GET").then(
-    value => batch.forEach(waiter => waiter.resolve(value)),
+    value => batch.forEach(waiter => waiter.resolve(structuredClone(value))),
     failure => batch.forEach(waiter => waiter.reject(failure)),
   ).finally(() => { lane.running = false; runListLane(path, lane); });
 }

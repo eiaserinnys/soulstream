@@ -29,14 +29,16 @@ it("카드 목록 읽기는 호출 뒤에 시작한 요청 하나로 합쳐지�
   pending[0].respond(json(["before-late"]));
   pending[1].respond(json(["folder"]));
   expect((await first).cards).toEqual(["before-late"]);
-  expect(await sameTick).toBe(await first);
+  expect(await sameTick).toEqual(await first);
+  expect(await sameTick).not.toBe(await first);
   expect((await folder).cards).toEqual(["folder"]);
   expect(((await abortedResult) as Error).name).toBe("AbortError");
   await flush();
   expect(fetchMock).toHaveBeenCalledTimes(3);
   pending[2].respond(json(["after-start"]));
   expect((await late).cards).toEqual(["after-start"]);
-  expect(await lateTwo).toBe(await late);
+  expect(await lateTwo).toEqual(await late);
+  expect(await lateTwo).not.toBe(await late);
 
   const failing = [cardRequest("/api/cards"), cardRequest("/api/cards")].map(call => call.catch(error => error));
   await flush();
