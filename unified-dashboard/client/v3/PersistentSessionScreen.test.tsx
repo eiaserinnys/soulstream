@@ -198,18 +198,23 @@ it('keeps the retry button mounted and focused while a failed bootstrap is retri
  expect(retry()).toBe(button);expect(document.activeElement).toBe(button);expect(button.getAttribute('aria-disabled')).toBe('true');expect(button.disabled).toBe(false);expect(host.querySelector('[data-testid="persistent-empty-retrying"] svg.animate-spin')).not.toBeNull();expect(text()).toContain('다시 만드는 중입니다');
  await act(async()=>button.click());expect(mocks.bootstrap).toHaveBeenCalledTimes(2);
 });
-it('asks admins to connect a coding agent when bootstrap is on but unavailable, and re-reads after the settings close',async()=>{
+it('asks admins to log in to a coding agent when bootstrap is on but unavailable, and re-reads after the settings close',async()=>{
  mocks.admin=true;mocks.list.mockResolvedValue(emptyListing({bootstrap_enabled:true,unavailable_reason:'쓸 수 있는 모델이 없습니다.'}));await mount();
- expect(text()).toContain('코딩 에이전트를 연결하면 기본 영구 세션을 만듭니다');expect(text()).toContain('쓸 수 있는 모델이 없습니다.');expect(mocks.bootstrap).not.toHaveBeenCalled();
+ const lines=()=>host.querySelector('[data-testid="persistent-empty-unavailable"] p')!;
+ expect([...lines().childNodes].filter(n=>n.nodeType===Node.TEXT_NODE).map(n=>n.textContent)).toEqual(['기본 영구 세션을 만들기 위해','코딩 에이전트에 로그인해주세요.']);expect(lines().querySelectorAll('br').length).toBe(1);
+ expect([...host.querySelectorAll('.persistent-empty-steps > li')].map(li=>li.textContent)).toEqual(['설정에서 Claude, Codex, Antigravity 가운데 하나를 연결합니다','안내대로 로그인하고 설정을 닫습니다']);
+ expect([...host.querySelectorAll('button')].some(b=>b.textContent==='코딩 에이전트 연결')).toBe(true);expect(text()).not.toContain('쓸 수 있는 모델이 없습니다.');expect(host.querySelector('.persistent-empty-reason')).toBeNull();expect(mocks.bootstrap).not.toHaveBeenCalled();
  await press('코딩 에이전트 연결');
  expect(host.querySelector('[data-testid="config"]')?.getAttribute('data-tab')).toBe('coding_agents');
  mocks.list.mockResolvedValue(emptyListing({bootstrap_enabled:true,unavailable_reason:null}));mocks.bootstrap.mockResolvedValue({created:true,session_id:'ready'});
  const before=mocks.list.mock.calls.length;await press('설정 닫기');
  expect(mocks.list.mock.calls.length).toBe(before+1);expect(mocks.bootstrap).toHaveBeenCalledTimes(1);expect(mocks.navigate).toHaveBeenCalledWith('/persistent/ready',true);
 });
-it('hides the connect button from non-admins in the unavailable state',async()=>{
+it('tells non-admins only that an admin must log in, without steps, button or the server reason',async()=>{
  mocks.list.mockResolvedValue(emptyListing({bootstrap_enabled:true,unavailable_reason:'쓸 수 있는 모델이 없습니다.'}));await mount();
- expect(text()).toContain('쓸 수 있는 모델이 없습니다.');expect([...host.querySelectorAll('button')].some(b=>b.textContent==='코딩 에이전트 연결')).toBe(false);
+ const frame=host.querySelector('[data-testid="persistent-empty-unavailable"]')!;
+ expect([...frame.querySelector('p')!.childNodes].filter(n=>n.nodeType===Node.TEXT_NODE).map(n=>n.textContent)).toEqual(['기본 영구 세션을 만들기 위해','관리자가 코딩 에이전트에 로그인해야 합니다.']);
+ expect(frame.querySelectorAll('p').length).toBe(1);expect(frame.querySelector('ol')).toBeNull();expect(frame.querySelector('button')).toBeNull();expect(text()).not.toContain('쓸 수 있는 모델이 없습니다.');
 });
 it('opens the persistent settings tab with the viewed PAS selected and stays on the PAS window when it closes',async()=>{
  const resource=session('one');mocks.list.mockResolvedValue({sessions:[resource,session('two')]});await mount('one');
