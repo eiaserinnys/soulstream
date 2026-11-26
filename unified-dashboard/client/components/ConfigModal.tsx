@@ -6,7 +6,7 @@ import { FileStorageTab } from "./FileStorageTab";
 import { CardDispatchTab } from "./CardDispatchTab";
 import { PersistentDefaultsSettingsForm } from "./PersistentDefaultsSettingsForm";
 /**
- * ConfigModal - 서버 설정 편집 모달 (unified-dashboard)
+ * ConfigModal - 설정 모달 (unified-dashboard)
  *
  * 모달 쉘 + 탭 선택 상태 + 하위 컴포넌트 조합만 담당한다.
  *   - 필드 렌더링  : components/config/SettingFieldWidget
@@ -24,7 +24,6 @@ import {
   DialogHeader,
   DialogFooter,
   DialogTitle,
-  DialogDescription,
   DialogPanel,
   Button,
   FrameLoading,
@@ -45,6 +44,7 @@ import { SkillCatalogTab } from "./guides/SkillCatalogTab";
 import { resetGuideSession } from "../lib/skill-guides";
 import { SettingFieldWidget } from "./config/SettingFieldWidget";
 import { ConfigCategoryNav } from "./config/ConfigCategoryNav";
+import { DEFAULT_CONFIG_TAB_ID, visibleConfigTabs } from "./config/configTabs";
 import { ConfigResultMessage } from "./config/ConfigResultMessage";
 import { useConfigSettings } from "../hooks/useConfigSettings";
 import {
@@ -59,22 +59,6 @@ import { RecurringJobsTab } from "./RecurringJobsTab";
 import { PersistentSessionsTab } from "./PersistentSessionsTab";
 import { CodingAgentsTab } from "./CodingAgentsTab";
 import { UsageStatsTab } from "./usage-stats/UsageStatsTab";
-
-const LIQUID_GLASS_TAB_NAME = "liquid_glass";
-const CHAT_TAB_NAME = "chat";
-const NODES_TAB_NAME = "nodes";
-const USERS_TAB_NAME = "users";
-const AGENTS_TAB_NAME = "agents";
-const SKILLS_TAB_NAME = "skills";
-const OWNED_AGENTS_TAB_NAME = "owned_agents";
-const ACCESS_LINKS_TAB_NAME = "access_links";
-const WEBHOOKS_TAB_NAME = "webhooks";
-const SESSION_REVIEW_TAB_NAME = "session_review";
-const USAGE_LOG_TAB_NAME = "usage_log";
-const USAGE_STATS_TAB_NAME = "usage_stats";
-const RECURRING_JOBS_TAB_NAME = "recurring_jobs";
-const PERSISTENT_TAB_NAME = "persistent";
-const CODING_AGENTS_TAB_NAME = "coding_agents";
 
 export interface ConfigModalApi {
   request: typeof fetch;
@@ -114,7 +98,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
 
   const [localChat, setLocalChat] = useState<import("@seosoyoung/soul-ui").ChatFontSize>(14);
   const [localGlass, setLocalGlass] = useState(DEFAULT_LIQUID_GLASS_SETTINGS);
-  const [selectedTab, setSelectedTab] = useState<string>(initialTab ?? "appearance");
+  const [selectedTab, setSelectedTab] = useState<string>(initialTab ?? DEFAULT_CONFIG_TAB_ID);
   const [mcpProfileTarget, setMcpProfileTarget] = useState<string | undefined>();
   const [agentMcpTarget, setAgentMcpTarget] = useState<{ agentId: string; nodeId: string } | undefined>();
   const userEmail = typeof user?.email === "string" ? user.email : null;
@@ -129,94 +113,35 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
     saveInFlight.current = true;
     try { await save(); } finally { saveInFlight.current = false; }
   };
-  const extraTabs = useMemo(() => {
-    return [
-      { name: "appearance", label: "화면과 읽기" },
-      { name: OWNED_AGENTS_TAB_NAME, label: "내 에이전트" },
-      { name: ACCESS_LINKS_TAB_NAME, label: "접속 링크" },
-      { name: WEBHOOKS_TAB_NAME, label: "웹훅" },
-      { name: NODES_TAB_NAME, label: "노드" },
-      { name: RECURRING_JOBS_TAB_NAME, label: "반복 작업" },
-      { name: PERSISTENT_TAB_NAME, label: "영구 에이전트 세션" },
-      { name: USAGE_LOG_TAB_NAME, label: "사용 로그" },
-      { name: USAGE_STATS_TAB_NAME, label: "세션 통계" },
-      ...((api || user?.isAdmin) ? [
-        { name: SESSION_REVIEW_TAB_NAME, label: "요청 검수" },
-        { name: "file_storage", label: "파일 저장소" },
-        { name: "card_dispatch", label: "카드 실행" },
-        { name: CODING_AGENTS_TAB_NAME, label: "코딩 에이전트" },
-        { name: "persistent_defaults", label: "영구 세션 기본 모델" },
-        { name: "mcp", label: "MCP" },
-        { name: AGENTS_TAB_NAME, label: "에이전트" },
-        { name: SKILLS_TAB_NAME, label: "스킬과 카탈로그" },
-        { name: USERS_TAB_NAME, label: "사용자" },
-      ] : []),
-    ];
-  }, [(api || user?.isAdmin)]);
+  const isAdmin = Boolean(api || user?.isAdmin);
+  const tabs = useMemo(() => visibleConfigTabs(isAdmin), [isAdmin]);
 
   // 카테고리 로드 시 첫 탭 선택. 모달을 닫으면 다음 오픈 시 재선택되도록 리셋.
   useEffect(() => {
     if (!selectedTab) {
-      const firstTab = initialTab ?? "appearance";
+      const firstTab = initialTab ?? DEFAULT_CONFIG_TAB_ID;
       if (firstTab) setSelectedTab(firstTab);
     }
-  }, [categories, extraTabs, selectedTab]);
+  }, [categories, tabs, selectedTab]);
   useEffect(() => {
-    if (!open) { setSelectedTab(initialTab ?? "appearance"); setMobileIndex(!initialTab); setDiscardPrompt(false); resetGuideSession(); }
+    if (!open) { setSelectedTab(initialTab ?? DEFAULT_CONFIG_TAB_ID); setMobileIndex(!initialTab); setDiscardPrompt(false); resetGuideSession(); }
   }, [open]);
   useEffect(() => {
     if (open && userEmail) setPasDevicePreferences(readPersistentSessionDevicePreferences(userEmail));
   }, [open, userEmail]);
 
   const activeCategory = categories.find((c) => c.name === selectedTab);
-  const isNonConfigTab = selectedTab === "appearance" ||
-    selectedTab === LIQUID_GLASS_TAB_NAME ||
-    selectedTab === CHAT_TAB_NAME ||
-    selectedTab === NODES_TAB_NAME ||
-    selectedTab === RECURRING_JOBS_TAB_NAME ||
-    selectedTab === PERSISTENT_TAB_NAME ||
-    selectedTab === "file_storage" ||
-    selectedTab === "card_dispatch" ||
-    selectedTab === CODING_AGENTS_TAB_NAME ||
-    selectedTab === "persistent_defaults" ||
-    selectedTab === "mcp" ||
-    selectedTab === SESSION_REVIEW_TAB_NAME ||
-    selectedTab === USAGE_LOG_TAB_NAME ||
-    selectedTab === AGENTS_TAB_NAME ||
-    selectedTab === SKILLS_TAB_NAME ||
-    selectedTab === OWNED_AGENTS_TAB_NAME ||
-    selectedTab === ACCESS_LINKS_TAB_NAME ||
-    selectedTab === WEBHOOKS_TAB_NAME ||
-    selectedTab === USERS_TAB_NAME;
-  const isUsageStatsTab = selectedTab === USAGE_STATS_TAB_NAME;
-  const isNonConfigTabWithUsageStats = isNonConfigTab || isUsageStatsTab;
-  const hasTabs = categories.length > 0 || extraTabs.length > 0;
+  const selectedDefinition = tabs.find(tab => tab.id === selectedTab);
+  const isUsageStatsTab = selectedTab === "usage_stats";
+  const hasTabs = categories.length > 0 || tabs.length > 0;
 
-  const activeLabel = selectedTab === "appearance" ? "화면과 읽기" : [...categories, ...extraTabs].find(tab => tab.name === selectedTab)?.label ?? "설정";
-  const descriptions: Record<string, string> = {
-    appearance: "나에게 편안한 배경과 대화 글자 크기를 고릅니다.",
-    owned_agents: "내 에이전트의 이름과 활성 상태, 연결 키를 관리합니다.",
-    access_links: "외부 에이전트가 내 세션에 일을 맡길 수 있는 링크를 관리합니다.",
-    webhooks: "내 세션과 외부 서비스가 주고받는 웹훅을 관리합니다.",
-    nodes: "작업을 실행할 기기와 연결 상태를 확인합니다.", agents: "에이전트의 프로필과 기본 실행 환경을 관리합니다.",
-    recurring_jobs: "반복할 작업과 다음 실행 시점을 관리합니다.", persistent: "영구 세션의 지시와 표시, 기록을 관리합니다.", card_dispatch: "카드의 실행 방식과 동시 실행 수를 조정합니다.",
-    coding_agents: "노드마다 Claude, Codex, Antigravity 로그인을 연결합니다.",
-    persistent_defaults: "새 영구 세션이 쓸 기본 모델과 대체 순서를 정합니다. 이미 있는 세션은 바뀌지 않습니다.",
-    users: "서버를 사용할 사람과 접근 범위를 관리합니다.", session_review: "실행 전 검수가 필요한 요청을 정합니다.",
-    file_storage: "첨부 파일을 보관할 저장소를 연결합니다.", usage_log: "사용 기록을 확인하고 필요한 범위로 좁힙니다.",
-    usage_stats: "기간별 토큰과 정가 환산을 봅니다.",
-    mcp: "중앙 MCP 서버와 프로필, 인증 키를 관리합니다.",
-    skills: "스킬과 카탈로그의 연결, 쓰이는 곳, 검증 결과를 봅니다.",
-  };
+  const activeLabel = selectedDefinition?.label ?? activeCategory?.label ?? "설정";
   const close = () => { if (saving || saveInFlight.current) return; if (hasChanges) setDiscardPrompt(true); else onOpenChange(false); };
   return (
     <Dialog open={open} onOpenChange={next => { if (!next) close(); }}>
       <DialogPopup className="approved-dialog config-dialog max-w-5xl" closeProps={{ disabled: saving, onClick: event => { event.preventDefault(); close(); } }} style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px` } as CSSProperties}>
         <DialogHeader>
           <DialogTitle>설정</DialogTitle>
-          <DialogDescription>
-            개인 환경부터 서버 운영까지, 필요한 설정을 찾으세요.
-          </DialogDescription>
         </DialogHeader>
 
         <DialogPanel className="config-dialog-panel" scrollable={false} scrollFade={false}>
@@ -230,14 +155,14 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
             <div className="config-layout" data-mobile-index={mobileIndex}>
               <ConfigCategoryNav
                 categories={categories}
-                extraTabs={extraTabs}
+                tabs={tabs}
                 activeCategory={selectedTab}
                 onSelect={name => { setSelectedTab(name); setMobileIndex(false); setMcpProfileTarget(undefined); setAgentMcpTarget(undefined); }}
               />
               <section className="config-detail" aria-label={activeLabel}>
               <button type="button" className="config-back" onClick={() => setMobileIndex(true)}><ArrowLeft className="size-4" aria-hidden="true"/>모든 설정</button>
-              <header className="config-detail-heading"><h2>{activeLabel}</h2><p>{descriptions[selectedTab] ?? "서버에 적용할 값을 변경한 뒤 저장하세요."}</p></header>
-              {selectedTab === "appearance" ? <div className="config-appearance">
+              <header className="config-detail-heading"><h2>{activeLabel}</h2><p>{selectedDefinition?.description ?? "서버에 적용할 값을 변경한 뒤 저장하세요."}</p></header>
+              {selectedDefinition?.id === "appearance" ? <div className="config-appearance">
                 <WallpaperPicker local={Boolean(api)} />
                 <ChatTypographyTab preference={api ? {value:localChat,set:setLocalChat} : undefined}/>
                 {userEmail ? <SettingFieldWidget
@@ -250,46 +175,42 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
                   }}
                 /> : null}
                 <details className="config-advanced"><summary>유리 효과 세부 조정<span>고급</span></summary><LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined}/></details>
-              </div> : selectedTab === CHAT_TAB_NAME ? (
-                <ChatTypographyTab preference={api ? {value:localChat,set:setLocalChat} : undefined} />
-              ) : selectedTab === LIQUID_GLASS_TAB_NAME ? (
-                <LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined} />
-              ) : selectedTab === NODES_TAB_NAME ? (
+              </div> : selectedDefinition?.id === "nodes" ? (
                 // 구역 틀 테두리는 두지 않는다. 노드 카드와 사용량 행이 이미 테두리를 가진다.
                 <div>
                   <NodePanel request={api?.request} sampleNodes={api?.nodes} />
                 </div>
-              ) : selectedTab === RECURRING_JOBS_TAB_NAME ? (
+              ) : selectedDefinition?.id === "recurring_jobs" ? (
                 <RecurringJobsTab api={api?.recurring} assignment={api?.assignment} />
-              ) : selectedTab === PERSISTENT_TAB_NAME ? (
+              ) : selectedDefinition?.id === "persistent" ? (
                 <PersistentSessionsTab request={api?.request} assignment={api?.assignment} initialPersistentSessionId={initialPersistentSessionId} onSessionSaved={onPersistentSessionSaved} />
-              ) : selectedTab === USAGE_LOG_TAB_NAME ? (
+              ) : selectedDefinition?.id === "usage_log" ? (
                 <UsageLogTab request={api?.request} />
-              ) : selectedTab === USAGE_STATS_TAB_NAME ? (
+              ) : selectedDefinition?.id === "usage_stats" ? (
                 <UsageStatsTab request={api?.request} />
-              ) : selectedTab === SESSION_REVIEW_TAB_NAME ? (
+              ) : selectedDefinition?.id === "session_review" ? (
                 <SessionReviewPolicyTab request={api?.request} />
-              ) : selectedTab === "file_storage" && (api || user?.isAdmin) ? (
+              ) : selectedDefinition?.id === "file_storage" ? (
                 <FileStorageTab request={api?.request} />
-              ) : selectedTab === "card_dispatch" ? (
+              ) : selectedDefinition?.id === "card_dispatch" ? (
                 <CardDispatchTab api={api?.cards} orchestration={api?.orchestration} />
-              ) : selectedTab === CODING_AGENTS_TAB_NAME && (api || user?.isAdmin) ? (
+              ) : selectedDefinition?.id === "coding_agents" ? (
                 <CodingAgentsTab request={api?.request} sampleNodes={api?.nodes} />
-              ) : selectedTab === "persistent_defaults" && (api || user?.isAdmin) ? (
+              ) : selectedDefinition?.id === "persistent_defaults" ? (
                 <PersistentDefaultsSettingsForm />
-              ) : selectedTab === "mcp" && (api || user?.isAdmin) ? (
-                open && !mobileIndex ? <McpSettingsTab request={api?.request} initialProfileId={mcpProfileTarget} onOpenAgent={(agentId, nodeId) => { setAgentMcpTarget({ agentId, nodeId }); setSelectedTab(AGENTS_TAB_NAME); setMobileIndex(false); }} /> : null
-              ) : selectedTab === AGENTS_TAB_NAME ? (
+              ) : selectedDefinition?.id === "mcp" ? (
+                open && !mobileIndex ? <McpSettingsTab request={api?.request} initialProfileId={mcpProfileTarget} onOpenAgent={(agentId, nodeId) => { setAgentMcpTarget({ agentId, nodeId }); setSelectedTab("agents"); setMobileIndex(false); }} /> : null
+              ) : selectedDefinition?.id === "agents" ? (
                 <AgentProfileEditorTab request={api?.request} initialMcpTarget={agentMcpTarget} onEditMcpProfile={profileId => { setMcpProfileTarget(profileId); setSelectedTab("mcp"); setMobileIndex(false); }} />
-              ) : selectedTab === SKILLS_TAB_NAME && (api || user?.isAdmin) ? (
+              ) : selectedDefinition?.id === "skills" ? (
                 open && !mobileIndex ? <SkillCatalogTab request={api?.request} /> : null
-              ) : selectedTab === OWNED_AGENTS_TAB_NAME ? (
+              ) : selectedDefinition?.id === "owned_agents" ? (
                 open && !mobileIndex ? <OwnedAgentsTab request={api?.request} /> : null
-              ) : selectedTab === ACCESS_LINKS_TAB_NAME ? (
+              ) : selectedDefinition?.id === "access_links" ? (
                 open && !mobileIndex ? <AccessLinksTab request={api?.request} /> : null
-              ) : selectedTab === WEBHOOKS_TAB_NAME ? (
+              ) : selectedDefinition?.id === "webhooks" ? (
                 open && !mobileIndex ? <WebhooksTab request={api?.request} /> : null
-              ) : selectedTab === USERS_TAB_NAME ? (
+              ) : selectedDefinition?.id === "users" ? (
                 <UserManagementTab request={api?.request} initialEditor={userEditor} />
               ) : activeCategory ? (
                 <div className="space-y-2">
@@ -315,9 +236,9 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
             <Button variant="outline" onClick={() => setDiscardPrompt(false)}>계속 편집</Button>
             <Button variant="destructive" onClick={() => onOpenChange(false)}>변경 버리기</Button>
           </div> : <div className="config-footer-row">
-            <p className="config-save-state">{isUsageStatsTab ? null : hasChanges ? `${changedKeys.length}개 변경, 아직 저장되지 않음` : selectedTab === "appearance" ? <><Check className="size-4" aria-hidden="true"/> 변경 즉시 적용</> : isNonConfigTab ? "각 항목의 버튼으로 변경을 적용합니다" : "재시작이 필요한 항목은 별도로 표시됩니다"}</p>
+            <p className="config-save-state">{isUsageStatsTab ? null : hasChanges ? `${changedKeys.length}개 변경, 아직 저장되지 않음` : selectedDefinition?.id === "appearance" ? <><Check className="size-4" aria-hidden="true"/> 변경 즉시 적용</> : selectedDefinition ? "각 항목의 버튼으로 변경을 적용합니다" : "재시작이 필요한 항목은 별도로 표시됩니다"}</p>
             <Button variant="outline" disabled={saving} onClick={close}>{!isUsageStatsTab && hasChanges ? "취소" : "완료"}</Button>
-            {!isUsageStatsTab && (hasChanges || !isNonConfigTabWithUsageStats) ? <Button data-testid="config-save-button" disabled={!hasChanges || saving} onClick={() => void saveChanges()}>
+            {!isUsageStatsTab && (hasChanges || !selectedDefinition) ? <Button data-testid="config-save-button" disabled={!hasChanges || saving} onClick={() => void saveChanges()}>
               {saving ? "저장 중…" : "변경 저장"}
             </Button> : null}
           </div>}

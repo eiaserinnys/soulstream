@@ -149,7 +149,7 @@ def nodes_open_selected(browser, base, out: Path, width: int):
         open_settings(page)
         if width < 768:
             page.get_by_role("button", name="모든 설정").click()
-        page.locator('[data-testid="config-category-nav"]').get_by_role("button", name="코딩 에이전트").click()
+        page.locator('[data-testid="config-category-nav"]').get_by_role("button", name="코딩 에이전트 연결", exact=True).click()
         tab = page.get_by_test_id("coding-agents-tab")
         expect(tab).to_be_visible(timeout=15000)
         page.wait_for_timeout(700)

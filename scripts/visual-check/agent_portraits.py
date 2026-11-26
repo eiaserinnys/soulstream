@@ -199,7 +199,7 @@ def open_agents_tab(page):
     nav = page.locator('[data-testid="config-category-nav"]')
     if not nav.is_visible():  # 좁은 폭에서는 상세 쪽이 먼저 열려 있다.
         page.get_by_role("button", name="모든 설정").click()
-    nav.get_by_role("button", name="에이전트", exact=True).click()
+    nav.get_by_role("button", name="에이전트 프로필", exact=True).click()
     expect(page.get_by_test_id("agent-profile-settings")).to_be_visible(timeout=15000)
     page.wait_for_timeout(500)
 

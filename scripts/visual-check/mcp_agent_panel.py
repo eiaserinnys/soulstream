@@ -567,7 +567,7 @@ def assert_no_node(browser, width, theme, origin, out):
         base.open_panel(page, origin)
         back = page.locator('.config-back')
         if back.is_visible(): back.click()
-        page.locator('.config-dialog').get_by_role('button', name='에이전트', exact=True).click()
+        page.locator('.config-dialog').get_by_role('button', name='에이전트 프로필', exact=True).click()
         page.get_by_role('tab', name='MCP', exact=True).click()
         expect(page.get_by_text('연결된 노드가 없습니다.', exact=True)).to_be_visible()
         shot(page, out, f'agent-no-node-{width}-{theme}')

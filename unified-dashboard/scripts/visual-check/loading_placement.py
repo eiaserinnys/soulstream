@@ -614,7 +614,7 @@ def open_settings_tab(page: Page) -> None:
     page.goto("/")
     wait_shell(page)
     page.click('[data-testid="config-button"]')
-    page.get_by_role("button", name="에이전트", exact=True).click()
+    page.get_by_role("button", name="에이전트 프로필", exact=True).click()
 
 
 def click_settings_tab(page: Page, label: str) -> None:

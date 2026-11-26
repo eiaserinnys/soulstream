@@ -8,7 +8,7 @@ const SIZES = { wide: WIDE, narrow: NARROW } as const;
 type Size = keyof typeof SIZES;
 
 async function openProfile(page: Page, size: Size, theme: Theme, extra: { assemblyState?: string; guidesState?: string } = {}) {
-  await openSettings(page, { ...SIZES[size], theme, category: "에이전트", ...extra });
+  await openSettings(page, { ...SIZES[size], theme, category: "에이전트 프로필", ...extra });
   await expect(page.getByTestId("agent-profile-editor")).toBeVisible();
 }
 async function openSkills(page: Page, size: Size, theme: Theme, guidesState = "normal") {
@@ -36,7 +36,7 @@ async function overviewLoaded(page: Page) {
 }
 
 /** 설정 창 안에서 다른 항목으로 옮긴다(좁은 폭에서는 먼저 「모든 설정」으로 돌아간다). 페이지를 다시 열지 않아 시험이 빠르다. */
-async function switchCategory(page: Page, label: "에이전트" | "스킬과 카탈로그") {
+async function switchCategory(page: Page, label: "에이전트 프로필" | "스킬과 카탈로그") {
   const back = page.getByRole("button", { name: "모든 설정" });
   if (await back.isVisible()) await back.click();
   await page.getByRole("button", { name: label, exact: true }).click();

@@ -121,7 +121,7 @@ async function expectGlobalToolbarChrome(page: Page): Promise<void> {
   await expect(toolbar).toBeVisible();
   await expect(toolbar.getByText("Soulstream", { exact: true })).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "세션 검색 열기" })).toBeVisible();
-  await expect(toolbar.getByRole("button", { name: "서버 설정" })).toBeVisible();
+  await expect(toolbar.getByRole("button", { name: "설정", exact: true })).toBeVisible();
   await expect(toolbar.getByRole("button", { name: /^(라이트|다크) 모드로 전환$/ })).toBeVisible();
 }
 
@@ -138,7 +138,7 @@ async function expectGlobalToolbarInteractions(page: Page): Promise<void> {
   await expect(page.getByRole("heading", { name: "세션 기록 검색" })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  await toolbar.getByRole("button", { name: "서버 설정" }).click();
+  await toolbar.getByRole("button", { name: "설정", exact: true }).click();
   await expect(page.getByRole("heading", { name: "설정", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(toolbar).toBeVisible();

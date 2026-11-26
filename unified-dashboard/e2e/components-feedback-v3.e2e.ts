@@ -252,7 +252,7 @@ test(`composer and surfaces ${width} ${webgl ? "webgl" : "fallback"}`, async ({ 
   await capture("operational-folder-edit");
   expect(operationalEditorSurface.background).toBe(reference.background);
   await page.keyboard.press('Escape');
-  await page.getByTestId("v3-global-toolbar").getByRole("button", { name: "서버 설정" }).click();
+  await page.getByTestId("v3-global-toolbar").getByRole("button", { name: "설정", exact: true }).click();
   await expect(page.getByRole("heading", { name: "설정", exact: true })).toBeVisible({ timeout: 30_000 }); await capture("operational-settings");
   // 설정은 카테고리 목록에서 고른다. 모의 카테고리의 필드 3개를 연다.
   const configDialog = page.getByRole("dialog").filter({ has: page.getByTestId("config-category-nav") });

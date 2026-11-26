@@ -99,7 +99,7 @@ try {
       return route.fulfill({ json: { job } });
     });
     await page.goto(base);
-    const opener = page.getByRole('button', { name: '서버 설정', exact: true });
+    const opener = page.getByRole('button', { name: '설정', exact: true });
     await opener.waitFor({ state: 'visible', timeout: 60000 });
     await opener.click();
     const dialog = page.locator('.config-dialog');
@@ -187,7 +187,7 @@ try {
     const session = { session_id: 'operations-session', display_name: '운영 기록을 확인하는 영구 세션', node_id: 'eiaserinnys', folder_id: 'folder-amber', agent_id: 'seosoyoung', agent_name: '서소영', persistent: true, settings, runtime: { current_model: { model_preset: 'qa-standard', reasoning_effort: null, model: 'qa-standard' }, pending: null } };
     await persistentPage.route('**/api/persistent-sessions**', route => route.fulfill({ json: { sessions: [session], total: 1, create_defaults: { node_id: 'eiaserinnys', preferred_agent_id: 'seosoyoung', settings, initial_instruction: '', unavailable_reason: null } } }));
     await persistentPage.goto(base);
-    await persistentPage.getByRole('button', { name: '서버 설정', exact: true }).click();
+    await persistentPage.getByRole('button', { name: '설정', exact: true }).click();
     await persistentPage.locator('.config-dialog').getByRole('button', { name: '영구 에이전트 세션', exact: true }).click();
     const persistentTab = persistentPage.getByTestId('persistent-sessions-tab');
     await persistentTab.getByRole('button').filter({ hasText: session.display_name }).first().click();

@@ -121,7 +121,7 @@ export const dialoguesInventory = [
   {
     section: "settings",
     id: "settings",
-    name: "서버 설정 · 모든 탭",
+    name: "설정 · 모든 탭",
     component: "ConfigModal",
   },
   {

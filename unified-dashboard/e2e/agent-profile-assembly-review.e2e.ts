@@ -7,7 +7,7 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const SKILL_LABEL = guideSkills[1]!.name;
 const output = path.resolve("../.local/card1783-captures");
-async function open(page: Page, width: number, height: number, state = "normal", section = "에이전트") {
+async function open(page: Page, width: number, height: number, state = "normal", section = "에이전트 프로필") {
   await page.setViewportSize({ width, height });
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await page.addInitScript(() => { localStorage.setItem("soul-dashboard-theme", "dark"); localStorage.setItem("ls.webglGlass", "0"); });
@@ -27,7 +27,7 @@ async function open(page: Page, width: number, height: number, state = "normal",
   await page.goto(`/dialogues?sample=settings&assemblyState=${state}`);
   await expect(page.getByRole("heading", { name: "설정", exact: true })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: section, exact: true }).click();
-  if (section === "에이전트") await expect(page.getByTestId("agent-profile-editor")).toBeVisible();
+  if (section === "에이전트 프로필") await expect(page.getByTestId("agent-profile-editor")).toBeVisible();
   await expect(page.getByText("연결이 끊겼습니다")).toHaveCount(0);
 }
 async function shot(page: Page, name: string) {

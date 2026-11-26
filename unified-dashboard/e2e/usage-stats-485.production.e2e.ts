@@ -64,7 +64,7 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
 
   await page.goto("/");
   await expect(page.getByTestId("v3-global-toolbar")).toBeVisible();
-  await page.getByTestId("v3-global-toolbar").getByRole("button", { name: "서버 설정" }).click();
+  await page.getByTestId("v3-global-toolbar").getByRole("button", { name: "설정", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { name: "설정" })).toBeVisible();
   await dialog.getByTestId("config-category-nav").getByRole("button", { name: "세션 통계" }).click();
@@ -185,7 +185,7 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
   await expect(dialog).toBeHidden();
   responseMode = "ok";
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByTestId("v3-global-toolbar").getByRole("button", { name: "서버 설정" }).click();
+  await page.getByTestId("v3-global-toolbar").getByRole("button", { name: "설정", exact: true }).click();
   const narrowDialog = page.getByRole("dialog");
   await expect(narrowDialog.getByRole("heading", { name: "설정" })).toBeVisible();
   await narrowDialog.getByTestId("config-category-nav").getByRole("button", { name: "세션 통계" }).click();

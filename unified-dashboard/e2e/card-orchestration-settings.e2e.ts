@@ -131,7 +131,7 @@ for (const width of [1440, 390])
       }),
     );
     await page.goto("/");
-    await page.getByRole("button", { name: "서버 설정", exact: true }).click();
+    await page.getByRole("button", { name: "설정", exact: true }).click();
     await page.getByRole("tab", { name: "카드 실행", exact: true }).click();
     const operational = page.getByRole("form", { name: "중앙 카드 배정 정책" });
     await expect(operational.getByLabel("1순위 모델 프리셋")).toHaveValue(
