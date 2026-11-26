@@ -84,6 +84,13 @@ describe.sequential("versioned migration runner", () => {
       expect(coveredAt).toBeLessThanOrEqual(finishedAt + 60_000);
       expect(Number(checkpoint?.version)).toBe(2); // schema seed version 1 + 1
       expect(checkpoint?.updated_by).toBe("migration:fresh_install");
+
+      const [cardDispatch] = await sql`
+        SELECT value FROM system_settings WHERE setting_key = 'card_dispatch'
+      `;
+      expect(cardDispatch?.value).toMatchObject({
+        reviewMeetsDependency: true, startReleasedDependents: true,
+      });
     } finally {
       await sql.end({ timeout: 5 });
     }

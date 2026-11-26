@@ -3594,7 +3594,7 @@ CREATE TABLE IF NOT EXISTS card_comments (
 );
 CREATE INDEX IF NOT EXISTS idx_card_comments_card ON card_comments(card_id, created_at);
 INSERT INTO system_settings(setting_key,value,version,updated_by)
-VALUES ('card_dispatch','{"nodeConcurrency":{"default":2}}'::jsonb,1,'migration:109_cards') ON CONFLICT (setting_key) DO NOTHING;
+VALUES ('card_dispatch','{"nodeConcurrency":{"default":2},"reviewMeetsDependency":true,"startReleasedDependents":true}'::jsonb,1,'migration:109_cards') ON CONFLICT (setting_key) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS folder_operations (
     id               TEXT PRIMARY KEY,
