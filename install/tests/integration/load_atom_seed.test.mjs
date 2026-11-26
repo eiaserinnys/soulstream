@@ -161,9 +161,9 @@ test('case 1: full run via CLI, then an idempotent rerun', async () => {
     const { nodes } = await readAll(atom, cookie);
 
     const markers = markerMap(nodes, state.install_id);
-    assert.equal(nodes.filter((node) => !node.is_symlink && node.card.source_type === 'soulstream-seed').length, 159);
-    assert.equal(markers.size, 159);
-    assert.equal(nodes.filter((node) => node.is_symlink).length, 30);
+    assert.equal(nodes.filter((node) => !node.is_symlink && node.card.source_type === 'soulstream-seed').length, 172);
+    assert.equal(markers.size, 172);
+    assert.equal(nodes.filter((node) => node.is_symlink).length, 38);
 
     const parents = new Set(SEED.entries.map((entry) => entry.parent ?? null));
     for (const parentKey of parents) {
@@ -255,7 +255,7 @@ test('case 2a: lost /batch response resumes from markers without resending', asy
     assert.ok(roots.some((node) => node.card.title === '사용자 카드 2a'), 'user card must be preserved');
     const state = readState(stateDir);
     const { nodes } = await readAll(atom, cookie);
-    assert.equal(markerMap(nodes, state.install_id).size, 159);
+    assert.equal(markerMap(nodes, state.install_id).size, 172);
   });
 });
 

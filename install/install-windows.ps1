@@ -162,6 +162,10 @@ Write-Ok "Ports 5200, 4200, $WorkerPort and $($WorkerPort + 1) are free."
 Write-Step "Checking tools"
 if (-not (Test-CommandExists "git")) { Write-Host "   Installing Git..."; Install-WithWinget "Git.Git" }
 if (-not (Test-CommandExists "git")) { throw "Git was installed but is not on PATH. Open a new elevated PowerShell and run this script again." }
+if (-not (Test-CommandExists "gh")) {
+    Write-Host "   Installing GitHub CLI..."
+    try { Install-WithWinget "GitHub.cli" } catch { Write-Warn "GitHub CLI was not installed ($($_.Exception.Message)). Install it later with: winget install --id GitHub.cli" }
+}
 # npm, pnpm and codex also install .ps1 shims, which Restricted execution policy blocks; call the .cmd files.
 function Get-NodeVersion { [version]((Get-NativeOutput "node.exe" @("--version")) -replace "v", "") }
 $nodeOk = (Test-CommandExists "node.exe") -and ((Get-NodeVersion) -ge $MINIMUM_NODE_VERSION)

@@ -5,12 +5,13 @@ import { appendFileSync, chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileS
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createFakeCommands } from './support/fake_commands.mjs';
-import { copyCatalog } from './support/catalog.mjs';
+import { copyCatalog, copyCommonFiles } from './support/catalog.mjs';
 const script = resolve('install/install.sh');
 const ATOM_KEY = 'test-atom-api-key';
 // Files the earlier installation steps leave for render_config: the seed map and the atom API key.
 function prepareRoot(dir, root) {
  copyCatalog(root);
+ copyCommonFiles(root);
  mkdirSync(join(root,'config'),{recursive:true});
  writeFileSync(join(root,'config','.atom-seed-map.json'),JSON.stringify({skill_catalog:'11111111-2222-4333-8444-555555555555',domain_catalog:null}));
  writeFileSync(join(root,'.atom-api-key'),`${ATOM_KEY}\n`);

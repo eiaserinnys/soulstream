@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { createFakeCommands, runBash } from './support/fake_commands.mjs';
 import { startFakeAtom } from './support/fake_atom_server.mjs';
 import { PAS_DISALLOWED_TOOLS } from './support/pas_disallowed_tools.mjs';
-import { copyCatalog, installDefaults } from './support/catalog.mjs';
+import { copyCatalog, copyCommonFiles, installDefaults } from './support/catalog.mjs';
 
 const script = resolve('install/install.sh');
 const NAMES = ['skill_catalog', 'domain_catalog', 'common_rules', 'common_rules_extra', 'common_rules_templates', 'codex_rules',
@@ -32,6 +32,7 @@ function setup({ map = U, apiKey = API_KEY } = {}) {
   mkdirSync(join(root, 'config'), { recursive: true });
   mkdirSync(atomRoot, { recursive: true });
   copyCatalog(root);
+  copyCommonFiles(root);
   if (map !== undefined) writeFileSync(join(root, 'config', '.atom-seed-map.json'), typeof map === 'string' ? map : JSON.stringify(map));
   if (apiKey !== null) writeFileSync(join(root, '.atom-api-key'), `${apiKey}\n`);
   const fake = createFakeCommands(dir);
@@ -130,6 +131,8 @@ const EXPECTED_PROFILES = `profiles:
 const EXPECTED_AGENTS_MD = `# Soulstream workspace
 
 Use this shared workspace for your work. Create project worktrees under \`.projects/<repository>--<branch>\`.
+Keep temporary scripts in \`.local/tmp\` and work products in \`.local/artifacts\`.
+Scripts of shared and custom skills live under \`$AGENT_COMMON_FILES_DIR/skills/<skill>/\`.
 The \`soulstream\` MCP server provides session and workspace tools.
 The \`atom\` MCP server holds your instructions and skills. Rules live under \`에이전트 > 공통 > rules\` and skills under \`에이전트 > 공통 > skills\`.
 Find skills with \`search_skills\` and read them with \`load_skill\`. Read any other atom node with \`compile_subtree\`.
@@ -499,4 +502,36 @@ test('main runs the installation steps in order', () => {
     'Writing configuration', 'Building Soulstream', 'Initializing schema', 'Starting services',
     'Enabling Tailscale Serve', 'Checking services and workspace', 'Checking model presets',
   ]);
+});
+
+test('render_config points the worker at the skill script bundle, syncs it and keeps files the user added', async () => {
+  const t = setup();
+  try {
+    assert.equal((await t.run(renderBody('claude,codex'))).status, 0);
+    const bundleDir = join(t.root, '.local', 'agent-common');
+    assert.equal(env(join(t.root, '.env.soul-server-ts')).AGENT_COMMON_FILES_DIR, bundleDir);
+    assert.equal(env(join(t.root, '.env.orch')).AGENT_COMMON_FILES_DIR, undefined);
+    const checker = join(bundleDir, 'skills', 'html-make', 'scripts', 'check-ui-css.mjs');
+    assert.ok(readFileSync(checker).equals(readFileSync(resolve('scripts/check-ui-css.mjs'))));
+    assert.ok(existsSync(join(bundleDir, 'skills', 'html-make', 'scripts', 'ui-css-check.config.json')));
+    for (const dir of ['.projects', '.local/tmp', '.local/artifacts']) assert.ok(statSync(join(t.home, 'workspace', dir)).isDirectory(), dir);
+
+    mkdirSync(join(bundleDir, 'skills', 'my-custom'), { recursive: true });
+    writeFileSync(join(bundleDir, 'skills', 'my-custom', 'run.mjs'), 'console.log("mine");\n');
+    writeFileSync(checker, '// edited\n');
+    assert.equal((await t.run(renderBody('claude,codex'))).status, 0);
+    assert.equal(t.read(bundleDir, 'skills', 'my-custom', 'run.mjs'), 'console.log("mine");\n');
+    assert.ok(readFileSync(checker).equals(readFileSync(resolve('scripts/check-ui-css.mjs'))), 'a bundled file is restored');
+    assert.equal(t.read(t.home, 'workspace', 'AGENTS.md'), EXPECTED_AGENTS_MD);
+  } finally { t.cleanup(); }
+});
+
+test('render_config stops when the checkout has no skill script bundle', async () => {
+  const t = setup();
+  try {
+    rmSync(join(t.root, 'install', 'common-files'), { recursive: true });
+    const result = await t.run(renderBody('claude,codex'));
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Missing bundled skill scripts/);
+  } finally { t.cleanup(); }
 });

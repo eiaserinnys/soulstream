@@ -5,7 +5,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSy
 import { tmpdir } from 'node:os';
 import { join, resolve, win32 } from 'node:path';
 import { createFakeCommands } from './support/fake_commands.mjs';
-import { copyCatalog } from './support/catalog.mjs';
+import { copyCatalog, copyCommonFiles } from './support/catalog.mjs';
 import { PAS_DISALLOWED_TOOLS as SUPPORT_PAS_TOOLS } from './support/pas_disallowed_tools.mjs';
 import { PAS_DISALLOWED_TOOLS } from '../windows/pas_disallowed_tools.mjs';
 import { renderConfig, renderEnvFiles } from '../windows/render_config.mjs';
@@ -34,6 +34,7 @@ test('the Node renderer writes the same bytes as bash render_config on linux', (
   try {
     const fake = createFakeCommands(dir);
     copyCatalog(root);
+    copyCommonFiles(root);
     mkdirSync(join(root, 'config'), { recursive: true });
     writeFileSync(join(root, 'config', '.atom-seed-map.json'), JSON.stringify(SEED_MAP));
     writeFileSync(join(root, '.atom-api-key'), 'test-atom-api-key\n');
@@ -63,6 +64,7 @@ test('a second render keeps what you edited and the secrets', () => {
   const dir = mkdtempSync(join(tmpdir(), 'windows-render-keep-')), home = join(dir, 'home'), root = join(home, 'soulstream');
   try {
     copyCatalog(root);
+    copyCommonFiles(root);
     mkdirSync(join(root, 'config'), { recursive: true });
     writeFileSync(join(root, 'config', '.atom-seed-map.json'), JSON.stringify(SEED_MAP));
     writeFileSync(join(root, '.atom-api-key'), 'test-atom-api-key\n');
@@ -116,4 +118,56 @@ test('the win32 render uses Windows paths, no process runner and no agy', () => 
     secrets: { bearer: 'b', jwt: 'j', dbPassword: 'd', adminPassword: 'adminpass1' }, atomApiKey: 'k', backends: ['claude'], nodes: {},
   });
   assert.ok(withoutAtomDashboard.orch.includes('ATOM_PUBLIC_URL='));
+});
+
+test('the Node renderer owns AGENT_COMMON_FILES_DIR, syncs the bundle and keeps user skill folders', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'windows-render-bundle-')), home = join(dir, 'home'), root = join(home, 'soulstream');
+  try {
+    copyCatalog(root);
+    copyCommonFiles(root);
+    mkdirSync(join(root, 'config'), { recursive: true });
+    writeFileSync(join(root, 'config', '.atom-seed-map.json'), JSON.stringify(SEED_MAP));
+    writeFileSync(join(root, '.atom-api-key'), 'test-atom-api-key\n');
+    const options = { platform: 'linux', home, root, backends: ['claude'], ports: PORTS, secrets: { bearer: 'b', jwt: 'j', dbPassword: 'd', adminPassword: 'adminpass1' } };
+    renderConfig(options);
+    const bundleDir = join(root, '.local', 'agent-common');
+    assert.equal(envValue(join(root, '.env.soul-server-ts'), 'AGENT_COMMON_FILES_DIR'), bundleDir);
+    const checker = join(bundleDir, 'skills', 'html-make', 'scripts', 'check-ui-css.mjs');
+    assert.ok(readFileSync(checker).equals(readFileSync(resolve('scripts/check-ui-css.mjs'))));
+    for (const sub of ['.projects', '.local/tmp', '.local/artifacts']) assert.ok(existsSync(join(home, 'workspace', sub)), sub);
+
+    mkdirSync(join(bundleDir, 'skills', 'my-custom'), { recursive: true });
+    writeFileSync(join(bundleDir, 'skills', 'my-custom', 'run.mjs'), 'console.log("mine");\n');
+    writeFileSync(checker, '// edited\n');
+    renderConfig(options);
+    assert.equal(readFileSync(join(bundleDir, 'skills', 'my-custom', 'run.mjs'), 'utf8'), 'console.log("mine");\n');
+    assert.ok(readFileSync(checker).equals(readFileSync(resolve('scripts/check-ui-css.mjs'))), 'a bundled file is restored');
+    assert.equal(readFileSync(join(home, 'workspace', 'AGENTS.md'), 'utf8').includes('$AGENT_COMMON_FILES_DIR/skills/<skill>/'), true);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('the win32 render writes the bundle folder next to the other state folders', () => {
+  const root = 'C:\\Users\\Jane Doe\\AppData\\Local\\Soulstream\\soulstream';
+  const { worker } = renderEnvFiles({
+    platform: 'win32', home: 'C:\\Users\\Jane Doe', root, workspace: 'C:\\Users\\Jane Doe\\AppData\\Local\\Soulstream\\workspace',
+    agentHome: 'C:\\Users\\Jane Doe\\AppData\\Local\\Soulstream\\agent-home', path: win32, ports: PORTS,
+    secrets: { bearer: 'b', jwt: 'j', dbPassword: 'd', adminPassword: 'adminpass1' }, atomApiKey: 'k', backends: ['claude'], nodes: {},
+  });
+  assert.ok(worker.includes(`AGENT_COMMON_FILES_DIR=${root}\\.local\\agent-common`));
+});
+
+test('the render and the bundle copy work under a root path with spaces and Hangul', () => {
+  const dir = mkdtempSync(join(tmpdir(), '소울 스트림 시험 ')), home = join(dir, 'home dir'), root = join(home, '소울 스트림 시험', 'soulstream');
+  try {
+    copyCatalog(root);
+    copyCommonFiles(root);
+    mkdirSync(join(root, 'config'), { recursive: true });
+    writeFileSync(join(root, 'config', '.atom-seed-map.json'), JSON.stringify(SEED_MAP));
+    writeFileSync(join(root, '.atom-api-key'), 'test-atom-api-key\n');
+    renderConfig({ platform: 'linux', home, root, backends: ['claude'], ports: PORTS, secrets: { bearer: 'b', jwt: 'j', dbPassword: 'd', adminPassword: 'adminpass1' } });
+    const bundleDir = join(root, '.local', 'agent-common');
+    assert.equal(envValue(join(root, '.env.soul-server-ts'), 'AGENT_COMMON_FILES_DIR'), bundleDir);
+    assert.ok(readFileSync(join(bundleDir, 'skills', 'html-make', 'scripts', 'check-ui-css.mjs')).equals(readFileSync(resolve('scripts/check-ui-css.mjs'))));
+    assert.ok(existsSync(join(bundleDir, 'skills', 'html-make', 'scripts', 'ui-css-check.config.json')));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

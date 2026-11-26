@@ -44,9 +44,9 @@ function seedTexts() {
 
 test('seed shape: schema, entry counts, exported keys, roots', () => {
   assert.equal(SEED.schema_version, 1);
-  assert.equal(SEED.entries.length, 189);
-  assert.equal(CARDS.length, 159);
-  assert.equal(SYMLINKS.length, 30);
+  assert.equal(SEED.entries.length, 210);
+  assert.equal(CARDS.length, 172);
+  assert.equal(SYMLINKS.length, 38);
   assert.equal(Object.keys(SEED.exported_keys).length, 20);
   const roots = SEED.entries.filter((entry) => (entry.parent ?? null) === null).map((entry) => entry.title);
   assert.deepEqual(roots, ['에이전트', '프로젝트', '실수 사례']);
@@ -89,7 +89,7 @@ test('titles are non-empty and at most 50 code points', () => {
   }
 });
 
-test('placeholders: 42 cards, 71 references, 62 distinct card keys, no card_id form', () => {
+test('placeholders: 47 cards, 79 references, 70 distinct card keys, no card_id form', () => {
   const cardKeys = new Set(CARDS.map((entry) => entry.key));
   const distinct = new Set();
   let references = 0;
@@ -100,19 +100,19 @@ test('placeholders: 42 cards, 71 references, 62 distinct card keys, no card_id f
       assert.ok(cardKeys.has(key), `placeholder points at a non-card key: ${key}`);
     }
   }
-  assert.equal(REPLACEMENTS.length, 42);
-  assert.equal(references, 71);
-  assert.equal(distinct.size, 62);
+  assert.equal(REPLACEMENTS.length, 47);
+  assert.equal(references, 79);
+  assert.equal(distinct.size, 70);
   for (const [, text] of seedTexts()) {
     assert.equal(text.includes('{{card_id:'), false, 'seed must not use the {{card_id: placeholder form');
   }
   assert.equal(SYMLINKS.some((entry) => entry.content !== undefined), false, 'symlink entries must not carry content');
 });
 
-test('buildCreatePayload: 159 creates, seed order, positions, body under the Fastify limit', () => {
+test('buildCreatePayload: 172 creates, seed order, positions, body under the Fastify limit', () => {
   const installId = '00000000-0000-4000-8000-000000000000';
   const payload = buildCreatePayload(SEED, installId);
-  assert.equal(payload.creates.length, 159);
+  assert.equal(payload.creates.length, 172);
   assert.deepEqual(payload.creates.map((item) => item.temp_id), CARDS.map((entry) => entry.key));
   const size = Buffer.byteLength(JSON.stringify(payload));
   assert.ok(size < 1_048_576, `batch body is ${size} bytes`);
@@ -370,5 +370,103 @@ test('portraits: PNG signature, no text chunks, under 1 MiB', () => {
     }
     assert.ok(types.includes('IHDR') && types.includes('IEND'), `${name} portrait is missing IHDR/IEND`);
     for (const type of types) assert.equal(FORBIDDEN.has(type), false, `${name} portrait contains ${type}`);
+  }
+});
+
+// --- self-growing install: new skills, catalog and guidance --------------------
+
+const entryByKey = (key) => SEED.entries.find((entry) => entry.key === key);
+const contentOf = (key) => entryByKey(key)?.content ?? '';
+const NEW_SKILLS = {
+  'skill.daily_review': 'daily-review',
+  'skill.skill_creator': 'skill-creator',
+  'skill.git_setup': 'git-setup',
+  'skill.html_make': 'html-make',
+};
+const HTML_PRESET = 'catalog.html_design_preset';
+const SHARD_KEYS = ['index_preset', 'apple_preset', 'astryx_preset'].map((name) => `${HTML_PRESET}.shard.${name}`);
+const NEWLY_WRITTEN_KEYS = [
+  ...Object.keys(NEW_SKILLS).flatMap((key) => [key, `${key}.body`]),
+  HTML_PRESET,
+  `${HTML_PRESET}.body`,
+  ...SHARD_KEYS,
+  'projects.root',
+  'common.soulstream_guide.settings',
+];
+
+test('new skills: structure card names the body card, body cards exist, skill-creator stays under 4,000 chars', () => {
+  for (const [key, name] of Object.entries(NEW_SKILLS)) {
+    const structure = entryByKey(key);
+    assert.equal(structure.title, name);
+    assert.equal(structure.parent, 'common.skills');
+    assert.ok(structure.content.includes(`body_node_id: '{{node_id:${key}.body}}'`), `${key} must point at its body card`);
+    assert.equal(entryByKey(`${key}.body`)?.parent, key, `${key}.body must sit under the skill`);
+    assert.ok(contentOf(`${key}.body`).length > 500, `${key} body is too short`);
+  }
+  assert.ok(contentOf('skill.skill_creator.body').length <= 4000);
+});
+
+test('agent skill symlinks: the main agent gets the seven restored and new skills, the PAS gets recurring-jobs', () => {
+  const linked = (parent) => SYMLINKS.filter((entry) => entry.parent === parent).map((entry) => entry.title);
+  for (const name of ['recurring-jobs', 'skill-link-blocks', 'atom-tree-cleanup', 'daily-review', 'skill-creator', 'git-setup', 'html-make']) {
+    assert.ok(linked('seosoyoung.skills').includes(name), `seosoyoung.skills is missing ${name}`);
+  }
+  assert.ok(linked('seosoyoung.skills_pas').includes('recurring-jobs'));
+});
+
+test('html-design-preset catalog: three shards of 2,000 to 3,500 chars and an html-make that includes it', () => {
+  const structure = contentOf(HTML_PRESET);
+  assert.match(structure, /composition: bundle/);
+  assert.equal(entryByKey(HTML_PRESET).parent, 'common.catalogs');
+  assert.equal(entryByKey(`${HTML_PRESET}.body`).parent, HTML_PRESET);
+  for (const key of SHARD_KEYS) {
+    assert.ok(structure.includes(`node_id: {{node_id:${key}}}`), `catalog must list shard ${key}`);
+    assert.equal(entryByKey(key).parent, `${HTML_PRESET}.body`);
+    const size = [...contentOf(key)].length;
+    assert.ok(size >= 2000 && size <= 3500, `${key} has ${size} chars`);
+  }
+  const htmlMake = contentOf('skill.html_make.body');
+  assert.ok(htmlMake.includes('include: html-design-preset'));
+  assert.ok(htmlMake.includes('node "$AGENT_COMMON_FILES_DIR/skills/html-make/scripts/check-ui-css.mjs"'));
+  assert.ok(htmlMake.includes('register_attachment'));
+  assert.ok(htmlMake.includes('.local/artifacts/'));
+  assert.ok(htmlMake.includes('파일 저장소'));
+});
+
+test('new skill bodies only link to skills and catalogs that the seed carries', () => {
+  const skillNames = new Set(SEED.entries.filter((entry) => entry.parent === 'common.skills').map((entry) => entry.title));
+  const catalogNames = new Set(SEED.entries.filter((entry) => entry.parent === 'common.catalogs').map((entry) => entry.title));
+  for (const key of Object.keys(NEW_SKILLS)) {
+    for (const body of extractLinkBlocks(contentOf(`${key}.body`))) {
+      const { kind, fields } = parseLinkBlockBody(body);
+      if (kind === 'call') assert.ok(skillNames.has(fields.call), `${key} calls an unknown skill: ${fields.call}`);
+      if (kind === 'include') assert.ok(skillNames.has(fields.include) || catalogNames.has(fields.include), `${key} includes an unknown document: ${fields.include}`);
+    }
+  }
+});
+
+test('guidance cards carry the first-conversation, daily-review, repository and project-memory rules', () => {
+  const pasRole = contentOf('seosoyoung.rules_pas.pas_role');
+  for (const text of ['첫 대화 안내', '카드가 0장', '일간 정리', '`put_report_entry`', '"ask"', 'Asia/Seoul', '저장소 연결 확인', '`git-setup`', '`list_worktrees`']) {
+    assert.ok(pasRole.includes(text), `pas_role is missing: ${text}`);
+  }
+  assert.ok(pasRole.includes('run=true') && pasRole.includes('agent_id: "seosoyoung"'));
+  const projects = contentOf('projects.root');
+  for (const text of ['개요와 경로', '아키텍처와 결정', '개발 주의사항', '4,000자', '1,500자', '`initial_context`', '`atomReferences`', '`batch_page_operations`', '`expected_version`']) {
+    assert.ok(projects.includes(text), `projects.root is missing: ${text}`);
+  }
+  assert.ok(contentOf('skill.card_work.body').includes('프로젝트 지식 게이트'));
+  assert.ok(contentOf('skill.card_work.body').includes('저장소 미설정 오류'));
+  assert.ok(contentOf('skill.worktree_manager.body').includes('`git-setup`'));
+  assert.ok(contentOf('common.rules.skill_dispatch').includes('스크립트와 자산은 `$AGENT_COMMON_FILES_DIR/skills/<스킬명>/`에서 읽는다.'));
+  const settings = contentOf('common.soulstream_guide.settings');
+  for (const heading of ['## 개인 환경', '## 세션과 작업', '## 에이전트와 노드', '## 기록과 관리']) assert.ok(settings.includes(heading), `settings is missing ${heading}`);
+  for (const tab of ['Git과 저장소', '스킬과 카탈로그', '코딩 에이전트 연결', '파일 저장소']) assert.ok(settings.includes(tab), `settings is missing ${tab}`);
+  assert.ok(contentOf('common.soulstream_guide.config_files').includes('`AGENT_COMMON_FILES_DIR`'));
+});
+
+test('newly written seed text avoids the long hyphen, the middle dot and the em dash', () => {
+  for (const key of NEWLY_WRITTEN_KEYS) {
+    assert.equal(/[―·—]/.test(contentOf(key)), false, `forbidden dash or middle dot in ${key}`);
   }
 });

@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createFakeCommands, runBash } from './support/fake_commands.mjs';
 import { startFakeAtom } from './support/fake_atom_server.mjs';
-import { copyCatalog } from './support/catalog.mjs';
+import { copyCatalog, copyCommonFiles } from './support/catalog.mjs';
 import { assertHostUntouched, snapshotHost } from './support/host_guard.mjs';
 
 const hostBefore = snapshotHost();
@@ -69,6 +69,7 @@ function setup() {
   mkdirSync(join(root, 'config'), { recursive: true });
   mkdirSync(atomRoot, { recursive: true });
   copyCatalog(root);
+  copyCommonFiles(root);
   writeFileSync(join(root, 'config', '.atom-seed-map.json'), '{}');
   const fake = createFakeCommands(dir);
   const t = { dir, home, root, atomRoot, fake, seq: 0 };
@@ -218,10 +219,11 @@ test('the value rule: allowed values are kept byte for byte, everything else is 
 });
 
 // A fake Soulstream orchestrator on an ephemeral port. Only what wait_and_create_workspace calls.
-async function startFakeOrch(password) {
+async function startFakeOrch(password, { jobStatus = 201 } = {}) {
   const requests = [];
   const COOKIE = 'soul_dashboard_auth=fake-orch-session';
   const folders = [];
+  const jobs = new Map();
   const server = createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -238,13 +240,20 @@ async function startFakeOrch(password) {
     }
     if (path === '/api/folders') {
       if (req.headers.cookie !== COOKIE) return send(401, {});
-      if (req.method === 'POST') { folders.push({ name: '작업실' }); return send(201, {}); }
+      if (req.method === 'POST') { folders.push({ id: 'folder-work-1', name: '작업실' }); return send(201, {}); }
       return send(200, { folders });
+    }
+    if (path === '/api/recurring-jobs' && req.method === 'POST') {
+      if (req.headers.cookie !== COOKIE) return send(401, {});
+      if (jobStatus >= 300) return send(jobStatus, { error: 'refused' });
+      const job = JSON.parse(body);
+      if (!jobs.has(job.idempotencyKey)) jobs.set(job.idempotencyKey, job);
+      return send(jobStatus, { job: jobs.get(job.idempotencyKey) });
     }
     return send(404, {});
   });
   await new Promise((resolvePromise) => server.listen(0, '127.0.0.1', resolvePromise));
-  return { url: `http://127.0.0.1:${server.address().port}`, requests, close: () => new Promise((resolvePromise) => server.close(resolvePromise)) };
+  return { url: `http://127.0.0.1:${server.address().port}`, requests, jobs, close: () => new Promise((resolvePromise) => server.close(resolvePromise)) };
 }
 
 // The test servers listen on ephemeral ports; the installer's own URLs name the production ports, and the fake curl
@@ -293,6 +302,16 @@ printf 'orch=%s\\n' "$(read_env_value "$ROOT/.env.orch" DASHBOARD_ADMIN_PASSWORD
       same(JSON.parse(atomLogin.body).password, value, 'atom login body');
       const orchLogin = orch.requests.find((request) => request.path === '/api/auth/password-login');
       same(JSON.parse(orchLogin.body).password, value, 'dashboard login body');
+      const jobRequests = orch.requests.filter((request) => request.method === 'POST' && request.path === '/api/recurring-jobs');
+      assert.equal(jobRequests.length, 1, 'the paused daily review job is registered once');
+      const job = JSON.parse(jobRequests[0].body);
+      assert.equal(job.idempotencyKey, 'clean-install-daily-review');
+      assert.equal(job.enabled, false);
+      assert.equal(job.agentId, 'seosoyoung');
+      assert.equal(job.nodeId, 'local');
+      assert.equal(job.folderId, 'folder-work-1');
+      assert.equal(job.modelPreset, null);
+      assert.deepEqual(job.scheduleExpressions, ['0 9 * * *']);
       // The seed loader sends the password file's content in its own login.
       // Asynchronous, so this process can answer the loader's request.
       await runBash('exec node "$@"', [resolve('install/seed/load_atom_seed.mjs'), '--atom-url', atom.url, '--password-file', join(t.root, '.admin-password'), '--state-dir', join(t.dir, 'seed-state')], { env: t.env() });
@@ -300,6 +319,32 @@ printf 'orch=%s\\n' "$(read_env_value "$ROOT/.env.orch" DASHBOARD_ADMIN_PASSWORD
       assert.ok(loaderLogins.length >= 2, 'the loader did not log in');
       same(JSON.parse(loaderLogins[loaderLogins.length - 1].body).password, value, 'seed loader login body');
     } finally { await atom.close(); await orch.close(); t.cleanup(); }
+  }
+});
+
+const WORKSPACE_BODY = `parse_args --backends claude --admin-password-file "$PW_FILE"
+setup_secrets "$ROOT" "$ATOM_ROOT"
+render_config "$HOME_DIR" "$ROOT"
+wait_and_create_workspace "$ROOT"
+wait_and_create_workspace "$ROOT"
+`;
+
+test('a rerun sends the same job key again and a refused job only warns', async () => {
+  for (const jobStatus of [201, 422]) {
+    const t = setup();
+    const orch = await startFakeOrch('Passw0rd-ok', { jobStatus });
+    try {
+      const pwFile = join(t.dir, 'pw');
+      writeFileSync(pwFile, 'Passw0rd-ok\n');
+      writeFileSync(join(t.root, '.atom-api-key'), `${API_KEY}\n`);
+      const result = await t.run(WORKSPACE_BODY, { PW_FILE: pwFile, FAKE_ORCH_URL: orch.url, FAKE_BIN_CURL: join(t.fake.bin, 'curl'), PATH: `${orchCurlBin(t)}:${t.fake.bin}:${process.env.PATH}` });
+      assert.equal(result.status, 0, result.stderr);
+      const posts = orch.requests.filter((request) => request.method === 'POST' && request.path === '/api/recurring-jobs');
+      assert.equal(posts.length, 2);
+      assert.equal(new Set(posts.map((request) => JSON.parse(request.body).idempotencyKey)).size, 1);
+      assert.equal(orch.jobs.size, jobStatus === 201 ? 1 : 0);
+      assert.equal(/Could not register the daily review recurring job \(HTTP 422\)/.test(result.stderr), jobStatus === 422);
+    } finally { await orch.close(); t.cleanup(); }
   }
 });
 

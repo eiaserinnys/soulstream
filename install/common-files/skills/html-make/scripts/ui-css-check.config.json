@@ -1,0 +1,18 @@
+{
+  "cssRoots": ["."],
+  "tsxRoots": [],
+  "tsxExclude": [],
+  "tokenFiles": ["tokens.css"],
+  "selectionPolicyFiles": ["selection.css"],
+  "baseline": "ui-css-baseline.json",
+  "rules": {
+    "color-literal": {"enabled": true, "hint": "tokens.css의 루트 토큰 블록에 색 변수를 정의하고 var(--이름)으로 쓴다."},
+    "font-literal": {"enabled": true, "hint": "tokens.css에 글자 크기와 글꼴 변수를 정의하고 var(--이름)으로 쓴다."},
+    "radius-literal": {"enabled": true, "hint": "tokens.css에 곡률 변수를 정의하고 var(--이름)으로 쓴다. Index 프리셋은 곡률을 쓰지 않는다."},
+    "spacing-literal": {"enabled": true, "hint": "tokens.css에 간격 변수를 4px 단계로 정의하고 var(--이름)으로 쓴다."},
+    "selection-outside-policy": {"enabled": true, "hint": "user-select는 selection.css 한 곳에만 적고 HTML의 <style data-ui=\"selection\"> 블록으로 옮긴다."},
+    "outline-none": {"enabled": true, "hint": "같은 문서에 :focus-visible 초점 모양(outline 또는 box-shadow)을 함께 둔다."},
+    "tw-text-arbitrary": {"enabled": false, "hint": "HTML 문서에는 쓰이지 않는다."},
+    "tw-rounded-arbitrary": {"enabled": false, "hint": "HTML 문서에는 쓰이지 않는다."}
+  }
+}

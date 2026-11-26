@@ -4,6 +4,17 @@ import { join } from 'node:path';
 import { fail, httpRequest, log, readEnvValue, sleep, waitFor, withLogTails } from './lib.mjs';
 
 const WORKSPACE_FOLDER = '작업실';
+const DAILY_REVIEW_JOB = {
+  idempotencyKey: 'clean-install-daily-review',
+  name: '일간 정리',
+  prompt: 'daily-review 스킬을 발동하여 지난 하루의 작업을 정리한다.',
+  timezone: 'UTC',
+  scheduleExpressions: ['0 9 * * *'],
+  nodeId: 'local',
+  agentId: 'seosoyoung',
+  modelPreset: null,
+  enabled: false,
+};
 
 export const orchUrl = (ctx) => `http://127.0.0.1:${ctx.ports.orch}`;
 
@@ -18,6 +29,21 @@ const folderCount = async (ctx, headers) => {
   const response = await httpRequest(`${orchUrl(ctx)}/api/folders`, { headers });
   return (response.json?.folders ?? []).filter((folder) => folder.name === WORKSPACE_FOLDER).length;
 };
+
+// Registers the paused daily review job once. The server returns the existing job for a repeated key, so a reinstall
+// never overwrites what the user switched on or edited. A refusal (for example no signed-in backend yet) only warns:
+// the job can be created later from the recurring jobs tab.
+async function registerDailyReviewJob(ctx, headers) {
+  const folders = await httpRequest(`${orchUrl(ctx)}/api/folders`, { headers });
+  const folder = (folders.json?.folders ?? []).find((item) => item.name === WORKSPACE_FOLDER);
+  if (!folder) throw fail('The workspace folder was not found.');
+  const created = await httpRequest(`${orchUrl(ctx)}/api/recurring-jobs`, {
+    method: 'POST', headers, body: { ...DAILY_REVIEW_JOB, folderId: folder.id },
+  });
+  if (created.status !== 200 && created.status !== 201) {
+    log(`Could not register the daily review recurring job (HTTP ${created.status}). Create it later in the recurring jobs settings tab.`);
+  }
+}
 
 export async function waitAndCreateWorkspace(ctx) {
   const bearer = { Authorization: `Bearer ${readEnvValue(join(ctx.soulDir, '.env.orch'), 'AUTH_BEARER_TOKEN')}` };
@@ -36,6 +62,7 @@ export async function waitAndCreateWorkspace(ctx) {
     if (created.status >= 300) throw fail(`Creating the workspace folder failed with HTTP ${created.status}.`);
   }
   if ((await folderCount(ctx, session)) !== 1) throw fail('The workspace folder was not created exactly once.');
+  await registerDailyReviewJob(ctx, session);
   const anonymous = await httpRequest(`${orchUrl(ctx)}/api/folders`);
   if (anonymous.status !== 401) throw fail(`An unauthenticated request to /api/folders answered HTTP ${anonymous.status}, expected 401.`);
 }
