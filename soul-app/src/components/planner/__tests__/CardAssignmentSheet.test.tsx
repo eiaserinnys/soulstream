@@ -1,4 +1,5 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+import { Text } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useSessionStore } from '../../../store/sessionStore';
@@ -69,4 +70,18 @@ test('실행 보완은 기본 노드와 기본 모델을 명시적으로 저장�
  await waitFor(()=>expect(screen.getByRole('button',{name:'확인'}).props.accessibilityState.disabled).toBe(false));
  await act(async()=>fireEvent.press(screen.getByText('확인')));
  expect(save).toHaveBeenCalledWith({folderId:'folder-1',nodeId:'node-1',agentId:'roselin',modelPreset:'sol'});
+});
+
+test('모델 값만 두 줄까지 보이고 다른 행은 한 줄이다', async () => {
+  useSettingsStore.setState({ nodeId: 'node-1' });
+  useSessionStore.setState({ catalog: { folders: [{ id: 'folder-1', name: '폴더', archived: false }], sessions: {} } as any });
+  const api = { listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-1' }] }),
+    listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'roselin', name: '로젤린' }] }),
+    listModelPresets: jest.fn().mockResolvedValue({ model_presets: [] }),
+    getPlannerFolder: jest.fn().mockResolvedValue({ folder: { parentFolderId: null }, blocks: [] }),
+  };
+  const screen = render(<CardAssignmentSheet api={api as any} value={{ folderId: 'folder-1', nodeId: 'node-1', agentId: 'roselin', modelPreset: null }} onClose={jest.fn()} onSave={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('로젤린')).toBeTruthy());
+  const lines = screen.UNSAFE_getAllByType(Text).map(text => text.props.numberOfLines).filter(value => value !== undefined);
+  expect(lines).toEqual([1, 1, 1, 2]);
 });

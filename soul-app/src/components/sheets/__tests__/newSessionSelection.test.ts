@@ -4,6 +4,7 @@ import {
   buildModelPresetActionSheet,
   buildNodeActionSheet,
   formatModelPresetLabel,
+  formatModelPresetMeta,
   formatModelPresetUnavailableReason,
   resolveAgentActionSheetSelection,
   resolveFolderActionSheetSelection,
@@ -15,6 +16,7 @@ import {
   resolveSelectedNodeName,
   sortNewSessionFolders,
 } from '../newSessionSelection';
+import type { ModelPresetAvailability } from '../../../../../packages/soul-ui/src/lib/model-preset-availability';
 
 describe('newSessionSelection', () => {
   test('maps node ActionSheet options and selected labels without undefined entries', () => {
@@ -241,7 +243,48 @@ describe('newSessionSelection', () => {
     expect(resolveSelectedModelPresetName('sol', [exhausted], true, false))
       .toBe('Sol (7일 사용량 제한) · 11/28 12:20 해제');
     expect(resolveSelectedModelPresetName('sol', [exhausted], true, false, true))
-      .toBe('자동 (Sol (7일 사용량 제한) · 11/28 12:20 해제)');
+      .toBe('자동 (Sol) · 7일 사용량 제한 · 11/28 12:20 해제');
+  });
+
+  test('자동 선택 글자는 괄호를 겹치지 않고 사유와 해제 시각을 가운뎃점으로 잇는다', () => {
+    const exhausted: ModelPresetAvailability = {
+      id: 'sol',
+      label: 'Sol',
+      backend: 'codex',
+      available: true,
+      reason: 'quota_exhausted',
+      reason_label: '7일 사용량 제한',
+      resets_at: new Date(2030, 10, 28, 12, 20).toISOString(),
+      usage_warning: false,
+    };
+    const auto = (preset: ModelPresetAvailability) =>
+      resolveSelectedModelPresetName('sol', [preset], true, false, true);
+
+    expect(auto({ ...exhausted, resets_at: null })).toBe('자동 (Sol) · 7일 사용량 제한');
+    expect(auto({ ...exhausted, reason_label: null })).toBe('자동 (Sol) · 11/28 12:20 해제');
+    expect(auto({ ...exhausted, reason_label: null, resets_at: null })).toBe('자동 (Sol)');
+    expect(auto({ ...exhausted, available: false, reason: 'limit_rejected', reason_label: '5시간 한도 거부 중' }))
+      .toBe('자동 (Sol) · 5시간 한도 거부 중 · 11/28 12:20 해제');
+  });
+
+  test('실행 조합 시트 메타 줄은 소진 모델의 사유와 해제 시각, 사용 불가 모델의 사유를 돌려준다', () => {
+    const exhausted = {
+      id: 'sol',
+      label: 'Sol',
+      backend: 'codex',
+      available: true,
+      reason: 'quota_exhausted',
+      reason_label: '7일 사용량 제한',
+      resets_at: new Date(2030, 10, 28, 12, 20).toISOString(),
+      usage_warning: false,
+    };
+
+    expect(formatModelPresetMeta(exhausted)).toBe('7일 사용량 제한 · 11/28 12:20 해제');
+    expect(formatModelPresetMeta({ ...exhausted, resets_at: null })).toBe('7일 사용량 제한');
+    expect(formatModelPresetMeta({ ...exhausted, reason_label: null })).toBeNull();
+    expect(formatModelPresetMeta({ ...exhausted, reason: null })).toBeNull();
+    expect(formatModelPresetMeta({ ...exhausted, available: false, reason: 'auth_not_configured', reason_label: '인증 미설정' }))
+      .toBe('인증 미설정');
   });
 
   test('reset 시각은 오늘이면 시각만, 다른 날이면 로컬 날짜와 시각을 표시한다', () => {

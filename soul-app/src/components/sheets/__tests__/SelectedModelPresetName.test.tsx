@@ -40,7 +40,7 @@ describe('SelectedModelPresetName', () => {
   test('자동 선택은 자동 ( ) 로 감싸고 이름만 빨갛다', () => {
     const screen = renderName(null);
 
-    expect(screen.getByTestId('row')).toHaveTextContent('자동 (Sol (7일 사용량 제한) · 11/28 12:20 해제)');
+    expect(screen.getByTestId('row')).toHaveTextContent('자동 (Sol) · 7일 사용량 제한 · 11/28 12:20 해제');
     expect(screen.getByText('Sol')).toHaveStyle({ color: errorText });
   });
 

@@ -18,8 +18,15 @@ WIDTHS = (390, 360)
 SCENES_B = (
     ("b-direct-row", "section=dialogues&sample=assignment&exhausted=direct", "맡길 대상"),
     ("b-auto-row", "section=dialogues&sample=assignment&exhausted=auto", "맡길 대상"),
+    ("b-direct-long-row", "section=dialogues&sample=assignment&exhausted=direct-long", "맡길 대상"),
+    ("b-auto-long-row", "section=dialogues&sample=assignment&exhausted=auto-long", "맡길 대상"),
     ("b-direct-chip", "section=entryShell&chips=long", "card-execution-chip"),
+    ("c-execution-meta", "section=dialogues&sample=execution-picker&exhausted=direct-long", "execution-models"),
 )
+CLAMPED_TEXT = """() => [...document.querySelectorAll('div,span')]
+  .filter(el => getComputedStyle(el).webkitLineClamp !== 'none' && /사용량 제한/.test(el.textContent || ''))
+  .filter(el => ![...el.children].some(child => getComputedStyle(child).webkitLineClamp !== 'none' && /사용량 제한/.test(child.textContent || '')))
+  .map(el => ({ text: el.textContent, lines: getComputedStyle(el).webkitLineClamp, truncated: el.scrollHeight > el.clientHeight + 1 }))"""
 
 
 def action_sheet_html(sheet: dict, width: int) -> str:
@@ -64,11 +71,14 @@ def main() -> None:
                     page = browser.new_page(viewport={"width": width, "height": 844}, reduced_motion="reduce")
                     page.route("**/api/auth/status", lambda route: route.fulfill(json={"authenticated": True}))
                     page.goto(f"{args.base_url}?{query}&theme=light")
-                    ready = page.get_by_test_id(test_id) if test_id.startswith("card-") else page.get_by_text(test_id, exact=True)
+                    ready = page.get_by_test_id(test_id) if test_id.startswith(("card-", "execution-")) else page.get_by_text(test_id, exact=True)
                     ready.first.wait_for(state="visible", timeout=15000)
+                    if test_id.startswith("execution-"):
+                        ready.first.scroll_into_view_if_needed()
                     page.evaluate("() => document.fonts.ready")
                     page.wait_for_timeout(800)
                     page.screenshot(path=str(out / f"{args.prefix}-{name}-{width}.png"), animations="disabled")
+                    print(f"{args.prefix}-{name}-{width}: {json.dumps(page.evaluate(CLAMPED_TEXT), ensure_ascii=False)}")
                     page.close()
         finally:
             browser.close()

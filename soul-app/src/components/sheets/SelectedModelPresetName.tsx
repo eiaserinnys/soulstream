@@ -12,5 +12,5 @@ export function SelectedModelPresetName({ selection }: {
   const preset = selection.effectiveModelPreset;
   if (preset?.reason !== 'quota_exhausted') return <>{selection.selectedModelPresetName}</>;
   const automatic = selection.selectedModelPresetId === null;
-  return <>{automatic ? '자동 (' : ''}<Text style={{ color: t.colors.errorText }}>{preset.label}</Text>{formatModelPresetDetail(preset, false)}{automatic ? ')' : ''}</>;
+  return <>{automatic ? '자동 (' : ''}<Text style={{ color: t.colors.errorText }}>{preset.label}</Text>{automatic ? ')' : ''}{formatModelPresetDetail(preset, false, automatic)}</>;
 }

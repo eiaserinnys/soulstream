@@ -219,6 +219,7 @@ test.each([true, false])('소진 모델을 빨강 표시하고 명시 선택=%s�
         destructiveButtonIndex: [1], disabledButtonIndices: [] }), expect.any(Function));
     act(() => lastSheetHandler()?.(1));
   }
+  expect(within(screen.getByTestId('succession-selection-model')).UNSAFE_getAllByProps({ numberOfLines: 2 }).length).toBeGreaterThan(0);
   const name = within(screen.getByTestId('succession-selection-model')).getByText(exhausted.label);
   expect(name.props.style).toEqual(expect.objectContaining({ color: expect.any(String) }));
   fireEvent.press(screen.getByTestId('succession-submit'));

@@ -450,7 +450,7 @@ function SessionSuccessionSheetContent({
             {!selection.effectiveNodeId || !selection.agentId ? <Text style={styles.selectionError}>노드와 에이전트를 선택해 주세요.</Text> : null}
             <SelectionRow disabled={submitting} testID="succession-selection-node" label="노드" value={selection.selectedNodeName} onPress={pickNode} styles={styles} />
             <SelectionRow disabled={submitting} testID="succession-selection-agent" label="에이전트" value={selection.selectedAgentName} onPress={pickAgent} styles={styles} />
-            <SelectionRow disabled={submitting} testID="succession-selection-model" label="모델" value={<SelectedModelPresetName selection={selection} />} onPress={pickModel} styles={styles} />
+            <SelectionRow disabled={submitting} testID="succession-selection-model" label="모델" value={<SelectedModelPresetName selection={selection} />} valueLines={2} onPress={pickModel} styles={styles} />
             {presetSupportsEffort(effortPreset) ? (
               <SelectionRow
                 testID="succession-selection-effort"
