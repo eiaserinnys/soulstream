@@ -33,6 +33,7 @@ const TurnSummaryConfigFileSchema = z
     provider: z.enum(["codex", "openai-api"]),
     model: z.string().trim().min(1).optional(),
     story_model: z.string().trim().min(1).optional(),
+    fallback_model_preset: z.string().trim().nullable().optional(),
     reasoning_effort: z.enum(["minimal", "low", "medium", "high", "xhigh"]),
     instruction_extraction_model: z.string().trim().min(1).optional(),
     instruction_extraction_reasoning_effort: z.enum([
@@ -80,6 +81,7 @@ const TurnSummaryConfigOverlaySchema = z
     provider: z.enum(["codex", "openai-api"]).optional(),
     model: z.string().trim().min(1).optional(),
     story_model: z.string().trim().min(1).optional(),
+    fallback_model_preset: z.string().trim().nullable().optional(),
     reasoning_effort: z.enum([
       "minimal",
       "low",
@@ -137,7 +139,9 @@ const TurnSummaryConfigSchema = TurnSummaryConfigFileSchema
     excludedFolderIds: value.excluded_folder_ids,
   }));
 
-export type TurnSummaryConfig = z.output<typeof TurnSummaryConfigSchema>;
+export type TurnSummaryConfig = z.output<typeof TurnSummaryConfigSchema> & {
+  readonly fallbackModel?: string;
+};
 
 export class TurnSummaryConfigService {
   private lastSuccessful: TurnSummaryConfig | undefined;
@@ -177,8 +181,11 @@ export class TurnSummaryConfigService {
         instruction_extraction_model: merged.instruction_extraction_model
           ?? resolveTaskModel(defaults.instruction_extraction.model_preset, "codex"),
       });
-      this.lastSuccessful = config;
-      return config;
+      const result: TurnSummaryConfig = merged.fallback_model_preset
+        ? { ...config, fallbackModel: resolveFallbackModel(catalog, merged.fallback_model_preset) }
+        : config;
+      this.lastSuccessful = result;
+      return result;
     } catch (error) {
       if (this.lastSuccessful === undefined) throw error;
       this.logger.warn(
@@ -188,6 +195,19 @@ export class TurnSummaryConfigService {
       return this.lastSuccessful;
     }
   }
+}
+
+function resolveFallbackModel(
+  catalog: ReturnType<ModelCatalogSource["snapshot"]>,
+  presetId: string,
+): string {
+  const preset = resolveModelPreset(catalog, presetId);
+  if (preset.backend !== "antigravity") {
+    throw new Error(
+      `Turn summary fallback preset backend ${preset.backend} is not antigravity`,
+    );
+  }
+  return preset.model;
 }
 
 function resolveLocalConfigPath(configPath: string): string {

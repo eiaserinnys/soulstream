@@ -10,11 +10,13 @@ import {
   createPersistentInstructionCommandSender,
 } from
   "../src/turn-summary/live_turn_summary_pipeline.js";
+import type { TurnSummaryConfig } from "../src/turn-summary/turn_summary_config.js";
 import type { PersistentInstructionExtractor } from
   "../src/turn-summary/persistent_instruction_extractor.js";
 
 const liveFactoryMocks = vi.hoisted(() => ({
   pipelineDeps: undefined as unknown,
+  storyDeps: undefined as unknown,
   generate: vi.fn(),
   summarize: vi.fn(),
   catchUpStart: vi.fn(),
@@ -41,6 +43,14 @@ vi.mock("../src/turn-summary/session_story_completion_sweep.js", () => ({
     start(): void {}
     stop(): void {}
     async drain(): Promise<void> {}
+  },
+}));
+
+vi.mock("../src/turn-summary/session_story_fold_service.js", () => ({
+  SessionStoryFoldService: class {
+    constructor(deps: unknown) {
+      liveFactoryMocks.storyDeps = deps;
+    }
   },
 }));
 
@@ -241,5 +251,97 @@ describe("live persistent instruction extractor wiring", () => {
       maxAttempts: 1,
       outputSchema: { required: ["standing_instructions"] },
     });
+  });
+});
+
+describe("live usage limit fallback wiring", () => {
+  const usageLimit = () => Object.assign(
+    new Error("codex exec exited 1: You've hit your usage limit."),
+    { code: "CODEX_USAGE_LIMIT" },
+  );
+  const fallbackConfig: TurnSummaryConfig = {
+    enabled: true,
+    instruction: "summary config",
+    storyInstruction: "story config",
+    storyFoldThreshold: 10,
+    storyFoldBatchSize: 5,
+    storyFoldMaxBatchesPerRun: 4,
+    storyCompletedFoldMaxSummaries: 40,
+    storyCompletionGraceMs: 100,
+    storyCompletionMinSummaries: 1,
+    storyCompletionSweepIntervalMs: 100,
+    storyNarrativeMaxChars: 100,
+    storyTimeoutMs: 90_000,
+    storyFoldFailureCooldownMs: 900_000,
+    catchUpIntervalMs: 900_000,
+    catchUpWindowHours: 72,
+    catchUpMaxJobsPerRound: 100,
+    provider: "codex",
+    model: "gpt-5.6-luna",
+    storyModel: "gpt-5.6-terra",
+    fallbackModel: "gemini-3.8-flash",
+    reasoningEffort: "high",
+    instructionExtractionModel: "gpt-6.2-sol",
+    instructionExtractionReasoningEffort: "xhigh",
+    timeoutMs: 1_234,
+    maxAttempts: 2,
+    codexConcurrencyLimit: 3,
+    codepointLimit: 100,
+    historyLimit: 0,
+    excludedFolderIds: [],
+  };
+
+  it("sends story folds and persistent instruction extraction to the fallback executor on a usage limit", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      answers: { long_term_correction: { noul: 0.8 } },
+    }), { status: 200 })));
+    liveFactoryMocks.generate.mockRejectedValue(usageLimit());
+    liveFactoryMocks.summarize.mockRejectedValue(usageLimit());
+    const fallbackGenerate = vi.fn(async (request: { model: string }) => ({
+      content: JSON.stringify({ standing_instructions: [] }),
+      model: request.model,
+      latencyMs: 1,
+      attempts: 1,
+      spawnDurationMs: 1,
+      peakConcurrentSpawns: 1,
+    }));
+
+    createLiveTurnSummaryPipeline({
+      config: { codex_cli_path: "codex", typesafe_api_key: "test-typesafe-key" } as never,
+      configPath: "unused-turn-summary.yaml",
+      modelCatalog: repositoryModelCatalog(),
+      sqlResolver: {} as never,
+      registry: {} as never,
+      eventHub: { publish: vi.fn() } as never,
+      commands: { router: {} as never, bridge: {} as never, timeoutMs: 100 },
+      sessionBroadcaster: { append: vi.fn() },
+      logger: { warn: vi.fn(), info: vi.fn() },
+      warn: vi.fn(),
+      fallbackExecutor: { generate: fallbackGenerate },
+      overrides: { turnSummaryCodexPath: "/codex" },
+    });
+    const dependencies = liveFactoryMocks.pipelineDeps as {
+      persistentInstructionExtractor: PersistentInstructionExtractor;
+      summarizer: { summarize: (...args: unknown[]) => Promise<{ model: string }> };
+    };
+
+    await dependencies.persistentInstructionExtractor.extract(
+      { userText: "앞으로 답변 전에 근거를 확인해 줘.", activeInstructions: [] },
+      fallbackConfig,
+    );
+    expect(fallbackGenerate).toHaveBeenLastCalledWith(expect.objectContaining({
+      model: "gemini-3.8-flash",
+      reasoningEffort: "high",
+      outputSchema: expect.objectContaining({ required: ["standing_instructions"] }),
+    }));
+
+    const { generator } = liveFactoryMocks.storyDeps as {
+      generator: { generate: (...args: unknown[]) => Promise<{ model: string }> };
+    };
+    await expect(generator.generate("접기", fallbackConfig, { maxAttempts: 1 })).resolves.toMatchObject({ model: "gemini-3.8-flash" });
+    await expect(dependencies.summarizer.summarize(
+      { userText: "u", assistantText: "a", previousSummaries: [] }, fallbackConfig,
+    )).resolves.toMatchObject({ model: "gemini-3.8-flash" });
+    expect(fallbackGenerate).toHaveBeenCalledTimes(3);
   });
 });
