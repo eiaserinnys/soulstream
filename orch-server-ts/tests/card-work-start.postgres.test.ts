@@ -200,6 +200,6 @@ it.each(["review","queued","blocked","on_hold","done","cancelled","running"])("s
     await cards.startCardWork(declaration(archived, "archived"));
     expect((await cards.getCard(archived))!.card).toMatchObject({status:"running",archived:true});
     const id = await make();
-    await expect(cards.startCardWork({...declaration(id,"stale"),execution:{registrationId:"old",executionCommandId:"old"}})).rejects.toThrow("execution");
+    await expect(cards.startCardWork({...declaration(id,"stale"),execution:{registrationId:"old",executionCommandId:"old"}})).rejects.toThrow("카드 실행 신원");
   });
 });

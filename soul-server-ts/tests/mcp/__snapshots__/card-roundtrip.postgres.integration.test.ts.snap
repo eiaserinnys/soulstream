@@ -533,11 +533,11 @@ exports[`card orchestrator MCP roundtrip > preserves version conflict 1`] = `
   "content": [
     {
       "type": "text",
-      "text": "folder card version conflict: card-1 expected version 999, actual version 1"
+      "text": "카드 #1의 판이 바뀌었습니다(읽은 판 999, 지금 판 1). get_card로 다시 읽고 새 version으로 다시 부르세요."
     }
   ],
   "structuredContent": {
-    "error": "folder card version conflict: card-1 expected version 999, actual version 1",
+    "error": "카드 #1의 판이 바뀌었습니다(읽은 판 999, 지금 판 1). get_card로 다시 읽고 새 version으로 다시 부르세요.",
     "code": "CARD_VERSION_CONFLICT"
   },
   "isError": true

@@ -115,8 +115,8 @@ describe("list_node_model_presets", () => {
     f.options.cluster.nodeAgentProfiles.modelPresetProvider = { listForNode: () => presets as never };
     expect(await f.call("list_node_model_presets", { node_id: "node-remote" })).toMatchObject({ structuredContent: { model_presets: presets } });
   });
-  it("미연결 노드는 오케스트레이터 404를 MCP 오류로 반환", async () => {
-    expect(await fixture().call("list_node_model_presets", { node_id: "missing-node" })).toMatchObject({ isError: true, structuredContent: { error: expect.stringContaining("Node missing-node not connected") } });
+  it("미연결 노드는 노드 이름 확인 안내를 MCP 오류로 반환", async () => {
+    expect(await fixture().call("list_node_model_presets", { node_id: "missing-node" })).toMatchObject({ isError: true, structuredContent: { error: expect.stringContaining("노드 'missing-node'를 찾을 수 없거나 연결되어 있지 않습니다") } });
   });
   it("노드 등록을 기다린 뒤 모델 프리셋을 조회한다", async () => {
     const f = fixture();

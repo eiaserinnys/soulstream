@@ -441,7 +441,7 @@ describe("durable card orchestration admissions", () => {
     await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,model_preset,status) VALUES(${sid},${target.nodeId},'roselin','worker-model','running')`;
     const execution={registrationId:"expired-worker",executionCommandId:"expired-command"};
     await recordWorkReceipt(h,sid,"running",execution);
-    await expect(cards.startCardWork({actorKind:"agent",actorSessionId:sid,cardId:id,expectedVersion:2,idempotencyKey:"expired-start",execution})).rejects.toThrow("admission");
+    await expect(cards.startCardWork({actorKind:"agent",actorSessionId:sid,cardId:id,expectedVersion:2,idempotencyKey:"expired-start",execution})).rejects.toThrow("배정 승인");
     expect((await cards.getCard(id))?.card).toMatchObject({status:"queued",assignee_kind:"agent",assignee_session_id:null,version:2});
   });
   it("denies the existing reset-time automatic schedule only for policy-owned cards",async()=>{
