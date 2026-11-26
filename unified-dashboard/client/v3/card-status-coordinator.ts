@@ -72,5 +72,5 @@ export function useCardStatusCoordinator(card:CardRow,control:CardStatusControl)
   };
   const showColors=()=>{if(control.changeColor&&!unavailable&&!writing.current)setView("color");};
   const showStatuses=()=>setView("status");
-  return {open,view,changeOpen,request,requestColor,detail,loading,pending,busy,error,refresh,unavailable,change,changeColor,showColors,showStatuses};
+  return {open,view,close,changeOpen,request,requestColor,detail,loading,pending,busy,error,refresh,unavailable,change,changeColor,showColors,showStatuses};
 }

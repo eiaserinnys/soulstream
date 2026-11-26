@@ -3,7 +3,7 @@ import { Button, type AgentInfo } from "@seosoyoung/soul-ui";
 import type { UploadedFile } from "@seosoyoung/soul-ui/hooks/useFileUpload";
 import type { CardAssignment } from "@seosoyoung/soul-ui/cards/card-types";
 import type { NodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
-import { modelPresetUnavailableReason } from "../lib/model-presets";
+import { modelPresetReasonText } from "../lib/model-presets";
 import { CardHandoffView } from "./CardHandoffView";
 import { CardExecutionPickerView } from "./CardExecutionPicker";
 import { FolderPicker } from "./FolderPicker";
@@ -33,7 +33,7 @@ export function CardHandoffSample({onSend}:{onSend(text:string):void}) {
  const folder=reviewFolders.find(folder=>folder.id===selection.folderId)!;
  const agent=agents.find(agent=>agent.id===selection.agentId)!;
  const model=catalog.presets.find(preset=>preset.id===selection.modelPreset);
- const modelReason=model&&!model.available?modelPresetUnavailableReason(model):null;
+ const modelReason=model&&!model.available?modelPresetReasonText(model):null;
  const unavailableMessage=model&&!model.available?`${model.label}${modelReason?` · ${modelReason}`:""}`:null;
  const draftModel=catalog.presets.find(preset=>preset.id===draftSelection.modelPreset);
  const canConfirm=Boolean(draftSelection.nodeId&&agents.some(candidate=>candidate.id===draftSelection.agentId)

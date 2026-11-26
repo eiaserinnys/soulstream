@@ -37,11 +37,12 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
       const accepted=await new Promise<boolean>(resolve=>setConfirmation({card:latest,resolve}));
       if(!accepted)return;
     }
+    const openSettings=()=>{state.close();setSettingsCard(latest);};
     if(status==='running'&&!latest.assigneeSessionId&&(!latest.nodeId||!latest.assigneeAgentId||!latest.modelPreset)){
-      setSettingsCard(latest);return;
+      openSettings();return;
     }
     try{return await control.change(latest,status,reason);}
-    catch(error){if(status==='running'&&!latest.assigneeSessionId&&error instanceof CardApiError&&error.code==='CARD_EXECUTION_SETTINGS_REQUIRED'){setSettingsCard(latest);return;}throw error;}
+    catch(error){if(status==='running'&&!latest.assigneeSessionId&&error instanceof CardApiError&&error.code==='CARD_EXECUTION_SETTINGS_REQUIRED'){openSettings();return;}throw error;}
   }});
   const {open,view,changeOpen,detail,loading,busy,error,refresh,unavailable,change,changeColor,showColors,showStatuses}=state;
   const currentColor=detail?.card.color??card.color??"yellow";

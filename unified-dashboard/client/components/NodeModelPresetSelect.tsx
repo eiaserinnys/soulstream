@@ -5,10 +5,13 @@ import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-pres
 import { CatalogSelectionField } from "./CatalogSelectionField";
 
 import {
+  NO_AVAILABLE_MODEL_MESSAGE,
+  hasNoAvailableModelPreset,
   modelPresetDisplayLabel,
   modelPresetOptionLabel,
-  modelPresetUnavailableReason,
+  modelPresetReasonText,
   modelPresetSelectionState,
+  modelPresetsByAgentBackend,
 } from "../lib/model-presets";
 import {
   type NodeModelPresetCatalog,
@@ -25,6 +28,7 @@ export function NodeModelPresetSelect({
   triggerClassName,
   modelPresetCatalog,
   missingPresetLabel,
+  agentBackend,
   onValueChange,
   onPresetChange,
   onValidityChange,
@@ -39,6 +43,7 @@ export function NodeModelPresetSelect({
   triggerClassName?: string;
   modelPresetCatalog?: NodeModelPresetCatalog;
   missingPresetLabel?(id: string): string;
+  agentBackend?: string | null;
   onValueChange(value: string): void;
   onPresetChange?(preset: ModelPresetAvailability | null): void;
   onValidityChange?(valid: boolean): void;
@@ -86,17 +91,17 @@ export function NodeModelPresetSelect({
     options={[
       { value: "", label: "미지정" },
       ...(selectedPresetMissing ? [{ value, disabled: loaded, label: loading ? "선택한 모델 확인 중…" : missingPresetLabel?.(value) ?? "선택한 모델" }] : []),
-      ...presets.map(preset => {
-        const reason = modelPresetUnavailableReason(preset);
+      ...modelPresetsByAgentBackend(presets, agentBackend).map(preset => {
+        const reason = modelPresetReasonText(preset);
         return {
           value: preset.id,
           disabled: !preset.available,
           label: reason
-            ? <span className="flex flex-col"><span>{preset.label}</span><span className="text-sm sm:text-xs">{reason}</span></span>
-            : <span className={preset.reason === "quota_exhausted" ? "text-destructive" : undefined}>{modelPresetOptionLabel(preset)}</span>,
+            ? <span className="flex flex-col"><span className={preset.reason === "quota_exhausted" ? "text-destructive" : undefined}>{preset.label}</span><span className="text-sm sm:text-xs">{reason}</span></span>
+            : modelPresetOptionLabel(preset),
         };
       }),
     ]}
     adornment={selection.preset?.usage_warning ? <Badge variant="warning">사용량 확인 지연</Badge> : null}
-    message={missingText ?? selection.warning} onValueChange={onValueChange}/>;
+    message={missingText ?? selection.warning ?? (hasNoAvailableModelPreset({ status: catalogStatus, presets }) ? NO_AVAILABLE_MODEL_MESSAGE : null)} onValueChange={onValueChange}/>;
 }

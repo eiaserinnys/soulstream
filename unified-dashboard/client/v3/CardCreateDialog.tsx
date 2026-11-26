@@ -13,6 +13,9 @@ import {FolderPicker} from "./FolderPicker";
 import {useFolderPickerStars} from "./use-folder-picker-stars";
 import {V3ErrorNotice} from "./V3ErrorNotice";
 
+/** The execution settings were saved, but the server refused to start the card. */
+export class CardStartRefusedError extends Error {}
+
 export interface CreateCardInput {
  folderId:string;title:string;request:string;nodeId:string|null;assignee:{kind:"agent";agentId:string}|null;modelPreset:string|null;
  attachments:CardAttachment[];queue:false;idempotencyKey:string;
@@ -26,7 +29,7 @@ export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,o
  const [title,setTitle]=useState(""),[request,setRequest]=useState(""),[folderId,setFolderId]=useState(executionSettings?.card.folderId??initialFolderId);
  const [nodeId,setNodeId]=useState(executionSettings?.card.nodeId??""),[agentId,setAgentId]=useState(executionSettings?.card.assigneeAgentId??""),[agent,setAgent]=useState<AgentInfo|null>(null),[modelPreset,setModelPreset]=useState(executionSettings?.card.modelPreset??""),[valid,setValid]=useState(false);
  const [folderOpen,setFolderOpen]=useState(false),[pending,setPending]=useState(false),[error,setError]=useState<string|null>(null);
- const [uncertain,setUncertain]=useState(false);
+ const [uncertain,setUncertain]=useState(false),[startRefused,setStartRefused]=useState(false);
  const [uploadSessionId]=useState(()=>crypto.randomUUID());
  const submitting=useRef(false),completed=useRef(false);
  const attempt=useRef<CreateCardInput|null>(null);
@@ -39,10 +42,10 @@ export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,o
  const onAgentChange=useCallback((value:AgentInfo|null)=>{if(attempt.current)return;setAgent(value);if(!explicitPreset.current)setModelPreset(value?.default_preset??"");},[]);
  const onPresetChange=useCallback((value:string)=>{if(attempt.current)return;explicitPreset.current=true;setModelPreset(value);},[]);
  const locked=pending||uncertain;
- const ready=!pending&&(uncertain?!!attempt.current:executionSettings?(!!folderId&&(!modelPreset||valid)&&(!executionSettings.startAfterSave||!!nodeId&&!!agentId&&valid)):!!title.trim()&&!!folderId&&upload.isReady&&(!upload.files.length||!!nodeId));
+ const ready=!pending&&(uncertain?!!attempt.current:executionSettings?(!!folderId&&(!modelPreset||valid)&&(!executionSettings.startAfterSave||!!nodeId&&!!agentId&&!!modelPreset&&valid)):!!title.trim()&&!!folderId&&upload.isReady&&(!upload.files.length||!!nodeId));
  const close=async()=>{if(submitting.current||attempt.current)return;await upload.cancel();onClose();};
  const save=async()=>{
-  if(!ready||submitting.current||completed.current)return;submitting.current=true;setPending(true);setError(null);
+  if(!ready||submitting.current||completed.current)return;submitting.current=true;setPending(true);setError(null);setStartRefused(false);
   try {
    if(!attempt.current)attempt.current={idempotencyKey:cardMutationKey(),folderId,title:title.trim(),request,nodeId:nodeId||null,assignee:agentId?{kind:"agent" as const,agentId}:null,modelPreset:modelPreset||null,queue:false as const,
     attachments:upload.files.map(file=>({nodeId,path:file.path!,name:file.file.name,mimeType:file.file.type||"application/octet-stream"}))};
@@ -54,9 +57,9 @@ export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,o
    const card=await (onSave??useCardStore.getState().create)(input);
    completed.current=true;upload.resetLocal();onCreated?.(card.id);onClose();
   }catch(cause){
-   const rejected=cause instanceof CardApiError&&[400,403,404,422,...(executionSettings?[409]:[])].includes(cause.status);
+   const rejected=cause instanceof CardStartRefusedError||cause instanceof CardApiError&&[400,403,404,422,...(executionSettings?[409]:[])].includes(cause.status);
    if(rejected)attempt.current=null;
-   setUncertain(!rejected);setError(cause instanceof Error?cause.message:String(cause));
+   setUncertain(!rejected);setStartRefused(cause instanceof CardStartRefusedError);setError(cause instanceof Error?cause.message:String(cause));
   }finally{submitting.current=false;setPending(false);}
  };
  const uploadError=upload.files.find(file=>file.status==="error")?.errorMessage;
@@ -64,7 +67,7 @@ export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,o
   <DialogPopup onClick={event=>event.stopPropagation()} className="v3-surface v3-succession-modal v3-card-create-dialog max-w-[640px]" closeProps={{"aria-label":executionSettings?"카드 설정 닫기":"새 카드 닫기",disabled:locked}}>
    <DialogHeader className="v3-succession-head"><span aria-hidden="true">＋</span><DialogTitle>{executionSettings?"카드 실행 설정":"새 카드"}</DialogTitle></DialogHeader>
    <DialogPanel className="v3-succession-body" scrollFade={false}>
-    {error||uploadError?<V3ErrorNotice className="v3-succession-error" message={error?(uncertain?"카드 저장 결과를 확인하지 못했습니다.":"카드를 저장하지 못했습니다."):"첨부를 업로드하지 못했습니다."} detail={error||uploadError}/>:null}
+    {error||uploadError?<V3ErrorNotice className="v3-succession-error" message={error?(uncertain?"카드 저장 결과를 확인하지 못했습니다.":startRefused?`저장했지만 시작하지 못했습니다: ${error}`:"카드를 저장하지 못했습니다."):"첨부를 업로드하지 못했습니다."} detail={startRefused?null:error||uploadError}/>:null}
     {uncertain?<p role="status" className="v3-form-intent" data-v3-selectable-content="true">이미 저장되었을 수 있습니다. 같은 제출로 저장 결과를 확인할 때까지 입력과 첨부를 유지합니다.</p>:null}
     <div className="v3-succession-context-editor">
      <section><strong>폴더</strong><Popover open={folderOpen} onOpenChange={setFolderOpen}><PopoverTrigger render={<Button variant="outline" disabled={locked}/>} aria-label="폴더 선택">{folders.find(f=>f.id===folderId)?.name??"폴더 선택"}</PopoverTrigger>

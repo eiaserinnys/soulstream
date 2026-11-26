@@ -208,6 +208,22 @@ it.each(['todo','queued','on_hold'] as const)('starts a %s detail through the ex
  expect(execute).toHaveBeenCalledWith('inherit',1);expect(close).not.toHaveBeenCalled();expect(document.querySelector('[data-card-status-picker]')).toBeNull();
 });
 
+it("closes the status menu before the execution settings modal opens for a card without a model",async()=>{
+ const source={...card,status:"todo" as const,assigneeSessionId:null,modelPreset:null};const latest={...detail,card:source};const execute=vi.fn();
+ useCardStore.setState({byId:{inherit:source},details:{inherit:latest},loadCard:vi.fn().mockResolvedValue(latest),execute});
+ vi.stubGlobal("fetch",vi.fn(async()=>({ok:true,json:async()=>({agents:[],model_presets:[],cards:[]})})));
+ await render();
+ const menuOpenWhenModalFirstShown:boolean[]=[];
+ const watcher=new MutationObserver(()=>{if(document.querySelector('[data-slot="dialog-title"]')&&menuOpenWhenModalFirstShown.length===0)menuOpenWhenModalFirstShown.push(Boolean(document.querySelector('[data-card-status-picker]')));});
+ watcher.observe(document.body,{childList:true,subtree:true});
+ await act(async()=>{container.querySelector<HTMLButtonElement>('[aria-label="시작하기"]')!.click();await new Promise(done=>setTimeout(done,30));});
+ watcher.disconnect();
+ expect(document.querySelector('[data-slot="dialog-title"]')?.textContent).toBe("카드 실행 설정");
+ expect(menuOpenWhenModalFirstShown).toEqual([false]);
+ expect(document.querySelector('[data-card-status-picker]')).toBeNull();
+ expect(execute).not.toHaveBeenCalled();
+});
+
 it("does not revive the append target when the answer response lands after the card closed",async()=>{
  const openQuestion={id:"q",text:"질문 본문",options:["답변"],answer:null,askedAt:card.createdAt,answeredAt:null} as CardDetail["questions"][number];
  const withQuestion={...detail,questions:[openQuestion]};const other={...card,id:"other"};

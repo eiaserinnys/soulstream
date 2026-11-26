@@ -5,9 +5,12 @@ import type { CardAssignment } from "@seosoyoung/soul-ui/cards/card-types";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { useNodeModelPresetCatalog, type NodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
 import {
+  NO_AVAILABLE_MODEL_MESSAGE,
+  hasNoAvailableModelPreset,
   modelPresetOptionLabel,
   modelPresetSelectionState,
-  modelPresetUnavailableReason,
+  modelPresetReasonText,
+  modelPresetsByAgentBackend,
 } from "../lib/model-presets";
 
 // Same node/agents endpoint and preset catalog as SessionSuccessionModal.
@@ -50,13 +53,13 @@ export function useCardExecutionPicker({selection,onChange,onError,disabled,open
   ? pickerCatalog.presets.find(preset=>preset.id===draftSelection.modelPreset)??null
   : null;
  const canConfirm=Boolean(draftSelection.nodeId&&draftAgent&&pickerCatalog.nodeId===draftSelection.nodeId
-  &&pickerCatalog.status==="ready"&&(!draftSelection.modelPreset||draftModel?.available));
+  &&pickerCatalog.status==="ready"&&Boolean(draftSelection.modelPreset)&&draftModel?.available);
  const unavailableMessage=useMemo(()=>{
   if(catalog.nodeId!==selection.nodeId||catalog.status!=="ready"||!selection.modelPreset)return null;
   const selectedPreset=catalog.presets.find(preset=>preset.id===selection.modelPreset);
   if(!selectedPreset)return modelPresetSelectionState(selection.modelPreset,catalog.presets,true).warning;
   if(selectedPreset.available)return null;
-  const reason=modelPresetUnavailableReason(selectedPreset);
+  const reason=modelPresetReasonText(selectedPreset);
   return reason?`${selectedPreset.label} · ${reason}`:selectedPreset.label;
  },[catalog.nodeId,catalog.presets,catalog.status,selection.modelPreset,selection.nodeId]);
  const valid=Boolean(selection.nodeId&&selectedAgent&&catalog.nodeId===selection.nodeId
@@ -81,13 +84,15 @@ export function CardExecutionPickerView({selection,onChange,onCancel,onConfirm,c
    <section aria-label="에이전트"><h3>에이전트</h3>{agents.map(({agent,nodeId})=><button type="button" key={agent.id} aria-pressed={selection.agentId===agent.id} disabled={disabled} onClick={()=>onChange({...selection,agentId:agent.id,nodeId,modelPreset:agent.default_preset??""})}>
     <span className="v3-card-picker-avatar"><ProfileAvatar role="assistant" hasPortrait portraitUrl={agent.portraitUrl||resolvePortrait(agent.id)} fallbackEmoji="🤖"/></span><span>{agent.name}</span></button>)}</section>
    <section aria-label="노드"><h3>노드</h3>{connected.length===0?<p>연결된 노드가 없습니다</p>:connected.map(node=><button type="button" key={node.nodeId} aria-pressed={selection.nodeId===node.nodeId} disabled={disabled||Boolean(selection.agentId&&!byNode[node.nodeId]?.some(agent=>agent.id===selection.agentId))} onClick={()=>onChange({...selection,nodeId:node.nodeId,modelPreset:""})}>{node.nodeId}</button>)}</section>
-   <section aria-label="모델"><h3>모델</h3>{catalog.nodeId===selection.nodeId ? catalog.presets.map(preset=>{
-    const reason=modelPresetUnavailableReason(preset);
+   <section aria-label="모델"><h3>모델</h3>{catalog.nodeId===selection.nodeId ? <>
+    {hasNoAvailableModelPreset(catalog)?<p>{NO_AVAILABLE_MODEL_MESSAGE}</p>:null}
+    {modelPresetsByAgentBackend(catalog.presets,agents.find(({agent})=>agent.id===selection.agentId)?.agent.backend).map(preset=>{
+    const reason=modelPresetReasonText(preset);
     return <button type="button" key={preset.id} className={reason?"v3-card-execution-option--reason":undefined} aria-pressed={selection.modelPreset===preset.id} disabled={disabled||!preset.available} onClick={()=>onChange({...selection,modelPreset:preset.id})}>
-     {reason ? <><span className="v3-card-execution-name">{preset.label}</span><span className="v3-card-execution-reason">{reason}</span></>
-      : <span className={preset.reason==="quota_exhausted"?"text-destructive":undefined}>{modelPresetOptionLabel(preset)}</span>}
+     {reason ? <><span className={preset.reason==="quota_exhausted"?"v3-card-execution-name text-destructive":"v3-card-execution-name"}>{preset.label}</span><span className="v3-card-execution-reason">{reason}</span></>
+      : <span>{modelPresetOptionLabel(preset)}</span>}
     </button>;
-   }):null}{catalog.status==="loading"?<FrameLoading inline label="불러오는 중…"/>:null}</section>
+   })}</> : null}{catalog.status==="loading"?<FrameLoading inline label="불러오는 중…"/>:null}</section>
   </div>
   <div className="v3-card-execution-actions">
    <Button variant="ghost" onClick={onCancel}>취소</Button>

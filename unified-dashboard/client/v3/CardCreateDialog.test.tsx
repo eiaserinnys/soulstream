@@ -166,3 +166,81 @@ it('keeps execution settings save inside its modal when rendered by a clickable 
  await act(async()=>{document.querySelector<HTMLButtonElement>('[aria-label="카드 설정 저장"]')!.click();await Promise.resolve();});
  expect(outside).not.toHaveBeenCalled();
 });
+
+const executionAssignment=(presets:unknown[]=[{id:'sol',label:'Sol',backend:'codex',available:true,reason:null,reason_label:null,resets_at:null,usage_warning:false}])=>({
+ nodes:[{nodeId:'n',status:'connected'}],agents:[{id:'a',name:'에이전트',backend:'codex',default_preset:''}],
+ modelPresetCatalog:{status:'ready' as const,nodeId:'n',presets:presets as any},
+});
+async function renderExecutionSettings(props:{startAfterSave?:boolean;modelPreset?:string|null;onSave?:any;onStart?:any;assignment?:any}={}){
+ const {CardExecutionSettingsDialog}=await import('./CardExecutionSettings');
+ const {reviewCard}=await import('./components-review-fixtures');
+ const card={...reviewCard,assigneeSessionId:null,folderId:'f',nodeId:'n',assigneeAgentId:'a',modelPreset:props.modelPreset??null};
+ const close=vi.fn();
+ await act(()=>root.render(<QueryClientProvider client={new QueryClient()}><CardExecutionSettingsDialog card={card} folders={[{id:'f',name:'폴더'} as any]} assignment={props.assignment??executionAssignment()} startAfterSave={props.startAfterSave} onSave={props.onSave??(async()=>({...card,version:card.version+1}))} onStart={props.onStart} onClose={close}/></QueryClientProvider>));
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,30));});
+ return {card,close,button:()=>document.querySelector<HTMLButtonElement>('[aria-label="카드 설정 저장"]')!};
+}
+it('keeps 저장 후 실행 off until a model is chosen',async()=>{
+ const unchosen=await renderExecutionSettings({startAfterSave:true});
+ expect(unchosen.button().textContent).toBe('저장 후 실행');
+ expect(unchosen.button().disabled).toBe(true);
+});
+
+it('turns 저장 후 실행 on once the card has a usable model',async()=>{
+ const chosen=await renderExecutionSettings({startAfterSave:true,modelPreset:'sol'});
+ expect(chosen.button().disabled).toBe(false);
+});
+
+it('still lets execution settings be saved without a model when no start follows',async()=>{
+ const plain=await renderExecutionSettings({startAfterSave:false});
+ expect(plain.button().textContent).toBe('설정 저장');
+ expect(plain.button().disabled).toBe(false);
+});
+
+it('tells the user the settings were saved when the server refuses to start, then lets the retry go through',async()=>{
+ const reason='폴더·노드·에이전트·모델을 선택한 뒤 실행하세요.';
+ const onStart=vi.fn().mockRejectedValueOnce(new CardApiError(reason,422)).mockResolvedValue(undefined);
+ const dialog=await renderExecutionSettings({startAfterSave:true,modelPreset:'sol',onStart});
+ await act(async()=>{dialog.button().click();await new Promise(resolve=>setTimeout(resolve,10));});
+ const alert=document.querySelector('[role="alert"]')!;
+ expect(alert.textContent).toContain(`저장했지만 시작하지 못했습니다: ${reason}`);
+ expect(alert.textContent).not.toContain('카드를 저장하지 못했습니다');
+ expect(dialog.close).not.toHaveBeenCalled();
+ expect(dialog.button().disabled).toBe(false);
+ await act(async()=>{dialog.button().click();await new Promise(resolve=>setTimeout(resolve,10));});
+ expect(onStart).toHaveBeenCalledTimes(2);
+ expect(dialog.close).toHaveBeenCalledTimes(1);
+});
+
+it('saves the retry on the version the first save produced',async()=>{
+ const {reviewCard}=await import('./components-review-fixtures');
+ const bodies:any[]=[];
+ vi.stubGlobal('fetch',vi.fn(async(input:unknown,init?:RequestInit)=>{
+  if(String(input).endsWith('/execution-settings')){
+   const body=JSON.parse(String(init?.body));bodies.push(body);
+   return {ok:true,json:async()=>({card:{...reviewCard,assigneeSessionId:null,folderId:'f',nodeId:'n',assigneeAgentId:'a',modelPreset:'sol',version:body.expectedVersion+1}})};
+  }
+  return {ok:true,json:async()=>({cards:[]})};
+ }));
+ const onStart=vi.fn().mockRejectedValueOnce(new CardApiError('거절',422)).mockResolvedValue(undefined);
+ const {CardExecutionSettingsDialog}=await import('./CardExecutionSettings');
+ const card={...reviewCard,assigneeSessionId:null,folderId:'f',nodeId:'n',assigneeAgentId:'a',modelPreset:'sol'};
+ await act(()=>root.render(<QueryClientProvider client={new QueryClient()}><CardExecutionSettingsDialog card={card} folders={[{id:'f',name:'폴더'} as any]} assignment={executionAssignment()} startAfterSave onStart={onStart} onClose={()=>{}}/></QueryClientProvider>));
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,30));});
+ const button=()=>document.querySelector<HTMLButtonElement>('[aria-label="카드 설정 저장"]')!;
+ await act(async()=>{button().click();await new Promise(resolve=>setTimeout(resolve,10));});
+ await act(async()=>{button().click();await new Promise(resolve=>setTimeout(resolve,10));});
+ expect(bodies.map(body=>body.expectedVersion)).toEqual([card.version,card.version+1]);
+});
+
+it('shows a save failure as a save failure, not a refused start',async()=>{
+ const dialog=await renderExecutionSettings({startAfterSave:true,modelPreset:'sol',onSave:async()=>{throw new CardApiError('저장 실패',422);},onStart:vi.fn()});
+ await act(async()=>{dialog.button().click();await new Promise(resolve=>setTimeout(resolve,10));});
+ expect(document.querySelector('[role="alert"]')!.textContent).toContain('카드를 저장하지 못했습니다.');
+ expect(document.body.textContent).not.toContain('저장했지만 시작하지 못했습니다');
+});
+
+it('tells the user there is no usable model when the node has none',async()=>{
+ await renderExecutionSettings({assignment:executionAssignment([{id:'sol',label:'Sol',backend:'codex',available:false,reason:'not_authenticated',reason_label:'미인증',resets_at:null,usage_warning:false}])});
+ expect(document.body.textContent).toContain('쓸 수 있는 모델이 없습니다. 설정의 「코딩 에이전트 연결」에서 이 노드의 로그인을 확인하세요.');
+});

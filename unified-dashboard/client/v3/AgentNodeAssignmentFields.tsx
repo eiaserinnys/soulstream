@@ -141,6 +141,7 @@ export function AgentNodeAssignmentFields({
       disabled={disabled}
       triggerClassName="v3-model-preset-trigger"
       modelPresetCatalog={modelPresetCatalog}
+      agentBackend={agents.find((agent) => agent.id === agentId)?.backend}
       onValueChange={onModelPresetChange}
       onPresetChange={onModelPresetInfoChange}
       onValidityChange={onModelPresetValidityChange}

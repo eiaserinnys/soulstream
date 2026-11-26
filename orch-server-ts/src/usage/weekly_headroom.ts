@@ -5,6 +5,11 @@ import type {
 
 const WEEK_SECONDS = 7 * 24 * 60 * 60;
 
+export type WeeklyHeadroomBlockingQuota = {
+  readonly label: string;
+  readonly resets_at: string | null;
+};
+
 export type WeeklyHeadroom = {
   readonly status: "ok" | "stale" | "unavailable";
   readonly headroom: number | null;
@@ -13,6 +18,8 @@ export type WeeklyHeadroom = {
   readonly resets_at: string | null;
   readonly observed_at: string | null;
   readonly quota_label: string | null;
+  /** A non-7-day applicable quota that is exhausted; null when none is. */
+  readonly blocking_quota: WeeklyHeadroomBlockingQuota | null;
 };
 
 export type WeeklyHeadroomCalculation = {
@@ -45,9 +52,10 @@ export function resolveWeeklyHeadroom(
   applicableWeeklyQuotas: readonly UsageSummaryQuota[],
   stale: boolean,
   now: Date,
+  blockingQuota: WeeklyHeadroomBlockingQuota | null = null,
 ): WeeklyHeadroom {
   if (!provider || provider.status !== "auto") {
-    return unavailableWeeklyHeadroom(provider?.observedAt ?? null);
+    return unavailableWeeklyHeadroom(provider?.observedAt ?? null, null);
   }
 
   const candidates: Candidate[] = [];
@@ -87,7 +95,7 @@ export function resolveWeeklyHeadroom(
         : selected,
     null,
   );
-  if (!lowest) return unavailableWeeklyHeadroom(provider.observedAt ?? null);
+  if (!lowest) return unavailableWeeklyHeadroom(provider.observedAt ?? null, blockingQuota);
 
   return {
     status: stale ? "stale" : "ok",
@@ -97,6 +105,7 @@ export function resolveWeeklyHeadroom(
     resets_at: new Date(lowest.resetAt * 1_000).toISOString(),
     observed_at: provider.observedAt ?? null,
     quota_label: lowest.quotaLabel,
+    blocking_quota: blockingQuota,
   };
 }
 
@@ -124,7 +133,10 @@ function getWindowRemainingPercent(resetAt: number, now: Date): number {
   );
 }
 
-function unavailableWeeklyHeadroom(observedAt: string | null): WeeklyHeadroom {
+function unavailableWeeklyHeadroom(
+  observedAt: string | null,
+  blockingQuota: WeeklyHeadroomBlockingQuota | null,
+): WeeklyHeadroom {
   return {
     status: "unavailable",
     headroom: null,
@@ -133,6 +145,7 @@ function unavailableWeeklyHeadroom(observedAt: string | null): WeeklyHeadroom {
     resets_at: null,
     observed_at: observedAt,
     quota_label: null,
+    blocking_quota: blockingQuota,
   };
 }
 

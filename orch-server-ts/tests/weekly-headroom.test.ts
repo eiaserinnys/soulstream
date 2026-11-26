@@ -78,7 +78,20 @@ describe("resolveWeeklyHeadroom", () => {
       resets_at: new Date(resetAt * 1_000).toISOString(),
       observed_at: now.toISOString(),
       quota_label: "Fable",
+      blocking_quota: null,
     });
+  });
+
+  it("carries the blocking quota through both the numeric and the unavailable result", () => {
+    const blocking = { label: "월 사용량 제한", resets_at: "2026-08-20T00:00:00.000Z" };
+    const resetAt = now.getTime() / 1_000 + WEEK_SECONDS;
+    expect(resolveWeeklyHeadroom(
+      provider({ weeklyRemainingPercent: 40, weeklyResetAt: resetAt }), [], false, now, blocking,
+    )).toMatchObject({ status: "ok", blocking_quota: blocking });
+    expect(resolveWeeklyHeadroom(provider(), [], false, now, blocking))
+      .toMatchObject({ status: "unavailable", blocking_quota: blocking });
+    expect(resolveWeeklyHeadroom(provider({ status: "error" }), [], false, now, blocking).blocking_quota)
+      .toBeNull();
   });
 
   it("returns unavailable with null numeric values when no weekly numbers exist", () => {

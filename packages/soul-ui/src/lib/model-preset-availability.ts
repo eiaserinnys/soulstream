@@ -6,6 +6,7 @@ interface WeeklyHeadroom {
   resets_at: string | null;
   observed_at: string | null;
   quota_label: string | null;
+  blocking_quota?: { label: string; resets_at: string | null } | null;
 }
 
 export interface ModelPresetAvailability {

@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fetchNodeModelPresets } from "@seosoyoung/soul-ui/shared/model-presets";
 import {
-  modelPresetUnavailableReason,
+  hasNoAvailableModelPreset,
+  modelPresetReasonText,
   modelPresetOptionLabel,
   modelPresetSelectionState,
+  modelPresetsByAgentBackend,
 } from "./model-presets";
 
 const availablePreset = {
@@ -19,11 +21,50 @@ const availablePreset = {
 };
 
 describe("model preset presentation", () => {
-  it("keeps an exhausted model selectable and renders its name alone", () => {
+  it("keeps an exhausted model selectable and shows its reason and reset time next to the name", () => {
     const exhausted = { ...availablePreset, reason: "quota_exhausted",
-      reason_label: "주간 사용량 제한", resets_at: "2030-01-02T03:04:00.000Z" };
-    expect(modelPresetOptionLabel(exhausted)).toBe(exhausted.label);
+      reason_label: "7일 사용량 제한", resets_at: "2030-01-02T03:04:00.000Z" };
+    expect(modelPresetOptionLabel(exhausted, () => "11/28"))
+      .toBe("프리셋 A (7일 사용량 제한, 11/28 해제)");
+    expect(modelPresetOptionLabel({ ...exhausted, resets_at: null }))
+      .toBe("프리셋 A (7일 사용량 제한)");
     expect(modelPresetSelectionState(exhausted.id, [exhausted], true).valid).toBe(true);
+  });
+
+  it("formats the exhausted reset time in the browser's local time by default", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 26, 9, 0));
+    const exhausted = { ...availablePreset, reason: "quota_exhausted", reason_label: "7일 사용량 제한",
+      resets_at: new Date(2026, 10, 28, 3, 20).toISOString() };
+    expect(modelPresetOptionLabel(exhausted)).toBe("프리셋 A (7일 사용량 제한, 11/28 03:20 해제)");
+    expect(modelPresetReasonText(exhausted)).toBe("7일 사용량 제한 · 11/28 03:20 해제");
+  });
+
+  it("gives a reason column only to blocked or exhausted presets", () => {
+    expect(modelPresetReasonText(availablePreset)).toBeNull();
+    expect(modelPresetReasonText({ ...availablePreset, usage_warning: true })).toBeNull();
+    expect(modelPresetReasonText({ ...availablePreset, reason: "quota_exhausted", reason_label: null })).toBeNull();
+  });
+
+  it("detects a ready catalog without any available preset", () => {
+    const blocked = { ...availablePreset, available: false, reason: "not_authenticated", reason_label: "미인증" };
+    expect(hasNoAvailableModelPreset({ status: "ready", presets: [blocked, blocked] })).toBe(true);
+    expect(hasNoAvailableModelPreset({ status: "ready", presets: [] })).toBe(true);
+    expect(hasNoAvailableModelPreset({ status: "ready", presets: [blocked, availablePreset] })).toBe(false);
+    expect(hasNoAvailableModelPreset({ status: "loading", presets: [] })).toBe(false);
+    expect(hasNoAvailableModelPreset({ status: "error", presets: [] })).toBe(false);
+  });
+
+  it("puts the agent's backend first and keeps the catalog order otherwise", () => {
+    const claude = { ...availablePreset, id: "c1", backend: "claude" };
+    const codex1 = { ...availablePreset, id: "x1", backend: "codex" };
+    const gemini = { ...availablePreset, id: "g1", backend: "antigravity" };
+    const codex2 = { ...availablePreset, id: "x2", backend: "codex" };
+    const presets = [claude, codex1, gemini, codex2];
+    expect(modelPresetsByAgentBackend(presets, "codex").map(p => p.id)).toEqual(["x1", "x2", "c1", "g1"]);
+    expect(modelPresetsByAgentBackend(presets, null)).toBe(presets);
+    expect(modelPresetsByAgentBackend(presets, undefined)).toBe(presets);
+    expect(modelPresetsByAgentBackend(presets, "none").map(p => p.id)).toEqual(["c1", "x1", "g1", "x2"]);
   });
 
   it("shows and blocks an actually rejected model while keeping a 0% model selectable", () => {
@@ -46,7 +87,7 @@ describe("model preset presentation", () => {
     expect(modelPresetOptionLabel(rejected, () => "12:20"))
       .toBe("프리셋 A (5시간 한도 거부 중) · 12:20 해제");
     expect(modelPresetSelectionState(rejected.id, [rejected], true).valid).toBe(false);
-    expect(modelPresetOptionLabel(exhausted)).toBe(exhausted.label);
+    expect(modelPresetOptionLabel(exhausted, () => "12:20")).toBe("프리셋 A (7일 사용량 제한, 12:20 해제)");
     expect(modelPresetSelectionState(exhausted.id, [exhausted], true).valid).toBe(true);
   });
 
@@ -61,11 +102,11 @@ describe("model preset presentation", () => {
       resets_at: new Date(2026, 9, 15, 13, 19).toISOString(),
     };
 
-    expect(modelPresetUnavailableReason(rejected)).toBe("7일 한도 거부 중 · 10/15 13:19 해제");
-    expect(modelPresetUnavailableReason({ ...rejected, resets_at: null }))
+    expect(modelPresetReasonText(rejected)).toBe("7일 한도 거부 중 · 10/15 13:19 해제");
+    expect(modelPresetReasonText({ ...rejected, resets_at: null }))
       .toBe("7일 한도 거부 중");
-    expect(modelPresetUnavailableReason(availablePreset)).toBeNull();
-    expect(modelPresetUnavailableReason({ ...rejected, reason_label: null })).toBeNull();
+    expect(modelPresetReasonText(availablePreset)).toBeNull();
+    expect(modelPresetReasonText({ ...rejected, reason_label: null })).toBeNull();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -169,7 +210,7 @@ it("uses existing warning and exhausted labels for Antigravity without showing h
   expect(modelPresetOptionLabel(delayed)).toBe("Gemini - 3.8 Flash (사용량 확인 지연)");
   expect(modelPresetSelectionState(delayed.id, [delayed], true).valid).toBe(true);
   const exhausted = { ...antigravity, reason: "quota_exhausted", reason_label: "7일 사용량 제한" };
-  expect(modelPresetOptionLabel(exhausted)).toBe("Gemini - 3.8 Flash");
+  expect(modelPresetOptionLabel(exhausted)).toBe("Gemini - 3.8 Flash (7일 사용량 제한)");
   expect(modelPresetSelectionState(exhausted.id, [exhausted], true).valid).toBe(true);
   const unconfigured = { ...antigravity, available: false, reason: "auth_not_configured", reason_label: "인증 미설정" };
   expect(modelPresetOptionLabel(unconfigured)).toBe("Gemini - 3.8 Flash (인증 미설정)");
