@@ -1,4 +1,4 @@
-import { appendFile, mkdir, mkdtemp, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -289,6 +289,36 @@ describe("terminal registration scan cache", () => {
 });
 
 describe("runner registration reader", () => {
+  it("skips a legacy registration whose config names the retired openai-agents backend and keeps scanning", async () => {
+    const legacy = await writeRegistrationFixture("legacy-agents", {
+      identity: "pending", sidecarPid: null, lifecyclePid: STALE_PID,
+    });
+    await writeRegistrationFixture("neighbor", {
+      stateDirectory: legacy.stateDirectory,
+      identity: "absent", sidecarPid: STALE_PID, lifecyclePid: STALE_PID,
+    });
+    const legacyConfig = JSON.parse(await readFile(legacy.paths.configPath, "utf8")) as {
+      backend: string;
+      agent: { backend: string };
+    };
+    legacyConfig.backend = "openai-agents";
+    legacyConfig.agent.backend = "openai-agents";
+    await writeFile(legacy.paths.configPath, JSON.stringify(legacyConfig));
+
+    const scan = await scanRunnerRegistrations(legacy.stateDirectory, {
+      verifyProcessIdentity: true,
+      recoveryStorage,
+    });
+
+    expect(scan.registrations.map((registration) => registration.config.sessionId))
+      .toEqual(["session-neighbor"]);
+    expect(scan.errors).toHaveLength(1);
+    expect(scan.errors[0]).toMatchObject({
+      directory: legacy.paths.sessionDirectory,
+      sessionId: "session-legacy-agents",
+    });
+  });
+
   it("scans a respawned runner while the lifecycle still names the previous process", async () => {
     const fixture = await writeRegistrationFixture("respawn", {
       identity: "complete",

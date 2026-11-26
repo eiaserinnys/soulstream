@@ -52,6 +52,21 @@ const REQUESTED_TIMELINE_EVENT_TYPE_SET = new Set<string>([
   "complete",
 ]);
 
+/**
+ * 지운 OpenAI Agents 이벤트 이름. EAS Update 없이 쓰이는 옛 soul-app이 이력 조회에
+ * 이 이름을 `event_types`로 계속 보내므로 받아들이되 조회에서는 뺀다.
+ */
+export const RETIRED_TIMELINE_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "agent_updated",
+  "handoff_requested",
+  "handoff_occurred",
+  "guardrail_tripwire",
+]);
+
+export function isRetiredTimelineEventType(value: string): boolean {
+  return RETIRED_TIMELINE_EVENT_TYPES.has(value);
+}
+
 export function isRequestedTimelineEventType(value: string): value is RequestedTimelineEventType {
   return REQUESTED_TIMELINE_EVENT_TYPE_SET.has(value);
 }
