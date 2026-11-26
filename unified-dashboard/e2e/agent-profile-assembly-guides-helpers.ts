@@ -16,7 +16,7 @@ export interface OpenOptions {
   height: number;
   theme?: Theme;
   /** 설정 창 왼쪽 목록에서 누를 항목. */
-  category: "에이전트" | "스킬과 카탈로그";
+  category: "에이전트 프로필" | "스킬과 카탈로그";
   assemblyState?: string;
   guidesState?: string;
 }

@@ -216,8 +216,8 @@ class Fake:
         return [NODE]
 
 
-def new_page(browser, base, fake, width, height=900, theme="dark", preferences=None):
-    context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=theme, reduced_motion="reduce", locale="ko-KR", timezone_id="Asia/Seoul", service_workers="block")
+def new_page(browser, base, fake, width, height=900, theme="dark", preferences=None, scale=1):
+    context = browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=scale, color_scheme=theme, reduced_motion="reduce", locale="ko-KR", timezone_id="Asia/Seoul", service_workers="block")
     page = context.new_page()
     init = f"localStorage.setItem('soul-dashboard-theme','{theme}'); localStorage.setItem('ls.webglGlass','0');"
     if preferences is not None:
@@ -273,6 +273,6 @@ def assert_no_secret_output(sink, label):
 
 
 def open_settings(page):
-    page.get_by_role("button", name="서버 설정").click()
+    page.get_by_test_id("config-button").click()
     expect(page.locator('[data-slot="dialog-popup"]')).to_be_visible(timeout=15000)
 

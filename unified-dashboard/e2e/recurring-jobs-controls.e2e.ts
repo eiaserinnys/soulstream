@@ -181,7 +181,7 @@ const settle = (page: Page) => page.evaluate(() => new Promise<void>((resolve) =
 async function openRecurringTab(page: Page) {
   await page.goto("/");
   await expect(page.getByTestId("v3-global-toolbar")).toBeVisible({ timeout: 60_000 });
-  const settingsButton = page.getByRole("button", { name: "서버 설정", exact: true });
+  const settingsButton = page.getByRole("button", { name: "설정", exact: true });
   await expect(settingsButton).toBeVisible({ timeout: 60_000 });
   await settingsButton.click();
   const dialog = page.locator(".config-dialog");

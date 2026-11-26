@@ -94,7 +94,7 @@ test("admin tab loads the default node and preserves an absent preset", async ({
     } else await route.fulfill({ json: { value: { model_preset: "missing-id", fallback_models: [{ model_preset: "known", reasoning_effort: null }] }, version: 1, source: "settings" } });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "서버 설정", exact: true }).click();
+  await page.getByRole("button", { name: "설정", exact: true }).click();
   await page.getByRole("button", { name: "영구 세션 기본 모델", exact: true }).click();
   const form = page.getByRole("form", { name: "영구 세션 기본 모델" });
   await expect(form.getByLabel("기본 모델")).toContainText("missing-id");

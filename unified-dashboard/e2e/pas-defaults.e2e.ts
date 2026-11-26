@@ -94,7 +94,7 @@ test("실제 설정창의 로딩, 편집, 실패와 반응형 배치", async ({ 
     await form.getByRole("button", { name: "다시 불러오기" }).click();
   }
   await page.goto("/");
-  await page.getByRole("button", { name: "서버 설정", exact: true }).click();
+  await page.getByRole("button", { name: "설정", exact: true }).click();
   await page.getByRole("button", { name: "영구 세션 기본 모델", exact: true }).click();
   await expect(form.getByText("불러오는 중…")).toBeVisible();
   await expect(form.getByRole("button", { name: "다시 불러오기" })).toHaveCount(0);
@@ -184,7 +184,7 @@ test("실제 설정창의 로딩, 편집, 실패와 반응형 배치", async ({ 
   await page.evaluate(() => localStorage.setItem("soul-dashboard-theme", "light"));
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
   await page.reload();
-  await page.getByRole("button", { name: "서버 설정", exact: true }).click();
+  await page.getByRole("button", { name: "설정", exact: true }).click();
   await page.getByRole("button", { name: "영구 세션 기본 모델", exact: true }).click();
   await expect(form.getByText("저장한 설정을 쓰는 중")).toBeVisible();
   await expect(page.locator("html")).not.toHaveClass(/dark/);

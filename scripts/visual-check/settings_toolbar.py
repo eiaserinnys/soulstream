@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from playwright.sync_api import expect, sync_playwright  # noqa: E402
 
+from settings_toc import capture_settings_toc, measure_direct_open, measure_operations, write_operations as write_toc_operations  # noqa: E402
 from settings_toolbar_r2 import capture_r2, write_operations  # noqa: E402
 from settings_toolbar_r3 import capture_r3  # noqa: E402
 from settings_toolbar_fakes import CHECKS, INDEX, Fake, SESSION_ID, FAKE_PASTED_CODE, FAKE_USER_CODE, assert_no_secret_output, check, DIST, flow, listen, new_page, open_settings, serve, shot, soon, toolbar_metrics, wait_for_call  # noqa: E402
@@ -85,7 +86,7 @@ def capture_settings_and_logins(browser, base, out: Path):
     check("설정창을 닫으면 PAS 창에 그대로 있음", page.url.endswith(f"/persistent/{SESSION_ID}"), page.url)
 
     open_settings(page)
-    page.locator('[data-testid="config-category-nav"]').get_by_role("button", name="코딩 에이전트").click()
+    page.locator('[data-testid="config-category-nav"]').get_by_role("button", name="코딩 에이전트 연결", exact=True).click()
     expect(page.get_by_test_id("coding-agents-tab")).to_be_visible(timeout=15000)
     expect(page.get_by_test_id("agent-login-button-codex")).to_have_text("연결", timeout=15000)
     expect(page.get_by_test_id("agent-login-button-antigravity")).to_have_text("다시 연결")
@@ -156,7 +157,7 @@ def capture_settings_and_logins(browser, base, out: Path):
     expect(page.get_by_test_id("v3-global-toolbar")).to_be_visible(timeout=20000)
     open_settings(page)
     page.get_by_role("button", name="모든 설정").click()  # 좁은 폭은 한 칸씩 보인다.
-    page.locator('[data-testid="config-category-nav"]').get_by_role("button", name="코딩 에이전트").click()
+    page.locator('[data-testid="config-category-nav"]').get_by_role("button", name="코딩 에이전트 연결", exact=True).click()
     page.get_by_test_id("agent-login-button-codex").click()
     sheet = page.get_by_test_id("agent-login-sheet")
     expect(sheet.get_by_test_id("agent-login-user-code")).to_be_visible(timeout=10000)
@@ -249,16 +250,27 @@ def main():
     parser.add_argument("--baseline-dist", required=True)
     parser.add_argument("--only-r2", action="store_true", help="2차와 3차 보강 그림과 조작 결과만 찍는다(반복 확인용)")
     parser.add_argument("--only-r3", action="store_true", help="3차 보강 그림만 찍는다(조작 결과 파일은 쓰지 않는다)")
+    parser.add_argument("--only-toc", action="store_true", help="카드 #1883 설정창 목차만 이전 빌드(baseline-)와 이번 빌드로 찍고 조작 결과(operations.md)를 쓴다")
     parser.add_argument("--dist", default=None, help="찍을 빌드 폴더. 고치기 전 코드의 빌드를 줘서 3차 단언이 실패하는지 볼 때 쓴다")
     args = parser.parse_args()
     out = Path(args.output).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    keep_first_round(out)
+    if not args.only_toc:
+        keep_first_round(out)
     server, base = serve(Path(args.dist) if args.dist else DIST)
     baseline_server, baseline_base = serve(Path(args.baseline_dist))
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
+            if args.only_toc:
+                capture_settings_toc(browser, baseline_base, out, "baseline-")
+                capture_settings_toc(browser, base, out, "")
+                measure_operations(browser, base)
+                measure_direct_open(browser, base, out)
+                browser.close()
+                write_toc_operations(out)
+                (out / "checks.json").write_text(json.dumps(CHECKS, ensure_ascii=False, indent=2), encoding="utf-8")
+                return
             if args.only_r3:
                 capture_r3(browser, base, out)
                 browser.close()

@@ -342,7 +342,7 @@ async function usageLog(browser: Browser, width: number) {
     await page.route("**/api/ui-events/installs**", r => r.fulfill({ json: { installs: [] } }));
     await page.route(u => new URL(u).pathname === "/api/ui-events", r => r.fulfill({ json: { events: [ev(1), ev(2), ev(3)] } }));
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    const opener = page.locator('button[aria-label="Open server configuration"]:visible, button[aria-label="서버 설정"]:visible, [data-testid="config-button"]:visible').first();
+    const opener = page.locator('button[aria-label="Open server configuration"]:visible, button[aria-label="설정"]:visible, [data-testid="config-button"]:visible').first();
     await opener.waitFor({ state: "visible", timeout: 30_000 });
     await opener.click();
     const dialog = page.locator('[data-slot="dialog-popup"]').first();

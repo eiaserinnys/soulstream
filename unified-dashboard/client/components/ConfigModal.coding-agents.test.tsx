@@ -59,12 +59,12 @@ const render = async (props: Partial<React.ComponentProps<typeof ConfigModal>> =
 };
 
 describe("ConfigModal coding agents tab", () => {
-  it("shows the tab to administrators in the work-and-execution group and opens its body", async () => {
+  it("shows the tab to administrators in the agents-and-nodes group and opens its body", async () => {
     await render();
-    expect(navLabels()).toContain("코딩 에이전트");
-    const group = [...document.body.querySelectorAll('[data-testid="config-category-nav"] section')].find((section) => section.querySelector("h3")?.textContent === "작업과 실행")!;
-    expect([...group.querySelectorAll("button")].map((button) => button.textContent)).toContain("코딩 에이전트");
-    await act(async () => [...document.body.querySelectorAll<HTMLButtonElement>('[data-testid="config-category-nav"] button')].find((button) => button.textContent === "코딩 에이전트")!.click());
+    expect(navLabels()).toContain("코딩 에이전트 연결");
+    const group = [...document.body.querySelectorAll('[data-testid="config-category-nav"] section')].find((section) => section.querySelector("h3")?.textContent === "에이전트와 노드")!;
+    expect([...group.querySelectorAll("button")].map((button) => button.textContent)).toContain("코딩 에이전트 연결");
+    await act(async () => [...document.body.querySelectorAll<HTMLButtonElement>('[data-testid="config-category-nav"] button')].find((button) => button.textContent === "코딩 에이전트 연결")!.click());
     expect(document.body.querySelector('[data-testid="coding-agents-stub"]')).not.toBeNull();
     expect(document.body.textContent).toContain("노드마다 Claude, Codex, Antigravity 로그인을 연결합니다.");
   });
@@ -72,7 +72,7 @@ describe("ConfigModal coding agents tab", () => {
   it("hides the tab from non-administrators and renders nothing for it even if asked to open it", async () => {
     auth.isAdmin = false;
     await render();
-    expect(navLabels()).not.toContain("코딩 에이전트");
+    expect(navLabels()).not.toContain("코딩 에이전트 연결");
     await render({ initialTab: "coding_agents" });
     expect(document.body.querySelector('[data-testid="coding-agents-stub"]')).toBeNull();
   });

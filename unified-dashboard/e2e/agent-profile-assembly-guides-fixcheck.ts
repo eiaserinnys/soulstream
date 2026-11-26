@@ -12,7 +12,7 @@ const f1 = (value: number) => value.toFixed(1);
 const f2 = (value: number) => value.toFixed(2);
 
 async function openProfile(page: Page, width: number, height: number, extra: { assemblyState?: string; theme?: Theme } = {}) {
-  await openSettings(page, { width, height, category: "에이전트", ...extra });
+  await openSettings(page, { width, height, category: "에이전트 프로필", ...extra });
   await expect(assembly(page).getByTestId("agent-context-skills")).toBeVisible({ timeout: 15_000 });
 }
 async function openSkills(page: Page, width: number, height: number, guidesState = "normal", theme: Theme = "light") {
@@ -148,7 +148,7 @@ async function overviewChaining(page: Page): Promise<string[]> {
   const lines: string[] = [];
   for (const [width, height] of [[1440, 700], [360, 800]] as const) {
     await openOverviewAt(page, width, height, "light");
-    const heading = (await page.getByRole("heading", { name: "에이전트", exact: true }).boundingBox())!;
+    const heading = (await page.getByRole("heading", { name: "에이전트 프로필", exact: true }).boundingBox())!;
     const outsidePoint = { x: Math.round(heading.x + 10), y: Math.round(heading.y + heading.height / 2) };
     const outside = summarizeWheel(await wheelOverview(page, outsidePoint));
     console.log(`연쇄 ${width}x${height} 표 밖: ${wheelLine(outside)}`);

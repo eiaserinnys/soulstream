@@ -1,5 +1,5 @@
 /**
- * ConfigButton - 서버 설정 모달 열기 버튼 (unified-dashboard)
+ * ConfigButton - 설정 모달 열기 버튼 (unified-dashboard)
  *
  * soul-dashboard의 ConfigButton에서 포팅.
  * ThemeToggle과 동일한 스타일 패턴. 헤더 우상단 배치용.
@@ -30,7 +30,7 @@ export function ConfigButton({
         "border border-border text-muted-foreground hover:bg-input",
         "transition-colors cursor-pointer",
       )}
-      title="서버 설정"
+      title="설정"
       aria-label="Open server configuration"
     >
       <span className="text-xs">⚙️</span>
@@ -45,7 +45,7 @@ function ChromeConfigButton({
 }: { onClick: () => void; appearance: "default" | "bare" }) {
   return (
     <DashboardIconCap
-      label="서버 설정"
+      label="설정"
       data-testid="config-button"
       appearance={appearance}
       onClick={onClick}

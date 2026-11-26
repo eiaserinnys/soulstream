@@ -154,7 +154,7 @@ async function prepare(page: Page, width: number) {
     await expect(brand).toContainText("소울스트림");
     await expect(brand).toContainText("PAS 버튼 검수");
   }
-  await expect(page.getByRole("button", { name: "서버 설정", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "설정", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "작업 목록", exact: true })).toBeVisible();
   await expect(page.locator('[data-testid="send-button"]')).toBeVisible();
   const scroller = page.locator('[data-virtuoso-scroller="true"]');
@@ -320,7 +320,7 @@ for (const width of [1440, 1280]) {
 
     if (width === 1440) {
       await page.getByRole("button", { name: "작업 목록 닫기", exact: true }).click();
-      await page.getByRole("button", { name: "서버 설정", exact: true }).click();
+      await page.getByRole("button", { name: "설정", exact: true }).click();
       await expect(page.getByTestId("persistent-session-settings-dialog")).toBeVisible();
       await page.getByRole("button", { name: "세션 스토리", exact: true }).click();
       await expect(page.locator(".session-story-settings-copy")).toContainText("스토리 구간 36: 대화의 전개와 결정된 내용을 설정 탭에서 확인합니다.");
@@ -339,7 +339,7 @@ test("PAS mobile keeps conversation auxiliary strips out and opens story setting
   const chatInput = screen.locator('textarea[data-slot="chat-input-body"]');
   await chatInput.fill(chatDraft);
 
-  await page.getByRole("button", { name: "서버 설정", exact: true }).click();
+  await page.getByRole("button", { name: "설정", exact: true }).click();
   await expect(page.getByTestId("persistent-session-settings-dialog")).toBeVisible();
   await page.getByRole("button", { name: "지시 추가", exact: true }).click();
   const instructionDraft = "스토리 탭을 다녀와도 남길 지시 초안";

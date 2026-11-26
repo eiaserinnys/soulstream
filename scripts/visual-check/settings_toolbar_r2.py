@@ -65,7 +65,7 @@ def open_coding_tab(page, narrow: bool = False):
     open_settings(page)
     if narrow:
         page.get_by_role("button", name="모든 설정").click()
-    page.locator('[data-testid="config-category-nav"]').get_by_role("button", name="코딩 에이전트").click()
+    page.locator('[data-testid="config-category-nav"]').get_by_role("button", name="코딩 에이전트 연결", exact=True).click()
     expect(page.get_by_test_id("coding-agents-tab")).to_be_visible(timeout=15000)
     expect(page.get_by_test_id("agent-login-button-codex")).to_be_visible(timeout=15000)
 
@@ -321,7 +321,7 @@ def frames_and_states(browser, base, out: Path):
         page.goto(base + f"/persistent/{SESSION_ID}", wait_until="domcontentloaded")
         expect(page.get_by_test_id("v3-global-toolbar")).to_be_visible(timeout=20000)
         open_settings(page)
-        page.locator('[data-testid="config-category-nav"]').get_by_role("button", name="코딩 에이전트").click()
+        page.locator('[data-testid="config-category-nav"]').get_by_role("button", name="코딩 에이전트 연결", exact=True).click()
         expect(page.get_by_test_id("coding-agents-tab")).to_be_visible(timeout=15000)
         if nodes == "many":
             page.get_by_role("button", name="eias-linegames").first.click()
@@ -373,7 +373,7 @@ def operations(browser, base, out: Path):
     context, page = new_page(browser, base, fake, 1280)
     page.goto(base + f"/persistent/{SESSION_ID}", wait_until="domcontentloaded")
     expect(page.get_by_test_id("v3-global-toolbar")).to_be_visible(timeout=20000)
-    settings_button = page.get_by_role("button", name="서버 설정")
+    settings_button = page.get_by_role("button", name="설정", exact=True)
     settings_button.focus()
     settings_button.press("Enter")
     expect(page.locator(DIALOG)).to_be_visible(timeout=15000)
@@ -381,7 +381,7 @@ def operations(browser, base, out: Path):
     first_focus = active(page)
     inside = page.evaluate("() => !!document.activeElement && !!document.activeElement.closest('[data-slot=\"dialog-popup\"]')")
     check("설정창을 열면 초점이 창 안에 있음", inside, first_focus)
-    page.locator('[data-testid="config-category-nav"]').get_by_role("button", name="코딩 에이전트").click()
+    page.locator('[data-testid="config-category-nav"]').get_by_role("button", name="코딩 에이전트 연결", exact=True).click()
     expect(page.get_by_test_id("agent-login-button-codex")).to_be_visible(timeout=15000)
 
     codex = page.get_by_test_id("agent-login-button-codex")
@@ -461,7 +461,7 @@ def operations(browser, base, out: Path):
     closed = page.locator(DIALOG).count() == 0
     after_dialog = active(page)
     check("설정창 Esc: 창이 닫히고 PAS 창이 그대로임", closed and page.url.endswith(f"/persistent/{SESSION_ID}"), {"closed": closed, "focus": after_dialog})
-    DIALOGS.append(("설정창(ConfigModal)", "PAS 창 툴바의 「서버 설정」(Enter)", first_focus + "(창 안)", "탭 단추에서 Enter는 그 탭 열기", "창 닫음, PAS 창 유지", after_dialog))
+    DIALOGS.append(("설정창(ConfigModal)", "PAS 창 툴바의 「설정」(Enter)", first_focus + "(창 안)", "탭 단추에서 Enter는 그 탭 열기", "창 닫음, PAS 창 유지", after_dialog))
     ops("15", "통과", f"설정창 Esc로 창이 닫히고 PAS 창이 그대로. 닫은 뒤 초점은 {after_dialog}")
     context.close()
 

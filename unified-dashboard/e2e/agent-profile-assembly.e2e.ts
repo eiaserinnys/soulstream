@@ -27,7 +27,7 @@ async function open(page: Page, width: number, state = "normal") {
   });
   await page.goto(`/dialogues?sample=settings&assemblyState=${state}`);
   await expect(page.getByRole("dialog")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "에이전트", exact: true }).click();
+  await page.getByRole("button", { name: "에이전트 프로필", exact: true }).click();
   await expect(page.getByTestId("agent-profile-editor")).toBeVisible();
 }
 async function capture(page: Page, width: number, name: string) {
