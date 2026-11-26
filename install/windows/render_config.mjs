@@ -2,7 +2,7 @@
 // With platform "linux" and Linux paths the output is byte for byte what bash writes; the install tests keep it so.
 import { createHash } from 'node:crypto';
 import {
-  chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync,
+  chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { posix, win32 } from 'node:path';
 import { PAS_DISALLOWED_TOOLS } from './pas_disallowed_tools.mjs';
@@ -285,12 +285,20 @@ function linkClaudeMd({ platform, workspace, path, previousAgentsMd }) {
 
 // Copies the bundled skill scripts into the shared folder. Files the user added there are kept; files with the same
 // path as a bundled file are replaced on every run.
+function copyTree(source, target, path) {
+  mkdirSync(target, { recursive: true });
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    const from = path.join(source, entry.name);
+    const to = path.join(target, entry.name);
+    if (entry.isDirectory()) copyTree(from, to, path);
+    else copyFileSync(from, to);
+  }
+}
+
 function syncCommonFiles(root, path) {
   const source = path.join(root, 'install', 'common-files');
   if (!existsSync(source)) throw new Error(`Missing bundled skill scripts: ${source}`);
-  const target = path.join(root, '.local', 'agent-common');
-  mkdirSync(target, { recursive: true });
-  cpSync(source, target, { recursive: true, force: true });
+  copyTree(source, path.join(root, '.local', 'agent-common'), path);
 }
 
 /**

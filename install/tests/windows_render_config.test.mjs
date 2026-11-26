@@ -155,3 +155,19 @@ test('the win32 render writes the bundle folder next to the other state folders'
   });
   assert.ok(worker.includes(`AGENT_COMMON_FILES_DIR=${root}\\.local\\agent-common`));
 });
+
+test('the render and the bundle copy work under a root path with spaces and Hangul', () => {
+  const dir = mkdtempSync(join(tmpdir(), '소울 스트림 시험 ')), home = join(dir, 'home dir'), root = join(home, '소울 스트림 시험', 'soulstream');
+  try {
+    copyCatalog(root);
+    copyCommonFiles(root);
+    mkdirSync(join(root, 'config'), { recursive: true });
+    writeFileSync(join(root, 'config', '.atom-seed-map.json'), JSON.stringify(SEED_MAP));
+    writeFileSync(join(root, '.atom-api-key'), 'test-atom-api-key\n');
+    renderConfig({ platform: 'linux', home, root, backends: ['claude'], ports: PORTS, secrets: { bearer: 'b', jwt: 'j', dbPassword: 'd', adminPassword: 'adminpass1' } });
+    const bundleDir = join(root, '.local', 'agent-common');
+    assert.equal(envValue(join(root, '.env.soul-server-ts'), 'AGENT_COMMON_FILES_DIR'), bundleDir);
+    assert.ok(readFileSync(join(bundleDir, 'skills', 'html-make', 'scripts', 'check-ui-css.mjs')).equals(readFileSync(resolve('scripts/check-ui-css.mjs'))));
+    assert.ok(existsSync(join(bundleDir, 'skills', 'html-make', 'scripts', 'ui-css-check.config.json')));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

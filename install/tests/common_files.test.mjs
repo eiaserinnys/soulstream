@@ -1,10 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { scratchPaths, scratchSubpath } from '../common-files/lib/scratch_workspace.mjs';
 
 const BUNDLE = resolve('install/common-files');
 const CHECKER = join(BUNDLE, 'skills/html-make/scripts/check-ui-css.mjs');
@@ -37,17 +36,4 @@ test('the bundled CSS checker passes tokenized CSS and reports literals outside 
     assert.match(failed.stdout, /color-literal style\.css/);
     assert.match(failed.stdout, /spacing-literal style\.css/);
   } finally { rmSync(clean, { recursive: true, force: true }); rmSync(dirty, { recursive: true, force: true }); }
-});
-
-test('scratch_workspace resolves .local/tmp and .local/artifacts and refuses paths that leave them', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'scratch-'));
-  try {
-    mkdirSync(join(dir, 'cwd'));
-    assert.deepEqual(scratchPaths({ SCRATCH_WORKSPACE_DIR: dir }, '/elsewhere'), { root: dir, tmp: join(dir, '.local', 'tmp'), artifacts: join(dir, '.local', 'artifacts') });
-    assert.equal(scratchPaths({}, join(dir, 'cwd')).root, join(dir, 'cwd'));
-    assert.equal(scratchPaths({ SCRATCH_WORKSPACE_DIR: '  ' }, join(dir, 'cwd')).root, join(dir, 'cwd'));
-    assert.equal(scratchSubpath('tmp', 'job/run.mjs', { SCRATCH_WORKSPACE_DIR: dir }), join(dir, '.local', 'tmp', 'job', 'run.mjs'));
-    assert.throws(() => scratchSubpath('artifacts', '../outside', { SCRATCH_WORKSPACE_DIR: dir }), /escapes/);
-    assert.throws(() => scratchSubpath('other', 'x', { SCRATCH_WORKSPACE_DIR: dir }), /kind/);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

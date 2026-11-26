@@ -4,7 +4,6 @@
 
 ## 들어 있는 것
 
-- `lib/scratch_workspace.mjs`: `$SCRATCH_WORKSPACE_DIR`(없으면 현재 폴더) 기준 `.local/tmp`와 `.local/artifacts` 경로를 계산하는 헬퍼.
 - `skills/html-make/scripts/check-ui-css.mjs`: HTML 문서용 CSS 검사기. 저장소의 `scripts/check-ui-css.mjs`와 같은 파일이다.
 - `skills/html-make/scripts/ui-css-check.config.json`: 검사 기준 설정.
 

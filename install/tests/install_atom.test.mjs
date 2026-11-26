@@ -513,7 +513,7 @@ test('render_config points the worker at the skill script bundle, syncs it and k
     assert.equal(env(join(t.root, '.env.orch')).AGENT_COMMON_FILES_DIR, undefined);
     const checker = join(bundleDir, 'skills', 'html-make', 'scripts', 'check-ui-css.mjs');
     assert.ok(readFileSync(checker).equals(readFileSync(resolve('scripts/check-ui-css.mjs'))));
-    assert.ok(existsSync(join(bundleDir, 'lib', 'scratch_workspace.mjs')));
+    assert.ok(existsSync(join(bundleDir, 'skills', 'html-make', 'scripts', 'ui-css-check.config.json')));
     for (const dir of ['.projects', '.local/tmp', '.local/artifacts']) assert.ok(statSync(join(t.home, 'workspace', dir)).isDirectory(), dir);
 
     mkdirSync(join(bundleDir, 'skills', 'my-custom'), { recursive: true });
