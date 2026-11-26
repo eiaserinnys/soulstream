@@ -85,9 +85,9 @@ type PagedCardFixture = {
 async function seedPagedCards(rows: readonly PagedCardFixture[]) {
   await h.sql`DELETE FROM cards WHERE id LIKE 'paged-%'`;
   for (const row of rows)
-    await h.sql`INSERT INTO cards(id,folder_id,title,request,position_key,status,updated_at,number)
+    await h.sql`INSERT INTO cards(id,folder_id,title,request,position_key,status,updated_at,status_changed_at,number)
       VALUES (${row.id},'public',${row.title},${row.request ?? row.title},${row.id},${row.status},
-        ${row.updatedAt}::timestamptz,${row.number ?? null})`;
+        ${row.updatedAt}::timestamptz,${row.updatedAt}::timestamptz,${row.number ?? null})`;
 }
 
 it('pages active cards in status-group order and excludes closed cards when includeClosed=false', async () => {
@@ -134,7 +134,7 @@ it('traverses every card without duplicates or gaps in status-group and update o
     AND (strpos(lower(title),'pagedpage') > 0 OR strpos(lower(request),'pagedpage') > 0 OR strpos('#' || COALESCE(number::text,''),'pagedpage') > 0)
     ORDER BY CASE status WHEN 'todo' THEN 1 WHEN 'queued' THEN 2 WHEN 'running' THEN 3 WHEN 'blocked' THEN 4
       WHEN 'review' THEN 5 WHEN 'on_hold' THEN 6 WHEN 'done' THEN 7 WHEN 'cancelled' THEN 8 ELSE 9 END,
-      updated_at DESC, id COLLATE "C" DESC`;
+      status_changed_at DESC, id COLLATE "C" DESC`;
   expect(ids).toEqual(expected.map(row=>row.id));
   expect(ids).toHaveLength(11);
   expect(new Set(ids).size).toBe(ids.length);

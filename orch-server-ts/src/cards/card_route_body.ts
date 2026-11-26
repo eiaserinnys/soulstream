@@ -57,7 +57,7 @@ export async function listCardRouteBody(options: CardRouteBodyOptions, input: un
       includeClosed: query.includeClosed, allowedFolderIds, q: query.q, limit: query.limit, after: query.pagedAfter });
     return { cards: page.cards.map(serializeCardRow), nextCursor: page.nextCursor };
   }
-  const cards = await service.listCards({ ...query, allowedFolderIds });
+  const cards = await service.listCards({ ...query, allowedFolderIds, order: "status_changed" });
   return { cards: (await service.projectCards(cards,allowedFolderIds)).map(serializeCardRow) };
 }
 

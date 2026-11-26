@@ -26,20 +26,21 @@ test('작업 목록은 여섯 활성 상태만 보드 순서와 보드 라벨로
   ]);
 });
 
-test('그룹 안은 queued positionKey, 나머지 positionKey의 사전식 순서다', () => {
+test('그룹 안은 queued만 queuePositionKey 오름차순, 나머지는 상태 변경 시각 내림차순이다', () => {
+  const at = (day: string) => `2026-10-${day}T00:00:00Z`;
   const cards = [
-    cardFixture({ id: 'todo-b', status: 'todo', positionKey: 'b' }),
-    cardFixture({ id: 'todo-a', status: 'todo', positionKey: 'a' }),
-    cardFixture({ id: 'queued-b', status: 'queued', positionKey: 'a', queuePositionKey: 'b' }),
-    cardFixture({ id: 'queued-a', status: 'queued', positionKey: 'z', queuePositionKey: 'a' }),
-    cardFixture({ id: 'running-b', status: 'running', positionKey: 'b' }),
-    cardFixture({ id: 'running-a', status: 'running', positionKey: 'a' }),
+    cardFixture({ id: 'todo-old', status: 'todo', positionKey: 'a', statusChangedAt: at('01') }),
+    cardFixture({ id: 'todo-new', status: 'todo', positionKey: 'b', statusChangedAt: at('05') }),
+    cardFixture({ id: 'queued-b', status: 'queued', positionKey: 'a', queuePositionKey: 'b', statusChangedAt: at('09') }),
+    cardFixture({ id: 'queued-a', status: 'queued', positionKey: 'z', queuePositionKey: 'a', statusChangedAt: at('02') }),
+    cardFixture({ id: 'running-old', status: 'running', positionKey: 'a', statusChangedAt: at('03') }),
+    cardFixture({ id: 'running-new', status: 'running', positionKey: 'b', statusChangedAt: at('04') }),
   ];
 
   const groups = groupPersistentSessionTasks(cards);
-  expect(groups.find((group) => group.status === 'running')?.cards.map((card) => card.id)).toEqual(['running-a', 'running-b']);
+  expect(groups.find((group) => group.status === 'running')?.cards.map((card) => card.id)).toEqual(['running-new', 'running-old']);
   expect(groups.find((group) => group.status === 'queued')?.cards.map((card) => card.id)).toEqual(['queued-a', 'queued-b']);
-  expect(groups.find((group) => group.status === 'todo')?.cards.map((card) => card.id)).toEqual(['todo-a', 'todo-b']);
+  expect(groups.find((group) => group.status === 'todo')?.cards.map((card) => card.id)).toEqual(['todo-new', 'todo-old']);
 });
 
 test('빈 그룹은 결과에서 생략된다', () => {

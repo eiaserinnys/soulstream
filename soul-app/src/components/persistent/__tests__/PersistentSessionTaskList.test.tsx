@@ -95,7 +95,7 @@ test('한 목록의 가장 긴 카드 번호가 모든 요약 행의 번호 폭�
 });
 
 test('세 자리 번호만 있는 목록은 세 자리 번호 폭을 유지한다', async () => {
-  const cards = [412, 415].map((number) => cardFixture({ id: `number-${number}`, number, status: 'running' }));
+  const cards = [412, 415].map((number, index) => cardFixture({ id: `number-${number}`, number, status: 'running', statusChangedAt: `2026-09-30T00:0${1 - index}:00Z` }));
   const screen = render(<PersistentSessionTaskList api={{ listCards: jest.fn().mockResolvedValue({ cards }) } as any}
     onOpenCard={jest.fn()} />);
 

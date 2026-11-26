@@ -1,4 +1,5 @@
 import {CardCreateDialog} from "./CardCreateDialog";
+import {compareStatusChange} from "@seosoyoung/soul-ui/cards/card-order";
 import { useState } from "react";
 import { DashboardIconCap, FrameLoading, type CatalogFolder } from "@seosoyoung/soul-ui";
 import { V3ErrorNotice } from "./V3ErrorNotice";
@@ -14,7 +15,7 @@ export function FolderCardSection({folderId,folders=[],placement="inline"}:{fold
  const [board,setBoard]=useState(true),[includeCompleted,setIncludeCompleted]=useState(false);
  const membership=useCardMembership(folderId,createdIds);
  const completed=useCompletedCards(folderId,includeCompleted);
- const cards=[...membership.cards,...completed.cards].filter(c=>!c.archived).sort((a,b)=>a.positionKey<b.positionKey?-1:a.positionKey>b.positionKey?1:0);
+ const cards=[...membership.cards,...completed.cards].filter(c=>!c.archived).sort(compareStatusChange);
  const doneCount=cards.filter(card=>card.status==="done").length;
  const visibleCards=cards.filter(card=>includeCompleted||(card.status!=="done"&&(!board||card.status!=="cancelled")));
  const placeholder=membership.loading?(membership.error?null:<FrameLoading inline label="카드를 불러오는 중…"/>):undefined;

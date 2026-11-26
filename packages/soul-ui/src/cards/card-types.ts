@@ -43,7 +43,7 @@ export interface CardRow {
   assigneeAgentId: string | null; assigneeUserId: string | null; assigneeSessionId: string | null;
   assigneeAgent?: CardAssigneeAgent | null;
   nodeId: string | null; modelPreset: string | null; version: number; archived: boolean;
-  createdAt: string; updatedAt: string;
+  createdAt: string; updatedAt: string; statusChangedAt?: string;
   completedAt?: string | null;
   /** 사용자가 답변을 미뤄 둔 시각(ISO). 없거나 null이면 미루지 않았다. 서버 단위가 더하기 전 응답에는 없다. */
   snoozedUntil?: string | null;

@@ -1,6 +1,7 @@
 import type { CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { Button, DisclosureActionIcon, FrameLoading } from "@seosoyoung/soul-ui";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
+import { sortCardsInStatus } from "@seosoyoung/soul-ui/cards/card-order";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { useEffect, useState, type CSSProperties, type ReactElement, type RefObject } from "react";
 import { cardStatusLabel } from "./CardActions";
@@ -140,11 +141,7 @@ function readCollapsedTaskGroups(): TaskStatus[] {
 /** Applies the whole-board status order and position ordering to shared card membership. */
 export function groupPersistentSessionTasks(cards: readonly CardRow[]): PersistentSessionTaskGroup[] {
   return TASK_STATUSES.flatMap(status => {
-    const matching = cards.filter(card => card.status === status).sort((left, right) => {
-      const leftKey = status === "queued" ? left.queuePositionKey ?? "" : left.positionKey;
-      const rightKey = status === "queued" ? right.queuePositionKey ?? "" : right.positionKey;
-      return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
-    });
+    const matching = sortCardsInStatus(cards.filter(card => card.status === status));
     if (matching.length === 0) return [];
     return [{ status, label: cardStatusLabel({ ...matching[0], blockedKind: null }), cards: matching }];
   });

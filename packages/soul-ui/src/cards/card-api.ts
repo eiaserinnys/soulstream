@@ -1,5 +1,6 @@
 import {orchestratorFetch} from "../lib/orchestrator-connection";
 import type { CardAssignment, CardRow } from "./card-types";
+import { sortByStatusChange, sortCardsInStatus } from "./card-order";
 export class CardApiError extends Error { constructor(message: string, readonly status: number, readonly code?:string) { super(message); } }
 async function sendCardRequest<T>(path: string, method: string, body?: object, signal?: AbortSignal): Promise<T> {
   const response = await orchestratorFetch(fetch,path, { method, credentials: "same-origin", headers: { Accept: "application/json", ...(body ? { "Content-Type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), ...(signal ? { signal } : {}) });
@@ -55,11 +56,11 @@ export function createCardInput(request: string, selection: CardAssignment, idem
     assignee: { kind: "agent" as const, agentId: selection.agentId }, nodeId: selection.nodeId,
     modelPreset: selection.modelPreset || null, queue: true, idempotencyKey };
 }
-export function groupCards<T extends { status: string; archived?: boolean; queuePositionKey?: string | null }>(cards: readonly T[]) {
+export function groupCards<T extends { id: string; status: string; updatedAt: string; statusChangedAt?: string | null; archived?: boolean; queuePositionKey?: string | null }>(cards: readonly T[]) {
   const visible = cards.filter(c => !c.archived);
-  return { attention: visible.filter(c => c.status === "review" || c.status === "blocked"),
-    running: visible.filter(c => c.status === "running"),
-    queued: visible.filter(c => c.status === "queued").sort((a,b) => (a.queuePositionKey ?? "") < (b.queuePositionKey ?? "") ? -1 : (a.queuePositionKey ?? "") > (b.queuePositionKey ?? "") ? 1 : 0) };
+  return { attention: sortByStatusChange(visible.filter(c => c.status === "review" || c.status === "blocked")),
+    running: sortByStatusChange(visible.filter(c => c.status === "running")),
+    queued: sortCardsInStatus(visible.filter(c => c.status === "queued")) };
 }
 export function queueAfterId(ids: readonly string[], movedId: string) { return ids[ids.indexOf(movedId) - 1] ?? null; }
 export const cardPath = (id: string) => `/api/cards/${encodeURIComponent(id)}`;
