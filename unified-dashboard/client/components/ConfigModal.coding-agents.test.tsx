@@ -28,6 +28,7 @@ vi.mock("../hooks/useConfigSettings", () => ({
   useConfigSettings: () => ({ categories: [], formData: {}, loading: false, saving: false, error: null, result: null, changedKeys: [], hasChanges: false, updateField: vi.fn(), save: vi.fn() }),
 }));
 vi.mock("./CodingAgentsTab", () => ({ CodingAgentsTab: () => <div data-testid="coding-agents-stub" /> }));
+vi.mock("./GitReposTab", () => ({ GitReposTab: () => <div data-testid="git-repos-stub" /> }));
 vi.mock("./PersistentSessionsTab", () => ({
   PersistentSessionsTab: (props: { initialPersistentSessionId?: string | null; onSessionSaved?: unknown }) => (
     <div data-testid="persistent-stub" data-session={props.initialPersistentSessionId ?? ""} data-has-saved={String(typeof props.onSessionSaved === "function")} />
@@ -67,6 +68,19 @@ describe("ConfigModal coding agents tab", () => {
     await act(async () => [...document.body.querySelectorAll<HTMLButtonElement>('[data-testid="config-category-nav"] button')].find((button) => button.textContent === "코딩 에이전트 연결")!.click());
     expect(document.body.querySelector('[data-testid="coding-agents-stub"]')).not.toBeNull();
     expect(document.body.textContent).toContain("노드마다 Claude, Codex, Antigravity 로그인을 연결합니다.");
+  });
+
+  it("puts the Git and repositories tab right after coding agents for administrators only", async () => {
+    await render();
+    const labels = navLabels();
+    expect(labels[labels.indexOf("코딩 에이전트 연결") + 1]).toBe("Git과 저장소");
+    await act(async () => [...document.body.querySelectorAll<HTMLButtonElement>('[data-testid="config-category-nav"] button')].find((button) => button.textContent === "Git과 저장소")!.click());
+    expect(document.body.querySelector('[data-testid="git-repos-stub"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("노드마다 Git 사용자, SSH 키, 저장소를 설정합니다.");
+    auth.isAdmin = false;
+    await render({ initialTab: "git_repos" });
+    expect(navLabels()).not.toContain("Git과 저장소");
+    expect(document.body.querySelector('[data-testid="git-repos-stub"]')).toBeNull();
   });
 
   it("hides the tab from non-administrators and renders nothing for it even if asked to open it", async () => {

@@ -197,7 +197,7 @@ describe("ConfigModal layout", () => {
     expect([...nav!.querySelectorAll("section")].map(section => [...section.querySelectorAll("button")].map(button => button.textContent))).toEqual([
       ["화면과 읽기", "외부 에이전트", "접속 링크", "웹훅"],
       ["영구 에이전트 세션", "영구 세션 기본 모델", "카드 실행", "반복 작업"],
-      ["에이전트 프로필", "MCP", "스킬과 카탈로그", "코딩 에이전트 연결", "노드"],
+      ["에이전트 프로필", "MCP", "스킬과 카탈로그", "코딩 에이전트 연결", "Git과 저장소", "노드"],
       ["세션 통계", "사용 로그", "요청 검수", "사용자", "파일 저장소", "General Settings", "Runtime"],
     ]);
     expect(document.body.querySelector('[data-slot="dialog-description"]')).toBeNull();
