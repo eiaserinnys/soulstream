@@ -31,7 +31,7 @@ import { appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtemp
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createFakeCommands, runBash } from './support/fake_commands.mjs';
-import { copyCatalog } from './support/catalog.mjs';
+import { copyCatalog, copyCommonFiles } from './support/catalog.mjs';
 
 const script = resolve('install/install.sh');
 const fixtures = resolve('install/tests/fixtures/stage1');
@@ -627,6 +627,8 @@ const EXPECTED_PROFILES = `profiles:
 const EXPECTED_AGENTS_MD = `# Soulstream workspace
 
 Use this shared workspace for your work. Create project worktrees under \`.projects/<repository>--<branch>\`.
+Keep temporary scripts in \`.local/tmp\` and work products in \`.local/artifacts\`.
+Scripts of shared and custom skills live under \`$AGENT_COMMON_FILES_DIR/skills/<skill>/\`.
 The \`soulstream\` MCP server provides session and workspace tools.
 The \`atom\` MCP server holds your instructions and skills. Rules live under \`에이전트 > 공통 > rules\` and skills under \`에이전트 > 공통 > skills\`.
 Find skills with \`search_skills\` and read them with \`load_skill\`. Read any other atom node with \`compile_subtree\`.
@@ -641,7 +643,8 @@ function configSetup() {
   mkdirSync(join(root, 'config'), { recursive: true });
   mkdirSync(atomRoot);
   copyCatalog(root);
-  mkdirSync(join(root, 'install'));
+  mkdirSync(join(root, 'install'), { recursive: true });
+  copyCommonFiles(root);
   copyFileSync(stage1Presets, join(root, 'install/stage1-managed-presets.json'));
   writeFileSync(join(root, 'config', '.atom-seed-map.json'), JSON.stringify(MAP));
   writeFileSync(join(root, '.atom-api-key'), `${API_KEY}\n`);

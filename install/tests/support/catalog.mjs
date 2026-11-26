@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 const catalogPath = resolve('packages/model-catalog/data/model-catalog.yaml');
@@ -8,6 +8,10 @@ export function copyCatalog(root) {
   mkdirSync(dirname(target), { recursive: true });
   copyFileSync(catalogPath, target);
   return target;
+}
+
+export function copyCommonFiles(root) {
+  cpSync(resolve('install/common-files'), join(root, 'install/common-files'), { recursive: true });
 }
 
 export function installDefaults() {

@@ -650,6 +650,14 @@ YAML
   done
 }
 
+# Copies the bundled skill scripts into the shared folder. Files the user added there are kept; files with the same
+# path as a bundled file are replaced on every run.
+sync_common_files() {
+  local root=$1 source=$1/install/common-files
+  [[ -d "$source" ]] || { printf 'Missing bundled skill scripts: %s\n' "$source" >&2; return 1; }
+  cp -a "$source/." "$root/.local/agent-common/"
+}
+
 # Uses the secrets chosen by setup_secrets and the database password from it.
 render_config() {
   local home=$1 root=$2 fresh_orch fresh_worker atom_api_key previous_backends work claude
@@ -661,7 +669,8 @@ render_config() {
   MANAGED_CONFIG_WARNINGS=
   read_atom_seed_map "$root/config/.atom-seed-map.json" || return 1
   atom_api_key=$(read_atom_api_key "$root/.atom-api-key") || return 1
-  mkdir -p "$root/config" "$home/workspace/.projects" "$root/.local"
+  mkdir -p "$root/config" "$home/workspace/.projects" "$home/workspace/.local/tmp" "$home/workspace/.local/artifacts" "$root/.local/agent-common"
+  sync_common_files "$root" || return 1
   fresh_orch=$(mktemp) || return 1
   register_temp_file "$fresh_orch"
   fresh_worker=$(mktemp) || { rm -f "$fresh_orch"; return 1; }
@@ -719,6 +728,7 @@ MCP_PATH=/mcp
 MCP_REQUIRE_AUTH=true
 MCP_ALLOWED_HOSTS=localhost,127.0.0.1
 AGENTS_CONFIG_PATH=${root}/config/agents.yaml
+AGENT_COMMON_FILES_DIR=${root}/.local/agent-common
 EVENT_OUTBOX_DIR=${root}/.local/event-outbox
 INCOMING_FILE_DIR=${root}/.local/incoming
 SOUL_RUNNER_PROCESS_ENABLED=true
@@ -736,7 +746,7 @@ ENV
     { ! has_backend claude || printf 'CLAUDE_AUTH_TOKEN_PATH=%s/.claude/.credentials.json\n' "$home" >> "$fresh_worker"; } &&
     { ! has_backend codex || printf 'CODEX_ADAPTER_MODE=app-server\n' >> "$fresh_worker"; } &&
     merge_env "$root/.env.orch" "$fresh_orch" 'ENVIRONMENT HOST PORT DEFAULT_EXECUTION_NODE_ID DEFAULT_PAS_AGENT_ID PERSISTENT_SESSION_BOOTSTRAP DATABASE_URL DASHBOARD_DIR SOULSTREAM_PUBLIC_URL CORS_ALLOWED_ORIGINS AUTH_BEARER_TOKEN JWT_SECRET DASHBOARD_ADMIN_PASSWORD TAILSCALE_AUTH_ENABLED TAILSCALE_ALLOWED_LOGIN ATOM_ENABLED ATOM_SERVER_URL ATOM_PUBLIC_URL ATOM_API_KEY SKILL_CATALOG_NODE_ID DOMAIN_CATALOG_NODE_ID AGY_CLI_PATH' &&
-    merge_env "$root/.env.soul-server-ts" "$fresh_worker" 'ENVIRONMENT SOULSTREAM_NODE_ID SOULSTREAM_UPSTREAM_URL SOULSTREAM_BACKENDS AUTH_BEARER_TOKEN JWT_SECRET PORTABLE_LOCAL_MCP_AUTHORIZATION HOST PORT MCP_INTERNAL_PORT MCP_ENABLED MCP_PATH MCP_REQUIRE_AUTH MCP_ALLOWED_HOSTS AGENTS_CONFIG_PATH EVENT_OUTBOX_DIR INCOMING_FILE_DIR SOUL_RUNNER_PROCESS_ENABLED SOUL_RUNNER_STATE_DIR SOUL_RUNNER_ARTIFACT_DIR SOUL_RUNNER_RELEASES_DIR WORKTREE_MCP_ENABLED WORKTREE_PROJECTS_ROOT SESSION_ISOLATION_MODE CLAUDE_ACCOUNT_POOL_ENABLED ATOM_ENABLED ATOM_SERVER_URL ATOM_API_KEY CLAUDE_AUTH_TOKEN_PATH CODEX_ADAPTER_MODE CLAUDE_CODE_EXECPATH CODEX_CLI_PATH AGY_CLI_PATH DISABLE_AUTOUPDATER'
+    merge_env "$root/.env.soul-server-ts" "$fresh_worker" 'ENVIRONMENT SOULSTREAM_NODE_ID SOULSTREAM_UPSTREAM_URL SOULSTREAM_BACKENDS AUTH_BEARER_TOKEN JWT_SECRET PORTABLE_LOCAL_MCP_AUTHORIZATION HOST PORT MCP_INTERNAL_PORT MCP_ENABLED MCP_PATH MCP_REQUIRE_AUTH MCP_ALLOWED_HOSTS AGENTS_CONFIG_PATH AGENT_COMMON_FILES_DIR EVENT_OUTBOX_DIR INCOMING_FILE_DIR SOUL_RUNNER_PROCESS_ENABLED SOUL_RUNNER_STATE_DIR SOUL_RUNNER_ARTIFACT_DIR SOUL_RUNNER_RELEASES_DIR WORKTREE_MCP_ENABLED WORKTREE_PROJECTS_ROOT SESSION_ISOLATION_MODE CLAUDE_ACCOUNT_POOL_ENABLED ATOM_ENABLED ATOM_SERVER_URL ATOM_API_KEY CLAUDE_AUTH_TOKEN_PATH CODEX_ADAPTER_MODE CLAUDE_CODE_EXECPATH CODEX_CLI_PATH AGY_CLI_PATH DISABLE_AUTOUPDATER'
   }; then
     rm -f "$fresh_orch" "$fresh_worker"
     return 1
@@ -772,6 +782,8 @@ YAML
 # Soulstream workspace
 
 Use this shared workspace for your work. Create project worktrees under `.projects/<repository>--<branch>`.
+Keep temporary scripts in `.local/tmp` and work products in `.local/artifacts`.
+Scripts of shared and custom skills live under `$AGENT_COMMON_FILES_DIR/skills/<skill>/`.
 The `soulstream` MCP server provides session and workspace tools.
 The `atom` MCP server holds your instructions and skills. Rules live under `에이전트 > 공통 > rules` and skills under `에이전트 > 공통 > skills`.
 Find skills with `search_skills` and read them with `load_skill`. Read any other atom node with `compile_subtree`.
@@ -921,7 +933,7 @@ preflight() {
   fi
 }
 
-install_packages() { export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y sudo tmux curl ca-certificates git jq openssl build-essential python3 postgresql-17; }
+install_packages() { export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y sudo tmux curl ca-certificates git jq openssl build-essential python3 gh postgresql-17; }
 setup_account() {
   id soulstream >/dev/null 2>&1 || useradd -m -d /home/soulstream -s /bin/bash soulstream
   if [[ -f /root/.ssh/authorized_keys && ! -e /home/soulstream/.ssh/authorized_keys ]]; then
@@ -1488,6 +1500,19 @@ UNIT
   systemctl enable soulstream-orch.service soulstream-worker.service
   systemctl restart soulstream-orch.service soulstream-worker.service
 }
+# Registers the paused daily review job once. The server returns the existing job for a repeated key, so a reinstall
+# never overwrites what the user switched on or edited. A refusal (for example no signed-in backend yet) only warns:
+# the job can be created later from the recurring jobs tab.
+register_daily_review_job() {
+  local folder_id body status
+  folder_id=$(curl -fsS "$@" http://127.0.0.1:5200/api/folders | jq -r '[.folders[] | select(.name=="작업실")][0].id') || return 1
+  body=$(jq -n --arg folder "$folder_id" '{idempotencyKey: "clean-install-daily-review", name: "일간 정리", prompt: "daily-review 스킬을 발동하여 지난 하루의 작업을 정리한다.", timezone: "UTC", scheduleExpressions: ["0 9 * * *"], nodeId: "local", agentId: "seosoyoung", modelPreset: null, folderId: $folder, enabled: false}') || return 1
+  status=$(curl -s -o /dev/null -w '%{http_code}' "$@" -X POST -H 'Content-Type: application/json' --data "$body" http://127.0.0.1:5200/api/recurring-jobs)
+  if [[ "$status" != 200 && "$status" != 201 ]]; then
+    printf 'Could not register the daily review recurring job (HTTP %s). Create it later in the recurring jobs settings tab.\n' "$status" >&2
+  fi
+  return 0
+}
 wait_and_create_workspace() {
   local root=$1 header cookie deadline status count
   header=$(mktemp) || return 1
@@ -1508,6 +1533,7 @@ wait_and_create_workspace() {
       curl -fsS -H "@$cookie" -X POST -H 'Content-Type: application/json' --data '{"name":"작업실","idempotencyKey":"clean-install-default-workspace"}' http://127.0.0.1:5200/api/folders >/dev/null
     fi
     curl -fsS -H "@$cookie" http://127.0.0.1:5200/api/folders | jq -e '[.folders[] | select(.name=="작업실")] | length == 1' >/dev/null
+    register_daily_review_job -H "@$cookie" || { rm -f "$header" "$cookie"; return 1; }
     status=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5200/api/folders)
     [[ "$status" == 401 ]]
     status=$(curl -s -o /dev/null -w '%{http_code}' -H "@$cookie" -H 'Tailscale-Funnel-Request: ?1' http://127.0.0.1:5200/api/folders)
@@ -1529,6 +1555,7 @@ wait_and_create_workspace() {
     curl -fsS -b "$cookie" -X POST -H 'Content-Type: application/json' --data '{"name":"작업실","idempotencyKey":"clean-install-default-workspace"}' http://127.0.0.1:5200/api/folders >/dev/null
   fi
   curl -fsS -b "$cookie" http://127.0.0.1:5200/api/folders | jq -e '[.folders[] | select(.name=="작업실")] | length == 1' >/dev/null
+  register_daily_review_job -b "$cookie" || { rm -f "$header" "$cookie"; return 1; }
   status=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5200/api/folders)
   rm -f "$header" "$cookie"
   [[ "$status" == 401 ]]
