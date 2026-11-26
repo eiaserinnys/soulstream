@@ -330,6 +330,7 @@ describe("live execute proxy provider", () => {
         resets_at: null,
         observed_at: null,
         quota_label: null,
+        blocking_quota: null,
       },
     }));
     const harness = createHarness({

@@ -56,7 +56,7 @@ export const clusterTools = {
     } },
   list_node_model_presets: { name: "list_node_model_presets", audience: "all", config: {
       description:
-        "특정 노드가 광고한 모델 preset id와 현재 가용성·사용량 경고를 조회.",
+        "특정 노드가 광고한 모델 preset id와 현재 가용성·사용량 경고를 조회. reason이 quota_exhausted면 포함 한도를 다 쓴 것이다. available은 true로 남지만 추가 과금이나 실패가 날 수 있으니 resets_at 뒤에 쓰거나 다른 모델을 고른다. weekly_headroom.window_remaining_percent는 7일 창의 남은 시간 비율이며 사용량 비율이 아니다(남은 사용량 비율은 remaining_percent). weekly_headroom.blocking_quota는 7일 창이 아닌 적용 한도(월 한도 등)가 바닥났을 때의 { label, resets_at }이고, 아니면 null이다.",
       inputSchema: { node_id: z.string().min(1) },
     } },
   reflect_cluster_brief: { name: "reflect_cluster_brief", audience: "all", config: {

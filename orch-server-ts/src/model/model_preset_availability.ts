@@ -32,6 +32,7 @@ import { supportsClaudeAccountPool } from "../node/registry_helpers.js";
 import {
   resolveWeeklyHeadroom,
   type WeeklyHeadroom,
+  type WeeklyHeadroomBlockingQuota,
 } from "../usage/weekly_headroom.js";
 
 export type StaticModelPreset = {
@@ -303,6 +304,7 @@ export function resolvePresetAvailability(
     ? null
     : nodeUsage?.providers[preset.usage_provider] ?? null;
   const usageStale = nodeUsage === undefined || provider === null || provider.stale;
+  const nowEpochSeconds = now.getTime() / 1_000;
   const weeklyHeadroom = preset.usage_provider === null
     ? null
     : resolveWeeklyHeadroom(
@@ -313,6 +315,12 @@ export function resolvePresetAvailability(
         ) ?? [],
         usageStale,
         now,
+        usageStale
+          ? null
+          : blockingQuota(provider?.quotas.filter((quota) =>
+              normalizedQuotaWindow(quota.window) !== "7일"
+              && isQuotaExhausted(preset, quota, nowEpochSeconds),
+            )[0] ?? null),
       );
   const base = { ...publicPreset(preset), weekly_headroom: weeklyHeadroom };
   if (!preset.available || preset.reason === "env_unresolved") {
@@ -379,12 +387,8 @@ export function resolvePresetAvailability(
     return availablePreset(base, true);
   }
 
-  const nowEpochSeconds = now.getTime() / 1_000;
   const exhausted = provider.quotas.find((quota) =>
-    quota.remainingPercent !== null
-    && quota.remainingPercent <= 0
-    && isQuotaApplicable(preset, quota)
-    && !(quota.resetAt !== null && quota.resetAt < nowEpochSeconds),
+    isQuotaExhausted(preset, quota, nowEpochSeconds),
   );
   if (!exhausted) return availablePreset(base, false);
   return {
@@ -505,6 +509,25 @@ function isQuotaApplicable(
     normalizeModelIdentity(preset.usage_model_id),
     normalizeModelIdentity(quota.model),
   );
+}
+
+function isQuotaExhausted(
+  preset: StaticModelPreset,
+  quota: UsageSummaryQuota,
+  nowEpochSeconds: number,
+): boolean {
+  return quota.remainingPercent !== null
+    && quota.remainingPercent <= 0
+    && isQuotaApplicable(preset, quota)
+    && !(quota.resetAt !== null && quota.resetAt < nowEpochSeconds);
+}
+
+function blockingQuota(quota: UsageSummaryQuota | null): WeeklyHeadroomBlockingQuota | null {
+  if (quota === null) return null;
+  return {
+    label: quotaReasonLabel(quota),
+    resets_at: quota.resetAt === null ? null : new Date(quota.resetAt * 1_000).toISOString(),
+  };
 }
 
 function quotaReasonLabel(quota: UsageSummaryQuota): string {

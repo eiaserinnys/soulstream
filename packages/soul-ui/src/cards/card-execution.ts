@@ -16,7 +16,7 @@ const notify=()=>listeners.forEach(f=>f());
 export function resetCardExecutions(){generation++;for(const attempt of attempts.values()){clearTimeout(attempt.timer);clearTimeout(attempt.timeout);}attempts.clear();states.clear();writes.clear();notify();}
 export function cardExecutionProblem(error:unknown){
   const status=error instanceof CardApiError?error.status:0;
-  return status===401||status===403?"로그인과 카드 접근 권한을 확인해 주세요.":status===409?"카드가 변경되었습니다. 최신 상태를 확인해 주세요.":status===422?"카드를 시작하지 못했습니다. 다시 시도해 주세요.":"연결을 확인한 뒤 다시 시도해 주세요.";
+  return status===401||status===403?"로그인과 카드 접근 권한을 확인해 주세요.":status===409?"카드가 변경되었습니다. 최신 상태를 확인해 주세요.":status===422?(error instanceof CardApiError&&error.serverDetail||"카드를 시작하지 못했습니다. 다시 시도해 주세요."):"연결을 확인한 뒤 다시 시도해 주세요.";
 }
 function observe(id:string,attempt:Attempt,scope:number){
   attempt.timer=setTimeout(()=>{

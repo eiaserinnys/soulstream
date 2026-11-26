@@ -1,16 +1,21 @@
-import {useState} from "react";
+import {useRef,useState} from "react";
 import {DashboardIconCap,type CatalogFolder} from "@seosoyoung/soul-ui";
 import {Pencil} from "lucide-react";
 import type {CardRow} from "@seosoyoung/soul-ui/cards/card-types";
 import {saveCardExecutionSettings,type CardExecutionSettings as Settings} from "@seosoyoung/soul-ui/cards/card-execution";
 import {useCardStore} from "@seosoyoung/soul-ui/cards/card-store";
-import {CardCreateDialog} from "./CardCreateDialog";
+import {CardCreateDialog,CardStartRefusedError} from "./CardCreateDialog";
 export function CardExecutionSettingsDialog({card,folders,onClose,startAfterSave,onSave,onStart,assignment}:{card:CardRow;folders:readonly CatalogFolder[];onClose():void;startAfterSave?:boolean;onSave?(value:Settings,key:string):Promise<CardRow>;onStart?(card:CardRow):Promise<unknown>;assignment?:import("./AgentNodeAssignmentFields").AssignmentData}){
+ const latest=useRef(card);
  return <CardCreateDialog starredFolderIds={assignment?folders.map(f=>f.id):undefined} assignment={assignment} folders={folders} onClose={onClose} executionSettings={{card,startAfterSave,onSave:async(value,key)=>{
-   const saved=onSave?await onSave(value,key):(await saveCardExecutionSettings(card.id,card.version,value,key)).card;
+   const saved=onSave?await onSave(value,key):(await saveCardExecutionSettings(card.id,latest.current.version,value,key)).card;
+   latest.current=saved;
    useCardStore.getState().putCards([saved]);
    useCardStore.getState().markLocalChange(saved.id);
-   if(startAfterSave)await (onStart?onStart(saved):useCardStore.getState().execute(card.id,saved.version));
+   if(startAfterSave){
+    try{await (onStart?onStart(saved):useCardStore.getState().execute(card.id,saved.version));}
+    catch(cause){throw new CardStartRefusedError(cause instanceof Error?cause.message:String(cause));}
+   }
  }}}/>;
 }
 export function CardExecutionSettings({card,folders,onSave,assignment}:{card:CardRow;folders:readonly CatalogFolder[];onSave?(value:Settings,key:string):Promise<CardRow>;assignment?:import("./AgentNodeAssignmentFields").AssignmentData}){

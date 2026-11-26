@@ -130,6 +130,7 @@ describe("resolvePresetAvailability", () => {
         resets_at: null,
         observed_at: null,
         quota_label: null,
+        blocking_quota: null,
       },
     });
   });
@@ -643,6 +644,7 @@ describe("resolvePresetAvailability", () => {
       resets_at: new Date(quotaResetAt * 1_000).toISOString(),
       observed_at: now.toISOString(),
       quota_label: "Fable",
+      blocking_quota: { label: "5시간 사용량 제한", resets_at: new Date((now.getTime() / 1_000 + 60) * 1_000).toISOString() },
     });
   });
 
@@ -1008,6 +1010,7 @@ describe("ModelPresetAvailabilityService limit rejection", () => {
         resets_at: null,
         observed_at: null,
         quota_label: null,
+        blocking_quota: null,
       },
     });
     expect(getClaudePoolAccountsForAvailability).not.toHaveBeenCalled();
@@ -1172,6 +1175,7 @@ function presetAvailability(
       resets_at: null,
       observed_at: now.toISOString(),
       quota_label: "7일",
+      blocking_quota: null,
     },
   };
 }
@@ -1424,6 +1428,37 @@ describe("OpenCode Go preset availability", () => {
       reason_label: "5시간 사용량 제한",
     });
     expect(availability.resets_at).toBe(new Date((weeklyResetAt - 3 * 24 * 60 * 60) * 1_000).toISOString());
+  });
+
+  it("reports an exhausted monthly quota as blocking_quota while the 7-day window stays ok", () => {
+    const monthlyResetAt = weeklyResetAt + 20 * 24 * 60 * 60;
+    const availability = resolvePresetAvailability("node-a", goPreset, goSummary({
+      quotas: [
+        { id: "opencode_go:weekly", label: "7일", window: "7d", model: null, remainingPercent: 82, resetAt: weeklyResetAt },
+        { id: "opencode_go:monthly", label: "월", window: "monthly", model: null, remainingPercent: 0, resetAt: monthlyResetAt },
+      ],
+    }), now);
+
+    expect(availability.weekly_headroom).toMatchObject({
+      status: "ok",
+      remaining_percent: 82,
+      blocking_quota: { label: "월 사용량 제한", resets_at: new Date(monthlyResetAt * 1_000).toISOString() },
+    });
+    expect(availability).toMatchObject({ available: true, reason: "quota_exhausted", reason_label: "월 사용량 제한" });
+  });
+
+  it("leaves blocking_quota null when only the 7-day window is exhausted or the usage is stale", () => {
+    const weeklyOut = resolvePresetAvailability("node-a", goPreset, goSummary({
+      quotas: [{ id: "opencode_go:weekly", label: "7일", window: "7d", model: null, remainingPercent: 0, resetAt: weeklyResetAt }],
+    }), now);
+    expect(weeklyOut.reason).toBe("quota_exhausted");
+    expect(weeklyOut.weekly_headroom?.blocking_quota).toBeNull();
+
+    const stale = resolvePresetAvailability("node-a", goPreset, goSummary({
+      stale: true,
+      quotas: [{ id: "opencode_go:monthly", label: "월", window: "monthly", model: null, remainingPercent: 0, resetAt: weeklyResetAt + 20 * 24 * 60 * 60 }],
+    }), now);
+    expect(stale.weekly_headroom?.blocking_quota).toBeNull();
   });
 
   it("keeps the preset selectable with a warning when the Go usage request failed", () => {

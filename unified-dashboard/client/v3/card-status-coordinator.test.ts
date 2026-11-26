@@ -1,5 +1,8 @@
+/** @vitest-environment jsdom */
+import { createElement, act } from "react";
+import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
-import { performCardTransition } from "./card-status-coordinator";
+import { performCardTransition, useCardStatusCoordinator } from "./card-status-coordinator";
 import { reviewDetail } from "./components-review-fixtures";
 
 describe("shared card transition contract", () => {
@@ -25,5 +28,18 @@ describe("shared card transition contract", () => {
   const control={pending:false,load:vi.fn().mockResolvedValue({...reviewDetail,questions:[]}),change:vi.fn().mockRejectedValue(new Error("version conflict"))};
   await expect(performCardTransition(control,"blocked")).rejects.toThrow("version conflict");
   await expect(performCardTransition(control,"done")).rejects.toThrow("version conflict");
+ });
+ it("closes the menu when asked to, so a modal can take over",async()=>{
+  (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
+  const latest={...reviewDetail,card:{...reviewDetail.card,status:"todo" as const},questions:[]};
+  let state!:ReturnType<typeof useCardStatusCoordinator>;
+  const Probe=()=>{state=useCardStatusCoordinator(latest.card,{pending:false,load:vi.fn().mockResolvedValue(latest),change:vi.fn()});return null;};
+  const host=document.createElement("div"),root=createRoot(host);
+  await act(async()=>root.render(createElement(Probe)));
+  await act(async()=>{await state.request();});
+  expect(state.open).toBe(true);expect(state.detail).toEqual(latest);
+  await act(async()=>state.close());
+  expect(state.open).toBe(false);expect(state.detail).toBeNull();
+  await act(async()=>root.unmount());
  });
 });

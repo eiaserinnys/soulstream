@@ -5,27 +5,53 @@ export const MODEL_PRESET_FETCH_ERROR = "모델 목록을 불러오지 못했습
 const UNAVAILABLE_SELECTION_MESSAGE =
   "선택한 모델을 이 노드에서 사용할 수 없습니다. 모델을 다시 선택해 주세요.";
 
+export const NO_AVAILABLE_MODEL_MESSAGE =
+  "쓸 수 있는 모델이 없습니다. 설정의 「코딩 에이전트 연결」에서 이 노드의 로그인을 확인하세요.";
+
 export function modelPresetOptionLabel(
   preset: ModelPresetAvailability,
   formatResetTime: (value: string) => string | null = localResetTime,
   includeUsageWarning = true,
 ): string {
   if (preset.available) {
-    return `${preset.label}${
-      preset.usage_warning && includeUsageWarning ? " (사용량 확인 지연)" : ""
-    }`;
+    const warning = preset.usage_warning && includeUsageWarning ? " (사용량 확인 지연)" : "";
+    if (preset.reason === "quota_exhausted" && preset.reason_label) {
+      const resetTime = preset.resets_at ? formatResetTime(preset.resets_at) : null;
+      return `${preset.label} (${preset.reason_label}${resetTime ? `, ${resetTime} 해제` : ""})${warning}`;
+    }
+    return `${preset.label}${warning}`;
   }
   const reason = preset.reason_label ? ` (${preset.reason_label})` : "";
   const resetTime = preset.resets_at ? formatResetTime(preset.resets_at) : null;
   return `${preset.label}${reason}${resetTime ? ` · ${resetTime} 해제` : ""}`;
 }
 
-export function modelPresetUnavailableReason(
+/** Reason column text for a row that is blocked or has used up its included quota. */
+export function modelPresetReasonText(
   preset: ModelPresetAvailability,
 ): string | null {
-  if (preset.available || !preset.reason_label) return null;
+  if (!preset.reason_label) return null;
+  if (preset.available && preset.reason !== "quota_exhausted") return null;
   const resetTime = preset.resets_at ? localResetTime(preset.resets_at) : null;
   return `${preset.reason_label}${resetTime ? ` · ${resetTime} 해제` : ""}`;
+}
+
+export function hasNoAvailableModelPreset(
+  catalog: { status: string; presets: readonly ModelPresetAvailability[] },
+): boolean {
+  return catalog.status === "ready" && !catalog.presets.some((preset) => preset.available);
+}
+
+/** Puts the picked agent's backend first and keeps the catalog order inside each group. */
+export function modelPresetsByAgentBackend(
+  presets: readonly ModelPresetAvailability[],
+  agentBackend: string | null | undefined,
+): readonly ModelPresetAvailability[] {
+  if (!agentBackend) return presets;
+  return [
+    ...presets.filter((preset) => preset.backend === agentBackend),
+    ...presets.filter((preset) => preset.backend !== agentBackend),
+  ];
 }
 
 export function modelPresetSelectionState(
