@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
@@ -50,8 +50,16 @@ describe("describeServerCheck", () => {
 });
 
 describe("checkReachability", () => {
+  const fetchMock = vi.fn();
+
   beforeEach(() => {
     invokeMock.mockReset();
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("asks the Rust check_server command with the timeout and resolves when ok", async () => {
@@ -63,6 +71,40 @@ describe("checkReachability", () => {
       url: "http://127.0.0.1:4105",
       timeoutMs: 5000,
     });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("lets the user in when Rust cannot connect but the webview can (OS proxy)", async () => {
+    invokeMock.mockResolvedValue({ kind: "unreachable" });
+    fetchMock.mockResolvedValue({});
+    await expect(
+      checkReachability("https://a.example", 10000),
+    ).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://a.example");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: "HEAD",
+      mode: "no-cors",
+    });
+  });
+
+  it("shows the unreachable message when neither Rust nor the webview can connect", async () => {
+    invokeMock.mockResolvedValue({ kind: "unreachable" });
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    await expect(checkReachability("https://a.example", 10000)).rejects.toThrow(
+      "https://a.example 에 연결할 수 없습니다. 주소와 네트워크를 확인하세요.",
+    );
+  });
+
+  it("does not ask the webview again after http_status or not_soulstream", async () => {
+    fetchMock.mockResolvedValue({});
+    invokeMock.mockResolvedValue({ kind: "http_status", status: 404 });
+    await expect(checkReachability("https://a.example")).rejects.toThrow("404");
+    invokeMock.mockResolvedValue({ kind: "not_soulstream" });
+    await expect(checkReachability("https://a.example")).rejects.toThrow(
+      "소울스트림 서버가 아닙니다",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("rejects with the message for each failed result", async () => {

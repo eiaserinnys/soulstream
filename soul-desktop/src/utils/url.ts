@@ -48,10 +48,36 @@ export function describeError(error: unknown): string {
 }
 
 /**
+ * Whether the webview itself can reach `url`. no-cors HEAD: only network failure is
+ * visible, not the HTTP status. The Rust check does not follow the OS proxy, so this
+ * keeps users behind one from getting worse than before.
+ */
+async function webviewCanReach(url: string, timeoutMs: number): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    await fetch(url, {
+      method: "HEAD",
+      mode: "no-cors",
+      signal: controller.signal,
+    });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
  * Check that `url` is a Soulstream server.
  * The webview cannot read the status of a cross-origin response unless the server's
  * CORS allow-list contains the app origin, so the Rust `check_server` command calls
- * `GET /api/health` and classifies the answer.
+ * `GET /api/health` and classifies the answer. Only when Rust cannot connect
+ * (`unreachable`) the webview gets one more chance with its own no-cors HEAD, and
+ * a success there lets the user in without a server verdict. `http_status` and
+ * `not_soulstream` are answers from a server and are never re-checked.
+ * Worst case wait is 2 x `timeoutMs` (Rust, then webview).
  * @throws ServerCheckError with the user-facing message when the server is not usable
  */
 export async function checkReachability(
@@ -68,6 +94,9 @@ export async function checkReachability(
     throw new ServerCheckError(
       `서버를 확인하지 못했습니다. (${String(error)})`,
     );
+  }
+  if (result.kind === "unreachable" && (await webviewCanReach(url, timeoutMs))) {
+    return;
   }
   const message = describeServerCheck(url, result);
   if (message) throw new ServerCheckError(message);
