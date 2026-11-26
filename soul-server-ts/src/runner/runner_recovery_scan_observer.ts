@@ -20,8 +20,10 @@ export function closedRunnerTailRequiresDrain(registration: RunnerRegistration):
   return status !== "fully_acknowledged" && status !== "empty_prebootstrap";
 }
 
+export const RUNNER_RECOVERY_SCAN_SLOW_MS = 1_000;
+
 export function logRunnerRecoveryScan(
-  logger: Pick<Logger, "info">,
+  logger: Pick<Logger, "info" | "debug">,
   registrations: RunnerRegistration[],
   startedAt: number,
   finishedAt: number,
@@ -35,18 +37,24 @@ export function logRunnerRecoveryScan(
       && isTerminalRunnerExecutionState(registration.lifecycle.execution_state),
   );
   const closedTailDrains = closed.filter(closedRunnerTailRequiresDrain).length;
-  logger.info({
-    durationMs: Math.max(0, finishedAt - startedAt),
+  const durationMs = Math.max(0, finishedAt - startedAt);
+  const summary = {
+    durationMs,
     registrations: registrations.length,
     terminalRegistrations: terminal.length,
     closedRegistrations: closed.length,
     closedTailDrains,
     closedTailSkips: closed.length - closedTailDrains,
+  };
+  const handled = terminal.length > 0 || closed.length > 0;
+  const noteworthy = handled || durationMs >= RUNNER_RECOVERY_SCAN_SLOW_MS;
+  logger[noteworthy ? "info" : "debug"]({
+    ...summary,
     ...(observation ? {
       nodeId: observation.nodeId,
       scanId: observation.scanId,
       phaseDurationsMs: observation.phaseDurationsMs,
-      ...(observation.database ? { database: observation.database } : {}),
+      ...(noteworthy && observation.database ? { database: observation.database } : {}),
       ...(observation.registrationCacheMisses
         ? { registrationCacheMisses: observation.registrationCacheMisses }
         : {}),

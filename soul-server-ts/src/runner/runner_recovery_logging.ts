@@ -12,6 +12,7 @@ import type {
 
 export class RunnerRecoveryLogger {
   private readonly failures = new RunnerRecoveryFailureLogTracker();
+  private readonly missingSessionReported = new Map<string, string | null>();
 
   constructor(private readonly options: {
     logger: Pick<Logger, "error" | "warn">;
@@ -20,10 +21,15 @@ export class RunnerRecoveryLogger {
 
   clear(sessionId: string): void {
     this.failures.clear(sessionId);
+    this.missingSessionReported.delete(sessionId);
   }
 
   prune(registrations: RunnerRegistration[]): void {
     this.failures.prune(registrations);
+    const present = new Set(registrations.map(({ config }) => config.sessionId));
+    for (const sessionId of this.missingSessionReported.keys()) {
+      if (!present.has(sessionId)) this.missingSessionReported.delete(sessionId);
+    }
   }
 
   failure(
@@ -53,13 +59,20 @@ export class RunnerRecoveryLogger {
   hydration(outcome: RunnerRecoveryHydrationOutcome): void {
     const { registration, disposition } = outcome;
     const sessionId = registration.config.sessionId;
-    if (outcome.status === "ready") return;
+    if (outcome.status === "ready") {
+      this.missingSessionReported.delete(sessionId);
+      return;
+    }
     if (outcome.status === "missing") {
-      this.options.logger.warn(
-        { sessionId },
-        "runner registration has no durable session",
-      );
-      this.clear(sessionId);
+      const registrationId = registration.registrationId ?? null;
+      if (this.missingSessionReported.get(sessionId) !== registrationId) {
+        this.options.logger.warn(
+          { sessionId },
+          "runner registration has no durable session",
+        );
+        this.missingSessionReported.set(sessionId, registrationId);
+      }
+      this.failures.clear(sessionId);
       return;
     }
     if (outcome.status === "failed" && !outcome.retryable) {

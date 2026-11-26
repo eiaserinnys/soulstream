@@ -109,6 +109,7 @@ export class AgentProfileSource implements NewSessionAgentProfileSource {
   private refreshInFlight: Promise<void> | null = null;
   private lastRefreshAttemptAtMs: number | null = null;
   private cachedSnapshot: ProfileSnapshot | null = null;
+  private readonly loggedOverrideVersions = new Map<string, RemoteAgentProfile["version"]>();
 
   constructor(private readonly options: AgentProfileSourceOptions) {}
 
@@ -174,7 +175,12 @@ export class AgentProfileSource implements NewSessionAgentProfileSource {
 
   private createSnapshot(overlays: readonly RemoteAgentProfile[]): ProfileSnapshot {
     const yamlProfiles = readAgentsConfig(this.options.agentsConfigPath).agents;
-    const merged = mergeProfiles(yamlProfiles, overlays, this.options.logger);
+    const merged = mergeProfiles(
+      yamlProfiles,
+      overlays,
+      this.options.logger,
+      this.loggedOverrideVersions,
+    );
     const unresolvedProfileIds = new Set<string>();
     const resolved = merged.profiles.map((profile) => {
       try {
@@ -305,6 +311,7 @@ function mergeProfiles(
   yamlProfiles: readonly AgentProfile[],
   overlays: readonly RemoteAgentProfile[],
   logger: Pick<Logger, "info" | "warn">,
+  loggedOverrideVersions: Map<string, RemoteAgentProfile["version"]>,
 ): {
   profiles: AgentProfile[];
   dbIds: Set<string>;
@@ -327,10 +334,13 @@ function mergeProfiles(
     if (!overlay) return profile;
     dbIds.add(profile.id);
     portraits.set(profile.id, overlay.has_portrait);
-    logger.info(
-      { agentId: profile.id, version: overlay.version },
-      "DB agent profile overrides YAML-owned identity fields",
-    );
+    if (loggedOverrideVersions.get(profile.id) !== overlay.version) {
+      loggedOverrideVersions.set(profile.id, overlay.version);
+      logger.info(
+        { agentId: profile.id, version: overlay.version },
+        "DB agent profile overrides YAML-owned identity fields",
+      );
+    }
     const aliases = overlay.aliases.map((alias) =>
       typeof alias === "string" ? { id: alias } : alias);
     const { default_preset: _yamlDefaultPreset, ...base } = profile;
@@ -345,6 +355,9 @@ function mergeProfiles(
       ? merged
       : { ...merged, default_preset: overlay.default_preset };
   });
+  for (const agentId of loggedOverrideVersions.keys()) {
+    if (!dbIds.has(agentId)) loggedOverrideVersions.delete(agentId);
+  }
   return { profiles, dbIds, portraits };
 }
 

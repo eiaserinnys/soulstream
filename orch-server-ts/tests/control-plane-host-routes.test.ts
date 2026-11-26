@@ -720,7 +720,7 @@ describe("control-plane host routes", () => {
           baseUrl: address,
           headers: { authorization: `Bearer ${token}` },
         },
-        logger: { info: vi.fn(), warn: vi.fn() } as never,
+        logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn() } as never,
       }),
     );
     const payload = {

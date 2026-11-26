@@ -256,11 +256,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect(JSON.parse(await readFile(join(stateDirectory, ".registration-scan-cache.json"), "utf8")).entries).toHaveLength(1);
       const second = makeSubject([], RECOVERY_NOW_MS, [], { stateDirectory, scan });
       await second.coordinator.scanOnce();
-      expect(first.logger.info).toHaveBeenCalledWith(
+      expect(first.logger.debug).toHaveBeenCalledWith(
         expect.objectContaining({ registrationCacheMisses: expect.objectContaining({ notCached: 1 }) }),
         "runner recovery scan completed",
       );
-      expect(second.logger.info).toHaveBeenCalledWith(
+      expect(second.logger.debug).toHaveBeenCalledWith(
         expect.objectContaining({ registrationCacheMisses: {
           uncacheable: 0, fingerprintChanged: 0, fullRecheckExpired: 0, notCached: 0,
         } }), "runner recovery scan completed",
@@ -3351,7 +3351,7 @@ describe("RunnerRecoveryCoordinator phase observation", () => {
         },
       },
       scan: async (_stateDirectory, options) => {
-        now += 7;
+        now += 1_007;
         options?.phaseObservation?.runSync("dbRead", {
           sessionId: "session-a",
           databasePath: "/runner/session-a/runner.sqlite",
@@ -3376,9 +3376,37 @@ describe("RunnerRecoveryCoordinator phase observation", () => {
     expect(activeOperations).toBe(0);
     expect(subject.logger.info).toHaveBeenCalledWith(expect.objectContaining({
       nodeId: "node-a",
-      phaseDurationsMs: expect.objectContaining({ registration: 7 }),
+      phaseDurationsMs: expect.objectContaining({ registration: 1_007 }),
       database: expect.objectContaining({ counts: { dbOpen: 0, dbRead: 1, dbClose: 0 } }),
     }), "runner recovery scan completed");
+  });
+
+  it("logs an ordinary scan at debug without the database detail", async () => {
+    let now = 100;
+    const subject = makeSubject([], RECOVERY_NOW_MS, [], {
+      monotonicNow: () => now,
+      scan: async (_stateDirectory, options) => {
+        now += 7;
+        options?.phaseObservation?.runSync("dbRead", {
+          sessionId: "session-a",
+          databasePath: "/runner/session-a/runner.sqlite",
+          label: "test scan read",
+        }, () => {});
+        return { registrations: [], errors: [] };
+      },
+    });
+
+    await subject.coordinator.scanOnce();
+
+    const scanLines = (calls: unknown[][]) =>
+      calls.filter(([, message]) => message === "runner recovery scan completed");
+    expect(scanLines(subject.logger.info.mock.calls)).toHaveLength(0);
+    const context = scanLines(subject.logger.debug.mock.calls)[0]![0];
+    expect(context).toMatchObject({
+      durationMs: 7,
+      phaseDurationsMs: expect.objectContaining({ registration: 7 }),
+    });
+    expect(context).not.toHaveProperty("database");
   });
 
   it("reports registration cache miss reasons in the scan log", async () => {
@@ -3407,7 +3435,7 @@ describe("RunnerRecoveryCoordinator phase observation", () => {
       await subject.coordinator.scanOnce();
       await subject.coordinator.scanOnce();
 
-      const completed = subject.logger.info.mock.calls.filter(
+      const completed = subject.logger.debug.mock.calls.filter(
         ([, message]) => message === "runner recovery scan completed",
       );
       expect(completed).toHaveLength(2);
@@ -4243,6 +4271,27 @@ describe("RunnerRecoveryCoordinator central check card1400 execution boundary", 
 
     expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
     expect(forgetRunnerRecoveryTask).toHaveBeenCalledWith(target);
+  });
+});
+
+describe("runner registration whose session no longer exists", () => {
+  it("keeps a live runner's registration and warns once per registration", async () => {
+    const live = registration({ pidAlive: true, lifecycleState: "running" });
+    const subject = makeSubject([live], RECOVERY_NOW_MS, [], {
+      taskManager: { hydrateRunnerRecoveryTask: async () => null },
+    });
+    const missingWarnings = () => subject.logger.warn.mock.calls.filter(
+      ([, message]) => message === "runner registration has no durable session",
+    );
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.scanOnce();
+
+    expect(missingWarnings()).toHaveLength(1);
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.invalidateRegistration).not.toHaveBeenCalled();
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
   });
 });
 

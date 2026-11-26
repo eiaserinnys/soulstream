@@ -184,12 +184,14 @@ class DefaultNodeStallMonitor implements NodeStallMonitor {
       eventLoopDelayMs,
       activeRunnerOperations: [...this.activeRunnerOperations.values()],
       activeSqliteTransactions: [...this.activeSqliteTransactions.values()],
-      recentSqliteTransactions: [...this.recentSqliteTransactions],
     };
     const threshold = this.options.eventLoopWarningThresholdMs
       ?? EVENT_LOOP_DELAY_WARNING_THRESHOLD_MS;
     if (eventLoopDelayMs.max >= threshold) {
-      this.options.logger.warn(context, "node event loop delay threshold exceeded");
+      this.options.logger.warn(
+        { ...context, recentSqliteTransactions: [...this.recentSqliteTransactions] },
+        "node event loop delay threshold exceeded",
+      );
     } else {
       this.options.logger.info(context, "node event loop delay summary");
     }

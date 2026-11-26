@@ -147,24 +147,6 @@ export async function invalidateRunnerRegistrationIdentity(
   });
 }
 
-export async function retireTerminalRunnerRegistrationIdentity(
-  sessionDirectory: string,
-  expectedRegistrationId: string | null,
-  retiredAt = new Date(),
-): Promise<void> {
-  const current = await readRunnerRegistrationIdentity(sessionDirectory);
-  if (!current) return;
-  if (expectedRegistrationId === null || current.registrationId !== expectedRegistrationId) {
-    throw new Error(`runner registration was superseded before retirement: ${current.sessionId}`);
-  }
-  await writeRunnerRegistrationIdentity(sessionDirectory, {
-    ...current,
-    pid: null,
-    startIdentity: null,
-    retiredAt: retiredAt.toISOString(),
-  });
-}
-
 export async function waitForChildRunnerRegistrationIdentity(
   sessionDirectory: string,
   pending: RunnerRegistrationIdentity,

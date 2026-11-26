@@ -8,6 +8,7 @@ import type { OrchProxyConfig } from "../mcp/runtime.js";
 export type HostClientConfig = { orch: OrchProxyConfig; logger: Logger };
 
 export const ORCH_HOST_REQUEST_TIMEOUT_MS = 10_000;
+const SLOW_HOST_REQUEST_MS = 1_000;
 
 export async function fetchOrchResponse(
   orch: Pick<OrchProxyConfig, "baseUrl" | "headers">,
@@ -406,7 +407,8 @@ export class PersistenceHostTransport {
         { code: hostError?.code },
       );
     }
-    this.config.logger.info(timing, "persistence host request completed");
+    const level = timing.totalDurationMs >= SLOW_HOST_REQUEST_MS ? "info" : "debug";
+    this.config.logger[level](timing, "persistence host request completed");
     return reviveDates(JSON.parse(responseBody)) as T;
   }
 }

@@ -341,11 +341,10 @@ describe("R36 delete_session lifecycle lab", () => {
     }
   });
 
-  it("keeps a missing session with a non-terminal historical lifecycle pid", async () => {
+  it("retires a missing session whose runner is gone but whose lifecycle still reads running", async () => {
     const fixture = await durableMissingSessionFixture("running", () => STARTED_AT);
     const logger = testLogger();
     const taskManager = missingSessionTaskManager();
-    const terminate = vi.spyOn(fixture.spawner, "terminate");
     const coordinator = new RunnerRecoveryCoordinator({
       nodeId: "node-a",
       stateDirectory: fixture.stateDirectory,
@@ -375,12 +374,11 @@ describe("R36 delete_session lifecycle lab", () => {
       await coordinator.scanOnce();
       await coordinator.waitForSettled();
 
-      expect(terminate).not.toHaveBeenCalled();
       expect((await readRunnerRegistrationIdentity(
         fixture.paths.sessionDirectory,
-      ))?.retiredAt).toBeUndefined();
-      expect(logger.warn).toHaveBeenCalledWith(
-        { sessionId: fixture.sessionId },
+      ))?.retiredAt).toBeTruthy();
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        expect.anything(),
         "runner registration has no durable session",
       );
     } finally {

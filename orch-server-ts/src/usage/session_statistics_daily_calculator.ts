@@ -15,9 +15,20 @@ export function statisticsLiveDays(asOf: string): string[] {
   return kstHour < 2 ? [statisticsShiftDay(today, -1), today] : [today];
 }
 
-/** One invocation computes at most one date; no ingestion changes or dependency invalidation. */
+/** Receipts are stamped with the transaction start, so a commit may land this long after its stamp. */
+const RECEIPT_COMMIT_LAG_MS = 5 * 60_000;
+
+/** What the last idle tick saw: the recent-days window and the database clock before it read the facts. */
+export type QuietTickMemory = { window: string; probedAt: Date } | undefined;
+
+/**
+ * One invocation computes at most one date; no ingestion changes or dependency invalidation.
+ * The recent-days max-event scan is skipped while the previous tick found nothing to do and no
+ * receipt of a late event in that window has arrived since.
+ */
 export async function calculateSessionStatisticsDay(repository: SessionStatisticsRepositoryPort,
-  input: SessionStatisticsReadRequest, catalog: ModelCatalogConfig): Promise<boolean> {
+  input: SessionStatisticsReadRequest, catalog: ModelCatalogConfig,
+  quiet: { memory: QuietTickMemory } = { memory: undefined }): Promise<boolean> {
   if (!repository.daily || !repository.readMetadata || !repository.readSlice) return false;
   const daily = repository.daily;
   const readMetadata = repository.readMetadata.bind(repository);
@@ -33,20 +44,26 @@ export async function calculateSessionStatisticsDay(repository: SessionStatistic
     const batches = await daily.load(metadata.range.since, before, SESSION_STATISTICS_DAILY_AGGREGATION_VERSION, []);
     const byDay = new Map(batches.map(batch => [batch.day, batch]));
     const recentSince = statisticsShiftDay(sessionStatisticsDate(input.asOf)!, -7);
-    const maxima = await daily.sourceMax(recentSince, before);
+    const window = `${recentSince}|${before}`;
+    const remembered = quiet.memory?.window === window ? quiet.memory : undefined;
+    const probe = await daily.factsChangedSince(recentSince, before,
+      remembered === undefined ? null : new Date(remembered.probedAt.getTime() - RECEIPT_COMMIT_LAG_MS));
+    quiet.memory = undefined;
+    const maxima = probe.changed ? await daily.sourceMax(recentSince, before) : undefined;
     let selected: string | undefined;
     for (let date = statisticsShiftDay(before, -1); date >= metadata.range.since; date = statisticsShiftDay(date, -1)) {
       const prior = byDay.get(date);
-      if (prior === undefined || (date >= recentSince && BigInt(maxima.get(date) ?? "0") > BigInt(prior.sourceMaxEventId))) {
+      if (prior === undefined || (date >= recentSince && BigInt(maxima?.get(date) ?? "0") > BigInt(prior.sourceMaxEventId))) {
         selected = date;
         break;
       }
     }
     if (selected === undefined) {
+      quiet.memory = { window, probedAt: probe.probedAt };
       computed = await daily.regroupNext?.(metadata.range.since, before, SESSION_STATISTICS_DAILY_AGGREGATION_VERSION) ?? false;
       return;
     }
-    const maximum = selected >= recentSince ? maxima.get(selected) ?? "0"
+    const maximum = selected >= recentSince && maxima !== undefined ? maxima.get(selected) ?? "0"
       : (await daily.sourceMax(selected, statisticsShiftDay(selected, 1))).get(selected) ?? "0";
     const read = await readSlice(globalInput, selected);
     await daily.save(createSessionStatisticsDailyState(read, selected, catalog), maximum);
