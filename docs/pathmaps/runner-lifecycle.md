@@ -56,7 +56,7 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
 ## Antigravity 엔진 선택과 정의 수명 (PR A)
 
-`main.ts`는 프로필과 카탈로그 backend의 합집합으로 CLI 필요 여부를 판정하고 `engine/antigravity_cli_path.ts`가 AGY_CLI_PATH → PATH의 agy → HOME/.local/bin/agy를 파일 검사만으로 해석한다. 미설치는 워커 기동을 막지 않으며 실제 execute에서 명시 오류가 된다. 선택 경로는 composition → `runner_process_runtime_factory.ts` → `runner_process_spawn.ts` → schemaVersion=1 `runner_child_config.ts.antigravityCliPath`로 전달된다. 재기동 spawn도 저장된 경로를 전달한다. 실행 파일 manifest 슬롯은 Claude/Codex 그대로이며 agy 바이너리를 stamp하지 않는다.
+`main.ts`는 프로필과 카탈로그 backend의 합집합으로 CLI 필요 여부를 판정하고 `@soulstream/executable-path`의 `resolveAntigravityCliPath`가 AGY_CLI_PATH → PATH의 agy → HOME/.local/bin/agy를 파일 검사만으로 해석한다. 미설치는 워커 기동을 막지 않으며 실제 execute에서 명시 오류가 된다. 선택 경로는 composition → `runner_process_runtime_factory.ts` → `runner_process_spawn.ts` → schemaVersion=1 `runner_child_config.ts.antigravityCliPath`로 전달된다. 재기동 spawn도 저장된 경로를 전달한다. 실행 파일 manifest 슬롯은 Claude/Codex 그대로이며 agy 바이너리를 stamp하지 않는다.
 
 `runtime/engine_factory.ts`와 `runner_child_engine_factory.ts`는 Antigravity를 명시 선택하고 자식 팩토리는 모르는 backend를 throw한다. `runner_child_runtime_helpers.ts:requiresBackendSessionId`에 Antigravity가 포함되어 init ID가 기존 bootstrap/outbox의 선행 조건이다. 같은 `sessions.claude_session_id`와 bootstrap.backend_session_id가 다음 턴과 워커 교체 뒤 재개 ID를 공급한다.
 
