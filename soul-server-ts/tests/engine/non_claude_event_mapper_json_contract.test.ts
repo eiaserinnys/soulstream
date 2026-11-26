@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  mapAgentsGuardrailError,
-  mapAgentsRunStreamEvent,
-} from "../../src/engine/agents_event_mapper.js";
 import { mapAppServerNotification } from
   "../../src/engine/codex_app_server/event_mapper.js";
 import { mapThreadEvent } from "../../src/engine/codex_event_mapper.js";
@@ -70,13 +66,6 @@ describe("non-Claude mapper runner JSON contract", () => {
 
     expect(events).toEqual([]);
     expect(onUnknownNotification).toHaveBeenCalledWith("future/event");
-  });
-
-  it.each(agentsFixtures)("keeps Agents $name output inside the contract", ({ event }) => {
-    const output = event.kind === "guardrail"
-      ? mapAgentsGuardrailError(event.value)
-      : mapAgentsRunStreamEvent(event.value);
-    assertMapperOutput(output, "Agents");
   });
 });
 
@@ -222,45 +211,3 @@ function appServerItemWithoutId(type: string): Record<string, unknown> {
       throw new Error(`Unhandled app-server item fixture: ${type}`);
   }
 }
-
-const agentsFixtures: Array<{
-  name: string;
-  event: { kind: "stream" | "guardrail"; value: unknown };
-}> = [
-  {
-    name: "agent update",
-    event: { kind: "stream", value: { type: "agent_updated_stream_event", agent: {} } },
-  },
-  {
-    name: "tool approval without agent name",
-    event: {
-      kind: "stream",
-      value: {
-        type: "run_item_stream_event",
-        name: "tool_approval_requested",
-        item: { rawItem: { callId: "approval-1", name: "Bash" } },
-      },
-    },
-  },
-  {
-    name: "tool output",
-    event: {
-      kind: "stream",
-      value: {
-        type: "run_item_stream_event",
-        name: "tool_output",
-        item: { rawItem: { callId: "tool-1" } },
-      },
-    },
-  },
-  {
-    name: "guardrail without output info",
-    event: {
-      kind: "guardrail",
-      value: {
-        name: "InputGuardrailTripwireTriggered",
-        result: { guardrail: {}, output: {} },
-      },
-    },
-  },
-];

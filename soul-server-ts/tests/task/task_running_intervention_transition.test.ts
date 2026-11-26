@@ -72,7 +72,7 @@ describe("RunningInterventionTransition", () => {
     expect(intervene).toHaveBeenCalledOnce();
     expect(injectAtToolBoundary).not.toHaveBeenCalled();
     expect(task.status).toBe("running");
-    expect(resolveTurnLoopTransition(task, { id: "test", name: "시험", backend: "antigravity", workspace_dir: "/tmp/agy" })).toMatchObject({ kind: "continue", prompt: expect.stringContaining("새 정보로 계속") });
+    expect(resolveTurnLoopTransition(task)).toMatchObject({ kind: "continue", prompt: expect.stringContaining("새 정보로 계속") });
   });
   it.each([
     {

@@ -767,7 +767,7 @@ describe("TaskManager.deliverToolApproval", () => {
     markDurablyRunning(task);
     const deliverToolApproval = vi.fn().mockResolvedValue({ status: "delivered" });
     task.runner = createInProcessTaskRunnerRuntime({
-      backendId: "openai-agents",
+      backendId: "codex",
       workspaceDir: "/tmp/agents",
       intervene: async () => ({ status: "not_delivered", mechanism: "unsupported", reason: "not_supported" } as const),
       async *execute(): AsyncIterable<never> {},

@@ -13,11 +13,11 @@ import { resolveTaskBackend } from "../../src/task/task_live_delivery_result.js"
 
 const logger = pino({ level: "silent" });
 
-const openaiAgent: AgentProfile = {
-  id: "openai-agents-default",
-  name: "OpenAI Agents Default",
-  backend: "openai-agents",
-  workspace_dir: "/tmp/openai-agents-default",
+const agentsSdkAgent: AgentProfile = {
+  id: "agents-sdk-default",
+  name: "Agents SDK Default",
+  backend: "codex",
+  workspace_dir: "/tmp/agents-sdk-default",
   agents_sdk: {
     entry_agent: "default",
     agents: [
@@ -34,7 +34,7 @@ function makeTask(params: Partial<Task> = {}): Task {
     agentSessionId: "sess-1",
     prompt: "hi",
     status: "running",
-    profileId: openaiAgent.id,
+    profileId: agentsSdkAgent.id,
     createdAt: new Date("2026-05-23T00:00:00.000Z"),
     lastEventId: 0,
     lastReadEventId: 0,
@@ -50,7 +50,7 @@ function createDeliveryCommands(opts: {
   startNewExecution?: TaskExecutor["startNewExecution"];
 } = {}) {
   const agents = new Map(
-    (opts.agents ?? [openaiAgent]).map((agent) => [agent.id, agent]),
+    (opts.agents ?? [agentsSdkAgent]).map((agent) => [agent.id, agent]),
   );
   const taskManager = {
     deliverInputResponse:
@@ -154,10 +154,10 @@ describe("DeliveryCommands.respond", () => {
 
 describe("DeliveryCommands.toolApproval", () => {
   it("forwards approval options, starts resumed task, and returns tool_approval_ack", async () => {
-    const sessionAgent = { ...openaiAgent, name: "DB Session Agent" };
+    const sessionAgent = { ...agentsSdkAgent, name: "DB Session Agent" };
     const resumedTask = makeTask({
       agentSessionId: "sess-agents",
-      profileId: openaiAgent.id,
+      profileId: agentsSdkAgent.id,
       agentProfileSnapshot: sessionAgent,
     });
     const deliverToolApproval = vi.fn(async (_params, onResume) => {
@@ -225,10 +225,10 @@ describe("DeliveryCommands.toolApproval", () => {
 describe("resolveTaskBackend", () => {
   it("uses the session profile snapshot before the mutable registry", () => {
     const task = makeTask({
-      agentProfileSnapshot: { ...openaiAgent, backend: "codex" },
+      agentProfileSnapshot: { ...agentsSdkAgent, backend: "codex" },
     });
     expect(resolveTaskBackend(task, {
-      get: () => openaiAgent,
+      get: () => agentsSdkAgent,
     })).toBe("codex");
   });
 });

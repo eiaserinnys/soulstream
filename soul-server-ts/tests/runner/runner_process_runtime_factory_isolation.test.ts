@@ -192,10 +192,7 @@ function makeFactory(options: {
     spawner: { adopt: vi.fn(), spawn },
     ...(options.isolationHost ? { isolationHost: options.isolationHost } : {}),
   });
-  const runtime = factory(options.task, options.turnAgent ?? agent, options.backend ?? "claude", {
-    persistRunState: vi.fn(async () => undefined),
-    persistSessionItems: vi.fn(async () => undefined),
-  });
+  const runtime = factory(options.task, options.turnAgent ?? agent, options.backend ?? "claude");
   return { factory, runtime, spawn };
 }
 

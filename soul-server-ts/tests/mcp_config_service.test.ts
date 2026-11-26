@@ -39,7 +39,7 @@ describe("McpConfigService", () => {
     const profile = AgentProfileSchema.parse({
       id: "agents-inline",
       name: "Agents Inline",
-      backend: "openai-agents",
+      backend: "codex",
       workspace_dir: "/tmp/agents",
       agents_sdk: {
         entry_agent: "triage",
@@ -218,7 +218,7 @@ describe("McpConfigService", () => {
     const profile = AgentProfileSchema.parse({
       id: "agents-research",
       name: "Agents Research",
-      backend: "openai-agents",
+      backend: "codex",
       workspace_dir: "/tmp/agents",
       mcp_profile: "research",
       agents_sdk: {
@@ -371,7 +371,7 @@ describe("McpConfigService", () => {
     const profile = AgentProfileSchema.parse({
       id: "agents-research",
       name: "Agents Research",
-      backend: "openai-agents",
+      backend: "codex",
       workspace_dir: "/tmp/agents",
       mcp_profile: "research",
       agents_sdk: {
@@ -423,7 +423,7 @@ describe("McpConfigService", () => {
     const profile = AgentProfileSchema.parse({
       id: "agents-research",
       name: "Agents Research",
-      backend: "openai-agents",
+      backend: "codex",
       workspace_dir: "/tmp/agents",
       mcp_profile: "research",
       agents_sdk: {
@@ -491,7 +491,7 @@ describe("McpConfigService", () => {
     const profile = AgentProfileSchema.parse({
       id: "agents-research",
       name: "Agents Research",
-      backend: "openai-agents",
+      backend: "codex",
       workspace_dir: "/tmp/agents",
       mcp_profile: "research",
       agents_sdk: {

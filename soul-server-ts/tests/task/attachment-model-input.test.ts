@@ -164,12 +164,7 @@ async function collectExecuteParams(
     engine: { backendId: agent.backend, workspaceDir: agent.workspace_dir } as EnginePort,
     dispatcher: { executeFrames } as unknown as TaskRunnerRuntime["dispatcher"],
   } as TaskRunnerRuntime;
-  const turnRunner = new TaskEngineTurnRunner({
-    snapshotPersistence: {
-      persistRunStateSnapshot: vi.fn().mockResolvedValue(undefined),
-      persistSessionItemsSnapshot: vi.fn().mockResolvedValue(undefined),
-    },
-  });
+  const turnRunner = new TaskEngineTurnRunner({});
   for await (const _event of turnRunner.executeTurn({ task, agent, runner, input })) {
     // Drain the real turn boundary.
   }

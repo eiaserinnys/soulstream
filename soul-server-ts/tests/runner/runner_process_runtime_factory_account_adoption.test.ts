@@ -151,10 +151,7 @@ describe("Claude account pool live runner adoption", () => {
       lastReadEventId: 0,
       interventionQueue: [],
     } as Task;
-    const runtime = factory.recover!(task, registration, {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    }, "adopt");
+    const runtime = factory.recover!(task, registration, "adopt");
 
     await expect(runtime.dispatcher.prepareSession(sessionId))
       .rejects.toThrow("stop after host binding restore");
@@ -189,10 +186,7 @@ describe("Claude account pool live runner adoption", () => {
       lastReadEventId: 0,
       interventionQueue: [],
     } as Task;
-    const kimiRuntime = factory.recover!(kimiTask, kimiRegistration, {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    }, "adopt");
+    const kimiRuntime = factory.recover!(kimiTask, kimiRegistration, "adopt");
 
     await expect(kimiRuntime.dispatcher.prepareSession(kimiSessionId))
       .rejects.toThrow("stop after Kimi adoption");
@@ -243,10 +237,7 @@ describe("Claude account pool live runner adoption", () => {
       lastReadEventId: 0,
       interventionQueue: [],
     } as Task;
-    const legacyRuntime = factory.recover!(legacyTask, legacyRegistration, {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    }, "adopt");
+    const legacyRuntime = factory.recover!(legacyTask, legacyRegistration, "adopt");
 
     await expect(legacyRuntime.dispatcher.prepareSession(legacySessionId))
       .rejects.toThrow("stop after old runner adoption");
@@ -266,9 +257,6 @@ describe("Claude account pool live runner adoption", () => {
         exclude_ids: [],
       }],
       correlationId: "host:claude-account-select",
-    }, { agentSessionId: "session-new-runner" } as Task, {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    }, {} as never)).rejects.toThrow("Claude account pool host service is unavailable");
+    }, { agentSessionId: "session-new-runner" } as Task, {} as never)).rejects.toThrow("Claude account pool host service is unavailable");
   });
 });

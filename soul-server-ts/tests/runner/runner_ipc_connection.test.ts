@@ -35,7 +35,7 @@ describe("RunnerIpcConnection", () => {
     // Frozen host_call branch from 8e23da6c: frame_protocol.ts:263-273.
     const legacyHostCall = z.object({
       kind: z.literal("host_call"),
-      service: z.enum(["claude_runtime", "detached_event", "snapshot", "event_archive"]),
+      service: z.enum(["claude_runtime", "detached_event", "event_archive"]),
       operation: z.string().min(1),
       args: z.array(z.json()),
     }).passthrough();
@@ -475,8 +475,8 @@ describe("RunnerIpcConnection", () => {
     expect(runnerConnection.pendingRequestCount).toBe(0);
 
     await expect(client.call(
-      "snapshot",
-      "persistRunState",
+      "detached_event",
+      "publish",
       [{}],
       { timeoutMs: 1_000 },
     )).resolves.toEqual([]);

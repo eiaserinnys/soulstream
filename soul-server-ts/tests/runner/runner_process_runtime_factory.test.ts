@@ -73,10 +73,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       name: "Pool Agent",
       backend: "claude",
       workspace_dir: "/workspace/pool",
-    } as AgentProfile, "claude", {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    });
+    } as AgentProfile, "claude");
 
     await expect(runtime.dispatcher.prepareSession("session-pool"))
       .rejects.toThrow("captured pool runner config");
@@ -134,10 +131,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       lastReadEventId: 0,
       interventionQueue: [],
     } as Task;
-    const runtime = factory(task, agent, "codex", {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    });
+    const runtime = factory(task, agent, "codex");
 
     await expect(runtime.dispatcher.prepareSession("session-pinned"))
       .rejects.toThrow("captured pinned spawn input");
@@ -190,10 +184,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       lastReadEventId: 0,
       interventionQueue: [],
     } as Task;
-    const runtime = factory(task, agent, "opencode", {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    });
+    const runtime = factory(task, agent, "opencode");
 
     await expect(runtime.dispatcher.prepareSession("session-opencode"))
       .rejects.toThrow("captured opencode spawn input");
@@ -249,10 +240,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       operation: "runnerRecovery.scan",
       logger: { warn: vi.fn() },
     });
-    const runtime = factory.recover!(task, registration, {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    }, "adopt", phaseObservation);
+    const runtime = factory.recover!(task, registration, "adopt", phaseObservation);
     expect((runtime.dispatcher as unknown as {
       options: {
         spawn: { codexDetachedResultRetentionMs: number };
@@ -301,10 +289,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       lastReadEventId: 0,
       interventionQueue: [],
     } as Task;
-    const runtime = factory.recover!(task, registration, {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    }, "adopt");
+    const runtime = factory.recover!(task, registration, "adopt");
 
     const failure = await runtime.dispatcher.prepareSession("session-adopt")
       .catch((error: unknown) => error);
@@ -399,10 +384,6 @@ describe("applyRunnerHostCall", () => {
     };
     const options = { claudeAccounts: service } as never;
     const task = { agentSessionId: "session-a" } as Task;
-    const snapshots = {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    };
     const selectInput = {
       session_id: "session-a",
       turn_id: "turn-a",
@@ -415,7 +396,7 @@ describe("applyRunnerHostCall", () => {
       operation: "select",
       args: ["session-a", selectInput],
       correlationId: "host:claude-account-select",
-    }, task, snapshots, options)).resolves.toEqual(account);
+    }, task, options)).resolves.toEqual(account);
     await applyRunnerHostCall({
       service: "claude_accounts",
       operation: "reject",
@@ -427,7 +408,7 @@ describe("applyRunnerHostCall", () => {
         session_id: "session-a",
       }],
       correlationId: "host:claude-account-reject",
-    }, task, snapshots, options);
+    }, task, options);
     const authFailure = {
       account_id: "account-a",
       session_id: "session-a",
@@ -438,18 +419,18 @@ describe("applyRunnerHostCall", () => {
       operation: "reportAuthFailure",
       args: ["session-a", authFailure],
       correlationId: "host:claude-account-auth-failure",
-    }, task, snapshots, options);
+    }, task, options);
     await applyRunnerHostCall({
       service: "claude_accounts",
       operation: "release",
       args: ["session-a", { session_id: "session-a" }],
       correlationId: "host:claude-account-release",
-    }, task, snapshots, options);
+    }, task, options);
     const turnRelease = { session_id: "session-a", account_id: "account-a", turn_id: "turn-a" };
     await applyRunnerHostCall({
       service: "claude_accounts", operation: "release",
       args: ["session-a", turnRelease], correlationId: "host:claude-turn-release",
-    }, task, snapshots, options);
+    }, task, options);
 
     expect(service.select).toHaveBeenCalledWith(selectInput);
     expect(service.reject).toHaveBeenCalledOnce();
@@ -461,13 +442,13 @@ describe("applyRunnerHostCall", () => {
       operation: "select",
       args: ["session-other", { ...selectInput, session_id: "session-other" }],
       correlationId: "host:claude-account-wrong-session",
-    }, task, snapshots, options)).rejects.toThrow("runner host session mismatch");
+    }, task, options)).rejects.toThrow("runner host session mismatch");
     await expect(applyRunnerHostCall({
       service: "claude_accounts",
       operation: "select",
       args: ["session-a", { ...selectInput, session_id: "session-other" }],
       correlationId: "host:claude-account-wrong-payload-session",
-    }, task, snapshots, options)).rejects.toThrow("runner Claude account request session mismatch");
+    }, task, options)).rejects.toThrow("runner Claude account request session mismatch");
   });
 
   it("asks for a restricted credential and substitutes the sandbox config directory", async () => {
@@ -484,10 +465,6 @@ describe("applyRunnerHostCall", () => {
       release: vi.fn(async () => undefined),
     };
     const task = { agentSessionId: "session-a" } as Task;
-    const snapshots = {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    };
     const selectInput = {
       session_id: "session-a",
       turn_id: "turn-a",
@@ -504,7 +481,6 @@ describe("applyRunnerHostCall", () => {
     await expect(applyRunnerHostCall(
       call,
       task,
-      snapshots,
       { claudeAccounts: service } as never,
       undefined,
       { configDirectory: "/sandbox/restricted/claude-config" },
@@ -533,10 +509,6 @@ describe("applyRunnerHostCall", () => {
       release: vi.fn(async () => undefined),
     };
     const task = { agentSessionId: "session-a" } as Task;
-    const snapshots = {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    };
 
     await expect(applyRunnerHostCall({
       service: "claude_accounts",
@@ -548,7 +520,7 @@ describe("applyRunnerHostCall", () => {
         exclude_ids: [],
       }],
       correlationId: "host:restricted-exhausted",
-    }, task, snapshots, { claudeAccounts: service } as never, undefined, {
+    }, task, { claudeAccounts: service } as never, undefined, {
       configDirectory: "/sandbox/restricted/claude-config",
     })).resolves.toEqual(exhausted);
   });
@@ -562,10 +534,6 @@ describe("applyRunnerHostCall", () => {
       release: vi.fn(async () => undefined),
     };
     const task = { agentSessionId: "session-a" } as Task;
-    const snapshots = {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    };
     const selectInput = {
       session_id: "session-a",
       turn_id: "turn-a",
@@ -578,16 +546,12 @@ describe("applyRunnerHostCall", () => {
       operation: "select",
       args: ["session-a", selectInput],
       correlationId: "host:full-select",
-    }, task, snapshots, { claudeAccounts: service } as never)).resolves.toEqual(account);
+    }, task, { claudeAccounts: service } as never)).resolves.toEqual(account);
 
     expect(service.select).toHaveBeenCalledWith(selectInput);
   });
 
   it("threads correlation to the mutating host operations", async () => {
-    const snapshots = {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    };
     const observeClaudeRuntime = vi.fn(async () => true);
     const publishDetachedClaudeEvent = vi.fn(async () => async () => undefined);
     const options = {
@@ -603,16 +567,6 @@ describe("applyRunnerHostCall", () => {
     } as Task;
     const event = { type: "text", text: "hello", timestamp: 1 };
     const calls = [
-      {
-        service: "snapshot" as const,
-        operation: "persistRunState",
-        args: ["session-a", { backendId: "openai-agents", serialized: "state" }],
-      },
-      {
-        service: "snapshot" as const,
-        operation: "persistSessionItems",
-        args: ["session-a", { backendId: "openai-agents", items: [] }],
-      },
       { service: "claude_runtime" as const, operation: "observe", args: ["session-a", event] },
       { service: "detached_event" as const, operation: "publish", args: ["session-a", event] },
     ];
@@ -621,29 +575,20 @@ describe("applyRunnerHostCall", () => {
       await applyRunnerHostCall(
         { ...call, correlationId: `host:${index}` },
         task,
-        snapshots,
         options,
       );
     }
 
-    expect(snapshots.persistRunState).toHaveBeenCalledWith(
-      { backendId: "openai-agents", serialized: "state" },
-      "host:0",
-    );
-    expect(snapshots.persistSessionItems).toHaveBeenCalledWith(
-      { backendId: "openai-agents", items: [] },
-      "host:1",
-    );
     expect(observeClaudeRuntime).toHaveBeenCalledWith(
       "session-a",
       event,
-      "host:2",
+      "host:0",
       expect.objectContaining({
         registrationId: "registration-a",
         executionCommandId: "owner-a",
       }),
     );
-    expect(publishDetachedClaudeEvent).toHaveBeenCalledWith("session-a", event, "host:3");
+    expect(publishDetachedClaudeEvent).toHaveBeenCalledWith("session-a", event, "host:1");
   });
 
   it("registers archived runner output with the active task execution context", async () => {
@@ -681,12 +626,8 @@ describe("applyRunnerHostCall", () => {
       args: ["/incoming/session-a/archive.txt", "archive.txt", "text/plain"],
       correlationId: "host:event-archive",
     } as never;
-    const snapshots = {
-      persistRunState: vi.fn(async () => undefined),
-      persistSessionItems: vi.fn(async () => undefined),
-    };
 
-    await expect(applyRunnerHostCall(call, task, snapshots, options)).resolves.toEqual(descriptor);
+    await expect(applyRunnerHostCall(call, task, options)).resolves.toEqual(descriptor);
     expect(register).toHaveBeenCalledWith(
       {
         local_path: "/incoming/session-a/archive.txt",
@@ -711,7 +652,7 @@ describe("applyRunnerHostCall", () => {
         dispatcher: { activeExecutionCommandId: () => "command-fallback" },
       },
     } as unknown as Task;
-    await applyRunnerHostCall(call, fallbackTask, snapshots, options);
+    await applyRunnerHostCall(call, fallbackTask, options);
     expect(register).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
@@ -728,7 +669,7 @@ describe("applyRunnerHostCall", () => {
       ...task,
       runner: { engine: { workspaceDir: "/workspace/engine" }, dispatcher: { activeExecutionCommandId: () => undefined } },
     } as unknown as Task;
-    await expect(applyRunnerHostCall(call, inactiveTask, snapshots, options))
+    await expect(applyRunnerHostCall(call, inactiveTask, options))
       .rejects.toThrow("ATTACHMENT_ACTIVE_EXECUTION_REQUIRED");
     expect(register).toHaveBeenCalledTimes(2);
   });
@@ -762,10 +703,6 @@ describe("applyRunnerHostCall", () => {
         correlationId: "host:metadata",
       },
       { agentSessionId: "session-a" } as Task,
-      {
-        persistRunState: vi.fn(async () => undefined),
-        persistSessionItems: vi.fn(async () => undefined),
-      },
       {
         observeClaudeRuntime,
       } as never,

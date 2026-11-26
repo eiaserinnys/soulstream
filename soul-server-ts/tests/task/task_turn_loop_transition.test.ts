@@ -8,23 +8,13 @@ import type {
 import { createInProcessTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
 import type { Task } from "../../src/task/task_models.js";
-import {
-  isOpenAiAgentsApprovalPending,
-  resolveTurnLoopTransition,
-} from "../../src/task/task_turn_loop_transition.js";
+import { resolveTurnLoopTransition } from "../../src/task/task_turn_loop_transition.js";
 
 const codexAgent: AgentProfile = {
   id: "codex-default",
   name: "Codex Default",
   backend: "codex",
   workspace_dir: "/tmp/codex-default",
-};
-
-const agentsAgent: AgentProfile = {
-  id: "agent-openai",
-  name: "Agents",
-  backend: "openai-agents",
-  workspace_dir: "/tmp/agents",
 };
 
 function makeTask(overrides: Partial<Task> = {}): Task {
@@ -48,26 +38,11 @@ describe("Task turn loop transition", () => {
       interventionQueue: [{ text: "do not consume", user: "u" }],
     });
 
-    const decision = resolveTurnLoopTransition(task, codexAgent);
+    const decision = resolveTurnLoopTransition(task);
 
     expect(decision).toEqual({ kind: "stop" });
     expect(task.interventionQueue).toHaveLength(1);
     expect(task.status).toBe("interrupted");
-  });
-
-  it("OpenAI Agents pending approval pauses before consuming queued interventions", () => {
-    const task = makeTask({
-      agentsRunState: "state-v1",
-      agentsPendingApprovalId: "approval-1",
-      interventionQueue: [{ text: "wait", user: "u" }],
-    });
-
-    const decision = resolveTurnLoopTransition(task, agentsAgent);
-
-    expect(decision).toEqual({ kind: "awaiting_approval" });
-    expect(task.interventionQueue).toHaveLength(1);
-    expect(task.status).toBe("running");
-    expect(isOpenAiAgentsApprovalPending(task)).toBe(true);
   });
 
   it("foreground pending Claude runtime work pauses completion before consuming queued interventions", () => {
@@ -86,7 +61,7 @@ describe("Task turn loop transition", () => {
       interventionQueue: [{ text: "later", user: "u" }],
     });
 
-    const decision = resolveTurnLoopTransition(task, codexAgent);
+    const decision = resolveTurnLoopTransition(task);
 
     expect(decision).toEqual({ kind: "awaiting_runtime" });
     expect(task.interventionQueue).toHaveLength(1);
@@ -122,7 +97,7 @@ describe("Task turn loop transition", () => {
       },
     });
 
-    const decision = resolveTurnLoopTransition(task, codexAgent);
+    const decision = resolveTurnLoopTransition(task);
 
     expect(decision).toEqual({ kind: "stop" });
     expect(task.status).toBe("completed");
@@ -145,7 +120,7 @@ describe("Task turn loop transition", () => {
       interventionQueue: [{ text: "continue while background runs", user: "u" }],
     });
 
-    const decision = resolveTurnLoopTransition(task, codexAgent);
+    const decision = resolveTurnLoopTransition(task);
 
     expect(decision.kind).toBe("continue");
     if (decision.kind !== "continue") throw new Error("expected continue decision");
@@ -170,7 +145,7 @@ describe("Task turn loop transition", () => {
       },
     });
 
-    const decision = resolveTurnLoopTransition(task, codexAgent);
+    const decision = resolveTurnLoopTransition(task);
 
     expect(decision).toEqual({ kind: "stop" });
     expect(task.status).toBe("completed");
@@ -191,7 +166,7 @@ describe("Task turn loop transition", () => {
       },
     });
 
-    const decision = resolveTurnLoopTransition(task, codexAgent);
+    const decision = resolveTurnLoopTransition(task);
 
     expect(decision).toEqual({ kind: "stop" });
     expect(task.status).toBe("completed");
@@ -212,7 +187,7 @@ describe("Task turn loop transition", () => {
       },
     });
 
-    const decision = resolveTurnLoopTransition(task, codexAgent);
+    const decision = resolveTurnLoopTransition(task);
 
     expect(decision).toEqual({ kind: "stop" });
     expect(task.status).toBe("completed");
@@ -221,7 +196,7 @@ describe("Task turn loop transition", () => {
   it("running task with empty queue marks the task completed and stops", () => {
     const task = makeTask();
 
-    const decision = resolveTurnLoopTransition(task, codexAgent);
+    const decision = resolveTurnLoopTransition(task);
 
     expect(decision).toEqual({ kind: "stop" });
     expect(task.status).toBe("completed");
@@ -240,7 +215,7 @@ describe("Task turn loop transition", () => {
       ],
     });
 
-    const decision = resolveTurnLoopTransition(task, codexAgent);
+    const decision = resolveTurnLoopTransition(task);
 
     expect(decision.kind).toBe("continue");
     if (decision.kind !== "continue") throw new Error("expected continue decision");
@@ -272,7 +247,7 @@ describe("Task turn loop transition", () => {
       ],
     });
 
-    const decision = resolveTurnLoopTransition(task, codexAgent);
+    const decision = resolveTurnLoopTransition(task);
 
     expect(decision.kind).toBe("continue");
     if (decision.kind !== "continue") throw new Error("expected continue decision");

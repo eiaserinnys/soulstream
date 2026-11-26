@@ -13,7 +13,6 @@ import {
   buildDurableRunnerEvent,
   backendSessionRotationEffect,
   isSqliteFullError,
-  requiresBackendSessionId,
   runnerLivenessIntervalMs,
   runnerToolLeaseTransition,
   sessionIdEffect,
@@ -322,7 +321,7 @@ export class RunnerChildRuntime {
           }, "Runner host unavailable; execution remains active");
         }
       }
-      if (requiresBackendSessionId(this.config.backend) && !(await this.outbox.readBootstrap())) {
+      if (!(await this.outbox.readBootstrap())) {
         this.discardPreBootstrapFrames(preBootstrap, "backend_session_id_missing");
         throw new Error(
           `${this.config.backend} execution ended before publishing its backend session ID`,
@@ -358,16 +357,6 @@ export class RunnerChildRuntime {
     frame: RunnerEventFrame,
     preBootstrap: PreBootstrapFrameBuffer,
   ): Promise<void> {
-    if (frame.kind === "run_state_snapshot") {
-      await this.callHostSnapshot("persistRunState", frame.snapshot);
-      this.recordProgress();
-      return;
-    }
-    if (frame.kind === "session_items_snapshot") {
-      await this.callHostSnapshot("persistSessionItems", frame.snapshot);
-      this.recordProgress();
-      return;
-    }
     if (frame.kind === "request") {
       await this.sendRequired(frame);
       this.recordProgress();
@@ -407,7 +396,7 @@ export class RunnerChildRuntime {
     const backendSessionId = sessionEffect?.kind === "set_backend_session_id"
       ? sessionEffect.backend_session_id
       : null;
-    if (!bootstrap && requiresBackendSessionId(this.config.backend)) {
+    if (!bootstrap) {
       if (backendSessionId === null) {
         const frameBytes = Buffer.byteLength(JSON.stringify(frame), "utf8");
         if (preBootstrap.frames.length >= PRE_BOOTSTRAP_EVENT_LIMIT) {
@@ -488,9 +477,6 @@ export class RunnerChildRuntime {
     const bootstrap = await this.outbox.readBootstrap();
     const rolloverFrom = command.params.backendSessionRolloverFrom;
     if (rolloverFrom !== undefined) {
-      if (!requiresBackendSessionId(this.config.backend)) {
-        throw new RunnerExecutionPreparationError("runner backend session rollover requires native session IDs");
-      }
       if (command.params.resumeSessionId !== undefined) {
         throw new RunnerExecutionPreparationError("runner backend session rollover cannot also resume");
       }
@@ -514,10 +500,6 @@ export class RunnerChildRuntime {
     }
     if (command.params.resumeSessionId !== undefined) {
       await this.ensureBootstrap(command.params.resumeSessionId, command.commandId);
-      return;
-    }
-    if (!requiresBackendSessionId(this.config.backend)) {
-      await this.ensureBootstrap(null, command.commandId);
       return;
     }
     this.beginLifecycle(command.commandId);
@@ -574,15 +556,6 @@ export class RunnerChildRuntime {
     }
     buffer.frames.length = 0;
     buffer.bytes = 0;
-  }
-
-  private async callHostSnapshot(operation: string, snapshot: unknown): Promise<void> {
-    const host = new RunnerHostRequestClient(() => this.endpoint.currentConnection);
-    await host.call("snapshot", operation, [this.config.sessionId, snapshot], {
-      timeoutMs: 30_000,
-      attempts: 61,
-      retryDelayMs: 500,
-    });
   }
 
   private async sendBestEffort(frame: RunnerFrame): Promise<void> {

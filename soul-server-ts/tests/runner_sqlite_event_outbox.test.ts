@@ -541,8 +541,8 @@ describe("RunnerSqliteEventOutbox", () => {
 
     await outbox.recordHostCallApplied({
       correlationId: "host-call-a",
-      service: "snapshot",
-      operation: "persistRunState",
+      service: "detached_event",
+      operation: "publish",
       createdAt: "2026-08-11T01:00:00.000Z",
     });
     expect(await outbox.hasPendingDurableWork()).toBe(false);
@@ -1948,15 +1948,15 @@ describe("RunnerSqliteEventOutbox", () => {
 
     await firstHost.recordHostCallApplied({
       correlationId: "host:one",
-      service: "snapshot",
-      operation: "persistRunState",
+      service: "detached_event",
+      operation: "publish",
       createdAt: "2026-08-11T01:00:00.000Z",
     });
 
     await expect(secondHost.readHostCallApplied("host:one")).resolves.toEqual({
       correlationId: "host:one",
-      service: "snapshot",
-      operation: "persistRunState",
+      service: "detached_event",
+      operation: "publish",
     });
     await secondHost.acknowledgeHostCall("host:one");
     await expect(firstHost.readHostCallApplied("host:one")).resolves.toBeNull();
@@ -1970,8 +1970,8 @@ describe("RunnerSqliteEventOutbox", () => {
     const outbox = await createOutbox();
     await outbox.recordHostCallApplied({
       correlationId: "host:orphaned",
-      service: "snapshot",
-      operation: "persistRunState",
+      service: "detached_event",
+      operation: "publish",
       createdAt: "2026-08-11T01:00:00.000Z",
     });
     expect(await outbox.hasPendingDurableWork()).toBe(false);
@@ -2020,12 +2020,12 @@ describe("RunnerSqliteEventOutbox", () => {
     ]);
     await migrated.recordHostCallApplied({
       correlationId: "host:migrated",
-      service: "snapshot",
-      operation: "persistSessionItems",
+      service: "detached_event",
+      operation: "publish",
       createdAt: "2026-08-11T01:00:00.000Z",
     });
     await expect(migrated.readHostCallApplied("host:migrated")).resolves.toMatchObject({
-      operation: "persistSessionItems",
+      operation: "publish",
     });
     migrated.close();
   });

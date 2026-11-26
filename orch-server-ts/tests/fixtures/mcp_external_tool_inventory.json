@@ -3109,7 +3109,6 @@
                   "enum": [
                     "claude",
                     "codex",
-                    "openai-agents",
                     "antigravity",
                     "opencode"
                   ],

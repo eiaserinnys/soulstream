@@ -33,10 +33,6 @@ describe("buildHistoryPageUrl", () => {
       "input_request_responded",
       "tool_approval_requested",
       "tool_approval_resolved",
-      "agent_updated",
-      "handoff_requested",
-      "handoff_occurred",
-      "guardrail_tripwire",
       "away_summary",
     ]);
   });

@@ -19,7 +19,6 @@ import {
   backendSessionRotationEffect,
   buildDurableRunnerEvent,
   isSqliteFullError,
-  requiresBackendSessionId,
   runnerLivenessIntervalMs,
   runnerToolLeaseTransition,
   setRunnerOomScore,
@@ -70,13 +69,6 @@ describe("buildDurableRunnerEvent", () => {
       content: "still working",
       timestamp: 3,
     } as SSEEventPayload)).toBeNull();
-  });
-  it("waits for resume material only on ID-bearing backends", () => {
-    expect(requiresBackendSessionId("claude")).toBe(true);
-    expect(requiresBackendSessionId("codex")).toBe(true);
-    expect(requiresBackendSessionId("antigravity")).toBe(true);
-    expect(requiresBackendSessionId("opencode")).toBe(true);
-    expect(requiresBackendSessionId("openai-agents")).toBe(false);
   });
   it("removes internal dedupe metadata before the durable frame crosses IPC", async () => {
     const event = {
@@ -348,10 +340,14 @@ describe("RunnerChildRuntime startup", () => {
 describe("RunnerChildRuntime execute result delivery", () => {
   it("drains execution frames to the outbox when the host is gone before the execute result is sent", async () => {
     const { runtime, sessionId } = await createRotationRuntime(null, [{
+      type: "session",
+      session_id: "backend-session-host-gone",
+      timestamp: 1,
+    } as SSEEventPayload, {
       type: "assistant_message",
       content: "output after the host disconnected",
       timestamp: 1,
-    } as SSEEventPayload], "openai-agents");
+    } as SSEEventPayload]);
     const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
     const send = vi.fn()
       .mockRejectedValueOnce(new Error("EPIPE"))
@@ -536,19 +532,6 @@ describe("RunnerChildRuntime backend session rotation", () => {
       const event = (await child.outbox.readBatch())?.events[0];
       expect(event?.payload).toMatchObject({ type: "session", session_id: "other-id" });
       expect(event?.session_effect).toBeNull();
-    } finally { await runtime.shutdown(); }
-  });
-
-  it("sets the session ID when bootstrap has none", async () => {
-    const { runtime, sessionId } = await createRotationRuntime(null, [], "openai-agents");
-    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
-    const command = executeCommandFrame("first-turn", { agentSessionId: sessionId, prompt: "hello" });
-    child.activeCommandId = command.commandId;
-    try {
-      await child.prepareExecution(command);
-      expect((await child.outbox.readBootstrap())?.payload.backend_session_id).toBeNull();
-      await child.forwardRunnerFrame(engineEventFrame({ type: "session", session_id: "first-id" }), { frames: [], bytes: 0 });
-      expect((await child.outbox.readBatch())?.events[0]?.session_effect).toEqual({ kind: "set_backend_session_id", backend_session_id: "first-id" });
     } finally { await runtime.shutdown(); }
   });
 

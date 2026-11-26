@@ -73,18 +73,6 @@ const frames: RunnerFrame[] = [
   {
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
     channel: "event",
-    kind: "run_state_snapshot",
-    snapshot: { backendId: "openai-agents", serialized: "state" },
-  },
-  {
-    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-    channel: "event",
-    kind: "session_items_snapshot",
-    snapshot: { backendId: "openai-agents", items: [{ role: "user" }] },
-  },
-  {
-    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-    channel: "event",
     kind: "request",
     correlationId: "request-1",
     request: {

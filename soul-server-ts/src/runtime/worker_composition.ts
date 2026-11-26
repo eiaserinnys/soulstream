@@ -18,8 +18,6 @@ import { SessionMutationHostClient } from "../control_plane/persistence_host_cli
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
 import { PersistentReportHostClient } from "../control_plane/persistent_report_host_client.js";
-import { AnthropicAdapter, OpenAIAdapter } from "../llm/adapters.js";
-import { LlmExecutor } from "../llm/executor.js";
 import { buildOrchProxyConfig } from "../mcp/orch_proxy.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import { subscribeModelCatalogReannounce } from "../model_catalog.js";
@@ -340,27 +338,6 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     broadcaster,
     folderContentHost,
   );
-  const llmAdapters = {
-    ...(env.LLM_OPENAI_API_KEY ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) } : {}),
-    ...(env.LLM_ANTHROPIC_API_KEY
-      ? { anthropic: new AnthropicAdapter(env.LLM_ANTHROPIC_API_KEY) }
-      : {}),
-  };
-  const llmExecutor = Object.keys(llmAdapters).length > 0
-    ? new LlmExecutor({
-        adapters: llmAdapters,
-        taskManager,
-        persistence,
-        broadcaster,
-        nodeId: env.SOULSTREAM_NODE_ID,
-        logger,
-      })
-    : undefined;
-  if (llmExecutor) {
-    logger.info({ providers: Object.keys(llmAdapters) }, "LLM proxy initialized");
-  } else {
-    logger.info("LLM proxy skipped: no provider API keys configured");
-  }
   const mcpRuntime: McpRuntime = {
     ...attachmentRuntime.mcpRuntime,
     persistentReports: new PersistentReportHostClient(orchHostClientDeps),
@@ -404,14 +381,6 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     mcp: buildMcpServerOptions(env, mcpRuntime),
     notificationDlq: { notifications: sessionDeliveryHost.notifications },
     cogito: { runtime: mcpRuntime },
-    llm: llmExecutor
-      ? {
-          executor: llmExecutor,
-          authBearerToken: env.AUTH_BEARER_TOKEN,
-          isProduction: env.ENVIRONMENT === "production",
-          logger,
-        }
-      : undefined,
     boardItem: { service: catalogService, auth: boardYjsAuth },
     markdownDocument: { service: catalogService, auth: boardYjsAuth },
     contextPreview: {

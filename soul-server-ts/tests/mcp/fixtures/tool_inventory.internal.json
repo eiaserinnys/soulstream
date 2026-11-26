@@ -981,7 +981,6 @@
                   "enum": [
                     "claude",
                     "codex",
-                    "openai-agents",
                     "antigravity",
                     "opencode"
                   ],
@@ -5767,7 +5766,6 @@
                   "enum": [
                     "claude",
                     "codex",
-                    "openai-agents",
                     "antigravity",
                     "opencode"
                   ],
@@ -6748,7 +6746,6 @@
                   "enum": [
                     "claude",
                     "codex",
-                    "openai-agents",
                     "antigravity",
                     "opencode"
                   ],
@@ -9558,7 +9555,6 @@
                   "enum": [
                     "claude",
                     "codex",
-                    "openai-agents",
                     "antigravity",
                     "opencode"
                   ],

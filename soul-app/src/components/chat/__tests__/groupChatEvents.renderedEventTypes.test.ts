@@ -27,7 +27,6 @@ describe('RENDERED_EVENT_TYPES', () => {
       'tool_approval_requested',
       'system',
       'realtime_status',
-      'guardrail_tripwire',
       'error',
       'generation_started',
       'report_timeline',
@@ -38,7 +37,7 @@ describe('RENDERED_EVENT_TYPES', () => {
     const rows = groupChatEvents([
       event('1', 'session_ended'),
       event('2', 'session_start'),
-      event('3', 'agent_updated'),
+      event('3', 'tool_approval_resolved'),
       event('4', 'unknown_future_event'),
       event('5', 'complete'),
       event('6', 'context_usage'),

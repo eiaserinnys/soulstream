@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 219개 $defs (top-level wire 108 + supporting/SSE 111). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 215개 $defs (top-level wire 108 + supporting/SSE 107). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -97,10 +97,6 @@
     "input_request_responded",
     "tool_approval_requested",
     "tool_approval_resolved",
-    "agent_updated",
-    "handoff_requested",
-    "handoff_occurred",
-    "guardrail_tripwire",
     "away_summary",
     "credential_alert",
     "realtime_status",
@@ -162,12 +158,8 @@
     "text_snapshot": "transient",
     "tool_start": "durable",
     "tool_result": "durable",
-    "agent_updated": "durable",
-    "handoff_requested": "durable",
-    "handoff_occurred": "durable",
     "tool_approval_requested": "durable",
     "tool_approval_resolved": "durable",
-    "guardrail_tripwire": "durable",
     "realtime_status": "durable",
     "realtime_transcript": "durable",
     "result": "durable",
@@ -739,7 +731,7 @@
               "label": { "type": "string" },
               "backend": {
                 "type": "string",
-                "enum": ["claude", "codex", "openai-agents", "antigravity", "opencode"]
+                "enum": ["claude", "codex", "antigravity", "opencode"]
               },
               "model": {
                 "type": "string",
@@ -1052,12 +1044,8 @@
             { "$ref": "#/$defs/SSEEventTextSnapshot" },
             { "$ref": "#/$defs/SSEEventToolStart" },
             { "$ref": "#/$defs/SSEEventToolResult" },
-            { "$ref": "#/$defs/SSEEventAgentUpdated" },
-            { "$ref": "#/$defs/SSEEventHandoffRequested" },
-            { "$ref": "#/$defs/SSEEventHandoffOccurred" },
             { "$ref": "#/$defs/SSEEventToolApprovalRequested" },
             { "$ref": "#/$defs/SSEEventToolApprovalResolved" },
-            { "$ref": "#/$defs/SSEEventGuardrailTripwire" },
             { "$ref": "#/$defs/SSEEventRealtimeStatus" },
             { "$ref": "#/$defs/SSEEventRealtimeTranscript" },
             { "$ref": "#/$defs/SSEEventResult" },
@@ -3959,7 +3947,7 @@
         "schema_version": { "const": 1 },
         "backend": {
           "type": "string",
-          "enum": ["claude", "codex", "openai-agents", "antigravity", "opencode"]
+          "enum": ["claude", "codex", "antigravity", "opencode"]
         },
         "provider": {
           "type": "string",
@@ -4363,44 +4351,6 @@
         "tool_use_id": { "type": "string" }
       }
     },
-    "SSEEventAgentUpdated": {
-      "type": "object",
-      "description": "SSE: OpenAI Agents SDK active agent 변경.",
-      "required": ["type", "agent_name", "timestamp"],
-      "additionalProperties": true,
-      "properties": {
-        "type": { "const": "agent_updated" },
-        "agent_name": { "type": "string" },
-        "timestamp": { "type": "number" }
-      }
-    },
-    "SSEEventHandoffRequested": {
-      "type": "object",
-      "description": "SSE: OpenAI Agents SDK handoff 요청.",
-      "required": ["type", "source_agent", "target_agent", "timestamp"],
-      "additionalProperties": true,
-      "properties": {
-        "type": { "const": "handoff_requested" },
-        "source_agent": { "type": "string" },
-        "target_agent": { "type": "string" },
-        "tool_use_id": { "type": "string" },
-        "handoff_input": {},
-        "timestamp": { "type": "number" }
-      }
-    },
-    "SSEEventHandoffOccurred": {
-      "type": "object",
-      "description": "SSE: OpenAI Agents SDK handoff 완료.",
-      "required": ["type", "source_agent", "target_agent", "timestamp"],
-      "additionalProperties": true,
-      "properties": {
-        "type": { "const": "handoff_occurred" },
-        "source_agent": { "type": "string" },
-        "target_agent": { "type": "string" },
-        "tool_use_id": { "type": "string" },
-        "timestamp": { "type": "number" }
-      }
-    },
     "SSEEventToolApprovalRequested": {
       "type": "object",
       "description": "SSE: OpenAI Agents SDK tool approval 요청.",
@@ -4428,20 +4378,6 @@
         "approved": { "type": "boolean" },
         "rejected": { "type": "boolean" },
         "message": { "type": "string" },
-        "timestamp": { "type": "number" }
-      }
-    },
-    "SSEEventGuardrailTripwire": {
-      "type": "object",
-      "description": "SSE: OpenAI Agents SDK guardrail tripwire로 run 중단.",
-      "required": ["type", "guardrail_type", "guardrail_name", "message", "timestamp"],
-      "additionalProperties": true,
-      "properties": {
-        "type": { "const": "guardrail_tripwire" },
-        "guardrail_type": { "type": "string" },
-        "guardrail_name": { "type": "string" },
-        "message": { "type": "string" },
-        "output_info": {},
         "timestamp": { "type": "number" }
       }
     },

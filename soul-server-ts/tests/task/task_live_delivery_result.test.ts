@@ -43,7 +43,7 @@ function makeSubject() {
   };
   const agentRegistry = {
     get: vi.fn((id: string) => {
-      if (id === "agent-openai") return { backend: "openai-agents" };
+      if (id === "agent-openai") return { backend: "codex" };
       if (id === "agent-codex") return { backend: "codex" };
       return undefined;
     }),
@@ -147,7 +147,7 @@ describe("TaskLiveDeliveryResult.deliverToolApproval", () => {
   it("delivers to the live engine, publishes the resolved event, and returns eventId", async () => {
     const deliverToolApproval = vi.fn().mockResolvedValue({ status: "delivered" });
     const engine = {
-      ...makeBaseEngine({ backendId: "openai-agents" }),
+      ...makeBaseEngine({ backendId: "codex" }),
       deliverToolApproval,
     } as EnginePort & SupportsToolApproval;
     const task = makeTask({
@@ -184,14 +184,14 @@ describe("TaskLiveDeliveryResult.deliverToolApproval", () => {
 
   it("maps engine failure shapes without publishing response events", async () => {
     const alreadyResolvedEngine = {
-        ...makeBaseEngine({ backendId: "openai-agents" }),
+        ...makeBaseEngine({ backendId: "codex" }),
         deliverToolApproval: vi.fn().mockResolvedValue({
           status: "already_resolved",
           message: "already done",
         }),
       } as EnginePort & SupportsToolApproval;
     const unsupportedEngine = {
-        ...makeBaseEngine({ backendId: "openai-agents" }),
+        ...makeBaseEngine({ backendId: "codex" }),
         deliverToolApproval: vi.fn().mockResolvedValue({ status: "not_supported" }),
       } as EnginePort & SupportsToolApproval;
     const alreadyResolvedTask = makeTask({
@@ -230,7 +230,7 @@ describe("TaskLiveDeliveryResult.deliverToolApproval", () => {
       status: "not_supported",
       approvalId: "approval-2",
       decision: "rejected",
-      backend: "openai-agents",
+      backend: "codex",
     });
     expect(responseEventPublisher.publishToolApprovalResolved).not.toHaveBeenCalled();
   });

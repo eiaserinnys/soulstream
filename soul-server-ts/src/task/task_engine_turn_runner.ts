@@ -3,8 +3,6 @@ import type { ExecutionInputV1, UsageSnapshotV1 } from "@soulstream/wire-schema"
 import type { UsageStatsProvider } from "@soulstream/wire-schema/session-statistics";
 import type {
   EngineExecuteParams,
-  EngineRunStateSnapshot,
-  EngineSessionItemsSnapshot,
   ScheduleToolUseHandler,
   SSEEventPayload,
   TurnOrigin,
@@ -51,15 +49,9 @@ export interface TaskEngineTurnInput {
 }
 
 export interface TaskEngineTurnRunnerDeps {
-  snapshotPersistence: TaskAgentsSnapshotPersistencePort;
   scheduleToolHandler?: ScheduleToolUseHandler;
   modelCatalog?: Pick<ModelCatalog, "resolve" | "snapshot">;
   claudeAccountPoolEnabled?: boolean;
-}
-
-export interface TaskAgentsSnapshotPersistencePort {
-  persistRunStateSnapshot(task: Task, snapshot: EngineRunStateSnapshot): Promise<void>;
-  persistSessionItemsSnapshot(task: Task, snapshot: EngineSessionItemsSnapshot): Promise<void>;
 }
 
 export interface TaskEngineTurnRunnerParams {
@@ -404,7 +396,6 @@ export class TaskEngineTurnRunner {
     return consumeRunnerFrames(frames, {
       task,
       runnerCommandDispatcher: dispatcher,
-      snapshotPersistence: this.deps.snapshotPersistence,
       scheduleToolHandler: this.deps.scheduleToolHandler,
     });
   }
@@ -417,7 +408,6 @@ export class TaskEngineTurnRunner {
     return consumeRunnerFrames(frames, {
       task,
       runnerCommandDispatcher: runner.dispatcher,
-      snapshotPersistence: this.deps.snapshotPersistence,
       scheduleToolHandler: this.deps.scheduleToolHandler,
     });
   }
@@ -428,7 +418,6 @@ export async function* consumeRunnerFrames(
   deps: {
     task: Task;
     runnerCommandDispatcher: RunnerCommandDispatcher;
-    snapshotPersistence: TaskAgentsSnapshotPersistencePort;
     scheduleToolHandler?: ScheduleToolUseHandler;
   },
 ): AsyncIterable<SSEEventPayload> {
@@ -437,14 +426,6 @@ export async function* consumeRunnerFrames(
     if (frame.kind === "engine_event") {
       fatalError = fatalErrorFromRunnerFrame(frame) ?? fatalError;
       yield sseEventFromRunnerFrame(frame);
-      continue;
-    }
-    if (frame.kind === "run_state_snapshot") {
-      await deps.snapshotPersistence.persistRunStateSnapshot(deps.task, frame.snapshot);
-      continue;
-    }
-    if (frame.kind === "session_items_snapshot") {
-      await deps.snapshotPersistence.persistSessionItemsSnapshot(deps.task, frame.snapshot);
       continue;
     }
     if (

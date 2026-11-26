@@ -16,7 +16,6 @@ export const RENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'tool_approval_requested',
   'system',
   'realtime_status',
-  'guardrail_tripwire',
   'error',
   'generation_started',
   'report_timeline',

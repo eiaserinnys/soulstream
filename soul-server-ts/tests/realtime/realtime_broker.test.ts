@@ -77,7 +77,7 @@ function createBroker(opts: {
     resolve(presetId: string): {
       id: string;
       label: string;
-      backend: "claude" | "codex" | "openai-agents";
+      backend: "claude" | "codex";
       model: string;
     };
   };

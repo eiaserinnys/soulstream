@@ -9,7 +9,6 @@ import type { EventArchiveContent } from "../db/event_payload_truncation.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
 import { engineEventFrame } from "./frame_protocol.js";
-import type { RunnerChildConfig } from "./runner_process_spawn.js";
 
 export function runnerLivenessIntervalMs(leaseTimeoutMs: number): number {
   if (!Number.isSafeInteger(leaseTimeoutMs) || leaseTimeoutMs <= 0) {
@@ -99,11 +98,6 @@ export function backendSessionRotationEffect(
     expected_backend_session_id: expectedBackendSessionId,
     backend_session_id: backendSessionId,
   };
-}
-
-export function requiresBackendSessionId(backend: RunnerChildConfig["backend"]): boolean {
-  return backend === "claude" || backend === "codex"
-    || backend === "antigravity" || backend === "opencode";
 }
 
 export async function setRunnerOomScore(

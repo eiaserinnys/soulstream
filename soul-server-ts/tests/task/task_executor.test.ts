@@ -9,7 +9,6 @@ import type {
   EnginePort,
   SSEEventPayload,
   SupportsCompact,
-  SupportsToolApproval,
 } from "../../src/engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
 import { UnknownModelPresetError } from "@soulstream/model-catalog";
@@ -17,10 +16,7 @@ import {
   claudePreemptiveCompactThresholdTokens,
   estimateClaudeTurnInputTokens,
 } from "../../src/task/claude_context_recovery.js";
-import {
-  engineEventFrame,
-  RUNNER_FRAME_PROTOCOL_VERSION,
-} from "../../src/runner/frame_protocol.js";
+import { engineEventFrame } from "../../src/runner/frame_protocol.js";
 import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
 import {
   RunnerOrphanedSpawnError,
@@ -1706,201 +1702,6 @@ describe("TaskExecutor.startNewExecution", () => {
     );
   });
 
-  it("Agents SDK 합성 시나리오: handoff 중 tool approval 거부 → graceful complete", async () => {
-    const mocks = makeMocks();
-    let resolveApproval!: () => void;
-    const approvalPromise = new Promise<void>((resolve) => {
-      resolveApproval = resolve;
-    });
-    const deliverToolApproval = vi.fn(() => {
-      resolveApproval();
-      return { status: "delivered" as const };
-    });
-    const engine: EnginePort & SupportsToolApproval = {
-      backendId: "openai-agents",
-      workspaceDir: "/tmp/agents",
-      intervene: async () => ({ status: "not_delivered", mechanism: "unsupported", reason: "not_supported" } as const),
-      async *execute(): AsyncIterable<SSEEventPayload> {
-        yield {
-          type: "handoff_requested",
-          source_agent: "Triage",
-          target_agent: "Database specialist",
-          tool_use_id: "handoff-call-1",
-          timestamp: 1,
-        } as SSEEventPayload;
-        yield {
-          type: "handoff_occurred",
-          source_agent: "Triage",
-          target_agent: "Database specialist",
-          tool_use_id: "handoff-call-1",
-          timestamp: 2,
-        } as SSEEventPayload;
-        yield {
-          type: "tool_approval_requested",
-          approval_id: "danger-call-1",
-          tool_use_id: "danger-call-1",
-          tool_name: "drop_rows",
-          tool_input: { table: "events" },
-          agent_name: "Database specialist",
-          timestamp: 3,
-        } as SSEEventPayload;
-        await approvalPromise;
-        yield {
-          type: "complete",
-          result: "Rejected dangerous tool and stopped safely",
-          attachments: [],
-          timestamp: 4,
-        } as SSEEventPayload;
-      },
-      deliverToolApproval,
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-    );
-    const task = makeTask();
-    task.profileId = "agent-openai";
-    executor.startNewExecution(task, { ...agent, id: "agent-openai", backend: "openai-agents" });
-
-    await waitFor(() => mocks.persistEvent.mock.calls.some(
-      (c) => (c[1] as { type: string }).type === "tool_approval_requested",
-    ));
-    const approvalResult = await (task.runner?.engine as EnginePort & SupportsToolApproval)
-      .deliverToolApproval("danger-call-1", "rejected", { message: "no prod write" });
-    await task.executionPromise;
-
-    expect(approvalResult).toEqual({ status: "delivered" });
-    expect(deliverToolApproval).toHaveBeenCalledWith(
-      "danger-call-1",
-      "rejected",
-      { message: "no prod write" },
-    );
-    expect(task.status).toBe("completed");
-    const persistedTypes = mocks.persistEvent.mock.calls.map(
-      (c) => (c[1] as { type: string }).type,
-    );
-    expect(persistedTypes).toEqual(expect.arrayContaining([
-      "handoff_requested",
-      "handoff_occurred",
-      "tool_approval_requested",
-      "complete",
-    ]));
-  });
-
-  it("Agents SDK RunState와 Session items를 metadata에 영속하고 resume params로 되돌림", async () => {
-    const mocks = makeMocks();
-    let captured: EngineExecuteParams | undefined;
-    const engine: EnginePort = {
-      backendId: "openai-agents",
-      intervene: unsupportedEngineIntervention,
-      workspaceDir: "/tmp/agents",
-      async *execute(): AsyncIterable<SSEEventPayload> {},
-      async *executeFrames(params: EngineExecuteParams) {
-        captured = params;
-        yield {
-          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-          channel: "event" as const,
-          kind: "run_state_snapshot" as const,
-          snapshot: {
-            backendId: "openai-agents" as const,
-            serialized: "state-v2",
-            pendingApprovalId: "danger-call-1",
-            previousResponseId: "resp-2",
-            conversationId: "conv-2",
-            schemaVersion: "1.11",
-          },
-        };
-        yield {
-          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-          channel: "event" as const,
-          kind: "session_items_snapshot" as const,
-          snapshot: {
-            backendId: "openai-agents" as const,
-            items: [{ role: "user", content: "hi" }],
-          },
-        };
-        yield engineEventFrame({
-          type: "complete",
-          result: "resumed",
-          attachments: [],
-          timestamp: 4,
-        });
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-    );
-    const task = makeTask();
-    task.profileId = "agent-openai";
-    task.agentsRunState = "state-v1";
-    task.agentsPreviousResponseId = "resp-1";
-    task.agentsConversationId = "conv-1";
-    task.agentsSessionItems = [{ role: "system", content: "old" }];
-    task.agentsQueuedToolApproval = {
-      approvalId: "danger-call-1",
-      decision: "rejected",
-      options: { message: "no prod write" },
-    };
-
-    executor.startNewExecution(task, { ...agent, id: "agent-openai", backend: "openai-agents" });
-    await task.executionPromise;
-
-    expect(captured).toMatchObject({
-      resumeRunState: "state-v1",
-      previousResponseId: "resp-1",
-      conversationId: "conv-1",
-      sessionItems: [{ role: "system", content: "old" }],
-      queuedToolApproval: {
-        approvalId: "danger-call-1",
-        decision: "rejected",
-        options: { message: "no prod write" },
-      },
-    });
-    expect(task.agentsRunState).toBe("state-v2");
-    expect(task.agentsPendingApprovalId).toBe("danger-call-1");
-    expect(task.agentsSessionItems).toEqual([{ role: "user", content: "hi" }]);
-    expect(mocks.enqueueMetadataEffect).toHaveBeenCalledWith(
-      "sess-1",
-      expect.objectContaining({
-        type: "agents_run_state",
-        value: expect.objectContaining({
-          serialized: "state-v2",
-          pendingApprovalId: "danger-call-1",
-          previousResponseId: "resp-2",
-          conversationId: "conv-2",
-        }),
-      }),
-      {
-        replaceExistingType: "agents_run_state",
-        registrationId: expect.stringMatching(/^in-process:/),
-      },
-    );
-    expect(mocks.enqueueMetadataEffect).toHaveBeenCalledWith(
-      "sess-1",
-      expect.objectContaining({
-        type: "agents_session_items",
-        value: expect.objectContaining({
-          items: [{ role: "user", content: "hi" }],
-        }),
-      }),
-      {
-        replaceExistingType: "agents_session_items",
-        registrationId: expect.stringMatching(/^in-process:/),
-      },
-    );
-  });
-
   it("engine.execute throw → status=error + finalize", async () => {
     const mocks = makeMocks();
     const engine = makeFakeEngine(
@@ -3038,7 +2839,6 @@ describe("TaskExecutor runner process boundary", () => {
     expect(processFactory.recover).toHaveBeenCalledWith(
       recovered,
       registration,
-      expect.anything(),
       "adopt",
     );
     expect(detachedClaudeRuntimeActivity).toHaveBeenCalledOnce();
@@ -3239,10 +3039,6 @@ describe("TaskExecutor runner process boundary", () => {
       task,
       agent,
       "codex",
-      expect.objectContaining({
-        persistRunState: expect.any(Function),
-        persistSessionItems: expect.any(Function),
-      }),
     );
     expect(engineFactory).not.toHaveBeenCalled();
     expect(dispatcher.prepareSession).toHaveBeenCalledWith(task.agentSessionId);
@@ -3585,7 +3381,6 @@ describe("TaskExecutor runner process boundary", () => {
       expect(processFactory.recover).toHaveBeenCalledWith(
         task,
         registration,
-        expect.anything(),
         "offline",
         phaseObservation,
       );

@@ -59,10 +59,10 @@ function makeRolloverControl(
       supported_efforts: ["low", "medium", "high"],
       default_effort: "high",
     },
-    "agents-preset": {
-      id: "agents-preset",
+    "opencode-preset": {
+      id: "opencode-preset",
       model: "gpt-5",
-      backend: "openai-agents",
+      backend: "opencode",
       env: {},
       supported_efforts: ["low", "medium", "high"],
       default_effort: "medium",
@@ -383,8 +383,8 @@ describe("PersistentSessionControl", () => {
   });
 
   it.each([
-    ["current", "claude-preset", "openai-agents"],
-    ["target", "agents-preset", "claude"],
+    ["current", "claude-preset", "opencode"],
+    ["target", "opencode-preset", "claude"],
   ] as const)("rejects an unsupported %s backend before writing metadata", async (_where, targetPreset, currentBackend) => {
     const task = makeRolloverTask({ modelPresetBackend: currentBackend as never });
     const { control, enqueueMetadataEffect } = makeRolloverControl(task);

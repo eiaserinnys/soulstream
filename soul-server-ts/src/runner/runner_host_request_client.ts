@@ -11,7 +11,6 @@ export type RunnerHostService =
   | "claude_accounts"
   | "claude_runtime"
   | "detached_event"
-  | "snapshot"
   | "event_archive";
 
 export interface RunnerHostRequestOptions {

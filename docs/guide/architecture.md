@@ -26,7 +26,7 @@ flowchart TB
     Worker["soul-server-ts Worker"]
     Outbox["Local Event Outbox (EVENT_OUTBOX_DIR)"]
     LoopbackMCP["Loopback MCP (127.0.0.1:MCP_INTERNAL_PORT)"]
-    Runners["Backend Runners (claude, codex, openai-agents, antigravity, opencode)"]
+    Runners["Backend Runners (claude, codex, antigravity, opencode)"]
     Worker --> Outbox
     Worker --> LoopbackMCP
     Worker --> Runners
@@ -61,11 +61,10 @@ flowchart TB
 
 ## Supported backends
 
-`packages/model-catalog` defines five execution backends:
+`packages/model-catalog` defines four execution backends:
 
 - `claude`: Anthropic Claude Code CLI and Claude Agent SDK runner.
 - `codex`: OpenAI Codex CLI (`codex app-server`) and Codex SDK runner.
-- `openai-agents`: OpenAI Agents SDK (`@openai/agents`) runtime.
 - `antigravity`: Antigravity CLI (`agy`) runner (for example, Gemini presets).
 - `opencode`: OpenCode CLI (`opencode`) runner.
 

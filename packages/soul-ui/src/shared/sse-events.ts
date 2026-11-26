@@ -1,5 +1,4 @@
 import type {
-  SSEEventAgentUpdated,
   SSEEventAssistantError,
   SSEEventAssistantMessage,
   SSEEventAwaySummary,
@@ -27,9 +26,6 @@ import type {
   SSEEventError,
   SSEEventFolderUpdated,
   SSEEventGenerationStarted,
-  SSEEventGuardrailTripwire,
-  SSEEventHandoffOccurred,
-  SSEEventHandoffRequested,
   SSEEventHistorySync,
   SSEEventInputMaterialManifest,
   SSEEventInputRequest,
@@ -80,12 +76,8 @@ export type TextDeltaEvent = SSEEventTextDelta;
 export type TextEndEvent = SSEEventTextEnd;
 export type ToolStartEvent = SSEEventToolStart;
 export type ToolResultEvent = SSEEventToolResult;
-export type AgentUpdatedEvent = SSEEventAgentUpdated;
-export type HandoffRequestedEvent = SSEEventHandoffRequested;
-export type HandoffOccurredEvent = SSEEventHandoffOccurred;
 export type ToolApprovalRequestedEvent = SSEEventToolApprovalRequested;
 export type ToolApprovalResolvedEvent = SSEEventToolApprovalResolved;
-export type GuardrailTripwireEvent = SSEEventGuardrailTripwire;
 export type ResultEvent = SSEEventResult;
 export type AwaySummaryEvent = SSEEventAwaySummary;
 export type TurnSummaryEvent = SSEEventTurnSummary;
@@ -166,12 +158,8 @@ export type SoulSSEEvent =
   | TextEndEvent
   | ToolStartEvent
   | ToolResultEvent
-  | AgentUpdatedEvent
-  | HandoffRequestedEvent
-  | HandoffOccurredEvent
   | ToolApprovalRequestedEvent
   | ToolApprovalResolvedEvent
-  | GuardrailTripwireEvent
   | ResultEvent
   | SubagentStartEvent
   | SubagentStopEvent

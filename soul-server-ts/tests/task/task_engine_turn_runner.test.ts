@@ -98,16 +98,11 @@ function catalogResolver(): TurnRunnerCatalog {
 }
 
 function makeSubject(modelCatalog?: TurnRunnerCatalog, claudeAccountPoolEnabled = false) {
-  const snapshotPersistence = {
-    persistRunStateSnapshot: vi.fn().mockResolvedValue(undefined),
-    persistSessionItemsSnapshot: vi.fn().mockResolvedValue(undefined),
-  };
   const runner = new TaskEngineTurnRunner({
-    snapshotPersistence,
     modelCatalog,
     claudeAccountPoolEnabled,
   });
-  return { runner, snapshotPersistence };
+  return { runner };
 }
 
 async function drain(iterable: AsyncIterable<SSEEventPayload>): Promise<SSEEventPayload[]> {
@@ -432,55 +427,6 @@ describe("TaskEngineTurnRunner", () => {
     expect(captured).not.toHaveProperty("onIntervention");
   });
 
-  it("consumes engine events and snapshots from the in-process runner frame stream", async () => {
-    const task = makeTask();
-    const engine: EnginePort = {
-      backendId: "openai-agents",
-      intervene: unsupportedEngineIntervention,
-      workspaceDir: "/tmp/agent",
-      async *execute(): AsyncIterable<SSEEventPayload> {
-        throw new Error("legacy execute path must not be used");
-      },
-      async *executeFrames() {
-        yield engineEventFrame({ type: "session", session_id: "agents-1" });
-        yield {
-          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-          channel: "event" as const,
-          kind: "run_state_snapshot" as const,
-          snapshot: { backendId: "openai-agents" as const, serialized: "state-1" },
-        };
-        yield {
-          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-          channel: "event" as const,
-          kind: "session_items_snapshot" as const,
-          snapshot: { backendId: "openai-agents" as const, items: [{ role: "user" }] },
-        };
-        yield engineEventFrame({ type: "complete", result: "done", timestamp: 1 });
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const { runner, snapshotPersistence } = makeSubject();
-
-    const events = await drain(runner.executeTurn({
-      task,
-      agent: { ...agent, backend: "openai-agents" },
-      runner: createInProcessTaskRunnerRuntime(engine),
-      input: { prompt: "turn prompt" },
-    }));
-
-    expect(events.filter((event) => event.type !== "input_material_manifest")
-      .map((event) => event.type)).toEqual(["session", "complete"]);
-    expect(snapshotPersistence.persistRunStateSnapshot).toHaveBeenCalledWith(
-      task,
-      { backendId: "openai-agents", serialized: "state-1" },
-    );
-    expect(snapshotPersistence.persistSessionItemsSnapshot).toHaveBeenCalledWith(
-      task,
-      { backendId: "openai-agents", items: [{ role: "user" }] },
-    );
-  });
-
   it("restores Claude frame metadata on the production turn consumer", async () => {
     const task = makeTask();
     const engine: EnginePort = {
@@ -560,10 +506,6 @@ describe("TaskEngineTurnRunner", () => {
       async close() {},
     };
     const runner = new TaskEngineTurnRunner({
-      snapshotPersistence: {
-        persistRunStateSnapshot: vi.fn(),
-        persistSessionItemsSnapshot: vi.fn(),
-      },
     });
 
     const events = await drain(
@@ -594,10 +536,6 @@ describe("TaskEngineTurnRunner", () => {
       message: "scheduled",
       data: { scheduleId: "schedule-1" },
     });
-    const snapshotPersistence = {
-      persistRunStateSnapshot: vi.fn().mockResolvedValue(undefined),
-      persistSessionItemsSnapshot: vi.fn().mockResolvedValue(undefined),
-    };
     let controlFrame: unknown;
     const engine: EnginePort = {
       backendId: "claude",
@@ -629,7 +567,7 @@ describe("TaskEngineTurnRunner", () => {
       async interrupt() { return true; },
       async close() {},
     };
-    const runner = new TaskEngineTurnRunner({ snapshotPersistence, scheduleToolHandler });
+    const runner = new TaskEngineTurnRunner({ scheduleToolHandler });
 
     await drain(runner.executeTurn({ task, agent, runner: createInProcessTaskRunnerRuntime(engine), input: { prompt: "turn" } }));
 
@@ -701,10 +639,6 @@ describe("TaskEngineTurnRunner", () => {
       async close() {},
     };
     const runner = new TaskEngineTurnRunner({
-      snapshotPersistence: {
-        persistRunStateSnapshot: vi.fn(),
-        persistSessionItemsSnapshot: vi.fn(),
-      },
       scheduleToolHandler,
     });
 
@@ -754,10 +688,6 @@ describe("TaskEngineTurnRunner", () => {
       async close() {},
     };
     const runner = new TaskEngineTurnRunner({
-      snapshotPersistence: {
-        persistRunStateSnapshot: vi.fn(),
-        persistSessionItemsSnapshot: vi.fn(),
-      },
       scheduleToolHandler,
     });
 
@@ -1128,7 +1058,7 @@ describe("TaskEngineTurnRunner", () => {
     const task = makeTask({ agentsQueuedToolApproval: queuedToolApproval });
     let captured: EngineExecuteParams | undefined;
     const engine: EnginePort = {
-      backendId: "openai-agents",
+      backendId: "codex",
       intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/agent",
       execute(params): AsyncIterable<SSEEventPayload> {
@@ -1144,7 +1074,7 @@ describe("TaskEngineTurnRunner", () => {
 
     const iterable = runner.executeTurn({
       task,
-      agent: { ...agent, backend: "openai-agents" },
+      agent: { ...agent, backend: "codex" },
       runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "resume", imageAttachmentPaths: [] },
     });
@@ -1165,62 +1095,12 @@ describe("TaskEngineTurnRunner", () => {
     };
     runner.executeTurn({
       task,
-      agent: { ...agent, backend: "openai-agents" },
+      agent: { ...agent, backend: "codex" },
       runner: createInProcessTaskRunnerRuntime(secondEngine),
       input: { prompt: "resume again", imageAttachmentPaths: [] },
     });
 
     expect(secondCaptured?.queuedToolApproval).toBeUndefined();
-  });
-
-  it("wires Agents snapshot frames to the snapshot persistence boundary", async () => {
-    const task = makeTask();
-    const engine: EnginePort = {
-      backendId: "openai-agents",
-      intervene: unsupportedEngineIntervention,
-      workspaceDir: "/tmp/agent",
-      async *execute(): AsyncIterable<SSEEventPayload> {},
-      async *executeFrames() {
-        yield {
-          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-          channel: "event" as const,
-          kind: "run_state_snapshot" as const,
-          snapshot: {
-            backendId: "openai-agents" as const,
-            serialized: "state-v2",
-            pendingApprovalId: "tool-1",
-          },
-        };
-        yield {
-          protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-          channel: "event" as const,
-          kind: "session_items_snapshot" as const,
-          snapshot: {
-            backendId: "openai-agents" as const,
-            items: [{ role: "user", content: "hi" }],
-          },
-        };
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const { runner, snapshotPersistence } = makeSubject();
-
-    await drain(runner.executeTurn({
-      task,
-      agent: { ...agent, backend: "openai-agents" },
-      runner: createInProcessTaskRunnerRuntime(engine),
-      input: { prompt: "resume", imageAttachmentPaths: [] },
-    }));
-
-    expect(snapshotPersistence.persistRunStateSnapshot).toHaveBeenCalledWith(
-      task,
-      expect.objectContaining({ serialized: "state-v2" }),
-    );
-    expect(snapshotPersistence.persistSessionItemsSnapshot).toHaveBeenCalledWith(
-      task,
-      expect.objectContaining({ items: [{ role: "user", content: "hi" }] }),
-    );
   });
 
   it.each([

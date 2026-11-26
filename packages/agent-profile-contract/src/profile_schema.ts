@@ -260,14 +260,6 @@ export const AgentProfileSchema = z.object({
    */
   atom_contexts: z.array(AgentAtomContextSchema).optional(),
   agents_sdk: AgentsSdkConfigSchema.optional(),
-}).superRefine((profile, ctx) => {
-  if (profile.backend === "openai-agents" && !profile.agents_sdk) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["agents_sdk"],
-      message: "agents_sdk config required when backend is openai-agents",
-    });
-  }
 });
 
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;

@@ -341,14 +341,6 @@ async function selectRestrictedClaudeTurn(
       ],
     },
     task,
-    {
-      async persistRunState() {
-        return;
-      },
-      async persistSessionItems() {
-        return;
-      },
-    },
     { claudeAccounts: service } as never,
     () => undefined,
     { configDirectory },

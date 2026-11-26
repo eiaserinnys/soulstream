@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 219개 $defs (top-level wire 108 + supporting/SSE 111). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 215개 $defs (top-level wire 108 + supporting/SSE 107). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -161,7 +161,7 @@ export interface NodeRegister {
   model_presets?: {
     id: string;
     label: string;
-    backend: "claude" | "codex" | "openai-agents" | "antigravity" | "opencode";
+    backend: "claude" | "codex" | "antigravity" | "opencode";
     /**
      * 이 preset이 실행할 실제 모델 식별자. PAS 노드 간 핸드오프의 세션 row 투영에 사용한다.
      */
@@ -451,12 +451,8 @@ export interface SessionEventEnvelope {
     | SSEEventTextSnapshot
     | SSEEventToolStart
     | SSEEventToolResult
-    | SSEEventAgentUpdated
-    | SSEEventHandoffRequested
-    | SSEEventHandoffOccurred
     | SSEEventToolApprovalRequested
     | SSEEventToolApprovalResolved
-    | SSEEventGuardrailTripwire
     | SSEEventRealtimeStatus
     | SSEEventRealtimeTranscript
     | SSEEventResult
@@ -903,7 +899,7 @@ export interface SSEEventComplete {
 }
 export interface UsageSnapshotV1 {
   schema_version: 1;
-  backend: "claude" | "codex" | "openai-agents" | "antigravity" | "opencode";
+  backend: "claude" | "codex" | "antigravity" | "opencode";
   provider: "claude" | "codex" | "antigravity" | "deepseek" | "kimi" | "unknown";
   preset_id: string | null;
   requested_model: string | null;
@@ -1082,38 +1078,6 @@ export interface SSEEventToolResult {
   [k: string]: unknown;
 }
 /**
- * SSE: OpenAI Agents SDK active agent 변경.
- */
-export interface SSEEventAgentUpdated {
-  type: "agent_updated";
-  agent_name: string;
-  timestamp: number;
-  [k: string]: unknown;
-}
-/**
- * SSE: OpenAI Agents SDK handoff 요청.
- */
-export interface SSEEventHandoffRequested {
-  type: "handoff_requested";
-  source_agent: string;
-  target_agent: string;
-  tool_use_id?: string;
-  handoff_input?: unknown;
-  timestamp: number;
-  [k: string]: unknown;
-}
-/**
- * SSE: OpenAI Agents SDK handoff 완료.
- */
-export interface SSEEventHandoffOccurred {
-  type: "handoff_occurred";
-  source_agent: string;
-  target_agent: string;
-  tool_use_id?: string;
-  timestamp: number;
-  [k: string]: unknown;
-}
-/**
  * SSE: OpenAI Agents SDK tool approval 요청.
  */
 export interface SSEEventToolApprovalRequested {
@@ -1138,18 +1102,6 @@ export interface SSEEventToolApprovalResolved {
   approved?: boolean;
   rejected?: boolean;
   message?: string;
-  timestamp: number;
-  [k: string]: unknown;
-}
-/**
- * SSE: OpenAI Agents SDK guardrail tripwire로 run 중단.
- */
-export interface SSEEventGuardrailTripwire {
-  type: "guardrail_tripwire";
-  guardrail_type: string;
-  guardrail_name: string;
-  message: string;
-  output_info?: unknown;
   timestamp: number;
   [k: string]: unknown;
 }
@@ -3852,12 +3804,8 @@ export const EVENT_DURABILITY = {
   "text_snapshot": "transient",
   "tool_start": "durable",
   "tool_result": "durable",
-  "agent_updated": "durable",
-  "handoff_requested": "durable",
-  "handoff_occurred": "durable",
   "tool_approval_requested": "durable",
   "tool_approval_resolved": "durable",
-  "guardrail_tripwire": "durable",
   "realtime_status": "durable",
   "realtime_transcript": "durable",
   "result": "durable",
@@ -3925,12 +3873,8 @@ export const SSE_EVENT_TYPES = [
   "text_snapshot",
   "tool_start",
   "tool_result",
-  "agent_updated",
-  "handoff_requested",
-  "handoff_occurred",
   "tool_approval_requested",
   "tool_approval_resolved",
-  "guardrail_tripwire",
   "realtime_status",
   "realtime_transcript",
   "result",
@@ -3987,10 +3931,6 @@ export const SESSION_TIMELINE_EVENT_TYPES = [
   "input_request_responded",
   "tool_approval_requested",
   "tool_approval_resolved",
-  "agent_updated",
-  "handoff_requested",
-  "handoff_occurred",
-  "guardrail_tripwire",
   "away_summary",
   "credential_alert",
   "realtime_status",

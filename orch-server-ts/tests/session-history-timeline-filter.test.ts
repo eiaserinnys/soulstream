@@ -109,6 +109,35 @@ describe("session timeline event_types filter", () => {
     await app.close();
   });
 
+  it("accepts the legacy soul-app event_types list that still names retired events, and drops them from the read", async () => {
+    const { app, readTimeline } = createHarness();
+    const legacyAppEventTypes = "user_message,intervention_sent,session_notification,assistant_message,turn_summary,debug,thinking,tool_start,tool_result,error,assistant_error,system_message,context_usage,compact,input_request,input_request_expired,input_request_responded,tool_approval_requested,tool_approval_resolved,agent_updated,handoff_requested,handoff_occurred,guardrail_tripwire,away_summary,credential_alert,realtime_status,realtime_transcript,generation_started,report_timeline,report_timeline_question_closed,complete";
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/sessions/sess-1/timeline?event_types=${legacyAppEventTypes}`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const requested = (readTimeline.mock.calls as unknown as unknown[][])[0]?.[3] as string[];
+    expect(requested).toContain("assistant_message");
+    for (const retired of ["agent_updated", "handoff_requested", "handoff_occurred", "guardrail_tripwire"]) {
+      expect(requested).not.toContain(retired);
+    }
+    await app.close();
+  });
+
+  it("still rejects unknown names next to retired ones", async () => {
+    const { app, readTimeline } = createHarness();
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/timeline?event_types=agent_updated,future_event",
+    });
+    expect(response.statusCode).toBe(400);
+    expect(readTimeline).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("rejects empty and unknown event_types before provider access", async () => {
     const { app, readTimeline } = createHarness();
 

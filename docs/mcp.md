@@ -192,7 +192,7 @@ Webhook tools are internal only and need a trusted Soulstream caller session wit
 | `rollback_agents_config(snapshot_path)` | Restore `agents.yaml` from a managed ConfigStore snapshot |
 
 `mcp_profile` is a convenience preset, not a hard security boundary. Profile defaults are expanded from
-`mcp-profiles.yaml` and `mcp-registry.yaml` before an OpenAI Agents runtime starts. Inline
+`mcp-profiles.yaml` and `mcp-registry.yaml` before a session runtime starts. Inline
 `agents_sdk.agents[].mcp_servers` and `hosted_tools` remain valid and override profile defaults by effective tool or
 server key.
 

@@ -183,9 +183,7 @@ function makeRecoveredRunner(engine: EnginePort, restricted: boolean): TaskRunne
     RunnerProcessDispatcher.prototype as unknown as { initialize(): Promise<void> },
     "initialize",
   ).mockResolvedValue(undefined);
-  const recovered = factory.recover!(makeTask(), { config } as never, {
-    persistRunState: vi.fn(), persistSessionItems: vi.fn(),
-  }, "adopt");
+  const recovered = factory.recover!(makeTask(), { config } as never, "adopt");
   initialize.mockRestore();
   const fake = createInProcessTaskRunnerRuntime(engine);
   return { ...recovered, engine: fake.engine, dispatcher: fake.dispatcher, eventPersistence: "host" };
@@ -316,7 +314,7 @@ describe("TaskExecutor turn isolation gate", () => {
 
       expect(recover).toHaveBeenCalledOnce();
       expect(recover.mock.calls[0]?.[1]).toBe(registration);
-      expect(recover.mock.calls[0]?.[3]).toBe("adopt");
+      expect(recover.mock.calls[0]?.[2]).toBe("adopt");
       expect(dispatcher.recoverFrames).toHaveBeenCalledWith("execute-old", undefined);
       expect(attempts).toHaveLength(1);
       expect(attempts[0]?.isolation?.tier).toBe("restricted");

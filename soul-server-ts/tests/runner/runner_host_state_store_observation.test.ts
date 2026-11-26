@@ -64,8 +64,8 @@ describe("RunnerHostStateStore observation", () => {
     store.recordHostCallApplied({
       sessionId: "session-a",
       correlationId: "host:1",
-      service: "snapshot",
-      operation: "persistRunState",
+      service: "detached_event",
+      operation: "publish",
       createdAt: "2026-11-10T00:00:00.000Z",
     });
     expect(store.readHostCallApplied("session-a", "host:1")).toMatchObject({

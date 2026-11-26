@@ -197,20 +197,6 @@ export const RunnerCommandFrameSchema = withJsonContract(z.discriminatedUnion("k
   }).passthrough(),
 ]));
 
-const RunnerRunStateSnapshotSchema = z.object({
-  backendId: AgentBackendSchema,
-  serialized: z.string().nullable(),
-  pendingApprovalId: z.string().nullable().optional(),
-  previousResponseId: z.string().nullable().optional(),
-  conversationId: z.string().nullable().optional(),
-  schemaVersion: z.string().nullable().optional(),
-}).passthrough();
-
-const RunnerSessionItemsSnapshotSchema = z.object({
-  backendId: AgentBackendSchema,
-  items: z.array(z.json()),
-}).passthrough();
-
 export const RunnerClaudeBackgroundDeliveryMetadataSchema = z.object({
   initiatingToolUseId: z.string().min(1).optional(),
   deliveryId: z.string(),
@@ -277,7 +263,6 @@ const RunnerRequestSchema = z.discriminatedUnion("kind", [
       "claude_accounts",
       "claude_runtime",
       "detached_event",
-      "snapshot",
       "event_archive",
     ]),
     operation: z.string().min(1),
@@ -292,18 +277,6 @@ export const RunnerEventFrameSchema = withJsonContract(z.discriminatedUnion("kin
     kind: z.literal("engine_event"),
     payload: jsonRecord,
     metadata: RunnerEngineEventMetadataSchema.optional(),
-  }).passthrough(),
-  z.object({
-    protocolVersion,
-    channel: z.literal("event"),
-    kind: z.literal("run_state_snapshot"),
-    snapshot: RunnerRunStateSnapshotSchema,
-  }).passthrough(),
-  z.object({
-    protocolVersion,
-    channel: z.literal("event"),
-    kind: z.literal("session_items_snapshot"),
-    snapshot: RunnerSessionItemsSnapshotSchema,
   }).passthrough(),
   z.object({
     protocolVersion,
@@ -439,28 +412,6 @@ export function engineEventFrame(
     payload,
     ...(metadata !== undefined ? { metadata } : {}),
   }) as Extract<RunnerEventFrame, { kind: "engine_event" }>;
-}
-
-export function runStateSnapshotFrame(
-  snapshot: unknown,
-): Extract<RunnerEventFrame, { kind: "run_state_snapshot" }> {
-  return RunnerEventFrameSchema.parse({
-    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-    channel: "event",
-    kind: "run_state_snapshot",
-    snapshot,
-  }) as Extract<RunnerEventFrame, { kind: "run_state_snapshot" }>;
-}
-
-export function sessionItemsSnapshotFrame(
-  snapshot: unknown,
-): Extract<RunnerEventFrame, { kind: "session_items_snapshot" }> {
-  return RunnerEventFrameSchema.parse({
-    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-    channel: "event",
-    kind: "session_items_snapshot",
-    snapshot,
-  }) as Extract<RunnerEventFrame, { kind: "session_items_snapshot" }>;
 }
 
 export function runnerRequestFrame(

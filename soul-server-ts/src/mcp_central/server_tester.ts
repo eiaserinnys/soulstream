@@ -29,7 +29,7 @@ export async function testMcpServer(server: Server, env: Record<string, string |
     };
     const record = (value: unknown) => Object.fromEntries(Object.entries(value && typeof value === "object" ? value : {}).map(([k, v]) => [k, resolve(v)]));
     if (server.type === "stdio") {
-      // @openai/agents MCPServerStdio also splits full_command on spaces.
+      // full_command is split on spaces.
       const fullCommand = typeof config.full_command === "string" ? config.full_command.split(" ") : undefined;
       if (typeof config.full_command === "string") sensitive.add(config.full_command);
       const command = fullCommand ? fullCommand.shift() : resolve(config.command);

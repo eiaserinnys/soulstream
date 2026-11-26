@@ -1,6 +1,7 @@
 import {
   ALLOWED_TIMELINE_DEBUG_KINDS,
   isRequestedTimelineEventType,
+  isRetiredTimelineEventType,
   type RequestedTimelineDebugKind,
   type RequestedTimelineEventType,
 } from "./session_history_service.js";
@@ -25,14 +26,15 @@ export function parseTimelineEventTypesQuery(
     };
   }
   const values = value.split(",");
-  if (values.some((item) => !isRequestedTimelineEventType(item))) {
+  const current = values.filter((item) => !isRetiredTimelineEventType(item));
+  if (current.some((item) => !isRequestedTimelineEventType(item))) {
     return {
       ok: false,
       field: "event_types",
       message: "event_types contains an unsupported timeline event type",
     };
   }
-  return { ok: true, value: [...new Set(values)] as RequestedTimelineEventType[] };
+  return { ok: true, value: [...new Set(current)] as RequestedTimelineEventType[] };
 }
 
 export function parseTimelineDebugKindsQuery(

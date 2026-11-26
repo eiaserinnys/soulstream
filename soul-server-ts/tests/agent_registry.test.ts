@@ -248,11 +248,11 @@ describe("AgentProfileSchema", () => {
     ).toThrow(ZodError);
   });
 
-  it("openai-agents profile은 provider, hosted_tools, mcp_servers를 agents_sdk 아래에서 파싱", () => {
+  it("agents_sdk profile은 provider, hosted_tools, mcp_servers를 agents_sdk 아래에서 파싱", () => {
     const parsed = AgentProfileSchema.parse({
       id: "agents-research",
       name: "Agents Research",
-      backend: "openai-agents",
+      backend: "codex",
       workspace_dir: "/tmp/agents",
       agents_sdk: {
         entry_agent: "triage",
@@ -319,7 +319,7 @@ describe("AgentProfileSchema", () => {
     const parsed = AgentProfileSchema.parse({
       id: "agents-research",
       name: "Agents Research",
-      backend: "openai-agents",
+      backend: "codex",
       workspace_dir: "/tmp/agents",
       mcp_profile: "research-defaults",
       agents_sdk: {
@@ -346,7 +346,7 @@ describe("AgentProfileSchema", () => {
       AgentProfileSchema.parse({
         id: "agents-research",
         name: "Agents Research",
-        backend: "openai-agents",
+        backend: "codex",
         workspace_dir: "/tmp/agents",
         agents_sdk: {
           entry_agent: "triage",
