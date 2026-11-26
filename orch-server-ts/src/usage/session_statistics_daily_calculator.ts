@@ -18,17 +18,22 @@ export function statisticsLiveDays(asOf: string): string[] {
 /** Receipts are stamped with the transaction start, so a commit may land this long after its stamp. */
 const RECEIPT_COMMIT_LAG_MS = 5 * 60_000;
 
+/** Receives the error of a failed probe; the tick carries on as if the facts had changed. */
+export type ProbeFailureSink = (error: unknown) => void;
+
 /** What the last idle tick saw: the recent-days window and the database clock before it read the facts. */
 export type QuietTickMemory = { window: string; probedAt: Date } | undefined;
 
 /**
  * One invocation computes at most one date; no ingestion changes or dependency invalidation.
  * The recent-days max-event scan is skipped while the previous tick found nothing to do and no
- * receipt of a late event in that window has arrived since.
+ * receipt of a late event in that window has arrived since. A probe that throws counts as
+ * "changed" and leaves no memory, so the next tick starts from a full scan again.
  */
 export async function calculateSessionStatisticsDay(repository: SessionStatisticsRepositoryPort,
   input: SessionStatisticsReadRequest, catalog: ModelCatalogConfig,
-  quiet: { memory: QuietTickMemory } = { memory: undefined }): Promise<boolean> {
+  quiet: { memory: QuietTickMemory } = { memory: undefined },
+  onProbeFailure: ProbeFailureSink = () => {}): Promise<boolean> {
   if (!repository.daily || !repository.readMetadata || !repository.readSlice) return false;
   const daily = repository.daily;
   const readMetadata = repository.readMetadata.bind(repository);
@@ -46,8 +51,14 @@ export async function calculateSessionStatisticsDay(repository: SessionStatistic
     const recentSince = statisticsShiftDay(sessionStatisticsDate(input.asOf)!, -7);
     const window = `${recentSince}|${before}`;
     const remembered = quiet.memory?.window === window ? quiet.memory : undefined;
-    const probe = await daily.factsChangedSince(recentSince, before,
-      remembered === undefined ? null : new Date(remembered.probedAt.getTime() - RECEIPT_COMMIT_LAG_MS));
+    const receiptsSince = remembered === undefined ? null : new Date(remembered.probedAt.getTime() - RECEIPT_COMMIT_LAG_MS);
+    let probe: { changed: boolean; probedAt?: Date };
+    try {
+      probe = await daily.factsChangedSince(recentSince, before, receiptsSince);
+    } catch (error) {
+      onProbeFailure(error);
+      probe = { changed: true };
+    }
     quiet.memory = undefined;
     const maxima = probe.changed ? await daily.sourceMax(recentSince, before) : undefined;
     let selected: string | undefined;
@@ -59,7 +70,7 @@ export async function calculateSessionStatisticsDay(repository: SessionStatistic
       }
     }
     if (selected === undefined) {
-      quiet.memory = { window, probedAt: probe.probedAt };
+      if (probe.probedAt !== undefined) quiet.memory = { window, probedAt: probe.probedAt };
       computed = await daily.regroupNext?.(metadata.range.since, before, SESSION_STATISTICS_DAILY_AGGREGATION_VERSION) ?? false;
       return;
     }

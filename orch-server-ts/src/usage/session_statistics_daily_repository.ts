@@ -11,7 +11,7 @@ export interface SessionStatisticsDailyRepositoryPort {
    * Cheap stand-in for `sourceMax` between two ticks. Facts are only inserted with the ingress
    * receipt of their event in the same transaction, so a receipt created after `receiptsSince`
    * whose event falls in the window is the only way the window's facts can have changed.
-   * `receiptsSince === null` asks only for the database clock.
+   * `receiptsSince === null` reads no receipts: it answers `changed` and returns the database clock.
    */
   factsChangedSince(since: string, before: string, receiptsSince: Date | null): Promise<{ changed: boolean; probedAt: Date }>;
   save(state: SessionStatisticsDailyState, sourceMaxEventId: string): Promise<void>;
@@ -66,14 +66,24 @@ export class SessionStatisticsDailyRepository implements SessionStatisticsDailyR
   }
 
   async factsChangedSince(since: string, before: string, receiptsSince: Date | null): Promise<{ changed: boolean; probedAt: Date }> {
+    if (receiptsSince === null) {
+      const [clock] = await this.sql<readonly { probed_at: Date }[]>`SELECT now() AS probed_at`;
+      return { changed: true, probedAt: clock!.probed_at };
+    }
+    // The MATERIALIZED fence pins the join order: receipts from the last minutes first, then one
+    // events lookup each. Without it a generic plan scans the window's events (a million rows) first.
     const [row] = await this.sql<readonly { probed_at: Date; changed: boolean }[]>`
+      WITH recent AS MATERIALIZED (
+        SELECT session_id, event_id
+        FROM event_ingress_receipts
+        WHERE created_at >= ${receiptsSince}::timestamptz
+      )
       SELECT now() AS probed_at,
-        ${receiptsSince === null} OR EXISTS (
+        EXISTS (
           SELECT 1
-          FROM event_ingress_receipts AS receipt
-          JOIN events AS event ON event.session_id = receipt.session_id AND event.id = receipt.event_id
-          WHERE receipt.created_at >= ${receiptsSince ?? new Date(0)}::timestamptz
-            AND event.created_at >= (${since}::date::timestamp AT TIME ZONE 'Asia/Seoul')
+          FROM recent
+          JOIN events AS event ON event.session_id = recent.session_id AND event.id = recent.event_id
+          WHERE event.created_at >= (${since}::date::timestamp AT TIME ZONE 'Asia/Seoul')
             AND event.created_at < (${before}::date::timestamp AT TIME ZONE 'Asia/Seoul')
         ) AS changed
     `;
