@@ -292,8 +292,6 @@ function createRouteInventoryApp() {
       starredFolderOrder: { moveStarredFolder: async () => ({ pageVersion: 1, changed: false }) },
       onPageUpdated: () => undefined,
       createService: () => ({
-        handleConnection: () => undefined,
-        assertWebsocketAuthConfigured: () => undefined,
         createPage: async () => inert,
         mutatePage: async () => inert,
         close: async () => undefined,

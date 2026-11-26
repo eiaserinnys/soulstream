@@ -65,39 +65,6 @@ export function readWebglGlassOverride(
   }
 }
 
-export function readWebglGlassEnabled(storage: Storage | undefined = getLocalStorage()): boolean {
-  return readWebglGlassOverride(storage) ?? true;
-}
-
-export function writeWebglGlassEnabled(
-  enabled: boolean,
-  storage: Storage | undefined = getLocalStorage(),
-): void {
-  if (!storage) return;
-  try {
-    if (enabled) {
-      storage.setItem(WEBGL_GLASS_STORAGE_KEY, "1");
-    } else {
-      storage.setItem(WEBGL_GLASS_STORAGE_KEY, "0");
-    }
-  } catch {
-    return;
-  }
-  dispatchWebglGlassChange();
-}
-
-export function clearWebglGlassOverride(
-  storage: Storage | undefined = getLocalStorage(),
-): void {
-  if (!storage) return;
-  try {
-    storage.removeItem(WEBGL_GLASS_STORAGE_KEY);
-  } catch {
-    return;
-  }
-  dispatchWebglGlassChange();
-}
-
 export function dispatchWebglGlassChange(): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(WEBGL_GLASS_CHANGE_EVENT));

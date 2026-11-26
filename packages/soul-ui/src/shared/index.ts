@@ -8,7 +8,6 @@
 // === Constants ===
 export {
   SYSTEM_FOLDER_IDS,
-  SYSTEM_FOLDERS,
   DEFAULT_FOLDER_KEY,
   DEFAULT_FOLDER_ID,
   isSystemFolderId,

@@ -5,7 +5,6 @@ import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import {
   renameFolderPageTitle,
   saveFolderSessionDefaults,
-  unmountFolderDocument,
 } from "./folder-workspace-page-api";
 
 describe("renameFolderPageTitle", () => {
@@ -132,44 +131,6 @@ describe("saveFolderSessionDefaults", () => {
       nodeId: null,
       modelPreset: null,
     })).rejects.toThrow("에이전트 또는 노드를 선택해야 합니다");
-  });
-});
-
-describe("unmountFolderDocument", () => {
-  it("deletes the mounted document block through the page CAS contract", async () => {
-    const folderPage = page("task-a", "폴더 A", 5);
-    const api = {
-      getPage: vi.fn(async () => ({
-        page: folderPage,
-        state_vector: "AQ==",
-        blocks: [{
-          id: "mount-doc",
-          page_id: folderPage.id,
-          parent_id: null,
-          position_key: "A",
-          block_type: "paragraph",
-          text: "[[문서 A]]",
-          properties: {},
-          collapsed: false,
-        }],
-      })),
-      applyOperations: vi.fn(async () => ({
-        page: { ...folderPage, version: 6 },
-        blocks: [],
-        operation: { id: "delete-mount" },
-        temp_id_mapping: {},
-      })),
-    } as unknown as PageApiClient;
-
-    await unmountFolderDocument(api, folderPage.id, "mount-doc", () => "unmount-1");
-
-    expect(api.applyOperations).toHaveBeenCalledWith(folderPage.id, {
-      expectedVersion: 5,
-      expectedStateVector: new Uint8Array([1]),
-      idempotencyKey: "unmount-1",
-      reason: "v3 folder document unmount",
-      operations: [{ op: "delete_block_subtree", block_id: "mount-doc" }],
-    });
   });
 });
 

@@ -4,7 +4,6 @@ import {
 } from "../../../packages/wire-schema/src/conversation_visibility";
 
 export const TASK_TITLE_PREVIEW_LENGTH = 120;
-export const TASK_DESCRIPTION_COLLAPSE_LENGTH = 320;
 
 export function codePointLength(value: string | null | undefined): number {
   return Array.from(value ?? "").length;

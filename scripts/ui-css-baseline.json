@@ -3,7 +3,6 @@
     "soul-desktop/src/index.css": 9,
     "unified-dashboard/client/components/claude-accounts/claude-account-pool.css": 1,
     "unified-dashboard/client/components/config/config-layout.css": 3,
-    "unified-dashboard/client/v3/v3-folder-document-overlay.css": 1,
     "unified-dashboard/client/v3/v3-folder-workspace.css": 1,
     "unified-dashboard/client/v3/v3-postit-cards.css": 17
   },
@@ -28,7 +27,7 @@
     "unified-dashboard/client/v3/v3-card-check-items.css": 5,
     "unified-dashboard/client/v3/v3-context-succession.css": 3,
     "unified-dashboard/client/v3/v3-dialog-hierarchy.css": 2,
-    "unified-dashboard/client/v3/v3-folder-document-overlay.css": 1,
+    "unified-dashboard/client/v3/v3-document-reader-dialog.css": 1,
     "unified-dashboard/client/v3/v3-folder-section-navigation.css": 1,
     "unified-dashboard/client/v3/v3-folder-workspace.css": 3,
     "unified-dashboard/client/v3/v3-planner.css": 1,
@@ -41,8 +40,7 @@
     "unified-dashboard/client/components/claude-accounts/claude-account-pool.css": 7,
     "unified-dashboard/client/components/config/owned-agents.css": 1,
     "unified-dashboard/client/v3/card-question.css": 2,
-    "unified-dashboard/client/v3/v3-card-board.css": 1,
-    "unified-dashboard/client/v3/v3-folder-document-overlay.css": 1
+    "unified-dashboard/client/v3/v3-card-board.css": 1
   },
   "spacing-literal": {
     "unified-dashboard/client/v3/ritual.css": 16,
@@ -70,12 +68,10 @@
   },
   "tw-text-arbitrary": {
     "packages/soul-ui/src/components/AskQuestionBanner.tsx": 6,
-    "packages/soul-ui/src/components/BoardAssetCard.tsx": 3,
     "packages/soul-ui/src/components/ClaudeRuntimeNotificationsPanel.tsx": 2,
     "packages/soul-ui/src/components/ClaudeRuntimeSchedulesPanel.tsx": 3,
     "packages/soul-ui/src/components/ClaudeRuntimeSignalRows.tsx": 4,
     "packages/soul-ui/src/components/ClaudeRuntimeTasksPanel.tsx": 6,
-    "packages/soul-ui/src/components/CustomViewPanel.tsx": 1,
     "packages/soul-ui/src/components/SessionItem.tsx": 1,
     "packages/soul-ui/src/folder-status/FolderCompletionAction.tsx": 1,
     "unified-dashboard/client/components/CogitoHealthPanel.tsx": 1

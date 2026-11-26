@@ -1,21 +1,12 @@
-import {createPortal} from "react-dom";
 import { useLayoutEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useIsMobile, FileAttachmentPreview, SessionContextMenu, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
-import { FolderContextMenu } from "@seosoyoung/soul-ui/components/FolderContextMenu";
-import { MarkdownDocumentPanel } from "@seosoyoung/soul-ui/components/MarkdownDocumentPanel";
-import {
-  fetchMarkdownDocument,
-  updateMarkdownDocument,
-  deleteMarkdownDocument,
-} from "@seosoyoung/soul-ui/lib/markdown-document-operations";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { ProjectContextEditor } from "./ProjectContextEditor";
 import { CardTimeline } from "./CardTimeline";
 import { CardWorkspace } from "./CardWorkspace";
 import { CardBoardWorkspace } from "./CardBoardWorkspace";
 import { PostItCardView } from "./PostItCard";
-import { FolderDocumentOverlay } from "./FolderDocumentOverlay";
 import { DocumentReaderDialog } from "./DocumentReaderDialog";
 import { CardAttachmentReviewSamples } from "./CardAttachmentReviewSamples";
 import { ChatAttachmentReviewSamples } from "./ChatAttachmentReviewSamples";
@@ -40,7 +31,6 @@ export function DialoguesOverlaySamples({
   onClose(): void;
   onChanged(): void;
 }) {
-  const [expanded, setExpanded] = useState(true);
   const [selectedSession,setSelectedSession]=useState<SessionSummary>();
   const [mobileTab,setMobileTab]=useState("projects");
   const queryClient=useQueryClient();
@@ -164,49 +154,12 @@ export function DialoguesOverlaySamples({
       ? globalThis.fetch.bind(globalThis)
       : readSampleDocument}
     onClose={onClose}/>;
-  if (id === "document-overlay")
-    return createPortal(
-      <div className="v3-workspace-scrim is-chat-open is-document-overlay">
-        <div className="v3-workspace is-board-open">
-          <FolderDocumentOverlay
-            expanded={expanded}
-            projectTitle="검수 프로젝트"
-            folderTitle={folder.name}
-            onToggleExpanded={() => setExpanded((value) => !value)}
-            onClose={onClose}
-          >
-            <MarkdownDocumentPanel
-              documentId="sample-document"
-              container={null}
-              onPendingEditConsumed={() => {}}
-              onClose={onClose}
-              onDeleted={() => done("보드 문서 삭제")}
-              actions={{
-                read: (id) => fetchMarkdownDocument(id, api.request),
-                update: (value) => updateMarkdownDocument(value, api.request),
-                remove: (id) => deleteMarkdownDocument(id, api.request),
-              }}
-            />
-          </FolderDocumentOverlay>
-        </div>
-      </div>, document.querySelector(".v3-shell")!
-    );
   if (id === "v3-sheet")
     return (
       <V3ContextMenu
         target={{ x: 0, y: 0 }}
         actions={[{ label: "새 카드", onSelect: () => done("작업 액션") }]}
         onClose={onClose}
-      />
-    );
-  if (id === "folder-sheet")
-    return (
-      <FolderContextMenu
-        target={{ x: 0, y: 0, folder }}
-        onClose={onClose}
-        onRename={() => done("폴더 이름 변경")}
-        onOpenSettings={() => done("폴더 설정")}
-        onDelete={() => done("폴더 보관")}
       />
     );
   if (id === "session-sheet")

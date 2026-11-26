@@ -1,5 +1,5 @@
 // 카드 #1735 화면 검수 반려(세라피엘 1차) 재현·판정.
-// - 390 /dialogues?sample=session-sheet|folder-sheet|v3-sheet 와 1440·390 폴더 완료 알림에서
+// - 390 /dialogues?sample=session-sheet|v3-sheet 와 1440·390 폴더 완료 알림에서
 //   틀과 .glass, 테두리 빛의 네 모서리 계산 곡률이 같은지 단언한다.
 // - 1440 폴더 화면에서 세션 카드와 하위 폴더 행 왼쪽 위 모서리를 WebGL 켬/끔으로 찍어
 //   처음 채워지는 화소까지 거리가 1px 안으로 같은지 본다.
@@ -340,7 +340,7 @@ for (const width of [1440, 390]) {
   }
 }
 
-for (const id of ["session-sheet", "folder-sheet", "v3-sheet"]) {
+for (const id of ["session-sheet", "v3-sheet"]) {
   for (const webgl of [false, true]) {
     test(`시트 ${id} 390 webgl=${webgl ? 1 : 0}`, async ({ page }) => {
       test.setTimeout(120_000);

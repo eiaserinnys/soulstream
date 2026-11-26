@@ -293,13 +293,6 @@ export function buildDescriptionMutation({
   };
 }
 
-export function isRunResumable(session: SessionSummary): boolean {
-  return session.sessionType !== "llm"
-    && session.status !== "unknown"
-    && Boolean(session.nodeId)
-    && Boolean(session.agentId);
-}
-
 function editableDescriptionBlocks(blocks: readonly BlockDto[]): BlockDto[] {
   const childrenByParent = new Map<string | null, BlockDto[]>();
   for (const block of blocks) {

@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { processEventsBatch, processEventSingle } from "./event-processor";
+import { processEventsBatch } from "./event-processor";
 import { createProcessingContext } from "./processing-context";
 import type { SoulSSEEvent } from "@shared/types";
 import { flattenTree } from "../lib/flatten-tree";
@@ -322,14 +322,16 @@ describe("processEventsBatch — dedup", () => {
   it("eventId 없는 live-only 이벤트는 lastEventId 커서를 되돌리지 않는다", () => {
     const ctx = createProcessingContext();
 
-    const result = processEventSingle(
-      {
-        type: "text_start",
-        timestamp: 0,
-        tool_use_id: "item-live",
-        _live_only: true,
-      } as unknown as SoulSSEEvent,
-      0,
+    const result = processEventsBatch(
+      [{
+        event: {
+          type: "text_start",
+          timestamp: 0,
+          tool_use_id: "item-live",
+          _live_only: true,
+        } as unknown as SoulSSEEvent,
+        eventId: 0,
+      }],
       ctx,
       null,
       "sess-1",
@@ -338,113 +340,7 @@ describe("processEventsBatch — dedup", () => {
     );
 
     expect(result.updated).toBe(true);
-    expect(result.newLastEventId).toBe(42);
-  });
-});
-
-describe("processEventSingle — history_sync reset compatibility", () => {
-  it("reset_required를 모르는 웹도 트리를 바꾸지 않고 baseline marker로 처리", () => {
-    const ctx = createProcessingContext();
-    const initial = processEventSingle(
-      makeUserMessageEvent(7).event,
-      7,
-      ctx,
-      null,
-      "sess-1",
-      null,
-      0,
-    );
-    const root = initial.root;
-
-    const result = processEventSingle(
-      {
-        type: "history_sync",
-        last_event_id: 99,
-        is_live: true,
-        reset_required: true,
-      } as unknown as SoulSSEEvent,
-      0,
-      ctx,
-      root,
-      "sess-1",
-      null,
-      7,
-    );
-
-    expect(result.root).toBe(root);
-    expect(result.updated).toBe(false);
-    expect(result.notify).toBe(false);
-    expect(result.isHistorySync).toBe(true);
-    expect(ctx.historySynced).toBe(true);
-    expect(flattenTree(result.root)).toHaveLength(flattenTree(root).length);
-  });
-});
-
-describe("processEventSingle — prompt_suggestion", () => {
-  it("prompt_suggestion 단건: result.promptSuggestion에 sessionId+text가 담긴다", () => {
-    const ctx = createProcessingContext();
-    const result = processEventSingle(
-      makePromptSuggestionEvent(11, "hello world").event,
-      11,
-      ctx,
-      null,
-      "sess-1",
-      null,
-      0,
-    );
-
-    expect(result.promptSuggestion).toEqual({ sessionId: "sess-1", text: "hello world" });
-    expect(result.updated).toBe(false);
-    expect(result.root).toBeNull();
-    expect(result.newLastEventId).toBe(11);
-  });
-
-  it("prompt_suggestion: activeSessionKey가 null이면 promptSuggestion=null", () => {
-    const ctx = createProcessingContext();
-    const result = processEventSingle(
-      makePromptSuggestionEvent(11, "hello").event,
-      11,
-      ctx,
-      null,
-      null,
-      null,
-      0,
-    );
-
-    expect(result.promptSuggestion).toBeNull();
-  });
-
-  it("text_start 도착 시 result.clearPromptSuggestionFor에 sessionId가 담긴다", () => {
-    const ctx = createProcessingContext();
-    ctx.historySynced = true;
-    const result = processEventSingle(
-      makeTextStartEvent(12).event,
-      12,
-      ctx,
-      null,
-      "sess-1",
-      null,
-      0,
-    );
-
-    expect(result.clearPromptSuggestionFor).toBe("sess-1");
-  });
-
-  it("user_message는 clearPromptSuggestionFor를 셋하지 않는다", () => {
-    const ctx = createProcessingContext();
-    ctx.historySynced = true;
-    const result = processEventSingle(
-      makeUserMessageEvent(13).event,
-      13,
-      ctx,
-      null,
-      "sess-1",
-      null,
-      0,
-    );
-
-    // null 또는 undefined 모두 falsy이면 OK
-    expect(result.clearPromptSuggestionFor ?? null).toBeNull();
+    expect(result.maxEventId).toBe(42);
   });
 });
 
@@ -1148,9 +1044,8 @@ describe("live text lifecycle fences", () => {
         { event: liveText("text_delta", "stream-complete", "finished"), eventId: 0 },
         { event: liveText("text_end", "stream-complete"), eventId: 0 },
       ], ctx, null, "sess-1", null, 0);
-      const result = processEventSingle(
-        { type, liveSeq: 2 } as unknown as SoulSSEEvent,
-        2,
+      const result = processEventsBatch(
+        [{ event: { type, liveSeq: 2 } as unknown as SoulSSEEvent, eventId: 2 }],
         ctx,
         started.root,
         "sess-1",
@@ -1254,9 +1149,8 @@ describe("turn_summary — 응답 anchor 직접 캡션 투영", () => {
     );
     const before = flattenTree(initial.root);
 
-    const late = processEventSingle(
-      makeTurnSummaryEvent(140, 119).event,
-      140,
+    const late = processEventsBatch(
+      [{ event: makeTurnSummaryEvent(140, 119).event, eventId: 140 }],
       ctx,
       initial.root,
       "sess-1",

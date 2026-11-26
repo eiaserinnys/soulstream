@@ -26,7 +26,6 @@ describe("v3 task document board unification", () => {
     expect(inlineBoard).toContain("renameMarkdownDocument");
     expect(inlineBoard).toContain("deleteMarkdownDocument");
     expect(inlineBoard).toContain("moveBoardItemToFolder");
-    expect(inlineBoard).not.toContain("useBoardYjsRuntime");
     expect(inlineBoard).not.toContain("boardSync");
     expect(inlineBoard).not.toContain("/api/board-yjs");
     expect(inlineBoard).not.toContain("activeBoardDocumentId");

@@ -49,12 +49,6 @@ describe("markdown surface mount inventory", () => {
     ]);
   });
 
-  it("enumerates every shared MarkdownDocumentPanel surface", () => {
-    expect(inventoryMounts("MarkdownDocumentPanel")).toEqual([
-      "unified-dashboard/client/v3/DialoguesOverlaySamples.tsx",
-    ]);
-  });
-
   it("makes document code expansion explicit without changing chat or compact feeds", () => {
     const documentSurfaces = [
       "unified-dashboard/client/v3/CardNotes.tsx",
@@ -69,7 +63,6 @@ describe("markdown surface mount inventory", () => {
     ];
     expect(inventoryMounts("DocumentMarkdown")).toEqual([
       "packages/soul-ui/src/components/AttachmentViewer.tsx",
-      "packages/soul-ui/src/components/MarkdownDocumentPanel.tsx",
     ]);
     const cardDetailPane = readSource("unified-dashboard/client/v3/CardDetailPane.tsx");
     const cardNotes = readSource("unified-dashboard/client/v3/CardNotes.tsx");

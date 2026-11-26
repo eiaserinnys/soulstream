@@ -189,8 +189,6 @@ describe("production orchestrator entrypoint", () => {
     }
     expect(application.app.printRoutes()).toContain("ws/node");
     expect(application.app.hasRoute({ method: "POST", url: "/api/folders" })).toBe(true);
-    expect(application.app.hasRoute({ method: "GET", url: "/yjs/page/:pageId" }))
-      .toBe(true);
     expect(application.app.hasRoute({ method: "POST", url: "/api/page-yjs/host/:operation" }))
       .toBe(true);
     expect(application.app.hasRoute({ method: "POST", url: "/api/recurring-jobs" }))

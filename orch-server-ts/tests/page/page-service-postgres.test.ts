@@ -1,10 +1,4 @@
-import Fastify from "fastify";
-import {
-  HocuspocusProvider,
-  type HocuspocusProviderConfiguration,
-} from "@hocuspocus/provider";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import WebSocket from "ws";
 import * as Y from "yjs";
 
 import { PageRepository } from "../../src/page/page_repository.js";
@@ -14,8 +8,8 @@ import {
   PageMutationVersionConflictError,
 } from "../../src/page/page_mutation_helpers.js";
 import { PageYjsService } from "../../src/page/page_service.js";
+import { openLivePageDocument } from "./page_live_document.js";
 import { readPageYDocReplica } from "../../src/page/page_yjs_model.js";
-import { registerPageYjsRoutes } from "../../src/page/page_yjs_route.js";
 import { createLiveDbSqlResolver } from "../../src/runtime/live_db_sql.js";
 import {
   createPagePostgresHarness,
@@ -468,23 +462,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
 
   it("converges both live source and target Y.Docs after one cross-page transfer", async () => {
     const liveRepository = new PageRepository(createLiveDbSqlResolver({ sql: harness.liveSql }));
-    const app = Fastify({ logger: false });
-    const liveService = new PageYjsService({
-      repository: liveRepository,
-      auth: {
-        authBearerToken: "service-token",
-        nodeCredentials: null,
-        environment: "production",
-        dashboardAuthEnabled: false,
-        resolveDashboardUserFromHeaders: async () => null,
-      },
-      logger: app.log,
-    });
-    registerPageYjsRoutes(app, {
-      nodeCredentials: null,
-      createService: () => liveService,
-      authBearerToken: "service-token",
-    });
+    const liveService = new PageYjsService({ repository: liveRepository });
     await liveService.createPage({
       page: { id: "live-transfer-source", title: "Live source", dailyDate: null, metadata: {} },
       actor: { actorKind: "agent", actorSessionId: "agent-session" },
@@ -503,14 +481,11 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
         operations: [createBlock("live-anchor", null, null, "paragraph", "Anchor")],
       },
     });
-    const address = await app.listen({ host: "127.0.0.1", port: 0 });
-    const sourceProvider = connectProvider(address, "live-transfer-source");
-    const targetProvider = connectProvider(address, "live-transfer-target");
+    const [sourceLive, targetLive] = await Promise.all([
+      openLivePageDocument(liveService, "live-transfer-source"),
+      openLivePageDocument(liveService, "live-transfer-target"),
+    ]);
     try {
-      await Promise.all([
-        connectAndWaitForSync(sourceProvider),
-        connectAndWaitForSync(targetProvider),
-      ]);
       const sourceBefore = await liveService.getBrowserPage("live-transfer-source");
       const targetBefore = await liveService.getBrowserPage("live-transfer-target");
       const moved = await liveService.transferBlocks({
@@ -533,20 +508,19 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       });
 
       await waitForAsync(async () => {
-        const source = readPageYDocReplica("live-transfer-source", sourceProvider.document);
-        const target = readPageYDocReplica("live-transfer-target", targetProvider.document);
+        const source = readPageYDocReplica("live-transfer-source", sourceLive.document);
+        const target = readPageYDocReplica("live-transfer-target", targetLive.document);
         return source.page.mutationVersion === moved.source.page.version &&
           target.page.mutationVersion === moved.target.page.version &&
           !source.blocks.some((block) => block.id === "live-moved") &&
           target.blocks.some((block) => block.id === "live-moved");
       });
-      expect(readPageYDocReplica("live-transfer-source", sourceProvider.document).blocks)
+      expect(readPageYDocReplica("live-transfer-source", sourceLive.document).blocks)
         .not.toContainEqual(expect.objectContaining({ id: "live-moved" }));
-      expect(readPageYDocReplica("live-transfer-target", targetProvider.document).blocks)
+      expect(readPageYDocReplica("live-transfer-target", targetLive.document).blocks)
         .toContainEqual(expect.objectContaining({ id: "live-moved", text: "Live move" }));
     } finally {
-      await Promise.all([sourceProvider.destroy(), targetProvider.destroy()]);
-      await app.close();
+      await Promise.all([sourceLive.close(), targetLive.close()]);
       await liveService.close();
     }
   }, 60_000);
@@ -798,7 +772,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
     });
   }, 30_000);
 
-  it("persists client edits that race a durable server mutation exactly once", async () => {
+  it("persists live edits that race a durable server mutation exactly once", async () => {
     const created = await service.createPage({
       page: { id: "page-race", title: "Before", dailyDate: null, metadata: {} },
       actor: { actorKind: "agent", actorSessionId: "agent-session" },
@@ -820,25 +794,8 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
     });
     const blockId = created.temp_id_mapping["race-block"]!;
 
-    const app = Fastify({ logger: false });
-    const raceService = new PageYjsService({
-      repository,
-      auth: {
-        authBearerToken: "service-token",
-        nodeCredentials: null,
-        environment: "production",
-        dashboardAuthEnabled: false,
-        resolveDashboardUserFromHeaders: async () => null,
-      },
-      logger: app.log,
-    });
-    registerPageYjsRoutes(app, {
-      nodeCredentials: null,
-      createService: () => raceService,
-      authBearerToken: "service-token",
-    });
-    const address = await app.listen({ host: "127.0.0.1", port: 0 });
-    const provider = connectProvider(address, "page-race");
+    const raceService = new PageYjsService({ repository });
+    const live = await openLivePageDocument(raceService, "page-race");
     const originalCommit = repository.commitPageMutation.bind(repository);
     let releaseCommit!: () => void;
     let markCommitStarted!: () => void;
@@ -846,7 +803,6 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
     const commitStarted = new Promise<void>((resolve) => { markCommitStarted = resolve; });
     let operationSnapshot: Uint8Array | null = null;
     try {
-      await connectAndWaitForSync(provider);
       repository.commitPageMutation = async (input) => {
         markCommitStarted();
         await commitBarrier;
@@ -854,8 +810,8 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
         operationSnapshot = input.application.snapshot;
         return result;
       };
-      const text = getEditableText(provider.document, blockId);
-      text.insert(text.length, "-A");
+      const text = getEditableText(live.document, blockId);
+      live.edit(() => text.insert(text.length, "-A"));
       const mutation = raceService.mutatePage({
         pageId: "page-race",
         expectedVersion: 1,
@@ -864,7 +820,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
         command: { type: "rename_page", title: "Renamed" },
       });
       await commitStarted;
-      text.insert(text.length, "-B");
+      live.edit(() => text.insert(text.length, "-B"));
       releaseCommit();
       await mutation;
 
@@ -907,60 +863,11 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
     } finally {
       repository.commitPageMutation = originalCommit;
       releaseCommit();
-      await provider.destroy();
-      await app.close();
+      await live.close();
+      await raceService.close();
     }
   }, 60_000);
 });
-
-function connectProvider(address: string, pageId: string): HocuspocusProvider {
-  return new HocuspocusProvider({
-    url: `${address.replace("http", "ws")}/yjs/page/${pageId}`,
-    name: `page:${pageId}`,
-    document: new Y.Doc(),
-    token: "service-token",
-    WebSocketPolyfill: WebSocket,
-    autoConnect: false,
-  } as HocuspocusProviderConfiguration & { WebSocketPolyfill: typeof WebSocket });
-}
-
-function waitForSync(
-  provider: HocuspocusProvider,
-  timeoutMs = 30_000,
-): Promise<void> {
-  if (provider.isSynced) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout>;
-    const cleanup = () => {
-      clearTimeout(timer);
-      provider.off("synced", onSynced);
-      provider.off("authenticationFailed", onAuthenticationFailed);
-    };
-    const onSynced = () => {
-      cleanup();
-      resolve();
-    };
-    const onAuthenticationFailed = ({ reason }: { reason: string }) => {
-      cleanup();
-      reject(new Error(reason));
-    };
-    timer = setTimeout(() => {
-      cleanup();
-      reject(new Error("provider sync timed out"));
-    }, timeoutMs);
-    provider.on("synced", onSynced);
-    provider.on("authenticationFailed", onAuthenticationFailed);
-    if (provider.isSynced) {
-      onSynced();
-    }
-  });
-}
-
-async function connectAndWaitForSync(provider: HocuspocusProvider): Promise<void> {
-  const synced = waitForSync(provider);
-  provider.connect();
-  await synced;
-}
 
 function getEditableText(document: Y.Doc, blockId: string): Y.Text {
   const block = document.getMap<Y.Map<unknown>>("blocks").get(blockId);

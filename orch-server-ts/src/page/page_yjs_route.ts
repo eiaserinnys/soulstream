@@ -1,7 +1,6 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
-import { registerWebsocketPlugin } from "../websocket_plugin.js";
 import {
   registerPageBrowserRoutes,
   type PageBrowserRouteOptions,
@@ -15,7 +14,6 @@ import {
 } from "../planner/planner_routes.js";
 
 export const pageYjsRouteAuthRequirements = {
-  "WEBSOCKET /yjs/page/{pageId}": false,
   "POST /api/page-yjs/host/{operation}": true,
 } as const;
 
@@ -37,7 +35,6 @@ export function registerPageYjsRoutes(
   options: PageYjsRouteOptions,
 ): void {
   const service = options.createService(app.log);
-  service.assertWebsocketAuthConfigured();
   registerPageYjsHostOperationRoutes(app, {
     service,
     authBearerToken: options.authBearerToken,
@@ -67,15 +64,5 @@ export function registerPageYjsRoutes(
       });
     }
   }
-  registerWebsocketPlugin(app);
-  app.after(() => {
-    app.get<{ Params: { pageId: string } }>(
-      "/yjs/page/:pageId",
-      { websocket: true },
-      (socket, request) => {
-        service.handleConnection(socket, request.raw, request.params.pageId);
-      },
-    );
-  });
   app.addHook("onClose", async () => service.close());
 }

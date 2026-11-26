@@ -3,7 +3,6 @@ import { RenameSessionDialog } from "@seosoyoung/soul-ui/components/RenameSessio
 import { useEffect, useMemo, useState } from "react";
 import {
   FolderDialog,
-  FolderSettingsDialog,
   MarkdownDeleteDialog,
   SessionMenuOwnerProvider,
   useDashboardStore,
@@ -117,16 +116,6 @@ export function DialoguesSamples({
         error={null}
         onOpenChange={openChange}
         onArchive={() => done("상세 폴더 보관")}
-      />
-    );
-  if (id === "folder-settings")
-    return (
-      <FolderSettingsDialog
-        folder={folder}
-        folders={dialoguesFolders}
-        open
-        onOpenChange={openChange}
-        onConfirm={() => done("폴더 설정 저장")}
       />
     );
   if (id === "parent-move")

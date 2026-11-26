@@ -22,8 +22,6 @@ const bodyFor = (name: string) => `# ${name}\n\n${BODY_LINES.join("\n\n")}\n\n${
 
 let verifyAsked = false;
 
-export function resetGuidesSample(): void { verifyAsked = false; }
-
 export async function guidesSampleRoute(path: string, method: string, init: RequestInit | undefined, state: string): Promise<Response | null> {
   const isGuides = path === "/api/skill-guides" || path.startsWith("/api/skill-guides/");
   const overview = /^\/api\/nodes\/([^/]+)\/agents\/context-overview$/.exec(path);

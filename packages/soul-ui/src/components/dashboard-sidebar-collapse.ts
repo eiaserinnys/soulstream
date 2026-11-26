@@ -30,10 +30,6 @@ export function writeDashboardLeftSidebarCollapsed(
   }
 }
 
-export function isEditableShortcutTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
-}
-
 export function isDashboardSidebarToggleShortcut(
   event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">,
   platform = typeof navigator === "undefined" ? "" : navigator.platform,

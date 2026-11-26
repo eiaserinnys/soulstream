@@ -16,16 +16,11 @@ export { nodeIdToHue } from "../lib/nodeColors";
 export { NodeBadge } from "./NodeBadge";
 export type { NodeBadgeProps } from "./NodeBadge";
 export { FolderDialog } from "./FolderDialog";
-export { FolderSettingsDialog } from "./FolderSettingsDialog";
-export type { FolderSettingsDialogProps } from "./FolderSettingsDialog";
 export { ChatInput } from "./ChatInput";
-export { CustomViewPanel } from "./CustomViewPanel";
-export type { CustomViewPanelProps } from "./CustomViewPanel";
 export { FrameLoading } from "./FrameLoading";
 export type { FrameLoadingProps } from "./FrameLoading";
 export { FrameNotice } from "./FrameNotice";
 export type { FrameNoticeProps } from "./FrameNotice";
-export { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
 export { MarkdownDeleteDialog } from "./MarkdownDeleteDialog";
 export type { MarkdownDeleteDialogProps } from "./MarkdownDeleteDialog";
 export { MarkdownContent } from "./MarkdownContent";
@@ -46,8 +41,6 @@ export type {
   CustomViewBindingData,
 } from "../custom-view/CustomViewRenderer";
 export { useCustomViewBindings } from "../custom-view/use-custom-view-bindings";
-export { BoardAssetCard } from "./BoardAssetCard";
-export type { BoardAssetCardProps } from "./BoardAssetCard";
 export { AskQuestionBanner } from "./AskQuestionBanner";
 export { ProfileAvatar } from "./ProfileAvatar";
 export { ContextContentRenderer } from "./ContextContentRenderer";
@@ -81,4 +74,4 @@ export * from "./chat";
 export * from "./auth";
 export * from "./ui";
 
-export { SessionMenuOwnerProvider, SessionMenuTrigger, useSessionMenu } from "./SessionMenuOwner";
+export { SessionMenuOwnerProvider, useSessionMenu } from "./SessionMenuOwner";

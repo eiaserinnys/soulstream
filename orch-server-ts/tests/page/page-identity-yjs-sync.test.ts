@@ -1,10 +1,4 @@
-import Fastify from "fastify";
-import {
-  HocuspocusProvider,
-  type HocuspocusProviderConfiguration,
-} from "@hocuspocus/provider";
-import { afterEach, describe, expect, it } from "vitest";
-import WebSocket from "ws";
+import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import {
@@ -20,14 +14,8 @@ import {
   readPageYDocReplica,
   type PageYjsReplica,
 } from "../../src/page/page_yjs_model.js";
-import { registerPageYjsRoutes } from "../../src/page/page_yjs_route.js";
 import { PageYjsService } from "../../src/page/page_service.js";
-
-const providers: HocuspocusProvider[] = [];
-
-afterEach(async () => {
-  await Promise.all(providers.splice(0).map(async (provider) => await provider.destroy()));
-});
+import { openLivePageDocument, type LivePageDocument } from "./page_live_document.js";
 
 describe("identity page commit → live Y.Doc synchronization", () => {
   const cases = [
@@ -42,31 +30,14 @@ describe("identity page commit → live Y.Doc synchronization", () => {
       const pageId = `${testCase.identity}-${testCase.active ? "active" : "inactive"}`;
       const repository = new IdentityPageRepository();
       repository.seed(pageId, testCase.identity);
-      const app = Fastify({ logger: false });
-      const service = new PageYjsService({
-        repository,
-        auth: {
-          authBearerToken: "service-token",
-          nodeCredentials: null,
-          environment: "production",
-          dashboardAuthEnabled: false,
-          resolveDashboardUserFromHeaders: async () => null,
-        },
-      });
-      registerPageYjsRoutes(app, {
-        nodeCredentials: null,
-        createService: () => service,
-        authBearerToken: "service-token",
-      });
-      const address = await app.listen({ host: "127.0.0.1", port: 0 });
-      let browser: HocuspocusProvider | null = null;
-      let browserUpdateCount = 0;
+      const service = new PageYjsService({ repository });
+      let live: LivePageDocument | null = null;
+      let liveUpdateCount = 0;
 
       try {
         if (testCase.active) {
-          browser = connectProvider(address, pageId);
-          await connectAndWaitForSync(browser);
-          browser.document.on("update", () => { browserUpdateCount += 1; });
+          live = await openLivePageDocument(service, pageId);
+          live.document.on("update", () => { liveUpdateCount += 1; });
         }
 
         const identityApplication = new PageMutationCore().mutate(
@@ -92,11 +63,11 @@ describe("identity page commit → live Y.Doc synchronization", () => {
           title: "Renamed identity",
           version: 11,
         });
-        if (browser) {
-          await waitFor(() => readPageYDocReplica(pageId, browser!.document).page.mutationVersion === 11);
-          expect(readPageYDocReplica(pageId, browser.document).page.title)
+        if (live) {
+          await waitFor(() => readPageYDocReplica(pageId, live!.document).page.mutationVersion === 11);
+          expect(readPageYDocReplica(pageId, live.document).page.title)
             .toBe("Renamed identity");
-          expect(browserUpdateCount).toBeGreaterThan(0);
+          expect(liveUpdateCount).toBeGreaterThan(0);
         } else {
           expect(service.getPersistenceDiagnostics().activeDocuments).toBe(0);
         }
@@ -122,39 +93,12 @@ describe("identity page commit → live Y.Doc synchronization", () => {
         expect(repository.storeCount).toBe(0);
         expect(repository.read(pageId).page.mutationVersion).toBe(12);
       } finally {
-        await browser?.destroy();
-        await app.close();
+        await live?.close();
+        await service.close();
       }
     }, 20_000);
   }
 });
-
-function connectProvider(address: string, pageId: string): HocuspocusProvider {
-  const provider = new HocuspocusProvider({
-    url: `${address.replace("http", "ws")}/yjs/page/${pageId}`,
-    name: `page:${pageId}`,
-    document: new Y.Doc(),
-    token: "service-token",
-    WebSocketPolyfill: WebSocket,
-    autoConnect: false,
-  } as HocuspocusProviderConfiguration & { WebSocketPolyfill: typeof WebSocket });
-  providers.push(provider);
-  return provider;
-}
-
-async function connectAndWaitForSync(provider: HocuspocusProvider): Promise<void> {
-  const synced = provider.isSynced
-    ? Promise.resolve()
-    : new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("provider sync timed out")), 10_000);
-      provider.on("synced", () => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
-  provider.connect();
-  await synced;
-}
 
 async function waitFor(predicate: () => boolean): Promise<void> {
   const deadline = Date.now() + 5_000;

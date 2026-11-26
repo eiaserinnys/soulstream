@@ -333,12 +333,6 @@ export function applyClaudeRuntimeEvent<E extends { type: string }>(
   return next;
 }
 
-export function schedulesFromList(
-  schedules: ClaudeRuntimeScheduleView[],
-): Record<string, ClaudeRuntimeScheduleView> {
-  return Object.fromEntries(schedules.map((schedule) => [schedule.scheduleId, schedule]));
-}
-
 function timestampToMs(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return Date.now();
   return value > 1_000_000_000_000 ? value : value * 1000;

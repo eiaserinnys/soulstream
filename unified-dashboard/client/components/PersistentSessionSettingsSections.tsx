@@ -8,14 +8,6 @@ import { PersistentSessionInstructionsView, usePersistentSessionInstructions } f
 import { PersistentSessionMonitoringView, usePersistentSessionMonitoring } from "./PersistentSessionMonitoring";
 import { SettingsAlert } from "./config/SettingsListDetail";
 
-export const PERSISTENT_SESSION_SETTINGS_SECTIONS = [
-  { name: "instructions", label: "지속 지시" },
-  { name: "account", label: "계정과 모델" },
-  { name: "display", label: "표시와 모션" },
-  { name: "record", label: "기록" },
-  { name: "story", label: "세션 스토리" },
-] as const;
-
 function Section({ name, label, children }: { name: string; label: string; children: ReactNode }) {
   return <section aria-label={label} data-section={name} className="space-y-2 border-t border-border pt-4">
     <h4 className="text-sm font-semibold">{label}</h4>

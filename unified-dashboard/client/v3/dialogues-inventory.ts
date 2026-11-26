@@ -42,12 +42,6 @@ export const dialoguesInventory = [
   },
   {
     section: "folders",
-    id: "folder-settings",
-    name: "폴더 설정",
-    component: "FolderSettingsDialog",
-  },
-  {
-    section: "folders",
     id: "parent-move",
     name: "다른 프로젝트로 이동",
     component: "FolderParentMoveDialog",
@@ -216,12 +210,6 @@ export const dialoguesInventory = [
   },
   {
     section: "overlays",
-    id: "document-overlay",
-    name: "보드 문서 편집기 확대",
-    component: "FolderDocumentOverlay / MarkdownDocumentPanel",
-  },
-  {
-    section: "overlays",
     id: "document-reader",
     name: "링크 문서 읽기",
     component: "DocumentReaderDialog",
@@ -231,12 +219,6 @@ export const dialoguesInventory = [
     id: "v3-sheet",
     name: "모바일 작업 액션 시트",
     component: "V3ContextMenu",
-  },
-  {
-    section: "overlays",
-    id: "folder-sheet",
-    name: "모바일 폴더 액션 시트",
-    component: "FolderContextMenu",
   },
   {
     section: "overlays",
@@ -253,11 +235,3 @@ export const dialoguesInventory = [
   { section: "overlays", id: "card-attachments", name: "카드 첨부 미리보기", component: "CardCheckItems / CardTimeline" },
 ] as const;
 export type DialogueId = (typeof dialoguesInventory)[number]["id"];
-export const dialoguesSections = [
-  { id: "folders", title: "폴더" },
-  { id: "sessions", title: "세션" },
-  { id: "cards", title: "카드와 첨부" },
-  { id: "documents", title: "문서와 보드" },
-  { id: "settings", title: "설정" },
-  { id: "overlays", title: "팝오버와 확대" },
-] as const;

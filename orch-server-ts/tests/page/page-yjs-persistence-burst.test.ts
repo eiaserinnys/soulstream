@@ -1,10 +1,4 @@
-import Fastify from "fastify";
-import {
-  HocuspocusProvider,
-  type HocuspocusProviderConfiguration,
-} from "@hocuspocus/provider";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import WebSocket from "ws";
 import * as Y from "yjs";
 
 import { projectPageLinks } from "../../src/page/page_link_projection.js";
@@ -18,13 +12,13 @@ import {
   readPageYDocReplica,
   type PageYjsReplica,
 } from "../../src/page/page_yjs_model.js";
-import { registerPageYjsRoutes } from "../../src/page/page_yjs_route.js";
 import { PageYjsService } from "../../src/page/page_service.js";
+import { openLivePageDocument } from "./page_live_document.js";
 
-const providers: HocuspocusProvider[] = [];
+const services: PageYjsService[] = [];
 
 afterEach(async () => {
-  await Promise.all(providers.splice(0).map((provider) => provider.destroy()));
+  await Promise.all(services.splice(0).map((service) => service.close()));
 });
 
 describe("Page Yjs rapid-edit persistence", () => {
@@ -32,120 +26,106 @@ describe("Page Yjs rapid-edit persistence", () => {
     const repository = new InstrumentedPageRepository();
     repository.seed("page-1", editableBlock("[[Target]]"));
     const baseSnapshot = repository.snapshots.get("page:page-1")!;
-    const { app, service } = createHarness(repository);
-    const address = await app.listen({ host: "127.0.0.1", port: 0 });
-    try {
-      const provider = connectProvider(address, "page-1");
-      await waitForSync(provider);
-      const text = getEditableText(provider.document);
+    const service = createService(repository);
+    const live = await openLivePageDocument(service, "page-1");
+    const text = getEditableText(live.document);
 
-      for (let index = 0; index < 3_000; index += 1) text.insert(text.length, "x");
-      await waitFor(() => repository.storeCount > 0, 10_000);
-      await waitFor(() => {
-        const diagnostics = service.getPersistenceDiagnostics();
-        return diagnostics.pendingStores === 0 && diagnostics.pendingUpdateDocuments === 0;
-      }, 10_000);
-
-      const finalText = `[[Target]]${"x".repeat(3_000)}`;
-      expect(repository.storeCount).toBeLessThanOrEqual(3);
-      expect(repository.lastText).toBe(finalText);
-      expect(repository.lastLinks).toMatchObject([{
-        sourceBlockId: "block-1",
-        linkKind: "inline_page",
-        targetTitleKey: "target",
-      }]);
-      const opLogReplica = new Y.Doc();
-      Y.applyUpdate(opLogReplica, baseSnapshot);
-      for (const update of repository.successfulUpdates) Y.applyUpdate(opLogReplica, update);
-      expect(readPageYDocReplica("page-1", opLogReplica).blocks[0]?.text).toBe(finalText);
-      const updateOnly = new Y.Doc();
-      for (const update of repository.successfulUpdates) Y.applyUpdate(updateOnly, update);
-      expect(() => readPageYDocReplica("page-1", updateOnly)).toThrow();
-
-      await provider.destroy();
-      await waitFor(() => service.getPersistenceDiagnostics().activeDocuments === 0);
-      expect(service.getPersistenceDiagnostics()).toMatchObject({
-        activeDocuments: 0,
-        activeConnections: 0,
-        pendingStores: 0,
-        executingStores: 0,
-        activeRepositoryStores: 0,
-        pendingUpdateBytes: 0,
-        pendingUpdateDocuments: 0,
-      });
-    } finally {
-      await app.close();
+    for (let index = 0; index < 3_000; index += 1) {
+      live.edit(() => text.insert(text.length, "x"));
     }
+    await waitFor(() => repository.storeCount > 0, 10_000);
+    await waitFor(() => {
+      const diagnostics = service.getPersistenceDiagnostics();
+      return diagnostics.pendingStores === 0 && diagnostics.pendingUpdateDocuments === 0;
+    }, 10_000);
+
+    const finalText = `[[Target]]${"x".repeat(3_000)}`;
+    expect(repository.storeCount).toBeLessThanOrEqual(3);
+    expect(repository.lastText).toBe(finalText);
+    expect(repository.lastLinks).toMatchObject([{
+      sourceBlockId: "block-1",
+      linkKind: "inline_page",
+      targetTitleKey: "target",
+    }]);
+    const opLogReplica = new Y.Doc();
+    Y.applyUpdate(opLogReplica, baseSnapshot);
+    for (const update of repository.successfulUpdates) Y.applyUpdate(opLogReplica, update);
+    expect(readPageYDocReplica("page-1", opLogReplica).blocks[0]?.text).toBe(finalText);
+    const updateOnly = new Y.Doc();
+    for (const update of repository.successfulUpdates) Y.applyUpdate(updateOnly, update);
+    expect(() => readPageYDocReplica("page-1", updateOnly)).toThrow();
+
+    await live.close();
+    await waitFor(() => service.getPersistenceDiagnostics().activeDocuments === 0);
+    expect(service.getPersistenceDiagnostics()).toMatchObject({
+      activeDocuments: 0,
+      activeConnections: 0,
+      pendingStores: 0,
+      executingStores: 0,
+      activeRepositoryStores: 0,
+      pendingUpdateBytes: 0,
+      pendingUpdateDocuments: 0,
+    });
   }, 20_000);
 
-  it("skips the trailing store for a durable server operation, then stores a client edit", async () => {
+  it("skips the trailing store for a durable server operation, then stores a live edit", async () => {
     const repository = new InstrumentedPageRepository();
     repository.seed("page-1", editableBlock("before"));
     const onPageUpdated = vi.fn();
-    const { app, service } = createHarness(repository, {
+    const service = createService(repository, {
       createOperationId: () => "operation-1",
       onPageUpdated,
     });
-    const address = await app.listen({ host: "127.0.0.1", port: 0 });
-    try {
-      const mutation = await service.mutatePage({
-        pageId: "page-1",
-        expectedVersion: 1,
-        actor: { actorKind: "agent", actorSessionId: "agent-session" },
-        idempotencyKey: "update_block_text:agent-session:operation-1",
-        command: { type: "update_block_text", blockId: "block-1", text: "server" },
-      });
-      expect(mutation.blocks[0]?.text).toBe("server");
-      await waitFor(() => repository.hasPageOperationCalls > 0);
-      expect(repository.storeCount).toBe(0);
-      expect(onPageUpdated).toHaveBeenCalledTimes(1);
-      expect(onPageUpdated).toHaveBeenLastCalledWith({ pageId: "page-1", version: 2 });
+    const mutation = await service.mutatePage({
+      pageId: "page-1",
+      expectedVersion: 1,
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "update_block_text:agent-session:operation-1",
+      command: { type: "update_block_text", blockId: "block-1", text: "server" },
+    });
+    expect(mutation.blocks[0]?.text).toBe("server");
+    await waitFor(() => repository.hasPageOperationCalls > 0);
+    expect(repository.storeCount).toBe(0);
+    expect(onPageUpdated).toHaveBeenCalledTimes(1);
+    expect(onPageUpdated).toHaveBeenLastCalledWith({ pageId: "page-1", version: 2 });
 
-      const provider = connectProvider(address, "page-1");
-      await waitForSync(provider);
-      getEditableText(provider.document).insert("server".length, "-client");
-      await waitFor(() => repository.storeCount === 1);
-      expect(repository.lastText).toBe("server-client");
-      expect(repository.successfulUpdates).toHaveLength(1);
-      expect(onPageUpdated).toHaveBeenCalledTimes(2);
-      expect(onPageUpdated).toHaveBeenLastCalledWith({ pageId: "page-1", version: 2 });
-    } finally {
-      await app.close();
-    }
+    const live = await openLivePageDocument(service, "page-1");
+    live.edit((document) => getEditableText(document).insert("server".length, "-live"));
+    await waitFor(() => repository.storeCount === 1);
+    expect(repository.lastText).toBe("server-live");
+    expect(repository.successfulUpdates).toHaveLength(1);
+    expect(onPageUpdated).toHaveBeenCalledTimes(2);
+    expect(onPageUpdated).toHaveBeenLastCalledWith({ pageId: "page-1", version: 2 });
   }, 20_000);
 
   it("isolates coalescing and final state across two rapidly edited pages", async () => {
     const repository = new InstrumentedPageRepository();
     repository.seed("page-1", editableBlock("one:"));
     repository.seed("page-2", editableBlock("two:"));
-    const { app, service } = createHarness(repository);
-    const address = await app.listen({ host: "127.0.0.1", port: 0 });
-    try {
-      const first = connectProvider(address, "page-1");
-      const second = connectProvider(address, "page-2");
-      await Promise.all([waitForSync(first), waitForSync(second)]);
-      const firstText = getEditableText(first.document);
-      const secondText = getEditableText(second.document);
-      for (let index = 0; index < 1_000; index += 1) {
-        firstText.insert(firstText.length, "a");
-        secondText.insert(secondText.length, "b");
-      }
-      await waitFor(() => {
-        const diagnostics = service.getPersistenceDiagnostics();
-        return repository.storeCount >= 2 && diagnostics.pendingStores === 0 &&
-          diagnostics.pendingUpdateDocuments === 0;
-      }, 10_000);
-
-      expect(repository.storeCountsByDocument.get("page:page-1")).toBeLessThanOrEqual(3);
-      expect(repository.storeCountsByDocument.get("page:page-2")).toBeLessThanOrEqual(3);
-      expect(repository.textByDocument.get("page:page-1")).toBe(`one:${"a".repeat(1_000)}`);
-      expect(repository.textByDocument.get("page:page-2")).toBe(`two:${"b".repeat(1_000)}`);
-
-      await Promise.all([first.destroy(), second.destroy()]);
-      await waitFor(() => service.getPersistenceDiagnostics().activeDocuments === 0);
-    } finally {
-      await app.close();
+    const service = createService(repository);
+    const [first, second] = await Promise.all([
+      openLivePageDocument(service, "page-1"),
+      openLivePageDocument(service, "page-2"),
+    ]);
+    const firstText = getEditableText(first.document);
+    const secondText = getEditableText(second.document);
+    for (let index = 0; index < 1_000; index += 1) {
+      first.edit(() => firstText.insert(firstText.length, "a"));
+      second.edit(() => secondText.insert(secondText.length, "b"));
     }
+    await waitFor(() => {
+      const diagnostics = service.getPersistenceDiagnostics();
+      return repository.storeCount >= 2 && diagnostics.pendingStores === 0 &&
+        diagnostics.pendingUpdateDocuments === 0;
+    }, 10_000);
+
+    expect(repository.storeCountsByDocument.get("page:page-1")).toBeLessThanOrEqual(3);
+    expect(repository.storeCountsByDocument.get("page:page-2")).toBeLessThanOrEqual(3);
+    expect(repository.textByDocument.get("page:page-1")).toBe(`one:${"a".repeat(1_000)}`);
+    expect(repository.textByDocument.get("page:page-2")).toBe(`two:${"b".repeat(1_000)}`);
+
+    await Promise.all([first.close(), second.close()]);
+    await waitFor(() => service.getPersistenceDiagnostics().activeDocuments === 0);
   }, 20_000);
 
   it("retries transient persistence failure without growing a memory queue", async () => {
@@ -153,45 +133,41 @@ describe("Page Yjs rapid-edit persistence", () => {
     repository.seed("page-1", editableBlock(""));
     const baseSnapshot = repository.snapshots.get("page:page-1")!;
     repository.failuresRemaining = 2;
-    const { app, service } = createHarness(repository);
-    const address = await app.listen({ host: "127.0.0.1", port: 0 });
-    try {
-      const provider = connectProvider(address, "page-1");
-      await waitForSync(provider);
-      const text = getEditableText(provider.document);
-      for (let index = 0; index < 1_000; index += 1) text.insert(text.length, "r");
-      const finalText = "r".repeat(1_000);
-      await waitFor(() => {
-        const diagnostics = service.getPersistenceDiagnostics();
-        return repository.lastText === finalText &&
-          diagnostics.pendingStores === 0 &&
-          diagnostics.executingStores === 0 &&
-          diagnostics.activeRepositoryStores === 0 &&
-          diagnostics.pendingUpdateDocuments === 0;
-      }, 10_000);
-
-      expect(repository.storeCount).toBeLessThanOrEqual(3);
-      expect(repository.storeAttempts).toBe(2 + repository.storeCount);
-      expect(repository.successfulUpdates).toHaveLength(repository.storeCount);
-      expect(repository.attemptedUpdates).toHaveLength(repository.storeAttempts);
-      expect(repository.attemptedUpdates.slice(0, 3).every((update) =>
-        Buffer.from(update).equals(Buffer.from(repository.attemptedUpdates[0]!))
-      )).toBe(true);
-      expect(repository.lastText).toBe(finalText);
-      const opLogReplica = new Y.Doc();
-      Y.applyUpdate(opLogReplica, baseSnapshot);
-      for (const update of repository.successfulUpdates) Y.applyUpdate(opLogReplica, update);
-      expect(readPageYDocReplica("page-1", opLogReplica).blocks[0]?.text).toBe(finalText);
-      expect(service.getPersistenceDiagnostics()).toMatchObject({
-        activeRepositoryStores: 0,
-        failedStores: 0,
-        pendingUpdateBytes: 0,
-        pendingUpdateDocuments: 0,
-        retryAttempts: 2,
-      });
-    } finally {
-      await app.close();
+    const service = createService(repository);
+    const live = await openLivePageDocument(service, "page-1");
+    const text = getEditableText(live.document);
+    for (let index = 0; index < 1_000; index += 1) {
+      live.edit(() => text.insert(text.length, "r"));
     }
+    const finalText = "r".repeat(1_000);
+    await waitFor(() => {
+      const diagnostics = service.getPersistenceDiagnostics();
+      return repository.lastText === finalText &&
+        diagnostics.pendingStores === 0 &&
+        diagnostics.executingStores === 0 &&
+        diagnostics.activeRepositoryStores === 0 &&
+        diagnostics.pendingUpdateDocuments === 0;
+    }, 10_000);
+
+    expect(repository.storeCount).toBeLessThanOrEqual(3);
+    expect(repository.storeAttempts).toBe(2 + repository.storeCount);
+    expect(repository.successfulUpdates).toHaveLength(repository.storeCount);
+    expect(repository.attemptedUpdates).toHaveLength(repository.storeAttempts);
+    expect(repository.attemptedUpdates.slice(0, 3).every((update) =>
+      Buffer.from(update).equals(Buffer.from(repository.attemptedUpdates[0]!))
+    )).toBe(true);
+    expect(repository.lastText).toBe(finalText);
+    const opLogReplica = new Y.Doc();
+    Y.applyUpdate(opLogReplica, baseSnapshot);
+    for (const update of repository.successfulUpdates) Y.applyUpdate(opLogReplica, update);
+    expect(readPageYDocReplica("page-1", opLogReplica).blocks[0]?.text).toBe(finalText);
+    expect(service.getPersistenceDiagnostics()).toMatchObject({
+      activeRepositoryStores: 0,
+      failedStores: 0,
+      pendingUpdateBytes: 0,
+      pendingUpdateDocuments: 0,
+      retryAttempts: 2,
+    });
   }, 20_000);
 
   it("atomically remerges updates that arrive while a bounded store fails", async () => {
@@ -199,116 +175,73 @@ describe("Page Yjs rapid-edit persistence", () => {
     repository.seed("page-1", editableBlock(""));
     repository.failuresRemaining = 3;
     repository.pauseNextAttempt();
-    const { app, service } = createHarness(repository);
-    const address = await app.listen({ host: "127.0.0.1", port: 0 });
-    try {
-      const provider = connectProvider(address, "page-1");
-      await waitForSync(provider);
-      const text = getEditableText(provider.document);
-      text.insert(0, "first");
-      await waitFor(() => repository.storeAttempts === 1);
-      text.insert(text.length, "-during-failure");
-      repository.releasePausedAttempt();
+    const service = createService(repository);
+    const live = await openLivePageDocument(service, "page-1");
+    const text = getEditableText(live.document);
+    live.edit(() => text.insert(0, "first"));
+    await waitFor(() => repository.storeAttempts === 1);
+    live.edit(() => text.insert(text.length, "-during-failure"));
+    repository.releasePausedAttempt();
 
-      await waitFor(() => service.getPersistenceDiagnostics().failedStores === 1);
-      await waitFor(() => repository.storeCount === 1);
-      expect(repository.storeAttempts).toBe(4);
-      expect(repository.successfulUpdates).toHaveLength(1);
-      expect(repository.lastText).toBe("first-during-failure");
-      expect(service.getPersistenceDiagnostics()).toMatchObject({
-        activeRepositoryStores: 0,
-        failedStores: 1,
-        pendingUpdateBytes: 0,
-        pendingUpdateDocuments: 0,
-        retryAttempts: 2,
-      });
-    } finally {
-      await app.close();
-    }
+    await waitFor(() => service.getPersistenceDiagnostics().failedStores === 1);
+    await waitFor(() => repository.storeCount === 1);
+    expect(repository.storeAttempts).toBe(4);
+    expect(repository.successfulUpdates).toHaveLength(1);
+    expect(repository.lastText).toBe("first-during-failure");
+    expect(service.getPersistenceDiagnostics()).toMatchObject({
+      activeRepositoryStores: 0,
+      failedStores: 1,
+      pendingUpdateBytes: 0,
+      pendingUpdateDocuments: 0,
+      retryAttempts: 2,
+    });
   }, 20_000);
 
   it("flushes trailing state and clears lifecycle work on server close", async () => {
     const repository = new InstrumentedPageRepository();
     repository.seed("page-1", editableBlock("before"));
-    const { app, service } = createHarness(repository);
-    const address = await app.listen({ host: "127.0.0.1", port: 0 });
-    let closed = false;
-    try {
-      const provider = connectProvider(address, "page-1");
-      await waitForSync(provider);
-      const text = getEditableText(provider.document);
-      text.insert(text.length, "-close");
+    const service = createService(repository);
+    const live = await openLivePageDocument(service, "page-1");
+    const text = getEditableText(live.document);
+    live.edit(() => text.insert(text.length, "-close"));
 
-      await app.close();
-      closed = true;
+    await service.close();
 
-      expect(repository.storeCount).toBe(1);
-      expect(repository.lastText).toBe("before-close");
-      expect(service.getPersistenceDiagnostics()).toEqual({
-        activeDocuments: 0,
-        activeConnections: 0,
-        pendingStores: 0,
-        executingStores: 0,
-        activeRepositoryStores: 0,
-        failedStores: 0,
-        pendingUpdateBytes: 0,
-        pendingUpdateDocuments: 0,
-        retryAttempts: 0,
-      });
-      await provider.destroy();
-    } finally {
-      if (!closed) await app.close();
-    }
+    expect(repository.storeCount).toBe(1);
+    expect(repository.lastText).toBe("before-close");
+    expect(service.getPersistenceDiagnostics()).toMatchObject({
+      pendingStores: 0,
+      executingStores: 0,
+      activeRepositoryStores: 0,
+      pendingUpdateBytes: 0,
+      pendingUpdateDocuments: 0,
+    });
+
+    await live.close();
+    expect(service.getPersistenceDiagnostics()).toEqual({
+      activeDocuments: 0,
+      activeConnections: 0,
+      pendingStores: 0,
+      executingStores: 0,
+      activeRepositoryStores: 0,
+      failedStores: 0,
+      pendingUpdateBytes: 0,
+      pendingUpdateDocuments: 0,
+      retryAttempts: 0,
+    });
   }, 20_000);
 });
 
-function createHarness(
+function createService(
   repository: InstrumentedPageRepository,
   options: {
     createOperationId?: () => string;
     onPageUpdated?: (event: { pageId: string; version: number }) => void;
   } = {},
-) {
-  const app = Fastify({ logger: false });
-  const service = new PageYjsService({
-    repository,
-    auth: productionAuth(),
-    logger: app.log,
-    ...options,
-  });
-  registerPageYjsRoutes(app, {
-    nodeCredentials: null,
-    createService: () => service,
-    authBearerToken: "service-token",
-  });
-  return { app, service };
-}
-
-function connectProvider(address: string, pageId: string): HocuspocusProvider {
-  const provider = new HocuspocusProvider({
-    url: `${address.replace("http", "ws")}/yjs/page/${pageId}`,
-    name: `page:${pageId}`,
-    document: new Y.Doc(),
-    token: "service-token",
-    WebSocketPolyfill: WebSocket,
-  } as HocuspocusProviderConfiguration & { WebSocketPolyfill: typeof WebSocket });
-  providers.push(provider);
-  return provider;
-}
-
-function waitForSync(provider: HocuspocusProvider): Promise<void> {
-  if (provider.isSynced) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("provider sync timed out")), 10_000);
-    provider.on("synced", () => {
-      clearTimeout(timer);
-      resolve();
-    });
-    provider.on("authenticationFailed", ({ reason }: { reason: string }) => {
-      clearTimeout(timer);
-      reject(new Error(reason));
-    });
-  });
+): PageYjsService {
+  const service = new PageYjsService({ repository, ...options });
+  services.push(service);
+  return service;
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
@@ -317,16 +250,6 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
     if (Date.now() >= deadline) throw new Error("condition timed out");
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-}
-
-function productionAuth() {
-  return {
-    authBearerToken: "service-token",
-    nodeCredentials: null,
-    environment: "production",
-    dashboardAuthEnabled: false,
-    resolveDashboardUserFromHeaders: async () => null,
-  };
 }
 
 function editableBlock(text: string) {

@@ -29,7 +29,7 @@ export {
   getFolderNameSortKey,
 } from "./folder-tree-options";
 export type { FolderTreeOption } from "./folder-tree-options";
-export { getChildFolders, getFolderBreadcrumbs, getRootFolders } from "./folder-catalog";
+export { getChildFolders, getFolderBreadcrumbs } from "./folder-catalog";
 export { getInheritedFolderPrompts } from "./folder-prompt-inheritance";
 export type { InheritedFolderPrompt } from "./folder-prompt-inheritance";
 export { formatWorkspaceTime } from "./format-workspace-time";
@@ -57,8 +57,6 @@ export type {
 } from "./markdown-document-operations";
 export { createMoveSessionsOperations } from "./move-sessions";
 export type { MoveSessionsApiConfig, MoveSessionsOperations } from "./move-sessions";
-export { shouldLoadMoreAfterSessionMove } from "./session-move-load-more";
-export type { SessionMoveLoadMoreState } from "./session-move-load-more";
 export { SessionReviewAcknowledgeError, acknowledgeSessionReview } from "./session-review";
 export type {
   SessionReviewAcknowledgeErrorInput,
@@ -76,7 +74,6 @@ export {
 } from "./liquid-lens";
 export type { LiquidLensMapMetrics, LiquidLensMapSize, LiquidLensOptions } from "./liquid-lens";
 export {
-  clearWebglGlassOverride,
   MAX_WEBGL_GLASS_CARDS,
   WEBGL_GLASS_CHANGE_EVENT,
   WEBGL_GLASS_STORAGE_KEY,
@@ -86,9 +83,7 @@ export {
   isWebglGlassStorageValueEnabled,
   isWebglGlassStorageValueDisabled,
   packVisibleGlassSurfaces,
-  readWebglGlassEnabled,
   readWebglGlassOverride,
-  writeWebglGlassEnabled,
 } from "./webgl-glass";
 export type {
   GlassSurfaceRef,

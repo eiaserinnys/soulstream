@@ -12,7 +12,6 @@ export * from "./board/board_asset_routes.js";
 export * from "./board/board_item_routes.js";
 export * from "./board/flat_folder_content_routes.js";
 export * from "./board/markdown_document_routes.js";
-export * from "./auth/socket_auth.js";
 export * from "./cogito/cogito_routes.js";
 export * from "./config.js";
 export * from "./contract/fixtures.js";

@@ -219,11 +219,6 @@ export function aggregateMetrics(records: RawUsageRecord[]): UsageStatsMetrics {
   };
 }
 
-export function hasUnknownPrice(records: RawUsageRecord[]): boolean {
-  for (const record of records) if (record.reference_cost_usd === null) return true;
-  return false;
-}
-
 export function zeroMetrics(): UsageStatsMetrics {
   return {
     input_total: 0,

@@ -455,32 +455,6 @@ async function run(browser: Browser) {
     await checkProjectFocus("node-retry-sublevel-390: first child keyboard ring", page);
     await page.screenshot({ path: path.join(output, "node-retry-sublevel-390-success.png"), animations: "disabled" });
   });
-  await scenario(browser, "folder-settings-retry-1440", 1440, 900, "dark", true, async page => {
-    await installNodeRoutes(page, { failRootTimes: 1 });
-    await page.goto(`${base}/dialogues?sample=folder-settings`);
-    await page.getByText("atom 트리 주입").waitFor();
-    await page.waitForTimeout(1500);
-    await page.getByRole("button", { name: /노드 선택/ }).click();
-    const error = page.getByText("노드를 불러오지 못했습니다", { exact: true });
-    await error.waitFor();
-    const retry = page.locator('[data-slot="popover-popup"]').getByRole("button", { name: "다시 시도" });
-    await retry.waitFor();
-    check("folder-settings-retry-1440: retry visible", await retry.isVisible());
-    await page.screenshot({ path: path.join(output, "folder-settings-retry-1440-error.png"), animations: "disabled" });
-    // popup 판에서도 「다시 시도」 앞 Tab 정류장인 빵부스러기 「루트」를 잰다.
-    await retry.focus();
-    await page.keyboard.press("Shift+Tab");
-    await checkProjectFocus("folder-settings-retry-1440: breadcrumb root ring", page);
-    await retry.focus();
-    await page.keyboard.press("Enter");
-    await page.getByText("프로젝트 지식 노드 0-1", { exact: true }).waitFor();
-    await page.waitForTimeout(100);
-    check("folder-settings-retry-1440: list after success", await error.count() === 0);
-    const firstNode = page.locator('[data-slot="popover-popup"] button').filter({ hasText: "프로젝트 컨텍스트에서 긴 노드 제목" }).first();
-    check("folder-settings-retry-1440: focus moves to the first node", await firstNode.evaluate(el => el === document.activeElement));
-    await checkProjectFocus("folder-settings-retry-1440: first node keyboard ring", page);
-    await page.screenshot({ path: path.join(output, "folder-settings-retry-1440-success.png"), animations: "disabled" });
-  });
   await scenario(browser, "minimum-360", 360, 844, "dark", true, async page => {
     await openSample(page, "atom-add");
     await measure(page, "atom-add-open-360-dark-glass");
@@ -540,16 +514,6 @@ async function run(browser: Browser) {
     const scrollAfter = await fields.evaluate(el => el.scrollTop);
     check("resize: scroll retained", Math.abs(scrollAfter - scrollBefore) <= 1 && after >= 0 && after < await fields.evaluate(el => el.clientHeight), { scrollBefore, scrollAfter, before, after });
     check("resize: draft retained", await limit.inputValue() === "7");
-  });
-  await scenario(browser, "folder-settings", 1440, 900, "dark", true, async page => {
-    await page.goto(`${base}/dialogues?sample=folder-settings`);
-    await page.getByText("atom 트리 주입").waitFor();
-    await page.waitForTimeout(1500);
-    await page.getByRole("button", { name: /노드 선택/ }).click();
-    await page.getByText("프로젝트 지식 노드 0-1", { exact: true }).waitFor();
-    check("folder settings: popup", await page.locator('[data-slot="popover-popup"] [title="자식 보기"]').count() > 0);
-    await page.waitForTimeout(500);
-    await page.screenshot({ path: path.join(output!, "folder-settings-1440.png"), animations: "disabled", timeout: 15_000 });
   });
 }
 async function runWithScrollbars(browser: Browser) {

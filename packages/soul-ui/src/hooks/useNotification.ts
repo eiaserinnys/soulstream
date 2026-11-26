@@ -10,9 +10,6 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
-import type { SoulSSEEvent } from "../shared/types";
-import { formatRetryingErrorHistory } from "../shared/sse-events";
-import { formatRateLimitNotice } from "../lib/rate-limit-notice";
 import { useUiEventTracker } from "../lib/ui-events";
 
 /**
@@ -115,65 +112,4 @@ export function useNotification(enabled = true) {
   }, [pendingNotifications, enabled, showNotification]);
 
   return { showNotification };
-}
-
-/**
- * 이벤트 타입에 따라 알림 제목과 본문을 생성합니다.
- */
-export function formatNotification(event: SoulSSEEvent): { title: string; body: string } {
-  switch (event.type) {
-    case "complete":
-      return {
-        title: "\u2705 Session Complete",
-        body: event.result
-          ? event.result.length > 100
-            ? event.result.slice(0, 97) + "..."
-            : event.result
-          : "Session completed successfully",
-      };
-
-    case "error":
-      if (event.will_retry === true) {
-        return {
-          title: "⚠️ 자동 재연결 발생",
-          body: formatRetryingErrorHistory(event.message),
-        };
-      }
-      return {
-        title: "\u274C Session Error",
-        body: formatRateLimitNotice(
-          event.message || "An error occurred",
-          event.rate_limit_type,
-          event.resets_at,
-        ),
-      };
-
-    case "session_notification":
-      return {
-        title: "Soul Dashboard",
-        body: formatRateLimitNotice(event.text, event.rate_limit_type, event.resets_at),
-      };
-
-    case "intervention_sent":
-      return {
-        title: `\u270B Intervention (${event.user})`,
-        body: event.text.length > 100
-          ? event.text.slice(0, 97) + "..."
-          : event.text,
-      };
-
-    case "claude_runtime_notification":
-      return {
-        title: event.title ?? event.notification_type ?? "Runtime Notification",
-        body: event.message.length > 100
-          ? event.message.slice(0, 97) + "..."
-          : event.message,
-      };
-
-    default:
-      return {
-        title: "Soul Dashboard",
-        body: `Event: ${event.type}`,
-      };
-  }
 }

@@ -12,7 +12,6 @@ import { closeNodeSocketsForHandover } from "./websocket_plugin.js";
 import { createConversationMessagePorts } from "./conversation/conversation_message_ports.js";
 import { ConversationService } from "./conversation/conversation_service.js";
 import { ConversationCatalog } from "./conversation/conversation_catalog.js";
-import { dashboardAuthEnabled, resolveDashboardLoginMode } from "./auth/login_mode.js";
 import { verifyServiceBearerAuthorization } from "./auth/service_bearer.js";
 import { SqlOwnedAgentRepository } from "./owned-agents/repository.js";
 import type { OnPersistentReportPosted, PublishPersistentReports } from "./session/persistent_report_service.js";
@@ -572,9 +571,6 @@ export async function createLiveProductionApplication(
       nodeCredentialInit.error,
     ));
   }
-  nodeCredentialStore.onRevoked((principal) => {
-    pageYjsService?.closeConnectionsForCredential(principal.credential_id);
-  });
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
@@ -644,15 +640,6 @@ export async function createLiveProductionApplication(
         onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),
         mutateFolderIdentity: async (input) =>
           await folderProjectIdentityService?.mutateFromPage(input) ?? null,
-        auth: {
-          authBearerToken: config.auth_bearer_token,
-          environment: config.environment,
-          nodeCredentials: nodeCredentialStore,
-          dashboardAuthEnabled: dashboardAuthEnabled(config),
-          tailscaleAuthEnabled: resolveDashboardLoginMode(config) === "tailscale",
-          resolveDashboardUserFromHeaders: (headers) =>
-            providers.authenticatedUserResolvers.resolveUserFromHeaders(headers),
-        },
       }), overrides.pageGate ?? unrestrictedPageGate(), ["createPage", "mutatePage", "transferBlocks", "getPage", "getBrowserPage", "findPage", "getDailyPage", "hydrateCommittedPage"]),
     },
   });
