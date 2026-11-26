@@ -420,7 +420,7 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
         signal.addEventListener("abort", rejectAborted, { once: true });
       }),
     );
-    const transportLogger = { warn: vi.fn(), info: vi.fn() };
+    const transportLogger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
     const lifecycleLogger = { warn: vi.fn(), error: vi.fn() };
     const hostClient = new ClaudeBackgroundGenerationHostClient(
       new PersistenceHostTransport({
