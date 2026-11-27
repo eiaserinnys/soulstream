@@ -91,7 +91,7 @@ The dashboard opens the persistent assistant session view by default. When you c
 To see the whole flow once, paste this request. The assistant's first greeting suggests the same request in Korean.
 
 ```text
-Make a card in the 작업실 folder and start it right away: write a one-page introduction to a sample project (its goal, three core features, and a first milestone). Track those three parts as check items, link each one to the document, and send it to me for review.
+Make a card in the 작업실 folder and start it right away: using the Soulstream guide (소울스트림 안내) in atom, write a one-page introduction to Soulstream (what it is, three core features, and how to get started). Track those three parts as check items, link each one to the document, and send it to me for review.
 ```
 
 The assistant creates a card in the `작업실` (workroom) folder, and an agent session starts the work. Within a few minutes, the card appears beside the chat for your review. Each check item links to the document, which opens in the dashboard. Choose Complete (`완료`) to close the card.
