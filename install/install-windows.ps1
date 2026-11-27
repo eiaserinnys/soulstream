@@ -13,6 +13,8 @@ param(
     [string]$Ref = "main",
     [string]$AtomRef = "main",
     [string]$Backends = "claude,codex",
+    [string]$PublicUrl = "",
+    [string]$AtomPublicUrl = "",
     [string]$PostgresPassword = "",
     [string]$AdminPasswordFile = "",
     [string]$RepositoryUrl = "https://github.com/eiaserinnys/soulstream.git",
@@ -138,6 +140,11 @@ foreach ($backend in $requestedBackends) {
     if ($backend -notin @("claude", "codex")) { throw "-Backends accepts claude and codex. '$backend' is not supported on Windows." }
 }
 if ($WorkerPort -lt 1024 -or $WorkerPort -gt 65534) { throw "-WorkerPort must be from 1024 to 65534." }
+foreach ($address in @(@("-PublicUrl", $PublicUrl), @("-AtomPublicUrl", $AtomPublicUrl))) {
+    if ($address[1] -and $address[1] -notmatch '^https?://([A-Za-z0-9._-]+|\[[0-9A-Fa-f:]+\])(:[0-9]{1,5})?$') {
+        throw "$($address[0]) must be an http:// or https:// address with a host and an optional port, and no path."
+    }
+}
 $soulDir = Join-Path $InstallRoot "soulstream"
 $atomDir = Join-Path $InstallRoot "atom"
 $logsDir = Join-Path $InstallRoot "logs"
@@ -306,6 +313,8 @@ Write-Ok "soulstream $(Get-NativeOutput "git" @("-C", $soulDir, "rev-parse", "--
 # ---- 6. set up and build (Node) ----
 $setup = Join-Path $soulDir "install\windows\setup.mjs"
 $common = @("--install-root", $InstallRoot, "--worker-port", "$WorkerPort", "--backends", ($requestedBackends -join ","), "--pg-bin", $pgBin)
+if ($PublicUrl) { $common += @("--public-url", $PublicUrl) }
+if ($AtomPublicUrl) { $common += @("--atom-public-url", $AtomPublicUrl) }
 $prepare = @($setup, "prepare") + $common
 if ($AdminPasswordFile) { $prepare += @("--admin-password-file", (Resolve-Path -LiteralPath $AdminPasswordFile).Path) }
 Invoke-Native "node" $prepare

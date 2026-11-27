@@ -5,6 +5,7 @@ import {
   chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { posix, win32 } from 'node:path';
+import { readEnvValue } from './lib.mjs';
 import { PAS_DISALLOWED_TOOLS } from './pas_disallowed_tools.mjs';
 
 export const ATOM_API_KEY_RE = /^[A-Za-z0-9._~+/=-]+$/;
@@ -142,6 +143,12 @@ ${PAS_DISALLOWED_TOOLS.map((tool) => `      - ${tool}\n`).join('')}    context_s
 export function renderEnvFiles(o) {
   const { platform, home, root, workspace, path, ports, secrets, atomApiKey, backends, nodes } = o;
   const win = platform === 'win32';
+  // Public addresses: the option, else the value already in .env.orch (o.kept), else the default.
+  const kept = o.kept ?? {};
+  const defaultOrigins = [`http://127.0.0.1:${ports.orch}`, `http://localhost:${ports.orch}`];
+  const publicUrl = o.publicUrl || kept.url || defaultOrigins[0];
+  const cors = o.publicUrl ? [...new Set([o.publicUrl, ...defaultOrigins])].join(',') : kept.cors || defaultOrigins.join(',');
+  const atomPublicUrl = o.atomDashboard === false ? '' : o.atomPublicUrl || kept.atom || `http://127.0.0.1:${ports.atom}`;
   const orch = [
     'ENVIRONMENT=production',
     'HOST=127.0.0.1',
@@ -158,9 +165,9 @@ export function renderEnvFiles(o) {
     `ATOM_API_KEY=${atomApiKey}`,
     `SKILL_CATALOG_NODE_ID=${nodes.skill_catalog ?? ''}`,
     `DOMAIN_CATALOG_NODE_ID=${nodes.domain_catalog ?? ''}`,
-    `SOULSTREAM_PUBLIC_URL=http://127.0.0.1:${ports.orch}`,
-    `CORS_ALLOWED_ORIGINS=http://127.0.0.1:${ports.orch},http://localhost:${ports.orch}`,
-    `ATOM_PUBLIC_URL=${o.atomDashboard === false ? '' : `http://127.0.0.1:${ports.atom}`}`,
+    `SOULSTREAM_PUBLIC_URL=${publicUrl}`,
+    `CORS_ALLOWED_ORIGINS=${cors}`,
+    `ATOM_PUBLIC_URL=${atomPublicUrl}`,
     `DASHBOARD_ADMIN_PASSWORD=${secrets.adminPassword}`,
   ];
   if (!win && backends.includes('antigravity')) orch.push(`AGY_CLI_PATH=${home}/.local/bin/agy`);
@@ -305,7 +312,8 @@ function syncCommonFiles(root, path) {
  * options: platform, home (user home), root (soulstream checkout), workspace, agentHome (win32: the folder that holds
  * the worker's own Claude and Codex logins), backends (array), ports
  * {orch, atom, worker, mcp, postgres}, secrets {bearer, jwt, dbPassword, adminPassword}, atomDashboard (false leaves
- * ATOM_PUBLIC_URL empty so the dashboard shows no atom link). Returns { warnings, seedWarnings }.
+ * ATOM_PUBLIC_URL empty so the dashboard shows no atom link), publicUrl and atomPublicUrl (optional addresses the
+ * browser uses; without them the values already in .env.orch stay). Returns { warnings, seedWarnings }.
  */
 export function renderConfig(options) {
   const platform = options.platform;
@@ -320,7 +328,9 @@ export function renderConfig(options) {
   mkdirSync(path.join(workspace, '.local', 'tmp'), { recursive: true });
   mkdirSync(path.join(workspace, '.local', 'artifacts'), { recursive: true });
   syncCommonFiles(root, path);
-  const o = { ...options, platform, path, workspace, nodes, atomApiKey };
+  const orchEnv = path.join(root, '.env.orch');
+  const kept = { url: readEnvValue(orchEnv, 'SOULSTREAM_PUBLIC_URL'), cors: readEnvValue(orchEnv, 'CORS_ALLOWED_ORIGINS'), atom: readEnvValue(orchEnv, 'ATOM_PUBLIC_URL') };
+  const o = { ...options, platform, path, workspace, nodes, atomApiKey, kept };
   const env = renderEnvFiles(o);
   const win = platform === 'win32';
   mergeEnv(path.join(root, '.env.orch'), env.orch, ORCH_KEYS, win);

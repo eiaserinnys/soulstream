@@ -63,6 +63,9 @@ DATABASE_OWNER=soulstream
 DEFAULT_WORKER_PORT=4205
 WORKER_PORT=$DEFAULT_WORKER_PORT
 WORKER_PORT_SET=false
+# Addresses the browser uses for the dashboard and atom, from --public-url and --atom-public-url; empty keeps what is installed.
+PUBLIC_URL=
+ATOM_PUBLIC_URL_OPT=
 # Dumps kept per database in <root>/.local/backups.
 BACKUP_KEEP=3
 
@@ -80,9 +83,11 @@ cleanup_temp_files() {
 }
 
 usage() {
-  printf 'Usage: install.sh [--backends claude,codex,antigravity] [--ref git-ref] [--atom-ref git-ref] [--worker-port port] [--admin-password-file path | --set-admin-password] [--tailscale [--tailscale-auth-key-file path] [--tailscale-user login]] [--help]\n'
+  printf 'Usage: install.sh [--backends claude,codex,antigravity] [--ref git-ref] [--atom-ref git-ref] [--worker-port port] [--public-url url] [--atom-public-url url] [--admin-password-file path | --set-admin-password] [--tailscale [--tailscale-auth-key-file path] [--tailscale-user login]] [--help]\n'
   printf '  --backends  comma-separated list of claude, codex, antigravity (default: claude,codex)\n'
   printf '  --worker-port  loopback port of the worker, 1024-65534; its MCP port is the next one (default: 4205, or the port of the previous install)\n'
+  printf '  --public-url  address the browser opens the dashboard at, such as http://127.0.0.1:15200 (password mode; default: the current address, or http://127.0.0.1:5200)\n'
+  printf '  --atom-public-url  address the browser opens atom at, such as http://127.0.0.1:14200 (password mode; default: the current address, or http://127.0.0.1:4200)\n'
 }
 
 # Prints the cause on stderr, then the usage, and stops with the argument-error status.
@@ -130,6 +135,27 @@ read_admin_password_file() {
   return 0
 }
 
+# An origin: http or https, a host and an optional port; no path and no trailing slash.
+valid_origin() { [[ "$1" =~ ^https?://([A-Za-z0-9._-]+|\[[0-9A-Fa-f:]+\])(:[0-9]{1,5})?$ ]]; }
+
+# The mode of the installation being updated is TAILSCALE_AUTH_ENABLED in its .env.orch. Succeeds when there is one
+# and it is the mode of this run, so its addresses may be kept. Reads before the env files are rewritten.
+same_mode_as_installed() {
+  local file=$1/.env.orch previous=false
+  [[ -f "$file" ]] || return 1
+  [[ "$(read_env_value "$file" TAILSCALE_AUTH_ENABLED)" == true ]] && previous=true
+  [[ "$previous" == "${TAILSCALE:-false}" ]]
+}
+
+# Prints the first of: the given value, the value in file (when the installation in root has this run's mode), the
+# mode default.
+pick_address() {
+  local given=$1 root=$2 file=$3 key=$4 default=$5 kept=
+  if [[ -n "$given" ]]; then printf '%s' "$given"; return 0; fi
+  if [[ -n "$root" ]] && same_mode_as_installed "$root"; then kept=$(read_env_value "$file" "$key") || return 1; fi
+  printf '%s' "${kept:-$default}"
+}
+
 valid_worker_port() { [[ "$1" =~ ^[1-9][0-9]{3,4}$ ]] && (( $1 >= 1024 && $1 <= 65534 )); }
 
 # Without --worker-port, a rerun keeps the port of the installation being updated.
@@ -152,6 +178,8 @@ parse_args() {
   ATOM_REF_SET=false
   WORKER_PORT=$DEFAULT_WORKER_PORT
   WORKER_PORT_SET=false
+  PUBLIC_URL=
+  ATOM_PUBLIC_URL_OPT=
   TAILSCALE=false
   TAILSCALE_AUTH_KEY=
   TAILSCALE_AUTH_KEY_FILE=
@@ -166,12 +194,14 @@ parse_args() {
       --help) usage; exit 0 ;;
       --tailscale) TAILSCALE=true; shift ;;
       --set-admin-password) SET_ADMIN_PASSWORD=true; shift ;;
-      --backends|--ref|--atom-ref|--worker-port|--admin-password-file|--tailscale-auth-key|--tailscale-auth-key-file|--tailscale-user)
+      --backends|--ref|--atom-ref|--worker-port|--public-url|--atom-public-url|--admin-password-file|--tailscale-auth-key|--tailscale-auth-key-file|--tailscale-user)
         if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then arg_error "$1 needs a value"; fi
         case "$1" in
           --ref) REF=$2; REF_SET=true ;;
           --atom-ref) ATOM_REF=$2; ATOM_REF_SET=true ;;
           --worker-port) valid_worker_port "$2" || arg_error "invalid --worker-port value \"$2\": use an integer from 1024 to 65534"; WORKER_PORT=$2; WORKER_PORT_SET=true ;;
+          --public-url) valid_origin "$2" || arg_error "invalid --public-url value \"$2\": use http:// or https:// followed by a host and an optional port, without a path"; PUBLIC_URL=$2 ;;
+          --atom-public-url) valid_origin "$2" || arg_error "invalid --atom-public-url value \"$2\": use http:// or https:// followed by a host and an optional port, without a path"; ATOM_PUBLIC_URL_OPT=$2 ;;
           --backends) BACKENDS=$2 ;;
           --admin-password-file) ADMIN_PASSWORD_FILE=$2 ;;
           --tailscale-auth-key) TAILSCALE_AUTH_KEY=$2 ;;
@@ -188,6 +218,7 @@ parse_args() {
     [[ "$ADMIN_PASSWORD_FILE" == /* ]] || ADMIN_PASSWORD_FILE=$PWD/$ADMIN_PASSWORD_FILE
     read_admin_password_file "$ADMIN_PASSWORD_FILE" || exit 2
   fi
+  if [[ "$TAILSCALE" == true && ( -n "$PUBLIC_URL" || -n "$ATOM_PUBLIC_URL_OPT" ) ]]; then arg_error "--public-url and --atom-public-url cannot be used with --tailscale; the addresses come from the tailnet name"; fi
   if [[ "$TAILSCALE" != true && ( -n "$TAILSCALE_AUTH_KEY" || -n "$TAILSCALE_AUTH_KEY_FILE" || -n "$TAILSCALE_USER" ) ]]; then arg_error "--tailscale-auth-key, --tailscale-auth-key-file and --tailscale-user need --tailscale"; fi
   if [[ -n "$TAILSCALE_AUTH_KEY" && -n "$TAILSCALE_AUTH_KEY_FILE" ]]; then arg_error "--tailscale-auth-key and --tailscale-auth-key-file cannot be used together"; fi
   if [[ -n "$TAILSCALE_AUTH_KEY_FILE" ]]; then
@@ -687,6 +718,27 @@ sync_common_files() {
   cp -a "$source/." "$root/.local/agent-common/"
 }
 
+# Sets DASHBOARD_URL, DASHBOARD_CORS and ATOM_URL_FOR_BROWSER for the orchestrator env file: the option, else the
+# installed value of the same mode, else the mode default.
+resolve_public_urls() {
+  local root=$1 default_url default_cors default_atom origin url cors= kept
+  if [[ "${TAILSCALE:-false}" == true ]]; then
+    default_url=https://${TAILSCALE_DNS}; default_cors=https://${TAILSCALE_DNS},http://127.0.0.1:5200; default_atom=https://${TAILSCALE_DNS}:8443
+  else
+    default_url=http://127.0.0.1:5200; default_cors=http://127.0.0.1:5200,http://localhost:5200; default_atom=http://127.0.0.1:4200
+  fi
+  DASHBOARD_URL=$(pick_address "${PUBLIC_URL:-}" "$root" "$root/.env.orch" SOULSTREAM_PUBLIC_URL "$default_url") || return 1
+  ATOM_URL_FOR_BROWSER=$(pick_address "${ATOM_PUBLIC_URL_OPT:-}" "$root" "$root/.env.orch" ATOM_PUBLIC_URL "$default_atom") || return 1
+  if [[ -n "${PUBLIC_URL:-}" ]]; then
+    for origin in "$PUBLIC_URL" ${default_cors//,/ }; do
+      [[ ",$cors," == *",$origin,"* ]] || cors=${cors:+$cors,}$origin
+    done
+    DASHBOARD_CORS=$cors
+  else
+    DASHBOARD_CORS=$(pick_address '' "$root" "$root/.env.orch" CORS_ALLOWED_ORIGINS "$default_cors") || return 1
+  fi
+}
+
 # Uses the secrets chosen by setup_secrets and the database password from it.
 render_config() {
   local home=$1 root=$2 fresh_orch fresh_worker atom_api_key previous_backends work claude
@@ -696,6 +748,7 @@ render_config() {
   previous_backends=$(read_env_value "$root/.env.soul-server-ts" SOULSTREAM_BACKENDS)
   [[ -n "$previous_backends" ]] || previous_backends=$BACKENDS
   resolve_worker_port "$root" || return 1
+  resolve_public_urls "$root" || return 1
   MANAGED_CONFIG_WARNINGS=
   read_atom_seed_map "$root/config/.atom-seed-map.json" || return 1
   atom_api_key=$(read_atom_api_key "$root/.atom-api-key") || return 1
@@ -726,17 +779,17 @@ DOMAIN_CATALOG_NODE_ID=${ATOM_NODES[domain_catalog]:-}
 ENV
     if [[ "${TAILSCALE:-false}" == true ]]; then
       cat >> "$fresh_orch" <<ENV
-SOULSTREAM_PUBLIC_URL=https://${TAILSCALE_DNS}
-CORS_ALLOWED_ORIGINS=https://${TAILSCALE_DNS},http://127.0.0.1:5200
-ATOM_PUBLIC_URL=https://${TAILSCALE_DNS}:8443
+SOULSTREAM_PUBLIC_URL=${DASHBOARD_URL}
+CORS_ALLOWED_ORIGINS=${DASHBOARD_CORS}
+ATOM_PUBLIC_URL=${ATOM_URL_FOR_BROWSER}
 TAILSCALE_AUTH_ENABLED=true
 TAILSCALE_ALLOWED_LOGIN=${TAILSCALE_USER}
 ENV
     else
       cat >> "$fresh_orch" <<ENV &&
-SOULSTREAM_PUBLIC_URL=http://127.0.0.1:5200
-CORS_ALLOWED_ORIGINS=http://127.0.0.1:5200,http://localhost:5200
-ATOM_PUBLIC_URL=http://127.0.0.1:4200
+SOULSTREAM_PUBLIC_URL=${DASHBOARD_URL}
+CORS_ALLOWED_ORIGINS=${DASHBOARD_CORS}
+ATOM_PUBLIC_URL=${ATOM_URL_FOR_BROWSER}
 ENV
       # printf, not a heredoc: the password is written byte for byte.
       printf 'DASHBOARD_ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD" >> "$fresh_orch"
@@ -1318,8 +1371,9 @@ build_atom() {
 }
 # Uses INSTALL_ROOT for the backup directory.
 init_atom() {
-  local atom_root=$1 fresh frontend=http://127.0.0.1:4200 populated
-  if [[ "${TAILSCALE:-false}" == true ]]; then frontend=https://${TAILSCALE_DNS}:8443; fi
+  local atom_root=$1 fresh default_frontend=http://127.0.0.1:4200 frontend populated
+  if [[ "${TAILSCALE:-false}" == true ]]; then default_frontend=https://${TAILSCALE_DNS}:8443; fi
+  frontend=$(pick_address "${ATOM_PUBLIC_URL_OPT:-}" "${INSTALL_ROOT:-}" "$atom_root/.env" FRONTEND_URL "$default_frontend") || return 1
   fresh=$(mktemp) || return 1
   register_temp_file "$fresh"
   if ! {
@@ -1651,6 +1705,10 @@ revision_line() {
   if [[ -n "${REPO_PATH[$name]-}" ]]; then current=$(as_soul git -C "${REPO_PATH[$name]}" rev-parse --short=12 HEAD); fi
   printf '%s revision: %s -> %s\n' "$label" "${previous:0:12}" "$current"
 }
+# The local end of the SSH tunnel: the port of a loopback address, else the server's own port.
+tunnel_local_port() {
+  if [[ "$1" =~ ^http://(127\.0\.0\.1|localhost):([0-9]+)$ ]]; then printf '%s' "${BASH_REMATCH[2]}"; else printf '%s' "$2"; fi
+}
 finish_message() {
   local root=$1 line
   printf '\nInstalled %s; backends: %s\n' "$(as_soul git -C "$root" rev-parse --short=12 HEAD)" "$BACKENDS"
@@ -1678,9 +1736,14 @@ finish_message() {
         printf 'Atom: https://%s:8443 (password: sudo cat %s/.admin-password)\n' "$TAILSCALE_DNS" "$root" ;;
     esac
   else
-    printf 'Connect: ssh -L 127.0.0.1:5200:127.0.0.1:5200 -L 127.0.0.1:4200:127.0.0.1:4200 <user>@<server>\n'
-    printf 'Soulstream: http://127.0.0.1:5200\n'
-    printf 'Atom: http://127.0.0.1:4200\n'
+    local dashboard_url atom_url
+    dashboard_url=$(read_env_value "$root/.env.orch" SOULSTREAM_PUBLIC_URL) || dashboard_url=
+    atom_url=$(read_env_value "$root/.env.orch" ATOM_PUBLIC_URL) || atom_url=
+    dashboard_url=${dashboard_url:-http://127.0.0.1:5200}
+    atom_url=${atom_url:-http://127.0.0.1:4200}
+    printf 'Connect: ssh -L 127.0.0.1:%s:127.0.0.1:5200 -L 127.0.0.1:%s:127.0.0.1:4200 <user>@<server>\n' "$(tunnel_local_port "$dashboard_url" 5200)" "$(tunnel_local_port "$atom_url" 4200)"
+    printf 'Soulstream: %s\n' "$dashboard_url"
+    printf 'Atom: %s\n' "$atom_url"
     case "${PASSWORD_SOURCE:-}" in
       user_tty|file)
         printf 'Password for both: use the administrator password you set (saved in %s/.admin-password)\n' "$root" ;;

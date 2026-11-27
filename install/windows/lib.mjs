@@ -25,6 +25,17 @@ export function parseArgs(argv) {
   return { command, options };
 }
 
+// A public address option: '' when absent, else an http(s) origin (host and optional port, no path, no trailing slash).
+// Same rule as install.sh valid_origin.
+export function originOption(options, name) {
+  const value = options[name];
+  if (value === undefined) return '';
+  if (!/^https?:\/\/([A-Za-z0-9._-]+|\[[0-9A-Fa-f:]+\])(:[0-9]{1,5})?$/.test(value)) {
+    throw fail(`--${name} must be an http:// or https:// address with a host and an optional port, and no path.`);
+  }
+  return value;
+}
+
 // Value of key in an env file; a missing file or key is ''. Same reading as install.sh read_env_value.
 export function readEnvValue(file, key) {
   if (!existsSync(file)) return '';
