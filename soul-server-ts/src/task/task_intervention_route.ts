@@ -446,7 +446,7 @@ export class TaskInterventionRoute {
       }
       if (this.deps.deliveryLedgerGate && !ledgerResultRecorded) {
         try {
-          await this.deps.deliveryLedgerGate.deferFailureToCoordinator(admission);
+          await this.deps.deliveryLedgerGate.deferFailureToCoordinator(admission, err);
         } catch (deferFailureToCoordinatorError) {
           recoveryError ??= deferFailureToCoordinatorError;
         }

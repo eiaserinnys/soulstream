@@ -22,6 +22,7 @@ import {
 import { buildNotificationOutboxPayload, isNotificationDeliveryIntent } from
   "./session_delivery_notification_payload.js";
 import { projectNotificationReceipt } from "./notification_receipt_projection.js";
+import { RESUME_REJECTED_CODE, ResumeRejectedError } from "./resume_rejected_error.js";
 import { INSTRUCTION_UNCERTAIN_REASON } from "./state/node_instruction_decision.js";
 import {
   discardConsumedRunnerIntervention,
@@ -277,8 +278,24 @@ export class TaskDeliveryLedgerGate {
     }
   }
 
-  async deferFailureToCoordinator(admission: DeliveryLedgerAdmission): Promise<void> {
+  async deferFailureToCoordinator(
+    admission: DeliveryLedgerAdmission,
+    error?: unknown,
+  ): Promise<void> {
     if (admission.kind !== "admitted") return;
+    if (error instanceof ResumeRejectedError) {
+      // 다시 보내도 같은 거절이 나므로 coordinator 재시도에 맡기지 않고 이 attempt를 닫는다.
+      const attemptToken = admission.row.attempt_token;
+      if (!attemptToken) {
+        throw new Error(`Delivery ${admission.deliveryId} lost its attempt token`);
+      }
+      await this.requireRepository().markUncertain(
+        admission.deliveryId,
+        attemptToken,
+        `${RESUME_REJECTED_CODE}: ${error.message}`,
+      );
+      return;
+    }
     // The end-to-end coordinator owns retry scheduling. Keeping the attempt token
     // intact lets a cross-node fallback reuse the same fenced attempt token.
   }

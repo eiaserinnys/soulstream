@@ -14,10 +14,11 @@ import { ExecutionAdmissionInFlightError } from
   "../../src/task/execution_admission_errors.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
-import type {
-  DeliveryLedgerAdmission,
+import {
   TaskDeliveryLedgerGate,
+  type DeliveryLedgerAdmission,
 } from "../../src/task/task_delivery_ledger_gate.js";
+import { ResumeRejectedError } from "../../src/task/resume_rejected_error.js";
 import type { SessionNotificationPublisher } from "../../src/task/task_session_notification.js";
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
@@ -1745,5 +1746,61 @@ describe("TaskInterventionRoute previous-turn system abort notice", () => {
     await vi.waitFor(() => expect(onResume).toHaveBeenCalledTimes(2));
     expect(task.interventionQueue).toHaveLength(1);
     expect(task.interventionQueue[0]?.text).toBe("queued across the admission race");
+  });
+});
+
+describe("TaskInterventionRoute 영구 resume 거절", () => {
+  const deliveryId = "66666666-6666-4666-8666-666666666666";
+  const rejection = "이 노드에 openai 키가 없어 이어 쓸 수 없습니다.";
+
+  function makeRejectingSubject(attemptToken: string, error: Error) {
+    const markUncertain = vi.fn().mockResolvedValue({ state: "uncertain" });
+    const gate = new TaskDeliveryLedgerGate(true, { markUncertain } as never);
+    const admission = admitted(deliveryId, "human_live_steer");
+    (admission.row as { attempt_token: string }).attempt_token = attemptToken;
+    vi.spyOn(gate, "admit").mockResolvedValue(admission);
+    vi.spyOn(gate, "beginDispatch").mockImplementation(async (candidate) => candidate);
+    const task = makeTask({ status: "completed", runner: undefined });
+    const subject = makeSubject([task], gate);
+    vi.mocked(subject.autoResumeTransition.resume).mockRejectedValue(error);
+    const send = () => subject.route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "다시",
+      user: "browser",
+      deliveryId,
+      deliveryIntent: "human_live_steer",
+      completionId: `message:${deliveryId}`,
+      relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
+      source: "user_message",
+    }, vi.fn());
+    return { markUncertain, send };
+  }
+
+  it.each([
+    ["HTTP 경로의 route 토큰", "route:11111111-1111-4111-8111-111111111111"],
+    ["coordinator 재시도의 attempt 토큰", "coordinator-attempt-token"],
+  ])("%s로 claim된 attempt를 markUncertain으로 닫고 오류를 그대로 던진다", async (_name, token) => {
+    const error = new ResumeRejectedError(rejection);
+    const { markUncertain, send } = makeRejectingSubject(token, error);
+
+    await expect(send()).rejects.toBe(error);
+
+    expect(markUncertain).toHaveBeenCalledOnce();
+    expect(markUncertain).toHaveBeenCalledWith(
+      deliveryId,
+      token,
+      `RESUME_REJECTED: ${rejection}`,
+    );
+  });
+
+  it.each([
+    ["unknown agent profile", new Error("Cannot auto-resume sess: unknown agent profile ghost")],
+    ["일시 오류", new Error("ECONNRESET")],
+  ])("%s는 종결하지 않고 coordinator 재시도에 맡긴다", async (_name, error) => {
+    const { markUncertain, send } = makeRejectingSubject("route:retry", error);
+
+    await expect(send()).rejects.toBe(error);
+
+    expect(markUncertain).not.toHaveBeenCalled();
   });
 });

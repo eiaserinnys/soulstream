@@ -3,6 +3,7 @@ import type { ControlCommandType } from "@soulstream/wire-schema";
 import { mapNodeCommandError } from "../http/api_errors.js";
 
 import {
+  PendingNodeCommandRejectedError,
   PendingNodeCommandTimeoutError,
   type NodeCommandResponse,
 } from "../node/pending_commands.js";
@@ -60,6 +61,10 @@ export async function executeInterveneCommand(
       ? response
       : { ...response, deliveryId: durableDeliveryId } };
   } catch (error) {
+    if (isResumeRejected(error)) {
+      // 노드가 영구로 거절했다. durable로 접수됐어도 사용자는 다음 턴을 기다릴 필요가 없다.
+      return genericStatusErrorResponse(error.response);
+    }
     if (durableDeliveryId !== undefined) {
       return { status: 200, body: {
         type: "intervene_ack",
@@ -173,6 +178,15 @@ export function invalidRequest(reply: FastifyReply, message: string): FastifyRep
       message,
     },
   });
+}
+
+const RESUME_REJECTED_CODE = "RESUME_REJECTED";
+
+function isResumeRejected(
+  error: unknown,
+): error is PendingNodeCommandRejectedError & { response: NodeCommandResponse } {
+  return error instanceof PendingNodeCommandRejectedError
+    && error.response?.code === RESUME_REJECTED_CODE;
 }
 
 function genericStatusErrorResponse(response: NodeCommandResponse): SessionActionResponse {

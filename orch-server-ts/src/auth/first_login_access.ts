@@ -28,7 +28,7 @@ export function createLocalOwnerEnsurer(
 ): EnsureLocalOwner {
   return async () => {
     const sql = await options.resolveSql();
-    await sql`INSERT INTO users (email, display_name, is_admin) VALUES ('owner@local', 'Owner', TRUE) ON CONFLICT (email) DO NOTHING`;
+    await sql`INSERT INTO users (email, display_name, is_admin) VALUES (${LOCAL_OWNER_EMAIL}, ${LOCAL_OWNER_NAME}, TRUE) ON CONFLICT (email) DO NOTHING`;
   };
 }
 

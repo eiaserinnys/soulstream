@@ -3,6 +3,7 @@ import type { ContextItem } from "@soulstream/wire-schema";
 import type { CallerInfo } from "../task/task_models.js";
 import type { DeliveryMetadataWireFields } from "@soulstream/wire-schema/session-delivery";
 import { nodeResponseRejection } from "../task/state/node_response_handling.js";
+import { RESUME_REJECTED_CODE, ResumeRejectedError } from "../task/resume_rejected_error.js";
 import {
   CommandDispatchError,
   type CommandHandlerMap,
@@ -149,6 +150,9 @@ async function handleIntervene(
         cell: verdict.decision.cell,
         intents: verdict.decision.intents,
       });
+    }
+    if (err instanceof ResumeRejectedError) {
+      throw new CommandDispatchError(err.message, RESUME_REJECTED_CODE);
     }
     throw new CommandDispatchError(err instanceof Error ? err.message : String(err));
   }

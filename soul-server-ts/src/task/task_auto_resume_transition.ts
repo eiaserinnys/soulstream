@@ -43,6 +43,7 @@ import {
   buildDeliveryInputDedupeKey,
 } from "./delivery_identity.js";
 import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
+import { ResumeRejectedError } from "./resume_rejected_error.js";
 import type { LlmContinuation, LlmContinuationTurn } from "./task_llm_continuation.js";
 
 const persistedResumeInputs = new WeakMap<Task, Set<string>>();
@@ -91,7 +92,9 @@ export class AutoResumeTransition {
     message: InterventionMessage,
   ): Promise<LlmContinuationTurn> {
     if (!this.llmContinuation) {
-      throw new Error(`Cannot auto-resume ${task.agentSessionId}: llm continuation is not configured`);
+      throw new ResumeRejectedError(
+        "이 노드는 llm 세션을 이어 쓰도록 설정되어 있지 않습니다. 새 세션에서 다시 물어 주세요.",
+      );
     }
     return await this.llmContinuation.prepare(task, message);
   }
@@ -320,7 +323,9 @@ export class AutoResumeTransition {
   private requireResumableProfile(task: Task): void {
     if (!this.deps.agentRegistry) return;
     if (!task.profileId) {
-      throw new Error(`Cannot auto-resume ${task.agentSessionId}: task is missing profileId`);
+      throw new ResumeRejectedError(
+        "이 세션은 에이전트 정보가 없어 이어 쓸 수 없습니다. 새 세션에서 다시 시작해 주세요.",
+      );
     }
     if (task.agentProfileSnapshot) return;
     if (!this.deps.agentRegistry.get(task.profileId)) {

@@ -3,10 +3,10 @@ import type { Logger } from "pino";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { TaskManager } from "../task/task_manager.js";
-import {
-  LlmContinuationRejectedError,
-  type LlmContinuation,
-  type LlmContinuationTurn,
+import { ResumeRejectedError } from "../task/resume_rejected_error.js";
+import type {
+  LlmContinuation,
+  LlmContinuationTurn,
 } from "../task/task_llm_continuation.js";
 import type { InterventionMessage, Task } from "../task/task_models.js";
 
@@ -53,7 +53,7 @@ export class LlmSessionContinuation implements LlmContinuation {
 
   async prepare(task: Task, message: InterventionMessage): Promise<LlmContinuationTurn> {
     if (this.inFlight.has(task.agentSessionId)) {
-      throw new LlmContinuationRejectedError(
+      throw new ResumeRejectedError(
         "이 llm 세션이 아직 답하는 중입니다. 답이 끝난 뒤에 다시 보내 주세요.",
       );
     }
@@ -61,7 +61,7 @@ export class LlmSessionContinuation implements LlmContinuation {
       (message.attachmentIds?.length ?? 0) > 0
       || (message.attachmentPaths?.length ?? 0) > 0
     ) {
-      throw new LlmContinuationRejectedError(
+      throw new ResumeRejectedError(
         "llm 세션은 첨부를 받지 않습니다. 첨부를 빼고 글만 보내 주세요.",
       );
     }
@@ -72,7 +72,7 @@ export class LlmSessionContinuation implements LlmContinuation {
       adapter = requireLlmAdapter(this.params.adapters, request.provider);
     } catch (err) {
       if (err instanceof ProviderNotConfiguredError) {
-        throw new LlmContinuationRejectedError(
+        throw new ResumeRejectedError(
           `이 노드에 ${request.provider} 키가 없어 이어 쓸 수 없습니다.`,
         );
       }
@@ -119,14 +119,14 @@ export class LlmSessionContinuation implements LlmContinuation {
     );
     const model = firstNonEmptyString(lastAssistant?.payload.model, lastUser?.payload.model);
     if (!provider.success || model === undefined) {
-      throw new LlmContinuationRejectedError(
+      throw new ResumeRejectedError(
         "이 llm 세션의 모델 정보를 찾지 못해 이어 쓸 수 없습니다. 새 세션에서 다시 물어 주세요.",
       );
     }
 
     const history = parseHistory(lastUser?.payload.messages);
     if (!lastUser || history === undefined) {
-      throw new LlmContinuationRejectedError(
+      throw new ResumeRejectedError(
         "이 llm 세션의 대화 이력을 찾지 못해 이어 쓸 수 없습니다. 새 세션에서 다시 물어 주세요.",
       );
     }

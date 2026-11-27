@@ -16,6 +16,7 @@ import type {
 } from "../src/auth/claude_auth.js";
 import type { SessionDB } from "../src/db/session_db.js";
 import type { RealtimeBroker } from "../src/realtime/realtime_broker.js";
+import { ResumeRejectedError } from "../src/task/resume_rejected_error.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import { TaskManager } from "../src/task/task_manager.js";
 import type { Task } from "../src/task/task_models.js";
@@ -824,6 +825,32 @@ describe("CommandDispatcher.intervene (B-4)", () => {
         requestId: "i-persist-fail",
         command_type: "intervene",
         message: "events DB unavailable",
+      }),
+    ]);
+  });
+
+  it("영구 resume 거절은 RESUME_REJECTED 코드와 노드 문구를 담은 error ACK로 보낸다", async () => {
+    const message = "이 노드에 openai 키가 없어 이어 쓸 수 없습니다.";
+    const addIntervention = vi.fn().mockRejectedValue(new ResumeRejectedError(message));
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { addIntervention } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: "sess-1",
+      text: "다시",
+      user: "alice",
+      requestId: "i-resume-rejected",
+    });
+
+    expect(sent).toEqual([
+      expect.objectContaining({
+        type: "error",
+        requestId: "i-resume-rejected",
+        command_type: "intervene",
+        message,
+        code: "RESUME_REJECTED",
       }),
     ]);
   });

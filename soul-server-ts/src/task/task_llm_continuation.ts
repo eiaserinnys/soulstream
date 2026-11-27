@@ -1,13 +1,5 @@
 import type { InterventionMessage, Task } from "./task_models.js";
 
-/** 이어 쓸 수 없는 llm 세션이다. 이벤트를 쓰기 전에 던지며, 문구는 사용자에게 그대로 간다. */
-export class LlmContinuationRejectedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "LlmContinuationRejectedError";
-  }
-}
-
 export interface LlmContinuationTurn {
   /** 새 user_message 이벤트에 덧붙일 llm 필드(전체 이력, provider, model 등). */
   userMessageFields: Record<string, unknown>;

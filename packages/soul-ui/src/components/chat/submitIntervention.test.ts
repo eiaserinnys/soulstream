@@ -8,7 +8,7 @@
  * 동 리포 `useMessageHistoryBuffer.ts`(L129, L187)와 §9 대칭.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { submitIntervention } from "./submitIntervention";
+import { submitIntervention, SubmitInterventionHttpError } from "./submitIntervention";
 import { submitResume } from "./submitResume";
 
 describe("submitIntervention — credentials: 'include' (R-2 fix G-1)", () => {
@@ -112,5 +112,19 @@ describe("submitIntervention — credentials: 'include' (R-2 fix G-1)", () => {
       reason: "verdict_unknown",
       consumeWhen: null,
     });
+  });
+
+  it("422 RESUME_REJECTED 응답의 문구를 그대로 오류 메시지로 던진다", async () => {
+    const message = "이 노드에 openai 키가 없어 이어 쓸 수 없습니다.";
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      json: async () => ({ error: { code: "RESUME_REJECTED", message } }),
+    } as unknown as Response);
+
+    const failure = submitResume({ sessionKey: "sess-llm", text: "다시" });
+
+    await expect(failure).rejects.toBeInstanceOf(SubmitInterventionHttpError);
+    await expect(failure).rejects.toMatchObject({ message, status: 422 });
   });
 });

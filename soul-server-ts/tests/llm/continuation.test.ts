@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { ResumeRejectedError } from "../../src/task/resume_rejected_error.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import { LlmSessionContinuation } from "../../src/llm/continuation.js";
 import { LlmExecutor } from "../../src/llm/executor.js";
@@ -187,7 +188,9 @@ describe("끝난 llm 세션 이어 쓰기", () => {
     }
     const before = harness.mocks.outboxAppend.mock.calls.length;
 
-    await expect(intervene(harness, sessionId, "다시").result).rejects.toThrow(message);
+    const rejected = intervene(harness, sessionId, "다시").result;
+    await expect(rejected).rejects.toThrow(message);
+    await expect(rejected).rejects.toBeInstanceOf(ResumeRejectedError);
 
     expect(harness.mocks.outboxAppend.mock.calls.length).toBe(before);
     expect(harness.taskManager.getTask(sessionId)?.status).toBe("completed");
@@ -199,10 +202,42 @@ describe("끝난 llm 세션 이어 쓰기", () => {
     attachContinuation(harness);
     const before = harness.mocks.outboxAppend.mock.calls.length;
 
-    await expect(
-      intervene(harness, sessionId, "이 파일", { attachmentPaths: ["/tmp/a.png"] }).result,
-    ).rejects.toThrow("llm 세션은 첨부를 받지 않습니다");
+    const rejected = intervene(harness, sessionId, "이 파일", { attachmentPaths: ["/tmp/a.png"] }).result;
+    await expect(rejected).rejects.toThrow("llm 세션은 첨부를 받지 않습니다");
+    await expect(rejected).rejects.toBeInstanceOf(ResumeRejectedError);
     expect(harness.mocks.outboxAppend.mock.calls.length).toBe(before);
+  });
+
+  it("아직 답하는 중이면 영구 거절 종류로 거절한다", async () => {
+    const harness = makeLlmHarness();
+    const sessionId = await createFinishedLlmSession(harness);
+    let finish!: () => void;
+    const slow = new MockLlmAdapter();
+    slow.complete.mockImplementation(
+      () => new Promise((resolve) => {
+        finish = () => resolve({ content: "늦은 답", inputTokens: 1, outputTokens: 1 });
+      }),
+    );
+    const continuation = new LlmSessionContinuation({
+      adapters: { openai: slow },
+      db: harness.db,
+      persistence: harness.persistence,
+      taskManager: harness.taskManager,
+      logger: silentLogger,
+    });
+    const task = harness.taskManager.getTask(sessionId)!;
+    const message = { text: "다시", user: "browser", callerInfo: browser };
+
+    const turn = await continuation.prepare(task, message);
+    const running = turn.run();
+    await vi.waitFor(() => expect(slow.complete).toHaveBeenCalled());
+
+    const rejected = continuation.prepare(task, message);
+    await expect(rejected).rejects.toBeInstanceOf(ResumeRejectedError);
+    await expect(rejected).rejects.toThrow("아직 답하는 중입니다");
+
+    finish();
+    await running;
   });
 
   it("profileId가 없는 llm 세션도 프로필 검사에 걸리지 않고 claude 엔진을 시작하지 않는다", async () => {
@@ -232,5 +267,38 @@ describe("끝난 llm 세션 이어 쓰기", () => {
     await vi.waitFor(() => expect(task.status).toBe("completed"));
 
     expect(onResume).not.toHaveBeenCalled();
+  });
+
+  it("llm 이어 쓰기가 달려 있지 않으면 영구 거절 종류로 거절한다", async () => {
+    const harness = makeLlmHarness();
+    const sessionId = await createFinishedLlmSession(harness);
+    const task = harness.taskManager.getTask(sessionId)!;
+    const transition = new AutoResumeTransition({ logger: silentLogger, persistence: harness.persistence });
+
+    await expect(
+      transition.resume(task, { text: "다시", user: "browser", callerInfo: browser }, vi.fn()),
+    ).rejects.toBeInstanceOf(ResumeRejectedError);
+  });
+
+  it("profileId가 없는 claude 세션은 영구 거절 문구로 거절하고 unknown agent profile은 그대로 둔다", async () => {
+    const harness = makeLlmHarness();
+    const sessionId = await createFinishedLlmSession(harness);
+    const task = harness.taskManager.getTask(sessionId)!;
+    task.sessionType = "claude";
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: harness.persistence,
+      agentRegistry: { get: () => undefined } as never,
+    });
+    const message = { text: "다시", user: "browser", callerInfo: browser };
+
+    const noProfile = transition.resume(task, message, vi.fn());
+    await expect(noProfile).rejects.toBeInstanceOf(ResumeRejectedError);
+    await expect(noProfile).rejects.toThrow("이 세션은 에이전트 정보가 없어 이어 쓸 수 없습니다");
+
+    task.profileId = "ghost";
+    const unknownProfile = transition.resume(task, message, vi.fn());
+    await expect(unknownProfile).rejects.toThrow("unknown agent profile ghost");
+    await expect(unknownProfile).rejects.not.toBeInstanceOf(ResumeRejectedError);
   });
 });

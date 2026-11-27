@@ -8,6 +8,7 @@ import {
   requireAdmin,
   type AdminAccessProvider,
 } from "./admin_access.js";
+import { LOCAL_OWNER_EMAIL } from "../auth/first_login_access.js";
 import {
   badRequest,
   hasOwn,
@@ -264,7 +265,7 @@ function optionalFolderIds(
 function normalizeEmail(value: unknown): Validation<string> {
   if (typeof value !== "string") return { ok: false, message: "Invalid email" };
   const email = value.trim().toLowerCase();
-  if (!email || !EMAIL_RE.test(email)) {
+  if (email !== LOCAL_OWNER_EMAIL && (!email || !EMAIL_RE.test(email))) {
     return { ok: false, message: "Invalid email" };
   }
   return { ok: true, value: email };
