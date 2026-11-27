@@ -12,6 +12,7 @@ on:
       - 'soul-desktop/**'
       - 'soul-server-ts/**'
       - 'orch-server-ts/**'
+      - 'install/**'
       - 'chrome-extension/**'
       - 'scripts/tests/**'
       - 'scripts/verify-*.mjs'
@@ -24,6 +25,8 @@ on:
       - 'scripts/source-guards.config.json'
       - 'scripts/check-ts-guards.mjs'
       - 'scripts/check-ts-guards.test.mjs'
+      - 'scripts/test-affected.mjs'
+      - 'scripts/test-affected.test.mjs'
       - 'deploy/haniel/build-core.sh'
       - 'deploy/haniel/pack_portable_node_release.sh'
       - 'deploy/macos/check-macos-node.sh'
@@ -39,6 +42,7 @@ on:
       - 'soul-desktop/**'
       - 'soul-server-ts/**'
       - 'orch-server-ts/**'
+      - 'install/**'
       - 'chrome-extension/**'
       - 'scripts/tests/**'
       - 'scripts/verify-*.mjs'
@@ -51,6 +55,8 @@ on:
       - 'scripts/source-guards.config.json'
       - 'scripts/check-ts-guards.mjs'
       - 'scripts/check-ts-guards.test.mjs'
+      - 'scripts/test-affected.mjs'
+      - 'scripts/test-affected.test.mjs'
       - 'deploy/haniel/build-core.sh'
       - 'deploy/haniel/pack_portable_node_release.sh'
       - 'deploy/macos/check-macos-node.sh'
@@ -175,7 +181,7 @@ jobs:
           elif [[ "${{ matrix.package }}" == "packages/search-contract" ]]; then
             corepack pnpm --dir packages/search-contract test
           elif [[ "${{ matrix.package }}" == "scripts" ]]; then
-            node --test scripts/tests/verify_bundle_load.test.mjs scripts/verify-workspace-bundle.test.mjs scripts/check-ui-css.test.mjs scripts/check-source-guards.test.mjs scripts/check-ts-guards.test.mjs
+            node --test scripts/tests/verify_bundle_load.test.mjs scripts/verify-workspace-bundle.test.mjs scripts/check-ui-css.test.mjs scripts/check-source-guards.test.mjs scripts/check-ts-guards.test.mjs scripts/test-affected.test.mjs
           elif [[ "${{ matrix.kind }}" == "python" ]]; then
             python -m pytest deploy/haniel/test_build_core_darwin.py -q --timeout=60
           elif [[ "${{ matrix.package }}" == "packages/chat-ui" ]]; then

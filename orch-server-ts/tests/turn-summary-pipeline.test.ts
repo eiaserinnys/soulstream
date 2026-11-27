@@ -29,6 +29,7 @@ const CONFIG: TurnSummaryConfig = {
   storyCompletionSweepIntervalMs: 60_000,
   storyNarrativeMaxChars: 1_500,
   storyTimeoutMs: 90_000,
+  fallbackTimeoutMs: 90_000,
   storyFoldFailureCooldownMs: 900_000,
   catchUpIntervalMs: 900_000,
   catchUpWindowHours: 72,

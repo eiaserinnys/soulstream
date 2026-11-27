@@ -101,8 +101,8 @@ export class UsageLimitFallbackTurnSummarizer implements UsageLimitPrimary {
         prompt: prompt(),
         model: config.fallbackModel,
         reasoningEffort: ANTIGRAVITY_EFFORT[config.reasoningEffort],
-        timeoutMs: config.timeoutMs,
-        maxAttempts: options?.maxAttempts ?? config.maxAttempts,
+        timeoutMs: config.fallbackTimeoutMs,
+        maxAttempts: 1,
         concurrencyLimit: config.codexConcurrencyLimit,
         ...(options?.outputSchema === undefined
           ? {}

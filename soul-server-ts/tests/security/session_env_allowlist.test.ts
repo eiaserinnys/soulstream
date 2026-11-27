@@ -49,6 +49,8 @@ describe("restricted base env allowlist", () => {
       "ATOM_NL_API_KEY",
       "ARBOR_API_KEY",
       "KIMI_API_KEY",
+      "LLM_ANTHROPIC_API_KEY",
+      "LLM_OPENAI_API_KEY",
       "SERENDIPITY_API_KEY",
       "CLAUDE_CODE_MESSAGING_TOKEN",
       "CLAUDE_CODE_OAUTH_TOKEN",

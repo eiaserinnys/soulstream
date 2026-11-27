@@ -54,7 +54,7 @@ test("parent move disables current parent, self and descendants", async ({ page 
   const child = page.getByTestId("v3-child-folder-folder-dashboard");
   await child.locator('button[aria-label$="관리 메뉴"]').click();
   await page.getByRole("menuitem", { name: "다른 폴더로 이동" }).click();
-  const dialog = page.getByRole("dialog", { name: "다른 프로젝트로 이동" });
+  const dialog = page.getByRole("dialog", { name: "다른 폴더로 이동" });
   await verifyPicker(page, dialog, "parent");
   if (before) return;
   await dialog.getByRole("tab", { name: "전체", exact: true }).click();

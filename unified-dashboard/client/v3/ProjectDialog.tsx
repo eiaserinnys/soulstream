@@ -117,7 +117,7 @@ export function ProjectDialog({
     }).catch((cause: unknown) => {
       if (active) {
         setLoadFailed(true);
-        setError(`프로젝트 설정을 불러오지 못했습니다 · ${errorText(cause)}`);
+        setError(`폴더 설정을 불러오지 못했습니다 · ${errorText(cause)}`);
       }
     }).finally(() => {
       if (active) setLoading(false);
@@ -157,7 +157,7 @@ export function ProjectDialog({
       onSaved(folder);
       onClose();
     } catch (cause) {
-      setError(`프로젝트 저장 실패 · ${errorText(cause)}`);
+      setError(`폴더 저장 실패 · ${errorText(cause)}`);
     } finally {
       busy.current = false;
       setPending(false);
@@ -185,7 +185,7 @@ export function ProjectDialog({
               onModelPresetValidityChange={setEditorValid} onError={setError} />
           ) : null}
           <div hidden={editor !== null}>
-          {loading ? <FrameLoading label="프로젝트 설정을 불러오는 중…" /> : loadFailed ? null : (
+          {loading ? <FrameLoading label="폴더 설정을 불러오는 중…" /> : loadFailed ? null : (
             <ProjectFormFields key={target?.mode === "edit" ? target.folder.id : "create"}
               value={value} disabled={pending} defaultsInvalid={!assignmentValid} onChange={setValue} onEdit={openEditor} />
           )}

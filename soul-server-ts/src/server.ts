@@ -13,6 +13,7 @@ import {
   registerCogitoSearchRoute,
   type CogitoSearchRouteConfig,
 } from "./cogito/search_route.js";
+import { registerLlmRoutes, type LlmRouteConfig } from "./llm/router.js";
 import {
   registerBoardItemHttpRoutes,
   type BoardItemHttpRouteConfig,
@@ -53,6 +54,8 @@ export interface ServerParams {
   };
   /** Node-local Cogito search route retained for MCP session-history search. */
   cogito?: CogitoSearchRouteConfig;
+  /** LLM proxy route 설정. 미지정 시 `/llm/completions` 미등록. */
+  llm?: LlmRouteConfig;
   /** Task dashboard write routes. */
   /** Board item dashboard write routes. */
   boardItem?: BoardItemHttpRouteConfig;
@@ -139,6 +142,9 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
   }
   if (params.cogito) {
     registerCogitoSearchRoute(fastify, params.cogito);
+  }
+  if (params.llm) {
+    registerLlmRoutes(fastify, params.llm);
   }
   if (params.boardItem) {
     registerBoardItemHttpRoutes(fastify, params.boardItem);

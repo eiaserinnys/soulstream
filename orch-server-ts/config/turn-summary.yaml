@@ -32,6 +32,7 @@ story_completion_min_summaries: 5
 story_completion_sweep_interval_ms: 60000
 story_narrative_max_chars: 1500
 story_timeout_ms: 90000
+fallback_timeout_ms: 90000
 story_fold_failure_cooldown_ms: 900000
 catch_up_interval_ms: 900000
 catch_up_window_hours: 72

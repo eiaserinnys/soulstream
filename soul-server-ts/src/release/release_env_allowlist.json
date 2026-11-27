@@ -17,6 +17,8 @@
     "DASH_USER_PORTRAIT": { "owner": "catalog", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "GOOGLE_CLIENT_ID": { "owner": "auth", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
     "JWT_SECRET": { "owner": "auth", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
+    "LLM_OPENAI_API_KEY": { "owner": "llm", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
+    "LLM_ANTHROPIC_API_KEY": { "owner": "llm", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
     "CODEX_API_KEY": { "owner": "codex", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
     "CODEX_CLI_PATH": { "owner": "codex", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "AGY_CLI_PATH": { "owner": "antigravity", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },

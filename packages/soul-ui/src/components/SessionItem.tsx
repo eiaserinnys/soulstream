@@ -36,6 +36,14 @@ export const STATUS_CONFIG: Record<SessionStatus, StatusConfig> = {
   unknown:      { dotClass: "bg-muted-foreground",  animate: false, label: "대기", chipClass: "bg-accent-amber/14 text-accent-amber" },
 };
 
+export function getSessionStatusLabel(
+  status: SessionStatus,
+  sessionType: SessionSummary["sessionType"],
+): string {
+  const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
+  return status === "completed" && sessionType !== "llm" ? "턴 종료" : config.label;
+}
+
 // === Portrait ===
 
 function getInitials(name: string | null | undefined): string {
@@ -185,7 +193,7 @@ export const SessionItem = memo(function SessionItem({
                 config.animate && "animate-[lg-pulse_1.6s_infinite]",
               )}
             />
-            {config.label}
+            {getSessionStatusLabel(session.status, session.sessionType)}
           </span>
           <span className="font-mono text-xs text-muted-foreground/70">{timeStr}</span>
         </div>

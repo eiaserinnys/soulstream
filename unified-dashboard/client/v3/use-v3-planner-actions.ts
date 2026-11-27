@@ -193,10 +193,10 @@ export function useV3PlannerActions({
         target,
         project: moveFolderParentInPlanner,
       });
-      notify(`프로젝트 이동 · ${folders.find((candidate) => candidate.id === target.folderId)?.name ?? target.folderId}`);
+      notify(`폴더 이동 · ${folders.find((candidate) => candidate.id === target.folderId)?.name ?? target.folderId}`);
     } catch (error) {
       refreshFolder(task.page.id);
-      notifyWriteFailure("프로젝트 이동", error);
+      notifyWriteFailure("폴더 이동", error);
       throw error;
     }
   }, [api, folders, moveFolderParentInPlanner, notify, notifyWriteFailure, refreshFolder]);

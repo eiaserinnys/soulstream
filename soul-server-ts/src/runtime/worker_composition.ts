@@ -18,6 +18,7 @@ import { SessionMutationHostClient } from "../control_plane/persistence_host_cli
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
 import { PersistentReportHostClient } from "../control_plane/persistent_report_host_client.js";
+import { composeLlmRoute } from "../llm/compose.js";
 import { buildOrchProxyConfig } from "../mcp/orch_proxy.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import { subscribeModelCatalogReannounce } from "../model_catalog.js";
@@ -338,6 +339,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     broadcaster,
     folderContentHost,
   );
+  const llm = composeLlmRoute({ env, taskManager, persistence, broadcaster, logger });
   const mcpRuntime: McpRuntime = {
     ...attachmentRuntime.mcpRuntime,
     persistentReports: new PersistentReportHostClient(orchHostClientDeps),
@@ -382,6 +384,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     mcp: buildMcpServerOptions(env, mcpRuntime),
     notificationDlq: { notifications: sessionDeliveryHost.notifications },
     cogito: { runtime: mcpRuntime },
+    llm,
     boardItem: { service: catalogService, auth: boardYjsAuth },
     markdownDocument: { service: catalogService, auth: boardYjsAuth },
     contextPreview: {

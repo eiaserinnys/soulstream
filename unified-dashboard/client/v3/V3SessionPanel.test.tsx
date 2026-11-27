@@ -17,6 +17,8 @@ vi.mock("@seosoyoung/soul-ui", () => ({
     interrupted: { label: "중단" },
     unknown: { label: "대기" },
   },
+  getSessionStatusLabel: (status: string, sessionType?: string) =>
+    status === "completed" ? (sessionType === "llm" ? "완료" : "턴 종료") : status === "running" ? "실행 중" : "대기",
   getSessionActivityTimestamp: (session: SessionSummary) =>
     session.lastMessage?.timestamp ?? session.createdAt ?? session.updatedAt,
   getSessionActivityMs: (session: SessionSummary) => {
