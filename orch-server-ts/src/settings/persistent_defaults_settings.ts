@@ -22,12 +22,22 @@ const SettingsValueSchema = PersistentDefaultsSchema.extend({
 function antigravityPresetIds(catalog: Catalog): Set<string> {
   return new Set(catalog.presets.filter(preset => preset.backend === "antigravity").map(preset => preset.id));
 }
-/** Drops Antigravity presets from the defaults; the first remaining fallback replaces a dropped primary. */
-function withoutAntigravity(defaults: PersistentDefaults, antigravity: ReadonlySet<string>): PersistentDefaults {
+/**
+ * Drops Antigravity presets from the defaults; the first remaining fallback replaces a dropped primary.
+ * When nothing else is left, the catalogue defaults stand in, themselves stripped of Antigravity.
+ */
+function withoutAntigravity(
+  defaults: PersistentDefaults,
+  antigravity: ReadonlySet<string>,
+  catalogDefaults?: PersistentDefaults,
+): PersistentDefaults {
   const fallback_models = defaults.fallback_models.filter(entry => !antigravity.has(entry.model_preset));
   if (!antigravity.has(defaults.model_preset)) return { ...defaults, fallback_models };
   const [first, ...rest] = fallback_models;
-  return first ? { ...defaults, model_preset: first.model_preset, fallback_models: rest } : defaults;
+  if (first) return { ...defaults, model_preset: first.model_preset, fallback_models: rest };
+  if (!catalogDefaults) return defaults;
+  const stripped = withoutAntigravity(catalogDefaults, antigravity);
+  return antigravity.has(stripped.model_preset) ? defaults : stripped;
 }
 
 export class PersistentDefaultsError extends Error {
@@ -82,7 +92,7 @@ export class PersistentDefaultsSettings implements ModelCatalogSource {
       ...base,
       persistent_defaults: {
         ...base.persistent_defaults,
-        ...withoutAntigravity(base.persistent_defaults, antigravityPresetIds(base)),
+        ...withoutAntigravity(base.persistent_defaults, antigravityPresetIds(base), this.catalog.snapshot().persistent_defaults),
       },
     };
     this.offMemo = { base, result };
@@ -109,7 +119,7 @@ export class PersistentDefaultsSettings implements ModelCatalogSource {
   async get(): Promise<PersistentDefaultsResult> {
     const visible = (value: PersistentDefaults) => this.antigravityEnabled()
       ? value
-      : withoutAntigravity(value, antigravityPresetIds(this.catalog.snapshot()));
+      : withoutAntigravity(value, antigravityPresetIds(this.catalog.snapshot()), this.catalog.snapshot().persistent_defaults);
     if (!this.cached) {
       const { model_preset, fallback_models } = this.catalog.snapshot().persistent_defaults;
       return { value: visible({ model_preset, fallback_models }), version: 0, source: "catalog" };

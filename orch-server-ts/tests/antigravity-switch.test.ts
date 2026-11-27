@@ -64,6 +64,24 @@ describe("a switched-off Antigravity looks absent, and comes back without re-reg
     expect(entries.filter(entry => entry.kind === "preset" && entry.backend === "antigravity")).not.toHaveLength(0);
   });
 
+  it("hides agents whose backend is Antigravity from the node snapshot, while the stored advertisement keeps them", () => {
+    const state = { enabled: false };
+    const registry = new InMemoryNodeRegistry({ antigravityEnabled: () => state.enabled });
+    registry.registerNode({
+      ...advertisement(),
+      agents: [
+        { id: "roselin", backend: "claude", default_preset: "claude-opus" },
+        { id: "gem", backend: "antigravity", default_preset: agyPreset },
+      ],
+    } as NodeRegistrationPayload);
+    const ids = (nodes: Array<{ agents: unknown[] }>) => nodes[0]!.agents.map(agent => (agent as { id: string }).id);
+    expect(ids([registry.getConnectedNode("node-a")!])).toEqual(["roselin"]);
+    expect(ids(registry.listConnectedNodes())).toEqual(["roselin"]);
+    expect(ids([registry.getConnectedNodeAdvertised("node-a")!])).toEqual(["roselin", "gem"]);
+    state.enabled = true;
+    expect(ids([registry.getConnectedNode("node-a")!])).toEqual(["roselin", "gem"]);
+  });
+
   it("does not answer an Antigravity preset from the catalogue fallback for a node that never connected", () => {
     const registry = new InMemoryNodeRegistry({ antigravityEnabled: () => false });
     const service = new ModelPresetAvailabilityService(registry, noUsage, catalog);
@@ -96,6 +114,20 @@ describe("with the switch off", () => {
     })).rejects.toMatchObject({ statusCode: 422 });
     state.enabled = true;
     expect(settings.snapshot().persistent_defaults.model_preset).toBe(source.persistent_defaults.model_preset);
+  });
+
+  it("falls back to the catalogue defaults without Antigravity when the stored defaults hold nothing else", async () => {
+    const stored = { value: { model_preset: agyPreset, fallback_models: [] }, version: 2 };
+    const settings = new PersistentDefaultsSettings(async () => (async () => [stored]) as never, catalog, vi.fn(), () => false);
+    await settings.refresh();
+    const catalogDefaults = catalog.snapshot().persistent_defaults;
+    const expectedFallbacks = catalogDefaults.fallback_models.filter(entry => !agyPresetIds.includes(entry.model_preset));
+    for (const shown of [settings.snapshot().persistent_defaults, (await settings.get()).value]) {
+      expect(agyPresetIds).not.toContain(shown.model_preset);
+      expect(shown.fallback_models.map(entry => entry.model_preset)).not.toEqual(expect.arrayContaining(agyPresetIds));
+      expect([shown.model_preset, ...shown.fallback_models.map(entry => entry.model_preset)])
+        .toEqual(expect.arrayContaining(expectedFallbacks.map(entry => entry.model_preset)));
+    }
   });
 
   it("reports antigravity as null in the usage summary and never asks a node for its usage", async () => {
@@ -184,5 +216,53 @@ describe("with the switch off", () => {
     });
     await expect(provider.executeResume!({ agent_session_id: "s1", prompt: "again" } as never, undefined as never))
       .rejects.toMatchObject({ statusCode: 409, detail: { error: { code: "ANTIGRAVITY_DISABLED" } } });
+  });
+
+  describe("resuming a finished persistent Antigravity session", () => {
+    function persistentHarness(fallbackModels: Array<{ model_preset: string; reasoning_effort: string | null }>) {
+      const { registry } = switchedRegistry();
+      const updates: Array<Record<string, unknown>> = [];
+      const row: Record<string, unknown> = {
+        session_id: "pas-1", agent_id: "roselin", node_id: "node-a", status: "completed", termination_reason: null,
+        model_preset: agyPreset, model: "m", reasoning_effort: null, claude_session_id: "native",
+        metadata: [
+          { type: "persistent_session", value: { enabled: true } },
+          { type: "persistent_settings", value: {
+            default_model: { model_preset: agyPreset, reasoning_effort: null }, fallback_models: fallbackModels,
+          } },
+          { type: "persistent_generation", value: { number: 1 } },
+        ],
+      };
+      const provider = createLiveExecuteProxyRouteProvider({
+        registry, router: {} as never, bridge: {} as never, sessionEventHub: { subscribe: () => () => undefined } as never,
+        modelCatalog: catalog, modelPresetAvailability: new ModelPresetAvailabilityService(registry, noUsage, catalog),
+        persistentResume: {
+          getSession: async () => row,
+          updateSession: async (input: Record<string, unknown>) => { updates.push(input); },
+          listAgentProfiles: async () => ({ roselin: {} }),
+        },
+      } as never);
+      registry.sessionCache.upsertFromSessionCreated({
+        nodeId: "node-a", connectionId: registry.getConnectedNode("node-a")!.connectionId,
+        message: { type: "session_created", session: { agent_session_id: "pas-1", status: "completed" } },
+        nowMs: 1_700_000_000_000,
+      } as never);
+      return { provider, updates };
+    }
+    const resume = (provider: ReturnType<typeof persistentHarness>["provider"]) =>
+      provider.executeResume!({ agent_session_id: "pas-1", prompt: "again" } as never, undefined as never);
+
+    it("hands over to a stored non-Antigravity candidate instead of refusing", async () => {
+      const { provider, updates } = persistentHarness([{ model_preset: "claude-opus", reasoning_effort: null }]);
+      await expect(resume(provider)).rejects.not.toMatchObject({ detail: { error: { code: "ANTIGRAVITY_DISABLED" } } });
+      expect(updates).toHaveLength(1);
+      expect(updates[0]).toMatchObject({ modelPreset: "claude-opus" });
+    });
+
+    it("answers 409 ANTIGRAVITY_DISABLED when the stored settings leave no candidate other than Antigravity", async () => {
+      const { provider, updates } = persistentHarness([]);
+      await expect(resume(provider)).rejects.toMatchObject({ statusCode: 409, detail: { error: { code: "ANTIGRAVITY_DISABLED" } } });
+      expect(updates).toEqual([]);
+    });
   });
 });

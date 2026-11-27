@@ -32,7 +32,9 @@ vi.mock("./NodeProvidersPanel", () => ({
   },
 }));
 
-vi.mock("./AntigravityBackendRow", () => ({ AntigravityBackendRow: () => <div data-testid="agy-row-stub" /> }));
+vi.mock("./AntigravityBackendRow", () => ({
+  AntigravityBackendRow: ({ onSaved }: { onSaved?: () => void }) => <div data-testid="agy-row-stub"><button type="button" onClick={onSaved}>스위치 저장됨</button></div>,
+}));
 
 import { CodingAgentsTab } from "./CodingAgentsTab";
 
@@ -99,6 +101,13 @@ describe("CodingAgentsTab", () => {
     mocks.summary = snapshot("solo");
     await render(nodes(node("solo")));
     await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "사용량 다시 읽기")!.click());
+    expect(mocks.retry).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-reads the usage summary when the Antigravity switch is saved", async () => {
+    mocks.summary = snapshot("solo");
+    await render(nodes(node("solo")));
+    await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "스위치 저장됨")!.click());
     expect(mocks.retry).toHaveBeenCalledTimes(1);
   });
 

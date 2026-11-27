@@ -40,7 +40,7 @@ export function runnerInventoryCommandType(
 
 const ANTIGRAVITY_BACKEND = "antigravity";
 
-/** `advertiseAntigravity: false` hides the Antigravity presets and backend; the stored advertisement is untouched. */
+/** `advertiseAntigravity: false` hides the Antigravity presets, backend and agents; the stored advertisement is untouched. */
 export function snapshotNode(
   node: MutableNodeConnection,
   advertiseAntigravity = true,
@@ -48,6 +48,9 @@ export function snapshotNode(
   const modelPresets = advertiseAntigravity
     ? node.modelPresets
     : node.modelPresets?.filter((preset) => !(isRecord(preset) && preset.backend === ANTIGRAVITY_BACKEND));
+  const agents = advertiseAntigravity
+    ? node.agents
+    : node.agents.filter((agent) => !(isRecord(agent) && agent.backend === ANTIGRAVITY_BACKEND));
   const supportedBackends = advertiseAntigravity
     ? node.supportedBackends
     : node.supportedBackends.filter((backend) => backend !== ANTIGRAVITY_BACKEND);
@@ -56,7 +59,7 @@ export function snapshotNode(
     connectionId: node.connectionId,
     host: node.host,
     port: node.port,
-    agents: [...node.agents],
+    agents: [...agents],
     ...(modelPresets ? { modelPresets: [...modelPresets] } : {}),
     capabilities: { ...node.capabilities },
     supportedBackends: [...supportedBackends],

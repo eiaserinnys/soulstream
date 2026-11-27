@@ -33,7 +33,7 @@ export function CodingAgentsTab({ request, sampleNodes }: {
   const summaryNode = findUsageSummaryNode(usage.summary, selectedId);
 
   return <div className="space-y-4">
-  <AntigravityBackendRow request={send} />
+  <AntigravityBackendRow request={send} onSaved={usage.retry} />
   <SettingsListDetailFrame testId="coding-agents-tab" list={<SettingsNodeList description="코딩 에이전트를 연결할 노드" nodeList={nodeList} selectedId={selectedId} onSelect={select} />}>
     {selected ? <>
       <SettingsDetailHeader title={selected.nodeId} />

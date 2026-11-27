@@ -53,8 +53,8 @@ function fakeServer(initial: Payload, put?: (body: Record<string, unknown>) => R
   return { request, puts };
 }
 
-async function mount(request: typeof fetch) {
-  await act(async () => root.render(<AntigravityBackendRow request={request} />));
+async function mount(request: typeof fetch, onSaved?: () => void) {
+  await act(async () => root.render(<AntigravityBackendRow request={request} onSaved={onSaved} />));
   await settle();
 }
 
@@ -141,5 +141,23 @@ describe("Antigravity switch row", () => {
     const retry = [...host.querySelectorAll("button")].find((button) => button.textContent === "다시 시도")!;
     await click(retry);
     expect(toggle().getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("tells its parent after each successful save, and not after a failed one", async () => {
+    let fail = true;
+    const server = fakeServer(off, (body) => fail
+      ? Response.json({ detail: { error: { code: "X", message: "boom" } } }, { status: 500 })
+      : Response.json({ value: { enabled: true }, version: Number(body.expectedVersion) + 1, source: "settings" }));
+    const onSaved = vi.fn();
+    await mount(server.request, onSaved);
+    await click(toggle());
+    await type("인지했습니다");
+    await click(confirmButton());
+    expect(onSaved).not.toHaveBeenCalled();
+    fail = false;
+    await click(confirmButton());
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    await click(toggle());
+    expect(onSaved).toHaveBeenCalledTimes(2);
   });
 });

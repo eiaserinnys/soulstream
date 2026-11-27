@@ -16,8 +16,9 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : S
 /**
  * 「코딩 에이전트 연결」 탭 맨 위의 「Antigravity(agy) 사용」 한 줄.
  * 켜는 동작만 확인 대화상자를 거치고, 끄는 동작은 바로 저장한다. 실패하면 스위치는 원래 값으로 남는다.
+ * 저장에 성공하면 `onSaved`로 알려, 아래 공급자 패널이 사용량을 다시 읽게 한다.
  */
-export function AntigravityBackendRow({ request }: { request: typeof fetch }) {
+export function AntigravityBackendRow({ request, onSaved }: { request: typeof fetch; onSaved?: () => void }) {
   const [payload, setPayload] = useState<AntigravityBackendPayload | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -38,6 +39,7 @@ export function AntigravityBackendRow({ request }: { request: typeof fetch }) {
     try {
       setPayload(await putAntigravityBackend(request, { enabled, expectedVersion: payload.version }));
       setDialogOpen(false);
+      onSaved?.();
     } catch (error) {
       setSaveError(errorText(error));
       if (error instanceof AntigravityBackendRequestError && error.status === 409) {
