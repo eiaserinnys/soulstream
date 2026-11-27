@@ -9,7 +9,7 @@ import { PersistentDefaultsSettings } from "../src/settings/persistent_defaults_
 import { UsageSummaryService, type UsageSummaryBridge } from "../src/usage/usage_summary_service.js";
 import { registerAgentLoginRoutes } from "../src/node/agent_login_routes.js";
 import { registerEphemeralLlmRoutes } from "../src/llm/ephemeral_llm_routes.js";
-import { UsageLimitFallbackTurnSummarizer } from "../src/turn-summary/turn_summary_usage_limit_fallback.js";
+import { ModelChainTurnSummarizer } from "../src/turn-summary/turn_summary_model_chain.js";
 import { createLiveExecuteProxyRouteProvider } from "../src/runtime/live_execute_proxy_route_provider.js";
 import { createClaudeAuthHarness } from "./node-claude-auth-test-helpers.js";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
@@ -196,13 +196,21 @@ describe("with the switch off", () => {
     await app.close();
   });
 
-  it("skips the Antigravity fallback for a turn summary that hit the Codex usage limit", async () => {
-    const limitError = Object.assign(new Error("codex exec exited 1: You've hit your usage limit."), { code: "CODEX_USAGE_LIMIT" });
-    const fallback = { generate: vi.fn() };
-    const primary = { summarize: vi.fn(async () => { throw limitError; }), generate: vi.fn(async () => { throw limitError; }) };
-    const summarizer = new UsageLimitFallbackTurnSummarizer({ primary: primary as never, fallback, antigravityEnabled: () => false });
-    await expect(summarizer.generate("prompt", { fallbackModel: "gemini-3.8-flash", reasoningEffort: "low" } as never)).rejects.toBe(limitError);
-    expect(fallback.generate).not.toHaveBeenCalled();
+  it("skips the Antigravity stage and goes on to codex when claude hit its usage limit", async () => {
+    const claudeLimit = Object.assign(new Error("hit your usage limit"), { code: "CLAUDE_USAGE_LIMIT" });
+    const claude = { generate: vi.fn(async () => { throw claudeLimit; }) };
+    const antigravity = { generate: vi.fn() };
+    const codexResult = { content: "요약", model: "gpt-5.6-luna", latencyMs: 1, attempts: 1 };
+    const codex = { generate: vi.fn(async () => codexResult) };
+    const chain = new ModelChainTurnSummarizer({
+      claude: claude as never, antigravity: antigravity as never, codex: codex as never, antigravityEnabled: () => false,
+    });
+    const config = {
+      preferredStages: [{ backend: "claude", model: "sonnet" }, { backend: "antigravity", model: "gemini-4-hydrogen" }],
+      reasoningEffort: "low", model: "gpt-5.6-luna", timeoutMs: 1, maxAttempts: 1, fallbackTimeoutMs: 2,
+    } as never;
+    await expect(chain.generate("prompt", config)).resolves.toBe(codexResult);
+    expect(antigravity.generate).not.toHaveBeenCalled();
   });
 
   it("refuses to resume a finished ordinary Antigravity session", async () => {

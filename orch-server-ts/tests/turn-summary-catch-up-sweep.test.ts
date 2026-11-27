@@ -107,9 +107,9 @@ describe("TurnSummaryCatchUpSweep", () => {
       expect.objectContaining({
         sessionId: "session-a",
         completeEventId: 11,
-        codexMessage: expect.stringContaining("usage limit"),
+        limitMessage: expect.stringContaining("usage limit"),
       }),
-      "Turn summary catch-up stopped: codex usage limit",
+      "Turn summary catch-up stopped: usage limit",
     );
     expect(info).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -117,6 +117,23 @@ describe("TurnSummaryCatchUpSweep", () => {
         failed: 0,
         stoppedByUsageLimit: true,
       }),
+      "Turn summary catch-up",
+    );
+  });
+
+  it("stops the round when the error chain holds only a Claude usage limit", async () => {
+    const usageLimit = Object.assign(new Error("claude hit your usage limit"), { code: "CLAUDE_USAGE_LIMIT" });
+    const error = new Error("turn summary failed after 1 attempts", { cause: usageLimit });
+    const { sweep, enqueue, info } = createSweep({
+      candidates: CANDIDATES,
+      outcomes: [{ status: "failed", error }],
+    });
+
+    await sweep.sweep();
+
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({ failed: 0, stoppedByUsageLimit: true }),
       "Turn summary catch-up",
     );
   });

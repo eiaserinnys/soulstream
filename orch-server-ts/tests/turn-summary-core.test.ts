@@ -18,11 +18,10 @@ import {
   parseCodexJsonl,
 } from "../src/turn-summary/codex_exec_turn_summarizer.js";
 import { resolveCodexCliPath } from "@soulstream/executable-path";
-import { AntigravityEphemeralExecutor } from "../src/llm/antigravity_ephemeral_executor.js";
-import { isCodexUsageLimitError } from "../src/llm/codex_ephemeral_executor.js";
-import { UsageLimitFallbackTurnSummarizer } from
-  "../src/turn-summary/turn_summary_usage_limit_fallback.js";
+import { ModelChainTurnSummarizer } from
+  "../src/turn-summary/turn_summary_model_chain.js";
 import { resolveModelPreset } from "@soulstream/model-catalog";
+import { isTurnSummaryUsageLimitError } from "../src/turn-summary/error_chain.js";
 import {
   OpenAiApiTurnSummarizer,
 } from "../src/turn-summary/openai_api_turn_summarizer.js";
@@ -94,6 +93,7 @@ const CONFIG: TurnSummaryConfig = {
   provider: "codex",
   model: "gpt-5.6-terra",
   storyModel: "gpt-5.6-terra",
+  preferredStages: [],
   reasoningEffort: "high",
   instructionExtractionModel: "gpt-6.2-sol",
   instructionExtractionReasoningEffort: "high",
@@ -302,43 +302,43 @@ describe("TurnSummaryConfigService", () => {
     expect(service.read()).toMatchObject({ model: "one", storyModel: "two", instructionExtractionModel: "three" });
   });
 
-  it("resolves the catalog default fallback model for a config without the key and drops it for an empty override", () => {
-    const dir = trackTempDir(join(tmpdir(), "turn-summary-fallback-"));
+  it("resolves the catalog preferred presets into stages, and an empty override leaves only codex", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-preferred-"));
     const path = join(dir, "turn-summary.yaml");
     const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8");
-    expect(source).not.toContain("fallback_model_preset");
+    expect(source).not.toContain("preferred_model_presets");
     writeFileSync(path, source, "utf8");
-    const catalog = repositoryModelCatalog();
-    const snapshot = catalog.snapshot();
-    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, catalog);
-    expect(service.read()).toMatchObject({
-      fallbackModel: resolveModelPreset(snapshot, snapshot.task_defaults.turn_summary_fallback!.model_preset).model,
-    });
-    expect(service.read().fallbackModel).toBe("gemini-3.8-flash");
-    writeFileSync(join(dir, "turn-summary.local.yaml"), 'fallback_model_preset: ""\n', "utf8");
-    expect(service.read().fallbackModel).toBeUndefined();
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog());
+    expect(service.read().preferredStages).toEqual([
+      { backend: "claude", model: "sonnet" },
+      { backend: "antigravity", model: "gemini-4-hydrogen" },
+    ]);
+    writeFileSync(join(dir, "turn-summary.local.yaml"), "preferred_model_presets: []\n", "utf8");
+    expect(service.read().preferredStages).toEqual([]);
+    writeFileSync(join(dir, "turn-summary.local.yaml"), "preferred_model_presets: [gemini-4-hydrogen]\n", "utf8");
+    expect(service.read().preferredStages).toEqual([{ backend: "antigravity", model: "gemini-4-hydrogen" }]);
   });
 
-  it("has no fallback when the catalog declares no fallback default", () => {
-    const dir = trackTempDir(join(tmpdir(), "turn-summary-fallback-none-"));
+  it("has no preferred stages when the catalog declares no preferred default", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-preferred-none-"));
     const path = join(dir, "turn-summary.yaml");
     writeFileSync(path, readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8"), "utf8");
     const catalog = repositoryModelCatalog().snapshot();
-    const { turn_summary_fallback: _omitted, ...taskDefaults } = catalog.task_defaults;
+    const { turn_summary_preferred: _omitted, ...taskDefaults } = catalog.task_defaults;
     const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, {
       snapshot: () => ({ ...catalog, task_defaults: taskDefaults }),
     });
-    expect(service.read().fallbackModel).toBeUndefined();
+    expect(service.read().preferredStages).toEqual([]);
   });
 
-  it("rejects a fallback preset whose backend is not antigravity", () => {
-    const dir = trackTempDir(join(tmpdir(), "turn-summary-fallback-backend-"));
+  it("rejects a preferred preset whose backend is neither claude nor antigravity", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-preferred-backend-"));
     const path = join(dir, "turn-summary.yaml");
     const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8");
     writeFileSync(path, source, "utf8");
-    writeFileSync(join(dir, "turn-summary.local.yaml"), "fallback_model_preset: codex-5.6-terra\n", "utf8");
+    writeFileSync(join(dir, "turn-summary.local.yaml"), "preferred_model_presets: [codex-5.6-terra]\n", "utf8");
     const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog());
-    expect(() => service.read()).toThrow(/antigravity/);
+    expect(() => service.read()).toThrow(/claude or antigravity/);
   });
 
   it("resolves changed task defaults from the supplied catalog", () => {
@@ -537,98 +537,137 @@ describe("TurnSummaryConfigService", () => {
   });
 });
 
-describe("turn summary Codex usage limit fallback", () => {
+describe("turn summary model chain", () => {
   const input = { userText: "요청", assistantText: "응답", previousSummaries: [] };
-  const fallbackConfig = { ...CONFIG, fallbackModel: "gemini-3.8-flash", reasoningEffort: "xhigh" as const };
-  const usageLimit = () => Object.assign(
-    new Error("codex exec exited 1: You've hit your usage limit."),
-    { code: "CODEX_USAGE_LIMIT" },
-  );
-  const agySuccess = (model?: string) => [
-    ...(model === undefined ? [] : [JSON.stringify({ event: "init", init: { model } })]),
-    JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "대체 요약", structured_output: "대체 요약" } }),
-  ].join("\n");
+  const chainConfig: TurnSummaryConfig = {
+    ...CONFIG,
+    model: "gpt-5.6-luna",
+    preferredStages: [
+      { backend: "claude", model: "sonnet" },
+      { backend: "antigravity", model: "gemini-4-hydrogen" },
+    ],
+    reasoningEffort: "xhigh",
+    timeoutMs: 30_000,
+    maxAttempts: 2,
+    fallbackTimeoutMs: 75_000,
+  };
+  const coded = (code: string, message = code) => Object.assign(new Error(message), { code });
+  const ok = (model: string, content = "요약") => ({
+    content, model, latencyMs: 1, attempts: 1, spawnDurationMs: 1, peakConcurrentSpawns: 1,
+  });
 
-  function build(codexError: Error, agyStdout = agySuccess()) {
-    const codexExecute = vi.fn(async () => { throw codexError; });
-    const agyExecute = vi.fn(async () => ({ stdout: agyStdout, stderr: "", exitCode: 0 }));
+  function build(options: {
+    claude?: () => unknown;
+    antigravity?: () => unknown;
+    codex?: () => unknown;
+    antigravityEnabled?: () => boolean;
+    skipBackends?: readonly ("claude" | "antigravity")[];
+  } = {}) {
+    const claude = { generate: vi.fn(async (request: { model: string }) => (options.claude ?? (() => ok(request.model)))()) };
+    const antigravity = { generate: vi.fn(async (request: { model: string }) => (options.antigravity ?? (() => ok(request.model)))()) };
+    const codex = { generate: vi.fn(async (_prompt: string, config: TurnSummaryConfig, _options?: unknown) => (options.codex ?? (() => ok(config.model)))()) };
     const info = vi.fn();
-    const summarizer = new UsageLimitFallbackTurnSummarizer({
-      primary: new CodexExecTurnSummarizer({ codexPath: "codex", processPort: { execute: codexExecute }, processEnv: {} }),
-      fallback: new AntigravityEphemeralExecutor({ agyPath: "agy", processPort: { execute: agyExecute }, processEnv: { PATH: "/bin" } }),
+    const chain = new ModelChainTurnSummarizer({
+      claude: claude as never,
+      antigravity: antigravity as never,
+      codex: codex as never,
       info,
+      ...(options.antigravityEnabled === undefined ? {} : { antigravityEnabled: options.antigravityEnabled }),
+      ...(options.skipBackends === undefined ? {} : { skipBackends: options.skipBackends }),
     });
-    return { summarizer, codexExecute, agyExecute, info };
+    return { chain, claude, antigravity, codex, info };
   }
 
-  it("reruns the same prompt on the fallback model with the mapped effort and reports its model id", async () => {
-    const { summarizer, agyExecute, info } = build(usageLimit(), agySuccess("gemini-3.8-flash"));
-    const schema = { type: "object", properties: { a: { type: "string" } } };
-
-    const result = await summarizer.summarize(input, fallbackConfig, { outputSchema: schema });
-
-    expect(result).toMatchObject({ content: JSON.stringify("대체 요약"), model: "gemini-3.8-flash" });
-    expect(agyExecute).toHaveBeenCalledTimes(1);
-    const [invocation, stdin] = agyExecute.mock.calls[0] as unknown as [{ args: string[] }, string];
-    expect(JSON.parse(stdin).message.content).toBe(buildTurnSummaryPrompt(input, CONFIG));
-    expect(invocation.args).toEqual(expect.arrayContaining(["--json-schema", "--model", "gemini-3.8-flash", "--effort", "high"]));
-    expect(info).toHaveBeenCalledWith(expect.stringContaining("gemini-3.8-flash"));
-  });
-
-  it("also covers generate() used by story folds and persistent instruction extraction", async () => {
-    const { summarizer, agyExecute } = build(usageLimit());
-    const result = await summarizer.generate("접기 프롬프트", { ...fallbackConfig, reasoningEffort: "minimal" }, { maxAttempts: 1 });
-    expect(result).toMatchObject({ content: "대체 요약", model: "gemini-3.8-flash" });
-    const [invocation] = agyExecute.mock.calls[0] as unknown as [{ args: string[] }];
-    expect(invocation.args).toEqual(expect.arrayContaining(["--effort", "low"]));
-  });
-
-  it("calls the fallback once with the fallback time limit instead of the request time limit", async () => {
-    const generate = vi.fn(async (request: { model: string }) => ({
-      content: "대체 요약", model: request.model, latencyMs: 1, attempts: 1, spawnDurationMs: 1, peakConcurrentSpawns: 1,
-    }));
-    const summarizer = new UsageLimitFallbackTurnSummarizer({
-      primary: new CodexExecTurnSummarizer({
-        codexPath: "codex",
-        processPort: { execute: vi.fn(async () => { throw usageLimit(); }) },
-        processEnv: {},
-      }),
-      fallback: { generate },
+  it("uses claude first and calls neither antigravity nor codex when it succeeds", async () => {
+    const { chain, claude, antigravity, codex } = build();
+    const result = await chain.summarize(input, chainConfig);
+    expect(result).toMatchObject({ content: "요약", model: "sonnet" });
+    expect(claude.generate).toHaveBeenCalledTimes(1);
+    expect(claude.generate.mock.calls[0]![0]).toMatchObject({
+      model: "sonnet", reasoningEffort: "xhigh", timeoutMs: 30_000, maxAttempts: 2,
     });
-    const config = { ...fallbackConfig, timeoutMs: 30_000, maxAttempts: 2, fallbackTimeoutMs: 75_000 };
-
-    await summarizer.summarize(input, config);
-    await summarizer.generate("접기 프롬프트", config, { maxAttempts: 2 });
-
-    expect(generate).toHaveBeenCalledTimes(2);
-    for (const [request] of generate.mock.calls as unknown as [{ timeoutMs: number; maxAttempts: number }][]) {
-      expect(request).toMatchObject({ timeoutMs: 75_000, maxAttempts: 1 });
-    }
+    expect(antigravity.generate).not.toHaveBeenCalled();
+    expect(codex.generate).not.toHaveBeenCalled();
   });
 
-  it("does not use the fallback for Codex failures other than the usage limit", async () => {
-    const failure = Object.assign(new Error("codex exec exited 1: websocket failed"), { code: "CODEX_EXEC_FAILED" });
-    const { summarizer, agyExecute, info } = build(failure);
-    await expect(summarizer.summarize(input, fallbackConfig)).rejects.toMatchObject({
-      name: "TurnSummaryExecutionError",
-      cause: expect.objectContaining({ name: "CodexEphemeralExecutionError" }),
+  it.each(["CLAUDE_USAGE_LIMIT", "CLAUDE_UNAVAILABLE"])(
+    "moves on to gemini-4-hydrogen on %s with the fallback time limit and a single attempt",
+    async (code) => {
+      const { chain, antigravity, codex, info } = build({ claude: () => { throw coded(code); } });
+      const result = await chain.summarize(input, chainConfig, {
+        outputSchema: { type: "object" },
+      });
+      expect(result).toMatchObject({ model: "gemini-4-hydrogen" });
+      expect(antigravity.generate).toHaveBeenCalledTimes(1);
+      expect(antigravity.generate.mock.calls[0]![0]).toMatchObject({
+        model: "gemini-4-hydrogen",
+        reasoningEffort: "high",
+        timeoutMs: 75_000,
+        maxAttempts: 1,
+        outputSchema: { type: "object" },
+      });
+      expect(codex.generate).not.toHaveBeenCalled();
+      expect(info).toHaveBeenCalledWith(expect.stringContaining(code));
+    },
+  );
+
+  it("moves on to codex with the request model when antigravity is rate limited too", async () => {
+    const { chain, codex } = build({
+      claude: () => { throw coded("CLAUDE_USAGE_LIMIT"); },
+      antigravity: () => { throw coded("ANTIGRAVITY_RATE_LIMITED"); },
     });
-    expect(agyExecute).not.toHaveBeenCalled();
-    expect(info).not.toHaveBeenCalled();
+    const result = await chain.summarize(input, chainConfig);
+    expect(result).toMatchObject({ model: "gpt-5.6-luna" });
+    expect(codex.generate).toHaveBeenCalledTimes(1);
+    expect(codex.generate.mock.calls[0]![1]).toMatchObject({ model: "gpt-5.6-luna", timeoutMs: 75_000 });
+    expect(codex.generate.mock.calls[0]![2]).toMatchObject({ maxAttempts: 1 });
   });
 
-  it("keeps the usage limit in the error chain when the fallback fails too", async () => {
-    const { summarizer } = build(usageLimit(), "broken NDJSON");
-    const error = await summarizer.summarize(input, fallbackConfig).catch((caught: unknown) => caught);
+  it("does not move on when claude times out", async () => {
+    const { chain, antigravity, codex } = build({ claude: () => { throw coded("CLAUDE_TIMEOUT"); } });
+    await expect(chain.summarize(input, chainConfig)).rejects.toMatchObject({ cause: { code: "CLAUDE_TIMEOUT" } });
+    expect(antigravity.generate).not.toHaveBeenCalled();
+    expect(codex.generate).not.toHaveBeenCalled();
+  });
+
+  it("skips antigravity when it is switched off and goes straight to codex", async () => {
+    const { chain, antigravity, codex } = build({
+      claude: () => { throw coded("CLAUDE_USAGE_LIMIT"); },
+      antigravityEnabled: () => false,
+    });
+    await chain.generate("prompt", chainConfig);
+    expect(antigravity.generate).not.toHaveBeenCalled();
+    expect(codex.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps every attempted stage error in the chain when all stages fail", async () => {
+    const { chain } = build({
+      claude: () => { throw coded("CLAUDE_USAGE_LIMIT"); },
+      antigravity: () => { throw coded("ANTIGRAVITY_RATE_LIMITED"); },
+      codex: () => { throw coded("CODEX_EXEC_FAILED"); },
+    });
+    const error = await chain.summarize(input, chainConfig).catch((caught: unknown) => caught);
     expect(error).toMatchObject({ name: "TurnSummaryExecutionError" });
-    expect(isCodexUsageLimitError(error)).toBe(true);
+    expect(isTurnSummaryUsageLimitError(error)).toBe(true);
+    expect(isTurnSummaryUsageLimitError(coded("CODEX_EXEC_FAILED"))).toBe(false);
   });
 
-  it("keeps today's behaviour when no fallback model is configured", async () => {
-    const { summarizer, agyExecute } = build(usageLimit());
-    const error = await summarizer.summarize(input, CONFIG).catch((caught: unknown) => caught);
-    expect(isCodexUsageLimitError(error)).toBe(true);
-    expect(agyExecute).not.toHaveBeenCalled();
+  it("runs codex first with the request limits when no preferred stage is configured", async () => {
+    const { chain, claude, codex } = build();
+    await chain.generate("prompt", { ...chainConfig, preferredStages: [] }, { maxAttempts: 1 });
+    expect(claude.generate).not.toHaveBeenCalled();
+    expect(codex.generate.mock.calls[0]![1]).toMatchObject({ timeoutMs: 30_000 });
+    expect(codex.generate.mock.calls[0]![2]).toMatchObject({ maxAttempts: 1 });
+  });
+
+  it("leaves antigravity out for a chain that skips it", async () => {
+    const { chain, antigravity, codex } = build({
+      claude: () => { throw coded("CLAUDE_USAGE_LIMIT"); },
+      skipBackends: ["antigravity"],
+    });
+    await chain.generate("prompt", chainConfig);
+    expect(antigravity.generate).not.toHaveBeenCalled();
+    expect(codex.generate).toHaveBeenCalledTimes(1);
   });
 });
 

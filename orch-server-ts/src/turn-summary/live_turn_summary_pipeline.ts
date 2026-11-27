@@ -23,9 +23,10 @@ import { resolveCodexCliPath } from "@soulstream/executable-path";
 import { CodexExecTurnSummarizer } from
   "./codex_exec_turn_summarizer.js";
 import {
-  UsageLimitFallbackTurnSummarizer,
-  type TurnSummaryFallbackExecutor,
-} from "./turn_summary_usage_limit_fallback.js";
+  ModelChainTurnSummarizer,
+  type ChainAntigravityExecutor,
+  type ChainClaudeExecutor,
+} from "./turn_summary_model_chain.js";
 import { createPersistentInstructionExtractor } from
   "./persistent_instruction_extractor.js";
 import {
@@ -89,7 +90,8 @@ export function createLiveTurnSummaryPipeline(options: {
   >;
   readonly logger: TurnSummaryLogger;
   readonly warn: (message: string) => void;
-  readonly fallbackExecutor?: TurnSummaryFallbackExecutor;
+  readonly claudeExecutor?: ChainClaudeExecutor;
+  readonly antigravityExecutor?: ChainAntigravityExecutor;
   readonly overrides?: LiveTurnSummaryProductionOverrides;
 }): LiveTurnSummaryPipeline {
   if (options.overrides?.turnSummaryPipeline !== undefined) {
@@ -114,14 +116,18 @@ export function createLiveTurnSummaryPipeline(options: {
     ...(codexPath === undefined ? {} : { codexPath }),
     processEnv,
   });
-  const codexSummarizer = new UsageLimitFallbackTurnSummarizer({
-    primary: codexExec,
-    ...(options.fallbackExecutor === undefined
+  const chainDeps = {
+    codex: codexExec,
+    ...(options.claudeExecutor === undefined ? {} : { claude: options.claudeExecutor }),
+    ...(options.antigravityExecutor === undefined
       ? {}
-      : { fallback: options.fallbackExecutor }),
-    info: (message) => options.logger.info?.(message),
+      : { antigravity: options.antigravityExecutor }),
+    info: (message: string) => options.logger.info?.(message),
     antigravityEnabled: () => options.registry.isAntigravityEnabled(),
-  });
+  };
+  const codexSummarizer = new ModelChainTurnSummarizer(chainDeps);
+  // A story fold is long and agy takes one request at a time, so folds never use it.
+  const storyChain = new ModelChainTurnSummarizer({ ...chainDeps, skipBackends: ["antigravity"] });
   const summarizer = createTurnSummaryProviderRouter({
     codex: codexSummarizer,
     ...(options.config.turn_summary_openai_key
@@ -133,7 +139,7 @@ export function createLiveTurnSummaryPipeline(options: {
   const storyFolder = new SessionStoryFoldService({
     repository: storyRepository,
     configService,
-    generator: codexExec,
+    generator: storyChain,
     logger: options.logger,
   });
   const persistentInstructionExtractor = createPersistentInstructionExtractor({

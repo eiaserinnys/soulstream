@@ -1,4 +1,8 @@
 import type { ClaudeCentralPoolAccount } from "@soulstream/wire-schema";
+import {
+  effectiveWindowUsedPercent,
+  isUsageExhaustedForScope,
+} from "@soulstream/wire-schema/claude-account-usage";
 import type { InMemoryNodeRegistry } from "../node/registry.js";
 import type { NodeRegistryEvent } from "../node/registry_types.js";
 import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
@@ -40,6 +44,9 @@ export type ClaudeCentralServiceOptions = {
   /** 시험에서 Anthropic 호출을 가짜로 바꾼다. 테스트 밖에서는 생략한다. */
   readonly fetch?: typeof fetch;
 };
+
+/** A token that expires within this window may die before a one-shot call finishes. */
+const ONE_SHOT_TOKEN_MIN_REMAINING_MS = 60_000;
 
 export class ClaudeCentralNotFoundError extends Error {
   readonly code = "account_not_found";
@@ -196,6 +203,39 @@ export class ClaudeCentralService {
 
   cancelLogin(loginId: string): ClaudeCentralLoginSnapshot {
     return this.logins.cancel(loginId);
+  }
+
+  /**
+   * Access token for a one-shot `claude -p` call: the enabled, logged-in, unexhausted account
+   * whose token stays valid for the next minute, preferring the lowest seven-day usage and then
+   * the lowest five-hour usage. Null when no account qualifies.
+   */
+  async pickOneShotAccessToken(): Promise<string | null> {
+    const nowMs = this.now();
+    let best: { token: string; sevenDay: number; fiveHour: number } | undefined;
+    for (const record of await this.repository.list()) {
+      if (!record.enabled || record.authState !== "ok" || record.accessToken === null) continue;
+      const expiresAtMs = record.expiresAt === null ? Number.NaN : Date.parse(record.expiresAt);
+      if (!(expiresAtMs > nowMs + ONE_SHOT_TOKEN_MIN_REMAINING_MS)) continue;
+      const observation = this.usage.getObservation(record.id);
+      const usage = observation?.raw === null || observation?.raw === undefined
+        ? emptyCentralUsage()
+        : parseCentralUsagePayload(observation.raw);
+      if (isUsageExhaustedForScope(usage, "all", nowMs)) continue;
+      const candidate = {
+        token: record.accessToken,
+        sevenDay: effectiveWindowUsedPercent(usage.seven_day, nowMs) ?? 0,
+        fiveHour: effectiveWindowUsedPercent(usage.five_hour, nowMs) ?? 0,
+      };
+      if (
+        best === undefined ||
+        candidate.sevenDay < best.sevenDay ||
+        (candidate.sevenDay === best.sevenDay && candidate.fiveHour < best.fiveHour)
+      ) {
+        best = candidate;
+      }
+    }
+    return best?.token ?? null;
   }
 
   private accountView(record: ClaudeCentralAccountRecord): ClaudeCentralAccountView {
