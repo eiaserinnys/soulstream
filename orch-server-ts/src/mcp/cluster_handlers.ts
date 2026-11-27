@@ -16,6 +16,7 @@ import {
 } from "../node/agent_profile_routes.js";
 import { executeCogitoBriefRoute } from "../cogito/cogito_routes.js";
 import { executeCreateSessionRoute } from "../session/session_command_routes.js";
+import { projectModelPresets } from "./model_preset_projection.js";
 import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 import type {
   EventIngressDeadLetterListInput,
@@ -64,7 +65,8 @@ async function run(fn: () => Promise<unknown>) {
   try { return jsonResult(await fn()); }
   catch (error) { return errorResult(error instanceof Error ? error.message : String(error)); }
 }
-const node = (operation: "agents" | "model-presets" | "plan" | "apply" | "snapshots" | "rollback", suffix: string, method: "GET" | "POST", body: (a: Args) => Args = () => ({})): Handler => (o, a) => run(async () => {
+type NodeOperation = "agents" | "model-presets" | "plan" | "apply" | "snapshots" | "rollback";
+async function nodeRequest(o: McpHostOptions, a: Args, operation: NodeOperation, suffix: string, method: "GET" | "POST", body: (a: Args) => Args = () => ({})): Promise<unknown> {
   const nodeId = String(a.node_id);
   await o.cluster.sessions.router.waitForNode(nodeId);
   return request(method,
@@ -74,7 +76,9 @@ const node = (operation: "agents" | "model-presets" | "plan" | "apply" | "snapsh
       if (response.status === 404) throw new Error(`노드 '${nodeId}'를 찾을 수 없거나 연결되어 있지 않습니다. list_nodes로 노드 이름을 확인하고 연결된 노드 이름으로 다시 부르세요.`);
       return response;
     });
-});
+}
+const node = (operation: NodeOperation, suffix: string, method: "GET" | "POST", body?: (a: Args) => Args): Handler =>
+  (o, a) => run(() => nodeRequest(o, a, operation, suffix, method, body));
 const profileBody = (a: Args) => ({ profile: a.profile, create_if_missing: a.create_if_missing ?? false, include_text_diff: a.include_text_diff ?? a.includeTextDiff ?? false });
 
 function projectCentralAgentProfile(profile: AgentProfileRecord): Record<string, unknown> {
@@ -142,7 +146,10 @@ export const clusterHandlers = {
     });
   }),
   list_node_agents: node("agents", "agents", "GET"),
-  list_node_model_presets: node("model-presets", "model-presets", "GET"),
+  list_node_model_presets: (o, a) => run(async () => projectModelPresets(
+    await nodeRequest(o, a, "model-presets", "model-presets", "GET"),
+    { ...(Array.isArray(a.preset_ids) ? { presetIds: a.preset_ids.map(String) } : {}), detail: a.detail === true },
+  )),
   get_central_agent_profile: (o, a) => run(async () => {
     const { repository } = o.cluster.centralAgentProfiles;
     if (a.agent_id === undefined) {
