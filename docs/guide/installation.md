@@ -12,6 +12,8 @@ bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl
 
 `--backends` takes a comma-separated list of `claude`, `codex`, and `antigravity` (default: `claude,codex`). The first backend becomes the backend for the default `seosoyoung` and `seosoyoung-pas` profiles. Without `--ref` or `--atom-ref`, both Soulstream and atom install from the verified `origin/beta` branch. For the latest development commits, download `install.sh` from `main` instead of `beta` and pass `--ref main --atom-ref main` together. You can also pin a revision with `--ref <ref>` for Soulstream or `--atom-ref <ref>` for atom (branch, tag, or commit).
 
+`--worker-port <port>` (1024 to 65534, default `4205`) moves the worker's loopback port, and its MCP port moves to the next one (`4206` by default). Use it when another Soulstream worker on the same computer already uses `4205`, for example in WSL. A rerun without the option keeps the port of the previous install.
+
 Administrator password options (shared by the Soulstream dashboard and atom):
 
 - On a fresh interactive install (`stdin` is a terminal and `/dev/tty` is available), the installer asks twice for an administrator password before installing packages. Press Enter at the first prompt to generate a random 24-character hex password and print it once on your terminal when installation finishes (never in `/var/log/soulstream-install.log`).
