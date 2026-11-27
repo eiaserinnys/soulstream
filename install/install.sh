@@ -59,6 +59,10 @@ declare -gA BACKUP_PATHS=()
 PROTECTED_ATOM_BACKUP=
 # Owner of both databases, and the role a manual restore creates objects as.
 DATABASE_OWNER=soulstream
+# Loopback port of the worker; its MCP port is the next one. --worker-port moves both.
+DEFAULT_WORKER_PORT=4205
+WORKER_PORT=$DEFAULT_WORKER_PORT
+WORKER_PORT_SET=false
 # Dumps kept per database in <root>/.local/backups.
 BACKUP_KEEP=3
 
@@ -76,8 +80,9 @@ cleanup_temp_files() {
 }
 
 usage() {
-  printf 'Usage: install.sh [--backends claude,codex,antigravity] [--ref git-ref] [--atom-ref git-ref] [--admin-password-file path | --set-admin-password] [--tailscale [--tailscale-auth-key-file path] [--tailscale-user login]] [--help]\n'
+  printf 'Usage: install.sh [--backends claude,codex,antigravity] [--ref git-ref] [--atom-ref git-ref] [--worker-port port] [--admin-password-file path | --set-admin-password] [--tailscale [--tailscale-auth-key-file path] [--tailscale-user login]] [--help]\n'
   printf '  --backends  comma-separated list of claude, codex, antigravity (default: claude,codex)\n'
+  printf '  --worker-port  loopback port of the worker, 1024-65534; its MCP port is the next one (default: 4205, or the port of the previous install)\n'
 }
 
 # Prints the cause on stderr, then the usage, and stops with the argument-error status.
@@ -125,6 +130,19 @@ read_admin_password_file() {
   return 0
 }
 
+valid_worker_port() { [[ "$1" =~ ^[1-9][0-9]{3,4}$ ]] && (( $1 >= 1024 && $1 <= 65534 )); }
+
+# Without --worker-port, a rerun keeps the port of the installation being updated.
+resolve_worker_port() {
+  local existing
+  [[ "$WORKER_PORT_SET" == true ]] && return 0
+  existing=$(read_env_value "$1/.env.soul-server-ts" PORT) || return 1
+  if [[ -z "$existing" ]]; then WORKER_PORT=$DEFAULT_WORKER_PORT; return 0; fi
+  valid_worker_port "$existing" || { printf 'PORT=%s in %s/.env.soul-server-ts is not a port from 1024 to 65534; pass --worker-port.\n' "$existing" "$1" >&2; return 1; }
+  WORKER_PORT=$existing
+  return 0
+}
+
 parse_args() {
   disable_xtrace
   BACKENDS=claude,codex
@@ -132,6 +150,8 @@ parse_args() {
   REF_SET=false
   ATOM_REF=
   ATOM_REF_SET=false
+  WORKER_PORT=$DEFAULT_WORKER_PORT
+  WORKER_PORT_SET=false
   TAILSCALE=false
   TAILSCALE_AUTH_KEY=
   TAILSCALE_AUTH_KEY_FILE=
@@ -146,11 +166,12 @@ parse_args() {
       --help) usage; exit 0 ;;
       --tailscale) TAILSCALE=true; shift ;;
       --set-admin-password) SET_ADMIN_PASSWORD=true; shift ;;
-      --backends|--ref|--atom-ref|--admin-password-file|--tailscale-auth-key|--tailscale-auth-key-file|--tailscale-user)
+      --backends|--ref|--atom-ref|--worker-port|--admin-password-file|--tailscale-auth-key|--tailscale-auth-key-file|--tailscale-user)
         if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then arg_error "$1 needs a value"; fi
         case "$1" in
           --ref) REF=$2; REF_SET=true ;;
           --atom-ref) ATOM_REF=$2; ATOM_REF_SET=true ;;
+          --worker-port) valid_worker_port "$2" || arg_error "invalid --worker-port value \"$2\": use an integer from 1024 to 65534"; WORKER_PORT=$2; WORKER_PORT_SET=true ;;
           --backends) BACKENDS=$2 ;;
           --admin-password-file) ADMIN_PASSWORD_FILE=$2 ;;
           --tailscale-auth-key) TAILSCALE_AUTH_KEY=$2 ;;
@@ -674,6 +695,7 @@ render_config() {
   # The backends of the installation being updated, read before the env files are rewritten.
   previous_backends=$(read_env_value "$root/.env.soul-server-ts" SOULSTREAM_BACKENDS)
   [[ -n "$previous_backends" ]] || previous_backends=$BACKENDS
+  resolve_worker_port "$root" || return 1
   MANAGED_CONFIG_WARNINGS=
   read_atom_seed_map "$root/config/.atom-seed-map.json" || return 1
   atom_api_key=$(read_atom_api_key "$root/.atom-api-key") || return 1
@@ -729,8 +751,8 @@ AUTH_BEARER_TOKEN=${BEARER}
 JWT_SECRET=${JWT}
 PORTABLE_LOCAL_MCP_AUTHORIZATION="Bearer ${BEARER}"
 HOST=127.0.0.1
-PORT=4205
-MCP_INTERNAL_PORT=4206
+PORT=${WORKER_PORT}
+MCP_INTERNAL_PORT=$((WORKER_PORT + 1))
 MCP_ENABLED=true
 MCP_PATH=/mcp
 MCP_REQUIRE_AUTH=true
@@ -762,11 +784,11 @@ ENV
   rm -f "$fresh_orch" "$fresh_worker"
   work=$(mktemp -d)
   render_agents "$home" "$root" > "$work/agents"
-  cat > "$work/mcp-registry" <<'YAML'
+  cat > "$work/mcp-registry" <<YAML
 servers:
   - id: soulstream
     type: streamable_http
-    url: http://127.0.0.1:4205/mcp
+    url: http://127.0.0.1:${WORKER_PORT}/mcp
     headers:
       Authorization:
         env: PORTABLE_LOCAL_MCP_AUTHORIZATION
@@ -941,7 +963,14 @@ preflight() {
   fi
 }
 
-install_packages() { export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y sudo tmux curl ca-certificates git jq openssl build-essential python3 gh postgresql-17; }
+# A new VM still runs apt from cloud-init right after boot. apt-get update fails at once on the lists lock held there
+# (DPkg::Lock::Timeout does not cover it), so wait for cloud-init first; the timeout keeps a run started from cloud-init itself from hanging.
+install_packages() {
+  export DEBIAN_FRONTEND=noninteractive
+  if command -v cloud-init >/dev/null; then timeout 300 cloud-init status --wait >/dev/null 2>&1 || true; fi
+  apt-get update
+  apt-get -o DPkg::Lock::Timeout=300 install -y sudo tmux curl ca-certificates git jq openssl build-essential python3 gh postgresql-17
+}
 setup_account() {
   id soulstream >/dev/null 2>&1 || useradd -m -d /home/soulstream -s /bin/bash soulstream
   if [[ -f /root/.ssh/authorized_keys && ! -e /home/soulstream/.ssh/authorized_keys ]]; then
@@ -1522,7 +1551,8 @@ register_daily_review_job() {
   return 0
 }
 wait_and_create_workspace() {
-  local root=$1 header cookie deadline status count
+  local root=$1 header cookie deadline status count worker_port
+  worker_port=$(read_env_value "$root/.env.soul-server-ts" PORT) || return 1
   header=$(mktemp) || return 1
   register_temp_file "$header"
   cookie=$(mktemp) || return 1
@@ -1530,7 +1560,7 @@ wait_and_create_workspace() {
   chmod 600 "$header" "$cookie" || return 1
   printf 'Authorization: Bearer %s\n' "$(read_env_value "$root/.env.orch" AUTH_BEARER_TOKEN)" > "$header"
   deadline=$((SECONDS+120))
-  until curl --max-time 3 -fsS http://127.0.0.1:5200/api/health >/dev/null 2>&1 && curl --max-time 3 -fsS http://127.0.0.1:4205/health >/dev/null 2>&1 && curl --max-time 3 -fsS -H "@$header" http://127.0.0.1:5200/api/nodes 2>/dev/null | jq -e '.nodes[] | select(.nodeId=="local" and .connected==true)' >/dev/null; do
+  until curl --max-time 3 -fsS http://127.0.0.1:5200/api/health >/dev/null 2>&1 && curl --max-time 3 -fsS http://127.0.0.1:${worker_port}/health >/dev/null 2>&1 && curl --max-time 3 -fsS -H "@$header" http://127.0.0.1:5200/api/nodes 2>/dev/null | jq -e '.nodes[] | select(.nodeId=="local" and .connected==true)' >/dev/null; do
     if ((SECONDS >= deadline)); then journalctl -u soulstream-orch.service -n 50 --no-pager; journalctl -u soulstream-worker.service -n 50 --no-pager; rm -f "$header" "$cookie"; return 1; fi
     sleep 2
   done
