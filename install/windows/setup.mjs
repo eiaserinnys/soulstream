@@ -11,7 +11,7 @@ import { requireClis } from './cli.mjs';
 import { prepareSecrets, setupDatabases, setupSchema } from './database.mjs';
 import { orchUrl, refreshModelPresets, waitAndCreateWorkspace } from './finish.mjs';
 import { renderHanielConfig } from './haniel_config.mjs';
-import { fail, log, parseArgs, readEnvValue, run } from './lib.mjs';
+import { fail, log, originOption, parseArgs, readEnvValue, run } from './lib.mjs';
 import { renderConfig } from './render_config.mjs';
 
 const BACKENDS = ['claude', 'codex'];
@@ -34,6 +34,8 @@ function buildContext(options, env = process.env) {
     home: options['user-home'] ?? homedir(),
     backends: BACKENDS.filter((name) => requested.includes(name)),
     ports: { orch: 5200, atom: 4200, worker, mcp: worker + 1, postgres: 5432 },
+    publicUrl: originOption(options, 'public-url'),
+    atomPublicUrl: originOption(options, 'atom-public-url'),
     pgBin: options['pg-bin'] ?? '',
     postgresPassword: env.SOULSTREAM_PG_PASSWORD ?? '',
   };
@@ -63,7 +65,7 @@ async function prepare(ctx, options) {
   step('Writing configuration');
   const rendered = renderConfig({
     platform: ctx.platform, home: ctx.home, root: ctx.soulDir, workspace: ctx.workspace, agentHome: ctx.agentHome, backends: ctx.backends, ports: ctx.ports, secrets,
-    atomDashboard: atom.dashboard,
+    atomDashboard: atom.dashboard, publicUrl: ctx.publicUrl, atomPublicUrl: ctx.atomPublicUrl,
   });
   step('Building Soulstream');
   const pnpm = (args, env) => run('pnpm', args, { cwd: ctx.soulDir, env });
@@ -84,8 +86,9 @@ async function finish(ctx) {
   const { atomDashboard, warnings: notes } = JSON.parse(readFileSync(join(ctx.soulDir, '.local', 'install-notes.json'), 'utf8'));
   const head = run('git', ['-C', ctx.soulDir, 'rev-parse', '--short=12', 'HEAD'], { capture: true }).trim();
   log(`\nInstalled ${head}; backends: ${ctx.backends.join(', ')}`);
-  log(`Soulstream: ${orchUrl(ctx)}`);
-  log(`Atom: http://127.0.0.1:${ctx.ports.atom}${atomDashboard ? '' : ' (API only; its dashboard did not build)'}`);
+  const envOrch = join(ctx.soulDir, '.env.orch');
+  log(`Soulstream: ${readEnvValue(envOrch, 'SOULSTREAM_PUBLIC_URL') || orchUrl(ctx)}`);
+  log(`Atom: ${readEnvValue(envOrch, 'ATOM_PUBLIC_URL') || `http://127.0.0.1:${ctx.ports.atom}`}${atomDashboard ? '' : ' (API only; its dashboard did not build)'}`);
   log(`Password for both: ${readEnvValue(join(ctx.soulDir, '.env.orch'), 'DASHBOARD_ADMIN_PASSWORD')} (saved in ${join(ctx.soulDir, '.admin-password')})`);
   log('PAS: once you connect a coding agent, the dashboard creates a default 서소영 (PAS) persistent session.');
   if (notes.length > 0) log(`Notes:\n${notes.map((n) => `  ${n}`).join('\n')}`);

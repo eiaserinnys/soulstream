@@ -3,7 +3,7 @@ import { closeSync, existsSync, openSync, readFileSync, renameSync, writeFileSyn
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { atomSchemaReady } from './database.mjs';
-import { fail, httpRequest, killTree, log, parseEnvFile, run, waitFor, withLogTails } from './lib.mjs';
+import { fail, httpRequest, killTree, log, parseEnvFile, readEnvValue, run, waitFor, withLogTails } from './lib.mjs';
 import { ATOM_API_KEY_RE, mergeEnv } from './render_config.mjs';
 
 export const atomUrl = (ctx) => `http://127.0.0.1:${ctx.ports.atom}`;
@@ -26,17 +26,23 @@ export function buildAtom(ctx) {
   return { dashboard: true, notes: [] };
 }
 
-export function initAtom(ctx, secrets, dashboard) {
-  mergeEnv(join(ctx.atomDir, '.env'), [
+// FRONTEND_URL is the option, else the value already in atom's .env, else the loopback address.
+export function atomEnvLines(ctx, secrets, dashboard) {
+  const envFile = join(ctx.atomDir, '.env');
+  return [
     'NODE_ENV=production',
     'API_HOST=127.0.0.1',
     `API_PORT=${ctx.ports.atom}`,
     `DATABASE_URL=postgresql://soulstream:${secrets.dbPassword}@127.0.0.1:${ctx.ports.postgres}/atom`,
     `JWT_SECRET=${secrets.atomJwt}`,
     ...(dashboard ? [`DASHBOARD_DIR=${join(ctx.atomDir, 'dashboard', 'dist')}`] : []),
-    `FRONTEND_URL=${atomUrl(ctx)}`,
+    `FRONTEND_URL=${ctx.atomPublicUrl || readEnvValue(envFile, 'FRONTEND_URL') || atomUrl(ctx)}`,
     `DASHBOARD_ADMIN_PASSWORD=${secrets.adminPassword}`,
-  ], 'NODE_ENV API_HOST API_PORT DATABASE_URL JWT_SECRET DASHBOARD_ADMIN_PASSWORD DASHBOARD_DIR FRONTEND_URL'.split(' '), ctx.platform === 'win32');
+  ];
+}
+
+export function initAtom(ctx, secrets, dashboard) {
+  mergeEnv(join(ctx.atomDir, '.env'), atomEnvLines(ctx, secrets, dashboard), 'NODE_ENV API_HOST API_PORT DATABASE_URL JWT_SECRET DASHBOARD_ADMIN_PASSWORD DASHBOARD_DIR FRONTEND_URL'.split(' '), ctx.platform === 'win32');
   run('npm', ['--prefix', ctx.atomDir, 'run', 'migrate']);
   if (!atomSchemaReady(ctx)) throw fail('The atom schema is not complete after the migration.');
 }

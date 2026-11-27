@@ -14,6 +14,8 @@ bash -c 'set -euo pipefail; (command -v curl >/dev/null 2>&1 && test -f /etc/ssl
 
 `--worker-port <port>` (1024 to 65534, default `4205`) moves the worker's loopback port, and its MCP port moves to the next one (`4206` by default). Use it when another Soulstream worker on the same computer already uses `4205`, for example in WSL. A rerun without the option keeps the port of the previous install.
 
+`--public-url <url>` and `--atom-public-url <url>` set the addresses the browser opens the dashboard and atom at (`SOULSTREAM_PUBLIC_URL` and `ATOM_PUBLIC_URL`). They are for password mode only and cannot be combined with `--tailscale`. Use them when the browser reaches the dashboard or atom at an address other than the default `http://127.0.0.1:5200` and `http://127.0.0.1:4200`, such as an SSH tunnel opened on other local ports or a reverse proxy you set up yourself. Each value is an `http://` or `https://` origin without a path, for example `http://127.0.0.1:15200`. Running the installer again in password mode keeps the addresses that are in place now, including ones you edited by hand. In Tailscale mode every run writes the addresses again from the current tailnet name.
+
 Administrator password options (shared by the Soulstream dashboard and atom):
 
 - On a fresh interactive install (`stdin` is a terminal and `/dev/tty` is available), the installer asks twice for an administrator password before installing packages. Press Enter at the first prompt to generate a random 24-character hex password and print it once on your terminal when installation finishes (never in `/var/log/soulstream-install.log`).
@@ -55,6 +57,8 @@ In the default password mode, both services listen on `127.0.0.1` only. Forward 
 ```bash
 ssh -L 127.0.0.1:5200:127.0.0.1:5200 -L 127.0.0.1:4200:127.0.0.1:4200 <user>@<server>
 ```
+
+If port 5200 or 4200 on your computer is already in use, open the tunnel on other local ports (for example `-L 127.0.0.1:15200:127.0.0.1:5200 -L 127.0.0.1:14200:127.0.0.1:4200`) and run the install command again with `--public-url http://127.0.0.1:15200 --atom-public-url http://127.0.0.1:14200`.
 
 Open Soulstream at `http://127.0.0.1:5200` and atom at `http://127.0.0.1:4200` with the same administrator password. Use the password you entered during installation (or the generated one shown once on your terminal); if you installed non-interactively or need to look it up later, read it on the server with `sudo cat /home/soulstream/soulstream/.admin-password`. The atom button (`atom 열기`) in the global dashboard toolbar also opens atom (`ATOM_PUBLIC_URL`) in a new browser tab.
 
@@ -197,6 +201,7 @@ The installer follows the `main` channel of Soulstream and atom.
 | `-InstallRoot` | `%LOCALAPPDATA%\SoulstreamServer` | Install folder. A folder that is not empty and was not created by this installer is refused |
 | `-WorkerPort` | `4205` | Worker port. The internal MCP port is the next one |
 | `-Backends` | `claude,codex` | Coding agents to set up. Antigravity is not supported on Windows |
+| `-PublicUrl`, `-AtomPublicUrl` | `http://127.0.0.1:5200`, `http://127.0.0.1:4200` | Addresses the browser opens the dashboard and atom at, when they differ from the defaults (a reverse proxy you set up yourself, for example). Each is an `http://` or `https://` origin without a path. The servers still listen on `5200` and `4200` |
 | `-Ref`, `-AtomRef` | `main` | Branch, tag, or commit of Soulstream and atom |
 | `-PostgresPassword` | none | Superuser password of an existing PostgreSQL 17 |
 | `-AdminPasswordFile` | none | Single-line file with the administrator password. Without it, one is generated |
@@ -217,7 +222,7 @@ Soulstream keeps its own Claude and Codex logins in `<InstallRoot>\agent-home` a
 
 Soulstream starts from a scheduled task named `SoulstreamServer` that runs at your logon. It does not store your Windows password, so it runs only while you are signed in. The installer starts the task right away. If the task does not start in that session, the installer starts Soulstream directly and says so; the task takes over at your next logon.
 
-Run the same command again to rebuild: the secrets, the administrator password, and the databases stay, the configuration is rewritten, and the services restart. Files you edited under `config\` are kept, and the new version is written next to them as `.installer-new`. The installer does not upgrade an existing database. If the database is behind the version you install, it stops and says so.
+Run the same command again to rebuild: the secrets, the administrator password, and the databases stay, the configuration is rewritten, and the services restart. The public addresses (`SOULSTREAM_PUBLIC_URL`, `CORS_ALLOWED_ORIGINS`, `ATOM_PUBLIC_URL` in `.env.orch`, and `FRONTEND_URL` in atom's `.env`) are kept as they are, including values you edited by hand, unless you pass `-PublicUrl` or `-AtomPublicUrl`. Files you edited under `config\` are kept, and the new version is written next to them as `.installer-new`. The installer does not upgrade an existing database. If the database is behind the version you install, it stops and says so.
 
 Limits on Windows: session isolation is off, and sessions run in the worker process instead of separate runner processes. Antigravity and Tailscale are not supported.
 
