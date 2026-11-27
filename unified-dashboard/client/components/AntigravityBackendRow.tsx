@@ -11,13 +11,15 @@ import { ANTIGRAVITY_TERMS_WARNING, AntigravityConsentDialog } from "./Antigravi
 import "./claude-accounts/claude-account-pool.css";
 import "./antigravity-backend-row.css";
 
+const SWITCH_SKELETON_CLASS = "c724-quota-track animate-pulse h-[calc(var(--thumb-size)+2px)]! w-[calc(var(--thumb-size)*2-2px)]! [--thumb-size:--spacing(5)] sm:[--thumb-size:--spacing(4)]";
+
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 /**
  * 「코딩 에이전트 연결」 탭 맨 위의 「Antigravity(agy) 사용」 한 줄.
  * 켜는 동작만 확인 대화상자를 거치고, 끄는 동작은 바로 저장한다. 실패하면 스위치는 원래 값으로 남는다.
  * 저장에 성공하면 `onSaved(켜졌는지)`로 알려, 아래 공급자 패널이 사용량을 다시 읽게 한다.
- * 읽는 중에는 같은 크기의 꺼 둔 스위치를 놓아, 읽은 뒤에도 줄 높이와 설명 줄 수가 바뀌지 않는다.
+ * 읽는 중에는 스위치와 같은 크기의 손잡이 없는 뼈대를 놓는다. 켜짐으로도 꺼짐으로도 읽히지 않고, 읽은 뒤에도 줄 높이와 설명 줄 수가 바뀌지 않는다.
  */
 export function AntigravityBackendRow({ request, onSaved }: { request: typeof fetch; onSaved?: (enabled: boolean) => void }) {
   const [payload, setPayload] = useState<AntigravityBackendPayload | null>(null);
@@ -52,7 +54,7 @@ export function AntigravityBackendRow({ request, onSaved }: { request: typeof fe
   }
 
   const enabled = payload?.value.enabled === true;
-  return <div className="agy-backend-row" data-testid="antigravity-backend-row" data-enabled={enabled ? "on" : "off"}>
+  return <div className="agy-backend-row" data-testid="antigravity-backend-row" data-enabled={enabled ? "on" : "off"} aria-busy={!payload && loadError === null}>
     <div className="c724-account-top">
       <div className="agy-backend-text">
         <span className="c724-account-email">Antigravity(agy) 사용</span>
@@ -73,7 +75,7 @@ export function AntigravityBackendRow({ request, onSaved }: { request: typeof fe
             />
           </span>
           : loadError === null
-            ? <span className="c724-switch-wrap"><Switch checked={false} disabled aria-busy="true" aria-label="Antigravity(agy) 사용, 불러오는 중" data-testid="antigravity-backend-switch-loading" /></span>
+            ? <span className="c724-switch-wrap"><span className={SWITCH_SKELETON_CLASS} aria-hidden="true" data-testid="antigravity-backend-switch-loading" /></span>
             : null}
       </div>
     </div>

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from playwright.sync_api import expect
 
-from settings_toolbar_fakes import SESSION_ID, OrchLikeFake, check, new_page, open_settings, shot
+from settings_toolbar_fakes import PREFIX, SESSION_ID, OrchLikeFake, check, new_page, open_settings, shot
 from settings_toolbar_r2 import DIALOGS, OPS, active, broken_words, fixtures_flows, ops
 
 PHRASE = "인지했습니다"
@@ -17,9 +17,9 @@ CONSENT = '[data-slot="dialog-popup"]:has(#agy-consent-input)'
 CONFIRM = "켜기"
 
 
-def open_tab(browser, base, width, fake, height=900):
+def open_tab(browser, base, width, fake, height=900, theme="dark"):
     fixtures_flows(fake)
-    context, page = new_page(browser, base, fake, width, height)
+    context, page = new_page(browser, base, fake, width, height, theme=theme)
     page.goto(base + f"/persistent/{SESSION_ID}", wait_until="domcontentloaded")
     expect(page.get_by_test_id("v3-global-toolbar")).to_be_visible(timeout=20000)
     open_settings(page)
@@ -245,6 +245,78 @@ def capture_loading(browser, base, out: Path, width: int):
     return loading, loaded
 
 
+PLACEHOLDER_LOOK = """() => {
+  const el = document.querySelector('[data-testid="antigravity-backend-switch-loading"]');
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { role: el.getAttribute('role'), ariaChecked: el.getAttribute('aria-checked'), hasChecked: !!el.closest('[data-testid="antigravity-backend-row"]').querySelector('[aria-checked]'),
+    thumbs: el.children.length, busy: el.closest('[data-testid="antigravity-backend-row"]').getAttribute('aria-busy'), w: Math.round(r.width), h: Math.round(r.height) };
+}"""
+
+SWITCH_SIZE = """() => {
+  const el = document.querySelector('[data-testid="antigravity-backend-switch"]');
+  const r = el.getBoundingClientRect();
+  const thumb = el.querySelector('span');
+  return { w: Math.round(r.width), h: Math.round(r.height), checked: el.getAttribute('aria-checked'), thumbX: Math.round(thumb.getBoundingClientRect().left - r.left) };
+}"""
+
+WATCH_SWITCH_FRAMES = """() => {
+  window.__switchFrames = [];
+  const sample = () => {
+    const el = document.querySelector('[data-testid="antigravity-backend-switch"]');
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const thumb = el.querySelector('span');
+    window.__switchFrames.push({ checked: el.getAttribute('aria-checked'), thumbX: Math.round(thumb.getBoundingClientRect().left - r.left) });
+  };
+  new MutationObserver(sample).observe(document.body, { subtree: true, childList: true, attributes: true });
+  const tick = () => { sample(); requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}"""
+
+
+def pixel_gap(image_path, box_a, box_b):
+    from PIL import Image
+    image = Image.open(image_path).convert("RGB")
+    pick = lambda box: image.getpixel((int(box[0] + box[2] / 2), int(box[1] + box[3] / 2)))
+    a, b = pick(box_a), pick(box_b)
+    return max(abs(x - y) for x, y in zip(a, b)), a, b
+
+
+def capture_loading_on(browser, base, out: Path, width: int, theme: str):
+    """켜져 있는 설정을 읽는 중: 자리 표시는 켜짐으로도 꺼짐으로도 읽히지 않고, 읽은 직후 첫 프레임부터 손잡이가 켜짐 자리에 있다."""
+    fake = OrchLikeFake(atom=True)
+    fake.agy = {"enabled": True, "version": 1}
+    fake.collected_agy = "auto"
+    fake.agy_read = "hold"
+    context, page = open_tab(browser, base, width, fake, theme=theme)
+    page.emulate_media(reduced_motion="no-preference")
+    expect(page.get_by_test_id("antigravity-backend-row")).to_be_visible(timeout=15000)
+    page.wait_for_timeout(500)
+    look = page.evaluate(PLACEHOLDER_LOOK)
+    check(f"켜진 설정 읽는 중 {width}px {theme}: 자리 표시에 role, aria-checked, 손잡이가 없고 줄이 aria-busy", look is not None and look["role"] is None and look["ariaChecked"] is None and not look["hasChecked"] and look["thumbs"] == 0 and look["busy"] == "true", look)
+    tag = f"{width}-{theme}"
+    row = page.get_by_test_id("antigravity-backend-row")
+    box = page.get_by_test_id("antigravity-backend-switch-loading").bounding_box()
+    shot(page, out, f"agy-on-loading-{tag}.png", width, f"켜진 설정을 읽는 중({theme}, 손잡이 없는 자리 표시)", row)
+    row_box = row.bounding_box()
+    gap, placeholder_rgb, row_rgb = pixel_gap(out / (PREFIX + f"agy-on-loading-{tag}.png"), (box["x"] - row_box["x"], box["y"] - row_box["y"], box["width"], box["height"]), (6, 6, 1, 1))
+    check(f"켜진 설정 읽는 중 {width}px {theme}: 자리 표시가 줄 바탕과 구분됨(화소 차이 {gap})", gap >= 8, {"placeholder": placeholder_rgb, "row": row_rgb, "gap": gap})
+    page.evaluate(WATCH_SWITCH_FRAMES)
+    fake.agy_read = "ok"
+    for held in fake.held_agy:
+        held.fulfill(json={"value": {"enabled": True}, "version": 1, "source": "settings"})
+    expect(page.get_by_test_id("antigravity-backend-switch")).to_be_visible(timeout=10000)
+    page.wait_for_timeout(400)
+    frames = page.evaluate("() => window.__switchFrames")
+    final = page.evaluate(SWITCH_SIZE)
+    check(f"켜진 설정 읽는 직후 {width}px {theme}: 첫 프레임부터 aria-checked=true이고 손잡이가 켜짐 자리에 있음(미끄러짐 없음)", len(frames) >= 1 and all(f["checked"] == "true" and f["thumbX"] == final["thumbX"] for f in frames), {"frames": frames[:6], "final": final})
+    expected = {1280: (30, 18), 360: (38, 22)}[width]
+    check(f"켜진 설정 읽는 중 {width}px {theme}: 자리 표시 크기가 스위치와 같음({expected[0]}x{expected[1]})", (look["w"], look["h"]) == expected == (final["w"], final["h"]), {"placeholder": look, "switch": final})
+    context.close()
+    return look, final, gap
+
+
 def capture_resize(browser, base):
     """대화상자를 연 채 창을 좁혔다 넓혀도 입력 중인 글이 남고 대화상자가 화면 안에 있다."""
     fake = OrchLikeFake(atom=True)
@@ -269,11 +341,13 @@ def capture_agy(browser, base, out: Path):
         firsts.append((width, *capture_width(browser, base, out, width)))
         capture_failures(browser, base, out, width)
     loadings = [capture_loading(browser, base, out, width) for width in (1280, 360)]
+    on_loadings = [(width, theme, *capture_loading_on(browser, base, out, width, theme)) for width in (1280, 360) for theme in ("dark", "light")]
     resize = capture_resize(browser, base)
     wide = firsts[0]
     name = lambda label: "확인 문구 입력 칸" if label == "INPUT" else label
     wide = (wide[0], name(wide[1]), wide[2], wide[3], [name(item) for item in wide[4]])
     ops("13", "통과", f"설정을 읽는 동안 줄의 틀(제목, 설명)이 서고 스위치 크기의 자리 표시가 있다(agy-loading-1280.png, agy-loading-360.png). 읽는 중과 읽은 뒤의 줄 높이, 설명 줄 수, 동작 칸 너비가 같다: 1280 {loadings[0][0]}, 360 {loadings[1][0]}")
+    ops("13", "통과", f"켜진 설정을 읽는 중에도 자리 표시는 role, aria-checked, 손잡이가 없는 알약 뼈대라 켜짐으로도 꺼짐으로도 읽히지 않는다(agy-on-loading-*.png). 읽은 직후 첫 프레임부터 aria-checked=true이고 손잡이가 켜짐 자리에 있다. 크기는 스위치와 같고 줄 바탕과 화소 차이가 난다(너비, 테마, 자리 표시 크기, 읽은 뒤 스위치, 화소 차이): {[(w, t, (l['w'], l['h']), (f['w'], f['h']), g) for w, t, l, f, g in on_loadings]}")
     ops("14", "통과", f"켜기를 누르면 첫 초점이 입력 칸({wide[1]}), Esc나 켜기 뒤 초점이 스위치로 돌아온다({wide[2]}, {wide[3]}). 1280과 360에서 같다")
     ops("15", "통과", f"Tab 5번 순서 {wide[4]}: 초점이 대화상자 안에서만 돌고 안 보이는 요소가 없다. Esc는 대화상자만 닫고 설정창과 토글 값은 그대로다")
     ops("16", "통과", "360px에서 줄과 대화상자가 가로 넘침 없이 서고(모든 어절 한 덩어리), 대화상자는 화면 안에 들어온다. 저장 실패 문구와 읽기 실패 안내도 같다")

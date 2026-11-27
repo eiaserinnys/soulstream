@@ -132,6 +132,23 @@ describe("Antigravity switch row", () => {
     expect(toggle().getAttribute("aria-checked")).toBe("true");
   });
 
+  it("shows a switch-sized placeholder that reads as neither on nor off while the setting is being read", async () => {
+    let release: (response: Response) => void = () => {};
+    const request = vi.fn(() => new Promise<Response>((resolve) => { release = resolve; })) as unknown as typeof fetch;
+    await mount(request);
+    const row = host.querySelector<HTMLElement>('[data-testid="antigravity-backend-row"]')!;
+    const placeholder = row.querySelector<HTMLElement>('[data-testid="antigravity-backend-switch-loading"]');
+    expect(placeholder).not.toBeNull();
+    expect(row.getAttribute("aria-busy")).toBe("true");
+    expect(row.querySelector('[role="switch"]')).toBeNull();
+    expect(row.querySelector("[aria-checked]")).toBeNull();
+    expect(placeholder!.children).toHaveLength(0);
+    await act(async () => release(Response.json(on)));
+    await settle();
+    expect(row.getAttribute("aria-busy")).toBe("false");
+    expect(toggle().getAttribute("aria-checked")).toBe("true");
+  });
+
   it("replaces the switch with a failure notice and a retry when the setting cannot be read", async () => {
     let calls = 0;
     const request = vi.fn(async () => (calls++ === 0 ? new Response("down", { status: 503 }) : Response.json(off))) as unknown as typeof fetch;
