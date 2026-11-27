@@ -44,7 +44,7 @@ Starter instructions load once, on a fresh install, when the atom tree is empty.
 
 Before finishing, the installer refreshes model preset status (up to 6 attempts, 60 s per request, 10 s between retries). Installation continues even if refresh fails.
 
-After installation, open **Settings > Coding agents** (`설정 > 코딩 에이전트`) in the dashboard to connect Claude, Codex, and Antigravity without server commands. The node's model presets refresh right away.
+After installation, open **Settings > Connect coding agents** (`설정 > 코딩 에이전트 연결`) in the dashboard to connect Claude, Codex, and Antigravity without server commands. The node's model presets refresh right away.
 
 - **Claude** uses the account pool that the installer turns on, so zero accounts is valid. Expand the Claude row and choose Add account (`계정 추가`). While no pool store exists, the worker tries to import an existing `~/.claude/.credentials.json` at each startup and skips it if identity verification fails.
 - **Codex** uses device-code login. Open the URL the dashboard shows and enter the one-time code. If the dashboard reports that device code authentication is off, turn it on in the security section of your ChatGPT settings and try again.
@@ -218,7 +218,7 @@ What it installs:
 
 After it finishes, open `http://127.0.0.1:5200` and sign in with the administrator password. The password is printed at the end and saved in `<InstallRoot>\soulstream\.admin-password`. Atom is at `http://127.0.0.1:4200` with the same password. If the atom dashboard does not build, atom still serves its API, the dashboard hides its atom link, and the installer lists this under Notes.
 
-Soulstream keeps its own Claude and Codex logins in `<InstallRoot>\agent-home` and does not use or change the logins of your Claude Code and Codex CLIs. So after installing, sign in once in the dashboard. To connect a coding agent, open **Settings > Coding agents** (`설정 > 코딩 에이전트`) in the dashboard. For Claude, expand the row and choose Add account (`계정 추가`). For Codex, open the URL the dashboard shows and enter the one-time code.
+Soulstream keeps its own Claude and Codex logins in `<InstallRoot>\agent-home` and does not use or change the logins of your Claude Code and Codex CLIs. So after installing, sign in once in the dashboard. To connect a coding agent, open **Settings > Connect coding agents** (`설정 > 코딩 에이전트 연결`) in the dashboard. For Claude, expand the row and choose Add account (`계정 추가`). For Codex, open the URL the dashboard shows and enter the one-time code.
 
 Soulstream starts from a scheduled task named `SoulstreamServer` that runs at your logon. It does not store your Windows password, so it runs only while you are signed in. The installer starts the task right away. If the task does not start in that session, the installer starts Soulstream directly and says so; the task takes over at your next logon.
 

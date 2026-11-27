@@ -470,3 +470,32 @@ test('newly written seed text avoids the long hyphen, the middle dot and the em 
     assert.equal(/[―·—]/.test(contentOf(key)), false, `forbidden dash or middle dot in ${key}`);
   }
 });
+
+test('seed guidance names the settings tabs the way the dashboard does', () => {
+  const unified = SEED.entries.filter((entry) => /작업과 실행/.test(`${entry.title ?? ''}\n${entry.content ?? ''}`)).map((entry) => entry.key);
+  assert.deepEqual(unified, [], 'the dashboard has no 작업과 실행 group');
+  const codingLogin = contentOf('common.soulstream_guide.coding_login');
+  assert.ok(codingLogin.includes('코딩 에이전트 연결') && codingLogin.includes('에이전트와 노드'));
+  assert.ok(contentOf('common.soulstream_guide.first_window').includes('코딩 에이전트 연결'));
+  const staleTab = /설정 → 코딩 에이전트(?! 연결)|설정 → 에이전트(?!와 노드| 프로필)/;
+  const stale = SEED.entries.filter((entry) => staleTab.test(entry.content ?? '')).map((entry) => entry.key);
+  assert.deepEqual(stale, [], 'settings tabs must use the dashboard labels');
+});
+
+test('settings card lists every dashboard group and tab with the same admin marks', () => {
+  const source = fs.readFileSync(fileURLToPath(new URL('../../unified-dashboard/client/components/config/configTabs.ts', import.meta.url)), 'utf8');
+  const tabs = [...source.matchAll(/\{ id: "(\w+)", label: "([^"]+)",[^\n]*?group: "(\w+)", adminOnly: (true|false)/g)]
+    .map(([, id, label, group, admin]) => ({ id, label, group, adminOnly: admin === 'true' }));
+  const groups = [...source.matchAll(/\{ id: "(\w+)", label: "([^"]+)" \}/g)].map(([, id, label]) => ({ id, label }));
+  assert.equal(tabs.length, 20, 'expected 20 CONFIG_TABS labels');
+  assert.equal(groups.length, 4, 'expected 4 CONFIG_TAB_GROUPS labels');
+  const settings = contentOf('common.soulstream_guide.settings');
+  for (const group of groups) assert.ok(settings.includes(`## ${group.label}\n`), `settings is missing the group heading ${group.label}`);
+  for (const tab of tabs) {
+    const line = settings.split('\n').find((text) => text.startsWith(`- ${tab.label}:`) || text.startsWith(`- ${tab.label}(관리자):`));
+    assert.ok(line, `settings is missing a line for the tab ${tab.label}`);
+    assert.equal(line.startsWith(`- ${tab.label}(관리자):`), tab.adminOnly, `admin mark of ${tab.label} differs from configTabs.ts`);
+  }
+  const guide = contentOf('skill.soulstream_guide.body');
+  assert.ok(!guide.includes('세 묶음') && guide.includes('네 묶음'), 'the guide skill must say four groups');
+});
