@@ -1774,11 +1774,11 @@ finish_message() {
     done <<< "$MANAGED_CONFIG_WARNINGS"
   fi
   if has_backend antigravity; then
-    printf 'Login: connect Claude, Codex, and Antigravity in the dashboard under Settings → 코딩 에이전트.\n'
-    printf "Antigravity stays off until you turn it on under Settings → 코딩 에이전트 and accept Google's terms.\n"
+    printf 'Login: connect Claude, Codex, and Antigravity in the dashboard under Settings → 코딩 에이전트 연결.\n'
+    printf "Antigravity stays off until you turn it on under Settings → 코딩 에이전트 연결 and accept Google's terms.\n"
     printf 'SSH alternative: Codex with "sudo -Hu soulstream /usr/local/bin/codex login --device-auth" (enable device code login in ChatGPT security settings), Antigravity by running ~/.local/bin/agy as the soulstream user.\n'
   else
-    printf 'Login: connect Claude and Codex in the dashboard under Settings → 코딩 에이전트.\n'
+    printf 'Login: connect Claude and Codex in the dashboard under Settings → 코딩 에이전트 연결.\n'
     if has_backend codex; then printf 'SSH alternative: Codex with "sudo -Hu soulstream /usr/local/bin/codex login --device-auth" (enable device code login in ChatGPT security settings).\n'; fi
   fi
   printf 'After login, presets update within five minutes. To refresh now as root:\n'

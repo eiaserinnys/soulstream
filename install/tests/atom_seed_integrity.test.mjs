@@ -470,3 +470,14 @@ test('newly written seed text avoids the long hyphen, the middle dot and the em 
     assert.equal(/[―·—]/.test(contentOf(key)), false, `forbidden dash or middle dot in ${key}`);
   }
 });
+
+test('seed guidance names the settings tabs the way the dashboard does', () => {
+  const unified = SEED.entries.filter((entry) => /작업과 실행/.test(`${entry.title ?? ''}\n${entry.content ?? ''}`)).map((entry) => entry.key);
+  assert.deepEqual(unified, [], 'the dashboard has no 작업과 실행 group');
+  const codingLogin = contentOf('common.soulstream_guide.coding_login');
+  assert.ok(codingLogin.includes('코딩 에이전트 연결') && codingLogin.includes('에이전트와 노드'));
+  assert.ok(contentOf('common.soulstream_guide.first_window').includes('코딩 에이전트 연결'));
+  const staleTab = /설정 → 코딩 에이전트(?! 연결)|설정 → 에이전트(?!와 노드| 프로필)/;
+  const stale = SEED.entries.filter((entry) => staleTab.test(entry.content ?? '')).map((entry) => entry.key);
+  assert.deepEqual(stale, [], 'settings tabs must use the dashboard labels');
+});

@@ -92,7 +92,7 @@ async function finish(ctx) {
   log(`Password for both: ${readEnvValue(join(ctx.soulDir, '.env.orch'), 'DASHBOARD_ADMIN_PASSWORD')} (saved in ${join(ctx.soulDir, '.admin-password')})`);
   log('PAS: once you connect a coding agent, the dashboard creates a default 서소영 (PAS) persistent session.');
   if (notes.length > 0) log(`Notes:\n${notes.map((n) => `  ${n}`).join('\n')}`);
-  log('Login: connect Claude and Codex in the dashboard under Settings → 코딩 에이전트.');
+  log('Login: connect Claude and Codex in the dashboard under Settings → 코딩 에이전트 연결.');
   log(confirmed ? 'Model presets are confirmed.' : 'Model preset status is not confirmed yet; it updates within five minutes.');
 }
 

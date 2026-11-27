@@ -76,7 +76,7 @@ The command also updates the server to the latest verified version on the `beta`
 
 #### Connect coding agents
 
-Sign in as the administrator, then open **Settings > Coding agents** (`설정 > 코딩 에이전트`) to connect Claude, Codex, and Antigravity from the browser:
+Sign in as the administrator, then open **Settings > Connect coding agents** (`설정 > 코딩 에이전트 연결`) to connect Claude, Codex, and Antigravity from the browser:
 
 - **Claude** uses the account pool that the installer turns on. Expand the Claude row and choose Add account (`계정 추가`).
 - **Codex** uses device-code login. Open the URL the dashboard shows and enter the one-time code. If the dashboard reports that device code authentication is off, turn it on in the security section of your ChatGPT settings and try again.
