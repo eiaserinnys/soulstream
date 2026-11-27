@@ -10,6 +10,7 @@ import {
   registerSessionActionCommandRoutes,
   type SessionActionCommandRouteOptions,
 } from "../src/index.js";
+import { PendingNodeCommandRejectedError } from "../src/node/pending_commands.js";
 import { createHarnessCore } from "./session-action-command-test-helpers.js";
 
 /** Mirrors the route's stable upload identity derivation. */
@@ -370,5 +371,66 @@ describe("session intervention attachment admission", () => {
     expect(admit).not.toHaveBeenCalled();
     expect(register).not.toHaveBeenCalled();
     await app.close();
+  });
+});
+
+describe("durable intervention node rejection", () => {
+  const rejectedAck = (code: string | undefined, message: string) =>
+    new PendingNodeCommandRejectedError({
+      commandType: "intervene",
+      requestId: "req-1",
+      message,
+      response: { type: "error", status: "error", message, ...(code ? { code } : {}) } as never,
+    });
+
+  async function sendWithRejection(error: Error) {
+    const { router, bridge } = createHarnessCore();
+    vi.spyOn(router, "routeExistingSessionPendingCommand").mockImplementation(
+      async (payload: unknown) => payload as never,
+    );
+    vi.spyOn(bridge, "sendPendingCommand").mockRejectedValue(error);
+    const register = vi.fn(async (params: Record<string, any>) => ({
+      inserted: true,
+      conflict: false,
+      row: { delivery_id: params.deliveryId, state: "pending", aggregate_state: "pending" },
+    }));
+    const app = createApp({ config });
+    registerSessionActionCommandRoutes(app, {
+      router,
+      bridge,
+      deliveryRepositoryProvider: async () => ({ register }),
+    } as unknown as SessionActionCommandRouteOptions);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions/sess-1/intervene",
+      payload: {
+        user: "operator",
+        text: "hello",
+        delivery_id: "88888888-8888-4888-8888-888888888888",
+        delivery_intent: "human_live_steer",
+        source: "browser",
+      },
+    });
+    await app.close();
+    return response;
+  }
+
+  it("answers 422 with the node message when the node permanently rejects the resume", async () => {
+    const message = "이 노드에 openai 키가 없어 이어 쓸 수 없습니다.";
+    const response = await sendWithRejection(rejectedAck("RESUME_REJECTED", message));
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toEqual({ error: { code: "RESUME_REJECTED", message } });
+  });
+
+  it("keeps the queued 200 for any other node error when a durable delivery exists", async () => {
+    const response = await sendWithRejection(rejectedAck("NODE_RESPONSE_REJECTED", "later"));
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      outcome: "queued",
+      delivered: false,
+      reason: "next_turn_required",
+    });
   });
 });

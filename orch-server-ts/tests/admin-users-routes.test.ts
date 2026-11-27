@@ -445,4 +445,44 @@ describe("admin users route harness", () => {
 
     await app.close();
   });
+
+  it("accepts the first-install default account owner@local on patch and delete", async () => {
+    const { provider, calls } = createProvider();
+    const app = createApp({ config, adminUsersRoutes: { provider } });
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/users/owner@local",
+      payload: { displayName: "Owner" },
+    });
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: "/api/admin/users/owner@local",
+    });
+
+    expect(patched.statusCode).toBe(200);
+    expect(deleted.statusCode).toBe(200);
+    expect(calls).toContainEqual(["update", "owner@local", { displayName: "Owner" }]);
+    expect(calls).toContainEqual(["delete", "owner@local"]);
+
+    await app.close();
+  });
+
+  it("still rejects other addresses without a dot in the domain", async () => {
+    const { provider, calls } = createProvider();
+    const app = createApp({ config, adminUsersRoutes: { provider } });
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/users/a@b",
+      payload: { displayName: "A" },
+    });
+    const deleted = await app.inject({ method: "DELETE", url: "/api/admin/users/a@b" });
+
+    expect(patched.statusCode).toBe(400);
+    expect(deleted.statusCode).toBe(400);
+    expect(calls.some(([name]) => name === "update" || name === "delete")).toBe(false);
+
+    await app.close();
+  });
 });

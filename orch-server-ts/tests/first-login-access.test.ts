@@ -132,15 +132,18 @@ describe("development default user without a login", () => {
 describe("local owner row", () => {
   it("inserts owner@local as admin without touching an existing row", async () => {
     const statements: string[] = [];
-    const sql = (async (strings: TemplateStringsArray) => {
+    const values: unknown[][] = [];
+    const sql = (async (strings: TemplateStringsArray, ...params: unknown[]) => {
       statements.push(strings.join("?").replace(/\s+/g, " ").trim());
+      values.push(params);
       return [];
     }) as never;
     await createLocalOwnerEnsurer({ resolveSql: async () => sql })();
 
     expect(statements).toEqual([
-      "INSERT INTO users (email, display_name, is_admin) VALUES ('owner@local', 'Owner', TRUE) ON CONFLICT (email) DO NOTHING",
+      "INSERT INTO users (email, display_name, is_admin) VALUES (?, ?, TRUE) ON CONFLICT (email) DO NOTHING",
     ]);
+    expect(values).toEqual([["owner@local", "Owner"]]);
   });
 });
 
