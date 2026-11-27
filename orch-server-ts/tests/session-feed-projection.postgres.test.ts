@@ -1,12 +1,11 @@
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import postgres from "postgres";
 
-import { startPostgresTestContainer } from
-  "../../packages/db-schema/scripts/postgres-test-container.mjs";
+import { decidePostgresTests } from "../../packages/db-schema/scripts/postgres-test-policy.mjs";
+import { openIsolatedPostgres } from "./isolated_postgres_harness.js";
 import { advanceSessionFeedLastEventId } from
   "../src/node/event_feed_semantic_watermark.js";
 import type { EventIngressQuerySql } from
@@ -16,8 +15,7 @@ import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
 import { loadSessionFeedStates } from
   "../src/session/session_feed_state_repository.js";
 
-const hasDocker = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
-const describePostgres = hasDocker ? describe : describe.skip;
+const describePostgres = decidePostgresTests().backendAvailable ? describe : describe.skip;
 
 describePostgres("session feed PostgreSQL projection", () => {
   let sql: ReturnType<typeof postgres>;
@@ -438,46 +436,10 @@ async function createHarness(): Promise<{
   cleanup: () => Promise<void>;
   openFreshClient: () => ReturnType<typeof postgres>;
 }> {
-  const container = startPostgresTestContainer({
-    user: "session_feed_test",
-    password: "session_feed_test",
-    database: "session_feed_test_db",
-  });
-  const url = `postgres://session_feed_test:session_feed_test@127.0.0.1:${container.port}/session_feed_test_db`;
-  const bootstrap = postgres(url, { max: 1, onnotice: () => {} });
-  try {
-    await waitForPostgres(bootstrap);
-    const schema = readFileSync(fileURLToPath(new URL(
-      "../../packages/db-schema/sql/schema.sql",
-      import.meta.url,
-    )), "utf8");
-    await bootstrap.unsafe(schema);
-  } catch (error) {
-    await bootstrap.end({ timeout: 2 }).catch(() => undefined);
-    container.stop();
-    throw error;
-  }
+  const db = await openIsolatedPostgres({ max: 1 });
   return {
-    sql: bootstrap,
-    openFreshClient: () => postgres(url, { max: 1, onnotice: () => {} }),
-    cleanup: async () => {
-      await bootstrap.end({ timeout: 2 });
-      container.stop();
-    },
+    sql: db.sql,
+    openFreshClient: () => postgres(db.url, { max: 1, onnotice: () => {} }),
+    cleanup: db.cleanup,
   };
-}
-
-async function waitForPostgres(sql: ReturnType<typeof postgres>): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  let lastError: unknown;
-  while (Date.now() < deadline) {
-    try {
-      await sql`SELECT 1`;
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }

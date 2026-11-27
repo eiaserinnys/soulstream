@@ -1,11 +1,9 @@
-import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { startPostgresTestContainer } from "../../../packages/db-schema/scripts/postgres-test-container.mjs";
+import { openIsolatedPostgres } from "../isolated_postgres_harness.js";
 import { publishVerifiedAssetTx, type PublishEntry, type PublishReceipt } from "../../scripts/attachment-migration/publish_assets.js";
 import type { LivePostgresSql } from "../../src/runtime/live_db_sql.js";
-import { waitForPostgres } from "../persistent-session-settings-world.js";
 
 const HASH = "a".repeat(64);
 const ENDPOINT = "https://r2.example.test";
@@ -13,31 +11,17 @@ const BUCKET = "private-attachments";
 
 describe("attachment migration asset publication PostgreSQL contract", () => {
   let sql: ReturnType<typeof postgres>;
-  let stop: (() => void) | undefined;
+  let stop: (() => Promise<void>) | undefined;
 
   beforeAll(async () => {
-    const container = startPostgresTestContainer({
-      user: "attachment_publish_test",
-      password: "attachment_publish_test",
-      database: "attachment_publish_test_db",
-    });
-    stop = container.stop;
-    const url = `postgres://attachment_publish_test:attachment_publish_test@127.0.0.1:${container.port}/attachment_publish_test_db`;
-    const bootstrap = postgres(url, { max: 1, onnotice: () => undefined });
-    try {
-      await waitForPostgres(bootstrap);
-      const schema = await readFile(new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8");
-      await bootstrap.unsafe(schema);
-    } finally {
-      await bootstrap.end({ timeout: 2 });
-    }
-    sql = postgres(url, { max: 2, onnotice: () => undefined });
+    const db = await openIsolatedPostgres({ max: 2 });
+    sql = db.sql;
+    stop = db.cleanup;
     expect(Number((await sql`SELECT COUNT(*) AS n FROM file_assets`)[0]!.n)).toBe(0);
   }, 90_000);
 
   afterAll(async () => {
-    await sql?.end({ timeout: 2 });
-    stop?.();
+    await stop?.();
   });
 
   it("publishes committed asset metadata and a resolved alias as JSON object, then repeats idempotently", async () => {

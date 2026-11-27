@@ -6,6 +6,7 @@ export const POSTGRES_TEST_GLOBS = [
   "**/*_postgres.test.ts",
   "**/*.postgres.integration.test.ts",
 ];
+export const DOCKER_ONLY_GLOB = "**/*.docker.postgres.test.ts";
 export const FULL_SLICE_GLOB = "tests/runner/*_full_slice_postgres.test.ts";
 export const TEST_SCHEMA_PATTERN = "^[a-z][a-z0-9_]*_[0-9]{13}_[a-z0-9]+$";
 
@@ -42,13 +43,17 @@ export function requirePostgresBackendInCI(path, env = process.env, probeDocker 
 
 export function postgresVitestOptions(env = process.env, probeDocker = dockerAvailable) {
   const decision = decidePostgresTests(env, probeDocker);
+  const excludeDockerOnly = !decision.isCI && !decision.excludePostgres
+    && Boolean(env.TEST_DATABASE_URL?.trim()) && !probeDocker();
   const exclude = [
     ...(decision.excludePostgres ? POSTGRES_TEST_GLOBS : []),
+    ...(excludeDockerOnly ? [DOCKER_ONLY_GLOB] : []),
     ...(decision.excludeFullSlice ? [FULL_SLICE_GLOB] : []),
   ];
   if (exclude.length) {
     const reasons = [
       ...(decision.excludePostgres ? ["PostgreSQL tests: no TEST_DATABASE_URL or working docker"] : []),
+      ...(excludeDockerOnly ? ["Docker-only PostgreSQL tests: no working docker"] : []),
       ...(decision.excludeFullSlice ? ["runner full slices: SOULSTREAM_RUN_FULL_SLICE is not 1"] : []),
     ];
     process.stderr.write(`Skipping ${reasons.join("; ")}. CI does not skip; set TEST_DATABASE_URL, start docker, or set SOULSTREAM_RUN_FULL_SLICE=1 as needed.\n`);

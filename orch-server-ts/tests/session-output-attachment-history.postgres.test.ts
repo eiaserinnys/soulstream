@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { decidePostgresTests } from "../../packages/db-schema/scripts/postgres-test-policy.mjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type postgres from "postgres";
 
@@ -6,9 +6,7 @@ import { createLiveDbSqlResolver } from "../src/runtime/live_db_sql.js";
 import { createLiveSessionHistoryProvider } from "../src/runtime/live_session_history_provider.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 
-const describePostgres = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0
-  ? describe
-  : describe.skip;
+const describePostgres = decidePostgresTests().backendAvailable ? describe : describe.skip;
 
 describePostgres("session output attachment history PostgreSQL projection", () => {
   let harness: PagePostgresHarness;

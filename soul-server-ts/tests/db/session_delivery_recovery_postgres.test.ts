@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,14 +23,13 @@ import { enqueueInterventionOnce } from
   "../../src/task/task_intervention_queue.js";
 import type { InterventionMessage, Task } from
   "../../src/task/task_models.js";
+import { decidePostgresTests } from "../../../packages/db-schema/scripts/postgres-test-policy.mjs";
 import {
   createFullSchemaPostgresHarness,
-  hasFullSchemaPostgresBackend,
   type FullSchemaPostgresHarness,
 } from "./full_schema_postgres_harness.js";
 
-const describePostgres =
-  hasFullSchemaPostgresBackend || hasDockerBinary() ? describe : describe.skip;
+const describePostgres = decidePostgresTests().backendAvailable ? describe : describe.skip;
 
 describePostgres("session delivery recovery PostgreSQL integration", () => {
   let harness: FullSchemaPostgresHarness;
@@ -1920,8 +1918,4 @@ function deferred<T>(): {
     resolve = candidate;
   });
   return { promise, resolve };
-}
-
-function hasDockerBinary(): boolean {
-  return spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
 }
