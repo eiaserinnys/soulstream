@@ -428,6 +428,13 @@ export class CardControlPlaneService {
       await this.patch(sql,card,{now:sql.json(now)},params,eventId);
     });
   }
+  async setCardDependencies(params: CardMutationParams & { dependsOn: string[]; allowedFolderIds?: readonly string[] | null }) {
+    return this.mutateCard(params,"set_card_depends_on",{depends_on:params.dependsOn},async(sql,card,eventId)=>{
+      assertAssignedCardSession(card,params);
+      await replaceCardDependencies(sql,card.id,params.dependsOn,params.allowedFolderIds);
+      await this.patch(sql,card,{brief:card.brief},params,eventId);
+    });
+  }
   async addCardNote(params: CardMutationParams & { text: string }) {
     const existing=params.idempotencyKey ? await this.repo.getOperationByIdempotencyKey(params.idempotencyKey) : null;
     const existingNoteId=existing?.operation_type === "add_card_note" && existing.target_kind === "card" && existing.target_id === params.cardId

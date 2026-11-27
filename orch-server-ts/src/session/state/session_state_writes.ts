@@ -173,7 +173,7 @@ export const SESSION_STATUS_LITERAL_ALLOWLIST: SessionStatusLiteralFile[] = [
   { file: "src/cards/card_capacity.ts", comparisons: 0, lists: 0, sql: 5, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
   { file: "src/cards/card_change_delivery.ts", comparisons: 1, lists: 0, sql: 0, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
   { file: "src/cards/card_change_notification.ts", comparisons: 2, lists: 0, sql: 0, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
-  { file: "src/cards/card_dispatch_repository.ts", comparisons: 0, lists: 0, sql: 4, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
+  { file: "src/cards/card_dispatch_repository.ts", comparisons: 0, lists: 0, sql: 5, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
   { file: "src/cards/card_dispatch_runtime.ts", comparisons: 4, lists: 0, sql: 0, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
   { file: "src/cards/card_dispatcher.ts", comparisons: 7, lists: 0, sql: 0, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
   { file: "src/cards/card_execution_service.ts", comparisons: 4, lists: 2, sql: 0, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },

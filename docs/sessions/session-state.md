@@ -861,7 +861,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/cards/card_capacity.ts | 0 | 0 | 5 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_change_delivery.ts | 1 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_change_notification.ts | 2 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
-| src/cards/card_dispatch_repository.ts | 0 | 0 | 4 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
+| src/cards/card_dispatch_repository.ts | 0 | 0 | 5 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_dispatch_runtime.ts | 4 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_dispatcher.ts | 7 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_execution_service.ts | 4 | 2 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
@@ -942,7 +942,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/usage/session_statistics_usage_candidates.ts | 2 | 0 | 0 | 공급자 오류·사용 상태. |
 | src/usage/usage_summary_service.ts | 4 | 0 | 0 | 공급자 오류·사용 상태. |
 
-파일 84개, 비교 88줄, 목록 27줄, SQL 60줄이다.
+파일 84개, 비교 88줄, 목록 27줄, SQL 61줄이다.
 
 ## 다시 만들기
 

@@ -8093,6 +8093,38 @@
     "name": "set_agent_mcp_profile"
   },
   {
+    "description": "담당 카드의 선행 카드(#12 또는 UUID, 10장까지)를 통째로 바꿉니다. 빈 배열이면 모두 지웁니다. 시작한 카드에도 씁니다. 순환과 취소된 카드는 거부합니다. 선행을 기다리는 동안은 카드를 막힘으로 두세요. 선행이 모두 끝나면 서버가 [선행 카드 완료]를 보냅니다. 시작 전 카드는 update_unstarted_card를 쓰세요.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "depends_on": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "type": "array"
+        }
+      },
+      "required": [
+        "card_id",
+        "depends_on"
+      ],
+      "type": "object"
+    },
+    "name": "set_card_depends_on"
+  },
+  {
     "description": "담당 카드의 요청을 사용자가 확인할 결과 1~6개로 처음 나눕니다. 항목 하나는 화면이나 결과물을 보고 한 번에 됐다고 말할 결과입니다. 순서, PR, 검증 절차는 항목이 아닙니다. 제목은 40자까지입니다.",
     "execution": {
       "taskSupport": "forbidden"
