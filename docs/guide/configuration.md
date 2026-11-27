@@ -12,7 +12,7 @@ Defined in [`orch-server-ts/.env.example`](../../orch-server-ts/.env.example):
 - `HOST`: required HTTP listener bind address (defaults to `127.0.0.1` in local setups).
 - `PORT`: HTTP listener port (defaults to `5200`).
 - `DATABASE_URL`: required PostgreSQL connection URL.
-- `SOULSTREAM_PUBLIC_URL`: required public HTTP origin for OAuth metadata and issuer (no path or query). The Linux installer writes `http://127.0.0.1:5200` in password mode (`--public-url` sets it) and keeps the value in the file when it runs again in the same mode.
+- `SOULSTREAM_PUBLIC_URL`: required public HTTP origin for OAuth metadata and issuer (no path or query). The Linux installer writes `http://127.0.0.1:5200` in password mode (`--public-url` sets it) and keeps the value in the file when it runs again in password mode.
 - `DASHBOARD_DIR`: optional path to the built `unified-dashboard/dist` directory when serving the web UI from the orchestrator. Left empty, the orchestrator does not serve the dashboard and `GET /` answers `404`. Health checks use `/api/health` on the orchestrator and `/health` on a worker.
 - `NODE_NAME`: optional human-readable node label (required when external MCP ingress is enabled).
 - `DEFAULT_EXECUTION_NODE_ID`: node that runs cards, conversations, and persistent sessions that name no node (empty falls back to the built-in default node; the Linux installer sets `local`). It is separate from `NODE_NAME`, which only labels the external MCP ingress caller.
@@ -23,7 +23,7 @@ Board and attachment Cloudflare R2 storage settings are managed in the central P
 ### Authentication and CORS
 
 - `AUTH_BEARER_TOKEN`: shared service bearer token. Required in `production`; may be left empty in `development`.
-- `CORS_ALLOWED_ORIGINS`: explicit allowed CORS origins. Required in `production`. The Linux installer writes the mode's default origins plus the `--public-url` address, and keeps the value in the file when it runs again in the same mode without `--public-url`.
+- `CORS_ALLOWED_ORIGINS`: explicit allowed CORS origins. Required in `production`. The Linux installer writes the mode's default origins plus the `--public-url` address, and keeps the value in the file when it runs again in password mode without `--public-url`.
 - `CLAUDE_OAUTH_CLIENT_ID`: optional OAuth client ID for browser-initiated Claude account connection. Empty turns off only that browser flow.
 - `CLAUDE_OAUTH_CALLBACK_URL`: optional OAuth callback URL registered with the Claude OAuth application. Set it together with the client ID.
 - `GOOGLE_CLIENT_ID`: optional Google OAuth client ID for dashboard login.
@@ -42,7 +42,7 @@ endpoint remains unavailable until login and consent are integrated.
 
 - `ATOM_ENABLED`: enables optional Atom knowledge tree integration. The Linux installer sets `true`.
 - `ATOM_SERVER_URL`: base URL of the Atom server. The Linux installer sets `http://127.0.0.1:4200`.
-- `ATOM_PUBLIC_URL`: optional address a browser can open to reach Atom. `GET /api/status` returns it as `atom_public_url` (`string | null`), and the dashboard uses it for "open in atom" links. It is chosen in this order: `null` when `ATOM_ENABLED` is not `true`; otherwise `ATOM_PUBLIC_URL` when it is not empty; otherwise `ATOM_SERVER_URL` when its host is not a loopback host (`localhost`, `127.0.0.0/8`, `::1`, `0.0.0.0`); otherwise `null`. Only `http` or `https` absolute URLs are accepted (a trailing `/` is removed); any other `ATOM_PUBLIC_URL` is ignored with one warning in the log. `ATOM_SERVER_URL` keeps its meaning as the server-to-server address. The Linux installer writes `http://127.0.0.1:4200` in password mode (the SSH tunnel forwards that port) and `https://<MagicDNS name>:8443` in Tailscale mode. In password mode `--atom-public-url` sets it, and rerunning the installer in the same mode keeps the value now in the file, including one you edited by hand.
+- `ATOM_PUBLIC_URL`: optional address a browser can open to reach Atom. `GET /api/status` returns it as `atom_public_url` (`string | null`), and the dashboard uses it for "open in atom" links. It is chosen in this order: `null` when `ATOM_ENABLED` is not `true`; otherwise `ATOM_PUBLIC_URL` when it is not empty; otherwise `ATOM_SERVER_URL` when its host is not a loopback host (`localhost`, `127.0.0.0/8`, `::1`, `0.0.0.0`); otherwise `null`. Only `http` or `https` absolute URLs are accepted (a trailing `/` is removed); any other `ATOM_PUBLIC_URL` is ignored with one warning in the log. `ATOM_SERVER_URL` keeps its meaning as the server-to-server address. The Linux installer writes `http://127.0.0.1:4200` in password mode (the SSH tunnel forwards that port) and `https://<MagicDNS name>:8443` in Tailscale mode. In password mode `--atom-public-url` sets it, and rerunning the installer in password mode keeps the value now in the file, including one you edited by hand. In Tailscale mode every run writes it again from the current tailnet name.
 - `ATOM_API_KEY`: API key for Atom requests. The Linux installer issues a write-scoped agent key and keeps it in `/home/soulstream/soulstream/.atom-api-key` (`0600`).
 - `ATOM_ROOT_NODE_ID`: root node ID for Atom tree lookups. The Linux installer does not set it.
 - `SKILL_CATALOG_NODE_ID`: Atom node ID for the shared skill catalog.
@@ -186,7 +186,7 @@ The Linux installer manages these keys in Atom's `.env` (`0600`, owned by `souls
 - `JWT_SECRET`: generated once and kept across reruns.
 - `DASHBOARD_ADMIN_PASSWORD`: the administrator password shared with Soulstream (`/home/soulstream/soulstream/.admin-password`), set on first install and rotated with `--set-admin-password` or `--admin-password-file <path>` (8 to 128 printable ASCII characters, no leading or trailing space, and none of `#`, `\`, `'`, `"`, or `` ` ``).
 - `DASHBOARD_DIR`: `/home/soulstream/atom/dashboard/dist`.
-- `FRONTEND_URL`: `http://127.0.0.1:4200`, or `https://<MagicDNS name>:8443` with `--tailscale`. In password mode the installer's `--atom-public-url` sets it, and rerunning in the same mode keeps the value now in atom's `.env`.
+- `FRONTEND_URL`: `http://127.0.0.1:4200`, or `https://<MagicDNS name>:8443` with `--tailscale`. In password mode the installer's `--atom-public-url` sets it, and rerunning in password mode keeps the value now in atom's `.env`.
 
 Atom runs as `soulstream-atom.service`, which starts before the Soulstream services.
 

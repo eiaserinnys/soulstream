@@ -138,21 +138,20 @@ read_admin_password_file() {
 # An origin: http or https, a host and an optional port; no path and no trailing slash.
 valid_origin() { [[ "$1" =~ ^https?://([A-Za-z0-9._-]+|\[[0-9A-Fa-f:]+\])(:[0-9]{1,5})?$ ]]; }
 
-# The mode of the installation being updated is TAILSCALE_AUTH_ENABLED in its .env.orch. Succeeds when there is one
-# and it is the mode of this run, so its addresses may be kept. Reads before the env files are rewritten.
-same_mode_as_installed() {
-  local file=$1/.env.orch previous=false
-  [[ -f "$file" ]] || return 1
-  [[ "$(read_env_value "$file" TAILSCALE_AUTH_ENABLED)" == true ]] && previous=true
-  [[ "$previous" == "${TAILSCALE:-false}" ]]
+# Succeeds for a password-mode run over an existing password-mode installation, whose addresses may then be kept: the
+# installation's mode is TAILSCALE_AUTH_ENABLED in its .env.orch. A Tailscale run never keeps them, because its
+# addresses come from the current tailnet name. Reads before the env files are rewritten.
+keeps_installed_addresses() {
+  local file=$1/.env.orch
+  [[ "${TAILSCALE:-false}" != true && -f "$file" ]] || return 1
+  [[ "$(read_env_value "$file" TAILSCALE_AUTH_ENABLED)" != true ]]
 }
 
-# Prints the first of: the given value, the value in file (when the installation in root has this run's mode), the
-# mode default.
+# Prints the first of: the given value, the value in file (when keeps_installed_addresses holds for root), the mode default.
 pick_address() {
   local given=$1 root=$2 file=$3 key=$4 default=$5 kept=
   if [[ -n "$given" ]]; then printf '%s' "$given"; return 0; fi
-  if [[ -n "$root" ]] && same_mode_as_installed "$root"; then kept=$(read_env_value "$file" "$key") || return 1; fi
+  if [[ -n "$root" ]] && keeps_installed_addresses "$root"; then kept=$(read_env_value "$file" "$key") || return 1; fi
   printf '%s' "${kept:-$default}"
 }
 
