@@ -15,6 +15,7 @@ import type { SSEEventPayload } from "../engine/protocol.js";
 import type { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
 import type { createAttachmentMaterializer } from "../attachments/attachment_materializer.js";
 import type { McpConfigService } from "../mcp_config_service.js";
+import type { ModelCatalog } from "../model_catalog.js";
 import type { ChildCompletionConsumptionRecorder } from "../task/child_completion_consumption.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type {
@@ -59,6 +60,8 @@ export interface McpRuntime {
   agentConfigService?: AgentConfigService;
   mcpConfigService?: McpConfigService;
   catalogService: CatalogService;
+  /** This node's model catalogue, for backend lookups that must not go through the task manager. */
+  modelCatalog?: Pick<ModelCatalog, "snapshot">;
   logger: Logger;
   /** 미설정 시 multi-node 도구는 등록되되 호출 시 `{error: ...}` 반환. */
   orch?: OrchProxyConfig;

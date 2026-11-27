@@ -90,6 +90,7 @@ for (const [name, responses, refreshes, pending] of [
   ['warns after six unconfirmed snapshots', Array(6).fill(error), 6, true],
   ['retries a failed curl without invoking ERR', ['CURL_FAIL', ready], 2, false],
   ['confirms the first fresh snapshot', [ready], 1, false],
+  ['does not require an Antigravity provider', [snapshot({ providers: { claude: provider(), codex: provider(), antigravity: null, opencode_go: provider() } })], 1, false],
   ['retries stale and malformed responses', [snapshot({ stale: true }), 'not JSON', ready], 3, false],
   ['retries a stale provider and a missing provider', [snapshot({ providers: { claude: provider('auto', true), codex: provider(), antigravity: provider(), opencode_go: provider() } }), snapshot({ providers: { claude: null, codex: provider(), antigravity: provider(), opencode_go: provider() } }), ready], 3, false],
 ]) {

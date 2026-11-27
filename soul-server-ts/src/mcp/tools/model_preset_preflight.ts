@@ -14,6 +14,8 @@ type ModelPresetLookup = {
 type ModelPresetPreflightInput = ModelPresetLookup & {
   logger: McpRuntime["logger"];
   selectedPresetId: string | undefined;
+  /** Whether this node's catalogue lists the preset under the Antigravity backend. */
+  isAntigravityPreset?: (presetId: string) => boolean;
 };
 
 type ModelPresetFallbackPreflightInput = ModelPresetLookup & {
@@ -111,6 +113,7 @@ export async function preflightModelPreset({
   orch,
   logger,
   selectedPresetId,
+  isAntigravityPreset,
 }: ModelPresetPreflightInput): Promise<string | null> {
   if (selectedPresetId === undefined) return null;
 
@@ -128,6 +131,9 @@ export async function preflightModelPreset({
   const preset = presets.find(
     (candidate) => isRecord(candidate) && candidate.id === selectedPresetId,
   );
+  if (preset === undefined && isAntigravityPreset?.(selectedPresetId)) {
+    return `Model preset '${selectedPresetId}' is unavailable on node ${nodeId}: Antigravity is disabled in settings`;
+  }
   if (!isRecord(preset) || !isWellFormedPresetEntry(preset)) return warnAndContinue();
 
   return limitRejectionMessage(nodeId, selectedPresetId, preset);

@@ -38,18 +38,28 @@ export function runnerInventoryCommandType(
     : "list_sessions";
 }
 
+const ANTIGRAVITY_BACKEND = "antigravity";
+
+/** `advertiseAntigravity: false` hides the Antigravity presets and backend; the stored advertisement is untouched. */
 export function snapshotNode(
   node: MutableNodeConnection,
+  advertiseAntigravity = true,
 ): NodeConnectionSnapshot {
+  const modelPresets = advertiseAntigravity
+    ? node.modelPresets
+    : node.modelPresets?.filter((preset) => !(isRecord(preset) && preset.backend === ANTIGRAVITY_BACKEND));
+  const supportedBackends = advertiseAntigravity
+    ? node.supportedBackends
+    : node.supportedBackends.filter((backend) => backend !== ANTIGRAVITY_BACKEND);
   return {
     nodeId: node.nodeId,
     connectionId: node.connectionId,
     host: node.host,
     port: node.port,
     agents: [...node.agents],
-    ...(node.modelPresets ? { modelPresets: [...node.modelPresets] } : {}),
+    ...(modelPresets ? { modelPresets: [...modelPresets] } : {}),
     capabilities: { ...node.capabilities },
-    supportedBackends: [...node.supportedBackends],
+    supportedBackends: [...supportedBackends],
     connected: node.connected,
     status: node.connected ? "connected" : "disconnected",
     connectedAtMs: node.connectedAtMs,

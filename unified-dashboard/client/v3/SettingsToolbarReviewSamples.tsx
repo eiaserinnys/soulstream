@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { UsageSummaryNode, UsageSummaryProvider } from "@seosoyoung/soul-ui";
+import { Button, type UsageSummaryNode, type UsageSummaryProvider } from "@seosoyoung/soul-ui";
+import { AntigravityBackendRow } from "../components/AntigravityBackendRow";
+import { AntigravityConsentDialog } from "../components/AntigravityConsentDialog";
 import { CodingAgentsTab } from "../components/CodingAgentsTab";
 import { NodeProvidersPanel } from "../components/NodeProvidersPanel";
 import { PersistentSessionsTab } from "../components/PersistentSessionsTab";
@@ -165,6 +167,7 @@ export function CodingAgentsTabReviewSample() {
   const node: OrchestratorNode = { nodeId: "sample-node-a", host: "sample.invalid", port: 0, status: "connected", capabilities: {}, connectedAt: 0, sessionCount: 1 };
   const request = useMemo<typeof fetch>(() => async (input, init) => {
     const path = String(input);
+    if (path === "/api/admin/settings/antigravity-backend") return Response.json({ value: { enabled: false }, version: 0, source: "default" });
     if (path === "/api/usage/summary") {
       return Response.json({
         generatedAt: new Date().toISOString(), collectedAt: null,
@@ -174,4 +177,23 @@ export function CodingAgentsTabReviewSample() {
     return claudeLegacyRequest(input, init);
   }, []);
   return <QueryClientProvider client={client}>{frame(<CodingAgentsTab request={request} sampleNodes={new Map([[node.nodeId, node]])} />, "coding-agents-tab-review")}</QueryClientProvider>;
+}
+
+const antigravityPayload = (enabled: boolean) => async () => Response.json({ value: { enabled }, version: enabled ? 2 : 0, source: enabled ? "settings" : "default" });
+
+/** Antigravity 스위치 줄(꺼짐과 켜짐)과 확인 대화상자(처음, 저장 실패). 운영과 같은 부품에 가짜 전송을 물렸다. */
+export function AntigravityBackendReviewSamples() {
+  const off = useMemo(() => antigravityPayload(false) as unknown as typeof fetch, []);
+  const on = useMemo(() => antigravityPayload(true) as unknown as typeof fetch, []);
+  const [dialog, setDialog] = useState<"clean" | "error" | null>(null);
+  return <div className="space-y-3" data-testid="antigravity-backend-review">
+    {frame(<AntigravityBackendRow request={off} />, "antigravity-row-off")}
+    {frame(<AntigravityBackendRow request={on} />, "antigravity-row-on")}
+    <div className="flex gap-2">
+      <Button variant="outline" size="sm" onClick={() => setDialog("clean")}>확인 대화상자 열기</Button>
+      <Button variant="outline" size="sm" onClick={() => setDialog("error")}>저장 실패 상태 열기</Button>
+    </div>
+    <AntigravityConsentDialog open={dialog !== null} pending={false} error={dialog === "error" ? "설정을 저장하지 못했습니다 (500)" : null}
+      onOpenChange={(open) => { if (!open) setDialog(null); }} onConfirm={() => setDialog(null)} />
+  </div>;
 }

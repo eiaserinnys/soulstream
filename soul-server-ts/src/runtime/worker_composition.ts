@@ -357,6 +357,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     agentConfigService,
     mcpConfigService,
     catalogService,
+    modelCatalog,
     logger,
     orch: orchProxyConfig,
     chatUiPublisher: {

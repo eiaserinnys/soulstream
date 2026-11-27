@@ -78,6 +78,7 @@ export type ModelPresetAvailability = {
 export type ModelPresetAvailabilityRegistry = {
   getConnectedNode(nodeId: string): NodeConnectionSnapshot | undefined;
   getNodeState?(nodeId: string): NodeConnectionSnapshot | undefined;
+  isAntigravityEnabled?(): boolean;
 };
 
 export type ModelPresetUsageSummary = {
@@ -175,6 +176,9 @@ export class ModelPresetAvailabilityService {
         // A node that never connected has no advertised list; the full repository
         // catalogue still validates the preset id for defaults and previews.
         const resolved = resolveModelPreset(this.modelCatalog.snapshot(), presetId);
+        if (resolved.backend === "antigravity" && this.registry.isAntigravityEnabled?.() === false) {
+          throw new UnknownModelPresetError(presetId);
+        }
         preset = {
           id: resolved.id,
           label: resolved.label,

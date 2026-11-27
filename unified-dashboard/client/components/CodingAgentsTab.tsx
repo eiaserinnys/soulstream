@@ -1,6 +1,7 @@
 import { findUsageSummaryNode, useAuth } from "@seosoyoung/soul-ui";
 import type { OrchestratorNode } from "../store/orchestrator-store";
 import { useUsageSummary } from "../hooks/useUsageSummary";
+import { AntigravityBackendRow } from "./AntigravityBackendRow";
 import { NodeProvidersPanel } from "./NodeProvidersPanel";
 import {
   SettingsAlert,
@@ -13,6 +14,7 @@ import { SettingsNodeList, useSettingsNodeSelection } from "./config/SettingsNod
  * 「코딩 에이전트」 설정 탭. 노드 목록에서 노드를 고르면 상세에 그 노드의 공급자 행(노드 탭의 행과 같은 부품)이 놓인다.
  * 열면 연결된 첫 노드(연결된 노드가 없으면 첫 노드)가 골라져 있어 상세가 비어 있지 않다.
  * Claude는 계정 풀 로그인을, Codex와 Antigravity는 행의 「연결」 단추로 화면 로그인을 쓴다.
+ * 맨 위 한 줄은 설치 전체의 Antigravity 스위치다. 꺼져 있으면 서버가 Antigravity를 없는 것처럼 다룬다.
  */
 export function CodingAgentsTab({ request, sampleNodes }: {
   request?: typeof fetch;
@@ -30,12 +32,15 @@ export function CodingAgentsTab({ request, sampleNodes }: {
   });
   const summaryNode = findUsageSummaryNode(usage.summary, selectedId);
 
-  return <SettingsListDetailFrame testId="coding-agents-tab" list={<SettingsNodeList description="코딩 에이전트를 연결할 노드" nodeList={nodeList} selectedId={selectedId} onSelect={select} />}>
+  return <div className="space-y-4">
+  <AntigravityBackendRow request={send} />
+  <SettingsListDetailFrame testId="coding-agents-tab" list={<SettingsNodeList description="코딩 에이전트를 연결할 노드" nodeList={nodeList} selectedId={selectedId} onSelect={select} />}>
     {selected ? <>
       <SettingsDetailHeader title={selected.nodeId} />
       {selected.status === "connected"
         ? <NodeProvidersPanel nodeId={selected.nodeId} request={send} node={summaryNode} loading={usage.loading && summaryNode === null} onUsageChanged={usage.retry} />
         : <SettingsAlert><span data-v3-selectable-content="true">노드가 연결되어 있지 않아 로그인할 수 없습니다.</span></SettingsAlert>}
     </> : null}
-  </SettingsListDetailFrame>;
+  </SettingsListDetailFrame>
+  </div>;
 }

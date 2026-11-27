@@ -23,6 +23,7 @@ export type EphemeralLlmRouteOptions = {
   readonly nodeCredentials: NodeCredentialResolver | null;
   readonly generator: Pick<CodexEphemeralExecutor, "generate">;
   readonly antigravityGenerator?: Pick<AntigravityEphemeralExecutor, "generate">;
+  readonly antigravityEnabled?: () => boolean;
 };
 
 export const ephemeralLlmRouteAuthRequirements = {
@@ -90,7 +91,7 @@ export function registerEphemeralLlmRoutes(
       };
       let result;
       if (parsed.data.backend === "antigravity") {
-        if (!options.antigravityGenerator) {
+        if (!options.antigravityGenerator || options.antigravityEnabled?.() === false) {
           return errorReply(reply, 503, "ANTIGRAVITY_UNAVAILABLE", "Antigravity generator is unavailable");
         }
         // The backend-specific effort was validated above, before entering either executor.

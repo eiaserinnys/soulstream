@@ -254,6 +254,37 @@ describe("buildPersistentDecisionInput", () => {
     expect(fetchUsage).not.toHaveBeenCalled();
   });
 
+  it("asks for usage per candidate provider and never asks about Antigravity when no candidate uses it", async () => {
+    const task = makeTask();
+    const fetchUsage = vi.fn(async (..._args: unknown[]) => ({ success: true }));
+    const build = (fallback: string) => {
+      task.metadata = [{
+        type: "persistent_settings",
+        value: {
+          default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
+          fallback_models: [{ model_preset: fallback, reasoning_effort: "high" }],
+        },
+      }];
+      return buildPersistentDecisionInput(
+        { task, trigger: "limit_hit", now },
+        {
+          db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
+          modelCatalog: {
+            resolve: (id: string) => ({ id, model: id, backend: id === "gemini-4-argon" ? "antigravity" : id.startsWith("claude") ? "claude" : "codex" }),
+            snapshot: () => ({ presets: [], models: [], persistent_defaults: { fallback_models: [] } }),
+          } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
+          providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
+          logger: { warn: vi.fn() },
+        },
+      );
+    };
+    await build("codex-6.1-sol");
+    expect(fetchUsage.mock.calls.map((call) => call[2]).sort()).toEqual(["claude", "codex"]);
+    fetchUsage.mockClear();
+    await build("gemini-4-argon");
+    expect(fetchUsage.mock.calls.map((call) => call[2]).sort()).toEqual(["antigravity", "claude"]);
+  });
+
   it("treats an exhausted Claude account pool as zero availability and selects Argon", async () => {
     const task = makeTask();
     task.metadata = [{
@@ -334,7 +365,7 @@ describe("buildPersistentDecisionInput", () => {
       },
     }, now.toISOString());
     rememberProviderUsageObservation("codex", makeUsage(45, 15, "168h"), now.toISOString());
-    const fetchUsage = vi.fn(async () => ({ success: false }));
+    const fetchUsage = vi.fn(async (..._args: unknown[]) => ({ success: false }));
 
     await buildPersistentDecisionInput(
       { task, trigger: "arrival", now },
@@ -349,7 +380,7 @@ describe("buildPersistentDecisionInput", () => {
       },
     );
 
-    expect(fetchUsage).toHaveBeenCalledOnce();
+    expect(fetchUsage.mock.calls.map((call) => call[2]).sort()).toEqual(["claude", "codex"]);
   });
 
   it("forces one usage refresh for limit_hit even when observations are fresh", async () => {
@@ -358,7 +389,7 @@ describe("buildPersistentDecisionInput", () => {
     const codexUsage = makeUsage(35, 20, "168h");
     rememberProviderUsageObservation("claude", claudeUsage, now.toISOString());
     rememberProviderUsageObservation("codex", codexUsage, now.toISOString());
-    const fetchUsage = vi.fn(async () => ({ success: true }));
+    const fetchUsage = vi.fn(async (..._args: unknown[]) => ({ success: true }));
 
     const input = await buildPersistentDecisionInput(
       { task, trigger: "limit_hit", now, limitResetAt: "2026-10-06T01:00:00.000Z" },
@@ -373,7 +404,7 @@ describe("buildPersistentDecisionInput", () => {
       },
     );
 
-    expect(fetchUsage).toHaveBeenCalledOnce();
+    expect(fetchUsage.mock.calls.map((call) => call[2]).sort()).toEqual(["claude", "codex"]);
     expect(input.limit_reset_at).toBe("2026-10-06T01:00:00.000Z");
     expect(input.accounts.codex?.weekly_remaining_percent).toBe(65);
   });
@@ -416,7 +447,7 @@ describe("buildPersistentDecisionInput", () => {
     );
     const decision = decidePersistentGeneration(input);
 
-    expect(fetchUsage).toHaveBeenCalledOnce();
+    expect(fetchUsage).toHaveBeenCalledTimes(2);
     expect(input.accounts.codex?.weekly_remaining_percent).toBe(80);
     expect(decision).toMatchObject({
       action: "new_generation",
@@ -452,7 +483,7 @@ describe("buildPersistentDecisionInput", () => {
       },
     );
 
-    expect(fetchUsage).toHaveBeenCalledOnce();
+    expect(fetchUsage).toHaveBeenCalledTimes(2);
     expect(input.accounts.codex).toMatchObject({
       short_remaining_percent: 80,
       weekly_remaining_percent: 65,
@@ -749,7 +780,7 @@ describe("buildPersistentDecisionInput", () => {
       keepalive_count: 0,
       checkpoint_tokens_by_preset: {},
     });
-    expect(providerUsage.fetchUsage).toHaveBeenCalledTimes(1);
+    expect(providerUsage.fetchUsage).toHaveBeenCalledTimes(2);
     expect(input.accounts.claude?.short_remaining_percent).toBe(90);
     expect(input.accounts.codex?.short_remaining_percent).toBe(90);
   });
@@ -781,7 +812,7 @@ describe("buildPersistentDecisionInput", () => {
       },
     );
 
-    expect(fetchUsage).toHaveBeenCalledOnce();
+    expect(fetchUsage).toHaveBeenCalledTimes(2);
     expect(input.accounts.claude).toMatchObject({
       short_remaining_percent: 80,
       observed_at: oldObservation.observedAt,

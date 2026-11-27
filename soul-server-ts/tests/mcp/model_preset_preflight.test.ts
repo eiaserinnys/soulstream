@@ -27,6 +27,24 @@ afterEach(() => {
 });
 
 describe("preflightModelPreset", () => {
+  it("orch 목록 조회가 성공했는데 없는 Antigravity 프리셋은 거부하고, 조회 실패면 통과시킨다", async () => {
+    const isAntigravityPreset = (id: string) => id === "gemini-4-argon";
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      model_presets: [{ id: "claude-opus", available: true, reason: null }],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const input = { nodeId: "node-one", orch, logger: makeLogger(), isAntigravityPreset };
+
+    const rejected = await preflightModelPreset({ ...input, selectedPresetId: "gemini-4-argon" });
+    expect(rejected).toContain("gemini-4-argon");
+    expect(rejected).toContain("Antigravity");
+    await expect(preflightModelPreset({ ...input, selectedPresetId: "claude-opus" })).resolves.toBeNull();
+    await expect(preflightModelPreset({ ...input, selectedPresetId: "unlisted-claude" })).resolves.toBeNull();
+
+    fetchMock.mockRejectedValue(new Error("orch down"));
+    await expect(preflightModelPreset({ ...input, selectedPresetId: "gemini-4-argon" })).resolves.toBeNull();
+  });
+
   it("limit_rejected preset은 사유와 해제 시각을 포함한 오류를 돌려준다", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
       model_presets: [{

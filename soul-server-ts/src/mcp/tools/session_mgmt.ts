@@ -135,6 +135,8 @@ export function registerSessionMgmtTools(
           orch: runtime.orch,
           logger: runtime.logger,
           selectedPresetId,
+          isAntigravityPreset: (presetId) => runtime.modelCatalog?.snapshot().presets
+            .some((preset) => preset.id === presetId && preset.backend === "antigravity") ?? false,
         });
         if (preflightError !== null) return errorResult(preflightError);
       }

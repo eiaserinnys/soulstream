@@ -248,6 +248,8 @@ export type InMemoryNodeRegistryOptions = {
   sessionCache?: PerNodeSessionCache;
   nowMs?: () => number;
   requestIdGenerator?: NodeCommandRequestIdGenerator;
+  /** Whether snapshots advertise Antigravity; read on every snapshot so a switch change needs no re-registration. */
+  antigravityEnabled?: () => boolean;
 };
 
 export type MutableNodeConnection = {

@@ -63,7 +63,7 @@ import type { ReportTimelineRowLine, ReportTimelineRowStatus } from '../../../pa
 import { exhaustiveList } from '@shared/exhaustive';
 import { CENTRAL_REVIEW_SCENES, ClaudeAccountPoolReviewSample, ClaudeCentralPoolReviewSample, ClaudePoolPasReviewSample, isCentralReviewScene } from './ClaudeAccountPoolReviewSample';
 import { GitReposTabReviewSample } from "./GitReposTabReviewSample";
-import { AgentLoginSheetReviewSamples, CodingAgentRowReviewSamples, CodingAgentsTabReviewSample, PersistentEmptyStateReviewSamples, PersistentSessionsTabReviewSample, SettingsToolbarReviewSamples } from "./SettingsToolbarReviewSamples";
+import { AgentLoginSheetReviewSamples, AntigravityBackendReviewSamples, CodingAgentRowReviewSamples, CodingAgentsTabReviewSample, PersistentEmptyStateReviewSamples, PersistentSessionsTabReviewSample, SettingsToolbarReviewSamples } from "./SettingsToolbarReviewSamples";
 import { UsageShareRow } from "../components/usage-stats/UsageShareRow";
 import "../components/usage-stats/usage-stats.css";
 
@@ -503,7 +503,8 @@ export function ComponentsReviewPage() {
             <Sample name="V3GlobalToolbar" state="PAS 창 툴바와 기존 대시보드 툴바 · atom 단추 있음/없음"><SettingsToolbarReviewSamples/></Sample>
             <Sample name="NodeProvidersPanel · 코딩 에이전트 행" state="연결 안 됨(연결) · 연결됨(다시 연결) · 단추 없음(login_supported 거짓)"><CodingAgentRowReviewSamples/></Sample>
             <Sample name="AgentLoginSheet" state="Codex 주소와 코드 · Antigravity 코드 입력칸 · 확인 중 · 연결됨 · 실패(device_code_disabled, invalid_code)"><AgentLoginSheetReviewSamples/></Sample>
-            <Sample name="CodingAgentsTab" state="노드 하나를 고른 채 열림 · 공급자 행"><CodingAgentsTabReviewSample/></Sample>
+            <Sample name="AntigravityBackendRow / AntigravityConsentDialog" state="꺼짐 · 켜짐 · 확인 대화상자 · 저장 실패"><AntigravityBackendReviewSamples/></Sample>
+            <Sample name="CodingAgentsTab" state="맨 위 Antigravity 줄 · 노드 하나를 고른 채 열림 · 공급자 행"><CodingAgentsTabReviewSample/></Sample>
             <Sample name="GitReposTab" state="준비 · 미설정과 키 없음 · 공개키 파일 없음 · 폴더 미설정과 없음 · 로딩 · 읽기 실패 · 노드 끊김과 구버전 · 가져오는 중과 실패 · 연결 확인 성공과 실패 · 최악 데이터"><GitReposTabReviewSample/></Sample>
             <Sample name="PersistentSessionEmptyState" state="만들기 단추 · 연결 필요(관리자/아님) · 만드는 중 · 실패와 다시 시도"><PersistentEmptyStateReviewSamples/></Sample>
             <Sample name="PersistentSessionsTab 상세" state="지속 지시 · 계정과 모델 · 표시와 모션 · 기록 · 세션 스토리"><PersistentSessionsTabReviewSample/></Sample>

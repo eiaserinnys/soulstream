@@ -67,7 +67,7 @@ describe("ConfigModal coding agents tab", () => {
     expect([...group.querySelectorAll("button")].map((button) => button.textContent)).toContain("코딩 에이전트 연결");
     await act(async () => [...document.body.querySelectorAll<HTMLButtonElement>('[data-testid="config-category-nav"] button')].find((button) => button.textContent === "코딩 에이전트 연결")!.click());
     expect(document.body.querySelector('[data-testid="coding-agents-stub"]')).not.toBeNull();
-    expect(document.body.textContent).toContain("노드마다 Claude, Codex, Antigravity 로그인을 연결합니다.");
+    expect(document.body.textContent).toContain("노드마다 Claude와 Codex 로그인을 연결합니다. Antigravity는 약관을 확인하고 켠 뒤에 연결합니다.");
   });
 
   it("puts the Git and repositories tab right after coding agents for administrators only", async () => {

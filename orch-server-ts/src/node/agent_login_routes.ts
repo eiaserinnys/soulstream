@@ -47,6 +47,9 @@ export function registerAgentLoginRoutes(app: FastifyInstance, options: AgentLog
       if (!PROVIDER_NAME.test(request.params.provider)) {
         return sendLoginError(reply, 422, "invalid_request", "올바르지 않은 로그인 공급자입니다.");
       }
+      if (request.params.provider === "antigravity" && options.registry.isAntigravityEnabled?.() === false) {
+        return sendLoginError(reply, 409, "ANTIGRAVITY_DISABLED", "Antigravity가 설정에서 꺼져 있습니다.");
+      }
       return sendLoginCommand(request, reply, options, request.params.node_id,
         { type: "agent_login_start", provider: request.params.provider }, 202);
     },

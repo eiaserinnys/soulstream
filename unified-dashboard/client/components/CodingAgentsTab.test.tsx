@@ -32,6 +32,8 @@ vi.mock("./NodeProvidersPanel", () => ({
   },
 }));
 
+vi.mock("./AntigravityBackendRow", () => ({ AntigravityBackendRow: () => <div data-testid="agy-row-stub" /> }));
+
 import { CodingAgentsTab } from "./CodingAgentsTab";
 
 const node = (nodeId: string, status: "connected" | "disconnected" = "connected"): OrchestratorNode => ({ nodeId, status } as OrchestratorNode);

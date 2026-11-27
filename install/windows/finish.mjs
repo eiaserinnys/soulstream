@@ -67,7 +67,7 @@ export async function waitAndCreateWorkspace(ctx) {
   if (anonymous.status !== 401) throw fail(`An unauthenticated request to /api/folders answered HTTP ${anonymous.status}, expected 401.`);
 }
 
-const PROVIDERS = ['claude', 'codex', 'antigravity', 'opencode_go'];
+const PROVIDERS = ['claude', 'codex', 'opencode_go'];
 
 // confirmed: the local node and every provider answered with a fresh status.
 function presetsConfirmed(response) {

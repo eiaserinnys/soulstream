@@ -40,7 +40,7 @@ export function buildSessionBackendCatalog(
 ): SessionBackendCatalogEntry[] {
   if (registry === undefined) return [];
   const entries: SessionBackendCatalogEntry[] = [];
-  for (const node of registry.listConnectedNodes()) {
+  for (const node of registry.listConnectedNodesAdvertised()) {
     for (const agentId of registeredAgentIds(node, agentProfiles)) {
       const profile = findNodeAgentProfile(node, agentId, agentProfiles);
       if (profile === undefined) continue;
@@ -205,7 +205,7 @@ function enrichModelPreset(
   ) {
     return;
   }
-  const node = registry.getConnectedNode(nodeId);
+  const node = registry.getConnectedNodeAdvertised(nodeId);
   for (const candidate of node?.modelPresets ?? []) {
     const preset = asRecord(candidate);
     if (preset?.id === modelPreset) {

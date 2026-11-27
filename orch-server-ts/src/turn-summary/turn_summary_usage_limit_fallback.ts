@@ -48,6 +48,7 @@ export class UsageLimitFallbackTurnSummarizer implements UsageLimitPrimary {
     readonly primary: UsageLimitPrimary;
     readonly fallback?: TurnSummaryFallbackExecutor;
     readonly info?: (message: string) => void;
+    readonly antigravityEnabled?: () => boolean;
   }) {}
 
   async summarize(
@@ -88,6 +89,7 @@ export class UsageLimitFallbackTurnSummarizer implements UsageLimitPrimary {
     const { fallback } = this.deps;
     if (
       fallback === undefined ||
+      this.deps.antigravityEnabled?.() === false ||
       config.fallbackModel === undefined ||
       !isCodexUsageLimitError(error)
     ) {

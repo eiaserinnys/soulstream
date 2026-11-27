@@ -75,6 +75,7 @@ export class InMemoryNodeRegistry {
 
   private readonly nowMs: () => number;
   private readonly requestIdGenerator: NodeCommandRequestIdGenerator | undefined;
+  private readonly antigravityEnabled: () => boolean;
   private readonly nodes = new Map<string, MutableNodeConnection>();
   private connectionSequence = 0;
   private handoverWaitUntil = 0;
@@ -98,6 +99,25 @@ export class InMemoryNodeRegistry {
     this.sessionCache = options.sessionCache ?? new PerNodeSessionCache();
     this.nowMs = options.nowMs ?? Date.now;
     this.requestIdGenerator = options.requestIdGenerator;
+    this.antigravityEnabled = options.antigravityEnabled ?? (() => true);
+  }
+
+  isAntigravityEnabled(): boolean { return this.antigravityEnabled(); }
+
+  private snapshot(node: MutableNodeConnection): NodeConnectionSnapshot {
+    return snapshotNode(node, this.antigravityEnabled());
+  }
+
+  /** The stored advertisement, Antigravity included, for labelling sessions that already ran there. */
+  getConnectedNodeAdvertised(nodeId: string): NodeConnectionSnapshot | undefined {
+    const node = this.nodes.get(nodeId);
+    return node === undefined || !node.connected ? undefined : snapshotNode(node);
+  }
+
+  listConnectedNodesAdvertised(): NodeConnectionSnapshot[] {
+    return [...this.nodes.values()].filter((node) => node.connected).map((node) => snapshotNode(node))
+      .sort((left, right) => left.nodeId.localeCompare(right.nodeId)
+        || left.connectionId.localeCompare(right.connectionId));
   }
 
   registerNode(registration: NodeRegistrationPayload): NodeRegistrationResult {
@@ -168,7 +188,7 @@ export class InMemoryNodeRegistry {
     events.push(event);
 
     return {
-      node: snapshotNode(node),
+      node: this.snapshot(node),
       event,
       events,
       replacedConnectionId,
@@ -244,7 +264,7 @@ export class InMemoryNodeRegistry {
         type: "node_updated",
         nodeId,
         connectionId: node.connectionId,
-        node: snapshotNode(node),
+        node: this.snapshot(node),
       },
     ];
     if (Array.isArray(registration.sessions)) {
@@ -263,7 +283,7 @@ export class InMemoryNodeRegistry {
   getConnectedNode(nodeId: string): NodeConnectionSnapshot | undefined {
     const node = this.nodes.get(nodeId);
     if (node === undefined || !node.connected) return undefined;
-    return snapshotNode(node);
+    return this.snapshot(node);
   }
 
   getReportedRunnerLoad(nodeId: string): ReportedRunnerLoad | undefined {
@@ -286,19 +306,19 @@ export class InMemoryNodeRegistry {
 
   listAllNodes(): NodeConnectionSnapshot[] {
     return [...this.nodes.values()]
-      .map(snapshotNode)
+      .map((node) => this.snapshot(node))
       .sort((left, right) => left.nodeId.localeCompare(right.nodeId));
   }
 
   listConnectedNodesInRegistrationOrder(): NodeConnectionSnapshot[] {
     return [...this.nodes.values()]
       .filter((node) => node.connected)
-      .map(snapshotNode);
+      .map((node) => this.snapshot(node));
   }
 
   getNodeState(nodeId: string): NodeConnectionSnapshot | undefined {
     const node = this.nodes.get(nodeId);
-    return node === undefined ? undefined : snapshotNode(node);
+    return node === undefined ? undefined : this.snapshot(node);
   }
 
   getUserInfo(nodeId: string): Record<string, unknown> {
@@ -525,7 +545,7 @@ export class InMemoryNodeRegistry {
     ) {
       return undefined;
     }
-    return snapshotNode(node);
+    return this.snapshot(node);
   }
 
   findSessionOwner(agentSessionId: string): SessionOwner | undefined {
