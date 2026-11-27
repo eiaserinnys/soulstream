@@ -61,7 +61,7 @@ export class SessionStoryCompletionSweep {
   private async executeSweep(): Promise<void> {
     try {
       const config = this.deps.configService.read();
-      if (!config.enabled) return;
+      if (!config.sessionEnabled) return;
       const completedBefore = new Date(
         this.nowMs() - config.storyCompletionGraceMs,
       );

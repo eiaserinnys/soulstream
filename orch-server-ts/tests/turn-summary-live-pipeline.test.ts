@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+import { summarySettingsReader } from "./helpers/summary_settings.js";
 import { parsePersistentInstructionsApplyPayload } from
   "@soulstream/wire-schema/persistent-session-instructions";
 
@@ -147,6 +148,7 @@ describe("live turn summary pipeline sweeps", () => {
       } as never,
       configPath: "unused-turn-summary.yaml",
       modelCatalog: repositoryModelCatalog(),
+      summarySettings: summarySettingsReader(),
       sqlResolver: {} as never,
       registry: { isAntigravityEnabled: () => true } as never,
       eventHub: { publish: vi.fn() } as never,
@@ -189,6 +191,7 @@ describe("live persistent instruction extractor wiring", () => {
       } as never,
       configPath: "unused-turn-summary.yaml",
       modelCatalog: repositoryModelCatalog(),
+      summarySettings: summarySettingsReader(),
       sqlResolver: {} as never,
       registry: { isAntigravityEnabled: () => true } as never,
       eventHub: { publish: vi.fn() } as never,
@@ -206,7 +209,8 @@ describe("live persistent instruction extractor wiring", () => {
       userText: "앞으로 답변 전에 근거를 확인해 줘.",
       activeInstructions: [],
     }, {
-      enabled: true,
+      turnEnabled: true,
+      sessionEnabled: true,
       instruction: "summary config",
       storyInstruction: "story config",
       storyFoldThreshold: 10,
@@ -225,10 +229,9 @@ describe("live persistent instruction extractor wiring", () => {
       catchUpMaxJobsPerRound: 100,
       provider: "codex",
       model: "gpt-5.6-luna",
-      storyModel: "gpt-5.6-luna",
-      preferredStages: [],
+      turnStages: [{ backend: "codex", model: "gpt-6.2-sol" }],
+      sessionStages: [],
       reasoningEffort: "high",
-      instructionExtractionModel: "gpt-6.2-sol",
       instructionExtractionReasoningEffort: "high",
       timeoutMs: 1_234,
       maxAttempts: 2,
@@ -259,7 +262,8 @@ describe("live persistent instruction extractor wiring", () => {
 describe("live model chain wiring", () => {
   const limit = (code: string) => Object.assign(new Error(code), { code });
   const stageConfig: TurnSummaryConfig = {
-    enabled: true,
+    turnEnabled: true,
+    sessionEnabled: true,
     instruction: "summary config",
     storyInstruction: "story config",
     storyFoldThreshold: 10,
@@ -278,13 +282,16 @@ describe("live model chain wiring", () => {
     catchUpMaxJobsPerRound: 100,
     provider: "codex",
     model: "gpt-5.6-luna",
-    storyModel: "gpt-5.6-terra",
-    preferredStages: [
+    turnStages: [
       { backend: "claude", model: "sonnet" },
       { backend: "antigravity", model: "gemini-4-hydrogen" },
+      { backend: "codex", model: "gpt-5.6-luna" },
+    ],
+    sessionStages: [
+      { backend: "claude", model: "sonnet" },
+      { backend: "codex", model: "gpt-5.6-terra" },
     ],
     reasoningEffort: "high",
-    instructionExtractionModel: "gpt-6.2-sol",
     instructionExtractionReasoningEffort: "xhigh",
     timeoutMs: 1_234,
     maxAttempts: 2,
@@ -305,6 +312,7 @@ describe("live model chain wiring", () => {
       config: { codex_cli_path: "codex", typesafe_api_key: "test-typesafe-key" } as never,
       configPath: "unused-turn-summary.yaml",
       modelCatalog: repositoryModelCatalog(),
+      summarySettings: summarySettingsReader(),
       sqlResolver: {} as never,
       registry: { isAntigravityEnabled: () => true } as never,
       eventHub: { publish: vi.fn() } as never,
@@ -357,7 +365,7 @@ describe("live model chain wiring", () => {
     const { story } = wire(claudeGenerate, agyGenerate);
 
     const folded = await story.generator.generate(
-      "접기", { ...stageConfig, model: stageConfig.storyModel }, { maxAttempts: 1 },
+      "접기", stageConfig, { maxAttempts: 1 },
     );
 
     expect(folded).toMatchObject({ model: "gpt-5.6-terra" });

@@ -36,6 +36,7 @@ import {
 import { TurnSummaryPipeline } from "./turn_summary_pipeline.js";
 import { createTurnSummaryProviderRouter } from
   "./turn_summary_provider_router.js";
+import type { SummarySettingsReader } from "../settings/summary_settings.js";
 import { TurnSummaryRepository } from "./turn_summary_repository.js";
 import { SessionStoryCompletionSweep } from
   "./session_story_completion_sweep.js";
@@ -79,6 +80,7 @@ export function createLiveTurnSummaryPipeline(options: {
   readonly config: OrchServerEnvironmentConfig;
   readonly configPath: string;
   readonly modelCatalog: ModelCatalogSource;
+  readonly summarySettings: SummarySettingsReader;
   readonly sqlResolver: LiveDbSqlResolver;
   readonly registry: InMemoryNodeRegistry;
   readonly agentProfiles?: () => readonly AgentProfileIdentityOverlay[];
@@ -103,6 +105,7 @@ export function createLiveTurnSummaryPipeline(options: {
     options.configPath,
     options.logger,
     options.modelCatalog,
+    options.summarySettings,
   );
   const codexPath =
     options.overrides?.turnSummaryCodexPath ??
@@ -125,9 +128,8 @@ export function createLiveTurnSummaryPipeline(options: {
     info: (message: string) => options.logger.info?.(message),
     antigravityEnabled: () => options.registry.isAntigravityEnabled(),
   };
-  const codexSummarizer = new ModelChainTurnSummarizer(chainDeps);
-  // A story fold is long and agy takes one request at a time, so folds never use it.
-  const storyChain = new ModelChainTurnSummarizer({ ...chainDeps, skipBackends: ["antigravity"] });
+  const codexSummarizer = new ModelChainTurnSummarizer({ ...chainDeps, purpose: "turn" });
+  const storyChain = new ModelChainTurnSummarizer({ ...chainDeps, purpose: "session" });
   const summarizer = createTurnSummaryProviderRouter({
     codex: codexSummarizer,
     ...(options.config.turn_summary_openai_key

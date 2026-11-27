@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+import { summarySettingsReader } from "./helpers/summary_settings.js";
 
 import {
   classifyPersistentInstruction,
@@ -19,7 +20,8 @@ import {
 } from "../src/turn-summary/turn_summary_config.js";
 
 const CONFIG: TurnSummaryConfig = {
-  enabled: true,
+  turnEnabled: true,
+  sessionEnabled: true,
   instruction: "일반 요약 설정은 추출 prompt에 넣지 않는다.",
   storyInstruction: "줄거리 설정은 추출 prompt에 넣지 않는다.",
   storyFoldThreshold: 10,
@@ -38,10 +40,9 @@ const CONFIG: TurnSummaryConfig = {
   catchUpMaxJobsPerRound: 100,
   provider: "codex",
   model: "gpt-5.6-luna",
-  storyModel: "gpt-5.6-luna",
-  preferredStages: [],
+  turnStages: [],
+  sessionStages: [],
   reasoningEffort: "high",
-  instructionExtractionModel: "gpt-6.2-sol",
   instructionExtractionReasoningEffort: "high",
   timeoutMs: 30_000,
   maxAttempts: 2,
@@ -165,7 +166,7 @@ describe("persistent instruction extraction", () => {
     if (expectedCalls === 1) {
       const [, solConfig, options] = generate.mock.calls[0] ?? [];
       expect(solConfig).toMatchObject({
-        model: CONFIG.instructionExtractionModel,
+        model: CONFIG.model,
         reasoningEffort: CONFIG.instructionExtractionReasoningEffort,
         timeoutMs: CONFIG.timeoutMs,
         codexConcurrencyLimit: CONFIG.codexConcurrencyLimit,
@@ -182,7 +183,7 @@ describe("persistent instruction extraction", () => {
     }
   });
 
-  it("takes the extraction model from the merged config and follows a local overlay", async () => {
+  it("takes the extraction effort from the merged config, leaves the model to the chain stage and follows a local overlay", async () => {
     const dir = mkdtempSync(join(tmpdir(), "instruction-extractor-config-"));
     try {
       const baseYaml = readFileSync(
@@ -193,7 +194,7 @@ describe("persistent instruction extraction", () => {
       const overlayPath = join(dir, "turn-summary.local.yaml");
       writeFileSync(basePath, baseYaml, "utf8");
       writeFileSync(overlayPath, "enabled: true\n", "utf8");
-      const service = new TurnSummaryConfigService(basePath, { warn: vi.fn() }, repositoryModelCatalog());
+      const service = new TurnSummaryConfigService(basePath, { warn: vi.fn() }, repositoryModelCatalog(), summarySettingsReader());
       const generate = vi.fn().mockResolvedValue({
         content: JSON.stringify({ standing_instructions: [] }),
         model: "gpt-6.2-sol",
@@ -217,7 +218,7 @@ describe("persistent instruction extraction", () => {
       expect(baseConfig.reasoningEffort).toBe("high");
       await extractor.extract(input, baseConfig);
       expect(generate.mock.calls[0]?.[1]).toMatchObject({
-        model: "gpt-6.2-sol",
+        model: "gpt-5.6-terra",
         reasoningEffort: "high",
       });
 
@@ -235,7 +236,7 @@ describe("persistent instruction extraction", () => {
       expect(overriddenConfig.reasoningEffort).toBe("high");
       await extractor.extract(input, overriddenConfig);
       expect(generate.mock.calls[1]?.[1]).toMatchObject({
-        model: "gpt-6.3-nova",
+        model: "gpt-5.6-terra",
         reasoningEffort: "medium",
       });
     } finally {

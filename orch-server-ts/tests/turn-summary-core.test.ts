@@ -20,13 +20,14 @@ import {
 import { resolveCodexCliPath } from "@soulstream/executable-path";
 import { ModelChainTurnSummarizer } from
   "../src/turn-summary/turn_summary_model_chain.js";
-import { resolveModelPreset } from "@soulstream/model-catalog";
 import { isTurnSummaryUsageLimitError } from "../src/turn-summary/error_chain.js";
 import {
   OpenAiApiTurnSummarizer,
 } from "../src/turn-summary/openai_api_turn_summarizer.js";
-import { TurnSummaryProviderRouter } from
-  "../src/turn-summary/turn_summary_provider_router.js";
+import {
+  TurnSummaryProviderRouter,
+  TurnSummaryProviderUnavailableError,
+} from "../src/turn-summary/turn_summary_provider_router.js";
 import {
   buildTurnSummaryPrompt,
   truncateCodepoints,
@@ -34,6 +35,7 @@ import {
 import type { TurnSummarySpeaker } from
   "../src/turn-summary/turn_summary_speaker.js";
 import {
+  readSummarySettingsSeed,
   TurnSummaryConfigService,
   type TurnSummaryConfig,
 } from "../src/turn-summary/turn_summary_config.js";
@@ -43,7 +45,9 @@ import {
 } from "../src/runtime/child_process_env.js";
 
 import { addVirtualFile, resetVirtualFs } from "./helpers/virtual_fs.js";
+import type { ModelCatalogSource } from "../src/model/model_catalog_source.js";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+import { OPERATING_SUMMARY_SETTINGS, summarySettingsReader } from "./helpers/summary_settings.js";
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -72,7 +76,8 @@ afterAll(() => {
 
 
 const CONFIG: TurnSummaryConfig = {
-  enabled: true,
+  turnEnabled: true,
+  sessionEnabled: true,
   instruction:
     "①사용자가 요청한 것 ②에이전트가 한 일 ③결과를 한국어 1~3줄로 요약하라. 원문에 없는 사실을 만들지 말 것.",
   storyInstruction: "마커를 붙인 narrative와 highlight를 JSON으로 반환하라.",
@@ -92,10 +97,9 @@ const CONFIG: TurnSummaryConfig = {
   catchUpMaxJobsPerRound: 100,
   provider: "codex",
   model: "gpt-5.6-terra",
-  storyModel: "gpt-5.6-terra",
-  preferredStages: [],
+  turnStages: [],
+  sessionStages: [],
   reasoningEffort: "high",
-  instructionExtractionModel: "gpt-6.2-sol",
   instructionExtractionReasoningEffort: "high",
   timeoutMs: 30_000,
   maxAttempts: 2,
@@ -262,83 +266,138 @@ describe("turn summary prompt", () => {
 });
 
 describe("TurnSummaryConfigService", () => {
-  it("loads a legacy openai-api overlay with catalog defaults for story and extraction", () => {
+  it("loads a legacy openai-api overlay", () => {
     const dir = trackTempDir(join(tmpdir(), "turn-summary-api-legacy-"));
     const path = join(dir, "turn-summary.yaml");
     const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8");
     writeFileSync(path, source, "utf8");
     writeFileSync(join(dir, "turn-summary.local.yaml"), "provider: openai-api\nmodel: summary-model\n", "utf8");
-    const catalog = repositoryModelCatalog();
-    const snapshot = catalog.snapshot();
-    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, catalog);
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog(), summarySettingsReader());
 
-    expect(service.read()).toMatchObject({
-      provider: "openai-api",
-      model: "summary-model",
-      storyModel: resolveModelPreset(snapshot, snapshot.task_defaults.turn_story.model_preset).model,
-      instructionExtractionModel: resolveModelPreset(snapshot, snapshot.task_defaults.instruction_extraction.model_preset).model,
-    });
+    expect(service.read()).toMatchObject({ provider: "openai-api", model: "summary-model" });
   });
 
-  it("accepts an openai-api overlay providing all three models", () => {
+  it("still accepts the story and extraction model keys of an openai-api overlay", () => {
     const dir = trackTempDir(join(tmpdir(), "turn-summary-api-overlay-"));
     const path = join(dir, "turn-summary.yaml");
     const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8");
     writeFileSync(path, source, "utf8");
     writeFileSync(join(dir, "turn-summary.local.yaml"),
       "provider: openai-api\nmodel: one\nstory_model: two\ninstruction_extraction_model: three\n", "utf8");
-    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog());
-    expect(service.read()).toMatchObject({ provider: "openai-api", model: "one", storyModel: "two", instructionExtractionModel: "three" });
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog(), summarySettingsReader());
+    expect(service.read()).toMatchObject({ provider: "openai-api", model: "one" });
   });
-  it("resolves each catalog task default and lets all local model overrides win", () => {
+  it("resolves the catalog task default and lets the local model override win", () => {
     const dir = trackTempDir(join(tmpdir(), "turn-summary-catalog-"));
     const path = join(dir, "turn-summary.yaml");
     const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8")
       .replace(/^model:.*\n|^story_model:.*\n|^instruction_extraction_model:.*\n/gm, "");
     writeFileSync(path, source, "utf8");
-    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog());
-    expect(service.read()).toMatchObject({ model: "gpt-5.6-terra", storyModel: "gpt-5.6-terra", instructionExtractionModel: "gpt-6.2-sol" });
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog(), summarySettingsReader());
+    expect(service.read()).toMatchObject({ model: "gpt-5.6-terra" });
     writeFileSync(join(dir, "turn-summary.local.yaml"), "model: one\nstory_model: two\ninstruction_extraction_model: three\n", "utf8");
-    expect(service.read()).toMatchObject({ model: "one", storyModel: "two", instructionExtractionModel: "three" });
+    expect(service.read()).toMatchObject({ model: "one" });
   });
 
-  it("resolves the catalog preferred presets into stages, and an empty override leaves only codex", () => {
-    const dir = trackTempDir(join(tmpdir(), "turn-summary-preferred-"));
-    const path = join(dir, "turn-summary.yaml");
-    const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8");
-    expect(source).not.toContain("preferred_model_presets");
-    writeFileSync(path, source, "utf8");
-    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog());
-    expect(service.read().preferredStages).toEqual([
-      { backend: "claude", model: "sonnet" },
-      { backend: "antigravity", model: "gemini-4-hydrogen" },
-    ]);
-    writeFileSync(join(dir, "turn-summary.local.yaml"), "preferred_model_presets: []\n", "utf8");
-    expect(service.read().preferredStages).toEqual([]);
-    writeFileSync(join(dir, "turn-summary.local.yaml"), "preferred_model_presets: [gemini-4-hydrogen]\n", "utf8");
-    expect(service.read().preferredStages).toEqual([{ backend: "antigravity", model: "gemini-4-hydrogen" }]);
-  });
-
-  it("has no preferred stages when the catalog declares no preferred default", () => {
-    const dir = trackTempDir(join(tmpdir(), "turn-summary-preferred-none-"));
+  it("resolves the stored model order of each purpose into stages", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-stages-"));
     const path = join(dir, "turn-summary.yaml");
     writeFileSync(path, readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8"), "utf8");
-    const catalog = repositoryModelCatalog().snapshot();
-    const { turn_summary_preferred: _omitted, ...taskDefaults } = catalog.task_defaults;
-    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, {
-      snapshot: () => ({ ...catalog, task_defaults: taskDefaults }),
+    const settings = summarySettingsReader(OPERATING_SUMMARY_SETTINGS);
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog(), settings);
+    expect(service.read()).toMatchObject({
+      turnEnabled: true,
+      sessionEnabled: true,
+      turnStages: [
+        { backend: "claude", model: "sonnet" },
+        { backend: "antigravity", model: "gemini-4-hydrogen" },
+        { backend: "codex", model: "gpt-5.6-luna" },
+      ],
+      sessionStages: [
+        { backend: "claude", model: "sonnet" },
+        { backend: "codex", model: "gpt-5.6-terra" },
+      ],
     });
-    expect(service.read().preferredStages).toEqual([]);
+    settings.set({
+      turn: { enabled: false, model_presets: [] },
+      session: { enabled: true, model_presets: ["codex-5.6-terra"] },
+    });
+    expect(service.read()).toMatchObject({
+      turnEnabled: false,
+      sessionEnabled: true,
+      turnStages: [],
+      sessionStages: [{ backend: "codex", model: "gpt-5.6-terra" }],
+    });
   });
 
-  it("rejects a preferred preset whose backend is neither claude nor antigravity", () => {
-    const dir = trackTempDir(join(tmpdir(), "turn-summary-preferred-backend-"));
+  it("ignores the file's enabled and preferred presets once settings are the source", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-file-keys-"));
     const path = join(dir, "turn-summary.yaml");
-    const source = readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8");
-    writeFileSync(path, source, "utf8");
-    writeFileSync(join(dir, "turn-summary.local.yaml"), "preferred_model_presets: [codex-5.6-terra]\n", "utf8");
-    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog());
-    expect(() => service.read()).toThrow(/claude or antigravity/);
+    writeFileSync(path, readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8"), "utf8");
+    writeFileSync(join(dir, "turn-summary.local.yaml"), "enabled: true\npreferred_model_presets: [gemini-4-hydrogen]\n", "utf8");
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog(), summarySettingsReader());
+    expect(service.read()).toMatchObject({ turnEnabled: false, sessionEnabled: false, turnStages: [], sessionStages: [] });
+  });
+
+  it("skips a stored preset the catalogue cannot serve and warns once", () => {
+    const dir = trackTempDir(join(tmpdir(), "turn-summary-stale-preset-"));
+    const path = join(dir, "turn-summary.yaml");
+    writeFileSync(path, readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8"), "utf8");
+    const warn = vi.fn();
+    const settings = summarySettingsReader({
+      turn: { enabled: true, model_presets: ["removed-preset", "kimi-2", "codex-5.6-luna"] },
+      session: { enabled: false, model_presets: [] },
+    });
+    const service = new TurnSummaryConfigService(path, { warn }, repositoryModelCatalog(), settings);
+    expect(service.read().turnStages).toEqual([{ backend: "codex", model: "gpt-5.6-luna" }]);
+    service.read();
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  describe("first-run seed", () => {
+    function seedFor(local: string | undefined, catalog: ModelCatalogSource = repositoryModelCatalog()) {
+      const dir = trackTempDir(join(tmpdir(), "turn-summary-seed-"));
+      const path = join(dir, "turn-summary.yaml");
+      writeFileSync(path, readFileSync(fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)), "utf8"), "utf8");
+      if (local !== undefined) writeFileSync(join(dir, "turn-summary.local.yaml"), local, "utf8");
+      return readSummarySettingsSeed(path, catalog);
+    }
+
+    it("lays out the order the previous chain ran for an enabled production overlay", () => {
+      expect(seedFor("enabled: true\nmodel: gpt-5.6-luna\n")).toEqual(OPERATING_SUMMARY_SETTINGS);
+    });
+
+    it("seeds nothing while the file leaves summaries off", () => {
+      expect(seedFor(undefined)).toBeUndefined();
+      expect(seedFor("enabled: false\n")).toBeUndefined();
+    });
+
+    it("lets the overlay's preferred presets and story model decide, and the session order drops antigravity", () => {
+      expect(seedFor("enabled: true\npreferred_model_presets: [gemini-4-hydrogen]\nstory_model: gpt-5.6-luna\n")).toEqual({
+        turn: { enabled: true, model_presets: ["gemini-4-hydrogen", "codex-5.6-terra"] },
+        session: { enabled: true, model_presets: ["codex-5.6-luna"] },
+      });
+      expect(seedFor("enabled: true\npreferred_model_presets: []\n")).toEqual({
+        turn: { enabled: true, model_presets: ["codex-5.6-terra"] },
+        session: { enabled: true, model_presets: ["codex-5.6-terra"] },
+      });
+    });
+
+    it("falls back to the task default preset when no codex preset serves the file's model", () => {
+      expect(seedFor("enabled: true\nmodel: unlisted-model\nstory_model: other-unlisted\n")).toMatchObject({
+        turn: { model_presets: ["claude-sonnet", "gemini-4-hydrogen", "codex-5.6-terra"] },
+        session: { model_presets: ["claude-sonnet", "codex-5.6-terra"] },
+      });
+    });
+
+    it("has no preferred stages when the catalog declares no preferred default", () => {
+      const catalog = repositoryModelCatalog().snapshot();
+      const { turn_summary_preferred: _omitted, ...taskDefaults } = catalog.task_defaults;
+      expect(seedFor("enabled: true\n", { snapshot: () => ({ ...catalog, task_defaults: taskDefaults }) })).toEqual({
+        turn: { enabled: true, model_presets: ["codex-5.6-terra"] },
+        session: { enabled: true, model_presets: ["codex-5.6-terra"] },
+      });
+    });
   });
 
   it("resolves changed task defaults from the supplied catalog", () => {
@@ -353,8 +412,8 @@ describe("TurnSummaryConfigService", () => {
         turn_story: { model_preset: "codex-6.1-terra" },
         instruction_extraction: { model_preset: "codex-5.6-luna" },
       } }),
-    });
-    expect(service.read()).toMatchObject({ model: "gpt-6.2-sol", storyModel: "gpt-6.1-terra", instructionExtractionModel: "gpt-5.6-luna" });
+    }, summarySettingsReader());
+    expect(service.read()).toMatchObject({ model: "gpt-6.2-sol" });
   });
 
   it("rejects a task preset whose backend differs from the configured provider", () => {
@@ -364,7 +423,7 @@ describe("TurnSummaryConfigService", () => {
       .replace(/^model:.*\n|^story_model:.*\n|^instruction_extraction_model:.*\n/gm, "")
       .replace("provider: codex", "provider: openai-api");
     writeFileSync(path, source, "utf8");
-    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog());
+    const service = new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog(), summarySettingsReader());
     expect(() => service.read()).toThrow(/backend.*provider/i);
   });
   it("uses the disabled repository default when no local overlay exists", () => {
@@ -373,14 +432,13 @@ describe("TurnSummaryConfigService", () => {
     );
     const service = new TurnSummaryConfigService(path, {
       warn: vi.fn(),
-    }, repositoryModelCatalog());
+    }, repositoryModelCatalog(), summarySettingsReader());
 
     expect(service.read()).toMatchObject({
-      enabled: false,
+      turnEnabled: false,
+      sessionEnabled: false,
       provider: "codex",
       model: "gpt-5.6-terra",
-      storyModel: "gpt-5.6-terra",
-      instructionExtractionModel: "gpt-6.2-sol",
       instructionExtractionReasoningEffort: "high",
       codexConcurrencyLimit: 2,
       storyFoldThreshold: 10,
@@ -450,7 +508,7 @@ describe("TurnSummaryConfigService", () => {
     const path = join(dir, "turn-summary.yaml");
     const service = new TurnSummaryConfigService(path, {
       warn: vi.fn(),
-    }, repositoryModelCatalog());
+    }, repositoryModelCatalog(), summarySettingsReader());
 
     writeFileSync(path, yamlConfig("gpt-5.6-terra", false), "utf8");
     writeFileSync(
@@ -460,10 +518,8 @@ describe("TurnSummaryConfigService", () => {
     );
 
     expect(service.read()).toMatchObject({
-      enabled: true,
       provider: "codex",
       model: "gpt-5.4-mini",
-      storyModel: "gpt-5.4-mini",
       codexConcurrencyLimit: 2,
       storyFoldThreshold: 12,
       storyTimeoutMs: 45_000,
@@ -478,7 +534,7 @@ describe("TurnSummaryConfigService", () => {
     const path = join(dir, "turn-summary.yaml");
     const service = new TurnSummaryConfigService(path, {
       warn: vi.fn(),
-    }, repositoryModelCatalog());
+    }, repositoryModelCatalog(), summarySettingsReader());
 
     writeFileSync(path, yamlConfig("gpt-5.6-luna", false), "utf8");
     writeFileSync(
@@ -489,7 +545,6 @@ describe("TurnSummaryConfigService", () => {
 
     expect(service.read()).toMatchObject({
       model: "gpt-5.6-luna",
-      storyModel: "gpt-5.6-terra",
     });
   });
 
@@ -501,14 +556,14 @@ describe("TurnSummaryConfigService", () => {
     const warnings: unknown[] = [];
     const service = new TurnSummaryConfigService(path, {
       warn: (...args) => warnings.push(args),
-    }, repositoryModelCatalog());
+    }, repositoryModelCatalog(), summarySettingsReader());
 
     writeFileSync(path, yamlConfig("gpt-5.6-terra", false), "utf8");
-    writeFileSync(localPath, "enabled: true\n", "utf8");
-    expect(service.read().enabled).toBe(true);
+    writeFileSync(localPath, "model: gpt-5.4-mini\n", "utf8");
+    expect(service.read().model).toBe("gpt-5.4-mini");
 
     writeFileSync(localPath, "unexpected_key: true\n", "utf8");
-    expect(service.read().enabled).toBe(true);
+    expect(service.read().model).toBe("gpt-5.4-mini");
     expect(warnings).toHaveLength(1);
   });
 
@@ -519,13 +574,12 @@ describe("TurnSummaryConfigService", () => {
     const warnings: unknown[] = [];
     const service = new TurnSummaryConfigService(path, {
       warn: (...args) => warnings.push(args),
-    }, repositoryModelCatalog());
+    }, repositoryModelCatalog(), summarySettingsReader());
 
     writeFileSync(path, yamlConfig("gpt-5.6-terra", false), "utf8");
-    expect(service.read().enabled).toBe(false);
+    expect(service.read().model).toBe("gpt-5.6-terra");
 
     writeFileSync(path, yamlConfig("gpt-5.6-terra", true), "utf8");
-    expect(service.read().enabled).toBe(true);
     expect(service.read().model).toBe("gpt-5.6-terra");
 
     writeFileSync(path, yamlConfig("gpt-5.4-mini", true), "utf8");
@@ -542,9 +596,14 @@ describe("turn summary model chain", () => {
   const chainConfig: TurnSummaryConfig = {
     ...CONFIG,
     model: "gpt-5.6-luna",
-    preferredStages: [
+    turnStages: [
       { backend: "claude", model: "sonnet" },
       { backend: "antigravity", model: "gemini-4-hydrogen" },
+      { backend: "codex", model: "gpt-5.6-luna" },
+    ],
+    sessionStages: [
+      { backend: "claude", model: "sonnet" },
+      { backend: "codex", model: "gpt-5.6-terra" },
     ],
     reasoningEffort: "xhigh",
     timeoutMs: 30_000,
@@ -561,19 +620,19 @@ describe("turn summary model chain", () => {
     antigravity?: () => unknown;
     codex?: () => unknown;
     antigravityEnabled?: () => boolean;
-    skipBackends?: readonly ("claude" | "antigravity")[];
+    purpose?: "turn" | "session";
   } = {}) {
     const claude = { generate: vi.fn(async (request: { model: string }) => (options.claude ?? (() => ok(request.model)))()) };
     const antigravity = { generate: vi.fn(async (request: { model: string }) => (options.antigravity ?? (() => ok(request.model)))()) };
     const codex = { generate: vi.fn(async (_prompt: string, config: TurnSummaryConfig, _options?: unknown) => (options.codex ?? (() => ok(config.model)))()) };
     const info = vi.fn();
     const chain = new ModelChainTurnSummarizer({
+      purpose: options.purpose ?? "turn",
       claude: claude as never,
       antigravity: antigravity as never,
       codex: codex as never,
       info,
       ...(options.antigravityEnabled === undefined ? {} : { antigravityEnabled: options.antigravityEnabled }),
-      ...(options.skipBackends === undefined ? {} : { skipBackends: options.skipBackends }),
     });
     return { chain, claude, antigravity, codex, info };
   }
@@ -652,22 +711,54 @@ describe("turn summary model chain", () => {
     expect(isTurnSummaryUsageLimitError(coded("CODEX_EXEC_FAILED"))).toBe(false);
   });
 
-  it("runs codex first with the request limits when no preferred stage is configured", async () => {
+  it("runs a lone codex stage first, with the request limits and the stage's model", async () => {
     const { chain, claude, codex } = build();
-    await chain.generate("prompt", { ...chainConfig, preferredStages: [] }, { maxAttempts: 1 });
+    await chain.generate("prompt", {
+      ...chainConfig, turnStages: [{ backend: "codex", model: "gpt-6.2-sol" }],
+    }, { maxAttempts: 1 });
     expect(claude.generate).not.toHaveBeenCalled();
-    expect(codex.generate.mock.calls[0]![1]).toMatchObject({ timeoutMs: 30_000 });
+    expect(codex.generate.mock.calls[0]![1]).toMatchObject({ model: "gpt-6.2-sol", timeoutMs: 30_000 });
     expect(codex.generate.mock.calls[0]![2]).toMatchObject({ maxAttempts: 1 });
   });
 
-  it("leaves antigravity out for a chain that skips it", async () => {
-    const { chain, antigravity, codex } = build({
-      claude: () => { throw coded("CLAUDE_USAGE_LIMIT"); },
-      skipBackends: ["antigravity"],
-    });
+  it("does not run a codex stage after a stage that already succeeded", async () => {
+    const { chain, codex } = build();
     await chain.generate("prompt", chainConfig);
+    expect(codex.generate).not.toHaveBeenCalled();
+  });
+
+  it("follows the session order for a session chain, which leaves antigravity out", async () => {
+    const { chain, antigravity, codex } = build({
+      purpose: "session",
+      claude: () => { throw coded("CLAUDE_USAGE_LIMIT"); },
+    });
+    const result = await chain.generate("prompt", chainConfig);
     expect(antigravity.generate).not.toHaveBeenCalled();
-    expect(codex.generate).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ model: "gpt-5.6-terra" });
+    expect(codex.generate.mock.calls[0]![1]).toMatchObject({ model: "gpt-5.6-terra", timeoutMs: 75_000 });
+  });
+
+  it("walks a list that does not end on codex and ends in error when its last stage is out of quota", async () => {
+    const { chain } = build({
+      claude: () => { throw coded("CLAUDE_USAGE_LIMIT"); },
+      antigravity: () => { throw coded("ANTIGRAVITY_RATE_LIMITED"); },
+    });
+    const error = await chain.generate("prompt", {
+      ...chainConfig, turnStages: chainConfig.turnStages.slice(0, 2),
+    }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ name: "TurnSummaryExecutionError" });
+    expect(isTurnSummaryUsageLimitError(error)).toBe(true);
+  });
+
+  it("ends as a provider-unavailable skip when no listed stage is usable", async () => {
+    const { chain, antigravity, codex } = build({ antigravityEnabled: () => false });
+    await expect(chain.generate("prompt", {
+      ...chainConfig, turnStages: [{ backend: "antigravity", model: "gemini-4-hydrogen" }],
+    })).rejects.toBeInstanceOf(TurnSummaryProviderUnavailableError);
+    await expect(chain.generate("prompt", { ...chainConfig, turnStages: [] }))
+      .rejects.toBeInstanceOf(TurnSummaryProviderUnavailableError);
+    expect(antigravity.generate).not.toHaveBeenCalled();
+    expect(codex.generate).not.toHaveBeenCalled();
   });
 });
 
@@ -1118,7 +1209,7 @@ function yamlConfig(model: string, enabled: boolean): string {
     "provider: codex",
     `model: ${model}`,
     "reasoning_effort: high",
-    `instruction_extraction_model: ${CONFIG.instructionExtractionModel}`,
+    `instruction_extraction_model: gpt-6.2-sol`,
     `instruction_extraction_reasoning_effort: ${CONFIG.instructionExtractionReasoningEffort}`,
     "timeout_ms: 30000",
     "max_attempts: 2",

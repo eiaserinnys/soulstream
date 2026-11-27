@@ -197,6 +197,7 @@ function createAllOptInRouteApp() {
     mcpHostRoutes: { authBearerToken: "test-token", folders: { serviceProvider: async () => inert as never, authBearerToken: "test-token" } },
     persistentDefaultsRoutes: inert,
     antigravityBackendRoutes: inert,
+    summarySettingsRoutes: inert,
     cardDispatchSettingsRoutes: inert,
     cardOrchestrationRoutes: inert,
     cardOrchestrationDecisionRoutes: inert,

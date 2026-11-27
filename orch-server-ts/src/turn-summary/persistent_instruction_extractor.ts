@@ -79,7 +79,6 @@ export function createPersistentInstructionExtractor(options: {
         buildPersistentInstructionPrompt(input),
         {
           ...config,
-          model: config.instructionExtractionModel,
           reasoningEffort: config.instructionExtractionReasoningEffort,
         },
         {

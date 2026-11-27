@@ -4,6 +4,7 @@ import type { CodexExecGenerateOptions } from "./codex_exec_turn_summarizer.js";
 import { findUsageLimitError, isTurnSummaryUsageLimitError } from "./error_chain.js";
 import type { TurnSummaryConfig, TurnSummaryStage } from "./turn_summary_config.js";
 import { TurnSummaryExecutionError } from "./turn_summary_execution_error.js";
+import { TurnSummaryProviderUnavailableError } from "./turn_summary_provider_router.js";
 import {
   buildTurnSummaryPrompt,
   type TurnSummarizer,
@@ -39,7 +40,8 @@ const CLAUDE_EFFORT: Record<TurnSummaryConfig["reasoningEffort"], ClaudeReasonin
   xhigh: "xhigh",
 };
 
-type ChainStage = TurnSummaryStage | { readonly backend: "codex"; readonly model: string };
+/** Which configured model order a chain runs: the turn summaries' or the session story's. */
+export type ChainPurpose = "turn" | "session";
 
 type ErrorMetrics = Pick<
   TurnSummaryExecutionError,
@@ -47,23 +49,20 @@ type ErrorMetrics = Pick<
 >;
 
 /**
- * Runs the configured preferred stages (claude, antigravity) in order and ends on codex with the
- * request's own model. A stage hands over to the next only when it is out of quota or unusable
- * (see STAGE_HANDOFF_ERROR_CODES); any other failure, including a time-out, ends the chain.
+ * Runs the stages the summary settings list for its purpose, in order. A stage hands over to the
+ * next only when it is out of quota or unusable (see STAGE_HANDOFF_ERROR_CODES); any other
+ * failure, including a time-out, ends the chain. With no usable stage left the request ends as
+ * a provider-unavailable skip, not a failure.
  */
 export class ModelChainTurnSummarizer implements TurnSummarizer {
-  private readonly skipBackends: ReadonlySet<string>;
-
   constructor(private readonly deps: {
+    readonly purpose: ChainPurpose;
     readonly codex: ChainCodexStage;
     readonly claude?: ChainClaudeExecutor;
     readonly antigravity?: ChainAntigravityExecutor;
-    readonly skipBackends?: readonly ("claude" | "antigravity")[];
     readonly info?: (message: string) => void;
     readonly antigravityEnabled?: () => boolean;
-  }) {
-    this.skipBackends = new Set(deps.skipBackends ?? []);
-  }
+  }) {}
 
   async summarize(
     input: TurnSummaryInput,
@@ -78,10 +77,9 @@ export class ModelChainTurnSummarizer implements TurnSummarizer {
     config: TurnSummaryConfig,
     options: CodexExecGenerateOptions = {},
   ): Promise<TurnSummaryResult> {
-    const stages: ChainStage[] = [
-      ...config.preferredStages.filter((stage) => this.isUsable(stage)),
-      { backend: "codex", model: config.model },
-    ];
+    const configured = this.deps.purpose === "turn" ? config.turnStages : config.sessionStages;
+    const stages = configured.filter((stage) => this.isUsable(stage));
+    if (stages.length === 0) throw new TurnSummaryProviderUnavailableError("codex");
     const failures: unknown[] = [];
     for (const [index, stage] of stages.entries()) {
       try {
@@ -97,17 +95,17 @@ export class ModelChainTurnSummarizer implements TurnSummarizer {
         );
       }
     }
-    throw new Error("unreachable: the codex stage always ends the chain");
+    throw new Error("unreachable: the last stage always ends the chain");
   }
 
   private isUsable(stage: TurnSummaryStage): boolean {
-    if (this.skipBackends.has(stage.backend)) return false;
+    if (stage.backend === "codex") return true;
     if (stage.backend === "claude") return this.deps.claude !== undefined;
     return this.deps.antigravity !== undefined && this.deps.antigravityEnabled?.() !== false;
   }
 
   private async runStage(
-    stage: ChainStage,
+    stage: TurnSummaryStage,
     prompt: string,
     config: TurnSummaryConfig,
     options: CodexExecGenerateOptions,
@@ -133,13 +131,15 @@ export class ModelChainTurnSummarizer implements TurnSummarizer {
         ...request, reasoningEffort: ANTIGRAVITY_EFFORT[config.reasoningEffort],
       });
     }
-    return first
-      ? await this.deps.codex.generate(prompt, config, options)
-      : await this.deps.codex.generate(prompt, { ...config, timeoutMs }, { ...options, maxAttempts });
+    return await this.deps.codex.generate(
+      prompt,
+      { ...config, model: stage.model, timeoutMs },
+      { ...options, maxAttempts },
+    );
   }
 }
 
-function label(stage: ChainStage): string {
+function label(stage: TurnSummaryStage): string {
   return `${stage.backend}:${stage.model}`;
 }
 

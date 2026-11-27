@@ -81,7 +81,7 @@ export class TurnSummaryCatchUpSweep {
   private async executeSweep(): Promise<void> {
     try {
       const config = this.deps.configService.read();
-      if (!config.enabled) return;
+      if (!config.turnEnabled) return;
       const now = this.nowMs();
       this.pruneRemembered(now, config.catchUpWindowHours);
       const candidates = await this.deps.repository.listCatchUpCandidates({
