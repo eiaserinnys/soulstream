@@ -136,6 +136,8 @@ export class ClaudeEphemeralExecutor {
       await mkdir(configDir, { recursive: true });
       const env = sanitizeChildProcessEnv(this.options.processEnv ?? process.env);
       delete env.ANTHROPIC_AUTH_TOKEN;
+      // The throwaway HOME hides the CLI's own install, which would otherwise trigger an auto-update.
+      env.DISABLE_AUTOUPDATER = "1";
       const output = await runProcess({
         command: this.options.claudePath ?? "claude",
         args: [

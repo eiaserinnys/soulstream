@@ -17,7 +17,7 @@ function fakeClaude(name: string, body: string): { path: string; record: string 
   writeFileSync(path, [
     "#!/bin/sh",
     `cat > "${record}.stdin"`,
-    `printf '{"args":"%s","token":"%s","home":"%s","config":"%s","apiKey":"%s"}' "$*" "$CLAUDE_CODE_OAUTH_TOKEN" "$HOME" "$CLAUDE_CONFIG_DIR" "$ANTHROPIC_API_KEY" > "${record}"`,
+    `printf '{"args":"%s","token":"%s","home":"%s","config":"%s","apiKey":"%s","autoUpdater":"%s"}' "$*" "$CLAUDE_CODE_OAUTH_TOKEN" "$HOME" "$CLAUDE_CONFIG_DIR" "$ANTHROPIC_API_KEY" "$DISABLE_AUTOUPDATER" > "${record}"`,
     body,
   ].join("\n"), "utf8");
   chmodSync(path, 0o755);
@@ -55,6 +55,7 @@ describe("Claude ephemeral executor", () => {
     expect(seen.config).not.toBe("/host-config");
     expect(config.startsWith(home)).toBe(true);
     expect(seen.apiKey).toBe("");
+    expect(seen.autoUpdater).toBe("1");
     expect(seen.args).toContain("-p");
     expect(seen.args).toContain("--model sonnet");
     expect(seen.args).toContain("--effort high");
