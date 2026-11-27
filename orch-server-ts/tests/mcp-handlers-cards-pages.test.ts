@@ -833,6 +833,17 @@ describe("search_skills MCP execution", () => {
     expect(result.isError).toBe(true);
     expect(result.content).toContainEqual({ type: "text", text: "Skill catalog response was truncated" });
   });
+  it("reports the HTTP status when the skill catalog cannot be fetched", async () => {
+    const h = skillsHarness("99999999-4444-4333-8444-555555555555");
+    h.fetchMock.mockImplementation(async () => new Response("unavailable", { status: 503 }));
+
+    const result = await call(h.options, "search_skills", { query: "slack-member-recall" });
+
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0]!.text;
+    expect(text.startsWith("Failed to load skill catalog")).toBe(true);
+    expect(text).toContain("503");
+  });
   it("ranks candidates and respects the requested limit", async () => {
     const h = skillsHarness("99999999-aaaa-4bbb-8ccc-dddddddddddd");
     const result = await call(h.options, "search_skills", { query: "help with a Slack member request", limit: 2 });

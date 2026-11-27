@@ -1,6 +1,7 @@
 import { errorResult, jsonResult, type skillTools } from "@soulstream/mcp-contract";
 import { rankByRelevance } from "../relevance/typesafe_client.js";
 import {
+  CatalogFetchError,
   catalogEvaluationText,
   DEFAULT_DOMAIN_CATALOG_NODE_ID,
   loadAtomNodeBody,
@@ -18,6 +19,7 @@ function catalogLoadError(error: unknown, fallback: string): string {
     error.message === "Skill catalog response was truncated" ||
     error.message === "Domain catalog response was truncated"
   )) return error.message;
+  if (error instanceof CatalogFetchError) return `${fallback}: ${error.reason}`;
   return fallback;
 }
 

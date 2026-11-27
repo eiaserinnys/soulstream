@@ -26,6 +26,7 @@ import { ExternalEventsService, credentialOwner } from "./external_events/servic
 import type { McpHostOptions } from "./mcp/types.js";
 import {DashboardBuildInfo,OrchestratorLifecycle} from "./runtime/orchestrator_lifecycle.js";
 import { serviceTokenAccessWithoutEmail } from "./runtime/live_dashboard_access_provider.js";
+import { createLiveAtomHttpClient } from "./runtime/live_atom_route_provider.js";
 import type { SqlClient } from "./control_plane/control_plane_types.js";
 // 500줄 예외: 프로덕션 composition root의 단일 조립 순서를 한 파일에서 검증한다.
 // 도메인 동작은 각 service/repository 모듈에 있고, 이 파일은 연결만 소유한다.
@@ -1084,7 +1085,7 @@ export async function createLiveProductionApplication(
   };
   const mcpSkills = { enabled: config.atom_enabled, serverUrl: config.atom_server_url, apiKey: config.atom_api_key,
     nodeId: config.skill_catalog_node_id, catalogsNodeId: config.domain_catalog_node_id,
-    typesafeApiKey: config.typesafe_api_key, httpClient: providers.atomRoutes.httpClient };
+    typesafeApiKey: config.typesafe_api_key, httpClient: createLiveAtomHttpClient({ timeoutMs: 30_000 }) };
   const app = createApp({
     oauthRoutes: {
       issuer: config.soulstream_public_url,
