@@ -106,14 +106,32 @@ function fixture() {
 }
 
 describe("list_node_model_presets", () => {
-  it("오케스트레이터의 노드별 가용성 응답을 공개 필드 그대로 반환", async () => {
+  const fullPresets = () => [
+    { id: "kimi-3", label: "Kimi - 3", backend: "claude", available: false, reason: "env_unresolved", reason_label: "키 미설정", resets_at: null, usage_warning: false, weekly_headroom: null },
+    { id: "claude-opus", label: "Claude - Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: true, supported_efforts: ["low", "high"], default_effort: "high", weekly_headroom: { status: "ok", headroom: -10.5, remaining_percent: 83, window_remaining_percent: 93.5, resets_at: "2026-08-03T16:00:00.000Z", observed_at: "2026-07-28T03:00:00.000Z", quota_label: "7일", blocking_quota: null }, account_pool: { available_count: 3, total_count: 3, accounts: [{ id: "a", email: "x@y" }] } },
+  ];
+  const compactOpus = { id: "claude-opus", label: "Claude - Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: true, supported_efforts: ["low", "high"], default_effort: "high", weekly_headroom: { status: "ok", headroom: -10.5, remaining_percent: 83, window_remaining_percent: 93.5, resets_at: "2026-08-03T16:00:00.000Z", quota_label: "7일", blocking_quota: null }, account_pool: { available_count: 3, total_count: 3 } };
+  const listPresets = async (presets: unknown[], args: Record<string, unknown>) => {
     const f = fixture();
-    const presets = [
-      { id: "kimi-3", label: "Kimi - 3", backend: "claude", available: false, reason: "env_unresolved", reason_label: "키 미설정", resets_at: null, usage_warning: false, weekly_headroom: null },
-      { id: "claude-opus", label: "Claude - Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: true, weekly_headroom: { status: "ok", headroom: -10.5, remaining_percent: 83, window_remaining_percent: 93.5, resets_at: "2026-08-03T16:00:00.000Z", observed_at: "2026-07-28T03:00:00.000Z", quota_label: "7일", blocking_quota: null } },
-    ];
     f.options.cluster.nodeAgentProfiles.modelPresetProvider = { listForNode: () => presets as never };
-    expect(await f.call("list_node_model_presets", { node_id: "node-remote" })).toMatchObject({ structuredContent: { model_presets: presets } });
+    const result = await f.call("list_node_model_presets", { node_id: "node-remote", ...args });
+    return "structuredContent" in result ? result.structuredContent : result;
+  };
+  it("detail: true는 오케스트레이터의 노드별 가용성 응답을 그대로 반환", async () => {
+    const presets = fullPresets();
+    expect(await listPresets(presets, { detail: true })).toEqual({ model_presets: presets });
+  });
+  it("기본 호출은 계정 목록과 관측 시각을 빼고 판단 칸만 반환", async () => {
+    expect(await listPresets(fullPresets(), {})).toEqual({ model_presets: [
+      { id: "kimi-3", label: "Kimi - 3", backend: "claude", available: false, reason: "env_unresolved", reason_label: "키 미설정", resets_at: null, usage_warning: false, weekly_headroom: null },
+      compactOpus,
+    ] });
+  });
+  it("preset_ids로 고른 항목만 반환", async () => {
+    expect(await listPresets(fullPresets(), { preset_ids: ["claude-opus"] })).toEqual({ model_presets: [compactOpus] });
+  });
+  it("preset_ids 가운데 없는 id는 unknown_preset_ids로 알린다", async () => {
+    expect(await listPresets(fullPresets(), { preset_ids: ["claude-opus", "no-such"] })).toEqual({ model_presets: [compactOpus], unknown_preset_ids: ["no-such"] });
   });
   it("미연결 노드는 노드 이름 확인 안내를 MCP 오류로 반환", async () => {
     expect(await fixture().call("list_node_model_presets", { node_id: "missing-node" })).toMatchObject({ isError: true, structuredContent: { error: expect.stringContaining("노드 'missing-node'를 찾을 수 없거나 연결되어 있지 않습니다") } });
