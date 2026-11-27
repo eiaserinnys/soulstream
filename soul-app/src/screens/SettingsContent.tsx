@@ -144,9 +144,7 @@ export function SettingsContent({
         ? { ...wallpaper, mode: 'photo' as const }
         : { mode: next };
     setWallpaperMode(next);
-    await savePreferences(appearance, nextWallpaper, {
-      clearBackground: next !== 'photo',
-    });
+    await savePreferences(appearance, nextWallpaper);
   }
 
   async function handlePickBackground() {
@@ -204,9 +202,7 @@ export function SettingsContent({
     if (backgroundPending.current) return;
     const nextWallpaper = { mode: 'bokeh' as const };
     setWallpaper(nextWallpaper);
-    await savePreferences(appearance, nextWallpaper, {
-      clearBackground: true,
-    });
+    await savePreferences(appearance, nextWallpaper);
   }
 
   const wallpaperPreviewSource = resolveBackgroundImageSource(
