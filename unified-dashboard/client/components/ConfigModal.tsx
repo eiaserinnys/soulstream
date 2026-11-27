@@ -5,6 +5,7 @@ import { ArrowLeft, Check } from "lucide-react";
 import { FileStorageTab } from "./FileStorageTab";
 import { CardDispatchTab } from "./CardDispatchTab";
 import { PersistentDefaultsSettingsForm } from "./PersistentDefaultsSettingsForm";
+import { SummarySettingsForm } from "./SummarySettingsForm";
 /**
  * ConfigModal - 설정 모달 (unified-dashboard)
  *
@@ -201,6 +202,8 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
                 <GitReposTab request={api?.request} sampleNodes={api?.nodes} />
               ) : selectedDefinition?.id === "persistent_defaults" ? (
                 <PersistentDefaultsSettingsForm />
+              ) : selectedDefinition?.id === "summaries" ? (
+                <SummarySettingsForm />
               ) : selectedDefinition?.id === "mcp" ? (
                 open && !mobileIndex ? <McpSettingsTab request={api?.request} initialProfileId={mcpProfileTarget} onOpenAgent={(agentId, nodeId) => { setAgentMcpTarget({ agentId, nodeId }); setSelectedTab("agents"); setMobileIndex(false); }} /> : null
               ) : selectedDefinition?.id === "agents" ? (

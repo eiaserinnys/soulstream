@@ -19,6 +19,14 @@ export interface PersistentDefaultsSettingsService {
   presets(): Promise<NodeModelPresetCatalog>;
 }
 const endpoint = "/api/admin/settings/persistent-defaults";
+/** 설정 화면이 모델 목록을 읽는 기본 실행 노드의 프리셋. 영구 세션 기본 모델과 요약 설정이 함께 쓴다. */
+export async function loadDefaultNodeModelPresets(): Promise<NodeModelPresetCatalog> {
+  const { create_defaults } = await createPersistentSessionsApi().list();
+  const nodeId = create_defaults?.node_id;
+  if (!nodeId) throw new Error("기본 실행 노드를 불러오지 못했습니다.");
+  const presets = await fetchNodeModelPresets(nodeId);
+  return { nodeId, presets, status: "ready" };
+}
 const defaultService: PersistentDefaultsSettingsService = {
   read: async () => {
     try { return await cardRequest(endpoint); }
@@ -30,13 +38,7 @@ const defaultService: PersistentDefaultsSettingsService = {
     }
   },
   write: (input) => cardRequest(endpoint, "PUT", input),
-  presets: async () => {
-    const { create_defaults } = await createPersistentSessionsApi().list();
-    const nodeId = create_defaults?.node_id;
-    if (!nodeId) throw new Error("기본 실행 노드를 불러오지 못했습니다.");
-    const presets = await fetchNodeModelPresets(nodeId);
-    return { nodeId, presets, status: "ready" };
-  },
+  presets: loadDefaultNodeModelPresets,
 };
 const missingLabel = (id: string) => id;
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);

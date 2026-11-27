@@ -14,7 +14,8 @@ import type { TurnSummaryConfig } from
   "../src/turn-summary/turn_summary_config.js";
 
 const CONFIG: TurnSummaryConfig = {
-  enabled: true,
+  turnEnabled: true,
+  sessionEnabled: true,
   instruction: "턴을 요약하라.",
   storyInstruction: [
     "JSON 객체로 narrative와 highlight를 반환한다.",
@@ -39,10 +40,9 @@ const CONFIG: TurnSummaryConfig = {
   catchUpMaxJobsPerRound: 100,
   provider: "codex",
   model: "gpt-5.6-luna",
-  storyModel: "gpt-5.6-terra",
-  preferredStages: [],
+  turnStages: [],
+  sessionStages: [],
   reasoningEffort: "high",
-  instructionExtractionModel: "gpt-6.2-sol",
   instructionExtractionReasoningEffort: "high",
   timeoutMs: 30_000,
   maxAttempts: 2,
@@ -83,6 +83,34 @@ describe("SessionStoryFoldService", () => {
       }), "Session story fold stored");
     },
   );
+
+  it.each(["batch", "completed"] as const)(
+    "does nothing for a %s fold while session summaries are off, even with turn summaries on",
+    async (kind) => {
+      const repository = fakeRepository({ count: 10 });
+      const generator = fakeGenerator({ narrative: "[T1] 접었다.", highlight: "완료." });
+      const service = new SessionStoryFoldService({
+        repository, generator,
+        configService: { read: () => ({ ...CONFIG, turnEnabled: true, sessionEnabled: false }) },
+        logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      });
+      await runFold(service, kind);
+      expect(generator.generate).not.toHaveBeenCalled();
+      expect(repository.storeDigest).not.toHaveBeenCalled();
+    },
+  );
+
+  it("still folds stored turn summaries when turn summaries are off and session summaries are on", async () => {
+    const repository = fakeRepository({ count: 10 });
+    const generator = fakeGenerator({ narrative: "[T1] 접었다.", highlight: "완료." });
+    const service = new SessionStoryFoldService({
+      repository, generator,
+      configService: { read: () => ({ ...CONFIG, turnEnabled: false, sessionEnabled: true }) },
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    });
+    await service.foldIfNeeded("session-a");
+    expect(generator.generate).toHaveBeenCalledTimes(1);
+  });
 
   it("stores a narrative longer than the advisory limit", async () => {
     const repository = fakeRepository({ count: 10 });
@@ -212,10 +240,7 @@ describe("SessionStoryFoldService", () => {
     );
     expect(generator.generate).toHaveBeenCalledWith(
       expect.stringContaining("[T1] 첫 요청"),
-      expect.objectContaining({
-        model: "gpt-5.6-terra",
-        storyModel: "gpt-5.6-terra",
-      }),
+      expect.objectContaining({ timeoutMs: CONFIG.storyTimeoutMs }),
       expect.objectContaining({ maxAttempts: 1 }),
     );
     expect(repository.storeDigest).toHaveBeenCalledWith({

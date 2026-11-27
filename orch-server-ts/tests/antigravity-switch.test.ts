@@ -203,10 +203,13 @@ describe("with the switch off", () => {
     const codexResult = { content: "요약", model: "gpt-5.6-luna", latencyMs: 1, attempts: 1 };
     const codex = { generate: vi.fn(async () => codexResult) };
     const chain = new ModelChainTurnSummarizer({
-      claude: claude as never, antigravity: antigravity as never, codex: codex as never, antigravityEnabled: () => false,
+      purpose: "turn", claude: claude as never, antigravity: antigravity as never, codex: codex as never, antigravityEnabled: () => false,
     });
     const config = {
-      preferredStages: [{ backend: "claude", model: "sonnet" }, { backend: "antigravity", model: "gemini-4-hydrogen" }],
+      turnStages: [
+        { backend: "claude", model: "sonnet" }, { backend: "antigravity", model: "gemini-4-hydrogen" },
+        { backend: "codex", model: "gpt-5.6-luna" },
+      ],
       reasoningEffort: "low", model: "gpt-5.6-luna", timeoutMs: 1, maxAttempts: 1, fallbackTimeoutMs: 2,
     } as never;
     await expect(chain.generate("prompt", config)).resolves.toBe(codexResult);

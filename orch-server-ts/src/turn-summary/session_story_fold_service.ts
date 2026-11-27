@@ -252,7 +252,7 @@ export class SessionStoryFoldService {
     try {
       config = this.deps.configService.read();
       context.timeoutMs = config.storyTimeoutMs;
-      if (!config.enabled) return;
+      if (!config.sessionEnabled) return;
       const cooldownUntil = this.failureCooldownUntil.get(sessionId);
       if (cooldownUntil !== undefined && startedAt < cooldownUntil) {
         this.debugSkip(sessionId, "failure_cooldown");
@@ -386,7 +386,7 @@ export class SessionStoryFoldService {
     let lastError: unknown;
     let modelLatencyMs = 0;
     let usage: TurnSummaryUsage | undefined;
-    const storyConfig = { ...config, model: config.storyModel, timeoutMs: config.storyTimeoutMs };
+    const storyConfig = { ...config, timeoutMs: config.storyTimeoutMs };
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         const result = await this.deps.generator.generate(prompt, storyConfig, {

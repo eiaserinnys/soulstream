@@ -13,6 +13,7 @@ import {
   Plug,
   Server,
   ShieldCheck,
+  ScrollText,
   Sparkles,
   TerminalSquare,
   Users,
@@ -49,6 +50,7 @@ export const CONFIG_TABS: readonly ConfigTabDefinition[] = [
 
   { id: "persistent", label: "영구 에이전트 세션", description: "영구 세션의 지시와 표시, 기록을 관리합니다.", group: "sessions", adminOnly: false, icon: InfinityIcon },
   { id: "persistent_defaults", label: "영구 세션 기본 모델", description: "새 영구 세션이 쓸 기본 모델과 대체 순서를 정합니다. 이미 있는 세션은 바뀌지 않습니다.", group: "sessions", adminOnly: true, icon: Sparkles },
+  { id: "summaries", label: "요약", description: "턴 요약과 세션 요약을 켤지, 어떤 모델 순서로 쓸지 정합니다.", group: "sessions", adminOnly: true, icon: ScrollText },
   { id: "card_dispatch", label: "카드 실행", description: "카드의 실행 방식과 동시 실행 수를 조정합니다.", group: "sessions", adminOnly: true, icon: Workflow },
   { id: "recurring_jobs", label: "반복 작업", description: "반복할 작업과 다음 실행 시점을 관리합니다.", group: "sessions", adminOnly: false, icon: CalendarClock },
 

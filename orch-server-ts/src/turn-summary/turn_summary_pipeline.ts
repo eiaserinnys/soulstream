@@ -134,7 +134,7 @@ export class TurnSummaryPipeline {
     job: TurnSummaryCompleteJob,
   ): Promise<TurnSummaryJobOutcome> {
     const config = this.deps.configService.read();
-    if (!config.enabled) return { status: "skipped", reason: "disabled" };
+    if (!config.turnEnabled) return { status: "skipped", reason: "disabled" };
     const turn = await this.deps.repository.loadTurn(
       job.sessionId,
       job.completeEventId,

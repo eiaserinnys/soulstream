@@ -1,4 +1,8 @@
 # 운영 오버레이는 같은 디렉토리의 turn-summary.local.yaml에 변경할 키만 작성한다.
+# 턴 요약과 세션 요약(줄거리 접기)을 켤지, 어떤 모델 순서로 쓸지는 이 파일이 아니라 설정 화면
+# (설정 > 요약, DB의 system_settings.summary_settings)이 정한다. 이 파일의 enabled와
+# preferred_model_presets(없으면 카탈로그 turn_summary_preferred)는 설정 행이 아직 없을 때
+# 처음 한 번 그 값을 심는 데만 쓰고, 행이 생긴 뒤에는 읽지 않는다. 파일이 enabled: false면 심지 않는다.
 enabled: false
 instruction: |
   발화자 라벨에 따라 주어를 정확히 구분하여 한국어 1~3줄로 요약하라.

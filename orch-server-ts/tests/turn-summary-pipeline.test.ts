@@ -17,7 +17,8 @@ import type { TurnSummaryStartEvidence } from
   "../src/turn-summary/turn_summary_completion_evidence.js";
 
 const CONFIG: TurnSummaryConfig = {
-  enabled: true,
+  turnEnabled: true,
+  sessionEnabled: true,
   instruction: "한국어 1~3줄로 요약하라.",
   storyInstruction: "마커를 붙인 narrative와 highlight를 JSON으로 반환하라.",
   storyFoldThreshold: 10,
@@ -36,10 +37,9 @@ const CONFIG: TurnSummaryConfig = {
   catchUpMaxJobsPerRound: 100,
   provider: "codex",
   model: "gpt-5.6-terra",
-  storyModel: "gpt-5.6-terra",
-  preferredStages: [],
+  turnStages: [],
+  sessionStages: [],
   reasoningEffort: "high",
-  instructionExtractionModel: "gpt-6.2-sol",
   instructionExtractionReasoningEffort: "high",
   timeoutMs: 30_000,
   maxAttempts: 2,
@@ -249,7 +249,7 @@ describe("TurnSummaryPipeline", () => {
     } satisfies TurnSummarizer;
     const pipeline = new TurnSummaryPipeline({
       repository,
-      configService: { read: () => ({ ...CONFIG, enabled: false }) },
+      configService: { read: () => ({ ...CONFIG, turnEnabled: false, sessionEnabled: true }) },
       summarizer,
       eventHub: new RuntimeSessionEventHub(),
       logger: { info: vi.fn(), warn: vi.fn() },
@@ -368,7 +368,6 @@ describe("TurnSummaryPipeline", () => {
         read: () => ({
           ...CONFIG,
           model: "gpt-5.6-luna",
-          storyModel: "gpt-5.6-terra",
         }),
       },
       summarizer,
@@ -408,7 +407,6 @@ describe("TurnSummaryPipeline", () => {
       }),
       expect.objectContaining({
         model: "gpt-5.6-luna",
-        storyModel: "gpt-5.6-terra",
       }),
     );
     expect(seen).toEqual([

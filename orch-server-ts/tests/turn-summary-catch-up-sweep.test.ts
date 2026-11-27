@@ -12,7 +12,8 @@ import type { TurnSummaryJobOutcome } from
 const NOW = new Date("2026-11-21T00:00:00.000Z").getTime();
 
 const BASE_CONFIG = {
-  enabled: true,
+  turnEnabled: true,
+  sessionEnabled: true,
   excludedFolderIds: ["055be5a6-1285-48aa-a8a1-59e40fbe59af"],
   catchUpIntervalMs: 900_000,
   catchUpWindowHours: 72,
@@ -201,7 +202,7 @@ describe("TurnSummaryCatchUpSweep", () => {
   it("does not query while turn summaries are disabled", async () => {
     const { sweep, listCatchUpCandidates, info } = createSweep({
       candidates: CANDIDATES,
-      config: { ...BASE_CONFIG, enabled: false },
+      config: { ...BASE_CONFIG, turnEnabled: false },
     });
 
     await sweep.sweep();

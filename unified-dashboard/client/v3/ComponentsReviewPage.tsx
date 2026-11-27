@@ -32,6 +32,7 @@ import { CardDependencySamples } from "./CardDependencySamples";
 import { ReadOnlyCardListSample } from "./ReadOnlyCardListSample";
 import { CardOrchestrationSettingsSample } from "./CardOrchestrationSettingsSample";
 import { PersistentDefaultsSettingsReviewSample } from "./PersistentDefaultsSettingsReviewSample";
+import { SummarySettingsReviewSample } from "./SummarySettingsReviewSample";
 import { CardBoardSamples } from "./CardBoardSamples";
 import { CardCheckItemsSamples } from "./CardCheckItemsSamples";
 import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
@@ -520,6 +521,7 @@ export function ComponentsReviewPage() {
             <Sample name="PersistentSessionPortraitToggle" state="표시 · 숨김"><PersistentSessionPortraitToggleReviewSample/></Sample>
             <Sample name="CardOrchestrationSettingsForm / Input / Button" state="실제 설정 폼 · 모델 순서 · 저장 · 로컬 샘플"><CardOrchestrationSettingsSample/></Sample>
             <Sample name="PersistentDefaultsSettingsForm" state="카탈로그 · 저장된 설정 · 충돌"><PersistentDefaultsSettingsReviewSample/></Sample>
+            <Sample name="SummarySettingsForm" state="기본 꺼짐 · 운영 순서 · 충돌 · 서버 거절"><SummarySettingsReviewSample/></Sample>
             </div>
           </section>
           <section id="components-surfaces" className="v3-detail-section">

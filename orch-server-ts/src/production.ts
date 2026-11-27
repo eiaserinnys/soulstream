@@ -2,6 +2,8 @@ import { warnWhenProductionHasNoLogin } from "./auth/first_login_access.js";
 import { SkillLintReportStore } from "./skills/skill_lint_report_store.js";
 import { PersistentDefaultsSettings } from "./settings/persistent_defaults_settings.js";
 import { AntigravityBackendSettings, seedAntigravityBackend } from "./settings/antigravity_backend_settings.js";
+import { SummarySettings, seedSummarySettings } from "./settings/summary_settings.js";
+import { readSummarySettingsSeed } from "./turn-summary/turn_summary_config.js";
 import { McpCentralSyncService } from "./mcp_central/sync_service.js";
 import { createMcpTestPreviewService } from "./mcp_central/test_preview_service.js";
 import { createMcpCentralRepository } from "./mcp_central/repository.js";
@@ -386,6 +388,9 @@ export async function createLiveProductionApplication(
     () => antigravityBackend.enabled(),
   );
   await persistentDefaults.start();
+  const summarySettings = new SummarySettings(
+    async () => await sqlResolver.resolveSql() as unknown as SqlClient, persistentDefaults, context.warn,
+  );
   const searchDbConnectionFactory = createLiveSearchDbConnectionFactory({
     databaseUrl: config.database_url,
   });
@@ -1241,6 +1246,7 @@ export async function createLiveProductionApplication(
     },
     persistentDefaultsRoutes: { ...providers.adminUsersRoutes.provider, ...orchestrationAccess, service: persistentDefaults },
     antigravityBackendRoutes: { ...providers.adminUsersRoutes.provider, service: antigravityBackend },
+    summarySettingsRoutes: { ...providers.adminUsersRoutes.provider, service: summarySettings },
     cardDispatchSettingsRoutes:cardDispatchRuntime.settingsRoutes,
     cardOrchestrationRoutes: {
       ...providers.adminUsersRoutes.provider,
@@ -1259,11 +1265,27 @@ export async function createLiveProductionApplication(
     const nodeId = params?.node_id ?? params?.nodeId;
     if (typeof nodeId === "string" && request.url.startsWith("/api/nodes/")) await registry.waitForNode(nodeId);
   });
+  const turnSummaryConfigPath = overrides.turnSummaryConfigPath ??
+    fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url));
+  try {
+    const seed = readSummarySettingsSeed(turnSummaryConfigPath, persistentDefaults);
+    if (seed !== undefined) {
+      await seedSummarySettings(
+        await sqlResolver.resolveSql() as unknown as SqlClient,
+        persistentDefaults,
+        seed,
+        (value) => app.log.info({ value }, "Turn summary settings seeded from config file"),
+      );
+    }
+  } catch (error) {
+    context.warn(`Failed to seed summary settings: ${String(error)}`);
+  }
+  await summarySettings.start();
   turnSummaryPipeline = createLiveTurnSummaryPipeline({
     config,
     modelCatalog: persistentDefaults,
-    configPath: overrides.turnSummaryConfigPath ??
-      fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)),
+    summarySettings,
+    configPath: turnSummaryConfigPath,
     sqlResolver,
     registry,
     agentProfiles: dbCatalogRepository.agentProfileRepository.snapshot,
@@ -1518,6 +1540,7 @@ export async function createLiveProductionApplication(
       await runShutdownStep("card_dispatch_drain", () => cardDispatchRuntime.dispatcher.drain());
       await runShutdownStep("turn_summary_drain", () => turnSummaryPipeline?.drain());
     }
+    summarySettings.close();
     persistentDefaults.close();
     antigravityBackend.close();
     await runShutdownStep("push_notifier_close", () => pushNotifier.close());

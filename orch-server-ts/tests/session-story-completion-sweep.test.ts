@@ -10,9 +10,11 @@ import { SessionStoryCompletionSweep } from
 import { TurnSummaryConfigService, type TurnSummaryConfig } from
   "../src/turn-summary/turn_summary_config.js";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+import { summarySettingsReader } from "./helpers/summary_settings.js";
 
 const CONFIG = {
-  enabled: true,
+  turnEnabled: true,
+  sessionEnabled: true,
   storyCompletionGraceMs: 1_800_000,
   storyCompletionMinSummaries: 5,
   storyCompletionSweepIntervalMs: 60_000,
@@ -29,7 +31,7 @@ describe("SessionStoryCompletionSweep", () => {
       const sweep = new SessionStoryCompletionSweep({
         repository: { listCompletedFoldCandidates: vi.fn() },
         folder: { foldCompletedIfNeeded: vi.fn() },
-        configService: new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog()),
+        configService: new TurnSummaryConfigService(path, { warn: vi.fn() }, repositoryModelCatalog(), summarySettingsReader()),
         logger: { warn: vi.fn() },
       });
 
@@ -65,6 +67,23 @@ describe("SessionStoryCompletionSweep", () => {
       limit: 100,
     });
     expect(foldCompletedIfNeeded).toHaveBeenCalledWith(candidate, cutoff, 5);
+  });
+
+  it("runs no round while session summaries are off, and still runs with turn summaries off", async () => {
+    const listCompletedFoldCandidates = vi.fn().mockResolvedValue([]);
+    const read = vi.fn(() => ({ ...CONFIG, turnEnabled: true, sessionEnabled: false }));
+    const sweep = new SessionStoryCompletionSweep({
+      repository: { listCompletedFoldCandidates },
+      folder: { foldCompletedIfNeeded: vi.fn() },
+      configService: { read },
+      logger: { warn: vi.fn(), debug: vi.fn() },
+    });
+    await sweep.sweep();
+    expect(listCompletedFoldCandidates).not.toHaveBeenCalled();
+
+    read.mockReturnValue({ ...CONFIG, turnEnabled: false, sessionEnabled: true });
+    await sweep.sweep();
+    expect(listCompletedFoldCandidates).toHaveBeenCalledTimes(1);
   });
 
   it("coalesces overlapping sweeps into one candidate query", async () => {

@@ -1,5 +1,6 @@
 import { persistentDefaultsRouteAuthRequirements } from "../admin/persistent_defaults_routes.js";
 import { antigravityBackendRouteAuthRequirements } from "../admin/antigravity_backend_routes.js";
+import { summarySettingsRouteAuthRequirements } from "../admin/summary_settings_routes.js";
 import { mcpCentralRouteAuthRequirements } from "../mcp_central/routes.js";
 import { conversationRouteAuthRequirements } from "../conversation/conversation_routes.js";
 import { ownedAgentRouteAuthRequirements } from "../owned-agents/routes.js";
@@ -82,6 +83,7 @@ export const routeCoverageOwners = [
   { owner: "schedule.host", authRequirements: scheduleHostRouteAuthRequirements },
   {owner:"admin.persistent-defaults",authRequirements:persistentDefaultsRouteAuthRequirements},
   {owner:"admin.antigravity-backend",authRequirements:antigravityBackendRouteAuthRequirements},
+  {owner:"admin.summary-settings",authRequirements:summarySettingsRouteAuthRequirements},
   {owner:"cards.settings",authRequirements:cardDispatchSettingsRouteAuthRequirements},
   {owner:"cards.orchestration",authRequirements:{...cardOrchestrationRouteAuthRequirements,...cardOrchestrationDecisionRouteAuthRequirements}},
   { owner: "admin.users", authRequirements: { ...adminUsersRouteAuthRequirements, ...r2SettingsRouteAuthRequirements } },
@@ -223,6 +225,8 @@ export const tsOnlyRouteKeys = [
   "PUT /api/admin/settings/persistent-defaults",
   "GET /api/admin/settings/antigravity-backend",
   "PUT /api/admin/settings/antigravity-backend",
+  "GET /api/admin/settings/summaries",
+  "PUT /api/admin/settings/summaries",
   "GET /api/admin/settings/session-review-policy",
   "GET /api/admin/settings/board-r2",
   "PUT /api/admin/settings/board-r2",
