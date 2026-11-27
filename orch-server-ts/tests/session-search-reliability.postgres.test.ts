@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -6,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import postgres from "postgres";
 
-import { startPostgresTestContainer } from
-  "../../packages/db-schema/scripts/postgres-test-container.mjs";
+import { decidePostgresTests } from "../../packages/db-schema/scripts/postgres-test-policy.mjs";
+import { openIsolatedPostgres } from "./isolated_postgres_harness.js";
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 import { EventReadRepository } from "../src/control_plane/repositories/event_read_repository.js";
 import { SessionHistorySearchRepository } from "../src/control_plane/repositories/session_history_search_repository.js";
@@ -22,8 +21,7 @@ import {
 } from
   "../src/runtime/live_db_sql.js";
 
-const hasDocker = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
-const describePostgres = hasDocker ? describe : describe.skip;
+const describePostgres = decidePostgresTests().backendAvailable ? describe : describe.skip;
 
 describePostgres("session search reliability PostgreSQL integration", () => {
   let sql: ReturnType<typeof postgres>;
@@ -1680,51 +1678,10 @@ async function createHarness(): Promise<{
   databaseUrl: string;
   cleanup: () => Promise<void>;
 }> {
-  const container = startPostgresTestContainer({
-    user: "session_search_test",
-    password: "session_search_test",
-    database: "session_search_test_db",
-  });
-  const databaseUrl =
-    `postgres://session_search_test:session_search_test@127.0.0.1:${container.port}/session_search_test_db`;
-  const bootstrap = postgres(databaseUrl, { max: 1, onnotice: () => {} });
-  try {
-    await waitForPostgres(bootstrap);
-    const schema = readFileSync(fileURLToPath(new URL(
-      "../../packages/db-schema/sql/schema.sql",
-      import.meta.url,
-    )), "utf8");
-    // Runtime queries use the final canonical schema. Historical migration tests
-    // below apply their own migrations explicitly.
-    await bootstrap.unsafe(schema);
-  } catch (error) {
-    await bootstrap.end({ timeout: 2 }).catch(() => undefined);
-    container.stop();
-    throw error;
-  }
-  return {
-    sql: bootstrap,
-    databaseUrl,
-    cleanup: async () => {
-      await bootstrap.end({ timeout: 2 });
-      container.stop();
-    },
-  };
-}
-
-async function waitForPostgres(sql: ReturnType<typeof postgres>): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  let lastError: unknown;
-  while (Date.now() < deadline) {
-    try {
-      await sql`SELECT 1`;
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-  }
-  throw lastError ?? new Error("PostgreSQL did not become ready");
+  // Runtime queries use the final canonical schema. Historical migration tests
+  // below apply their own migrations explicitly.
+  const db = await openIsolatedPostgres({ max: 1 });
+  return { sql: db.sql, databaseUrl: db.url, cleanup: db.cleanup };
 }
 
 type EventSearchArguments = {

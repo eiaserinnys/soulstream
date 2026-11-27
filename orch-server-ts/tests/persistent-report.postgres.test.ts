@@ -1,10 +1,8 @@
-import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import Fastify from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReportTimelineAppendEvent } from "../src/session/report_timeline_publisher.js";
-import { startPostgresTestContainer } from "../../packages/db-schema/scripts/postgres-test-container.mjs";
-import { waitForPostgres } from "./persistent-session-settings-world.js";
+import { openIsolatedPostgres } from "./isolated_postgres_harness.js";
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { PersistentReportService } from "../src/session/persistent_report_service.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
@@ -13,10 +11,10 @@ import { registerPersistentSessionSettingsRoutes } from "../src/session/persiste
 import type { PersistentSessionSettingsService } from "../src/session/persistent_session_settings_service.js";
 import { intervenePayload } from "../src/session/session_action_command_payloads.js";
 
-// Same disposable container and production-schema pattern as PAS settings tests; no external DB URL.
+// Same disposable production-schema fixture as the other PAS PostgreSQL tests.
 describe("PAS reports on production PostgreSQL schema", () => {
   let sql: ReturnType<typeof postgres>;
-  let stop: () => void;
+  let stop: () => Promise<void>;
   let reports: PersistentReportService;
   let cards: CardControlPlaneService;
   let dbPort: ConstructorParameters<typeof CardControlPlaneService>[1];
@@ -25,16 +23,9 @@ describe("PAS reports on production PostgreSQL schema", () => {
   const human = { actorKind: "user" as const, actorSessionId: null, actorUserId: "director@example.com" };
   const entry = (key: string) => ({ key, kind: "ask", title: key, card_numbers: [], context: "맥락", action: "결정", options: ["진행"] });
   beforeAll(async () => {
-    const container = startPostgresTestContainer({ user: "pas_report_test", password: "pas_report_test", database: "pas_report_test_db" });
-    stop = container.stop;
-    const url = `postgres://pas_report_test:pas_report_test@127.0.0.1:${container.port}/pas_report_test_db`;
-    // Like page_postgres_harness, keep startup retries out of the service pool.
-    const bootstrap = postgres(url, { max: 1, onnotice: () => undefined });
-    try {
-      await waitForPostgres(bootstrap);
-      await bootstrap.unsafe(readFileSync(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8"));
-    } finally { await bootstrap.end({ timeout: 2 }); }
-    sql = postgres(url, { max: 4, onnotice: () => undefined });
+    const db = await openIsolatedPostgres({ max: 4 });
+    sql = db.sql;
+    stop = db.cleanup;
     expect(Number((await sql`SELECT COUNT(*) AS n FROM sessions`)[0]!.n)).toBe(0);
     await sql`INSERT INTO folders(id,name) VALUES ('report-folder','보고')`;
     await sql`INSERT INTO sessions(session_id,folder_id,node_id,metadata) VALUES
@@ -52,7 +43,7 @@ describe("PAS reports on production PostgreSQL schema", () => {
     await sql`UPDATE sessions SET metadata=${sql.json([{type:"persistent_session",value:{enabled:true}},{type:"other",value:"유지"}])} WHERE session_id='pas'`;
     await sql`UPDATE sessions SET metadata='[]' WHERE session_id='normal'`;
   });
-  afterAll(async () => { await sql?.end({ timeout: 2 }); stop?.(); });
+  afterAll(async () => { await stop?.(); });
 
   it("preserves order, replaces completely, rejects the thirteenth and writes no events", async () => {
     for (let n = 0; n < 12; n++) expect((await reports.put('pas',entry(`r${n}`))).ok).toBe(true);

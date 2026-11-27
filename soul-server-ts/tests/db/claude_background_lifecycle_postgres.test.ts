@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ClaudeBackgroundTaskRepository } from
@@ -14,14 +13,13 @@ import { attachClaudeBackgroundProvenance } from
 import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
 import { ClaudeBackgroundTaskLifecycle } from
   "../../src/task/claude_background_task_lifecycle.js";
+import { decidePostgresTests } from "../../../packages/db-schema/scripts/postgres-test-policy.mjs";
 import {
   createFullSchemaPostgresHarness,
-  hasFullSchemaPostgresBackend,
   type FullSchemaPostgresHarness,
 } from "./full_schema_postgres_harness.js";
 
-const describePostgres =
-  hasFullSchemaPostgresBackend || hasDockerBinary() ? describe : describe.skip;
+const describePostgres = decidePostgresTests().backendAvailable ? describe : describe.skip;
 
 describePostgres("Claude background lifecycle PostgreSQL integration", () => {
   let harness: FullSchemaPostgresHarness;
@@ -487,8 +485,4 @@ function deferred<T>() {
 
 async function nextMacrotask(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-function hasDockerBinary(): boolean {
-  return spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
 }

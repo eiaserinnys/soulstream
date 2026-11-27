@@ -1,38 +1,26 @@
-import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { startPostgresTestContainer } from "../../../packages/db-schema/scripts/postgres-test-container.mjs";
+import { openIsolatedPostgres } from "../isolated_postgres_harness.js";
 import { extractRelationalSources } from "../../scripts/attachment-migration/extract_relational.js";
 import { RELATIONAL_SOURCES_EXPORTED } from "../../scripts/attachment-migration/inventory_contract.js";
-import { waitForPostgres } from "../persistent-session-settings-world.js";
 
 const CUTOFF = "2026-10-17T00:00:00.000Z";
 const AFTER = "2026-10-17T00:00:00.001Z";
 
 describe("read-only relational attachment inventory against PostgreSQL", () => {
   let sql: ReturnType<typeof postgres>;
-  let stop: (() => void) | undefined;
+  let stop: (() => Promise<void>) | undefined;
 
   beforeAll(async () => {
-    const container = startPostgresTestContainer({ user: "attachment_inventory_test", password: "attachment_inventory_test", database: "attachment_inventory_test_db" });
-    stop = container.stop;
-    const url = `postgres://attachment_inventory_test:attachment_inventory_test@127.0.0.1:${container.port}/attachment_inventory_test_db`;
-    const bootstrap = postgres(url, { max: 1, onnotice: () => undefined });
-    try {
-      await waitForPostgres(bootstrap);
-      const schema = await readFile(new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8");
-      await bootstrap.unsafe(schema);
-    } finally {
-      await bootstrap.end({ timeout: 2 });
-    }
-    sql = postgres(url, { max: 2, onnotice: () => undefined });
+    const db = await openIsolatedPostgres({ max: 2 });
+    sql = db.sql;
+    stop = db.cleanup;
     expect(Number((await sql`SELECT COUNT(*) AS n FROM cards`)[0]!.n)).toBe(0);
     await sql`INSERT INTO folders(id,name) VALUES ('attachment-inventory-folder','inventory')`;
   }, 90_000);
 
   afterAll(async () => {
-    await sql?.end({ timeout: 2 });
-    stop?.();
+    await stop?.();
   });
 
   it("includes created_at equal to cutoff, excludes later rows, and marks updated rows as drift", async () => {

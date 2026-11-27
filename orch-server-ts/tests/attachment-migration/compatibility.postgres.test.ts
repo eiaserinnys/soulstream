@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { decidePostgresTests } from "../../../packages/db-schema/scripts/postgres-test-policy.mjs";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createFolderContentSqlAdapter } from "../../src/board/folder_content_sql.js";
@@ -13,9 +13,7 @@ import { createLiveAttachmentReadRepository } from "../../src/runtime/live_attac
 import { createLiveDbSqlResolver } from "../../src/runtime/live_db_sql.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "../page/page_postgres_harness.js";
 
-const describePostgres = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0
-  ? describe
-  : describe.skip;
+const describePostgres = decidePostgresTests().backendAvailable ? describe : describe.skip;
 
 const FOLDER_ID = "attachment-legacy-compatibility-folder";
 const CARD_ID = "attachment-legacy-compatibility-card";

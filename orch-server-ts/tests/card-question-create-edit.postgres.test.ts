@@ -1,8 +1,6 @@
-import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { startPostgresTestContainer } from "../../packages/db-schema/scripts/postgres-test-container.mjs";
-import { waitForPostgres } from "./persistent-session-settings-world.js";
+import { openIsolatedPostgres } from "./isolated_postgres_harness.js";
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { serializeCardDetail } from "../src/cards/card_operations.js";
@@ -11,7 +9,7 @@ import { PersistentReportService } from "../src/session/persistent_report_servic
 
 // Same disposable production-schema fixture as card-question-read-contract.postgres.test.ts.
 describe("card question creation and in-place edit", () => {
-  let sql: ReturnType<typeof postgres>, stop: () => void;
+  let sql: ReturnType<typeof postgres>, stop: () => Promise<void>;
   let cards: CardControlPlaneService;
   let reports: PersistentReportService;
   let reader: {
@@ -22,15 +20,9 @@ describe("card question creation and in-place edit", () => {
   const timeline = vi.fn(async () => {});
 
   beforeAll(async () => {
-    const container = startPostgresTestContainer({
-      user: "question_edit_test", password: "question_edit_test", database: "question_edit_test_db",
-    });
-    stop = container.stop;
-    sql = postgres(`postgres://question_edit_test:question_edit_test@127.0.0.1:${container.port}/question_edit_test_db`, {
-      max: 4, onnotice: () => {},
-    });
-    await waitForPostgres(sql);
-    await sql.unsafe(readFileSync(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8"));
+    const db = await openIsolatedPostgres({ max: 4 });
+    sql = db.sql;
+    stop = db.cleanup;
     expect(Number((await sql`SELECT COUNT(*) AS n FROM sessions`)[0]!.n)).toBe(0);
     await sql`INSERT INTO folders(id,name) VALUES('edit-folder','질문 고침')`;
     const adapted = createFolderContentSqlAdapter(sql as never);
@@ -54,7 +46,7 @@ describe("card question creation and in-place edit", () => {
     asked.mockClear();
     timeline.mockClear();
   });
-  afterAll(async () => { await sql?.end({ timeout: 2 }); stop?.(); });
+  afterAll(async () => { await stop?.(); });
 
   async function createCard(title: string, sessionId = "worker"): Promise<string> {
     const result = await cards.createCard({

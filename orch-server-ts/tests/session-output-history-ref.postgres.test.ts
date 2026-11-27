@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { decidePostgresTests } from "../../packages/db-schema/scripts/postgres-test-policy.mjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { EventOutbox } from "../../soul-server-ts/src/upstream/event_outbox.js";
@@ -14,9 +14,7 @@ import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page
 import { prepareCardWorkSchema } from "./card-work-postgres-fixture.js";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
-const describePostgres = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0
-  ? describe
-  : describe.skip;
+const describePostgres = decidePostgresTests().backendAvailable ? describe : describe.skip;
 
 describePostgres("session output attachment history references PostgreSQL contract", () => {
   let harness: PagePostgresHarness;

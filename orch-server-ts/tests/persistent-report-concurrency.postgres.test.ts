@@ -1,8 +1,6 @@
-import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { startPostgresTestContainer } from "../../packages/db-schema/scripts/postgres-test-container.mjs";
-import { waitForPostgres } from "./persistent-session-settings-world.js";
+import { openIsolatedPostgres } from "./isolated_postgres_harness.js";
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import type { SqlClient, FolderDbPort } from "../src/cards/control_plane/card_types.js";
@@ -52,21 +50,15 @@ const entry = (key: string, card_numbers: number[] = []) => ({
 describe("PAS report commit and lock ordering on production schema", () => {
   let sql: ReturnType<typeof postgres>;
   let adapted: SqlClient;
-  let stop: () => void;
+  let stop: () => Promise<void>;
   beforeAll(async () => {
-    const container = startPostgresTestContainer({
-      user: "report_order_test", password: "report_order_test", database: "report_order_test_db",
-    });
-    stop = container.stop;
-    sql = postgres(`postgres://report_order_test:report_order_test@127.0.0.1:${container.port}/report_order_test_db`, {
-      max: 6, onnotice: () => undefined, connection: { statement_timeout: 15000 },
-    });
-    await waitForPostgres(sql);
-    await sql.unsafe(readFileSync(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8"));
+    const db = await openIsolatedPostgres({ max: 6, connection: { statement_timeout: 15000 } });
+    sql = db.sql;
+    stop = db.cleanup;
     expect(Number((await sql`SELECT COUNT(*) AS n FROM sessions`)[0]!.n)).toBe(0);
     adapted = createFolderContentSqlAdapter(sql as never);
   }, 90_000);
-  afterAll(async () => { await sql?.end({ timeout: 2 }); stop?.(); });
+  afterAll(async () => { await stop?.(); });
 
   async function world(id: string, publish: PublishPersistentReports) {
     await sql`INSERT INTO folders(id,name) VALUES(${id},'보고 실행 계약')`;

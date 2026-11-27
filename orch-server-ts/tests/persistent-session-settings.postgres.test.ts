@@ -1,56 +1,41 @@
-import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
 import type { FastifyInstance } from "fastify";
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { startPostgresTestContainer } from "../../packages/db-schema/scripts/postgres-test-container.mjs";
+import { decidePostgresTests } from "../../packages/db-schema/scripts/postgres-test-policy.mjs";
+import { openIsolatedPostgres } from "./isolated_postgres_harness.js";
 import {
   NODE_ID,
   PAS_AGENT,
   buildPersistentSettingsApp,
   createPersistentSettingsState,
-  waitForPostgres,
 } from "./persistent-session-settings-world.js";
 
 // PAS settings API against a real PostgreSQL schema. The world (real orch service/routes/router/registry,
 // real worker control and handlers, mocked model catalog and transport socket) lives in
 // persistent-session-settings-world.ts.
 
-const hasDocker = spawnSync("docker", ["info"], { stdio: "ignore", timeout: 5_000 }).status === 0;
-const describePostgres = hasDocker ? describe : describe.skip;
+const describePostgres = decidePostgresTests().backendAvailable ? describe : describe.skip;
 
 type Json = Record<string, unknown>;
 
 describePostgres("PAS settings API on PostgreSQL", () => {
   let sql: ReturnType<typeof postgres>;
-  let stopContainer: () => void;
+  let stopContainer: () => Promise<void>;
   let app: FastifyInstance;
   const state = createPersistentSettingsState();
   const { metadataWrites, failOnce, createdByRuntime, tasks } = state;
 
   beforeAll(async () => {
-    const container = startPostgresTestContainer({
-      user: "pas_settings_test",
-      password: "pas_settings_test",
-      database: "pas_settings_test_db",
-    });
-    stopContainer = container.stop;
-    sql = postgres(
-      `postgres://pas_settings_test:pas_settings_test@127.0.0.1:${container.port}/pas_settings_test_db`,
-      { max: 4, onnotice: () => undefined },
-    );
-    await waitForPostgres(sql);
-    await sql.unsafe(readFileSync(fileURLToPath(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url)), "utf8"));
+    const db = await openIsolatedPostgres({ max: 4 });
+    sql = db.sql;
+    stopContainer = db.cleanup;
     app = await buildPersistentSettingsApp(sql, state);
   }, 90_000);
 
   afterAll(async () => {
     await app?.close();
-    await sql?.end({ timeout: 2 });
-    stopContainer?.();
+    await stopContainer?.();
   });
 
   beforeEach(async () => {

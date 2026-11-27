@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from
@@ -18,17 +17,16 @@ import { CompletionDeliveryCoordinator } from
   "../../src/task/completion_delivery_coordinator.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
+import { decidePostgresTests } from "../../../packages/db-schema/scripts/postgres-test-policy.mjs";
 import {
   createFullSchemaPostgresHarness,
-  hasFullSchemaPostgresBackend,
   type FullSchemaPostgresHarness,
 } from "./full_schema_postgres_harness.js";
 import { configureTestSessionDataHost } from "../helpers/session_data_test_host.js";
 import { startSessionPostgresMcpHost } from "../helpers/session_postgres_mcp_host.js";
 import { appendTestEvent } from "../helpers/append_test_event.js";
 
-const describePostgres =
-  hasFullSchemaPostgresBackend || hasDockerBinary() ? describe : describe.skip;
+const describePostgres = decidePostgresTests().backendAvailable ? describe : describe.skip;
 const logger = pino({ level: "silent" });
 
 describePostgres("child completion observation PostgreSQL integration", () => {
@@ -347,7 +345,3 @@ describePostgres("child completion observation PostgreSQL integration", () => {
     return terminalEventId;
   }
 });
-
-function hasDockerBinary(): boolean {
-  return spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
-}

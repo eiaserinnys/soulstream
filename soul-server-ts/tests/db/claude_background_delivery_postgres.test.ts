@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import pino from "pino";
@@ -38,14 +37,13 @@ import { createInterventionCommandFamily } from
   "../../src/upstream/intervention_command_family.js";
 import { TaskRuntimeCommands } from
   "../../src/upstream/task_runtime_commands.js";
+import { decidePostgresTests } from "../../../packages/db-schema/scripts/postgres-test-policy.mjs";
 import {
   createFullSchemaPostgresHarness,
-  hasFullSchemaPostgresBackend,
   type FullSchemaPostgresHarness,
 } from "./full_schema_postgres_harness.js";
 
-const describePostgres =
-  hasFullSchemaPostgresBackend || hasDockerBinary() ? describe : describe.skip;
+const describePostgres = decidePostgresTests().backendAvailable ? describe : describe.skip;
 
 const TERMINAL_VARIANTS: ReadonlyArray<{
   name: string;
@@ -875,8 +873,4 @@ function updatedTerminal(
       ...(error ? { error } : {}),
     },
   };
-}
-
-function hasDockerBinary(): boolean {
-  return spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
 }

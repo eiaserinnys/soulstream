@@ -1,9 +1,7 @@
-import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import type { FastifyRequest } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { startPostgresTestContainer } from "../../packages/db-schema/scripts/postgres-test-container.mjs";
-import { waitForPostgres } from "./persistent-session-settings-world.js";
+import { openIsolatedPostgres } from "./isolated_postgres_harness.js";
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
@@ -13,17 +11,15 @@ import { applyCardQuestionReply } from "../src/session/card_question_reply.js";
 
 // Same disposable production-schema fixture as persistent-report.postgres.test.ts.
 describe("card question answers and author withdrawal", () => {
-  let sql: ReturnType<typeof postgres>, stop: () => void;
+  let sql: ReturnType<typeof postgres>, stop: () => Promise<void>;
   let cards: CardControlPlaneService, reports: PersistentReportService, dispatcher: CardDispatcher;
   const human = { actorKind: "user" as const, actorSessionId: null, actorUserId: "director" };
   const messages = vi.fn(async (_sessionId: string, _text: string) => {});
   const warn = vi.fn();
   beforeAll(async () => {
-    const container = startPostgresTestContainer({ user: "question_rules_test", password: "question_rules_test", database: "question_rules_test_db" });
-    stop = container.stop;
-    sql = postgres(`postgres://question_rules_test:question_rules_test@127.0.0.1:${container.port}/question_rules_test_db`, { max: 4, onnotice: () => {} });
-    await waitForPostgres(sql);
-    await sql.unsafe(readFileSync(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8"));
+    const db = await openIsolatedPostgres({ max: 4 });
+    sql = db.sql;
+    stop = db.cleanup;
     expect(Number((await sql`SELECT COUNT(*) AS n FROM sessions`)[0]!.n)).toBe(0);
     await sql`INSERT INTO folders(id,name) VALUES('question-rules','질문 규칙')`;
     const adapted = createFolderContentSqlAdapter(sql as never);
@@ -48,7 +44,7 @@ describe("card question answers and author withdrawal", () => {
       ('unrelated','question-rules','node','worker','running','[]')`;
     messages.mockClear(); warn.mockClear();
   });
-  afterAll(async () => { await dispatcher?.drain(); await sql?.end({ timeout: 2 }); stop?.(); });
+  afterAll(async () => { await dispatcher?.drain(); await stop?.(); });
 
   async function ask(assigned: boolean) {
     const cardId = (await cards.createCard({ actorKind: "agent", actorSessionId: "pas", folderId: "question-rules", title: "질문", request: "확인",

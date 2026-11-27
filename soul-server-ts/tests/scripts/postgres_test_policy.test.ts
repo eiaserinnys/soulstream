@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   decidePostgresTests,
   isPostgresTestFile,
+  postgresVitestOptions,
   requirePostgresBackendInCI,
   TEST_SCHEMA_PATTERN,
 } from "../../../packages/db-schema/scripts/postgres-test-policy.mjs";
@@ -46,10 +47,34 @@ describe("PostgreSQL test policy", () => {
     expect(docker).not.toHaveBeenCalled();
   });
 
+  it("excludes Docker-only files, not general ones, when a supplied DB has no working Docker outside CI", () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const noDocker = postgresVitestOptions({ TEST_DATABASE_URL: "postgres://test" }, () => false);
+      expect(noDocker.exclude).toContain("**/*.docker.postgres.test.ts");
+      expect(noDocker.exclude).not.toContain("**/*.postgres.test.ts");
+      const withDocker = postgresVitestOptions({ TEST_DATABASE_URL: "postgres://test" }, () => true);
+      expect(withDocker.exclude).not.toContain("**/*.docker.postgres.test.ts");
+      expect(withDocker.exclude).not.toContain("**/*.postgres.test.ts");
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it("never excludes Docker-only files in CI", () => {
+    const docker = vi.fn(() => false);
+    expect(postgresVitestOptions({ CI: "true" }, docker).exclude).not.toContain("**/*.docker.postgres.test.ts");
+    docker.mockClear();
+    expect(postgresVitestOptions({ CI: "true", TEST_DATABASE_URL: "postgres://test" }, docker).exclude)
+      .not.toContain("**/*.docker.postgres.test.ts");
+    expect(docker).not.toHaveBeenCalled();
+  });
+
   it("recognizes the four filename forms and only generated test schema names", () => {
     for (const name of ["x.postgres.test.ts", "x-postgres.test.ts", "x_postgres.test.ts", "x.postgres.integration.test.ts"]) {
       expect(isPostgresTestFile(name)).toBe(true);
     }
+    expect(isPostgresTestFile("x.docker.postgres.test.ts")).toBe(true);
     expect(isPostgresTestFile("x.integration.test.ts")).toBe(false);
     const schema = new RegExp(TEST_SCHEMA_PATTERN);
     for (const name of ["page_1700000000000_abc123", "board_yjs_seed_1700000000000_abcd"]) expect(schema.test(name)).toBe(true);

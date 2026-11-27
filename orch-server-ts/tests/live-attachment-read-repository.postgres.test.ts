@@ -1,13 +1,11 @@
-import { spawnSync } from "node:child_process";
+import { decidePostgresTests } from "../../packages/db-schema/scripts/postgres-test-policy.mjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createLiveDbSqlResolver } from "../src/runtime/live_db_sql.js";
 import { createLiveAttachmentReadRepository } from "../src/runtime/live_attachment_read_repository.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 
-const describePostgres = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0
-  ? describe
-  : describe.skip;
+const describePostgres = decidePostgresTests().backendAvailable ? describe : describe.skip;
 
 describePostgres("live attachment read repository PostgreSQL contract", () => {
   let harness: PagePostgresHarness;
