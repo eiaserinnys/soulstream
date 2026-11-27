@@ -136,6 +136,12 @@ class Fake:
         self.calls: list[tuple[str, str]] = []
         self.held_bootstrap = None
         self.login_posts = 0
+        # Antigravity 설치 스위치(GET/PUT /api/admin/settings/antigravity-backend). 읽기는 ok | fail | hold, 저장은 ok | fail.
+        self.agy = {"enabled": False, "version": 0}
+        self.agy_read = "ok"
+        self.agy_put = "ok"
+        self.agy_puts: list[dict] = []
+        self.held_agy: list = []
 
     def handle(self, route):
         request = route.request
@@ -192,7 +198,9 @@ class Fake:
             if self.hold_usage:
                 self.held_usage.append(route)  # 불러오는 중 화면을 찍는 동안 응답하지 않는다.
                 return
-            return route.fulfill(json=usage_summary(self.login_supported))
+            return route.fulfill(json=self.usage_body())
+        if path == "/api/usage/refresh":
+            return route.fulfill(json=self.refresh_usage())
         if path == "/api/config/settings":
             return route.fulfill(json={"categories": []})
         if path.endswith("/claude-auth/accounts"):
@@ -203,12 +211,20 @@ class Fake:
             return route.fulfill(json={"account": {"email": "qa@example.test", "display_name": "QA", "has_claude_max": True}})
         if path.startswith("/api/claude-auth/central"):
             return route.fulfill(json={"mode": "pool", "accounts": [], "pool": None, "fable_pool": None, "default_receive": True, "nodes": {}, "effective": []})
+        if path == "/api/admin/settings/antigravity-backend":
+            return self.antigravity_backend(route, method, request)
         if path == "/cogito/briefs":
             return route.fulfill(json={"nodes": []})
         parts = path.split("/")
         if "agent-logins" in parts:
             return self.agent_login(route, method, parts)
         return route.continue_()
+
+    def usage_body(self):
+        return usage_summary(self.login_supported)
+
+    def refresh_usage(self):
+        return self.usage_body()
 
     def user_preferences(self, route, method, request):
         """서버 serializePreferences와 같은 꼴: 올린 그림이 있어도 번들 경로의 customImage는 덮어쓰지 않는다."""
@@ -224,6 +240,24 @@ class Fake:
         if background and wallpaper.get("mode") == "photo" and not BUNDLED_WALLPAPER.match(wallpaper.get("customImage", "")):
             wallpaper["customImage"] = background
         return route.fulfill(json={"email": "qa@example.test", "preferences": {"appearance": "system", "wallpaper": wallpaper}, "hasBackground": state["uploaded"], "backgroundUrl": background, "updatedAt": None})
+
+    def antigravity_backend(self, route, method, request):
+        """서버 AntigravityBackendSettings와 같은 꼴. 켜는 PUT은 확인 문구가 있어야 받고, 저장되면 버전이 오른다."""
+        if method == "PUT":
+            body = request.post_data_json or {}
+            self.agy_puts.append(body)
+            if self.agy_put == "fail":
+                return route.fulfill(status=500, json={"detail": {"error": {"code": "X", "message": "boom"}}})
+            value = body.get("value", {})
+            if value.get("enabled") and value.get("acknowledgement") != "인지했습니다":
+                return route.fulfill(status=422, json={"detail": {"error": {"code": "ANTIGRAVITY_ACKNOWLEDGEMENT_REQUIRED", "message": "x"}}})
+            self.agy = {"enabled": bool(value.get("enabled")), "version": self.agy["version"] + 1}
+        elif self.agy_read == "fail":
+            return route.fulfill(status=503, json={"detail": "down"})
+        elif self.agy_read == "hold":
+            self.held_agy.append(route)  # 불러오는 중 화면을 찍는 동안 응답하지 않는다.
+            return
+        return route.fulfill(json={"value": {"enabled": self.agy["enabled"]}, "version": self.agy["version"], "source": "settings" if self.agy["version"] else "default"})
 
     def agent_login(self, route, method, parts):
         tail = parts[parts.index("agent-logins") + 1:]
@@ -255,6 +289,34 @@ class Fake:
         if self.nodes == "many":
             return [NODE, {**NODE, "nodeId": "eias-linegames", "port": 3106}, {**NODE, "nodeId": "silent-manari-ts", "port": 3107, "status": "disconnected"}]
         return [NODE]
+
+
+class OrchLikeFake(Fake):
+    """사용량 요약이 Antigravity 스위치를 따른다(서버 getSummary와 같은 꼴).
+
+    꺼져 있으면 antigravity는 null이다. 꺼진 동안 모은 값에는 antigravity가 not_configured로 남아 있어, 켠 직후의
+    GET /api/usage/summary는 not_configured를 주고, POST /api/usage/refresh(새로 모으기) 뒤에야 auto로 돌아온다.
+    """
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.collected_agy = "not_configured"
+        self.refresh_posts = 0
+
+    def usage_body(self):
+        body = usage_summary(self.login_supported)
+        providers = body["nodes"][0]["providers"]
+        if not self.agy["enabled"]:
+            providers["antigravity"] = None
+        elif self.collected_agy == "not_configured":
+            providers["antigravity"] = provider("not_configured", login_supported=True)
+        return body
+
+    def refresh_usage(self):
+        self.refresh_posts += 1
+        if self.agy["enabled"]:
+            self.collected_agy = "auto"
+        return self.usage_body()
 
 
 def new_page(browser, base, fake, width, height=900, theme="dark", preferences=None, scale=1):

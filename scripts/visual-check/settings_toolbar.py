@@ -18,6 +18,7 @@ from playwright.sync_api import expect, sync_playwright  # noqa: E402
 from settings_toc import capture_settings_toc, measure_direct_open, measure_operations, write_operations as write_toc_operations  # noqa: E402
 from settings_toolbar_r2 import capture_r2, pas_empty_nonadmin, write_operations  # noqa: E402
 from settings_toolbar_r3 import capture_r3  # noqa: E402
+from settings_toolbar_agy import capture_agy, write_agy_operations  # noqa: E402
 from settings_toolbar_fakes import CHECKS, assert_connect_guide, INDEX, Fake, SESSION_ID, FAKE_PASTED_CODE, FAKE_USER_CODE, assert_no_secret_output, check, DIST, flow, listen, new_page, open_settings, serve, shot, soon, toolbar_metrics, wait_for_call  # noqa: E402
 
 def capture_toolbars(browser, base, out: Path, prefix: str, atom_expected: bool):
@@ -250,15 +251,30 @@ def capture_empty_states(browser, base, out: Path, prefix: str):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
-    parser.add_argument("--baseline-dist", required=True)
+    parser.add_argument("--baseline-dist", default=None)
     parser.add_argument("--only-r2", action="store_true", help="2차와 3차 보강 그림과 조작 결과만 찍는다(반복 확인용)")
     parser.add_argument("--only-empty", action="store_true", help="연결 필요 빈 상태(관리자와 비관리자)만 찍는다(카드 #1905 반복 확인용)")
     parser.add_argument("--only-r3", action="store_true", help="3차 보강 그림만 찍는다(조작 결과 파일은 쓰지 않는다)")
     parser.add_argument("--only-toc", action="store_true", help="카드 #1883 설정창 목차만 이전 빌드(baseline-)와 이번 빌드로 찍고 조작 결과(operations.md)를 쓴다")
+    parser.add_argument("--only-agy", action="store_true", help="카드 #1926 Antigravity 스위치와 약관 확인 대화상자만 찍고 조작 결과(operations.md)를 쓴다(기준선 빌드가 필요 없다)")
     parser.add_argument("--dist", default=None, help="찍을 빌드 폴더. 고치기 전 코드의 빌드를 줘서 3차 단언이 실패하는지 볼 때 쓴다")
     args = parser.parse_args()
     out = Path(args.output).resolve()
     out.mkdir(parents=True, exist_ok=True)
+    if args.only_agy:
+        server, base = serve(Path(args.dist) if args.dist else DIST)
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                capture_agy(browser, base, out)
+                browser.close()
+        finally:
+            server.shutdown()
+        write_agy_operations(out)
+        write_index(out)
+        return
+    if not args.baseline_dist:
+        parser.error("--baseline-dist is required unless --only-agy is given")
     if not args.only_toc:
         keep_first_round(out)
     server, base = serve(Path(args.dist) if args.dist else DIST)

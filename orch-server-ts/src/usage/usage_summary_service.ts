@@ -88,6 +88,7 @@ export type UsageSummarySnapshot = {
 
 export type UsageSummaryRegistry = NodeCommandRegistryPort & {
   readonly listConnectedNodes: () => readonly NodeConnectionSnapshot[];
+  readonly isAntigravityEnabled?: () => boolean;
 };
 
 export type UsageSummaryBridge = Pick<SessionCommandTransportBridge, "sendPendingCommand">;
@@ -227,7 +228,9 @@ export class UsageSummaryService {
       let snapshot: ProviderUsageSnapshot;
       let fetchedAt: string;
       if (previous === null) {
-        snapshot = await this.fetchNodeSnapshot(nodeId);
+        snapshot = this.antigravityEnabled()
+          ? await this.fetchNodeSnapshot(nodeId)
+          : await this.fetchSnapshotWithoutAntigravity(node);
         fetchedAt = this.now().toISOString();
         for (const provider of USAGE_SUMMARY_PROVIDER_NAMES) {
           if (snapshot.providers[provider].status !== "error") {
@@ -453,6 +456,7 @@ export class UsageSummaryService {
     const summary = withLoginSupport(
       summarizeNode(state, this.staleAfterMs, this.now()),
       supportsAgentLogin(node?.capabilities),
+      this.antigravityEnabled(),
     );
     if (
       node === undefined
@@ -520,6 +524,22 @@ export class UsageSummaryService {
     return requests;
   }
 
+  private antigravityEnabled(): boolean {
+    return this.registry.isAntigravityEnabled?.() !== false;
+  }
+
+  /** The node-side full snapshot would probe Antigravity, so ask for the other providers one by one. */
+  private async fetchSnapshotWithoutAntigravity(node: NodeConnectionSnapshot): Promise<ProviderUsageSnapshot> {
+    const [claude, codex, opencodeGo] = await Promise.all([
+      this.fetchNodeProvider(node.nodeId, "claude"),
+      this.fetchNodeProvider(node.nodeId, "codex"),
+      advertisesOpencodeGoUsage(node)
+        ? this.fetchNodeProvider(node.nodeId, "opencode_go")
+        : Promise.resolve(NOT_CONFIGURED_PROVIDER_LIMITS),
+    ]);
+    return { providers: { claude, codex, antigravity: NOT_CONFIGURED_PROVIDER_LIMITS, opencode_go: opencodeGo } };
+  }
+
   private async fetchNodeSnapshot(nodeId: string): Promise<ProviderUsageSnapshot> {
     const response = await this.sendProviderUsageCommand(nodeId);
     return parseProviderUsageSnapshot(response.data);
@@ -557,14 +577,14 @@ export class UsageSummaryService {
   }
 }
 
-function withLoginSupport(summary: UsageSummaryNode, supported: boolean): UsageSummaryNode {
+function withLoginSupport(summary: UsageSummaryNode, supported: boolean, antigravityEnabled: boolean): UsageSummaryNode {
   const { codex, antigravity } = summary.providers;
   return {
     ...summary,
     providers: {
       ...summary.providers,
       codex: codex === null ? null : { ...codex, login_supported: supported },
-      antigravity: antigravity === null ? null : { ...antigravity, login_supported: supported },
+      antigravity: antigravity === null || !antigravityEnabled ? null : { ...antigravity, login_supported: supported },
     },
   };
 }

@@ -67,7 +67,7 @@ export function PersistentSessionEmptyState({ api, defaults, isAdmin, onOpenCodi
         : <p>기본 영구 세션을 만들기 위해<br />관리자가 코딩 에이전트에 로그인해야 합니다.</p>}
       {isAdmin ? <>
         <ol className="persistent-empty-steps">
-          <li>설정에서 Claude, Codex, Antigravity 가운데 하나를 연결합니다</li>
+          <li>설정에서 Claude나 Codex 가운데 하나를 연결합니다</li>
           <li>안내대로 로그인하고 설정을 닫습니다</li>
         </ol>
         <Button onClick={onOpenCodingAgents}>코딩 에이전트 연결</Button>

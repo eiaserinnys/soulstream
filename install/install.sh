@@ -1616,7 +1616,7 @@ refresh_model_presets() {
     if response=$(curl --max-time 60 -fsS -X POST -H "@$header" http://127.0.0.1:5200/api/usage/refresh 2>/dev/null); then
       if result=$(jq -r '
         (first(.nodes[]? | select(.nodeId == "local")) // null) as $node |
-        ["claude", "codex", "antigravity", "opencode_go"] as $names |
+        ["claude", "codex", "opencode_go"] as $names |
         ($node.providers // {}) as $providers |
         (if $node != null and $node.stale == false and
             all($names[]; . as $name | $providers[$name] != null and
@@ -1711,8 +1711,14 @@ finish_message() {
       if [[ -n "$line" ]]; then printf '  %s\n' "$line"; fi
     done <<< "$MANAGED_CONFIG_WARNINGS"
   fi
-  printf 'Login: connect Claude, Codex, and Antigravity in the dashboard under Settings → 코딩 에이전트.\n'
-  if has_backend codex || has_backend antigravity; then printf 'SSH alternative: Codex with "sudo -Hu soulstream /usr/local/bin/codex login --device-auth" (enable device code login in ChatGPT security settings), Antigravity by running ~/.local/bin/agy as the soulstream user.\n'; fi
+  if has_backend antigravity; then
+    printf 'Login: connect Claude, Codex, and Antigravity in the dashboard under Settings → 코딩 에이전트.\n'
+    printf "Antigravity stays off until you turn it on under Settings → 코딩 에이전트 and accept Google's terms.\n"
+    printf 'SSH alternative: Codex with "sudo -Hu soulstream /usr/local/bin/codex login --device-auth" (enable device code login in ChatGPT security settings), Antigravity by running ~/.local/bin/agy as the soulstream user.\n'
+  else
+    printf 'Login: connect Claude and Codex in the dashboard under Settings → 코딩 에이전트.\n'
+    if has_backend codex; then printf 'SSH alternative: Codex with "sudo -Hu soulstream /usr/local/bin/codex login --device-auth" (enable device code login in ChatGPT security settings).\n'; fi
+  fi
   printf 'After login, presets update within five minutes. To refresh now as root:\n'
   printf '%s\n' "awk -F= '/^AUTH_BEARER_TOKEN=/{print \"Authorization: Bearer \" substr(\$0,index(\$0,\"=\")+1)}' $root/.env.orch | curl -fsS -X POST -H @- http://127.0.0.1:5200/api/usage/refresh"
   if [[ "${PRESET_REFRESH_PENDING:-false}" == true ]]; then printf 'Model preset status is not confirmed yet; it updates within five minutes.\n'; fi

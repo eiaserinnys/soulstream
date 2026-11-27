@@ -27,6 +27,24 @@ afterEach(() => {
 });
 
 describe("preflightModelPreset", () => {
+  it("orch 목록 조회가 성공했는데 없는 Antigravity 프리셋은 거부하고, 조회 실패면 통과시킨다", async () => {
+    const isAntigravityPreset = (id: string) => id === "gemini-4-argon";
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      model_presets: [{ id: "claude-opus", available: true, reason: null }],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const input = { nodeId: "node-one", orch, logger: makeLogger(), isAntigravityPreset };
+
+    const rejected = await preflightModelPreset({ ...input, selectedPresetId: "gemini-4-argon" });
+    expect(rejected).toContain("gemini-4-argon");
+    expect(rejected).toContain("Antigravity");
+    await expect(preflightModelPreset({ ...input, selectedPresetId: "claude-opus" })).resolves.toBeNull();
+    await expect(preflightModelPreset({ ...input, selectedPresetId: "unlisted-claude" })).resolves.toBeNull();
+
+    fetchMock.mockRejectedValue(new Error("orch down"));
+    await expect(preflightModelPreset({ ...input, selectedPresetId: "gemini-4-argon" })).resolves.toBeNull();
+  });
+
   it("limit_rejected preset은 사유와 해제 시각을 포함한 오류를 돌려준다", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
       model_presets: [{
@@ -337,5 +355,28 @@ describe("preflightModelPresetFallbacks", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("꺼진 Antigravity가 주 모델이고 대체가 모두 쓸 수 없으면 거부하고, 대체가 쓸 수 있으면 대체를 고르며, 조회 실패면 통과시킨다", async () => {
+    const isAntigravityPreset = (id: string) => id === "gemini-4-argon";
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      model_presets: [availability("claude-opus", false, null, "limit_rejected")],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const input = {
+      nodeId: "node-one", orch, logger: makeLogger(), initialPresetId: "gemini-4-argon",
+      fallbackPresetIds: ["claude-opus"], isAntigravityPreset,
+    };
+
+    const rejected = await preflightModelPresetFallbacks(input);
+    expect(rejected.chosenPresetId).toBe("gemini-4-argon");
+    expect(rejected.error).toContain("gemini-4-argon");
+    expect(rejected.error).toContain("Antigravity");
+
+    fetchMock.mockResolvedValue(jsonResponse({ model_presets: [availability("claude-opus", true, 50)] }));
+    await expect(preflightModelPresetFallbacks(input)).resolves.toEqual({ chosenPresetId: "claude-opus", error: null });
+
+    fetchMock.mockRejectedValue(new Error("orch down"));
+    await expect(preflightModelPresetFallbacks(input)).resolves.toEqual({ chosenPresetId: "gemini-4-argon", error: null });
   });
 });

@@ -55,7 +55,7 @@ export const CONFIG_TABS: readonly ConfigTabDefinition[] = [
   { id: "agents", label: "에이전트 프로필", description: "에이전트 프로필과 기본 실행 환경을 관리합니다.", group: "agents", adminOnly: true, icon: Bot },
   { id: "mcp", label: "MCP", description: "중앙 MCP 서버와 프로필, 인증 키를 관리합니다.", group: "agents", adminOnly: true, icon: Plug },
   { id: "skills", label: "스킬과 카탈로그", description: "스킬과 카탈로그의 연결, 쓰이는 곳, 검증 결과를 봅니다.", group: "agents", adminOnly: true, icon: Library },
-  { id: "coding_agents", label: "코딩 에이전트 연결", description: "노드마다 Claude, Codex, Antigravity 로그인을 연결합니다.", group: "agents", adminOnly: true, icon: TerminalSquare },
+  { id: "coding_agents", label: "코딩 에이전트 연결", description: "노드마다 코딩 에이전트 로그인을 연결합니다.", group: "agents", adminOnly: true, icon: TerminalSquare },
   { id: "git_repos", label: "Git과 저장소", description: "노드마다 Git 사용자, SSH 키, 저장소를 설정합니다.", group: "agents", adminOnly: true, icon: GitBranch },
   { id: "nodes", label: "노드", description: "작업을 실행할 기기와 연결 상태를 확인합니다.", group: "agents", adminOnly: false, icon: Server },
 

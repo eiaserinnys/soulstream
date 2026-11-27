@@ -631,7 +631,7 @@ describe("TaskExecutor persistent decision wiring", () => {
     await firstExecution;
     await task.executionPromise;
 
-    expect(fetchUsage).toHaveBeenCalledOnce();
+    expect(fetchUsage).toHaveBeenCalledTimes(2);
     expect(task.status).toBe("completed");
   });
 
@@ -1005,7 +1005,7 @@ describe("TaskExecutor persistent decision wiring", () => {
       rule: "limit_hit.switch",
       inputs_snapshot: expect.objectContaining({ limit_reset_at: resetAt }),
     });
-    expect(runtime.providerUsage.fetchUsage).toHaveBeenCalledOnce();
+    expect(runtime.providerUsage.fetchUsage).toHaveBeenCalledTimes(2);
 
     const decisionNow = new Date((decision?.inputs_snapshot as Record<string, unknown>).now as string);
     const schedule = resumeScheduleRuntime.getSchedule();

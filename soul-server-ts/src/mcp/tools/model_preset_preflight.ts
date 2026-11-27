@@ -14,12 +14,15 @@ type ModelPresetLookup = {
 type ModelPresetPreflightInput = ModelPresetLookup & {
   logger: McpRuntime["logger"];
   selectedPresetId: string | undefined;
+  /** Whether this node's catalogue lists the preset under the Antigravity backend. */
+  isAntigravityPreset?: (presetId: string) => boolean;
 };
 
 type ModelPresetFallbackPreflightInput = ModelPresetLookup & {
   logger: McpRuntime["logger"];
   initialPresetId: string | undefined;
   fallbackPresetIds: readonly string[];
+  isAntigravityPreset?: (presetId: string) => boolean;
 };
 
 /** 선택 계산에 필요한 advertised preset의 정규화 형태. */
@@ -88,6 +91,10 @@ function isWellFormedPresetEntry(preset: Record<string, unknown>): boolean {
     );
 }
 
+function antigravityDisabledMessage(nodeId: string, presetId: string): string {
+  return `Model preset '${presetId}' is unavailable on node ${nodeId}: Antigravity is disabled in settings`;
+}
+
 /** limit_rejected 항목이면 생성 전 차단 메시지를 돌려준다. */
 function limitRejectionMessage(
   nodeId: string,
@@ -111,6 +118,7 @@ export async function preflightModelPreset({
   orch,
   logger,
   selectedPresetId,
+  isAntigravityPreset,
 }: ModelPresetPreflightInput): Promise<string | null> {
   if (selectedPresetId === undefined) return null;
 
@@ -128,6 +136,9 @@ export async function preflightModelPreset({
   const preset = presets.find(
     (candidate) => isRecord(candidate) && candidate.id === selectedPresetId,
   );
+  if (preset === undefined && isAntigravityPreset?.(selectedPresetId)) {
+    return antigravityDisabledMessage(nodeId, selectedPresetId);
+  }
   if (!isRecord(preset) || !isWellFormedPresetEntry(preset)) return warnAndContinue();
 
   return limitRejectionMessage(nodeId, selectedPresetId, preset);
@@ -144,6 +155,7 @@ export async function preflightModelPresetFallbacks({
   logger,
   initialPresetId,
   fallbackPresetIds,
+  isAntigravityPreset,
 }: ModelPresetFallbackPreflightInput): Promise<{
   chosenPresetId: string | undefined;
   error: string | null;
@@ -172,6 +184,9 @@ export async function preflightModelPresetFallbacks({
   const chosen = presets.find(
     (candidate) => isRecord(candidate) && candidate.id === chosenPresetId,
   );
+  if (chosen === undefined && isAntigravityPreset?.(chosenPresetId)) {
+    return { chosenPresetId, error: antigravityDisabledMessage(nodeId, chosenPresetId) };
+  }
   if (!isRecord(chosen) || !isWellFormedPresetEntry(chosen)) {
     return warnAndUseInitial();
   }

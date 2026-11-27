@@ -1,6 +1,7 @@
 import { warnWhenProductionHasNoLogin } from "./auth/first_login_access.js";
 import { SkillLintReportStore } from "./skills/skill_lint_report_store.js";
 import { PersistentDefaultsSettings } from "./settings/persistent_defaults_settings.js";
+import { AntigravityBackendSettings, seedAntigravityBackend } from "./settings/antigravity_backend_settings.js";
 import { McpCentralSyncService } from "./mcp_central/sync_service.js";
 import { createMcpTestPreviewService } from "./mcp_central/test_preview_service.js";
 import { createMcpCentralRepository } from "./mcp_central/repository.js";
@@ -366,8 +367,22 @@ export async function createLiveProductionApplication(
   const configProvider = createEnvironmentConfigProvider(config);
   const sqlResolver = overrides.sqlResolver ??
     createLiveDbSqlResolver({ databaseUrl: config.database_url });
+  const antigravityBackend = new AntigravityBackendSettings(
+    async () => await sqlResolver.resolveSql() as unknown as SqlClient, context.warn,
+  );
+  try {
+    await seedAntigravityBackend(
+      await sqlResolver.resolveSql() as unknown as SqlClient,
+      overrides.modelCatalog.snapshot().presets.filter(preset => preset.backend === "antigravity").map(preset => preset.id),
+      message => context.warn(message),
+    );
+  } catch (error) {
+    context.warn(`Failed to seed Antigravity backend setting: ${String(error)}`);
+  }
+  await antigravityBackend.start();
   const persistentDefaults = new PersistentDefaultsSettings(
     async () => await sqlResolver.resolveSql() as unknown as SqlClient, overrides.modelCatalog, context.warn,
+    () => antigravityBackend.enabled(),
   );
   await persistentDefaults.start();
   const searchDbConnectionFactory = createLiveSearchDbConnectionFactory({
@@ -408,7 +423,7 @@ export async function createLiveProductionApplication(
     (sessionId, event) => appendReportTimeline(sessionId, event),
   );
   const recurringJobRepository = new SqlRecurringJobRepository(sqlResolver);
-  const registry = new InMemoryNodeRegistry();
+  const registry = new InMemoryNodeRegistry({ antigravityEnabled: () => antigravityBackend.enabled() });
   let backgroundActive = false;
   const nodeRecoveryTasks = new Set<Promise<void>>();
   let cardDispatchRuntime: Awaited<ReturnType<typeof createCardDispatchRuntime>> | undefined;
@@ -865,6 +880,7 @@ export async function createLiveProductionApplication(
       processEnv: ephemeralProcessEnv,
     }),
     antigravityGenerator: antigravityEphemeralExecutor,
+    antigravityEnabled: () => antigravityBackend.enabled(),
   };
   const ownedAgentRepository = new SqlOwnedAgentRepository(sqlResolver);
   const ownedAgentService = new OwnedAgentService(ownedAgentRepository,
@@ -1223,6 +1239,7 @@ export async function createLiveProductionApplication(
       bundleRepository: providers.agentProfileRoutes.bundleRepository,
     },
     persistentDefaultsRoutes: { ...providers.adminUsersRoutes.provider, ...orchestrationAccess, service: persistentDefaults },
+    antigravityBackendRoutes: { ...providers.adminUsersRoutes.provider, service: antigravityBackend },
     cardDispatchSettingsRoutes:cardDispatchRuntime.settingsRoutes,
     cardOrchestrationRoutes: {
       ...providers.adminUsersRoutes.provider,
@@ -1495,6 +1512,7 @@ export async function createLiveProductionApplication(
       await runShutdownStep("turn_summary_drain", () => turnSummaryPipeline?.drain());
     }
     persistentDefaults.close();
+    antigravityBackend.close();
     await runShutdownStep("push_notifier_close", () => pushNotifier.close());
     await runShutdownStep("db_catalog_close", () => dbCatalogRepository.close());
   };

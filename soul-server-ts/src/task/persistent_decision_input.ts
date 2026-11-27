@@ -352,23 +352,26 @@ async function collectAccounts(
       || (observation !== undefined && isExpiredPoolBlockObservation(observation.result, now));
   });
   if (forceRefresh || stale) {
-    try {
-      const response = await providerUsage.fetchUsage(
-        `persistent-decision:${sessionId}`,
-        "provider_usage_get",
-      );
-      if (!response.success) {
+    await Promise.all(providers.map(async (provider) => {
+      try {
+        const response = await providerUsage.fetchUsage(
+          `persistent-decision:${sessionId}`,
+          "provider_usage_get",
+          provider,
+        );
+        if (!response.success) {
+          logger.warn(
+            { sessionId, failureKind: "provider_usage_refresh" },
+            "persistent decision using the last provider usage observation",
+          );
+        }
+      } catch {
         logger.warn(
           { sessionId, failureKind: "provider_usage_refresh" },
           "persistent decision using the last provider usage observation",
         );
       }
-    } catch {
-      logger.warn(
-        { sessionId, failureKind: "provider_usage_refresh" },
-        "persistent decision using the last provider usage observation",
-      );
-    }
+    }));
   }
   return Object.fromEntries(providers.flatMap((provider) => {
     const observation = readProviderUsageObservation(provider);

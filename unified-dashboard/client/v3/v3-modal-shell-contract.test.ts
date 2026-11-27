@@ -24,6 +24,7 @@ const expectedV3DialogConsumers = [
 
 const sharedV3DialogConsumers = [
   "../components/AccessLinksTab.tsx",
+  "../components/AntigravityConsentDialog.tsx",
   "../components/ConfigModal.tsx",
   "../components/InboundWebhooksSection.tsx",
   "../components/OutboundWebhooksSection.tsx",

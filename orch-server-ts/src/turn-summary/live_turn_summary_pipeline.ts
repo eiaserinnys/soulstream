@@ -120,6 +120,7 @@ export function createLiveTurnSummaryPipeline(options: {
       ? {}
       : { fallback: options.fallbackExecutor }),
     info: (message) => options.logger.info?.(message),
+    antigravityEnabled: () => options.registry.isAntigravityEnabled(),
   });
   const summarizer = createTurnSummaryProviderRouter({
     codex: codexSummarizer,

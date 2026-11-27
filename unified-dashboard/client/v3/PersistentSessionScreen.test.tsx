@@ -202,7 +202,7 @@ it('asks admins to log in to a coding agent when bootstrap is on but unavailable
  mocks.admin=true;mocks.list.mockResolvedValue(emptyListing({bootstrap_enabled:true,unavailable_reason:'쓸 수 있는 모델이 없습니다.'}));await mount();
  const lines=()=>host.querySelector('[data-testid="persistent-empty-unavailable"] p')!;
  expect([...lines().childNodes].filter(n=>n.nodeType===Node.TEXT_NODE).map(n=>n.textContent)).toEqual(['기본 영구 세션을 만들기 위해','코딩 에이전트에 로그인해주세요.']);expect(lines().querySelectorAll('br').length).toBe(1);
- expect([...host.querySelectorAll('.persistent-empty-steps > li')].map(li=>li.textContent)).toEqual(['설정에서 Claude, Codex, Antigravity 가운데 하나를 연결합니다','안내대로 로그인하고 설정을 닫습니다']);
+ expect([...host.querySelectorAll('.persistent-empty-steps > li')].map(li=>li.textContent)).toEqual(['설정에서 Claude나 Codex 가운데 하나를 연결합니다','안내대로 로그인하고 설정을 닫습니다']);
  expect([...host.querySelectorAll('button')].some(b=>b.textContent==='코딩 에이전트 연결')).toBe(true);expect(text()).not.toContain('쓸 수 있는 모델이 없습니다.');expect(host.querySelector('.persistent-empty-reason')).toBeNull();expect(mocks.bootstrap).not.toHaveBeenCalled();
  await press('코딩 에이전트 연결');
  expect(host.querySelector('[data-testid="config"]')?.getAttribute('data-tab')).toBe('coding_agents');

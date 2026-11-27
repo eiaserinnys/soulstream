@@ -1,0 +1,36 @@
+.agy-backend-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  padding: var(--v3-space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-floor);
+  background: color-mix(in oklch, var(--muted) 20%, transparent);
+}
+
+.agy-backend-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-1);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.agy-backend-description,
+.agy-consent-label {
+  margin: 0;
+  font: var(--v3-type-body) var(--v3-font-family);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.agy-backend-description,
+.agy-consent-label {
+  color: var(--muted-foreground);
+}
+
+.agy-consent-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+}

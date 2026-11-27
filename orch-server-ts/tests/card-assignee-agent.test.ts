@@ -22,6 +22,8 @@ const node = {
 const registry = {
   getConnectedNode: (nodeId: string) => nodeId === "node-1" ? node : undefined,
   listConnectedNodes: () => [node],
+  getConnectedNodeAdvertised: (nodeId: string) => nodeId === "node-1" ? node : undefined,
+  listConnectedNodesAdvertised: () => [node],
   getUserInfo: () => ({ name: null, hasPortrait: false }),
 } as unknown as InMemoryNodeRegistry;
 

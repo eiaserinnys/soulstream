@@ -123,9 +123,9 @@ describe("production orchestrator entrypoint", () => {
     // composition, through the shared resolver.
     expect(nodeCredentialQueries).toHaveLength(1);
     expect(nodeCredentialQueries[0]).toContain("WHERE revoked_at IS NULL");
-    // The defaults cache and node credential store both load during composition.
-    expect(sqlResolver.resolveSql).toHaveBeenCalledTimes(8);
-    expect(schemaQuery).toHaveBeenCalledTimes(3);
+    // The defaults cache, the Antigravity switch (seed and cache) and the node credential store load during composition.
+    expect(sqlResolver.resolveSql).toHaveBeenCalledTimes(10);
+    expect(schemaQuery).toHaveBeenCalledTimes(5);
     expect(schemaQuery.mock.calls.some(([strings]) => strings.join("?").includes("persistent_defaults"))).toBe(true);
     expect(application.app.hasRoute({
       method: "GET",

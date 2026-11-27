@@ -119,6 +119,8 @@ export function registerSessionMgmtTools(
       const selectedPresetId = model_preset ?? agent.default_preset;
       const fallbackPresetIds = model_preset_fallbacks ?? [];
       let chosenPresetId = selectedPresetId;
+      const isAntigravityPreset = (presetId: string) => runtime.modelCatalog?.snapshot().presets
+        .some((preset) => preset.id === presetId && preset.backend === "antigravity") ?? false;
       if (fallbackPresetIds.length > 0) {
         const fallbackPreflight = await preflightModelPresetFallbacks({
           nodeId: runtime.nodeId,
@@ -126,6 +128,7 @@ export function registerSessionMgmtTools(
           logger: runtime.logger,
           initialPresetId: selectedPresetId,
           fallbackPresetIds,
+          isAntigravityPreset,
         });
         if (fallbackPreflight.error !== null) return errorResult(fallbackPreflight.error);
         chosenPresetId = fallbackPreflight.chosenPresetId;
@@ -135,6 +138,7 @@ export function registerSessionMgmtTools(
           orch: runtime.orch,
           logger: runtime.logger,
           selectedPresetId,
+          isAntigravityPreset,
         });
         if (preflightError !== null) return errorResult(preflightError);
       }

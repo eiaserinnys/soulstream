@@ -2,6 +2,7 @@ import { registerNodeGitSetupRoutes, type NodeGitSetupRouteOptions } from "./nod
 import { registerAgentContextOverviewRoutes, type AgentContextOverviewRouteOptions } from "./node/agent_context_overview_routes.js";
 import { registerSkillGuidesRoutes, type SkillGuidesRouteOptions } from "./skills/skill_guides_routes.js";
 import { registerPersistentDefaultsRoutes, type PersistentDefaultsRoutes } from "./admin/persistent_defaults_routes.js";
+import { registerAntigravityBackendRoutes, type AntigravityBackendRoutes } from "./admin/antigravity_backend_routes.js";
 import { registerMcpCentralRoutes, type McpCentralRouteOptions } from "./mcp_central/routes.js";
 import { registerConversationRoutes, type ConversationRouteOptions } from "./conversation/conversation_routes.js";
 import { registerOwnedAgentRoutes, type OwnedAgentRouteOptions } from "./owned-agents/routes.js";
@@ -239,6 +240,7 @@ export type CreateAppOptions = {
   workerAttachmentRoutes?: WorkerAttachmentRouteOptions;
   folderRoutes?: FolderRouteOptions;
   persistentDefaultsRoutes?: PersistentDefaultsRoutes;
+  antigravityBackendRoutes?: AntigravityBackendRoutes;
   cardDispatchSettingsRoutes?:CardDispatchSettingsRouteOptions;
   cardOrchestrationRoutes?:CardOrchestrationRouteOptions;
   cardOrchestrationDecisionRoutes?:CardOrchestrationDecisionRouteOptions;
@@ -495,6 +497,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerUserPreferencesRoutes(app, options.userPreferencesRoutes);
   }
   if (options.persistentDefaultsRoutes) registerPersistentDefaultsRoutes(app, options.persistentDefaultsRoutes);
+  if (options.antigravityBackendRoutes) registerAntigravityBackendRoutes(app, options.antigravityBackendRoutes);
   if (options.cardDispatchSettingsRoutes) registerCardDispatchSettingsRoutes(app,options.cardDispatchSettingsRoutes);
   if (options.cardOrchestrationRoutes) registerCardOrchestrationRoutes(app,options.cardOrchestrationRoutes);
   if (options.cardOrchestrationDecisionRoutes) registerCardOrchestrationDecisionRoutes(app,options.cardOrchestrationDecisionRoutes);

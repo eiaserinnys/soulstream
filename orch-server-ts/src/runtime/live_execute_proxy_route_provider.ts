@@ -224,6 +224,10 @@ export function createLiveExecuteProxyRouteProvider(
           ? readStoredPersistentSettings(row.metadata,
             options.modelCatalog.snapshot().persistent_defaults.fallback_models)
           : undefined;
+        const antigravityOff = !!row && options.registry.isAntigravityEnabled?.() === false
+          && isTerminalSessionStatus(row.status)
+          && options.modelCatalog.snapshot().presets.some(
+            (preset) => preset.id === row.model_preset && preset.backend === "antigravity");
         const attempted = new Set<string>();
         const fallbackCandidates = stored?.default_model
           ? [stored.default_model, ...stored.fallback_models]
@@ -247,6 +251,12 @@ export function createLiveExecuteProxyRouteProvider(
               );
             }
           }
+        }
+        if (antigravityOff && !persistentTarget) {
+          throw new ExecuteProxyRouteError(409, { error: {
+            code: "ANTIGRAVITY_DISABLED",
+            message: "Antigravity is disabled in settings",
+          } });
         }
         const admitted = await admitExecuteAttachments(options, request, {
           sessionId: payload.agent_session_id,

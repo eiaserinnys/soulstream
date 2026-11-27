@@ -19,6 +19,27 @@ type Catalog = ReturnType<ModelCatalogSource["snapshot"]>;
 const SettingsValueSchema = PersistentDefaultsSchema.extend({
   fallback_models: PersistentDefaultsSchema.shape.fallback_models.max(PERSISTENT_FALLBACK_MODELS_MAX),
 });
+function antigravityPresetIds(catalog: Catalog): Set<string> {
+  return new Set(catalog.presets.filter(preset => preset.backend === "antigravity").map(preset => preset.id));
+}
+/**
+ * Drops Antigravity presets from the defaults; the first remaining fallback replaces a dropped primary.
+ * When nothing else is left, the catalogue defaults stand in, themselves stripped of Antigravity.
+ */
+function withoutAntigravity(
+  defaults: PersistentDefaults,
+  antigravity: ReadonlySet<string>,
+  catalogDefaults?: PersistentDefaults,
+): PersistentDefaults {
+  const fallback_models = defaults.fallback_models.filter(entry => !antigravity.has(entry.model_preset));
+  if (!antigravity.has(defaults.model_preset)) return { ...defaults, fallback_models };
+  const [first, ...rest] = fallback_models;
+  if (first) return { ...defaults, model_preset: first.model_preset, fallback_models: rest };
+  if (!catalogDefaults) return defaults;
+  const stripped = withoutAntigravity(catalogDefaults, antigravity);
+  return antigravity.has(stripped.model_preset) ? defaults : stripped;
+}
+
 export class PersistentDefaultsError extends Error {
   constructor(readonly statusCode: number, readonly code: string, message: string) { super(message); }
 }
@@ -27,6 +48,7 @@ export class PersistentDefaultsError extends Error {
 export class PersistentDefaultsSettings implements ModelCatalogSource {
   private cached: Row | null = null;
   private memo?: { catalog: Catalog; row: Row; result: Catalog };
+  private offMemo?: { base: Catalog; result: Catalog };
   private revision = 0;
   private timer?: ReturnType<typeof setInterval>;
 
@@ -34,6 +56,7 @@ export class PersistentDefaultsSettings implements ModelCatalogSource {
     private readonly sql: () => Promise<SqlClient>,
     private readonly catalog: ModelCatalogSource,
     private readonly warn: (message: string) => void,
+    private readonly antigravityEnabled: () => boolean = () => true,
   ) {}
 
   async start(): Promise<void> {
@@ -62,6 +85,21 @@ export class PersistentDefaultsSettings implements ModelCatalogSource {
   }
 
   snapshot() {
+    const base = this.baseSnapshot();
+    if (this.antigravityEnabled()) return base;
+    if (this.offMemo?.base === base) return this.offMemo.result;
+    const result = {
+      ...base,
+      persistent_defaults: {
+        ...base.persistent_defaults,
+        ...withoutAntigravity(base.persistent_defaults, antigravityPresetIds(base), this.catalog.snapshot().persistent_defaults),
+      },
+    };
+    this.offMemo = { base, result };
+    return result;
+  }
+
+  private baseSnapshot() {
     const catalog = this.catalog.snapshot();
     const row = this.cached;
     if (!row) return catalog;
@@ -79,13 +117,16 @@ export class PersistentDefaultsSettings implements ModelCatalogSource {
   }
 
   async get(): Promise<PersistentDefaultsResult> {
+    const visible = (value: PersistentDefaults) => this.antigravityEnabled()
+      ? value
+      : withoutAntigravity(value, antigravityPresetIds(this.catalog.snapshot()), this.catalog.snapshot().persistent_defaults);
     if (!this.cached) {
       const { model_preset, fallback_models } = this.catalog.snapshot().persistent_defaults;
-      return { value: { model_preset, fallback_models }, version: 0, source: "catalog" };
+      return { value: visible({ model_preset, fallback_models }), version: 0, source: "catalog" };
     }
     const parsed = SettingsValueSchema.safeParse(this.cached.value);
     if (!parsed.success) throw new PersistentDefaultsError(503, "PERSISTENT_DEFAULTS_UNAVAILABLE", "Stored persistent defaults are invalid");
-    return { value: parsed.data, version: Number(this.cached.version), source: "settings" };
+    return { value: visible(parsed.data), version: Number(this.cached.version), source: "settings" };
   }
 
   async put(input: PersistentDefaultsUpdate): Promise<PersistentDefaultsResult> {
@@ -99,6 +140,12 @@ export class PersistentDefaultsSettings implements ModelCatalogSource {
     }
     if (typeof input.updatedBy !== "string" || !input.updatedBy.trim()) {
       messages.push("updatedBy: must be a non-empty string");
+    }
+    if (parsed.success && !this.antigravityEnabled()) {
+      const antigravity = antigravityPresetIds(this.catalog.snapshot());
+      const used = [parsed.data.model_preset, ...parsed.data.fallback_models.map(entry => entry.model_preset)]
+        .filter(id => antigravity.has(id));
+      if (used.length) messages.push(`Antigravity is disabled; cannot use ${used.join(", ")}`);
     }
     if (!parsed.success || messages.length) {
       throw new PersistentDefaultsError(422, "PERSISTENT_DEFAULTS_INVALID", messages.join("; "));

@@ -1,3 +1,4 @@
+import { NOT_CONFIGURED_PROVIDER_LIMITS } from "../usage/provider_usage_wire.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
@@ -349,9 +350,9 @@ export function registerNodeClaudeAuthRoutes(
 
   app.get<{ Params: NodeParams }>(
     "/api/nodes/:node_id/provider-usage",
-    async (request, reply) => sendDataCommand(reply, options, nodeParams(request).node_id, {
-      type: "provider_usage_get",
-    }),
+    async (request, reply) => antigravityOff(options)
+      ? sendSnapshotWithoutAntigravity(reply, options, nodeParams(request).node_id)
+      : sendDataCommand(reply, options, nodeParams(request).node_id, { type: "provider_usage_get" }),
   );
 
   app.get<{ Params: NodeParams & { provider: string } }>(
@@ -360,6 +361,9 @@ export function registerNodeClaudeAuthRoutes(
       const params = request.params;
       if (!PROVIDERS.has(params.provider)) {
         return detail(reply, 400, "provider must be one of: claude, codex, antigravity, opencode_go");
+      }
+      if (params.provider === "antigravity" && antigravityOff(options)) {
+        return detail(reply, 409, "Antigravity is disabled in settings");
       }
       return sendDataCommand(reply, options, params.node_id, {
         type: "provider_usage_get",
@@ -370,6 +374,10 @@ export function registerNodeClaudeAuthRoutes(
 
   registerClaudeAccountPoolRoutes(app, options);
   registerAgentLoginRoutes(app, options);
+}
+
+function antigravityOff(options: NodeClaudeAuthRouteOptions): boolean {
+  return options.registry.isAntigravityEnabled?.() === false;
 }
 
 type CommandResult =
@@ -398,6 +406,22 @@ async function sendDataCommand(
     return detail(reply, 400, ackErrorDetail(result.response));
   }
   return reply.send(result.response.data);
+}
+
+/** The node's full snapshot would probe Antigravity, so ask for the other providers one by one. */
+async function sendSnapshotWithoutAntigravity(
+  reply: FastifyReply,
+  options: NodeClaudeAuthRouteOptions,
+  nodeId: string,
+): Promise<FastifyReply | unknown> {
+  const providers: Record<string, unknown> = { antigravity: NOT_CONFIGURED_PROVIDER_LIMITS };
+  for (const provider of ["claude", "codex", "opencode_go"]) {
+    const result = await dispatchNodeCommandResult(reply, options, nodeId, { type: "provider_usage_get", provider });
+    if (!result.ok) return result.reply;
+    if (isUnsuccessfulAck(result.response)) return detail(reply, 400, ackErrorDetail(result.response));
+    providers[provider] = result.response.data;
+  }
+  return reply.send({ generatedAt: new Date().toISOString(), providers });
 }
 
 async function dispatchNodeCommandResult(
