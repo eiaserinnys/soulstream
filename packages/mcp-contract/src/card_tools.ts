@@ -189,6 +189,10 @@ export const cardTools = {
     description: "담당 카드의 지금 한 줄과 누구 차례인지를 고쳐 씁니다. now와 ask는 각각 60자까지이며 식별자를 넣지 않습니다. turn=user면 ask에 사용자가 볼 것을 적으세요. 턴을 끝내기 전에 현재와 맞춥니다.",
     inputSchema: { ...scope,now:z.string(),turn:z.enum(["agent","user","outside"]),ask:z.string().optional() },
   }, audience: "internal" },
+  set_card_depends_on: { name: "set_card_depends_on", config: {
+    description: "담당 카드의 선행 카드(#12 또는 UUID, 10장까지)를 통째로 바꿉니다. 빈 배열이면 모두 지웁니다. 시작한 카드에도 씁니다. 순환과 취소된 카드는 거부합니다. 선행을 기다리는 동안은 카드를 막힘으로 두세요. 선행이 모두 끝나면 서버가 [선행 카드 완료]를 보냅니다. 시작 전 카드는 update_unstarted_card를 쓰세요.",
+    inputSchema: { ...scope,depends_on:z.array(id).max(10) },
+  }, audience: "internal" },
   add_card_note: { name: "add_card_note", config: {
     description: "담당 카드의 진행과 기술 세부를 노트에 기록합니다(4,000자까지). 식별자와 자세한 로그는 여기에 쓰세요. 사용자에게 답하는 글과 항목의 결과는 각 도구에 씁니다.",
     inputSchema: { ...scope,text:z.string() },

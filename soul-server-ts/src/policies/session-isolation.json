@@ -406,6 +406,9 @@
     "set_agent_mcp_profile": {
       "category": "deny"
     },
+    "set_card_depends_on": {
+      "category": "allow"
+    },
     "set_card_items": {
       "category": "allow"
     },

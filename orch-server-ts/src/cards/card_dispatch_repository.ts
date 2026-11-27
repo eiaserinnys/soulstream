@@ -6,6 +6,7 @@ import { readCardDispatchSettings } from "./card_dispatch_settings.js";
 import { readCardReminderFacts } from "./card_status_reminder_repository.js";
 import { readCardBoardSessions } from "../session/persistent_report_service.js";
 import { dependentCards, readCardDependencies } from "./card_dependencies.js";
+import type { DependencyWaiter } from "./card_dependency_release.js";
 export type DispatchCard = CardRow & {
     folder_name: string;
 };
@@ -35,6 +36,16 @@ export class CardDispatchRepository {
     }
     async dependencies(cardId: string) { return (await readCardDependencies(await this.resolveSql(),[cardId])).get(cardId) ?? []; }
     async dependents(cardId: string) { return dependentCards(await this.resolveSql(),cardId); }
+    /** Started cards whose assignee session may be waiting on `cardId`, with all their predecessors. */
+    async startedDependents(cardId: string): Promise<DependencyWaiter[]> {
+        const sql = await this.resolveSql();
+        const rows = await sql<Omit<DependencyWaiter, "dependencies">[]> `SELECT c.id,c.number,c.assignee_session_id FROM card_dependencies d
+      JOIN cards c ON c.id=d.card_id JOIN folders f ON f.id=c.folder_id
+      WHERE d.depends_on_card_id=${cardId} AND c.assignee_kind='session' AND c.assignee_session_id IS NOT NULL
+        AND NOT c.archived AND NOT f.archived AND c.status IN ('running','blocked','awaiting_verification')`;
+        const dependencies = await readCardDependencies(sql,rows.map(row => row.id));
+        return rows.map(row => ({ ...row, dependencies: dependencies.get(row.id) ?? [] }));
+    }
     async limited(): Promise<DispatchCard[]> {
         const sql = await this.resolveSql();
         return sql<DispatchCard[]> `SELECT c.*,f.name AS folder_name FROM cards c JOIN folders f ON f.id=c.folder_id

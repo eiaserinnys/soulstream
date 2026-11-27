@@ -75,6 +75,7 @@ export const cardOperationSchemas={
   report_card_item:append.extend({ itemId,state:z.enum(["doing","done","dropped"]),result:z.string().optional(),evidence:evidence.optional(),caveat:z.string().optional(),reopenReason:z.string().optional() }),
   confirm_card_item:append.extend({ itemId,confirmed:z.boolean() }),
   update_card_now:append.extend({ now:z.string(),turn:z.enum(["agent","user","outside"]),ask:z.string().optional() }),
+  set_card_depends_on:append.extend({ dependsOn:z.array(id).max(10) }),
   add_card_note:append.extend({ text:z.string() }),
   request_card_review:append.extend({ ask:z.string().optional(),report:z.string().optional() }),
 } as const;
@@ -140,6 +141,7 @@ export async function executeCardOperation(service:CardControlPlaneService,opera
       case "report_card_item":return service.reportCardItem({ ...common,...cardOperationSchemas.report_card_item.parse(parsed) });
       case "confirm_card_item":return service.confirmCardItem({ ...common,...cardOperationSchemas.confirm_card_item.parse(parsed) });
       case "update_card_now":return service.updateCardNow({ ...common,...cardOperationSchemas.update_card_now.parse(parsed) });
+      case "set_card_depends_on":return service.setCardDependencies({ ...common,...cardOperationSchemas.set_card_depends_on.parse(parsed),allowedFolderIds });
       case "request_card_review":return service.requestCardReview({ ...common,...cardOperationSchemas.request_card_review.parse(parsed) });
     }
   })();

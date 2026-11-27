@@ -12,6 +12,7 @@ import { isTerminalSessionStatus } from "../session/session_status.js";
 import { isUsageLimitTermination } from "../session/session_limit_termination.js";
 import { buildCardPrompt } from "./card_prompt.js";
 import { dependencyMet } from "./card_dependencies.js";
+import { buildDependencyReleaseNotices } from "./card_dependency_release.js";
 import type { CardControlPlaneService, CardMutationChange } from "./card_control_plane_service.js";
 import type { CardDispatchRepository, DispatchCard } from "./card_dispatch_repository.js";
 import type { CardRow } from "./control_plane/card_types.js";
@@ -275,6 +276,15 @@ export class CardDispatcher {
                 const target = this.options.resolveTarget(waiting);
                 if (target.available) await this.dispatchCard(waiting,target);
             }
+        }
+        if (released) {
+            try {
+                for (const notice of buildDependencyReleaseNotices(await this.options.repository.startedDependents(card.id))) {
+                    try {
+                        await this.options.sendMessage(notice.sessionId, notice.text, undefined, {deliveryId:notice.deliveryId, actorKind:"system", actorSessionId:null});
+                    } catch (error) { this.options.warn(`card ${card.id} dependency release notice failed: ${String(error)}`); }
+                }
+            } catch (error) { this.options.warn(`card ${card.id} dependency release lookup failed: ${String(error)}`); }
         }
         if (released || card.status === "queued" || op.operation_type === "reorder_card_queue" || op.operation_type === "answer_card_question" || (previousStatus !== "review" && card.status === "review"))
             await this.dispatchOnce();

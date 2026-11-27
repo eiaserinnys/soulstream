@@ -173,6 +173,7 @@ export const cardHandlers = {
   report_card_item: (o,a,c) => internalAppend(o.cards,"report_card_item",a,c,{itemId:a.item_id,state:a.state,result:a.result,evidence:a.evidence,caveat:a.caveat,reopenReason:a.reopen_reason},
     result => ({ ...compactMutation(result), ...compactItemResult(result, a.item_id) })),
   update_card_now: (o,a,c) => internalAppend(o.cards,"update_card_now",a,c,{now:a.now,turn:a.turn,ask:a.ask}),
+  set_card_depends_on: (o,a,c) => internalAppend(o.cards,"set_card_depends_on",a,c,{dependsOn:a.depends_on}),
   add_card_note: (o,a,c) => internalAppend(o.cards,"add_card_note",a,c,{text:a.text},compactNote),
   list_card_notes: (o,a,c) => run(async () => {
     requireInternal(c);
