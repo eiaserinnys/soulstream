@@ -166,3 +166,76 @@ describe("Atom catalog list loaders", () => {
     }
   });
 });
+
+describe("Atom catalog list loaders when Atom fails", () => {
+  const atom = { enabled: true, serverUrl: "https://atom.test", apiKey: "test" };
+  const skillMarkdown = "## stale-skill\nbody_node_id: 20000000-0000-4000-8000-000000000001\n";
+  const domainMarkdown = [
+    "## stale-domain <!-- node:20000000-0000-4000-8000-0000000000d1 -->",
+    "body_node_id: 20000000-0000-4000-8000-0000000000d2",
+    "axis: [look]",
+    "composition: bundle",
+  ].join("\n");
+  const abortError = () => new DOMException("aborted", "AbortError");
+
+  async function expectStaleCacheServed(
+    nodeId: string,
+    markdown: string,
+    load: typeof loadSkillCatalog,
+  ) {
+    const get = vi.fn<AtomHttpClient["get"]>()
+      .mockResolvedValueOnce({ statusCode: 200, body: { markdown } })
+      .mockRejectedValue(abortError());
+    const logger = { warn: vi.fn() };
+    const input = { nodeId, atom, logger, httpClient: { get, post: vi.fn() } as AtomHttpClient };
+    const realNow = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(realNow);
+    try {
+      const first = await load(input);
+      expect(first.length).toBeGreaterThan(0);
+
+      now.mockReturnValue(realNow + 61_000);
+      const second = await load(input);
+      expect(second).toEqual(first);
+      expect(get).toHaveBeenCalledTimes(2);
+      expect(logger.warn).toHaveBeenCalled();
+
+      const third = await load(input);
+      expect(third).toEqual(first);
+      expect(get).toHaveBeenCalledTimes(2);
+    } finally {
+      now.mockRestore();
+    }
+  }
+
+  it("serves the expired skill catalog cache when the refresh fails, then waits another TTL", async () => {
+    await expectStaleCacheServed("30000000-0000-4000-8000-000000000001", skillMarkdown, loadSkillCatalog);
+  });
+
+  it("serves the expired domain catalog cache when the refresh fails, then waits another TTL", async () => {
+    await expectStaleCacheServed(
+      "30000000-0000-4000-8000-000000000002",
+      domainMarkdown,
+      loadDomainCatalog as unknown as typeof loadSkillCatalog,
+    );
+  });
+
+  it("names a timeout when there is no cache and the request aborts", async () => {
+    const httpClient = { get: vi.fn().mockRejectedValue(abortError()), post: vi.fn() } as unknown as AtomHttpClient;
+    await expect(loadSkillCatalog({
+      nodeId: "30000000-0000-4000-8000-000000000003", atom, logger: { warn: vi.fn() }, httpClient,
+    })).rejects.toThrow(/timeout/i);
+  });
+
+  it("names the HTTP status when there is no cache and Atom answers 503", async () => {
+    const httpClient = {
+      get: vi.fn().mockResolvedValue({ statusCode: 503, body: "unavailable" }), post: vi.fn(),
+    } as unknown as AtomHttpClient;
+    await expect(loadSkillCatalog({
+      nodeId: "30000000-0000-4000-8000-000000000004", atom, logger: { warn: vi.fn() }, httpClient,
+    })).rejects.toThrow(/503/);
+    await expect(loadDomainCatalog({
+      nodeId: "30000000-0000-4000-8000-000000000005", atom, logger: { warn: vi.fn() }, httpClient,
+    })).rejects.toThrow(/503/);
+  });
+});
