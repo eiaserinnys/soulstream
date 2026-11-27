@@ -1,6 +1,6 @@
 import "./config/config-layout.css";
 import "../v3/v3-card-board.css";
-import { fileToWallpaperDataUrl } from "@seosoyoung/soul-ui/lib/wallpaper-settings";
+import { DEFAULT_WALLPAPER_PHOTO_URL, WALLPAPER_PRESETS, fileToWallpaperDataUrl } from "@seosoyoung/soul-ui/lib/wallpaper-settings";
 import { ArrowLeft, Check } from "lucide-react";
 import { FileStorageTab } from "./FileStorageTab";
 import { CardDispatchTab } from "./CardDispatchTab";
@@ -251,23 +251,33 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
   );
 }
 
-const WALLPAPER_OPTIONS: Array<{ mode: WallpaperMode; label: string }> = [
+const WALLPAPER_STYLES: Array<{ mode: Exclude<WallpaperMode, "photo">; label: string }> = [
   { mode: "bokeh", label: "보케" },
   { mode: "metal", label: "메탈" },
-  { mode: "photo", label: "사진" },
   { mode: "plain", label: "단색" },
 ];
 
+interface WallpaperTile {
+  key: string;
+  label: string;
+  thumbUrl?: string;
+  selected: boolean;
+  apply: () => void;
+}
+
 function WallpaperPicker({ local = false }: {local?: boolean}) {
   const storedWallpaper = useDashboardStore((s) => s.wallpaper);
+  const storedUploadedUrl = useDashboardStore((s) => s.uploadedBackgroundUrl);
   const storedSetWallpaper = useDashboardStore((s) => s.setWallpaper);
   const storedSetWallpaperMode = useDashboardStore((s) => s.setWallpaperMode);
   const storedSetWallpaperCustomImage = useDashboardStore((s) => s.setWallpaperCustomImage);
   const [localWallpaper, setLocalWallpaper] = useState(storedWallpaper);
+  const [localUploadedUrl, setLocalUploadedUrl] = useState<string | null>(null);
   const wallpaper = local ? localWallpaper : storedWallpaper;
+  const uploadedUrl = local ? localUploadedUrl : storedUploadedUrl;
   const setWallpaper = local ? setLocalWallpaper : storedSetWallpaper;
   const setWallpaperMode = local ? (mode: WallpaperMode) => setLocalWallpaper(value=>({...value,mode})) : storedSetWallpaperMode;
-  const setWallpaperCustomImage = local ? async (file: File) => { const data = await fileToWallpaperDataUrl(file); setLocalWallpaper(value=>({...value,customImage:data,mode:"photo"})); } : storedSetWallpaperCustomImage;
+  const setWallpaperCustomImage = local ? async (file: File) => { const data = await fileToWallpaperDataUrl(file); setLocalUploadedUrl(data); setLocalWallpaper(value=>({...value,customImage:data,mode:"photo"})); } : storedSetWallpaperCustomImage;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -291,6 +301,29 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
     }
   };
 
+  const tiles: WallpaperTile[] = [
+    ...WALLPAPER_STYLES.map((style) => ({
+      key: style.mode,
+      label: style.label,
+      selected: wallpaper.mode === style.mode,
+      apply: () => setWallpaperMode(style.mode),
+    })),
+    ...WALLPAPER_PRESETS.map((preset) => ({
+      key: preset.id,
+      label: preset.name,
+      thumbUrl: preset.thumbUrl,
+      selected: wallpaper.mode === "photo" && (wallpaper.customImage ?? DEFAULT_WALLPAPER_PHOTO_URL) === preset.url,
+      apply: () => setWallpaper({ mode: "photo", customImage: preset.url }),
+    })),
+    ...(uploadedUrl ? [{
+      key: "uploaded",
+      label: "내 사진",
+      thumbUrl: uploadedUrl,
+      selected: wallpaper.mode === "photo" && wallpaper.customImage === uploadedUrl,
+      apply: () => setWallpaper({ mode: "photo", customImage: uploadedUrl }),
+    }] : []),
+  ];
+
   return (
     <section className="config-wallpaper">
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -311,21 +344,19 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
         </Button>
       </div>
       <div className="config-wallpaper-options">
-        {WALLPAPER_OPTIONS.map((option) => (
+        {tiles.map((tile) => (
           <button
-            key={option.mode}
+            key={tile.key}
             type="button"
-            className={
-              wallpaper.mode === option.mode
-                ? "rounded-full border border-accent-blue/55 bg-accent-blue/15 px-3 py-1.5 text-xs font-semibold text-foreground"
-                : "rounded-full border border-[var(--lg-line)] bg-muted/40 px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:border-accent-blue/40 hover:text-foreground"
-            }
             disabled={uploading}
-            data-wallpaper={option.mode}
-            aria-pressed={wallpaper.mode === option.mode}
-            onClick={() => setWallpaperMode(option.mode)}
+            data-wallpaper={tile.key}
+            aria-pressed={tile.selected}
+            onClick={tile.apply}
           >
-            <span className="wallpaper-swatch" aria-hidden="true"/><span>{option.label}</span>
+            <span className="wallpaper-swatch" aria-hidden="true">
+              {tile.thumbUrl && <img src={tile.thumbUrl} alt="" loading="lazy" draggable={false}/>}
+            </span>
+            <span>{tile.label}</span>
           </button>
         ))}
       </div>
@@ -333,18 +364,6 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
         <div role="alert" className="mt-2 rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">
           {error}
         </div>
-      )}
-      {wallpaper.customImage && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="mt-2 rounded-full px-0 text-sm text-muted-foreground hover:text-foreground"
-          disabled={uploading}
-          onClick={() => setWallpaper({ mode: "bokeh" })}
-        >
-          기본값 복원
-        </Button>
       )}
       <input
         ref={fileInputRef}

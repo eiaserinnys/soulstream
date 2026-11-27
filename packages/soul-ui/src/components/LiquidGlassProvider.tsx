@@ -115,6 +115,12 @@ export function LiquidGlassProvider({
 
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
+    document.documentElement.setAttribute("data-wallpaper-mode", wallpaper.mode);
+    return () => document.documentElement.removeAttribute("data-wallpaper-mode");
+  }, [wallpaper.mode]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
     document.documentElement.setAttribute("data-webgl-glass", shouldMountCanvas ? "on" : "off");
     return () => document.documentElement.removeAttribute("data-webgl-glass");
   }, [shouldMountCanvas]);

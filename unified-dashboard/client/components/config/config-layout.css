@@ -47,11 +47,13 @@
 .config-dialog .config-wallpaper { padding:0 0 var(--v3-space-6); border-bottom:1px solid var(--border); }
 .config-dialog .config-wallpaper-options { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--v3-space-2); margin-top:var(--v3-space-4); }
 .config-dialog .config-wallpaper-options button { padding:var(--v3-space-2) var(--v3-space-2) var(--v3-space-2); border-radius: var(--radius-floor); background:transparent; color:var(--muted-foreground); border:1px solid transparent; font:var(--v3-type-body) var(--v3-font-family); display:flex; flex-direction:column; gap:var(--v3-space-2); }
+.config-dialog .config-wallpaper-options button:not([aria-pressed="true"]):hover { border-color:var(--v3-stroke-hover); }
 .config-dialog .config-wallpaper-options button[aria-pressed="true"] { border-color:var(--primary); background:color-mix(in srgb,var(--primary) 6%,transparent); color:var(--foreground); }
-.config-dialog .wallpaper-swatch { height:var(--v3-control-height); width:100%; border-radius: var(--radius-floor); border:1px solid var(--border); background:var(--muted); }
+.config-dialog .config-wallpaper-options button { min-width:0; word-break:keep-all; overflow-wrap:anywhere; }
+.config-dialog .wallpaper-swatch { aspect-ratio:16/9; width:100%; overflow:hidden; border-radius: var(--radius-floor); border:1px solid var(--border); background:var(--muted); }
+.config-dialog .wallpaper-swatch > img { display:block; width:100%; height:100%; object-fit:cover; }
 .config-dialog [data-wallpaper="bokeh"] .wallpaper-swatch { background:radial-gradient(ellipse at 25% 20%,#e4b9b9 0%,transparent 70%),radial-gradient(ellipse at 75% 70%,#95a8cd 0%,#d7d2dc 80%); }
 .config-dialog [data-wallpaper="metal"] .wallpaper-swatch { background:linear-gradient(120deg,#e5e7ed,#aab2bd 38%,#f3f4f8 55%,#c2c8d2); }
-.config-dialog [data-wallpaper="photo"] .wallpaper-swatch { background:linear-gradient(155deg,#c9d8e2 50%,#b6c1ac 51%,#859984); }
 .config-dialog .config-appearance > section:not(.config-wallpaper) { background:transparent; padding:0 0 var(--v3-space-6); border:0; border-bottom:1px solid var(--border); border-radius:0; }
 .approved-dialog .config-advanced { font:var(--v3-type-body) var(--v3-font-family); }
 .approved-dialog .config-advanced > summary { display:flex; align-items:center; justify-content:space-between; padding:0 0 var(--v3-space-4); cursor:pointer; font-weight:500; }
@@ -73,7 +75,7 @@
 .config-dialog .config-detail [data-section] > [data-testid="config-field-row"]:last-child,
 .config-dialog .config-detail [data-section] > div > [data-testid="config-field-row"]:last-child,
 .config-dialog .config-detail [data-section] > :last-child > :last-child > [data-testid="config-field-row"]:last-child { border-bottom:0; }
-.approved-dialog :is(.config-category-item,.config-back,.config-advanced > summary):focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); border-radius: var(--radius-floor); }
+.approved-dialog :is(.config-category-item,.config-back,.config-advanced > summary,.config-wallpaper-options button):focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); border-radius: var(--radius-floor); }
 
 .config-dialog .session-story-settings-content { display:flex; flex-direction:column; gap:var(--v3-space-6); }
 .config-dialog .session-story-settings-groups { display:flex; flex-direction:column; gap:var(--v3-space-6); }
@@ -85,6 +87,7 @@
 .config-dialog .session-story-settings-error { display:flex; flex-direction:column; align-items:flex-start; gap:var(--v3-space-2); }
 .config-dialog .session-story-settings-error > p { margin:0; color:var(--muted-foreground); font:var(--v3-type-body) var(--v3-font-family); }
 @media (max-width:40rem) {
+ .config-dialog .config-wallpaper-options { grid-template-columns:repeat(3,minmax(0,1fr)); }
  .config-dialog { height:calc(100dvh - var(--v3-space-8)); }
  .config-dialog .config-layout { grid-template-columns:minmax(0,1fr); }
  .config-dialog .config-category-nav { border-right:0; background:transparent; padding:var(--v3-space-6); }

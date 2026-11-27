@@ -173,6 +173,56 @@ describe("user preferences route harness", () => {
     await app.close();
   });
 
+  it("keeps a bundled wallpaper path for a user who also uploaded a photo", async () => {
+    const stored = {
+      appearance: "system",
+      chatFontSize: 14,
+      wallpaper: { mode: "photo", customImage: "/wallpapers/aurora.webp" },
+      glass: { enabled: true, refraction: 75, blur: 5, chromatic: 0.8, specular: 0.25, tint: 0.42 },
+    };
+    const { app, calls } = createHarness({
+      getRow: { email: "user@example.com", prefs: stored, hasBackground: true, updatedAt: "2026-07-09T03:05:06+00:00" },
+      putRow: { email: "user@example.com", prefs: stored, hasBackground: true, updatedAt: "2026-07-09T03:05:06+00:00" },
+    });
+
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/user/preferences",
+      payload: { wallpaper: { mode: "photo", customImage: "/wallpapers/aurora.webp" } },
+    });
+    const get = await app.inject({ method: "GET", url: "/api/user/preferences" });
+
+    expect(calls[1]).toMatchObject(["put", "user@example.com", { wallpaper: { mode: "photo", customImage: "/wallpapers/aurora.webp" } }, { clearBackground: false }]);
+    for (const response of [put, get]) {
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        hasBackground: true,
+        backgroundUrl: "/api/user/background?v=1783566306",
+      });
+      expect(response.json().preferences.wallpaper).toEqual({ mode: "photo", customImage: "/wallpapers/aurora.webp" });
+    }
+
+    await app.close();
+  });
+
+  it("rejects wallpaper paths that are not a bundled /wallpapers/<id>.webp", async () => {
+    const { app, calls } = createHarness();
+
+    for (const customImage of ["/wallpapers/../x.webp", "/etc/x.webp", "/wallpapers/a/b.webp", "/wallpapers/A.webp", "/wallpapers/x.png"]) {
+      calls.length = 0;
+      const response = await app.inject({
+        method: "PUT",
+        url: "/api/user/preferences",
+        payload: { wallpaper: { mode: "photo", customImage } },
+      });
+      expect(response.statusCode).toBe(200);
+      const saved = calls[1] as ["put", string, { wallpaper: Record<string, unknown> }, unknown];
+      expect(saved[2].wallpaper).toEqual({ mode: "photo" });
+    }
+
+    await app.close();
+  });
+
   it("normalizes PUT payload prefs first and lets top-level keys override", async () => {
     const { app, calls } = createHarness();
 

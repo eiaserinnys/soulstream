@@ -1,7 +1,33 @@
 export const WALLPAPER_STORAGE_KEY = "soul-wallpaper";
 export const MAX_WALLPAPER_DATA_URL_BYTES = 2 * 1024 * 1024;
-export const DEFAULT_WALLPAPER_PHOTO_URL =
-  "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&q=70&auto=format";
+export const DEFAULT_WALLPAPER_PHOTO_URL = "/wallpapers/dawn-ridge.webp";
+
+export interface WallpaperPreset {
+  id: string;
+  name: string;
+  url: string;
+  thumbUrl: string;
+}
+
+const WALLPAPER_PRESET_NAMES: ReadonlyArray<readonly [string, string]> = [
+  ["dawn-ridge", "새벽 능선"],
+  ["aurora", "오로라"],
+  ["silk-curves", "비단 곡선"],
+  ["lake-horizon", "호수 수평선"],
+  ["desert-dunes", "사막 언덕"],
+  ["misty-forest", "안개 숲"],
+  ["moonlit-sea", "달빛 바다"],
+  ["milky-way", "은하수"],
+];
+
+export const WALLPAPER_PRESETS: readonly WallpaperPreset[] = WALLPAPER_PRESET_NAMES.map(
+  ([id, name]) => ({
+    id,
+    name,
+    url: `/wallpapers/${id}.webp`,
+    thumbUrl: `/wallpapers/thumbs/${id}.webp`,
+  }),
+);
 
 export type WallpaperMode = "bokeh" | "metal" | "photo" | "plain";
 
@@ -26,10 +52,13 @@ export function normalizeWallpaperSettings(value: unknown): WallpaperSettings {
   return customImage ? { mode, customImage } : { mode };
 }
 
+const BUNDLED_WALLPAPER_PATH = /^\/wallpapers\/[a-z0-9-]+\.webp$/;
+
 function isAllowedWallpaperImage(value: string): boolean {
   return (
     value.startsWith("data:image/")
     || value.startsWith("/api/user/background")
+    || BUNDLED_WALLPAPER_PATH.test(value)
     || value.startsWith("https://")
     || value.startsWith("http://")
   );

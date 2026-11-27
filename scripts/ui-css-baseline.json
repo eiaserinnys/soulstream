@@ -2,7 +2,7 @@
   "color-literal": {
     "soul-desktop/src/index.css": 9,
     "unified-dashboard/client/components/claude-accounts/claude-account-pool.css": 1,
-    "unified-dashboard/client/components/config/config-layout.css": 3,
+    "unified-dashboard/client/components/config/config-layout.css": 2,
     "unified-dashboard/client/v3/v3-folder-workspace.css": 1,
     "unified-dashboard/client/v3/v3-postit-cards.css": 17
   },

@@ -14,6 +14,7 @@ export const DASHBOARD_PWA_OPTIONS = {
       "**/registerSW.js",
       "**/sw-update-migration.js",
       "**/characters/seosoyoung/**",
+      "**/wallpapers/**",
       "**/brand-icons/**",
       "**/vendor-heic2any-*.js",
       "**/ComponentsReviewLayout-*.js",

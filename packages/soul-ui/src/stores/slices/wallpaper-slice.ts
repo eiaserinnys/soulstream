@@ -9,8 +9,8 @@ import {
 } from "../../lib/wallpaper-settings";
 import type { DashboardActions, DashboardState } from "../dashboard-store-types";
 
-export type WallpaperSlice = Pick<DashboardState, "wallpaper"> &
-  Pick<DashboardActions, "setWallpaper" | "setWallpaperMode" | "setWallpaperCustomImage">;
+export type WallpaperSlice = Pick<DashboardState, "wallpaper" | "uploadedBackgroundUrl"> &
+  Pick<DashboardActions, "setWallpaper" | "setWallpaperMode" | "setWallpaperCustomImage" | "setUploadedBackgroundUrl">;
 
 export const createWallpaperSlice: StateCreator<
   DashboardState & DashboardActions,
@@ -19,6 +19,9 @@ export const createWallpaperSlice: StateCreator<
   WallpaperSlice
 > = (set, get) => ({
   wallpaper: readWallpaperSettings(),
+  uploadedBackgroundUrl: null,
+
+  setUploadedBackgroundUrl: (uploadedBackgroundUrl: string | null) => set({ uploadedBackgroundUrl }),
 
   setWallpaper: (wallpaper: WallpaperSettings) => {
     const next = normalizeWallpaperSettings(wallpaper);

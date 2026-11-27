@@ -2027,3 +2027,38 @@ img[data-image-format="svg"],
   color: var(--node-user);
   border-color: color-mix(in srgb, var(--node-user) 35%, transparent);
 }
+
+/* 사진 배경 위의 글 대비: 사진 모드에서만 유리판을 테마별로 두껍게 하고, 밝은 테마의 덮개를 옅은 밝은 덮개로 바꾼다.
+   보케, 메탈, 단색 화면은 data-wallpaper-mode가 달라 영향이 없다. */
+html[data-wallpaper-mode="photo"]:not(.dark) {
+  --lg-tint: rgb(255 255 255 / 76%);
+  --lg-tint-deep: rgb(255 255 255 / 88%);
+  --lg-chat-panel: rgb(255 255 255 / 90%);
+  --lg-card: rgb(255 255 255 / 92%);
+}
+
+html[data-wallpaper-mode="photo"].dark {
+  --lg-tint: rgb(14 17 24 / 64%);
+  --lg-tint-deep: rgb(14 17 24 / 78%);
+  --lg-chat-panel: rgb(14 17 24 / 80%);
+  --lg-card: rgb(22 26 36 / 84%);
+}
+
+html:not(.dark) .wallpaper-layer[data-wallpaper-mode="photo"] .wallpaper-wall-dark {
+  background-image:
+    linear-gradient(rgb(244 245 248 / 10%), rgb(244 245 248 / 18%)),
+    var(--wallpaper-photo-url);
+}
+
+html[data-wallpaper-mode="photo"] :is(.glass, .glass-strong)[data-liquid-glass-webgl="true"]::before,
+html[data-wallpaper-mode="photo"] .liquid-glass-card[data-liquid-glass-webgl="true"]::before {
+  opacity: 1;
+}
+
+html[data-wallpaper-mode="photo"][data-webgl-glass="on"]:not(.dark) {
+  --lg-tint-deep: rgb(255 255 255 / 94%);
+}
+
+html[data-wallpaper-mode="photo"][data-webgl-glass="on"].dark {
+  --lg-tint-deep: rgb(14 17 24 / 86%);
+}

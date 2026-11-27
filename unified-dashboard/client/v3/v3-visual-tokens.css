@@ -56,3 +56,27 @@
   --v3-stroke-selected: color-mix(in srgb, var(--v3-accent) 72%, transparent);
   font-family: var(--v3-font-family);
 }
+
+html[data-wallpaper-mode="photo"]:not(.dark) :is(.v3-shell, .v3-surface) {
+  --v3-glass-panel: color-mix(in srgb, var(--background) 86%, transparent);
+  --v3-glass-detail: color-mix(in srgb, var(--background) 88%, transparent);
+  --v3-glass-card: color-mix(in srgb, var(--background) 92%, transparent);
+}
+
+html[data-wallpaper-mode="photo"].dark :is(.v3-shell, .v3-surface) {
+  --v3-glass-panel: color-mix(in srgb, var(--background) 66%, transparent);
+  --v3-glass-detail: color-mix(in srgb, var(--background) 72%, transparent);
+  --v3-glass-card: color-mix(in srgb, var(--background) 78%, transparent);
+}
+
+html[data-wallpaper-mode="photo"][data-webgl-glass="on"]:not(.dark) :is(.v3-shell, .v3-surface) {
+  --v3-glass-panel: color-mix(in srgb, var(--background) 93%, transparent);
+  --v3-glass-detail: color-mix(in srgb, var(--background) 94%, transparent);
+  --v3-glass-card: color-mix(in srgb, var(--background) 96%, transparent);
+}
+
+html[data-wallpaper-mode="photo"][data-webgl-glass="on"].dark :is(.v3-shell, .v3-surface) {
+  --v3-glass-panel: color-mix(in srgb, var(--background) 76%, transparent);
+  --v3-glass-detail: color-mix(in srgb, var(--background) 80%, transparent);
+  --v3-glass-card: color-mix(in srgb, var(--background) 84%, transparent);
+}

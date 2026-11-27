@@ -70,7 +70,14 @@ function drawPhotoWallpaper(
   } else {
     drawPhotoFallback(context, input.width, input.height);
   }
-  context.fillStyle = "rgba(10, 12, 18, 0.34)";
+  if (input.theme === "dark") {
+    context.fillStyle = "rgba(10, 12, 18, 0.34)";
+  } else {
+    const veil = context.createLinearGradient(0, 0, 0, input.height);
+    veil.addColorStop(0, "rgba(244, 245, 248, 0.10)");
+    veil.addColorStop(1, "rgba(244, 245, 248, 0.18)");
+    context.fillStyle = veil;
+  }
   context.fillRect(0, 0, input.width, input.height);
 }
 
