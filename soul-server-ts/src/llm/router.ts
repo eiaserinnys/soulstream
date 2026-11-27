@@ -2,7 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Logger } from "pino";
 import { ZodError } from "zod";
 
-import { ProviderNotConfiguredError, type LlmExecutor } from "./executor.js";
+import type { LlmExecutor } from "./executor.js";
+import { ProviderNotConfiguredError } from "./llm_turn.js";
 import { parseLlmCompletionRequest } from "./types.js";
 import { constantTimeStringEqual } from "@soulstream/mcp-contract";
 

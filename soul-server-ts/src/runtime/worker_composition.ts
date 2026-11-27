@@ -339,7 +339,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     broadcaster,
     folderContentHost,
   );
-  const llm = composeLlmRoute({ env, taskManager, persistence, broadcaster, logger });
+  const llm = composeLlmRoute({ env, db, taskManager, persistence, broadcaster, logger });
   const mcpRuntime: McpRuntime = {
     ...attachmentRuntime.mcpRuntime,
     persistentReports: new PersistentReportHostClient(orchHostClientDeps),

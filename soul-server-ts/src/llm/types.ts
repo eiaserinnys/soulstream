@@ -11,11 +11,13 @@ export const LlmMessageSchema = z.object({
 });
 export type LlmMessage = z.infer<typeof LlmMessageSchema>;
 
+export const LLM_DEFAULT_MAX_TOKENS = 2048;
+
 export const LlmCompletionRequestSchema = z.object({
   provider: LlmProviderSchema,
   model: z.string().min(1),
   messages: z.array(LlmMessageSchema).min(1),
-  max_tokens: z.number().int().min(1).default(2048),
+  max_tokens: z.number().int().min(1).default(LLM_DEFAULT_MAX_TOKENS),
   temperature: z.number().min(0).max(2).nullable().optional().default(null),
   client_id: z.string().nullable().optional().default(null),
   caller_info: z.record(z.string(), z.unknown()).nullable().optional().default(null),

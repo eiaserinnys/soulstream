@@ -1,10 +1,9 @@
 import { handleClipboardFiles } from "../lib/clipboard-files";
 /**
- * ChatInput - 인터벤션 / 세션 계속 / LLM 컨텍스트 전송 컴포넌트
+ * ChatInput - 인터벤션 / 세션 계속 전송 컴포넌트
  *
- * Running 세션: Intervention 모드로 실행 중인 Claude에 메시지 전송 (/intervene)
- * Completed/Error 세션: New Chat 모드로 대화 이어가기 (/resume → 새 세션 전환)
- * LLM 완료 세션: 이전 대화 컨텍스트를 누적하여 새 LLM 요청 전송 (/api/llm/completions)
+ * Running 세션: Intervention 모드로 실행 중인 세션에 메시지 전송 (/intervene)
+ * Completed/Error 세션(llm 세션 포함): 같은 세션에 대화 이어가기 (/intervene)
  *
  * 세션 상태별 네트워크 로직은 ./chat/submit*.ts 전략 함수로 분리되고,
  * 본 컴포넌트는 레이아웃, draft/포커스, 세션 전환 사이드 이펙트에 집중한다.
@@ -13,12 +12,11 @@ import { handleClipboardFiles } from "../lib/clipboard-files";
 import { useCallback, useRef, useEffect, useMemo, useState, type RefObject } from "react";
 import { Loader2, Square } from "lucide-react";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { useChatFlattenTree, useChatStore } from "../stores/chat-store-scope";
+import { useChatStore } from "../stores/chat-store-scope";
 import { FileAttachmentPreview } from "./FileAttachmentPreview";
 import { AttachmentViewer } from "./AttachmentViewer";
 import { isSafeRasterPreviewMimeType, type ChatAttachmentItem } from "../lib/chat-attachment-model";
 import { useFileUpload } from "../hooks/useFileUpload";
-import { buildLlmHistory } from "./chat/buildLlmHistory";
 import { resolveChatInputMode } from "./chat/chatInputMode";
 import { PaperclipButton } from "./chat/PaperclipButton";
 import { ChatInputEditor } from "./chat/ChatInputEditor";
@@ -80,9 +78,6 @@ export function ChatInput({
   const report = usePersistentReport();
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const activeSessionSummary = useChatStore((s) => s.activeSessionSummary);
-  const tree = useChatStore((s) => s.tree);
-  const treeVersion = useChatStore((s) => s.treeVersion);
-  const flattenMessages = useChatFlattenTree();
   const setActiveSession = useChatStore((s) => s.setActiveSession);
   const setDraft = useDashboardStore((s) => s.setDraft);
   const clearDraft = useDashboardStore((s) => s.clearDraft);
@@ -98,17 +93,9 @@ export function ChatInput({
 
   // 세션 상태 파생값
   const status = activeSessionSummary?.status ?? null;
-  const isLlm = activeSessionSummary?.sessionType === "llm";
   const isFinished = status === "completed" || status === "error";
-  const isLlmFinished = isLlm && isFinished;
+  const isLlmFinished = activeSessionSummary?.sessionType === "llm" && isFinished;
   const effectiveFileUploadUrl = isLlmFinished ? undefined : fileUploadUrl;
-
-  // LLM 대화 컨텍스트: 트리에서 user/assistant 메시지를 추출
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const llmMessages = useMemo(
-    () => (isLlm ? buildLlmHistory(tree, flattenMessages) : []),
-    [isLlm, tree, treeVersion, flattenMessages],
-  );
 
   const [text, setText] = useState("");
   // Appending onto an existing draft also releases a non-exact report reply.
@@ -126,7 +113,7 @@ export function ChatInput({
   const textRef = useRef(text);
   textRef.current = text;
   const previousSessionKeyRef = useRef<string | null>(null);
-  const composeMode = isLlmFinished ? "llm" : isFinished ? "resume" : "intervention";
+  const composeMode = isFinished ? "resume" : "intervention";
   const [interrupting, setInterrupting] = useState(false);
   const [interruptError, setInterruptError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -157,13 +144,7 @@ export function ChatInput({
   // submit 디스패처 훅 — sending / error / abort 관리 + 전략 호출
   const { sending, error, reset, send, retry, retryDelivery } = useChatInputSend({
     activeSessionKey,
-    tree,
-    flattenMessages,
     isFinished,
-    isLlmFinished,
-    llmProvider: activeSessionSummary?.llmProvider,
-    llmModel: activeSessionSummary?.llmModel,
-    clientId: activeSessionSummary?.clientId,
     fileUploadUrl: effectiveFileUploadUrl,
     uploadedPaths,
     uploadedAttachments: files.flatMap((file) => (
@@ -186,17 +167,12 @@ export function ChatInput({
       composeEvents.submitted(activeSessionKey, textRef.current.length, composeMode);
       setText("");
       textRef.current = "";
-      if (!isLlmFinished) resetLocal();
+      resetLocal();
     },
     onAfterSend: () => {
       composeEvents.settled("ok");
     },
     onSendFailure: () => composeEvents.settled("error"),
-    onSendError: (failedText) => {
-      textRef.current = failedText;
-      setText(failedText);
-      if (activeSessionKey) setDraft(activeSessionKey, failedText);
-    },
     onRetry: (sessionId, pending) => {
       if (sessionId === activeSessionKey) closeChatUiFeedback?.();
       composeEvents.submitted(sessionId, pending.text.length, pending.mode);
@@ -378,9 +354,7 @@ export function ChatInput({
 
   const mode = resolveChatInputMode({
     isFinished,
-    isLlmFinished,
     sending,
-    ctxCount: llmMessages.length,
   });
   const pendingAttachments = effectiveFileUploadUrl && files.length > 0 ? (
     <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

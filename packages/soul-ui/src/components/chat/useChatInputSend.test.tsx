@@ -17,10 +17,6 @@ import {
   type UseChatInputSendResult,
 } from "./useChatInputSend";
 
-vi.mock("../../providers/AuthProvider", () => ({
-  useAuth: () => ({ isAuthenticated: false, user: null }),
-}));
-
 vi.mock("./submitIntervention", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./submitIntervention")>()),
   submitIntervention: vi.fn(),
@@ -50,12 +46,10 @@ let sendStatus = "";
 function Harness({
   args,
   actions,
-  onSendError,
   onSendFailure,
 }: {
   args: UseChatInputSendArgs;
   actions: PendingSendActions;
-  onSendError: (text: string) => void;
   onSendFailure: () => void;
 }) {
   const [text, setText] = useState("draft to send");
@@ -69,10 +63,6 @@ function Harness({
     onBeforeSend: (messageText) => {
       args.onBeforeSend?.(messageText);
       setText("");
-    },
-    onSendError: (failedText) => {
-      onSendError(failedText);
-      setText(failedText);
     },
     onSendFailure,
   });
@@ -110,7 +100,6 @@ function deferred<T>() {
 describe("useChatInputSend pending message", () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;
-  let onSendError: ReturnType<typeof vi.fn>;
   let onSendFailure: ReturnType<typeof vi.fn>;
   let actions: PendingSendActions;
   let args: UseChatInputSendArgs;
@@ -123,7 +112,6 @@ describe("useChatInputSend pending message", () => {
     inputDisabled = true;
     sendDisabled = false;
     sendStatus = "";
-    onSendError = vi.fn();
     onSendFailure = vi.fn();
     actions = {
       getPendingChatSend: (sessionId) => useDashboardStore.getState().pendingChatSends[sessionId],
@@ -132,9 +120,7 @@ describe("useChatInputSend pending message", () => {
     };
     args = {
       activeSessionKey: "session-1",
-      tree: null,
       isFinished: false,
-      isLlmFinished: false,
       fileUploadUrl: "/api/attachments/sessions",
       uploadedPaths: ["/tmp/evidence.png"],
       uploadedAttachments: [{
@@ -166,7 +152,7 @@ describe("useChatInputSend pending message", () => {
 
   function render() {
     act(() => root?.render(
-      <Harness args={args} actions={actions} onSendError={onSendError} onSendFailure={onSendFailure} />,
+      <Harness args={args} actions={actions} onSendFailure={onSendFailure} />,
     ));
   }
 
@@ -292,7 +278,6 @@ describe("useChatInputSend pending message", () => {
     });
     expect(textareaValue).toBe("");
     expect(pendingReason).toBe("전달을 확인하지 못했습니다");
-    expect(onSendError).not.toHaveBeenCalled();
     expect(onSendFailure).toHaveBeenCalledOnce();
     expect(latest?.error).toBeNull();
   });
@@ -312,7 +297,6 @@ describe("useChatInputSend pending message", () => {
       reason: "전송하지 못했습니다: 세션을 찾을 수 없습니다",
     });
     expect(textareaValue).toBe("");
-    expect(onSendError).not.toHaveBeenCalled();
   });
 
   it("ignores an HTTP failure after the server event already cleared the slot", async () => {
@@ -345,7 +329,6 @@ describe("useChatInputSend pending message", () => {
     expect(started.status).toBe("sending");
     expect(useDashboardStore.getState().pendingChatSends["session-1"]).toBeUndefined();
     expect(textareaValue).toBe("");
-    expect(onSendError).not.toHaveBeenCalled();
     expect(latest?.error).toBeNull();
   });
 
