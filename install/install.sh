@@ -963,7 +963,14 @@ preflight() {
   fi
 }
 
-install_packages() { export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y sudo tmux curl ca-certificates git jq openssl build-essential python3 gh postgresql-17; }
+# A new VM still runs apt from cloud-init right after boot. apt-get update fails at once on the lists lock held there
+# (DPkg::Lock::Timeout does not cover it), so wait for cloud-init first; the timeout keeps a run started from cloud-init itself from hanging.
+install_packages() {
+  export DEBIAN_FRONTEND=noninteractive
+  if command -v cloud-init >/dev/null; then timeout 300 cloud-init status --wait >/dev/null 2>&1 || true; fi
+  apt-get update
+  apt-get -o DPkg::Lock::Timeout=300 install -y sudo tmux curl ca-certificates git jq openssl build-essential python3 gh postgresql-17
+}
 setup_account() {
   id soulstream >/dev/null 2>&1 || useradd -m -d /home/soulstream -s /bin/bash soulstream
   if [[ -f /root/.ssh/authorized_keys && ! -e /home/soulstream/.ssh/authorized_keys ]]; then
