@@ -41,6 +41,8 @@ describe("dependencies of started cards", () => {
       assignee: { kind: "session", sessionId: "owner" }, idempotencyKey: key() })).operation.target_id;
     await cards.setCardStatus({ ...human, cardId: id, status });
     if (dependsOn.length) await cards.setCardDependencies({ ...owner, cardId: id, dependsOn, idempotencyKey: key() });
+    await dispatcher.drain();
+    sendMessage.mockClear();
     return id;
   }
   async function predecessor(title: string) {
@@ -89,7 +91,7 @@ describe("dependencies of started cards", () => {
     const b = await predecessor("선행 B");
     const c = await predecessor("선행 C");
     await cards.setCardDependencies({ ...owner, cardId: a, dependsOn: [c], idempotencyKey: key() });
-    await cards.updateUnstartedCard({ ...human, cardId: b, dependsOn: [a], idempotencyKey: key() }, async () => {});
+    await cards.updateUnstartedCard({ actorKind: "agent", actorSessionId: "pas", cardId: b, dependsOn: [a], idempotencyKey: key() }, async () => {});
     await expect(cards.setCardDependencies({ ...owner, cardId: a, dependsOn: [b], idempotencyKey: key() }))
       .rejects.toMatchObject({ statusCode: 409, code: "CARD_DEPENDENCY_CYCLE" });
     expect(await dependsOn(a)).toEqual([c]);
