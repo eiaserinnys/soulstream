@@ -55,6 +55,7 @@ const mockApi = {
   getUsageSummary: jest.fn(),
   refreshUsageSummary: jest.fn(),
   getAuthStatus: jest.fn(),
+  putUserPreferences: jest.fn(),
 };
 
 beforeEach(() => {
@@ -320,4 +321,37 @@ test('입력 URL이 바뀐 뒤 이전 주소의 연결 테스트 결과를 표�
   await act(async () => resolve({ mode: 'single' }));
   expect(screen.queryByText('연결됨: single 모드')).toBeNull();
   expect(screen.getByTestId('settings-server-input').props.value).toBe('https://after.test');
+});
+
+describe('SettingsScreen — 올린 사진 보존', () => {
+  const uploadedWallpaper = { mode: 'photo' as const, customImage: '/api/user/background' };
+
+  beforeEach(() => {
+    useSettingsStore.setState({ serverUrl: CURRENT_SERVER_URL, appearance: 'dark', wallpaper: uploadedWallpaper });
+    useAuthStore.setState({ jwt: 'current-jwt', authRejected: false });
+    resetAuthScopeForTest();
+    mockApi.getConfig.mockResolvedValue({ mode: 'single', nodeId: 'me' });
+    mockApi.putUserPreferences.mockImplementation(async (preferences: any) => ({ preferences }));
+  });
+
+  const clearBackgroundSent = () =>
+    mockApi.putUserPreferences.mock.calls.map(([, options]) => Boolean(options?.clearBackground));
+
+  it.each(['bokeh', 'metal'])('배경을 %s로 바꿔도 서버의 올린 사진을 지우지 않는다', async (mode) => {
+    const screen = render(<SettingsScreen category="display" />);
+    fireEvent.press(await screen.findByTestId(`settings-wallpaper-${mode}`));
+
+    await waitFor(() => expect(mockApi.putUserPreferences).toHaveBeenCalledTimes(1));
+    expect(mockApi.putUserPreferences.mock.calls[0][0].wallpaper.mode).toBe(mode);
+    expect(clearBackgroundSent()).toEqual([false]);
+  });
+
+  it('기본값 복원은 배경을 보케로 저장하고 올린 사진을 지우지 않는다', async () => {
+    const screen = render(<SettingsScreen category="display" />);
+    fireEvent.press(await screen.findByTestId('settings-reset-background'));
+
+    await waitFor(() => expect(mockApi.putUserPreferences).toHaveBeenCalledTimes(1));
+    expect(mockApi.putUserPreferences.mock.calls[0][0].wallpaper.mode).toBe('bokeh');
+    expect(clearBackgroundSent()).toEqual([false]);
+  });
 });

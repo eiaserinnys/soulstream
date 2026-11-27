@@ -15,13 +15,13 @@ export function useDisplayPreferenceActions() {
   const [backgroundStatus, setBackgroundStatus] = useState<string | null>(null);
   useEffect(() => () => { ++preferencesRevision.current; }, []);
   useEffect(() => { ++preferencesRevision.current; setBackgroundStatus(null); }, [serverUrl, jwt]);
-  async function savePreferences(nextAppearance: Appearance, nextWallpaper: WallpaperSettings, options: { clearBackground?: boolean } = {}) {
+  async function savePreferences(nextAppearance: Appearance, nextWallpaper: WallpaperSettings) {
     const revision = ++preferencesRevision.current;
     const scope = identity.current;
     setBackgroundStatus('이 기기에 적용했습니다.');
     if (!scope.serverUrl || !scope.jwt) return;
     try {
-      const response = await createApiClient(scope.serverUrl).putUserPreferences({ appearance: nextAppearance, wallpaper: nextWallpaper }, options);
+      const response = await createApiClient(scope.serverUrl).putUserPreferences({ appearance: nextAppearance, wallpaper: nextWallpaper });
       if (revision !== preferencesRevision.current || identity.current.serverUrl !== scope.serverUrl || identity.current.jwt !== scope.jwt) return;
       useSettingsStore.getState().applyUserPreferences(response.preferences);
       setBackgroundStatus('이 기기와 서버에 적용했습니다.');
