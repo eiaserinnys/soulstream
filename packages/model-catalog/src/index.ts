@@ -219,7 +219,7 @@ export const ModelCatalogSchema = z.object({
     turn_summary: z.object({ model_preset: z.string().trim().min(1) }),
     turn_story: z.object({ model_preset: z.string().trim().min(1) }),
     instruction_extraction: z.object({ model_preset: z.string().trim().min(1) }),
-    turn_summary_fallback: z.object({ model_preset: z.string().trim().min(1) }).optional(),
+    turn_summary_preferred: z.object({ model_presets: z.array(z.string().trim().min(1)) }).optional(),
   }),
   provider_model_prefixes: z.array(z.object({
     prefix: z.string().trim().min(1),
@@ -280,8 +280,17 @@ export const ModelCatalogSchema = z.object({
       }
     }
   }
-  for (const [task, value] of Object.entries(catalog.task_defaults)) {
-    if (value === undefined || presetIds.has(value.model_preset)) continue;
+  const { turn_summary_preferred: preferred, ...singlePresetTasks } = catalog.task_defaults;
+  for (const [index, presetId] of (preferred?.model_presets ?? []).entries()) {
+    if (presetIds.has(presetId)) continue;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["task_defaults", "turn_summary_preferred", "model_presets", index],
+      message: `task_defaults.turn_summary_preferred.model_presets "${presetId}" is not a known model preset`,
+    });
+  }
+  for (const [task, value] of Object.entries(singlePresetTasks)) {
+    if (presetIds.has(value.model_preset)) continue;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["task_defaults", task, "model_preset"],

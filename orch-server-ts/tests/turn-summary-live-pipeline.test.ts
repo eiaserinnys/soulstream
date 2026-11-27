@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
-import { isCodexUsageLimitError } from "../src/llm/codex_ephemeral_executor.js";
 import { parsePersistentInstructionsApplyPayload } from
   "@soulstream/wire-schema/persistent-session-instructions";
 
@@ -227,6 +226,7 @@ describe("live persistent instruction extractor wiring", () => {
       provider: "codex",
       model: "gpt-5.6-luna",
       storyModel: "gpt-5.6-luna",
+      preferredStages: [],
       reasoningEffort: "high",
       instructionExtractionModel: "gpt-6.2-sol",
       instructionExtractionReasoningEffort: "high",
@@ -256,12 +256,9 @@ describe("live persistent instruction extractor wiring", () => {
   });
 });
 
-describe("live usage limit fallback wiring", () => {
-  const usageLimit = () => Object.assign(
-    new Error("codex exec exited 1: You've hit your usage limit."),
-    { code: "CODEX_USAGE_LIMIT" },
-  );
-  const fallbackConfig: TurnSummaryConfig = {
+describe("live model chain wiring", () => {
+  const limit = (code: string) => Object.assign(new Error(code), { code });
+  const stageConfig: TurnSummaryConfig = {
     enabled: true,
     instruction: "summary config",
     storyInstruction: "story config",
@@ -282,7 +279,10 @@ describe("live usage limit fallback wiring", () => {
     provider: "codex",
     model: "gpt-5.6-luna",
     storyModel: "gpt-5.6-terra",
-    fallbackModel: "gemini-3.8-flash",
+    preferredStages: [
+      { backend: "claude", model: "sonnet" },
+      { backend: "antigravity", model: "gemini-4-hydrogen" },
+    ],
     reasoningEffort: "high",
     instructionExtractionModel: "gpt-6.2-sol",
     instructionExtractionReasoningEffort: "xhigh",
@@ -293,22 +293,14 @@ describe("live usage limit fallback wiring", () => {
     historyLimit: 0,
     excludedFolderIds: [],
   };
+  const result = (model: string, content = "요약") => ({
+    content, model, latencyMs: 1, attempts: 1, spawnDurationMs: 1, peakConcurrentSpawns: 1,
+  });
 
-  it("sends summaries and persistent instruction extraction, but not story folds, to the fallback executor on a usage limit", async () => {
+  function wire(claudeGenerate: ReturnType<typeof vi.fn>, agyGenerate: ReturnType<typeof vi.fn>) {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       answers: { long_term_correction: { noul: 0.8 } },
     }), { status: 200 })));
-    liveFactoryMocks.generate.mockRejectedValue(usageLimit());
-    liveFactoryMocks.summarize.mockRejectedValue(usageLimit());
-    const fallbackGenerate = vi.fn(async (request: { model: string }) => ({
-      content: JSON.stringify({ standing_instructions: [] }),
-      model: request.model,
-      latencyMs: 1,
-      attempts: 1,
-      spawnDurationMs: 1,
-      peakConcurrentSpawns: 1,
-    }));
-
     createLiveTurnSummaryPipeline({
       config: { codex_cli_path: "codex", typesafe_api_key: "test-typesafe-key" } as never,
       configPath: "unused-turn-summary.yaml",
@@ -320,31 +312,69 @@ describe("live usage limit fallback wiring", () => {
       sessionBroadcaster: { append: vi.fn() },
       logger: { warn: vi.fn(), info: vi.fn() },
       warn: vi.fn(),
-      fallbackExecutor: { generate: fallbackGenerate },
+      claudeExecutor: { generate: claudeGenerate },
+      antigravityExecutor: { generate: agyGenerate },
       overrides: { turnSummaryCodexPath: "/codex" },
     });
-    const dependencies = liveFactoryMocks.pipelineDeps as {
-      persistentInstructionExtractor: PersistentInstructionExtractor;
-      summarizer: { summarize: (...args: unknown[]) => Promise<{ model: string }> };
+    return {
+      dependencies: liveFactoryMocks.pipelineDeps as {
+        persistentInstructionExtractor: PersistentInstructionExtractor;
+        summarizer: { summarize: (...args: unknown[]) => Promise<{ model: string }> };
+      },
+      story: liveFactoryMocks.storyDeps as {
+        generator: { generate: (...args: unknown[]) => Promise<{ model: string }> };
+      },
     };
+  }
+
+  it("sends instruction extraction to claude with the claude preset model and the extraction effort", async () => {
+    const claudeGenerate = vi.fn(async (request: { model: string }) =>
+      result(request.model, JSON.stringify({ standing_instructions: [] })));
+    const agyGenerate = vi.fn();
+    const { dependencies } = wire(claudeGenerate, agyGenerate);
 
     await dependencies.persistentInstructionExtractor.extract(
       { userText: "앞으로 답변 전에 근거를 확인해 줘.", activeInstructions: [] },
-      fallbackConfig,
+      stageConfig,
     );
-    expect(fallbackGenerate).toHaveBeenLastCalledWith(expect.objectContaining({
-      model: "gemini-3.8-flash",
-      reasoningEffort: "high",
-      outputSchema: expect.objectContaining({ required: ["standing_instructions"] }),
-    }));
 
-    const { generator } = liveFactoryMocks.storyDeps as {
-      generator: { generate: (...args: unknown[]) => Promise<{ model: string }> };
-    };
-    await expect(generator.generate("접기", fallbackConfig, { maxAttempts: 1 })).rejects.toSatisfy(isCodexUsageLimitError);
+    expect(claudeGenerate).toHaveBeenCalledTimes(1);
+    expect(claudeGenerate.mock.calls[0]![0]).toMatchObject({
+      model: "sonnet",
+      reasoningEffort: "xhigh",
+      timeoutMs: 1_234,
+      concurrencyLimit: 3,
+      outputSchema: expect.objectContaining({ required: ["standing_instructions"] }),
+    });
+    expect(agyGenerate).not.toHaveBeenCalled();
+    expect(liveFactoryMocks.generate).not.toHaveBeenCalled();
+  });
+
+  it("folds stories on claude then codex without ever calling antigravity", async () => {
+    const claudeGenerate = vi.fn(async () => { throw limit("CLAUDE_USAGE_LIMIT"); });
+    const agyGenerate = vi.fn();
+    liveFactoryMocks.generate.mockResolvedValue(result("gpt-5.6-terra", "접기"));
+    const { story } = wire(claudeGenerate, agyGenerate);
+
+    const folded = await story.generator.generate(
+      "접기", { ...stageConfig, model: stageConfig.storyModel }, { maxAttempts: 1 },
+    );
+
+    expect(folded).toMatchObject({ model: "gpt-5.6-terra" });
+    expect(claudeGenerate).toHaveBeenCalledTimes(1);
+    expect(agyGenerate).not.toHaveBeenCalled();
+    expect(liveFactoryMocks.generate).toHaveBeenCalledTimes(1);
+    expect(liveFactoryMocks.generate.mock.calls[0]![1]).toMatchObject({ model: "gpt-5.6-terra" });
+  });
+
+  it("sends summaries to antigravity when claude is out of quota", async () => {
+    const claudeGenerate = vi.fn(async () => { throw limit("CLAUDE_USAGE_LIMIT"); });
+    const agyGenerate = vi.fn(async (request: { model: string }) => result(request.model));
+    const { dependencies } = wire(claudeGenerate, agyGenerate);
+
     await expect(dependencies.summarizer.summarize(
-      { userText: "u", assistantText: "a", previousSummaries: [] }, fallbackConfig,
-    )).resolves.toMatchObject({ model: "gemini-3.8-flash" });
-    expect(fallbackGenerate).toHaveBeenCalledTimes(2);
+      { userText: "u", assistantText: "a", previousSummaries: [] }, stageConfig,
+    )).resolves.toMatchObject({ model: "gemini-4-hydrogen" });
+    expect(liveFactoryMocks.generate).not.toHaveBeenCalled();
   });
 });

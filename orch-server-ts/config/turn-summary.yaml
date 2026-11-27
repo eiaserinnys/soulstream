@@ -40,7 +40,7 @@ catch_up_max_jobs_per_round: 100
 provider: codex
 reasoning_effort: high
 instruction_extraction_reasoning_effort: high
-timeout_ms: 30000
+timeout_ms: 60000
 max_attempts: 2
 codex_concurrency_limit: 2
 codepoint_limit: 6000

@@ -1,8 +1,7 @@
 import type {
   TurnSummaryCatchUpRepositoryPort,
 } from "./turn_summary_catch_up_repository.js";
-import { isCodexUsageLimitError } from "../llm/codex_ephemeral_executor.js";
-import { findErrorInChain } from "./error_chain.js";
+import { findUsageLimitError } from "./error_chain.js";
 import type {
   TurnSummaryConfigService,
   TurnSummaryLogger,
@@ -126,19 +125,18 @@ export class TurnSummaryCatchUpSweep {
           }
           continue;
         }
-        if (isCodexUsageLimitError(outcome.error)) {
+        const usageLimit = findUsageLimitError(outcome.error);
+        if (usageLimit !== undefined) {
           stoppedByUsageLimit = true;
           this.deps.logger.warn(
             {
               sessionId: candidate.sessionId,
               completeEventId: candidate.completeEventId,
-              codexMessage: findErrorInChain(
-                outcome.error,
-                "CODEX_USAGE_LIMIT",
-              )?.message,
+              limitCode: usageLimit.code,
+              limitMessage: usageLimit.message,
               err: outcome.error,
             },
-            "Turn summary catch-up stopped: codex usage limit",
+            "Turn summary catch-up stopped: usage limit",
           );
           break;
         }

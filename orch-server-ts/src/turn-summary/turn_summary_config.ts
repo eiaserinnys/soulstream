@@ -34,7 +34,7 @@ const TurnSummaryConfigFileSchema = z
     provider: z.enum(["codex", "openai-api"]),
     model: z.string().trim().min(1).optional(),
     story_model: z.string().trim().min(1).optional(),
-    fallback_model_preset: z.string().trim().nullable().optional(),
+    preferred_model_presets: z.array(z.string().trim().min(1)).optional(),
     reasoning_effort: z.enum(["minimal", "low", "medium", "high", "xhigh"]),
     instruction_extraction_model: z.string().trim().min(1).optional(),
     instruction_extraction_reasoning_effort: z.enum([
@@ -83,7 +83,7 @@ const TurnSummaryConfigOverlaySchema = z
     provider: z.enum(["codex", "openai-api"]).optional(),
     model: z.string().trim().min(1).optional(),
     story_model: z.string().trim().min(1).optional(),
-    fallback_model_preset: z.string().trim().nullable().optional(),
+    preferred_model_presets: z.array(z.string().trim().min(1)).optional(),
     reasoning_effort: z.enum([
       "minimal",
       "low",
@@ -142,8 +142,14 @@ const TurnSummaryConfigSchema = TurnSummaryConfigFileSchema
     excludedFolderIds: value.excluded_folder_ids,
   }));
 
+export type TurnSummaryStage = {
+  readonly backend: "claude" | "antigravity";
+  readonly model: string;
+};
+
 export type TurnSummaryConfig = z.output<typeof TurnSummaryConfigSchema> & {
-  readonly fallbackModel?: string;
+  /** Stages tried before codex, in order. */
+  readonly preferredStages: readonly TurnSummaryStage[];
 };
 
 export class TurnSummaryConfigService {
@@ -184,12 +190,13 @@ export class TurnSummaryConfigService {
         instruction_extraction_model: merged.instruction_extraction_model
           ?? resolveTaskModel(defaults.instruction_extraction.model_preset, "codex"),
       });
-      const fallbackPreset = merged.fallback_model_preset === undefined
-        ? defaults.turn_summary_fallback?.model_preset
-        : merged.fallback_model_preset;
-      const result: TurnSummaryConfig = fallbackPreset
-        ? { ...config, fallbackModel: resolveFallbackModel(catalog, fallbackPreset) }
-        : config;
+      const preferredPresets = merged.preferred_model_presets
+        ?? defaults.turn_summary_preferred?.model_presets
+        ?? [];
+      const result: TurnSummaryConfig = {
+        ...config,
+        preferredStages: preferredPresets.map((presetId) => resolvePreferredStage(catalog, presetId)),
+      };
       this.lastSuccessful = result;
       return result;
     } catch (error) {
@@ -203,17 +210,17 @@ export class TurnSummaryConfigService {
   }
 }
 
-function resolveFallbackModel(
+function resolvePreferredStage(
   catalog: ReturnType<ModelCatalogSource["snapshot"]>,
   presetId: string,
-): string {
+): TurnSummaryStage {
   const preset = resolveModelPreset(catalog, presetId);
-  if (preset.backend !== "antigravity") {
+  if (preset.backend !== "claude" && preset.backend !== "antigravity") {
     throw new Error(
-      `Turn summary fallback preset backend ${preset.backend} is not antigravity`,
+      `Turn summary preferred preset backend ${preset.backend} is not claude or antigravity`,
     );
   }
-  return preset.model;
+  return { backend: preset.backend, model: preset.model };
 }
 
 function resolveLocalConfigPath(configPath: string): string {

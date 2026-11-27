@@ -58,6 +58,7 @@ import {
 import { registerDashboardServing } from "./dashboard/dashboard_serving.js";
 import { CodexEphemeralExecutor } from "./llm/codex_ephemeral_executor.js";
 import { AntigravityEphemeralExecutor } from "./llm/antigravity_ephemeral_executor.js";
+import { ClaudeEphemeralExecutor } from "./llm/claude_ephemeral_executor.js";
 import type { EphemeralLlmRouteOptions } from "./llm/ephemeral_llm_routes.js";
 import { InMemoryNodeRegistry, type NodeRegistryEvent } from "./node/registry.js";
 import { resolveRegisteredAgentId } from "./node/agent_profile_lookup.js";
@@ -1271,7 +1272,13 @@ export async function createLiveProductionApplication(
     sessionBroadcaster: runtimeServices.sessionBroadcaster,
     logger: app.log,
     warn: context.warn,
-    fallbackExecutor: antigravityEphemeralExecutor,
+    antigravityExecutor: antigravityEphemeralExecutor,
+    ...(claudeCentralService === undefined ? {} : {
+      claudeExecutor: new ClaudeEphemeralExecutor({
+        oneShotToken: () => claudeCentralService!.pickOneShotAccessToken(),
+        processEnv: ephemeralProcessEnv,
+      }),
+    }),
     overrides,
   });
   const childSessionCheck = new ChildSessionCheckService({

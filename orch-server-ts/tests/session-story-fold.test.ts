@@ -40,6 +40,7 @@ const CONFIG: TurnSummaryConfig = {
   provider: "codex",
   model: "gpt-5.6-luna",
   storyModel: "gpt-5.6-terra",
+  preferredStages: [],
   reasoningEffort: "high",
   instructionExtractionModel: "gpt-6.2-sol",
   instructionExtractionReasoningEffort: "high",

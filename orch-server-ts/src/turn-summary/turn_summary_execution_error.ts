@@ -5,13 +5,13 @@ export class TurnSummaryExecutionError extends Error {
     readonly spawnDurationMs: number,
     readonly peakConcurrentSpawns: number,
     cause: unknown,
-    readonly fallbackError?: unknown,
+    readonly previousErrors: readonly unknown[] = [],
   ) {
     super(
-      fallbackError === undefined
+      previousErrors.length === 0
         ? `turn summary failed after ${attempts} attempts`
-        : `turn summary failed after ${attempts} attempts; fallback model failed: ${
-          fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+        : `turn summary failed after ${attempts} attempts; earlier stages failed: ${
+          previousErrors.map((error) => error instanceof Error ? error.message : String(error)).join("; ")
         }`,
       { cause },
     );
