@@ -31,13 +31,11 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
   const setChatFontSize = useDashboardStore((state) => state.setChatFontSize);
   const hydratedAccountRef = useRef<string | null>(null);
   const appliedSnapshotKeyRef = useRef<string | null>(null);
-  const hasServerBackgroundRef = useRef(false);
   const saveSeqRef = useRef(0);
 
   useEffect(() => {
     hydratedAccountRef.current = null;
     appliedSnapshotKeyRef.current = null;
-    hasServerBackgroundRef.current = false;
     if (!accountKey) return;
 
     let cancelled = false;
@@ -50,7 +48,6 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     fetchUserPreferences()
       .then((response) => {
         if (cancelled) return;
-        hasServerBackgroundRef.current = response.hasBackground;
         setUploadedBackgroundUrl(response.backgroundUrl);
         applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef);
         writeCachedUserPreferences(accountKey, response.preferences);
@@ -83,10 +80,9 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     saveSeqRef.current = saveSeq;
     const timer = window.setTimeout(() => {
       writeCachedUserPreferences(accountKey, snapshot);
-      persistSnapshot(snapshot, hasServerBackgroundRef.current)
+      persistSnapshot(snapshot)
         .then((response) => {
           if (saveSeqRef.current !== saveSeq) return;
-          hasServerBackgroundRef.current = response.hasBackground;
           setUploadedBackgroundUrl(response.backgroundUrl);
           applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef);
           writeCachedUserPreferences(accountKey, response.preferences);
@@ -100,10 +96,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
   }, [accountKey, appearance, chatFontSize, liquidGlass, wallpaper, setChatFontSize, setLiquidGlass, setUploadedBackgroundUrl, setWallpaper]);
 }
 
-async function persistSnapshot(
-  snapshot: UserPreferencesSnapshot,
-  hasServerBackground: boolean,
-) {
+async function persistSnapshot(snapshot: UserPreferencesSnapshot) {
   const customImage = snapshot.wallpaper.customImage;
   if (snapshot.wallpaper.mode === "photo" && customImage?.startsWith("data:image/")) {
     const uploaded = await uploadUserBackground(await dataUrlToBlob(customImage));
@@ -115,9 +108,7 @@ async function persistSnapshot(
     });
   }
 
-  return saveUserPreferences(snapshot, {
-    clearBackground: hasServerBackground && snapshot.wallpaper.mode !== "photo",
-  });
+  return saveUserPreferences(snapshot);
 }
 
 function applySnapshot(

@@ -86,4 +86,10 @@ describe("ConfigModal wallpaper grid", () => {
     expect(useDashboardStore.getState().wallpaper).toEqual({ mode: "photo", customImage: "/api/user/background?v=3" });
     expect(tile("내 사진")!.getAttribute("aria-pressed")).toBe("true");
   });
+
+  it("marks the first bundled wallpaper for a legacy photo setting without an image", async () => {
+    await act(async () => useDashboardStore.setState({ wallpaper: { mode: "photo" } }));
+
+    expect(tiles().filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent)).toEqual(["새벽 능선"]);
+  });
 });

@@ -216,6 +216,7 @@ class Fake:
         if method == "PUT":
             body = request.post_data_json or {}
             state["wallpaper"] = body.get("wallpaper", state["wallpaper"])
+            state["last_put"] = body
             if body.get("clearBackground"):
                 state["uploaded"] = False
         background = "/api/user/background?v=1" if state["uploaded"] else None

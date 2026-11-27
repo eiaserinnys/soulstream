@@ -1,6 +1,6 @@
 import "./config/config-layout.css";
 import "../v3/v3-card-board.css";
-import { WALLPAPER_PRESETS, fileToWallpaperDataUrl } from "@seosoyoung/soul-ui/lib/wallpaper-settings";
+import { DEFAULT_WALLPAPER_PHOTO_URL, WALLPAPER_PRESETS, fileToWallpaperDataUrl } from "@seosoyoung/soul-ui/lib/wallpaper-settings";
 import { ArrowLeft, Check } from "lucide-react";
 import { FileStorageTab } from "./FileStorageTab";
 import { CardDispatchTab } from "./CardDispatchTab";
@@ -312,7 +312,7 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
       key: preset.id,
       label: preset.name,
       thumbUrl: preset.thumbUrl,
-      selected: wallpaper.mode === "photo" && wallpaper.customImage === preset.url,
+      selected: wallpaper.mode === "photo" && (wallpaper.customImage ?? DEFAULT_WALLPAPER_PHOTO_URL) === preset.url,
       apply: () => setWallpaper({ mode: "photo", customImage: preset.url }),
     })),
     ...(uploadedUrl ? [{
