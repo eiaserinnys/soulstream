@@ -1803,6 +1803,8 @@ run_install() {
 }
 main() {
   disable_xtrace
+  # The caller's umask may be 077; the soulstream account must still be able to read and run what root installs.
+  umask 022
   set -Eeuo pipefail
   trap 'restore_tty_echo; cleanup_temp_files' EXIT
   parse_args "$@"
