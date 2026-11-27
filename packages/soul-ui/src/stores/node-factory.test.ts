@@ -270,12 +270,18 @@ describe("createNodeFromEvent", () => {
 
     describe("initial instruction mark", () => {
       const legacy = "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.";
+      const sampleProject =
+        "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤, 처음 쓰는 분이라면 다음 첫 요청을 그대로 보내 보시라고 권해 주십시오. 「작업실 폴더에 카드를 만들어 바로 시작해 줘. 샘플 프로젝트 소개 문서를 한 장(목표, 핵심 기능 세 가지, 첫 마일스톤) 쓰고, 세 부분을 확인 항목으로 나눠 각각 문서 링크를 단 뒤 검수를 요청해 줘.」 그다음 지시를 기다려 주십시오.";
+      const introduction =
+        "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤, 처음 쓰는 분이라면 다음 첫 요청을 그대로 보내 보시라고 권해 주십시오. 「작업실 폴더에 카드를 만들어 바로 시작해 줘. atom의 소울스트림 안내를 바탕으로 소울스트림 소개 문서를 한 장(무엇인지, 핵심 기능 세 가지, 시작하는 법) 쓰고, 세 부분을 확인 항목으로 나눠 각각 문서 링크를 단 뒤 검수를 요청해 줘.」 그다음 지시를 기다려 주십시오.";
       const make = (type: "user_message" | "intervention_sent", text: string, fields: object = {}) =>
         createNodeFromEvent({ type, text, ...fields } as unknown as SoulSSEEvent, 204);
 
       it.each(["user_message", "intervention_sent"] as const)("marks the current and legacy first instruction in %s", (type) => {
         expect(make(type, `${EXECUTE_INSTRUCTION_PROMPT}\n${PERSISTENT_INITIAL_INSTRUCTION}`)).toMatchObject({ initialInstruction: true });
         expect(make(type, `${EXECUTE_INSTRUCTION_PROMPT}\n${legacy}`)).toMatchObject({ initialInstruction: true });
+        expect(make(type, `${EXECUTE_INSTRUCTION_PROMPT}\n${sampleProject}`)).toMatchObject({ initialInstruction: true });
+        expect(make(type, `${EXECUTE_INSTRUCTION_PROMPT}\n${introduction}`)).toMatchObject({ initialInstruction: true });
         expect(make(type, "", { payload: { text: `${EXECUTE_INSTRUCTION_PROMPT}\n${legacy}` } })).toMatchObject({ initialInstruction: true });
       });
 

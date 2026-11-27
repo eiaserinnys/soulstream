@@ -7,12 +7,19 @@ export const CARD_NOTICE_LEAD = " 맡긴 카드 #";
 export const EXECUTE_INSTRUCTION_PROMPT = "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.";
 /** 영구 세션을 만들 때 서버가 비었을 때 채우는 기본 첫 지시. */
 export const PERSISTENT_INITIAL_INSTRUCTION =
+  "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤, 처음 쓰는 분이라면 다음 첫 요청을 그대로 보내 보시라고 권해 주십시오. 「작업실 폴더에 카드를 만들어 바로 시작해 줘. atom의 소울스트림 안내를 바탕으로 소울스트림 소개 문서를 한 장(무엇인지, 핵심 기능 세 가지, 시작하는 법) 쓰고, 세 부분을 확인 항목으로 나눠 각각 문서 링크를 단 뒤 검수를 요청해 줘.」 그다음 지시를 기다려 주십시오.";
+/** 2026-11-25부터 2026-11-27까지 쓰인 기본 첫 지시(샘플 프로젝트 소개). 이미 저장된 세션이 있다. */
+const SAMPLE_PROJECT_PERSISTENT_INITIAL_INSTRUCTION =
   "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤, 처음 쓰는 분이라면 다음 첫 요청을 그대로 보내 보시라고 권해 주십시오. 「작업실 폴더에 카드를 만들어 바로 시작해 줘. 샘플 프로젝트 소개 문서를 한 장(목표, 핵심 기능 세 가지, 첫 마일스톤) 쓰고, 세 부분을 확인 항목으로 나눠 각각 문서 링크를 단 뒤 검수를 요청해 줘.」 그다음 지시를 기다려 주십시오.";
 /** 2026-10-06부터 2026-11-25 직전까지 쓰인 기본 첫 지시. 이미 저장된 세션이 있다. */
 const LEGACY_PERSISTENT_INITIAL_INSTRUCTION =
   "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.";
 const PERSISTENT_INITIAL_INPUTS: ReadonlySet<string> = new Set(
-  [PERSISTENT_INITIAL_INSTRUCTION, LEGACY_PERSISTENT_INITIAL_INSTRUCTION].map(value => `${EXECUTE_INSTRUCTION_PROMPT}\n${value}`),
+  [
+    PERSISTENT_INITIAL_INSTRUCTION,
+    SAMPLE_PROJECT_PERSISTENT_INITIAL_INSTRUCTION,
+    LEGACY_PERSISTENT_INITIAL_INSTRUCTION,
+  ].map(value => `${EXECUTE_INSTRUCTION_PROMPT}\n${value}`),
 );
 const LEGACY_CACHE_INPUT = "캐시 유지용 호출입니다. 도구를 쓰지 말고 '[SILENT]'만 답하십시오.";
 
