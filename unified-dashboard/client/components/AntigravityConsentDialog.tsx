@@ -3,6 +3,7 @@ import {
   Button, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, Input,
 } from "@seosoyoung/soul-ui";
 import { ANTIGRAVITY_ACKNOWLEDGEMENT } from "../lib/antigravity-backend-api";
+import "./claude-accounts/claude-account-pool.css";
 import "./antigravity-backend-row.css";
 
 export const ANTIGRAVITY_TERMS_WARNING = "구글은 약관으로 agy를 자동화에 사용하는 것을 금지합니다. 그래도 켜시겠습니까?";
@@ -35,8 +36,8 @@ export function AntigravityConsentDialog({ open, pending, error, onOpenChange, o
             onChange={(event) => setTyped(event.target.value)}
             onKeyDown={(event) => { if (event.key === "Enter" && confirmed && !pending) onConfirm(); }}
           />
+          {error ? <p className="c724-pool-error" role="alert" data-v3-selectable-content="true">{error}</p> : null}
         </div>
-        {error ? <p className="agy-consent-error" role="alert" data-v3-selectable-content="true">{error}</p> : null}
       </DialogPanel>
       <DialogFooter variant="bare">
         <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>취소</Button>

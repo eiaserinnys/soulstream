@@ -161,39 +161,68 @@ export function PersistentSessionsTabReviewSample() {
   return frame(<PersistentSessionsTab request={request} assignment={dialoguesAssignment} initialPersistentSessionId="sample-pas-1" />, "persistent-sessions-tab-review");
 }
 
-/** 코딩 에이전트 탭 전체(노드 목록과 공급자 행). 가짜 노드 하나와 가짜 사용량 요약이다. */
+/**
+ * 서버처럼 구는 가짜 전송. Antigravity 스위치를 따라 사용량 요약이 달라진다:
+ * 꺼져 있으면 Antigravity가 없고, 켠 직후에는 꺼진 동안 모은 값(미설정)이며, 새로 모으면(POST) 연결됨으로 돌아온다.
+ */
+function serverLikeRequest(): typeof fetch {
+  const state = { enabled: false, version: 0, collected: "not_configured" as "not_configured" | "auto" };
+  const summary = () => {
+    const antigravity = !state.enabled ? null
+      : state.collected === "auto"
+        ? usageFixtureProvider([usageFixtureQuota("antigravity:weekly", "7일", "7d", 56, nowSeconds + 4 * DAY)], { login_supported: true })
+        : usageFixtureProvider([], { status: "not_configured", login_supported: true });
+    const base = agentNode("sample-node-a", { codex: usageFixtureProvider([], { status: "not_configured", login_supported: true }), antigravity: usageFixtureProvider([], {}) });
+    return Response.json({
+      generatedAt: new Date().toISOString(), collectedAt: null,
+      nodes: [{ ...base, providers: { ...base.providers, antigravity } }],
+    });
+  };
+  return (async (input, init) => {
+    const path = String(input);
+    if (path === "/api/admin/settings/antigravity-backend") {
+      if (init?.method === "PUT") {
+        const body = JSON.parse(String(init.body)) as { value: { enabled: boolean } };
+        state.enabled = body.value.enabled;
+        state.version += 1;
+      }
+      return Response.json({ value: { enabled: state.enabled }, version: state.version, source: state.version ? "settings" : "default" });
+    }
+    if (path === "/api/usage/summary") return summary();
+    if (path === "/api/usage/refresh") { if (state.enabled) state.collected = "auto"; return summary(); }
+    return claudeLegacyRequest(input, init);
+  }) as typeof fetch;
+}
+
+/** 코딩 에이전트 탭 전체(스위치 줄, 노드 목록, 공급자 행). 가짜 노드 하나와 서버처럼 구는 가짜 전송이다. */
 export function CodingAgentsTabReviewSample() {
   const client = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }), []);
   const node: OrchestratorNode = { nodeId: "sample-node-a", host: "sample.invalid", port: 0, status: "connected", capabilities: {}, connectedAt: 0, sessionCount: 1 };
-  const request = useMemo<typeof fetch>(() => async (input, init) => {
-    const path = String(input);
-    if (path === "/api/admin/settings/antigravity-backend") return Response.json({ value: { enabled: false }, version: 0, source: "default" });
-    if (path === "/api/usage/summary") {
-      return Response.json({
-        generatedAt: new Date().toISOString(), collectedAt: null,
-        nodes: [agentNode("sample-node-a", { codex: usageFixtureProvider([], { status: "not_configured", login_supported: true }), antigravity: usageFixtureProvider(quotas(), { login_supported: true }) })],
-      });
-    }
-    return claudeLegacyRequest(input, init);
-  }, []);
+  const request = useMemo(serverLikeRequest, []);
   return <QueryClientProvider client={client}>{frame(<CodingAgentsTab request={request} sampleNodes={new Map([[node.nodeId, node]])} />, "coding-agents-tab-review")}</QueryClientProvider>;
 }
 
 const antigravityPayload = (enabled: boolean) => async () => Response.json({ value: { enabled }, version: enabled ? 2 : 0, source: enabled ? "settings" : "default" });
 
-/** Antigravity 스위치 줄(꺼짐과 켜짐)과 확인 대화상자(처음, 저장 실패). 운영과 같은 부품에 가짜 전송을 물렸다. */
+/** 읽기는 꺼짐으로 답하고 저장은 늘 실패하는 가짜 전송. 켜기 → 입력 → 켜기의 실제 흐름으로 저장 실패 상태에 이른다. */
+const failingSaveRequest = (async (_input, init) => init?.method === "PUT"
+  ? Response.json({ detail: { error: { code: "X", message: "boom" } } }, { status: 500 })
+  : Response.json({ value: { enabled: false }, version: 0, source: "default" })) as typeof fetch;
+
+/** Antigravity 스위치 줄(꺼짐, 켜짐, 저장이 실패하는 줄)과 확인 대화상자. 운영과 같은 부품에 가짜 전송을 물렸다. */
 export function AntigravityBackendReviewSamples() {
   const off = useMemo(() => antigravityPayload(false) as unknown as typeof fetch, []);
   const on = useMemo(() => antigravityPayload(true) as unknown as typeof fetch, []);
-  const [dialog, setDialog] = useState<"clean" | "error" | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   return <div className="space-y-3" data-testid="antigravity-backend-review">
     {frame(<AntigravityBackendRow request={off} />, "antigravity-row-off")}
     {frame(<AntigravityBackendRow request={on} />, "antigravity-row-on")}
+    <p className="v3-components-label">저장이 실패하는 줄: 스위치를 켜고 &lsquo;인지했습니다&rsquo;를 입력한 뒤 켜기를 누르면 대화상자 안에 오류가 뜹니다.</p>
+    {frame(<AntigravityBackendRow request={failingSaveRequest} />, "antigravity-row-save-fails")}
     <div className="flex gap-2">
-      <Button variant="outline" size="sm" onClick={() => setDialog("clean")}>확인 대화상자 열기</Button>
-      <Button variant="outline" size="sm" onClick={() => setDialog("error")}>저장 실패 상태 열기</Button>
+      <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>확인 대화상자 열기</Button>
     </div>
-    <AntigravityConsentDialog open={dialog !== null} pending={false} error={dialog === "error" ? "설정을 저장하지 못했습니다 (500)" : null}
-      onOpenChange={(open) => { if (!open) setDialog(null); }} onConfirm={() => setDialog(null)} />
+    <AntigravityConsentDialog open={dialogOpen} pending={false} error={null}
+      onOpenChange={setDialogOpen} onConfirm={() => setDialogOpen(false)} />
   </div>;
 }

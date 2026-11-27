@@ -198,7 +198,9 @@ class Fake:
             if self.hold_usage:
                 self.held_usage.append(route)  # 불러오는 중 화면을 찍는 동안 응답하지 않는다.
                 return
-            return route.fulfill(json=usage_summary(self.login_supported))
+            return route.fulfill(json=self.usage_body())
+        if path == "/api/usage/refresh":
+            return route.fulfill(json=self.refresh_usage())
         if path == "/api/config/settings":
             return route.fulfill(json={"categories": []})
         if path.endswith("/claude-auth/accounts"):
@@ -217,6 +219,12 @@ class Fake:
         if "agent-logins" in parts:
             return self.agent_login(route, method, parts)
         return route.continue_()
+
+    def usage_body(self):
+        return usage_summary(self.login_supported)
+
+    def refresh_usage(self):
+        return self.usage_body()
 
     def user_preferences(self, route, method, request):
         """서버 serializePreferences와 같은 꼴: 올린 그림이 있어도 번들 경로의 customImage는 덮어쓰지 않는다."""
@@ -281,6 +289,34 @@ class Fake:
         if self.nodes == "many":
             return [NODE, {**NODE, "nodeId": "eias-linegames", "port": 3106}, {**NODE, "nodeId": "silent-manari-ts", "port": 3107, "status": "disconnected"}]
         return [NODE]
+
+
+class OrchLikeFake(Fake):
+    """사용량 요약이 Antigravity 스위치를 따른다(서버 getSummary와 같은 꼴).
+
+    꺼져 있으면 antigravity는 null이다. 꺼진 동안 모은 값에는 antigravity가 not_configured로 남아 있어, 켠 직후의
+    GET /api/usage/summary는 not_configured를 주고, POST /api/usage/refresh(새로 모으기) 뒤에야 auto로 돌아온다.
+    """
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.collected_agy = "not_configured"
+        self.refresh_posts = 0
+
+    def usage_body(self):
+        body = usage_summary(self.login_supported)
+        providers = body["nodes"][0]["providers"]
+        if not self.agy["enabled"]:
+            providers["antigravity"] = None
+        elif self.collected_agy == "not_configured":
+            providers["antigravity"] = provider("not_configured", login_supported=True)
+        return body
+
+    def refresh_usage(self):
+        self.refresh_posts += 1
+        if self.agy["enabled"]:
+            self.collected_agy = "auto"
+        return self.usage_body()
 
 
 def new_page(browser, base, fake, width, height=900, theme="dark", preferences=None, scale=1):

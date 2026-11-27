@@ -53,7 +53,7 @@ function fakeServer(initial: Payload, put?: (body: Record<string, unknown>) => R
   return { request, puts };
 }
 
-async function mount(request: typeof fetch, onSaved?: () => void) {
+async function mount(request: typeof fetch, onSaved?: (enabled: boolean) => void) {
   await act(async () => root.render(<AntigravityBackendRow request={request} onSaved={onSaved} />));
   await settle();
 }
@@ -138,6 +138,9 @@ describe("Antigravity switch row", () => {
     await mount(request);
     expect(toggle()).toBeNull();
     expect(host.querySelector('[role="alert"]')).not.toBeNull();
+    expect(host.textContent).toContain("설정을 불러오지 못했습니다.");
+    expect(host.textContent).not.toContain("Antigravity 설정을 불러오지 못했습니다");
+    expect(host.querySelector("details pre")?.textContent).toBe("상태 코드 503");
     const retry = [...host.querySelectorAll("button")].find((button) => button.textContent === "다시 시도")!;
     await click(retry);
     expect(toggle().getAttribute("aria-checked")).toBe("false");
@@ -156,8 +159,10 @@ describe("Antigravity switch row", () => {
     expect(onSaved).not.toHaveBeenCalled();
     fail = false;
     await click(confirmButton());
+    expect(onSaved).toHaveBeenLastCalledWith(true);
     expect(onSaved).toHaveBeenCalledTimes(1);
     await click(toggle());
+    expect(onSaved).toHaveBeenLastCalledWith(false);
     expect(onSaved).toHaveBeenCalledTimes(2);
   });
 });

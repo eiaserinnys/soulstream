@@ -9,7 +9,7 @@ from pathlib import Path
 
 from playwright.sync_api import expect
 
-from settings_toolbar_fakes import SESSION_ID, Fake, check, new_page, open_settings, shot
+from settings_toolbar_fakes import SESSION_ID, OrchLikeFake, check, new_page, open_settings, shot
 from settings_toolbar_r2 import DIALOGS, OPS, active, broken_words, fixtures_flows, ops
 
 PHRASE = "인지했습니다"
@@ -65,14 +65,41 @@ def confirm_button(page):
     return consent(page).get_by_role("button", name=CONFIRM, exact=True)
 
 
+AGY_PROVIDER = '[data-testid="node-providers-panel"] [data-provider-id="antigravity"]'
+WATCH_AGY_ROW = """() => {
+  window.__agySeen = [];
+  const record = () => {
+    const row = document.querySelector('[data-testid="node-providers-panel"] [data-provider-id="antigravity"]');
+    window.__agySeen.push(row ? row.getAttribute('data-state') : null);
+  };
+  new MutationObserver(record).observe(document.body, { subtree: true, childList: true, attributes: true });
+}"""
+
+
+def agy_provider_state(page):
+    return page.evaluate("(sel) => { const e = document.querySelector(sel); return e ? e.getAttribute('data-state') : null; }", AGY_PROVIDER)
+
+
+def wait_agy_provider(page, predicate, timeout_ms=4000):
+    """Antigravity 공급자 줄의 data-state가 조건을 채울 때까지 기다린 뒤 마지막 값을 돌려준다."""
+    waited = 0
+    state = agy_provider_state(page)
+    while not predicate(state) and waited < timeout_ms:
+        page.wait_for_timeout(100)
+        waited += 100
+        state = agy_provider_state(page)
+    return state
+
+
 def capture_width(browser, base, out: Path, width: int):
     suffix = f"-{width}"
-    fake = Fake(atom=True)
+    fake = OrchLikeFake(atom=True)
     context, page = open_tab(browser, base, width, fake)
     switch = page.get_by_test_id("antigravity-backend-switch")
     expect(switch).to_be_visible(timeout=15000)
     check(f"꺼짐 {width}px: 스위치가 꺼져 있음", switch.get_attribute("aria-checked") == "false", switch.get_attribute("aria-checked"))
     assert_row(page, f"꺼짐 {width}px")
+    check(f"꺼짐 {width}px: 아래 공급자 패널에 Antigravity 줄이 없음", page.locator(AGY_PROVIDER).count() == 0 and page.locator('[data-testid="node-providers-panel"] [data-provider-id="codex"]').count() == 1, agy_provider_state(page))
     shot(page, out, f"agy-toggle-off{suffix}.png", width, "Antigravity 토글 꺼짐(기본)", page.locator('[data-slot="dialog-popup"]'))
 
     # 켜기를 누르면 바로 켜지 않고 확인 대화상자가 열린다. 첫 초점은 입력 칸이다.
@@ -118,16 +145,22 @@ def capture_width(browser, base, out: Path, width: int):
     switch.click()
     expect(consent(page)).to_be_visible(timeout=10000)
     typed_phrase(page, f"  {PHRASE} ")
+    page.evaluate(WATCH_AGY_ROW)
     page.locator("#agy-consent-input").press("Enter")
     expect(consent(page)).to_have_count(0, timeout=10000)
     check(f"켜기 {width}px: acknowledgement를 담은 PUT 한 번", fake.agy_puts == [{"value": {"enabled": True, "acknowledgement": PHRASE}, "expectedVersion": 0}], fake.agy_puts)
     check(f"켜기 {width}px: 토글이 켜짐", switch.get_attribute("aria-checked") == "true", switch.get_attribute("aria-checked"))
     after_confirm = active(page)
     check(f"켜기 {width}px: 닫은 뒤 초점이 스위치", page.evaluate("() => document.activeElement && document.activeElement.getAttribute('data-testid')") == "antigravity-backend-switch", after_confirm)
-    shot(page, out, f"agy-toggle-on{suffix}.png", width, "Antigravity 토글 켜짐", page.locator('[data-slot="dialog-popup"]'))
+    state = wait_agy_provider(page, lambda value: value is not None and value != "not_configured")
+    seen = page.evaluate("() => window.__agySeen")
+    check(f"켜기 {width}px: 켠 뒤 Antigravity 줄이 나타나고 미설정이 아님(새로 모은 사용량)", state is not None and state != "not_configured" and fake.refresh_posts == 1, {"state": state, "refresh_posts": fake.refresh_posts})
+    check(f"켜기 {width}px: 기다리는 동안 Antigravity 줄이 미설정으로 보인 적이 없음", "not_configured" not in seen, seen)
+    shot(page, out, f"agy-toggle-on{suffix}.png", width, "Antigravity 토글 켜짐(Antigravity 줄이 연결됨으로 나타남)", page.locator('[data-slot="dialog-popup"]'))
     # 끄기는 대화상자 없이 바로 저장한다.
     switch.click()
     page.wait_for_timeout(500)
+    check(f"끄기 {width}px: Antigravity 줄이 다시 사라지고 Codex 줄은 그대로", page.locator(AGY_PROVIDER).count() == 0 and page.locator('[data-testid="node-providers-panel"] [data-provider-id="codex"]').count() == 1, agy_provider_state(page))
     check(f"끄기 {width}px: 대화상자 없이 PUT, 토글이 꺼짐", consent(page).count() == 0 and fake.agy_puts[-1] == {"value": {"enabled": False}, "expectedVersion": 1} and switch.get_attribute("aria-checked") == "false", fake.agy_puts[-1])
     context.close()
     return first_focus, after_esc, after_confirm, seen
@@ -136,7 +169,7 @@ def capture_width(browser, base, out: Path, width: int):
 def capture_failures(browser, base, out: Path, width: int):
     suffix = f"-{width}"
     # 저장 실패: 대화상자 안에 오류와 다시 시도. 닫지 않는다.
-    fake = Fake(atom=True)
+    fake = OrchLikeFake(atom=True)
     fake.agy_put = "fail"
     context, page = open_tab(browser, base, width, fake)
     page.get_by_test_id("antigravity-backend-switch").click()
@@ -157,7 +190,7 @@ def capture_failures(browser, base, out: Path, width: int):
     context.close()
 
     # 설정 읽기 실패: 토글 자리가 실패 안내와 다시 시도로 바뀐다.
-    fake = Fake(atom=True)
+    fake = OrchLikeFake(atom=True)
     fake.agy_read = "fail"
     context, page = open_tab(browser, base, width, fake)
     row = page.get_by_test_id("antigravity-backend-row")
@@ -172,23 +205,49 @@ def capture_failures(browser, base, out: Path, width: int):
     context.close()
 
 
-def capture_loading(browser, base, out: Path):
-    fake = Fake(atom=True)
+LOADING_METRICS = """() => {
+  const row = document.querySelector('[data-testid="antigravity-backend-row"]');
+  const text = row.querySelector('.agy-backend-text');
+  const title = text.querySelector(':scope > span');
+  const desc = row.querySelector('.agy-backend-description');
+  const actions = row.querySelector('.c724-account-actions');
+  const lineHeight = parseFloat(getComputedStyle(desc).lineHeight);
+  return {
+    rowHeight: Math.round(row.getBoundingClientRect().height),
+    descLines: Math.round(desc.getBoundingClientRect().height / lineHeight),
+    actionsWidth: Math.round(actions.getBoundingClientRect().width),
+    titleLines: Math.round(title.getBoundingClientRect().height / parseFloat(getComputedStyle(title).lineHeight)),
+    titleTruncated: title.scrollWidth > title.clientWidth + 1,
+  };
+}"""
+
+
+def capture_loading(browser, base, out: Path, width: int):
+    """설정을 읽는 중과 읽은 뒤의 줄이 같은 크기다: 높이, 설명 줄 수, 동작 칸 너비가 같고 제목이 끊기지 않는다."""
+    fake = OrchLikeFake(atom=True)
     fake.agy_read = "hold"
-    context, page = open_tab(browser, base, 1280, fake)
+    context, page = open_tab(browser, base, width, fake)
     row = page.get_by_test_id("antigravity-backend-row")
     expect(row).to_be_visible(timeout=15000)
     page.wait_for_timeout(500)
-    check("읽는 중 1280px: 줄의 틀이 서 있고 스위치 자리에 로딩 표현이 있음", page.get_by_test_id("antigravity-backend-switch").count() == 0 and row.get_by_text("불러오는 중").count() == 1 and len(fake.held_agy) >= 1, "로딩 표현")
-    shot(page, out, "agy-loading-1280.png", 1280, "설정을 읽는 중(로딩 표현)", page.locator('[data-slot="dialog-popup"]'))
+    check(f"읽는 중 {width}px: 스위치 자리에 크기가 같은 자리 표시가 있고 아직 스위치는 없음", page.get_by_test_id("antigravity-backend-switch").count() == 0 and page.get_by_test_id("antigravity-backend-switch-loading").count() == 1 and len(fake.held_agy) >= 1, "로딩 표현")
+    loading = page.evaluate(LOADING_METRICS)
+    shot(page, out, f"agy-loading-{width}.png", width, "설정을 읽는 중(스위치 크기의 자리 표시)", page.locator('[data-slot="dialog-popup"]'))
+    fake.agy_read = "ok"
     for held in fake.held_agy:
-        held.abort()
+        held.fulfill(json={"value": {"enabled": False}, "version": 0, "source": "default"})
+    expect(page.get_by_test_id("antigravity-backend-switch")).to_be_visible(timeout=10000)
+    page.wait_for_timeout(300)
+    loaded = page.evaluate(LOADING_METRICS)
+    check(f"읽는 중 {width}px: 읽은 뒤와 줄 높이와 설명 줄 수와 동작 칸 너비가 같음", loading["rowHeight"] == loaded["rowHeight"] and loading["descLines"] == loaded["descLines"] and loading["actionsWidth"] == loaded["actionsWidth"], {"loading": loading, "loaded": loaded})
+    check(f"읽는 중 {width}px: 제목이 한 줄이고 잘리거나 낱말 가운데서 끊기지 않음(읽는 중과 읽은 뒤)", loading["titleLines"] == 1 and loaded["titleLines"] == 1 and not loading["titleTruncated"] and not loaded["titleTruncated"], {"loading": loading, "loaded": loaded})
     context.close()
+    return loading, loaded
 
 
 def capture_resize(browser, base):
     """대화상자를 연 채 창을 좁혔다 넓혀도 입력 중인 글이 남고 대화상자가 화면 안에 있다."""
-    fake = Fake(atom=True)
+    fake = OrchLikeFake(atom=True)
     context, page = open_tab(browser, base, 1280, fake)
     page.get_by_test_id("antigravity-backend-switch").click()
     expect(consent(page)).to_be_visible(timeout=10000)
@@ -209,12 +268,12 @@ def capture_agy(browser, base, out: Path):
     for width in (1280, 360):
         firsts.append((width, *capture_width(browser, base, out, width)))
         capture_failures(browser, base, out, width)
-    capture_loading(browser, base, out)
+    loadings = [capture_loading(browser, base, out, width) for width in (1280, 360)]
     resize = capture_resize(browser, base)
     wide = firsts[0]
     name = lambda label: "확인 문구 입력 칸" if label == "INPUT" else label
     wide = (wide[0], name(wide[1]), wide[2], wide[3], [name(item) for item in wide[4]])
-    ops("13", "통과", "설정을 읽는 동안 줄의 틀(제목, 설명)이 서고 스위치 자리에 불러오는 중 표현이 있다(agy-loading-1280.png). 읽기가 끝나면 스위치로 바뀐다")
+    ops("13", "통과", f"설정을 읽는 동안 줄의 틀(제목, 설명)이 서고 스위치 크기의 자리 표시가 있다(agy-loading-1280.png, agy-loading-360.png). 읽는 중과 읽은 뒤의 줄 높이, 설명 줄 수, 동작 칸 너비가 같다: 1280 {loadings[0][0]}, 360 {loadings[1][0]}")
     ops("14", "통과", f"켜기를 누르면 첫 초점이 입력 칸({wide[1]}), Esc나 켜기 뒤 초점이 스위치로 돌아온다({wide[2]}, {wide[3]}). 1280과 360에서 같다")
     ops("15", "통과", f"Tab 5번 순서 {wide[4]}: 초점이 대화상자 안에서만 돌고 안 보이는 요소가 없다. Esc는 대화상자만 닫고 설정창과 토글 값은 그대로다")
     ops("16", "통과", "360px에서 줄과 대화상자가 가로 넘침 없이 서고(모든 어절 한 덩어리), 대화상자는 화면 안에 들어온다. 저장 실패 문구와 읽기 실패 안내도 같다")
