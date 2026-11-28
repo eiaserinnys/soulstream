@@ -75,6 +75,7 @@ import type { CompletionNotifier } from "./completion_notifier.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
 import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
 import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
+import { prepareAntigravityResume } from "./antigravity_default_conversation.js";
 import type { TransientEventLogAggregator } from "./transient_event_log_aggregator.js";
 import { TaskEngineTurnRunner } from "./task_engine_turn_runner.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
@@ -216,6 +217,7 @@ export interface RunnerProcessRuntimeFactory {
    * 실패한다(fail-closed). full 턴에는 영향이 없다.
    */
   isolationSupported?: boolean;
+  antigravityWorkspace?(sessionId: string): { conversationId?: string; instructionsPresent: boolean };
   recover?(
     task: Task,
     registration: RunnerRegistration,
@@ -666,6 +668,8 @@ export class TaskExecutor {
     const needsGenerationReconciliation = applyingFrom !== undefined
       && task.codexThreadId !== applyingFrom;
     if (!shouldDecideArrival && !needsGenerationReconciliation && !prepared.backendSync) {
+      prepareAntigravityResume(task, agent, effectiveTaskBackend(task, agent) === "antigravity"
+        ? this.runnerProcessFactory?.antigravityWorkspace?.(task.agentSessionId) : undefined);
       beginGenerationRolloverIfPending(task, agent, this.modelCatalog, this.logger);
       return this.startPreparedExecution(
         task,
@@ -690,6 +694,8 @@ export class TaskExecutor {
         await prepared.backendSync;
         if (shouldDecideArrival) await this.decidePersistentArrival(task);
         await reconcileGenerationBeforeExecution(task, this.persistence);
+        prepareAntigravityResume(task, agent, effectiveTaskBackend(task, agent) === "antigravity"
+          ? this.runnerProcessFactory?.antigravityWorkspace?.(task.agentSessionId) : undefined);
         beginGenerationRolloverIfPending(task, agent, this.modelCatalog, this.logger);
         await this.startPreparedExecution(
           task,
@@ -865,7 +871,7 @@ export class TaskExecutor {
     if (
       existingPending?.applyingFrom !== undefined
       && existingPending.targetModelPreset === decision.target_preset
-      && existingPending.targetReasoningEffort === (reasoningEffort as ReasoningEffort | undefined)
+      && (existingPending.targetReasoningEffort ?? null) === (reasoningEffort ?? null)
     ) return;
     await runtime.persistentSessions.requestGenerationRollover(task.agentSessionId, {
       modelPreset: decision.target_preset,
@@ -2304,6 +2310,7 @@ export class TaskExecutor {
             await this.observeDeliveryTurn(task, turnReceipt, event);
             await this.engineEventPublisher.publishEngineEvent(task, event, {
               alreadyPersisted: runner.eventPersistence === "runner",
+              backend: runner.engine.backendId,
               isCacheKeepaliveTurn,
             });
             if (event.type === "session") identity.nativeId = task.codexThreadId;
@@ -2748,6 +2755,7 @@ export class TaskExecutor {
           await this.observeDeliveryTurn(task, turnReceipt, event);
           await this.engineEventPublisher.publishEngineEvent(task, event, {
             alreadyPersisted: true,
+            backend: runner.engine.backendId,
           });
           this.collectClaudeRuntimeTaskFollowup(task, event);
         }

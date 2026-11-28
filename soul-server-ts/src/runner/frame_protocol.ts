@@ -111,6 +111,7 @@ export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   }).optional(),
   imageAttachmentPaths: z.array(z.string()).optional(),
   resumeSessionId: z.string().optional(),
+  antigravityDefaultConversationId: z.string().min(1).optional(),
   backendSessionRolloverFrom: z.string().min(1).optional(),
   executionSecurity: ExecutionSecurityDecisionSchema.optional(),
   model: z.string().nullable().optional(),

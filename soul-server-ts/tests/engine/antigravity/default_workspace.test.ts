@@ -6,7 +6,6 @@ import { parse } from "yaml";
 import { describe, expect, it, vi } from "vitest";
 import { AntigravityEngineAdapter } from "../../../src/engine/antigravity/adapter.js";
 import { antigravityDefinitionName } from "../../../src/engine/antigravity/agent_definition.js";
-import { writeAntigravityRestrictedBundle } from "../../../src/engine/antigravity/restricted_bundle.js";
 import { antigravityWorkspacePaths } from "../../../src/engine/antigravity/default_workspace.js";
 import { makeTempDirSync } from "../../helpers/temp_dir.js";
 import { UTONIUM_ALLOWED, UTONIUM_DENIED } from "./utonium_policy_fixture.js";
@@ -180,23 +179,18 @@ describe("Antigravity default workspace", () => {
     expect(definition).toContain("본문");
     await f.engine.close();
   });
-  it("resumes new conversations with the same add-dir, and legacy restricted conversations with the old bundle", async () => {
+  it("resumes marked conversations with the same add-dir and rejects an unmarked conversation", async () => {
     const f = fixture(true); await run(f.engine);
     await run(f.engine, { resumeSessionId: "conv", systemPrompt: undefined });
     let args = JSON.parse(readFileSync(join(f.dir, "args.json"), "utf8"));
     expect(args).toContain("--conversation"); expect(args).toContain("conv"); expect(args).toContain(antigravityWorkspacePaths(f.state, f.workspace, home).addDir); expect(args).not.toContain("--agent");
     await f.engine.close();
     const legacy = fixture(true);
-    mkdirSync(legacy.state, { recursive: true });
-    await writeAntigravityRestrictedBundle({ directory: join(legacy.state, "antigravity-tool-policy"), agentId: "utonium", agentSessionId: sessionId,
-      systemPrompt: "legacy", gatewayConfigPath: join(legacy.state, "antigravity-mcp-gateway.json"), useMcp: false,
-      allowedTools: UTONIUM_ALLOWED, disallowedTools: UTONIUM_DENIED, profileWorkspaceDir: legacy.workspace, logger });
-    await run(legacy.engine, { resumeSessionId: "old", systemPrompt: undefined });
-    args = JSON.parse(readFileSync(join(legacy.dir, "args.json"), "utf8"));
-    expect(args).toContain("--conversation"); expect(args).toContain("old"); expect(args).not.toContain("--add-dir"); expect(args).not.toContain("--agent");
-    expect(JSON.parse(readFileSync(join(legacy.dir, "global-agents.json"), "utf8"))).toContain(`${name}.md`);
+    const events = [];
+    for await (const event of legacy.engine.execute({ agentSessionId: sessionId, prompt: "요청", resumeSessionId: "old" })) events.push(event);
+    expect(events).toContainEqual(expect.objectContaining({ type: "error", fatal: true }));
+    expect(existsSync(join(legacy.dir, "args.json"))).toBe(false);
     expect(existsSync(join(home, ".gemini/config/agents", `${name}.md`))).toBe(false);
-    expect(existsSync(join(legacy.state, "antigravity-tool-policy", "agents", `${name}.md`))).toBe(true);
     await legacy.engine.close();
   });
   it("warns and keeps the old location when the CWD sorts later", async () => {
@@ -217,6 +211,27 @@ describe("Antigravity default workspace", () => {
     const addDir = antigravityWorkspacePaths(f.state, f.workspace, home).addDir;
     expect(args[args.indexOf("--add-dir") + 1]).toBe(addDir);
     expect(readFileSync(join(addDir, "instructions", "chunk-000000.txt"), "utf8")).toBe("기존 지침");
+    await f.engine.close();
+  });
+  it("rebuilds a garbage-collected restricted workspace from a durable default conversation", async () => {
+    const f = fixture(true);
+    await run(f.engine);
+    const originalPolicy = JSON.parse(readFileSync(join(f.overlay, "policy.json"), "utf8"));
+    rmSync(f.state, { recursive: true });
+    await run(f.engine, { resumeSessionId: "conv", antigravityDefaultConversationId: "conv" });
+    const args = JSON.parse(readFileSync(join(f.dir, "args.json"), "utf8"));
+    expect(args).toContain("--conversation");
+    expect(args[args.indexOf("--add-dir") + 1]).toBe(antigravityWorkspacePaths(f.state, f.workspace, home).addDir);
+    expect(readFileSync(join(f.state, "antigravity-default-conversation"), "utf8")).toBe("conv");
+    expect(JSON.parse(readFileSync(join(f.overlay, "policy.json"), "utf8"))).toEqual(originalPolicy);
+    expect(readFileSync(join(f.overlay, "instructions", "chunk-000000.txt"), "utf8")).toContain("앞 줄");
+    const gate = config(f.overlay, "hooks.json")["soulstream-session"].PreToolUse[0].hooks[0].command;
+    expect(runHook(gate, { conversationId: "conv", ...hookInput("write_file", { Path: "/etc/hosts" }) }).decision).toBe("deny");
+    expect(runHook(gate, { conversationId: "conv", ...hookInput("run_command", { CommandLine: "pwd" }) }).decision).toBe("deny");
+    expect(runHook(gate, { conversationId: "child", ...hookInput("run_command", { CommandLine: "pwd" }) }).decision).toBe("allow");
+    expect(runHook(gate, { conversationId: "conv", ...hookInput("run_command", { CommandLine: "python3 /home/eias/migration/netcup-core-bootstrap/prod-state/agent-common-files/skills/seal/scripts/seal.py spec" }) }).decision).toBe("allow");
+    expect(runHook(gate, { conversationId: "conv", ...hookInput("call_mcp_tool", { ServerName: "soulstream", ToolName: "get_card" }) }).decision).toBe("allow");
+    expect(runHook(gate, { conversationId: "conv", ...hookInput("call_mcp_tool", { ServerName: "soulstream", ToolName: "list_cards" }) }).decision).toBe("deny");
     await f.engine.close();
   });
 });

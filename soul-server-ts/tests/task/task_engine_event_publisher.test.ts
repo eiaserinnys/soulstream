@@ -221,6 +221,29 @@ describe("TaskEngineEventPublisher", () => {
     expect(deps.logger.warn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "sess-1" }), expect.stringContaining("without its previous context"));
   });
 
+  it("records the replacement Antigravity conversation after resume is lost", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({ codexThreadId: "old", modelPresetBackend: "antigravity",
+      metadata: [{ type: "antigravity_default_conversation", value: "old" }] });
+    await publisher.publishEngineEvent(task, {
+      type: "session", session_id: "new", resume_lost_from: "old",
+    } as SSEEventPayload);
+    expect(task.codexThreadId).toBe("new");
+    expect(task.metadata).toContainEqual({ type: "antigravity_default_conversation", value: "new" });
+    expect(deps.enqueueMetadataEffect).toHaveBeenCalledWith("sess-1",
+      { type: "antigravity_default_conversation", value: "new" },
+      expect.objectContaining({ replaceExistingType: "antigravity_default_conversation", waitForAck: true }));
+  });
+
+  it("records a default conversation for a profile backend without a preset", async () => {
+    const deps = makePublisherDeps();
+    const task = makeTask();
+    await new TaskEngineEventPublisher(deps).publishEngineEvent(task,
+      { type: "session", session_id: "new" } as SSEEventPayload, { backend: "antigravity" });
+    expect(task.metadata).toContainEqual({ type: "antigravity_default_conversation", value: "new" });
+  });
+
   it("updates the in-memory ID from an already persisted runner event", async () => {
     const deps = makePublisherDeps();
     const publisher = new TaskEngineEventPublisher(deps);

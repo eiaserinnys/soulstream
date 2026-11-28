@@ -12,6 +12,7 @@ export function antigravityArguments(
   if (params.reasoningEffort !== undefined && !antigravityTransportEfforts().includes(params.reasoningEffort)) {
     throw new Error(`Unsupported Antigravity effort: ${params.reasoningEffort}`);
   }
+  if (params.resumeSessionId && !workspaceDirectory) throw new Error("Antigravity resume requires a configuration workspace");
   const args = ["--output-format", "stream-json", "--input-format", "stream-json",
     "--dangerously-skip-permissions", "--log-file", logPath];
   if (params.model) args.push("--model", params.model);

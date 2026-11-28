@@ -40,8 +40,8 @@ export function resolveGenerationState(
   }
 
   if (currentNativeSessionId !== pending.applyingFrom) {
-    const targetChanged = pending.targetModelPreset !== currentModel.modelPreset
-      || pending.targetReasoningEffort !== currentModel.reasoningEffort;
+    const targetChanged = (pending.targetModelPreset || null) !== (currentModel.modelPreset ?? null)
+      || (pending.targetReasoningEffort ?? null) !== (currentModel.reasoningEffort ?? null);
     const { applyingFrom: _from, previousModelPreset: _preset, previousBackend: _backend,
       ...requested } = pending;
     return {

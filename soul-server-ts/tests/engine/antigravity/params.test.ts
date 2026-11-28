@@ -9,9 +9,10 @@ describe("Antigravity launch inputs", () => {
     expect(antigravityUserMessage("한글\n둘째 줄")).toBe('{"event":"user","message":{"content":"한글\\n둘째 줄"}}\n');
   });
   it("resumes using the native ID without an agent definition", () => {
-    const args = antigravityArguments({ prompt: "다음", resumeSessionId: "conversation" }, "/state/log");
-    expect(args.slice(-2)).toEqual(["--conversation", "conversation"]);
-    expect(args).not.toContain("--agent"); expect(args).not.toContain("--add-dir");
+    const args = antigravityArguments({ prompt: "다음", resumeSessionId: "conversation" }, "/state/log", undefined, "/state/workspace");
+    expect(args.slice(-4)).toEqual(["--conversation", "conversation", "--add-dir", "/state/workspace"]);
+    expect(args).not.toContain("--agent");
+    expect(() => antigravityArguments({ prompt: "다음", resumeSessionId: "conversation" }, "/state/log")).toThrow(/workspace/);
   });
   it.each(["minimal", "ultra"])("rejects unsupported effort %s", (reasoningEffort) => {
     expect(() => antigravityArguments({ prompt: "x", reasoningEffort: reasoningEffort as "max" }, "/state/log")).toThrow(/effort/);
