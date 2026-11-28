@@ -65,7 +65,7 @@
     "created": "Webhook created",
     "createTitle": "New inbound webhook",
     "keyOnce": "Copy the key now. It only appears once.",
-    "createHelp": "Webhook messages can invoke tools in the target session. Revoking the webhook lets work already received continue.",
+    "createHelp": "Webhook messages can invoke tools in the target session. Work already received continues after revocation.",
     "copyKey": "Copy key",
     "headerlessUrl": "URL for requests without headers",
     "copyHeaderlessUrl": "Copy URL for requests without headers",
