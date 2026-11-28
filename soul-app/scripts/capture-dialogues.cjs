@@ -29,7 +29,7 @@ const server = http.createServer(async (req, res) => {
   catch { res.writeHead(404); res.end(); }
 });
 const samples = ['card-create', 'assignment', 'folder-picker', 'execution-picker', 'folder-create', 'session-create',
-  'session-diagnostic', 'morning-review', 'search-filter', 'settings', 'task-output', 'board-expanded', 'card-status', 'image-viewer'];
+  'session-diagnostic', 'search-filter', 'settings', 'task-output', 'board-expanded', 'card-status', 'image-viewer'];
 async function metrics(page) {
   return page.evaluate(() => {
     const sheet = document.querySelector('[data-testid="task-workspace-sheet"]');

@@ -3,7 +3,6 @@ jest.mock('expo-document-picker', () => ({}));
 const mockRenameFolder = jest.fn(async () => undefined);
 const mockSaveFolderDescription = jest.fn(async () => undefined);
 const mockSetFolderStarred = jest.fn(async () => undefined);
-const mockSetFolderToday = jest.fn(async () => undefined);
 let mockDeviceType: 'phone' | 'tabletPortrait' = 'tabletPortrait';
 
 jest.mock('../../../theme', () => ({
@@ -35,7 +34,6 @@ jest.mock('../../../hooks/usePlannerActions', () => ({
     renameFolder: mockRenameFolder,
     saveFolderDescription: mockSaveFolderDescription,
     setFolderStarred: mockSetFolderStarred,
-    setFolderToday: mockSetFolderToday,
   }),
 }));
 jest.mock('../../../hooks/usePlannerContextMenus', () => ({
@@ -121,7 +119,6 @@ beforeEach(() => {
   mockRenameFolder.mockReset().mockResolvedValue(undefined);
   mockSaveFolderDescription.mockReset().mockResolvedValue(undefined);
   mockSetFolderStarred.mockReset().mockResolvedValue(undefined);
-  mockSetFolderToday.mockReset().mockResolvedValue(undefined);
   plannerFolderTitleSaveCoordinator.reset();
   usePlannerStore.getState().resetForTest();
   usePlannerStore.getState().setSelectedFolderSnapshot(plannerFolder);

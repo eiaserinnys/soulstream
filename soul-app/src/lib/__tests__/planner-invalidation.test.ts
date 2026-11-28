@@ -20,7 +20,7 @@ test.each([
   expect(plannerSourceForStreamEvent(event)).toBe(source);
 });
 
-test('daily/project/starred/runHistory/pageDetail은 source 표에 지정된 변경만 관찰한다', () => {
+test('project/starred/runHistory/pageDetail은 source 표에 지정된 변경만 관찰한다', () => {
   let counters = createPlannerInvalidationCounters();
   const initial = selectPlannerInvalidationKeys(counters);
 
@@ -30,7 +30,6 @@ test('daily/project/starred/runHistory/pageDetail은 source 표에 지정된 변
   counters = incrementPlannerInvalidation(counters, 'folder');
   expect(selectPlannerInvalidationKeys(counters)).toEqual({
     ...initial,
-    daily: initial.daily + 1,
     project: initial.project + 1,
     starred: initial.starred + 1,
   });
@@ -40,14 +39,12 @@ test('daily/project/starred/runHistory/pageDetail은 source 표에 지정된 변
   counters = incrementPlannerInvalidation(counters, 'card');
   expect(selectPlannerInvalidationKeys(counters)).toEqual({
     ...initial,
-    daily: initial.daily + 2,
     project: initial.project + 2,
     starred: initial.starred + 2,
   });
 
   counters = incrementPlannerInvalidation(counters, 'page');
   expect(selectPlannerInvalidationKeys(counters)).toEqual({
-    daily: initial.daily + 3,
     project: initial.project + 3,
     starred: initial.starred + 3,
     runHistory: initial.runHistory,
@@ -56,7 +53,6 @@ test('daily/project/starred/runHistory/pageDetail은 source 표에 지정된 변
 
   counters = incrementPlannerInvalidation(counters, 'session_created');
   expect(selectPlannerInvalidationKeys(counters)).toEqual({
-    daily: initial.daily + 4,
     project: initial.project + 4,
     starred: initial.starred + 4,
     runHistory: initial.runHistory + 1,
@@ -65,7 +61,6 @@ test('daily/project/starred/runHistory/pageDetail은 source 표에 지정된 변
 
   counters = incrementPlannerInvalidation(counters, 'replay');
   expect(selectPlannerInvalidationKeys(counters)).toEqual({
-    daily: initial.daily + 5,
     project: initial.project + 5,
     starred: initial.starred + 5,
     runHistory: initial.runHistory + 2,
@@ -74,15 +69,15 @@ test('daily/project/starred/runHistory/pageDetail은 source 표에 지정된 변
 });
 
 test.each([
-  ['session_created', ['daily', 'project', 'starred', 'runHistory']],
+  ['session_created', ['project', 'starred', 'runHistory']],
   ['session_updated', []],
-  ['session_deleted', ['daily', 'project', 'starred', 'runHistory']],
+  ['session_deleted', ['project', 'starred', 'runHistory']],
   ['catalog', []],
-  ['folder', ['daily', 'project', 'starred']],
-  ['card', ['daily', 'project', 'starred']],
+  ['folder', ['project', 'starred']],
+  ['card', ['project', 'starred']],
   ['custom_view', []],
-  ['replay', ['daily', 'project', 'starred', 'runHistory', 'pageDetail']],
-  ['page', ['daily', 'project', 'starred', 'pageDetail']],
+  ['replay', ['project', 'starred', 'runHistory', 'pageDetail']],
+  ['page', ['project', 'starred', 'pageDetail']],
 ] as const)('%s source는 지정된 selector만 무효화한다', (source, expectedChanged) => {
   const initial = selectPlannerInvalidationKeys(createPlannerInvalidationCounters());
   const next = selectPlannerInvalidationKeys(

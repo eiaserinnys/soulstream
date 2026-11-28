@@ -25,7 +25,6 @@ jest.mock('react-native-enriched-markdown', () => {
   };
 });
 jest.mock('../../../hooks/usePlannerReads', () => ({
-  usePlannerDaily: () => ({ data: undefined, loading: false, error: null }),
   usePlannerPageDetail: () => ({ data: { blocks: [] }, loading: false, error: null }),
   usePlannerFolderDetail: () => ({ data: undefined, loading: false, error: null }),
 }));

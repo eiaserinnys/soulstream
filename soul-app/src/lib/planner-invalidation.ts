@@ -14,7 +14,6 @@ export type PlannerInvalidationCounters = Readonly<
 >;
 
 export interface PlannerInvalidationKeys {
-  daily: number;
   project: number;
   starred: number;
   runHistory: number;
@@ -82,7 +81,6 @@ export function selectPlannerInvalidationKeys(
     'replay',
   ]);
   return {
-    daily: pageCollections,
     project: pageCollections,
     starred: key(counters, [
       'page',

@@ -5,7 +5,7 @@ import { ROOT_TAB_ORDER } from './tabContract';
 import type { PhoneReturnTab } from './phonePanelHistory';
 
 export type PhoneTabName = (typeof ROOT_TAB_ORDER)[number];
-export type MainFocusKind = 'cards' | 'feed' | 'folder' | 'dailyHistory' | 'search';
+export type MainFocusKind = 'cards' | 'feed' | 'folder' | 'search';
 
 export type FolderWorkspaceContext = {
   folderPageId: string;
@@ -15,7 +15,6 @@ export type FolderWorkspaceContext = {
 
 export type NormalizedNavigationLocation =
   | { originTab: PhoneTabName; kind: 'daily'; date?: string }
-  | { originTab: PhoneTabName; kind: 'dailyHistory' }
   | { originTab: PhoneTabName; kind: 'folderList' }
   | { originTab: PhoneTabName; kind: 'folderWorkspace'; folder: FolderWorkspaceContext }
   | { originTab: PhoneTabName; kind: 'feed' }
@@ -191,8 +190,6 @@ export function readPhoneLocation(
   switch (top.name) {
     case 'Daily':
       return { originTab, kind: 'daily' };
-    case 'DailyHistory':
-      return { originTab, kind: 'dailyHistory' };
     case 'FolderList':
       return { originTab, kind: 'folderList' };
     case 'FolderWorkspace': {
@@ -374,8 +371,6 @@ function tabletMainLocation(context: TabletLocationContext): NormalizedNavigatio
       return { originTab: 'FeedTab', kind: 'feed' };
     case 'folder':
       return { originTab: 'FolderTab', kind: 'folderList' };
-    case 'dailyHistory':
-      return { originTab: 'DailyTab', kind: 'dailyHistory' };
     default:
       return { originTab: 'DailyTab', kind: 'daily' };
   }
@@ -401,10 +396,6 @@ export function buildPhoneState(
 
   switch (location.kind) {
     case 'daily':
-      activeTab = 'DailyTab';
-      setStack('DailyTab', [{ name: 'Daily' }]);
-      break;
-    case 'dailyHistory':
       activeTab = 'DailyTab';
       setStack('DailyTab', [{ name: 'Daily' }]);
       break;
@@ -568,8 +559,6 @@ export function buildTabletState(location: NormalizedNavigationLocation): {
   switch (location.kind) {
     case 'daily':
       return main({ activeSectionKind: 'daily', lastMainFocus: 'cards' });
-    case 'dailyHistory':
-      return main({ activeSectionKind: 'daily', lastMainFocus: 'dailyHistory' });
     case 'folderList':
       return main({ lastMainFocus: 'folder' });
     case 'folderWorkspace':

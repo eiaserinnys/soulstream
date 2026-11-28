@@ -3,7 +3,6 @@ jest.mock('expo-document-picker', () => ({}));
 const mockRenameFolder = jest.fn(async () => undefined);
 const mockSaveFolderDescription = jest.fn(async () => undefined);
 const mockSetFolderStarred = jest.fn(async () => undefined);
-const mockSetFolderToday = jest.fn(async () => undefined);
 
 jest.mock('../../../theme', () => ({
   ...jest.requireActual('../../../theme'),
@@ -34,7 +33,6 @@ jest.mock('../../../hooks/usePlannerActions', () => ({
     renameFolderPage: mockRenameFolder,
     saveFolderDescription: mockSaveFolderDescription,
     setFolderStarred: mockSetFolderStarred,
-    setFolderToday: mockSetFolderToday,
   }),
 }));
 jest.mock('../../../hooks/usePlannerContextMenus', () => ({
@@ -98,7 +96,6 @@ beforeEach(() => {
   mockRenameFolder.mockResolvedValue(undefined);
   mockSaveFolderDescription.mockResolvedValue(undefined);
   mockSetFolderStarred.mockResolvedValue(undefined);
-  mockSetFolderToday.mockResolvedValue(undefined);
 });
 
 afterEach(() => {

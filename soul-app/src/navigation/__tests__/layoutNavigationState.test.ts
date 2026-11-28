@@ -64,8 +64,6 @@ describe('readPhoneLocation', () => {
   });
 
   test('탭 안의 스택 최상단 화면과 하위 폴더 문맥을 읽는다', () => {
-    expect(readPhoneLocation(phoneState('DailyTab', [{ name: 'Daily' }, { name: 'DailyHistory' }])))
-      .toEqual({ originTab: 'DailyTab', kind: 'dailyHistory' });
     expect(readPhoneLocation(phoneState('FolderTab', [{ name: 'FolderList' }])))
       .toEqual({ originTab: 'FolderTab', kind: 'folderList' });
     expect(readPhoneLocation(phoneState('FolderTab', [{ name: 'FolderList' }, { name: 'FolderWorkspace', params: folder }])))
@@ -200,7 +198,6 @@ describe('buildPhoneState', () => {
 
   test.each<[string, NormalizedNavigationLocation]>([
     ['daily', { originTab: 'DailyTab', kind: 'daily' }],
-    ['dailyHistory', { originTab: 'DailyTab', kind: 'dailyHistory' }],
     ['folderList', { originTab: 'FolderTab', kind: 'folderList' }],
     ['folderWorkspace', { originTab: 'FolderTab', kind: 'folderWorkspace', folder }],
     ['feed', { originTab: 'FeedTab', kind: 'feed' }],
@@ -221,7 +218,6 @@ describe('buildPhoneState', () => {
       ? { originTab: 'SettingsTab', kind: 'settings', category: null }
       : location.kind === 'chat'
         ? { ...location, originTab: 'FeedTab' }
-        : location.kind === 'dailyHistory' ? { originTab: 'DailyTab', kind: 'daily' }
         : location;
     expect(readPhoneLocation(buildPhoneState(location))).toEqual(expected);
   });
@@ -229,10 +225,6 @@ describe('buildPhoneState', () => {
 
 describe('buildTabletState', () => {
   test('Route가 아닌 화면은 Main 위 효과로 표현한다', () => {
-    const history = buildTabletState({ originTab: 'DailyTab', kind: 'dailyHistory' });
-    expect(history.initialState.routes.map(route => route.name)).toEqual(['Main']);
-    expect(history.tabletEffects).toEqual({ activeSectionKind: 'daily', lastMainFocus: 'dailyHistory' });
-
     const workspace = buildTabletState({ originTab: 'FolderTab', kind: 'folderWorkspace', folder });
     expect(workspace.tabletEffects.folderOverlay).toEqual({ ...folder, sessionId: null });
 
@@ -270,7 +262,6 @@ describe('buildTabletState', () => {
 
   test.each<[string, NormalizedNavigationLocation]>([
     ['daily', { originTab: 'DailyTab', kind: 'daily' }],
-    ['dailyHistory', { originTab: 'DailyTab', kind: 'dailyHistory' }],
     ['folderList', { originTab: 'FolderTab', kind: 'folderList' }],
     ['folderWorkspace', { originTab: 'FolderTab', kind: 'folderWorkspace', folder }],
     ['feed', { originTab: 'FeedTab', kind: 'feed' }],
@@ -417,8 +408,6 @@ describe('readTabletLocation', () => {
       .toEqual({ originTab: 'FeedTab', kind: 'search', initialQuery: '검색어' });
     expect(readTabletLocation(main, { lastMainFocus: 'folder' }))
       .toEqual({ originTab: 'FolderTab', kind: 'folderList' });
-    expect(readTabletLocation(main, { lastMainFocus: 'dailyHistory' }))
-      .toEqual({ originTab: 'DailyTab', kind: 'dailyHistory' });
     expect(readTabletLocation(undefined, {})).toEqual({ originTab: 'DailyTab', kind: 'daily' });
   });
 
@@ -465,7 +454,7 @@ describe('readTabletLocation', () => {
 });
 
 test('inactive phone stacks keep their routes and index while explicitly written chat context wins', () => {
-  const previous = phoneState('DailyTab', [{ name: 'Daily' }, { name: 'DailyHistory' }]);
+  const previous = phoneState('DailyTab', [{ name: 'Daily' }, { name: 'CardDetail', params: { cardId: 'card-1' } }]);
   const next = buildPhoneState({ originTab: 'FeedTab', kind: 'chat', sessionId: 'new', returnTab: 'FolderTab', folder }, previous);
   expect(tabStack(next, 'DailyTab')).toEqual(tabStack(previous, 'DailyTab'));
   expect(next.routes.find(route => route.name === 'DailyTab')!.state!.index).toBe(1);

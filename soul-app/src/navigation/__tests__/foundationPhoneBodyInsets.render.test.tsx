@@ -6,11 +6,8 @@ jest.mock('../../theme/useDeviceType', () => ({
   useDeviceType: () => 'phone',
   deviceTypeToBaseKey: () => 'phone',
 }));
-jest.mock('../../hooks/usePlannerReads', () => ({
-  usePlannerDaily: () => ({ data: null, loading: false, error: null, refresh: jest.fn() }),
-}));
 jest.mock('../../hooks/usePlannerActions', () => ({
-  usePlannerActions: () => ({ createFolder: jest.fn(), saveDailyMemo: jest.fn() }),
+  usePlannerActions: () => ({ createFolder: jest.fn() }),
 }));
 jest.mock('../../hooks/usePlannerContextMenus', () => ({
   usePlannerContextMenus: () => ({

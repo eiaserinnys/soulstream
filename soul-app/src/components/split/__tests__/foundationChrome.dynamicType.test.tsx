@@ -19,9 +19,6 @@ jest.mock('../../planner/FolderWorkspace', () => ({
     onPress: () => onOpenFolder('child', 'child-page', '하위 폴더'),
   }),
 }));
-jest.mock('../../../hooks/usePlannerReads', () => ({
-  usePlannerDailyHistory: () => ({ dates: [] }),
-}));
 jest.mock('../../../hooks/usePlannerStarred', () => ({
   usePlannerStarred: () => ({ data: { items: [], nextCursor: null }, loading: false, error: null, loadMore: jest.fn() }),
 }));

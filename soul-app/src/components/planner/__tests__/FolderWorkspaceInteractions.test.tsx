@@ -14,11 +14,6 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
 jest.mock('../../../api/client', () => ({ createApiClient: jest.fn(() => ({})) }));
 jest.mock('../../../hooks/usePlannerReads', () => ({
-  usePlannerDaily: () => ({
-    data: { folders: [] },
-    loading: false,
-    error: null,
-  }),
   usePlannerPageDetail: () => ({ data: { blocks: [] }, loading: false, error: null }),
   usePlannerFolderDetail: (...args: unknown[]) => {
     const result = mockUsePlannerProject(...args);

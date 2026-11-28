@@ -2,9 +2,6 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 const mockRefreshStarred = jest.fn();
 const mockMoveStarredFolderOrder = jest.fn();
 const mockStarredFolderListProps = jest.fn();
-jest.mock('../../../hooks/usePlannerReads', () => ({
-  usePlannerDailyHistory: () => ({ dates: [], loading: false, error: null }),
-}));
 jest.mock('../../../hooks/usePlannerStarred', () => ({
   usePlannerStarred: () => ({
     data: { items: [], nextCursor: null },
