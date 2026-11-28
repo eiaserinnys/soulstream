@@ -45,7 +45,7 @@
     "processed": "Resolved",
     "cardListError": "Could not load the cards in progress or on hold.",
     "snoozedUntil": "Snoozed until {{time}}",
-    "didIt": "Done",
+    "didIt": "I did it",
     "itemTarget": "Item #{{number}}",
     "snoozeOption": {
       "hour": "In 1 hour",

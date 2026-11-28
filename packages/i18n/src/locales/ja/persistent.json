@@ -19,7 +19,7 @@
       "review": "レビュー待ち",
       "on_hold": "保留",
       "done": "完了",
-      "cancelled": "キャンセル"
+      "cancelled": "キャンセル済み"
     },
     "timeline": "案件の履歴",
     "agendaTimeline": "案件{{number}}番の履歴",

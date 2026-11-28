@@ -24,7 +24,7 @@
   "sendComment": "Send comment",
   "sendAnswer": "Send answer",
   "attachmentNeedsSession": "You can attach files once an assigned session is connected.",
-  "hideCompletedAndCancelled": "Hide completed and cancelled cards",
+  "hideCompletedAndCancelled": "Hide completed and canceled cards",
   "closeExecutionSettings": "Close card settings",
   "closeCreate": "Close new card",
   "executionSettings": "Card execution settings",
@@ -179,7 +179,7 @@
   "statusFilter": "Filter by card status",
   "all": "All",
   "refresh": "Refresh",
-  "cancelled": "Cancelled",
+  "cancelled": "Canceled",
   "statusUnknown": "Unknown status",
   "noCardsInStatus": "No cards with this status",
   "noVisibleCards": "No cards to show",
@@ -192,7 +192,7 @@
     "review": "Awaiting review",
     "on_hold": "On hold",
     "done": "Done",
-    "cancelled": "Cancelled"
+    "cancelled": "Canceled"
   },
   "draft": "Draft",
   "itemStatus": {
@@ -259,7 +259,7 @@
   "executionRefused": "Couldn’t start the card. Try again.",
   "executionConnection": "Check your connection and try again.",
   "executionDelayed": "It’s taking longer than expected to confirm the card started",
-  "executionCheckCancelled": "Confirmation that the card started was cancelled.",
+  "executionCheckCancelled": "Confirmation that the card started was canceled.",
   "period": {
     "7": "Last 7 days",
     "30": "Last 30 days",
@@ -269,7 +269,7 @@
   "reorderCard": "Reorder {{title}}",
   "agentListError": "Couldn’t load the agents ({{status}})",
   "optional": "Optional",
-  "dependencyCancelled": "Prerequisite cancelled: {{name}}",
+  "dependencyCancelled": "Prerequisite canceled: {{name}}",
   "dependencyArchived": "Prerequisite archived: {{name}}",
   "moreDependencies": "{{name}} and {{count, number}} more",
   "waitingForDependencies": "Waiting for {{names}}",

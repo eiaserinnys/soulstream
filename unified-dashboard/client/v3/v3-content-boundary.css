@@ -38,7 +38,7 @@
   background: color-mix(in srgb, var(--destructive) 8%, transparent);
   font-size: var(--font-size-xs);
   text-align: start;
-  word-break: keep-all;
+  word-break: var(--locale-word-break, keep-all);
   overflow-wrap: anywhere;
 }
 

@@ -1,3 +1,4 @@
+import { intlLocale, resolveLanguage, type Language } from "@soulstream/i18n";
 import { useTranslation } from "react-i18next";
 import {SessionContinueErrorDialog,SessionDeleteDialog} from "./SessionDialogViews";
 import { useState, useCallback, useEffect, useMemo } from "react";
@@ -81,7 +82,7 @@ export function SessionContextMenu({
   resolveSessionIds,
 }: SessionContextMenuProps) {
   const { t, i18n } = useTranslation();
-  const language = i18n.resolvedLanguage;
+  const language = resolveLanguage(i18n.resolvedLanguage, []);
   const isMobile = useIsMobile();
 
   // 데스크톱 컨텍스트 메뉴: 마우스 좌표를 VirtualElement anchor로 변환
@@ -404,18 +405,19 @@ export function SessionContextMenu({
 
 function resumeScheduleMessage(
   runAt: string,
-  language: string | undefined,
+  language: Language,
   t: ReturnType<typeof useTranslation>["t"],
 ): string {
   const time = resumeScheduleTime(runAt, language);
   return time ? t("ui.session.resumeScheduled", { time }) : t("ui.session.scheduledResume");
 }
 
-function resumeScheduleTime(value: string, language: string | undefined): string | undefined {
+function resumeScheduleTime(value: string, language: Language): string | undefined {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return undefined;
-  const day = date.toLocaleDateString(language, { month: "short", day: "numeric" });
-  const time = date.toLocaleTimeString(language, language === "ko"
+  const locale = intlLocale(language);
+  const day = date.toLocaleDateString(locale, { month: "short", day: "numeric" });
+  const time = date.toLocaleTimeString(locale, language !== "en"
     ? { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }
     : { hour: "numeric", minute: "2-digit" });
   return `${day} ${time}`;

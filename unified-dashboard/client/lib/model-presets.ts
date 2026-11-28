@@ -1,9 +1,9 @@
-import { createI18n } from "@soulstream/i18n";
+import { intlLocale, resolveLanguage } from "@soulstream/i18n";
+import { adminTranslation, dashboardLanguage } from "../components/config/admin-translation";
 import type { useTranslation } from "react-i18next";
 import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
 
 type Translate = ReturnType<typeof useTranslation>["t"];
-const legacyT = createI18n("ko").t;
 
 export const modelPresetFetchError = (t: Translate) => t("accounts.models.loadError");
 export const noAvailableModelMessage = (t: Translate) => t("accounts.models.none");
@@ -12,7 +12,7 @@ export function modelPresetOptionLabel(
   preset: ModelPresetAvailability,
   formatResetTime?: (value: string) => string | null,
   includeUsageWarning = true,
-  t: Translate = legacyT,
+  t: Translate = adminTranslation(),
   locale?: string,
 ): string {
   const resetTime = preset.resets_at
@@ -33,7 +33,7 @@ export function modelPresetOptionLabel(
 /** Reason column text for a row that is blocked or has used up its included quota. */
 export function modelPresetReasonText(
   preset: ModelPresetAvailability,
-  t: Translate = legacyT,
+  t: Translate = adminTranslation(),
   locale?: string,
 ): string | null {
   if (!preset.reason_label) return null;
@@ -64,7 +64,7 @@ export function modelPresetSelectionState(
   selectedId: string,
   presets: readonly ModelPresetAvailability[],
   loaded: boolean,
-  t: Translate = legacyT,
+  t: Translate = adminTranslation(),
 ): {
   preset: ModelPresetAvailability | null;
   valid: boolean;
@@ -92,7 +92,7 @@ export function modelPresetDisplayLabel({
   preset: ModelPresetAvailability | null;
   status: "idle" | "loading" | "ready" | "error";
   missingLabel?: string;
-}, t: Translate = legacyT, locale?: string): string {
+}, t: Translate = adminTranslation(), locale?: string): string {
   if (status === "error") return t("accounts.models.loadError");
   if (preset) return modelPresetOptionLabel(preset, undefined, false, t, locale);
   if (status === "loading") {
@@ -109,12 +109,14 @@ function localResetTime(value: string, locale?: string): string | null {
   const isToday = date.getFullYear() === now.getFullYear()
     && date.getMonth() === now.getMonth()
     && date.getDate() === now.getDate();
-  const time = new Intl.DateTimeFormat(locale, {
+  const language = locale ? resolveLanguage(locale, []) : dashboardLanguage();
+  const formatLocale = intlLocale(language);
+  const time = new Intl.DateTimeFormat(formatLocale, {
     hour: "2-digit",
     minute: "2-digit",
-    ...(!locale || locale === "ko" ? { hourCycle: "h23" } : {}),
+    ...(language === "en" ? {} : { hourCycle: "h23" }),
   }).format(date);
   if (isToday) return time;
-  const day = new Intl.DateTimeFormat(locale ?? "en", { month: "numeric", day: "numeric" }).format(date);
+  const day = new Intl.DateTimeFormat(formatLocale, { month: "numeric", day: "numeric" }).format(date);
   return `${day} ${time}`;
 }

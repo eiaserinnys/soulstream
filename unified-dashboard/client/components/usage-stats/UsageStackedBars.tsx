@@ -1,3 +1,4 @@
+import { intlLocale, resolveLanguage } from "@soulstream/i18n";
 import { useTranslation } from "react-i18next";
 import { usageDate, usageNumber } from "./usage-format";
 import { useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
@@ -71,7 +72,7 @@ export function UsageStackedBars({
   onSelect(bucket: string, intent: "toggle" | "set"): void;
 }) {
   const { t, i18n } = useTranslation();
-  const locale = i18n.resolvedLanguage;
+  const locale = intlLocale(resolveLanguage(i18n.resolvedLanguage, []));
   const unknownLabel = t(metric === "tokens" ? "admin.stats.missingUsage" : "admin.stats.unknownPrice");
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
   const drag = useRef<{ x: number; y: number; horizontal: boolean } | null>(null);

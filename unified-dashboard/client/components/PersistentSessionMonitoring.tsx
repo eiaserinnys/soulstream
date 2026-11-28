@@ -1,4 +1,5 @@
-import { createI18n } from "@soulstream/i18n";
+import { intlLocale, resolveLanguage, type Language } from "@soulstream/i18n";
+import { adminTranslation, dashboardLanguage } from "./config/admin-translation";
 import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, FrameLoading } from "@seosoyoung/soul-ui";
@@ -166,9 +167,10 @@ export function PersistentSessionMonitoringView({
   state: ReturnType<typeof usePersistentSessionMonitoring>;
 }) {
   const { t, i18n } = useTranslation();
-  const locale = i18n.resolvedLanguage;
+  const language = resolveLanguage(i18n.resolvedLanguage, []);
+  const locale = intlLocale(language);
   const { generationState, generation, generationError, history, latestDecision, decisionError, loadMore, retry } = state;
-  const usageByTerminalId = useMemo(() => turnUsageByTerminalId(history.events, t), [history.events, t]);
+  const usageByTerminalId = useMemo(() => turnUsageByTerminalId(history.events, t, language), [history.events, t, language]);
   const isLoading = generationState === "loading" || history.state === "loading";
   const error = generationError ?? history.error;
   const hasError = generationState === "error" || history.state === "error";
@@ -228,7 +230,7 @@ export function PersistentSessionAvailability({
   presets: readonly ModelPresetAvailability[];
 }) {
   const { t, i18n } = useTranslation();
-  const rows = persistentSessionQuotaRows(resource, presets, t, i18n.resolvedLanguage);
+  const rows = persistentSessionQuotaRows(resource, presets, t, resolveLanguage(i18n.resolvedLanguage, []));
   if (rows.length === 0) return null;
   return <SettingsGroupBox title={t("jobs.monitoring.headroom")}>
     <div className="persistent-session-quota-rows space-y-1">
@@ -242,7 +244,8 @@ export function PersistentSessionAvailability({
   </SettingsGroupBox>;
 }
 
-export function persistentSessionQuotaRows(resource: PersistentSession, presets: readonly ModelPresetAvailability[], t: Translate = createI18n("ko").t, locale = "ko") {
+export function persistentSessionQuotaRows(resource: PersistentSession, presets: readonly ModelPresetAvailability[], t: Translate = adminTranslation(), language = dashboardLanguage()) {
+  const locale = intlLocale(language);
   const percentFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
   const groups = new Map<string, {
     backend: string;
@@ -329,7 +332,7 @@ function latestPersistentDecision(events: readonly TimelineEvent[]): TimelineEve
     })[0] ?? null;
 }
 
-function turnUsageByTerminalId(events: readonly TimelineEvent[], t: Translate): Map<string, string> {
+function turnUsageByTerminalId(events: readonly TimelineEvent[], t: Translate, language: Language): Map<string, string> {
   const chronological = [...events].sort((a, b) => compareEventIds(a.id, b.id)).map((event) => ({
     id: event.id,
     type: event.event_type,
@@ -344,7 +347,7 @@ function turnUsageByTerminalId(events: readonly TimelineEvent[], t: Translate): 
       estimated: context?.estimated,
       usage: terminal.usage,
       turnCostUsd: terminal.turn_cost_usd,
-    });
+    }, language);
     return [[String(pair.terminalId), detail ?? t("jobs.monitoring.turnComplete")]];
   }));
 }

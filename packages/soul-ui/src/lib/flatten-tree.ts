@@ -1,3 +1,4 @@
+import { type Language } from "@soulstream/i18n";
 import type { CallerInfo, ContextItem, EventTruncation } from "@soulstream/wire-schema";
 import type {
   EventTreeNode,
@@ -304,6 +305,7 @@ function sameEventTruncation(
  */
 export interface FlattenTreeOptions {
   includePersistentTurnUsage?: boolean;
+  language?: Language;
 }
 
 export interface FlattenTreeCache {
@@ -434,6 +436,8 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
           n.content,
           n.rateLimitType,
           n.resetsAt,
+          undefined,
+          options.language,
         ),
         timestamp: n.timestamp,
         treeNodeId: n.id,
@@ -541,7 +545,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
     }
 
     case "error": {
-      const content = formatRateLimitNotice(node.content, node.rateLimitType, node.resetsAt);
+      const content = formatRateLimitNotice(node.content, node.rateLimitType, node.resetsAt, undefined, options.language);
       return {
         id: node.id,
         role: "system",
@@ -577,7 +581,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
           turnCostUsd: n.turnCostUsd,
           sessionCostUsd: n.sessionCostUsd,
           sessionCostPartial: n.sessionCostPartial,
-        }),
+        }, options.language),
         timestamp: n.timestamp,
         usage: n.usage,
         totalCostUsd: n.totalCostUsd,

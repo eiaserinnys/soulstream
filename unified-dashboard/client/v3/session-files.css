@@ -63,7 +63,7 @@
 .v3-session-file-diff-body:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .v3-session-file-diff-line { display: grid; grid-template-columns: calc(var(--v3-diff-digits, 3) * 1ch) 1ch minmax(0, 1fr); column-gap: var(--v3-space-2); padding-inline: var(--v3-space-2); color: var(--v3-text-secondary); }
 .v3-session-file-diff-num { color: var(--v3-text-tertiary); text-align: end; font-variant-numeric: tabular-nums; }
-.v3-session-file-diff-code { min-width: 0; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; tab-size: 4; }
+.v3-session-file-diff-code { min-width: 0; white-space: pre-wrap; word-break: var(--locale-word-break, keep-all); overflow-wrap: anywhere; tab-size: 4; }
 .v3-session-file-diff-line[data-kind="add"] { color: var(--foreground); background: color-mix(in srgb, var(--success) 14%, transparent); }
 .v3-session-file-diff-line[data-kind="del"] { color: var(--foreground); background: color-mix(in srgb, var(--destructive) 14%, transparent); }
 .v3-session-file-diff-line[data-kind="add"] > .v3-session-file-diff-sign { color: var(--success-foreground); }

@@ -45,9 +45,9 @@ describe("MarkdownContent — common wrapping marker", () => {
   test("applies the shared wrapping rule to the gallery part the component does not render", () => {
     const css = readFileSync(new URL("../styles/globals.css", import.meta.url), "utf8");
 
-    expect(css).toMatch(/\[data-markdown-block\]\s*\{[^}]*word-break:\s*keep-all;[^}]*overflow-wrap:\s*anywhere;/s);
+    expect(css).toMatch(/\[data-markdown-block\]\s*\{[^}]*word-break:\s*var\(--locale-word-break,\s*keep-all\);[^}]*overflow-wrap:\s*anywhere;/s);
     expect(css).toMatch(/\[data-markdown-block\]\s*:is\(th, td\)\s*\{[^}]*overflow-wrap:\s*break-word;/s);
-    expect(css).toMatch(/\.chat-image-run\s*\{[^}]*word-break:\s*keep-all;[^}]*overflow-wrap:\s*anywhere;/s);
+    expect(css).toMatch(/\.chat-image-run\s*\{[^}]*word-break:\s*var\(--locale-word-break,\s*keep-all\);[^}]*overflow-wrap:\s*anywhere;/s);
   });
 });
 
@@ -215,7 +215,7 @@ describe("MarkdownContent — remark-breaks plugin", () => {
 
     expect(css).toContain('[data-chat-attachment-role="user"]');
     expect(css).toContain('min-width: min(86%, calc(min(var(--chat-attachment-user-max-width)');
-    expect(css).toMatch(/\.chat-image-status\s*\{[^}]*word-break:\s*keep-all/s);
+    expect(css).toMatch(/\.chat-image-status\s*\{[^}]*word-break:\s*var\(--locale-word-break,\s*keep-all\)/s);
 
     expect(html).toContain('class="chat-image-frame chat-image-thumbnail-frame"');
     expect(css).toMatch(/--chat-attachment-thumbnail-max-size:\s*200px;/);

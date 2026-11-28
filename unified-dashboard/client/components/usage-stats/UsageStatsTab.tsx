@@ -1,3 +1,4 @@
+import { intlLocale, resolveLanguage } from "@soulstream/i18n";
 import { useTranslation } from "react-i18next";
 import type { AdminTranslate } from "../config/admin-translation";
 import { useMemo, useState } from "react";
@@ -106,7 +107,7 @@ function PeriodButtons({ value, onChange, label }: { value: string; onChange(val
 
 export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = {}) {
   const { t, i18n } = useTranslation();
-  const locale = i18n.resolvedLanguage;
+  const locale = intlLocale(resolveLanguage(i18n.resolvedLanguage, []));
   const [today] = useState(() => usageStatsKstDate(Date.now()));
   const [period, setPeriod] = useState<UsageStatsPeriod>("week");
   const [anchor, setAnchor] = useState(today);
@@ -399,7 +400,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
 
 function InputMaterial({ detail }: { detail: UsageStatsDayDetail }) {
   const { t, i18n } = useTranslation();
-  const locale = i18n.resolvedLanguage;
+  const locale = intlLocale(resolveLanguage(i18n.resolvedLanguage, []));
   const material = detail.input_material;
   const rows = groupUsageStatsInputMaterial(material);
   return <div className="usage-stats-input-material">

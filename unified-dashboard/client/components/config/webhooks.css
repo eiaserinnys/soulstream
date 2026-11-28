@@ -26,7 +26,7 @@
 .webhooks-dialog .webhooks-value > .owned-agents-meta { font:var(--v3-type-body) var(--v3-font-family); }
 .webhooks-dialog p.webhooks-danger:not(.webhooks-record-title) { font:var(--v3-type-meta) var(--v3-font-family); }
 .webhooks-dialog .access-links-form small[role="alert"] { color:var(--destructive-foreground); }
-.webhooks-dialog :is(.webhooks-danger, .access-links-hint) { word-break:keep-all; overflow-wrap:anywhere; }
+.webhooks-dialog :is(.webhooks-danger, .access-links-hint) { word-break:var(--locale-word-break, keep-all); overflow-wrap:anywhere; }
 
 /* 창 안 값 행과 기록 */
 .webhooks-values { display:flex; flex-direction:column; gap:var(--v3-space-4); }

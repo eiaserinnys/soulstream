@@ -1,3 +1,4 @@
+import { intlLocale, resolveLanguage } from "@soulstream/i18n";
 import { useTranslation } from "react-i18next";
 import { useLayoutEffect, useRef } from "react";
 import {
@@ -155,7 +156,7 @@ export function McpDialogs({
                 >
                   <span>
                     {t("mcp.revision", { revision: revision.id })} ·{" "}
-                    {new Date(revision.created_at).toLocaleString(i18n.resolvedLanguage === "ko" ? "ko-KR" : "en-US")}
+                    {new Date(revision.created_at).toLocaleString(intlLocale(resolveLanguage(i18n.resolvedLanguage, [])))}
                   </span>
                   <Button
                     type="button"

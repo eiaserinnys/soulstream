@@ -1,3 +1,4 @@
+import { resolveLanguage } from "@soulstream/i18n";
 import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -24,7 +25,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
   const { i18n } = useTranslation();
   const i18nRef = useRef(i18n);
   i18nRef.current = i18n;
-  const language = i18n.resolvedLanguage === "ko" ? "ko" : "en";
+  const language = resolveLanguage(i18n.resolvedLanguage, []);
   const accountKey = useMemo(() => normalizeEmail(email), [email]);
   const [appearance] = useAppearancePreference();
   const wallpaper = useDashboardStore((state) => state.wallpaper);
@@ -126,7 +127,7 @@ function applySnapshot(
   appliedSnapshotKeyRef: { current: string | null },
   i18n: ReturnType<typeof import("@soulstream/i18n").createI18n>,
 ) {
-  const normalized = normalizeUserPreferences({ ...snapshot, language: snapshot.language ?? (i18n.resolvedLanguage === "ko" ? "ko" : "en") });
+  const normalized = normalizeUserPreferences({ ...snapshot, language: snapshot.language ?? resolveLanguage(i18n.resolvedLanguage, []) });
   if (snapshot.language && snapshot.language !== i18n.resolvedLanguage) void i18n.changeLanguage(snapshot.language);
   appliedSnapshotKeyRef.current = stableSnapshotKey(normalized);
   setAppearancePreference(normalized.appearance);

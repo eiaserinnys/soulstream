@@ -1,4 +1,4 @@
-import { createI18n } from "@soulstream/i18n";
+import { adminTranslation } from "./config/admin-translation";
 import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -328,6 +328,6 @@ export function PersistentSessionsTab({ request, assignment, initialPersistentSe
 
 function message(value: unknown): string { return value instanceof Error ? value.message : String(value); }
 
-export function confirmPersistentSessionRelease(name: string, t: Translate = createI18n("ko").t) {
+export function confirmPersistentSessionRelease(name: string, t: Translate = adminTranslation()) {
   return window.confirm(t("jobs.persistent.confirmRelease", { name }));
 }

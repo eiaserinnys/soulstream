@@ -1,3 +1,5 @@
+import { resolveLanguage } from "@soulstream/i18n";
+import { formatWorkspaceTime as workspaceTime } from "@seosoyoung/soul-ui/lib/format-workspace-time";
 import type { useTranslation } from "react-i18next";
 import type { CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 
@@ -73,12 +75,5 @@ function errorStatus(error: unknown, seen = new Set<object>()): number | null {
 }
 
 export function formatWorkspaceTime(value: string | null | undefined, language: string): string {
-  const timestamp = Date.parse(value ?? "");
-  if (!Number.isFinite(timestamp)) return "...";
-  return new Intl.DateTimeFormat(language, {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(timestamp);
+  return workspaceTime(value, resolveLanguage(language, []));
 }

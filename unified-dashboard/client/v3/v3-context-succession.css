@@ -629,7 +629,7 @@
 }
 
 .v3-succession-effort-notice {
-  word-break: keep-all;
+  word-break: var(--locale-word-break, keep-all);
   grid-column: 1 / -1;
   color: var(--muted-foreground);
   font-size: var(--font-size-sm);

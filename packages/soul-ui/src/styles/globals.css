@@ -75,7 +75,7 @@
 
   /* Font */
   --font-mono: 'Cascadia Code', 'Fira Code', monospace;
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: var(--locale-font-prefix,) -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   /*
    * Typography scale — 4 tiers, responsive.
@@ -229,14 +229,14 @@
    앞뒤에 형제가 있어도 first:/last: 여백 판정이 main과 같다. word-break와
    overflow-wrap은 상속되므로 블록 표식 하나로 그 안의 글 모두에 이어진다. */
 [data-markdown-block] {
-  word-break: keep-all;
+  word-break: var(--locale-word-break, keep-all);
   overflow-wrap: anywhere;
 }
 /* 표 칸의 min-content는 한글 낱말보다 좁아지지 않아야 한다. break-word는
    min-content 계산에 반영되지 않으므로 긴 해시가 든 표는 지금처럼 표 상자 안
    가로 스크롤로 간다. 칸 안 인라인 코드와 링크만 글자 단위로 끊는다. */
 [data-markdown-block] :is(th, td) {
-  word-break: keep-all;
+  word-break: var(--locale-word-break, keep-all);
   overflow-wrap: break-word;
 }
 [data-markdown-block] :is(th, td) :is(code, a) {
@@ -248,7 +248,7 @@
    규칙만 여기에 토큰으로 쓴다. */
 [data-slot="chat-body"] [data-markdown="code-block"] {
   position: relative;
-  word-break: keep-all;
+  word-break: var(--locale-word-break, keep-all);
   overflow-wrap: anywhere;
 }
 /* 코드 블록의 언어 머리줄은 완료 렌더에 없다. 자리도 차지하지 않게 감춘다. */
@@ -273,7 +273,7 @@
    그리므로 블록 표식을 받지 않는다. 같은 공용 규칙을 그 부품의 안정된 훅으로
    건다(설명·상태 글). */
 .chat-image-run {
-  word-break: keep-all;
+  word-break: var(--locale-word-break, keep-all);
   overflow-wrap: anywhere;
 }
 
@@ -1538,7 +1538,7 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
   display: inline-block;
   font: var(--v3-type-meta) var(--v3-font-family);
   color: var(--muted-foreground);
-  word-break: keep-all;
+  word-break: var(--locale-word-break, keep-all);
 }
 .chat-image-frame {
   display: block;
@@ -2062,4 +2062,24 @@ html[data-wallpaper-mode="photo"][data-webgl-glass="on"]:not(.dark) {
 
 html[data-wallpaper-mode="photo"][data-webgl-glass="on"].dark {
   --lg-tint-deep: rgb(14 17 24 / 86%);
+}
+
+:root {
+  --locale-word-break: keep-all;
+}
+
+:lang(ja) {
+  --locale-font-prefix: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, "Noto Sans JP", "Noto Sans CJK JP",;
+  --locale-word-break: normal;
+}
+
+:lang(zh-Hans) {
+  --locale-font-prefix: "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC",;
+  --locale-word-break: normal;
+}
+
+@layer utilities {
+  :is(:lang(ja), :lang(zh-Hans)).break-keep {
+    word-break: var(--locale-word-break);
+  }
 }

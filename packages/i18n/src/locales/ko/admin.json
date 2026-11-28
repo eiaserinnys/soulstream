@@ -229,8 +229,8 @@
     "applied_other": "{{count}}개 설정 적용됨",
     "restartRequired_one": "{{count}}개 설정은 서버 재시작 후 적용됩니다",
     "restartRequired_other": "{{count}}개 설정은 서버 재시작 후 적용됩니다",
-    "open": "Open server configuration",
-    "button": "Config"
+    "open": "서버 설정 열기",
+    "button": "설정"
   },
   "pwa": {
     "reviewDraft": "작성 중인 내용을 확인한 뒤 새로고침합니다",

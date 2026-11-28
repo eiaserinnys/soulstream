@@ -111,7 +111,7 @@
 | 검수 대기 | Awaiting review | レビュー待ち |
 | 보류 | On hold | 保留 |
 | 완료 | Done (status), Complete (action) | 完了 |
-| 취소 | Cancelled (status), Cancel (action) | キャンセル |
+| 취소 | Canceled (status), Cancel (action) | キャンセル済み (状態)、キャンセル (操作) |
 | 확인 항목 | Check items | 確認項目 |
 | 커멘트 | Comment | コメント |
 | 선행 카드 | Prerequisite cards | 先行カード |

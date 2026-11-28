@@ -24,7 +24,7 @@
   "sendComment": "コメント送信",
   "sendAnswer": "回答を送信",
   "attachmentNeedsSession": "添付機能は近日対応予定です。担当セッションがつながると使えます。",
-  "hideCompletedAndCancelled": "完了・キャンセルを非表示",
+  "hideCompletedAndCancelled": "完了・キャンセル済みを非表示",
   "closeExecutionSettings": "カード設定を閉じる",
   "closeCreate": "新規カードを閉じる",
   "executionSettings": "カードの実行設定",
@@ -192,7 +192,7 @@
     "review": "レビュー待ち",
     "on_hold": "保留",
     "done": "完了",
-    "cancelled": "キャンセル"
+    "cancelled": "キャンセル済み"
   },
   "draft": "下書き",
   "itemStatus": {

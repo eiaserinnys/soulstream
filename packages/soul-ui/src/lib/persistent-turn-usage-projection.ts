@@ -1,3 +1,4 @@
+import { type Language } from "@soulstream/i18n";
 import { pairTurnUsage } from "./persistent-turn-usage";
 import type { ChatMessage } from "./flatten-tree";
 import type { PersistentTurnUsageMode } from "@soulstream/wire-schema/persistent-session-settings";
@@ -31,6 +32,7 @@ function mergePersistentInstructionRecordedCaptions(messages: ChatMessage[]): Ch
 export function projectPersistentTurnUsage(
   messages: ChatMessage[],
   turnUsageMode: PersistentTurnUsageMode,
+  language: Language = "ko",
 ): ChatMessage[] {
   const captionedMessages = mergePersistentInstructionRecordedCaptions(messages);
   const sourceMessages = captionedMessages.filter((message) => (
@@ -57,20 +59,20 @@ export function projectPersistentTurnUsage(
       const contextMessage = pair.contextUsage;
       const context = contextMessage?.contextUsageData;
       const complete = pair.complete;
-      const contextText = context ? formatContextUsageText(context) : undefined;
+      const contextText = context ? formatContextUsageText(context, language) : undefined;
       const stats = complete ? formatTurnCompleteStats({
         usage: complete.usage,
         turnCostUsd: complete.turnCostUsd,
         sessionCostUsd: complete.sessionCostUsd,
         sessionCostPartial: complete.sessionCostPartial,
-      }) : undefined;
+      }, language) : undefined;
       const completeText = stats ? `${TURN_COMPLETE_LABEL}${TURN_USAGE_SEPARATOR}${stats}` : undefined;
       const title = formatTurnUsageCaptionTitle({
         percent: context?.percent,
         estimated: context?.estimated,
         usage: complete?.usage,
         turnCostUsd: complete?.turnCostUsd,
-      }) ?? contextText;
+      }, language) ?? contextText;
 
       if (complete && title && (contextText || completeText)) {
         captions.set(String(pair.terminalId), {
@@ -83,11 +85,11 @@ export function projectPersistentTurnUsage(
     } else if (pair.terminalType === "error" && turnUsageMode !== "hidden") {
       const context = pair.contextUsage?.contextUsageData;
       if (!context) continue;
-      const contextText = formatContextUsageText(context);
+      const contextText = formatContextUsageText(context, language);
       const title = formatTurnUsageCaptionTitle({
         percent: context.percent,
         estimated: context.estimated,
-      }) ?? contextText;
+      }, language) ?? contextText;
       if (title && contextText) {
         captions.set(String(pair.terminalId), { title, contextText, expandedByDefault: turnUsageMode === "expanded" });
       }

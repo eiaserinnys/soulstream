@@ -257,7 +257,7 @@
   font: var(--v3-type-body) var(--v3-font-family);
   color: var(--foreground);
   /* 한국어는 어절 단위로 줄을 바꾼다. 아주 긴 토큰만 어디서든 끊는다. */
-  word-break: keep-all;
+  word-break: var(--locale-word-break, keep-all);
   overflow-wrap: anywhere;
 }
 
@@ -317,7 +317,7 @@
   color: color-mix(in oklch, var(--color-red-500) 58%, var(--foreground));
   /* 오류 문구는 읽고 옮겨 적는 글이라 선택된다. */
   user-select: text;
-  word-break: keep-all;
+  word-break: var(--locale-word-break, keep-all);
   overflow-wrap: anywhere;
 }
 

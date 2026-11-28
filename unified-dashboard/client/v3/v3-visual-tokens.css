@@ -23,7 +23,7 @@
   --v3-type-body: 450 14px/22px;
   --v3-type-meta: 500 12px/18px;
   --v3-type-badge: 600 11px/16px;
-  --v3-font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --v3-font-family: var(--locale-font-prefix,) "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --v3-text-primary: var(--foreground);
   --v3-text-secondary: color-mix(in srgb, var(--foreground) 72%, transparent);
   --v3-text-tertiary: color-mix(in srgb, var(--foreground) 58%, transparent);
