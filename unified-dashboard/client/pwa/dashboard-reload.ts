@@ -1,3 +1,4 @@
+import { adminTranslation, type AdminTranslate } from "../components/config/admin-translation";
 import {
   hasPendingDashboardAttachments,
   hasPendingDashboardMutations,
@@ -17,6 +18,7 @@ export interface ReloadEnvironment {
   hasPendingEdits(): boolean;
   flushPendingEdits(): Promise<boolean>;
   hasAttachments?(): boolean;
+  translate?(): AdminTranslate;
 }
 export function createDashboardReloadCoordinator(
   environment: ReloadEnvironment,
@@ -47,7 +49,7 @@ export function createDashboardReloadCoordinator(
       if (inFlight) return inFlight;
       pendingAction ??= action;
       const defer = () => {
-        showUpdateBanner(environment.document, () => approve(false));
+        showUpdateBanner(environment.document, () => approve(false), environment.translate ?? adminTranslation);
         return false;
       };
       if (openReaders.size) return Promise.resolve(defer());
@@ -83,7 +85,9 @@ export function dashboardReloadCoordinator() {
 function showUpdateBanner(
   document: Document,
   apply: () => Promise<boolean>,
+  translate: () => AdminTranslate,
 ): void {
+  const t = translate();
   if (document.querySelector("[data-sw-update-banner]")) return;
   const banner = document.createElement("div");
   banner.dataset.swUpdateBanner = "true";
@@ -105,11 +109,11 @@ function showUpdateBanner(
     font: "14px/1.4 system-ui, sans-serif",
   });
   const message = document.createElement("span");
-  message.textContent = "작성 중인 내용을 확인한 뒤 새로고침합니다";
+  message.textContent = t("admin.pwa.reviewDraft");
   const action = document.createElement("button");
   action.type = "button";
   action.dataset.swUpdateAction = "true";
-  action.textContent = "새 버전 적용";
+  action.textContent = t("admin.pwa.apply");
   Object.assign(action.style, {
     border: "1px solid rgba(255, 255, 255, 0.35)",
     borderRadius: "var(--radius-floor)",
@@ -121,14 +125,15 @@ function showUpdateBanner(
     fontWeight: "600",
   });
   action.addEventListener("click", () => {
+    const t = translate();
     action.disabled = true;
-    action.textContent = "편집 저장 중…";
+    action.textContent = t("admin.pwa.saving");
     void apply().then((approved) => {
       if (approved) return;
       action.disabled = false;
-      action.textContent = "다시 시도";
+      action.textContent = t("admin.pwa.retry");
       message.textContent =
-        "편집 저장이 아직 끝나지 않았습니다. 잠시 후 다시 시도하세요.";
+        t("admin.pwa.savePending");
     });
   });
   banner.append(message, action);

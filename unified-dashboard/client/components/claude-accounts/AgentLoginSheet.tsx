@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Input } from "@seosoyoung/soul-ui";
 import { AlertCircle, Check, Copy, ExternalLink, Loader2, RotateCcw } from "lucide-react";
@@ -32,9 +33,10 @@ const POLL_INTERVAL_MS = 1000;
  * 일회용 코드, 인증 주소, 붙여 넣은 코드는 화면 밖(콘솔, 로그, 오류 보고)에 내보내지 않는다.
  */
 export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: Props) {
+  const { t } = useTranslation();
   const label = AGENT_LOGIN_PROVIDER_LABEL[provider];
   const [flow, setFlow] = useState<AgentLoginFlow | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<{ cause: unknown } | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
@@ -61,7 +63,7 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
-    setMessage(null);
+    setRequestError(null);
     setCode("");
     setFlow(null);
     doneNotified.current = false;
@@ -74,7 +76,7 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
       }
       accept(next);
     } catch (caught) {
-      if (!unmounted.current) setMessage(agentLoginRequestErrorMessage(provider, caught));
+      if (!unmounted.current) setRequestError({ cause: caught });
     } finally {
       inFlight.current = false;
       if (!unmounted.current) setBusy(false);
@@ -111,12 +113,12 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
       void getAgentLogin(context.current.request, context.current.nodeId, loginId)
         .then((next) => {
           if (!active) return;
-          setMessage(null);
+          setRequestError(null);
           accept(next);
         })
         .catch((caught: unknown) => {
           if (!active) return;
-          setMessage(agentLoginRequestErrorMessage(provider, caught));
+          setRequestError({ cause: caught });
           // 같은 상태로 다시 그려 다음 읽기를 예약한다.
           setFlow((current) => current ? { ...current } : current);
         });
@@ -131,14 +133,14 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
     if (!flow || inFlight.current || !code.trim()) return;
     inFlight.current = true;
     setBusy(true);
-    setMessage(null);
+    setRequestError(null);
     const submitted = code.trim();
     // 붙여 넣은 코드는 보낸 즉시 화면 상태에서 지운다.
     setCode("");
     try {
       accept(await submitAgentLoginCode(context.current.request, context.current.nodeId, flow.login_id, submitted));
     } catch (caught) {
-      setMessage(agentLoginRequestErrorMessage(provider, caught));
+      setRequestError({ cause: caught });
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -157,7 +159,7 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
       onClose();
     } catch (caught) {
       pending.shouldCancel = true;
-      setMessage(agentLoginRequestErrorMessage(provider, caught));
+      setRequestError({ cause: caught });
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -166,7 +168,7 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
 
   // 초점은 시트가 지금 기다리는 첫 동작으로 간다. 열 때는 시트 자신(연결 단추가 비활성이 되어도 초점이 사라지지 않게),
   // 주소가 오면 「주소 열기」(Antigravity는 코드 입력칸), 실패하면 「다시 시도」.
-  const focusKey = flow ? `${flow.state}:${flow.expects_code ? "code" : "open"}` : message ? "error" : "starting";
+  const focusKey = flow ? `${flow.state}:${flow.expects_code ? "code" : "open"}` : requestError ? "error" : "starting";
   useEffect(() => {
     const root = sheetRef.current;
     if (!root) return;
@@ -181,8 +183,9 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
 
   const authUrl = safeAuthUrl(flow?.auth_url ?? null);
   const terminal = flow !== null && isTerminalAgentLoginState(flow.state);
-  const failedText = flow?.state === "failed" ? agentLoginFailureMessage(provider, flow.error?.code) : null;
-  const visibleError = message ?? failedText ?? (flow?.state === "cancelled" ? "로그인이 취소되었습니다." : null);
+  const failedText = flow?.state === "failed" ? agentLoginFailureMessage(provider, flow.error?.code, t) : null;
+  const message = requestError && agentLoginRequestErrorMessage(provider, requestError.cause, t);
+  const visibleError = message ?? failedText ?? (flow?.state === "cancelled" ? t("accounts.login.cancelled") : null);
   const asksForCode = flow?.state === "url_ready" && flow.expects_code;
   const showsDeviceCode = flow?.state === "url_ready" && !flow.expects_code && Boolean(flow.user_code);
 
@@ -201,54 +204,54 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
     }}
   >
     <div className="c724-auth-sheet-header">
-      <span className="c724-auth-sheet-title">{label} 연결</span>
-      <Button variant="outline" size="sm" disabled={busy && !terminal} onClick={() => void cancel()}>{terminal ? "닫기" : "취소"}</Button>
+      <span className="c724-auth-sheet-title">{t("accounts.login.connectTitle", { label })}</span>
+      <Button variant="outline" size="sm" disabled={busy && !terminal} onClick={() => void cancel()}>{terminal ? t("accounts.common.close") : t("accounts.common.cancel")}</Button>
     </div>
 
     {flow === null && !message ? <div className="c724-login-state-row" role="status">
       <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-      <p className="c724-auth-hint">로그인을 준비하고 있습니다.</p>
+      <p className="c724-auth-hint">{t("accounts.login.preparing")}</p>
     </div> : null}
     {flow?.state === "requested" ? <div className="c724-login-state-row" role="status">
       <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-      <p className="c724-auth-hint">인증 주소를 준비하고 있습니다.</p>
+      <p className="c724-auth-hint">{t("accounts.login.preparingAddress")}</p>
     </div> : null}
 
     {flow?.state === "url_ready" ? <>
-      <p className="c724-auth-hint">{showsDeviceCode ? "아래 주소를 열고 코드를 넣으세요." : asksForCode ? "아래 주소를 열어 인증을 마치세요." : "아래 주소를 열어 승인하세요."}</p>
+      <p className="c724-auth-hint">{showsDeviceCode ? t("accounts.login.openAndEnter") : asksForCode ? t("accounts.login.openAndVerify") : t("accounts.login.openAndApprove")}</p>
       {authUrl ? <Button className="c724-login-open-link" variant="outline" size="sm" render={<a href={authUrl} target="_blank" rel="noopener noreferrer" />}>
-        <ExternalLink className="size-4" aria-hidden="true" /> 주소 열기
-      </Button> : <p className="c724-login-error" role="alert"><AlertCircle className="size-4" aria-hidden="true" /><span>인증 주소를 열 수 없습니다. 다시 시도해 주세요.</span></p>}
+        <ExternalLink className="size-4" aria-hidden="true" />{" "}{t("accounts.login.openAddress")}
+      </Button> : <p className="c724-login-error" role="alert"><AlertCircle className="size-4" aria-hidden="true" /><span>{t("accounts.login.invalidAddress")}</span></p>}
     </> : null}
 
     {showsDeviceCode && flow?.user_code ? <DeviceCode value={flow.user_code} expiresAt={flow.expires_at} /> : null}
 
     {asksForCode ? <>
-      <p className="c724-auth-hint">브라우저가 보여 준 인증 코드를 붙여 넣으세요.</p>
+      <p className="c724-auth-hint">{t("accounts.login.pasteBrowserCode")}</p>
       <div className="c724-auth-code-row">
         <Input
-          aria-label={`${label} 인증 코드`}
+          aria-label={t("accounts.login.codeLabel", { value: label })}
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
           className="flex-1"
           disabled={busy}
-          placeholder="인증 코드 붙여넣기"
+          placeholder={t("accounts.login.pasteCode")}
           value={code}
           onChange={(event) => setCode(event.currentTarget.value)}
           onKeyDown={(event) => { if (event.key === "Enter") void submitCode(); }}
         />
-        <Button variant="default" size="sm" disabled={busy || !code.trim()} onClick={() => void submitCode()}>제출</Button>
+        <Button variant="default" size="sm" disabled={busy || !code.trim()} onClick={() => void submitCode()}>{t("accounts.login.submit")}</Button>
       </div>
     </> : null}
 
     {flow?.state === "code_submitted" || flow?.state === "verifying" ? <div className="c724-login-state-row" role="status">
       <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-      <p className="c724-auth-hint">{flow.state === "code_submitted" ? "인증 코드를 확인하고 있습니다." : `${label} 사용량을 확인하고 있습니다.`}</p>
+      <p className="c724-auth-hint">{flow.state === "code_submitted" ? t("accounts.login.verifyingCode") : t("accounts.login.checkingUsage", { value: label })}</p>
     </div> : null}
 
     {flow?.state === "done" ? <div className="c724-login-state-row" role="status">
-      <span className="c724-badge c724-badge-accent"><Check className="size-3.5" aria-hidden="true" /> 연결되었습니다</span>
+      <span className="c724-badge c724-badge-accent"><Check className="size-3.5" aria-hidden="true" />{" "}{t("accounts.login.connected")}</span>
     </div> : null}
 
     {visibleError ? <div className="c724-login-error" role="alert">
@@ -258,13 +261,14 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
 
     {(flow === null && message) || (flow !== null && (flow.state === "failed" || flow.state === "cancelled")) ? <div className="c724-login-actions">
       <Button data-retry variant="outline" size="sm" disabled={busy} onClick={() => void start()}>
-        <RotateCcw className="size-4" aria-hidden="true" /> 다시 시도
+        <RotateCcw className="size-4" aria-hidden="true" />{" "}{t("accounts.common.retry")}
       </Button>
     </div> : null}
   </section>;
 }
 
 function DeviceCode({ value, expiresAt }: { value: string; expiresAt: string | null }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const remaining = useRemainingSeconds(expiresAt);
   return <div className="c724-device-code">
@@ -272,9 +276,9 @@ function DeviceCode({ value, expiresAt }: { value: string; expiresAt: string | n
     <Button variant="outline" size="sm" onClick={() => {
       void navigator.clipboard?.writeText(value).then(() => setCopied(true)).catch(() => undefined);
     }}>
-      {copied ? <><Check className="size-4" aria-hidden="true" /> 복사됨</> : <><Copy className="size-4" aria-hidden="true" /> 복사</>}
+      {copied ? <><Check className="size-4" aria-hidden="true" />{" "}{t("accounts.common.copied")}</> : <><Copy className="size-4" aria-hidden="true" />{" "}{t("accounts.common.copy")}</>}
     </Button>
-    {remaining !== null ? <span className="c724-meta-inline" data-testid="agent-login-remaining">{remaining > 0 ? `남은 시간 ${formatRemaining(remaining)}` : "코드가 만료되었습니다"}</span> : null}
+    {remaining !== null ? <span className="c724-meta-inline" data-testid="agent-login-remaining">{remaining > 0 ? t("accounts.login.timeRemaining", { value: formatRemaining(remaining) }) : t("accounts.login.codeExpired")}</span> : null}
   </div>;
 }
 

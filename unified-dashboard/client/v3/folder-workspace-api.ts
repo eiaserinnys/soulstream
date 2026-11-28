@@ -1,3 +1,4 @@
+import { FolderMessageError } from "./folder-messages";
 import type { CatalogFolder } from "@seosoyoung/soul-ui";
 
 export interface FolderMutationResult {
@@ -6,19 +7,19 @@ export interface FolderMutationResult {
 }
 
 export async function moveFolderToParent(folder: CatalogFolder, parentFolderId: string): Promise<FolderMutationResult> {
-  if (folder.version === undefined) throw new Error("폴더 버전을 찾을 수 없습니다.");
+  if (folder.version === undefined) throw new FolderMessageError("folders.errors.noVersion");
   const response = await fetch(`/api/folders/${encodeURIComponent(folder.id)}`, {
     method: "PUT",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ parentFolderId, expectedVersion: folder.version, idempotencyKey: crypto.randomUUID() }),
   });
-  if (!response.ok) throw new Error(`폴더 이동 실패 (${response.status})`);
+  if (!response.ok) throw new FolderMessageError("folders.errors.moveHttp", { status: response.status });
   return response.json() as Promise<FolderMutationResult>;
 }
 
 export async function setFolderStatus(folder: CatalogFolder, status: "open" | "completed"): Promise<FolderMutationResult> {
-  if (folder.version === undefined) throw new Error("폴더 버전을 찾을 수 없습니다.");
+  if (folder.version === undefined) throw new FolderMessageError("folders.errors.noVersion");
   return mutateFolder(folder, "status", {
     status,
     expectedVersion: folder.version,
@@ -33,6 +34,6 @@ async function mutateFolder(folder: CatalogFolder, action: string, body: Record<
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(`폴더 변경 실패 (${response.status})`);
+  if (!response.ok) throw new FolderMessageError("folders.errors.changeHttp", { status: response.status });
   return await response.json() as FolderMutationResult;
 }

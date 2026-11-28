@@ -1,9 +1,10 @@
+import { translateFolderFallback, type FolderTranslate } from "./folder-messages";
 import type { BlockDto } from "../../../packages/page-model/src/types";
 import type { ProjectContextInheritance } from "./project-context-inheritance";
 import { singleLinePreview } from "./session-preview";
 
 export function buildFolderSessionContextItems(effectiveContext: ProjectContextInheritance,
-  contextBlocks: readonly BlockDto[], folderPageId: string) {
+  contextBlocks: readonly BlockDto[], folderPageId: string, t: FolderTranslate = translateFolderFallback) {
   return [
     ...effectiveContext.guidance.map((guidance) => ({
       id: `${guidance.source.pageId}:${guidance.blockId}`,
@@ -12,8 +13,8 @@ export function buildFolderSessionContextItems(effectiveContext: ProjectContextI
       direct: guidance.source.pageId === folderPageId,
       icon: "✦",
       contentLabel: singleLinePreview(guidance.text, 96) ?? guidance.text,
-      sourceLabel: contextSourceLabel(guidance.source.folderName),
-      label: `${singleLinePreview(guidance.text, 96) ?? guidance.text} · ${contextSourceLabel(guidance.source.folderName)}`,
+      sourceLabel: contextSourceLabel(guidance.source.folderName, t),
+      label: `${singleLinePreview(guidance.text, 96) ?? guidance.text} · ${contextSourceLabel(guidance.source.folderName, t)}`,
     })),
     ...effectiveContext.atomReferences.map((reference) => ({
       id: `${reference.source.pageId}:${reference.blockId}`,
@@ -23,8 +24,8 @@ export function buildFolderSessionContextItems(effectiveContext: ProjectContextI
       reference,
       icon: "⚛",
       contentLabel: reference.nodeTitle,
-      sourceLabel: contextSourceLabel(reference.source.folderName),
-      label: `${reference.nodeTitle} · ${contextSourceLabel(reference.source.folderName)}`,
+      sourceLabel: contextSourceLabel(reference.source.folderName, t),
+      label: `${reference.nodeTitle} · ${contextSourceLabel(reference.source.folderName, t)}`,
     })),
     ...contextBlocks.flatMap((block) => {
       const match = /^\[\[([^\[\]]+)\]\]$/.exec(block.text.trim());
@@ -35,13 +36,15 @@ export function buildFolderSessionContextItems(effectiveContext: ProjectContextI
         direct: true,
         icon: "📄",
         contentLabel: match[1],
-        sourceLabel: "이 폴더",
-        label: `${match[1]} · 이 폴더`,
+        sourceLabel: t("folders.context.thisFolder"),
+        label: t("folders.context.pageLabel", { name: match[1] }),
       }] : [];
     }),
   ];
 }
 
-export function contextSourceLabel(folderName: string): string {
-  return folderName === "이 폴더" ? folderName : `${folderName}에서 상속`;
+function contextSourceLabel(folderName: string, t: FolderTranslate): string {
+  return folderName === "이 폴더" // i18n-ignore: Current-folder marker from FolderDetailPane.tsx:142 and prepare-session-menu-succession.ts:14.
+    ? t("folders.context.thisFolder")
+    : t("folders.context.inherited", { name: folderName });
 }

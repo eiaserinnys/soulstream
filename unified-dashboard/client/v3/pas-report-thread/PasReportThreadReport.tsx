@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { flushSync } from "react-dom";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Button, DashboardIconCap, Dialog, DialogPopup, DialogTitle, useDashboardStore, useIsMobile } from "@seosoyoung/soul-ui";
@@ -7,7 +8,6 @@ import { PasCardPanelBoundary } from "./PasCardPanelBoundary";
 import { PasThreadDecideBox } from "./PasThreadDecideBox";
 import { PasThreadRail } from "./PasThreadRail";
 import { PasThreadBody } from "./PasThreadTimeline";
-import { AGENDA_KIND_LABEL } from "@seosoyoung/soul-ui/lib/pas-report-thread-core";
 import type { ReportEntry } from "./pas-report-thread-model";
 import { usePasReportThread, type PasReportThreadInput } from "./use-pas-report-thread";
 import "./v3-pas-report-thread.css";
@@ -58,6 +58,7 @@ export function PasReportThreadReport({ open, onClose, openTriggerRef, ownSessio
 }
 
 function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, ...input }: Omit<PasReportThreadInput, "entries"> & { entries: readonly ReportEntry[]; drawerMode: boolean; onClose(): void; ownSessionId: string | null; liveSessions: boolean }) {
+  const { t } = useTranslation();
   const controller = usePasReportThread(input);
   const { active, detail, loadState } = controller;
   const mobile = useIsMobile();
@@ -168,22 +169,22 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
   const openPanel = (trigger: HTMLElement | null) => { panelTrigger.current = trigger; setPanelOpen(true); };
   return <>
     <header className="pas-rt-head" inert={panelFailed || undefined}>
-      {drawerMode ? <div className="pas-rt-rail-toggle"><DashboardIconCap ref={railTrigger} size="small" appearance="bare" label="안건 목록"
+      {drawerMode ? <div className="pas-rt-rail-toggle"><DashboardIconCap ref={railTrigger} size="small" appearance="bare" label={t("persistent.thread.agendas")}
         data-testid="pas-rt-rail-toggle" aria-expanded={railOpen} onClick={railOpen ? closeRail : () => setRailOpen(true)}>
         <PanelLeft className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap></div> : null}
       <div className="pas-rt-heading">
         {active?.number != null ? <span className="pas-rt-number">#{active.number}</span> : null}
-        <DialogTitle className="pas-rt-title">{active?.title || "보고"}</DialogTitle>
-        {active ? <StatusChip label={AGENDA_KIND_LABEL[active.kind]} tone={KIND_TONE[active.kind]} /> : null}
+        <DialogTitle className="pas-rt-title">{active?.title || t("persistent.report.title")}</DialogTitle>
+        {active ? <StatusChip label={t(`persistent.thread.kind.${active.kind}`)} tone={KIND_TONE[active.kind]} /> : null}
       </div>
       <div className="pas-rt-tools">
-        <DashboardIconCap size="small" appearance="bare" label="카드 패널 열기" data-testid="pas-rt-open-card-panel" disabled={!active}
+        <DashboardIconCap size="small" appearance="bare" label={t("persistent.thread.openCardPanel")} data-testid="pas-rt-open-card-panel" disabled={!active}
           onClick={event => openPanel(event.currentTarget)}><ExternalLink className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap>
-        <DashboardIconCap size="small" appearance="bare" label="보고 창 닫기" onClick={onClose}><X className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap>
+        <DashboardIconCap size="small" appearance="bare" label={t("persistent.thread.closeReport")} onClick={onClose}><X className="size-5" strokeWidth={1.4} aria-hidden="true" /></DashboardIconCap>
       </div>
     </header>
     <div className="pas-rt-main" data-rail-open={drawerOpen || undefined} inert={panelFailed || undefined}>
-      {drawerOpen ? <button type="button" tabIndex={-1} className="pas-rt-rail-scrim" aria-label="안건 목록 닫기" onClick={closeRail} /> : null}
+      {drawerOpen ? <button type="button" tabIndex={-1} className="pas-rt-rail-scrim" aria-label={t("persistent.thread.closeAgenda")} onClick={closeRail} /> : null}
       <PasThreadRail controller={{ ...controller, select: id => { controller.select(id); if (drawerMode) closeRail(); } }} />
       <div className="pas-rt-thread" inert={drawerOpen ? true : undefined}>
         <div className="pas-rt-thread-content">
@@ -194,15 +195,15 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
               autoRef.current = atBottom; setAutoScroll(atBottom); if (atBottom) setHasNew(false);
             }}>
             <div>{active ? <PasThreadBody controller={controller} agenda={active} />
-              : <p className="pas-rt-empty" data-testid="pas-rt-empty" tabIndex={-1}>결재할 안건이 없습니다</p>}</div>
+              : <p className="pas-rt-empty" data-testid="pas-rt-empty" tabIndex={-1}>{t("persistent.thread.noDecisions")}</p>}</div>
           </div>
           {!autoScroll ? <Button className="pas-rt-jump" data-testid="pas-rt-jump-latest" data-new={hasNew || undefined}
-            onClick={() => { jump(); threadRef.current?.focus({ preventScroll: true }); }}>최신 경과로 ↓</Button> : null}
+            onClick={() => { jump(); threadRef.current?.focus({ preventScroll: true }); }}>{t("persistent.thread.latest")}</Button> : null}
         </div>
         <PasThreadDecideBox controller={controller} agenda={active} undoButtonRef={undoButtonRef} onLayoutChange={keepLatest} />
       </div>
     </div>
-    {panelOpen && active ? <PasCardPanelBoundary onClose={closePanel} onFailed={() => setPanelFailed(true)}><Suspense fallback={null}><PasCardPanel cardId={active.cardId} folders={folders ?? []} ownSessionId={ownSessionId}
+    {panelOpen && active ? <PasCardPanelBoundary t={t} onClose={closePanel} onFailed={() => setPanelFailed(true)}><Suspense fallback={null}><PasCardPanel cardId={active.cardId} folders={folders ?? []} ownSessionId={ownSessionId}
       liveSessions={liveSessions} mobile={mobile} onClose={closePanel} /></Suspense></PasCardPanelBoundary> : null}
   </>;
 }

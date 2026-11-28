@@ -1,12 +1,11 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from 'react';
 import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import { Button, FrameLoading, useAgentPortraitUrlResolver, useAuth, useDashboardStore, useInternalLinkClick } from '@seosoyoung/soul-ui';
 import { cardMutationKey, cardQuestionChoiceAnswer, cardQuestionTextAnswer } from '@seosoyoung/soul-ui/cards/card-api';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
-import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';
 import { CardCheckItems } from './CardCheckItems';
 import { CardCommentInput } from './CardCommentInput';
-import { CardStatusChip } from './CardActions';
 import { StatusChip } from './StatusChip';
 import { CardNowPanel } from './CardNowPanel';
 import { CardTimeline } from './CardTimeline';
@@ -24,6 +23,7 @@ type Props = {
 const EMPTY_PENDING_CONFIRMATIONS: Readonly<Record<number, boolean>> = {};
 
 export function PasCardExpansion({ entry, lookupCards, samplePortraitUrl }: Props) {
+  const { t } = useTranslation();
   const byId = useCardStore(state => state.byId);
   const catalog = useDashboardStore(state => state.catalog);
   const { user } = useAuth();
@@ -76,7 +76,7 @@ export function PasCardExpansion({ entry, lookupCards, samplePortraitUrl }: Prop
 
   // Store mutations also publish errors; their local alert owns those messages.
   const errorAlert = error && error !== lastSendError.current ? <p role="alert" className="v3-card-error">{error}</p> : null;
-  if (!card) return errorAlert ?? <FrameLoading label="카드를 불러오는 중…" />;
+  if (!card) return errorAlert ?? <FrameLoading label={t("persistent.expansion.loading")} />;
 
   const questions = detail?.questions ?? [];
   const question = (entry.question_id ? questions.find(item => item.id === entry.question_id && isOpenCardQuestion(item)) : undefined)
@@ -134,12 +134,12 @@ export function PasCardExpansion({ entry, lookupCards, samplePortraitUrl }: Prop
     {errorAlert}
     <CardCheckItems items={items} pendingConfirmations={pendingConfirmations} onConfirmChange={confirmItem} onTargetItem={targetItem} />
     <CardTimeline card={card} detail={commentsDetail} portraitUrl={portraitUrl} userPortraitUrl={user?.picture ?? ''} commentsOnly pending={pending} onAnswer={() => {}} />
-    {cardId ? <Button variant="link" className="text-foreground" render={<a href={`/?card=${encodeURIComponent(cardId)}`} onClick={internalLinkClick} />}>카드 열기</Button> : null}
-    {targetItemId !== null ? <div className="v3-card-target-notice" role="status"><span>대상: {targetItemId}번 {targetItemRow?.title ?? '항목'}</span><button type="button" aria-label="커멘트 대상 해제" onClick={() => { setTargetItemId(null); setFocusRequest(request => request + 1); }}>해제</button></div> : null}
-    {targetItemId === null && validTarget ? <CardQuestionNotice label={validTarget.kind === 'ask' ? '되묻기' : `덧붙이기: ${validTarget.label}`} onClear={clearQuestionTarget} /> : null}
+    {cardId ? <Button variant="link" className="text-foreground" render={<a href={`/?card=${encodeURIComponent(cardId)}`} onClick={internalLinkClick} />}>{t("persistent.expansion.openCard")}</Button> : null}
+    {targetItemId !== null ? <div className="v3-card-target-notice" role="status"><span>{t("persistent.expansion.itemTarget", { number: targetItemId, title: targetItemRow?.title ?? t("persistent.expansion.item") })}</span><button type="button" aria-label={t("persistent.expansion.clearCommentTarget")} onClick={() => { setTargetItemId(null); setFocusRequest(request => request + 1); }}>{t("persistent.expansion.clear")}</button></div> : null}
+    {targetItemId === null && validTarget ? <CardQuestionNotice label={validTarget.kind === 'ask' ? t("persistent.thread.askBack") : t("persistent.expansion.appendTo", { answer: validTarget.label })} onClear={clearQuestionTarget} /> : null}
     {sendError ? <p role="alert" className="v3-card-error">{sendError}</p> : null}
     <CardCommentInput cardId={cardId ?? entry.key} nodeId={card.nodeId} sessionId={card.assigneeSessionId} pending={pending} focusRequest={focusRequest + questionTarget.focus}
-      placeholder={targetItemId !== null ? '커멘트' : validTarget?.kind === 'ask' ? '물어볼 것' : validTarget?.kind === 'append' ? '덧붙일 말' : question ? '다르게 답하기' : '커멘트'} onSend={send} />
+      placeholder={targetItemId !== null ? t("persistent.thread.comment") : validTarget?.kind === 'ask' ? t("persistent.thread.askPlaceholder") : validTarget?.kind === 'append' ? t("persistent.expansion.appendPlaceholder") : question ? t("persistent.thread.answerFreely") : t("persistent.thread.comment")} onSend={send} />
   </div>;
 }
 
@@ -158,7 +158,8 @@ export function pasCardQuestion(entry: PersistentReportEntry, controls: ReportQu
     controls.hold(option);
     try {
       await useCardStore.getState().mutate(cardId, `/questions/${encodeURIComponent(view.id)}/answer`, cardQuestionChoiceAnswer(option));
-      if (option !== '했어' && cardQuestionTargetGeneration(scope) === generation) setCardQuestionTarget(scope, { kind: 'append', questionId: view.id, label: option });
+      const isRequestDone = option === '했어'; // i18n-ignore: 서버가 부여한 요청 완료 선택지와 비교한다.
+      if (!isRequestDone && cardQuestionTargetGeneration(scope) === generation) setCardQuestionTarget(scope, { kind: 'append', questionId: view.id, label: option });
       controls.confirm();
       return true;
     } catch {
@@ -166,12 +167,17 @@ export function pasCardQuestion(entry: PersistentReportEntry, controls: ReportQu
       return false;
     }
   };
-  const revised = view.revisedAt ? new Date(view.revisedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : null;
   return {
-    meta: revised ? <span className="v3-card-question-meta">{revised}에 고침</span> : null,
+    meta: view.revisedAt ? <PasQuestionRevision revisedAt={view.revisedAt} /> : null,
     body: <PasQuestionBody entry={entry} answer={controls.answer} pending={controls.pending} onChoose={choose} />,
     actions: <PasQuestionActions entry={entry} answer={controls.answer} pending={controls.pending} expanded={controls.expanded} expand={controls.expand} onChoose={choose} />,
   };
+}
+
+function PasQuestionRevision({ revisedAt }: { revisedAt: string }) {
+  const { t, i18n } = useTranslation();
+  const time = new Date(revisedAt).toLocaleTimeString(i18n.language, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return <span className="v3-card-question-meta">{t("persistent.expansion.revisedAt", { time })}</span>;
 }
 
 /** 펼친 장의 질문 보기는 카드 상세에 실린 질문·답을 쓴다. 상세가 아직 없으면 판 항목으로 그린다. */
@@ -211,11 +217,15 @@ function PasQuestionActions({ entry, answer, pending, expanded, expand, onChoose
   return <CardQuestionActions view={view} pending={pending} composerVisible={expanded}
     onAnswerFreely={() => expandWith(null)}
     onAskBack={() => expandWith({ kind: 'ask', questionId: view.id })}
-    onDone={() => { void onChoose('했어'); }} />;
+    onDone={() => {
+      void onChoose('했어'); // i18n-ignore: 서버가 부여한 요청 완료 선택지를 전송한다.
+    }} />;
 }
 
 export function PasCardExpansionStatus({ entry }: { entry: PasCardEntry }) {
-  if (entry.key.startsWith('cq_')) return <StatusChip label={entry.question_kind === 'request' ? '카드 부탁' : '카드 질문'} tone="question" />;
+  const { t } = useTranslation();
+  if (entry.key.startsWith('cq_')) return <StatusChip label={entry.question_kind === 'request' ? t("persistent.expansion.cardRequest") : t("persistent.expansion.cardQuestion")} tone="question" />;
   if (!entry.card_status) return null;
-  return <CardStatusChip card={{ status: entry.card_status as CardRow['status'], blockedKind: null }} />;
+  const status = t(`persistent.thread.status.${entry.card_status}`, { defaultValue: entry.card_status });
+  return <StatusChip label={t("persistent.expansion.cardStatus", { status })} tone={entry.card_status} className={`v3-card-status--${entry.card_status}`} />;
 }

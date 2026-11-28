@@ -13,7 +13,7 @@ export type UsageStatsFilter =
 export const ALL_USAGE_STATS_FILTER: UsageStatsFilter = {
   kind: "all",
   id: usageStatsFilterKey("all", null, null),
-  label: "모든 모델",
+  label: "",
   provider: null,
   model: null,
 };

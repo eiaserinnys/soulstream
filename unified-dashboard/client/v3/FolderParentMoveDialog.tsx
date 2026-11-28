@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useState } from "react";
 import {
   Button, Dialog, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, FrameLoading, type CatalogFolder,
@@ -19,6 +20,7 @@ export interface FolderParentMoveDialogProps {
 }
 
 export function FolderParentMoveDialog({ starredFolderIds, task, currentFolderId, folders, pending, error, onMove, onClose }: FolderParentMoveDialogProps) {
+  const { t } = useTranslation();
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const stars = useFolderPickerStars(task !== null, folders, starredFolderIds);
   const disabledFolderIds = useMemo(() => {
@@ -42,22 +44,22 @@ export function FolderParentMoveDialog({ starredFolderIds, task, currentFolderId
   return (
     <Dialog open={task !== null} onOpenChange={(open) => { if (!open && !pending) onClose(); }}>
       <DialogPopup className="approved-dialog v3-surface max-w-md">
-        <DialogHeader><DialogTitle>폴더 이동</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t("folders.move.title")}</DialogTitle></DialogHeader>
         <DialogPanel>
-          <div className="v3-form-context"><span>이동할 폴더</span><strong>{task?.page.title}</strong></div>
+          <div className="v3-form-context"><span>{t("folders.move.folder")}</span><strong>{task?.page.title}</strong></div>
           <div data-testid="v3-folder-parent-targets">
-            {stars.loading ? <FrameLoading inline label="폴더를 불러오는 중…" /> : task ? <FolderPicker key={task.folderId}
+            {stars.loading ? <FrameLoading inline label={t("folders.move.loading")} /> : task ? <FolderPicker key={task.folderId}
               folders={folders} starredFolderIds={stars.folderIds} disabledFolderIds={disabledFolderIds}
               selectedFolderId={selectedFolderId} pending={pending} onSelect={(folder) => setSelectedFolderId(folder.id)} /> : null}
           </div>
-          {stars.error ? <p className="v3-load-error" role="alert" data-v3-selectable-content="true">별표 조회 실패 · {stars.error}</p> : null}
+          {stars.error ? <p className="v3-load-error" role="alert" data-v3-selectable-content="true">{t("folders.move.starError", { detail: stars.error })}</p> : null}
           {error ? <p className="v3-load-error" role="alert" data-v3-selectable-content="true">{error}</p> : null}
         </DialogPanel>
         <DialogFooter className="v3-choice-footer">
-          <p className="v3-form-submit-note">{selectedFolderId ? `${folders.find(folder => folder.id === selectedFolderId)?.name ?? "선택한 폴더"} 안으로 이동` : "목적지를 선택하세요"}</p>
-          <Button variant="ghost" disabled={pending} onClick={onClose}>취소</Button>
+          <p className="v3-form-submit-note">{selectedFolderId ? t("folders.move.parentDestination", { name: folders.find(folder => folder.id === selectedFolderId)?.name ?? t("folders.move.selectedFolder") }) : t("folders.move.selectDestination")}</p>
+          <Button variant="ghost" disabled={pending} onClick={onClose}>{t("folders.common.cancel")}</Button>
           <Button disabled={pending || !selectedFolderId || disabledFolderIds.has(selectedFolderId)}
-            onClick={() => { if (selectedFolderId && !pending && !disabledFolderIds.has(selectedFolderId)) onMove({ folderId: selectedFolderId }); }}>{pending ? "이동 중…" : "폴더 이동"}</Button>
+            onClick={() => { if (selectedFolderId && !pending && !disabledFolderIds.has(selectedFolderId)) onMove({ folderId: selectedFolderId }); }}>{pending ? t("folders.move.pending") : t("folders.move.title")}</Button>
         </DialogFooter>
       </DialogPopup>
     </Dialog>

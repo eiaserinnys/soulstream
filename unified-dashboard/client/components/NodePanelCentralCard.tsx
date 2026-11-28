@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@seosoyoung/soul-ui";
@@ -20,6 +21,7 @@ export const CENTRAL_ACCOUNTS_QUERY_KEY = ["claude-auth-accounts", { scope: "cen
  * 같은 모양으로 나온다. 중앙 계정을 바꾸면 그 줄이 같은 키로 목록을 갱신한다.
  */
 export function NodePanelCentralCard({ request }: { request: typeof fetch }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const list = useQuery({
     queryKey: CENTRAL_ACCOUNTS_QUERY_KEY,
@@ -35,7 +37,7 @@ export function NodePanelCentralCard({ request }: { request: typeof fetch }) {
       expanded={expanded}
       onClick={() => setExpanded((current) => !current)}
     >
-      <span className="text-sm font-medium text-foreground truncate flex-auto min-w-0">중앙 풀</span>
+      <span className="text-sm font-medium text-foreground truncate flex-auto min-w-0">{t("accounts.claude.centralPool")}</span>
     </NodeCardHeader>
     {expanded ? <NodeCardBody>
       {list.isPending
@@ -44,10 +46,10 @@ export function NodePanelCentralCard({ request }: { request: typeof fetch }) {
           ? <div className="c724-account-row" data-testid="claude-central-list-error">
             <div className="c724-account-top">
               <p className="c724-pool-error" role="alert" data-v3-selectable-content="true">
-                {requestErrorMessage(list.error)}
+                {requestErrorMessage(list.error, t)}
               </p>
               <Button variant="outline" size="sm" disabled={list.isFetching} onClick={() => void list.refetch()}>
-                다시 시도
+                {t("accounts.common.retry")}
               </Button>
             </div>
           </div>

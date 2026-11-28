@@ -1,8 +1,8 @@
-import { Button, DashboardIconCap, Switch, type ProviderQuotaSlot, type ProviderQuotaSlots } from "@seosoyoung/soul-ui";
+import { useTranslation } from "react-i18next";
+import { Button, DashboardIconCap, Switch } from "@seosoyoung/soul-ui";
 import { ArrowDown, ArrowUp, RotateCcw, Trash2 } from "lucide-react";
 import type { ClaudeAccount, ClaudeAccountUsageWindow } from "../../../../packages/wire-schema/generated/typescript/index";
-import { clockLabel } from "../CogitoNodeHealthClock";
-import { ProviderQuotaGrid } from "./ProviderQuotaGrid";
+import { accountClockLabel, ProviderQuotaGrid, type QuotaWindow } from "./ProviderQuotaGrid";
 
 type Props = {
   account: ClaudeAccount;
@@ -23,15 +23,13 @@ type Props = {
 };
 
 function windowSlot(
-  kind: ProviderQuotaSlot["kind"],
-  label: string,
+  kind: QuotaWindow["kind"],
   window: ClaudeAccountUsageWindow | null,
-): ProviderQuotaSlot | null {
+): QuotaWindow | null {
   if (!window) return null;
   const reset = window.resets_at ? new Date(window.resets_at).getTime() : NaN;
   return {
     kind,
-    label,
     usedPercent: Math.min(100, Math.max(0, window.used_percent)),
     resetAt: Number.isFinite(reset) ? Math.floor(reset / 1000) : null,
     sevenDay: kind === "weekly" || kind === "fable",
@@ -46,18 +44,18 @@ function statusColor(account: ClaudeAccount): string {
   return "var(--color-emerald-400)";
 }
 
-function accountStatus(account: ClaudeAccount, nowMs: number): string | null {
-  if (account.auth_state === "needs_relogin") return "재로그인 필요";
+function accountStatus(account: ClaudeAccount, nowMs: number, t: ReturnType<typeof useTranslation>["t"], locale: string | undefined): string | null {
+  if (account.auth_state === "needs_relogin") return t("accounts.claude.needsRelogin");
   if (account.auth_state === "logging_in") {
     const expiresAt = account.login_expires_at ? new Date(account.login_expires_at).getTime() : NaN;
     const remainingMinutes = Number.isFinite(expiresAt) ? Math.ceil((expiresAt - nowMs) / 60_000) : 0;
-    return remainingMinutes > 0 ? `로그인 중, ${remainingMinutes}분 남음` : "로그인 중";
+    return remainingMinutes > 0 ? t("accounts.claude.loginMinutes", { value: remainingMinutes }) : t("accounts.claude.loggingIn");
   }
-  if (!account.enabled) return "사용 안 함";
-  if (account.auth_state === "idle") return "대기";
+  if (!account.enabled) return t("accounts.claude.disabled");
+  if (account.auth_state === "idle") return t("accounts.claude.idle");
   if (account.blocked) {
-    const until = clockLabel(account.blocked.until) ?? "해제 시각 미정";
-    return account.blocked.scope === "fable" ? `Fable ${until} 해제` : `${until} 해제`;
+    const until = accountClockLabel(account.blocked.until, locale) ?? t("accounts.quota.unknownReset");
+    return account.blocked.scope === "fable" ? t("accounts.quota.modelReset", { value: until }) : t("accounts.quota.resets", { value: until });
   }
   return null;
 }
@@ -78,15 +76,17 @@ export function ClaudeAccountRow({
   onCancelDelete,
   onDelete,
 }: Props) {
-  const status = accountStatus(account, nowMs);
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage;
+  const status = accountStatus(account, nowMs, t, locale);
   const rowState = account.auth_state === "needs_relogin" ? "needs_relogin" : account.blocked ? "blocked" : "normal";
   const hasUsage = account.usage.five_hour !== null || account.usage.seven_day !== null || account.usage.fable_weekly !== null;
-  const observed = account.observed_at ? clockLabel(account.observed_at) : null;
+  const observed = account.observed_at ? accountClockLabel(account.observed_at, locale) : null;
   const showPriority = enabledCount > 1 && account.enabled;
-  const slots: ProviderQuotaSlots = [
-    windowSlot("short", "5시간", account.usage.five_hour),
-    windowSlot("weekly", "7일", account.usage.seven_day),
-    windowSlot("fable", "Fable", account.usage.fable_weekly),
+  const slots = [
+    windowSlot("short", account.usage.five_hour),
+    windowSlot("weekly", account.usage.seven_day),
+    windowSlot("fable", account.usage.fable_weekly),
   ];
 
   return <div
@@ -101,42 +101,42 @@ export function ClaudeAccountRow({
         <span className="c724-status-dot" style={{ backgroundColor: statusColor(account) }} />
         <span className="c724-account-email" data-selectable="true" title={account.email} data-v3-selectable-content="true">{account.email}</span>
         {account.plan ? <span className="c724-badge c724-badge-neutral">{account.plan}</span> : null}
-        {showPriority ? <span className="c724-badge c724-badge-accent">{index + 1}순위</span> : null}
+        {showPriority ? <span className="c724-badge c724-badge-accent">{t("accounts.claude.priority", { number: index + 1 })}</span> : null}
         {status ? <span className={`c724-badge ${account.auth_state === "needs_relogin" ? "c724-badge-danger" : account.blocked ? "c724-badge-warn" : "c724-badge-neutral"}`}>{status}</span> : null}
-        {account.active_sessions > 0 ? <span className="c724-meta-inline" data-v3-selectable-content="true">세션 {account.active_sessions}</span> : null}
+        {account.active_sessions > 0 ? <span className="c724-meta-inline" data-v3-selectable-content="true">{t("accounts.claude.sessions", { number: account.active_sessions })}</span> : null}
       </div>
 
       <div className="c724-account-actions">
         <span className="c724-switch-wrap">
-          <Switch checked={account.enabled} disabled={busy} aria-label={`${account.email} 사용`} onCheckedChange={onEnabledChange} />
+          <Switch checked={account.enabled} disabled={busy} aria-label={t("accounts.claude.enableAccount", { value: account.email })} onCheckedChange={onEnabledChange} />
         </span>
         {showPriority ? <>
-          <DashboardIconCap size="small" label="우선순위 올리기" disabled={busy || index === 0} onClick={() => onMove(-1)}>
+          <DashboardIconCap size="small" label={t("accounts.claude.moveUp")} disabled={busy || index === 0} onClick={() => onMove(-1)}>
             <ArrowUp className="size-4" aria-hidden="true" />
           </DashboardIconCap>
-          <DashboardIconCap size="small" label="우선순위 내리기" disabled={busy || index >= enabledCount - 1} onClick={() => onMove(1)}>
+          <DashboardIconCap size="small" label={t("accounts.claude.moveDown")} disabled={busy || index >= enabledCount - 1} onClick={() => onMove(1)}>
             <ArrowDown className="size-4" aria-hidden="true" />
           </DashboardIconCap>
         </> : null}
-        <DashboardIconCap size="small" label={account.auth_state === "logging_in" ? "새로 시도" : "재로그인"} disabled={busy} onClick={onRelogin}>
+        <DashboardIconCap size="small" label={account.auth_state === "logging_in" ? t("accounts.claude.restartLogin") : t("accounts.common.relogin")} disabled={busy} onClick={onRelogin}>
           <RotateCcw className="size-4" aria-hidden="true" />
         </DashboardIconCap>
-        <DashboardIconCap size="small" label="계정 삭제" disabled={busy} onClick={onRequestDelete}>
+        <DashboardIconCap size="small" label={t("accounts.claude.deleteAccount")} disabled={busy} onClick={onRequestDelete}>
           <Trash2 className="size-4" aria-hidden="true" />
         </DashboardIconCap>
       </div>
     </div>
 
-    {hasUsage ? <ProviderQuotaGrid slots={slots} label={`${account.email} 사용량`} /> : <div className="c724-idle-row">
-      <span className="c724-meta-inline">{account.auth_state === "needs_relogin" ? "인증 만료로 사용량 조회 중단" : "미측정 (실제 호출 시 갱신)"}</span>
-      <span className="c724-meta-inline" data-v3-selectable-content="true">{observed ? `${observed} ${account.auth_state === "idle" ? "확인" : "갱신"}` : ""}</span>
+    {hasUsage ? <ProviderQuotaGrid slots={slots} label={t("accounts.quota.usage", { value: account.email })} /> : <div className="c724-idle-row">
+      <span className="c724-meta-inline">{account.auth_state === "needs_relogin" ? t("accounts.claude.usageAuthExpired") : t("accounts.claude.notMeasured")}</span>
+      <span className="c724-meta-inline" data-v3-selectable-content="true">{observed ? t(account.auth_state === "idle" ? "accounts.claude.observed" : "accounts.claude.updated", { time: observed }) : ""}</span>
     </div>}
 
     {confirmingDelete ? <div className="c724-confirm-bar" data-testid={`delete-confirm-${account.id}`}>
-      <span className="c724-confirm-text">{central ? "이 계정을 중앙 풀에서 삭제할까요?" : "이 계정을 노드에서 삭제할까요?"}</span>
+      <span className="c724-confirm-text">{central ? t("accounts.claude.deleteCentralConfirm") : t("accounts.claude.deleteNodeConfirm")}</span>
       <div className="c724-confirm-actions">
-        <Button variant="outline" size="sm" disabled={busy} onClick={onCancelDelete}>취소</Button>
-        <Button variant="destructive" size="sm" disabled={busy} onClick={onDelete}>{busy ? "삭제 중" : "삭제"}</Button>
+        <Button variant="outline" size="sm" disabled={busy} onClick={onCancelDelete}>{t("accounts.common.cancel")}</Button>
+        <Button variant="destructive" size="sm" disabled={busy} onClick={onDelete}>{busy ? t("accounts.common.deleting") : t("accounts.common.delete")}</Button>
       </div>
     </div> : null}
   </div>;

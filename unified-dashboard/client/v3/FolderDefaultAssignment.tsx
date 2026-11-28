@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
 import { Pencil } from "lucide-react";
@@ -21,6 +22,7 @@ export function FolderDefaultAssignment({
   modelPreset: string | null;
   onSave(value: { agentId: string; nodeId: string; modelPreset: string }): Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draftAgentId, setDraftAgentId] = useState(agentId ?? "");
   const [draftNodeId, setDraftNodeId] = useState(nodeId ?? "");
@@ -48,9 +50,9 @@ export function FolderDefaultAssignment({
         selectedId: modelPreset,
         preset: modelSelection.preset,
         status: modelCatalogStatus,
-        missingLabel: "모델 확인 필요",
+        missingLabel: t("folders.assignment.checkModel"),
       })
-    : "모델 미지정";
+    : t("folders.assignment.noModel");
 
   useEffect(() => {
     if (editing) return;
@@ -93,9 +95,9 @@ export function FolderDefaultAssignment({
       >
         <span className="v3-emoji" aria-hidden="true">👤</span>
         <span className="v3-task-default-values">
-          <span>{nodeId ?? "노드 미지정"}</span>
+          <span>{nodeId ?? t("folders.assignment.noNode")}</span>
           <span aria-hidden="true">·</span>
-          <span>{agentId ?? "에이전트 미지정"}</span>
+          <span>{agentId ?? t("folders.assignment.noAgent")}</span>
           <span aria-hidden="true">·</span>
           <span
             data-model-preset-state={modelCatalogStatus}
@@ -107,7 +109,7 @@ export function FolderDefaultAssignment({
         </span>
         <DashboardIconCap
           className="v3-task-default-edit"
-          label="기본 담당 편집"
+          label={t("folders.assignment.edit")}
           aria-expanded={editing}
           disabled={pending || editing}
           onClick={() => {
@@ -140,7 +142,7 @@ export function FolderDefaultAssignment({
           />
           {error ? <small role="alert">{error}</small> : null}
           <div className="v3-task-default-actions">
-            <Button variant="ghost" disabled={pending} onClick={cancel}>취소</Button>
+            <Button variant="ghost" disabled={pending} onClick={cancel}>{t("folders.common.cancel")}</Button>
             <Button
               disabled={
                 pending
@@ -149,7 +151,7 @@ export function FolderDefaultAssignment({
               }
               onClick={() => { void save(); }}
             >
-              {pending ? "저장 중…" : "저장"}
+              {pending ? t("folders.common.saving") : t("folders.common.save")}
             </Button>
           </div>
         </div>

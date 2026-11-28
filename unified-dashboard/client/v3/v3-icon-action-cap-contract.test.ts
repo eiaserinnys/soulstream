@@ -41,14 +41,14 @@ describe("v3 icon action cap contract", () => {
   });
 
   it.each([
-    ["./FolderCardSection.tsx", ["카드 추가"]],
+    ["./FolderCardSection.tsx", ["folders.cards.add"]],
     ["../../../packages/soul-ui/src/folder-status/FolderCompletionAction.tsx", ["actionLabel"]],
-    ["./FolderDetailPane.tsx", ["전체 카드로 돌아가기", "별표"]],
-    ["./FolderDescriptionPanel.tsx", ["편집"]],
-    ["./FolderInlineBoard.tsx", ["마크다운 추가", "마크다운 이름 변경 저장", "마크다운 이름 변경 취소"]],
-    ["./FolderSessionHistory.tsx", ["새 세션"]],
-    ["./FolderWorkspace.tsx", ["폴더 창 닫기"]],
-    ["./FolderWorkspaceSections.tsx", ["하위 폴더 더 보기"]],
+    ["./FolderDetailPane.tsx", ["folders.workspace.backToCards", "folders.common.addStar", "folders.common.removeStar"]],
+    ["./FolderDescriptionPanel.tsx", ["folders.description.edit"]],
+    ["./FolderInlineBoard.tsx", ["folders.board.addMarkdown", "folders.board.saveRename", "folders.board.cancelRename"]],
+    ["./FolderSessionHistory.tsx", ["folders.session.new"]],
+    ["./FolderWorkspace.tsx", ["folders.workspace.close"]],
+    ["./FolderWorkspaceSections.tsx", ["folders.workspace.moreSubfolders"]],
     ["./V3Navigation.tsx", ['label={t("sessions.moreStarredFolders")}', 'label={t("sessions.newFolder")}']],
     ["./V3SessionReviewBanner.tsx", ['label={t("sessions.acknowledgeReview")}']],
   ] as const)("%s uses the shared icon cap for its chrome actions", (path, labels) => {
@@ -118,7 +118,7 @@ describe("v3 icon action cap contract", () => {
     const workspace = read("./FolderWorkspace.tsx");
     const layout = read("./V3DashboardLayout.tsx");
 
-    expect(detail).toContain('parentFolder ? "상위 폴더로 이동" : "전체 카드로 돌아가기"');
+    expect(detail).toContain('parentFolder ? t("folders.workspace.goParent") : t("folders.workspace.backToCards")');
     expect(detail).not.toContain('label="폴더 상세 닫기"');
     expect(workspace).not.toContain('label="우측 패널 닫기"');
     expect(workspace).toContain("onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}");

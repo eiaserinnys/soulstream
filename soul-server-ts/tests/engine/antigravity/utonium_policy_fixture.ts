@@ -22,6 +22,11 @@ export const UTONIUM_DENIED = [
   "TodoWrite",
   "WebSearch",
   "WebFetch",
+  "Agent(general-purpose)",
+  "Agent(Explore)",
+  "Agent(Plan)",
+  "Agent(claude)",
+  "Agent(statusline-setup)",
   "mcp__soulstream__delete_session",
   "mcp__atom__update_card",
 ];

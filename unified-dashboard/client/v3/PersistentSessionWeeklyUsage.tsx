@@ -1,4 +1,5 @@
-import { DashboardIconCap, formatUsageResetCountdown, formatUsageUpdatedLabel, formatWeeklyUsedPercent, weeklyUsedPercent, type UsageSummaryGauge } from "@seosoyoung/soul-ui";
+import { useTranslation } from "react-i18next";
+import { DashboardIconCap, weeklyUsedPercent, type UsageSummaryGauge } from "@seosoyoung/soul-ui";
 import { ChevronRight, RefreshCw } from "lucide-react";
 import type { UseUsageSummaryResult } from "../hooks/useUsageSummary";
 
@@ -7,22 +8,37 @@ type Props = Pick<UseUsageSummaryResult, "node" | "gauges" | "loading" | "loadSt
   onNextNode: () => void;
 };
 
-function emptyMessage({ loading, loadState, node, gauges }: Pick<Props, "loading" | "loadState" | "node" | "gauges">): string | null {
+type Translate = ReturnType<typeof useTranslation>["t"];
+
+function emptyMessage({ loading, loadState, node, gauges }: Pick<Props, "loading" | "loadState" | "node" | "gauges">, t: Translate): string | null {
   if (gauges.length) return null;
   // 값 자리에 로딩 글자를 넣지 않는다. 첫 로딩 동안은 자리표시 행이 자리를 지킨다.
   if (loading) return null;
-  if (loadState === "connectionError") return "조회 실패";
-  if (node) return "주간 한도 없음";
-  return "수집 대기";
+  if (loadState === "connectionError") return t("persistent.usage.error");
+  if (node) return t("persistent.usage.noLimit");
+  return t("persistent.usage.waiting");
 }
 
 type DisplayGauge = Omit<UsageSummaryGauge, "remainingPercent"> & { remainingPercent: number | null };
 
-function localReleaseTime(value: string | null): string | null {
+function localReleaseTime(value: string | null, t: Translate, locale: string): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
-  return `${new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }).format(date)} 해제`;
+  return t("persistent.usage.release", { time: new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date) });
+}
+
+function formatUsageCountdown(resetAt: number | null, now: number, locale: string) {
+  if (resetAt === null) return null;
+  const minutes = Math.max(0, Math.floor((resetAt - now / 1000) / 60));
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const unit = (value: number, unit: "day" | "hour" | "minute", unitDisplay: "narrow" | "long") =>
+    new Intl.NumberFormat(locale, { style: "unit", unit, unitDisplay }).format(value);
+  if (days) return { compact: unit(days, "day", "narrow"), full: `${unit(days, "day", "long")} ${unit(hours % 24, "hour", "long")}` };
+  const value = hours || minutes;
+  const name = hours ? "hour" : "minute";
+  return { compact: unit(value, name, "narrow"), full: unit(value, name, "long") };
 }
 
 function epochSeconds(value: string | null): number | null {
@@ -32,12 +48,16 @@ function epochSeconds(value: string | null): number | null {
 }
 
 export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState, evaluatedAtMs, onRetry, onNextNode }: Props) {
-  const message = emptyMessage({ node, gauges, loading, loadState });
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language;
+  const percentFormat = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 0 });
+  const numberFormat = new Intl.NumberFormat(locale);
+  const message = emptyMessage({ node, gauges, loading, loadState }, t);
   const claudeProvider = node?.providers.claude;
   const claudePool = claudeProvider?.mode === "pool" ? claudeProvider.pool : null;
   const showPoolCount = !!claudePool && claudePool.total_count >= 2;
   const fullyBlocked = showPoolCount && claudePool.available_count === 0;
-  const releaseLabel = fullyBlocked ? localReleaseTime(claudePool?.earliest_available_at ?? null) : null;
+  const releaseLabel = fullyBlocked ? localReleaseTime(claudePool?.earliest_available_at ?? null, t, locale) : null;
   const displayGauges: DisplayGauge[] = gauges.map(gauge => ({ ...gauge }));
   if (showPoolCount && !displayGauges.some(gauge => gauge.id === "claude")) {
     displayGauges.unshift({
@@ -48,7 +68,10 @@ export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState,
     });
   }
   const stale = loadState === "connectionError" && displayGauges.length > 0;
-  const updatedLabel = stale && node ? formatUsageUpdatedLabel(node.fetchedAt, true) : null;
+  const fetchedAt = stale && node?.fetchedAt ? Date.parse(node.fetchedAt) : NaN;
+  const updatedLabel = Number.isFinite(fetchedAt)
+    ? t("persistent.usage.lastUpdated", { time: new Intl.DateTimeFormat(locale, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(fetchedAt) })
+    : t("persistent.usage.waitingUpdate");
   const placeholders = displayGauges.length === 0 ? 2 : 0;
   const placeholderRows = Array.from({ length: placeholders }, (_, index) => <div className="persistent-session-weekly-usage-row is-placeholder" aria-hidden="true" key={`placeholder-${index}`}>
     <div className="persistent-session-weekly-usage-labels persistent-session-weekly-usage-placeholder-labels" />
@@ -58,8 +81,8 @@ export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState,
   return <div
     className="persistent-session-weekly-usage"
     role="group"
-    aria-label="주간 사용량"
-    title={stale && updatedLabel ? `갱신 지연, ${updatedLabel}` : undefined}
+    aria-label={t("persistent.usage.title")}
+    title={stale && updatedLabel ? t("persistent.usage.stale", { detail: updatedLabel }) : undefined}
     data-testid="persistent-session-weekly-usage"
   >
     {displayGauges.length === 0 ? placeholderRows : null}
@@ -74,26 +97,27 @@ export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState,
         ? epochSeconds(claudePool?.best_weekly_resets_at ?? null) ?? gauge.resetAt
         : gauge.resetAt;
       const used = weeklyUsedPercent(remaining);
-      const percent = used === null ? "—" : formatWeeklyUsedPercent(used);
+      const percent = used === null ? "—" : percentFormat.format(used / 100);
       const warning = used !== null && used >= 80;
+      const countdown = remaining === null ? null : formatUsageCountdown(resetAt, evaluatedAtMs, locale);
       const fullCountdown = gauge.id === "claude" && fullyBlocked && releaseLabel
-        ? `회복 예정 ${releaseLabel}`
-        : remaining === null ? null : formatUsageResetCountdown(resetAt, evaluatedAtMs, false);
+        ? t("persistent.usage.recovery", { time: releaseLabel })
+        : countdown?.full;
       const compactCountdown = gauge.id === "claude" && fullyBlocked && releaseLabel
         ? releaseLabel
-        : remaining === null ? null : formatUsageResetCountdown(resetAt, evaluatedAtMs, true);
+        : countdown?.compact;
       const countState = claudePool?.available_count === 0 ? "danger" : claudePool && claudePool.available_count < claudePool.total_count ? "warn" : undefined;
       return <div className="persistent-session-weekly-usage-row" key={gauge.id}>
         <div className="persistent-session-weekly-usage-labels">
-          <span className="persistent-session-weekly-usage-provider">{gauge.label}{gauge.id === "claude" && showPoolCount ? <span className="persistent-session-weekly-usage-pool-count" data-warn={countState === "warn" || undefined} data-danger={countState === "danger" || undefined}>{claudePool?.available_count}/{claudePool?.total_count}</span> : null}</span>
-          {compactCountdown ? <span className="persistent-session-weekly-usage-countdown" aria-label={fullCountdown ? (fullyBlocked ? fullCountdown : `초기화까지 ${fullCountdown}`) : undefined}>{compactCountdown}</span> : null}
+          <span className="persistent-session-weekly-usage-provider">{gauge.label}{gauge.id === "claude" && showPoolCount ? <span className="persistent-session-weekly-usage-pool-count" data-warn={countState === "warn" || undefined} data-danger={countState === "danger" || undefined}>{numberFormat.format(claudePool.available_count)}/{numberFormat.format(claudePool.total_count)}</span> : null}</span>
+          {compactCountdown ? <span className="persistent-session-weekly-usage-countdown" aria-label={fullCountdown ? (fullyBlocked ? fullCountdown : t("persistent.usage.resetIn", { time: fullCountdown })) : undefined}>{compactCountdown}</span> : null}
           <strong className={warning ? "is-warning" : undefined}>{percent}</strong>
         </div>
         <div
           className={`persistent-session-weekly-usage-track${warning ? " is-warning" : ""}`}
           role={remaining === null ? undefined : "progressbar"}
           aria-hidden={remaining === null || undefined}
-          aria-label={remaining === null ? undefined : `${gauge.label} 주간 사용량`}
+          aria-label={remaining === null ? undefined : t("persistent.usage.provider", { provider: gauge.label })}
           aria-valuemin={remaining === null ? undefined : 0}
           aria-valuemax={remaining === null ? undefined : 100}
           aria-valuenow={used ?? undefined}
@@ -105,13 +129,13 @@ export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState,
     }) : message || loadState === "connectionError" ? <div className="persistent-session-weekly-usage-row is-status">
       <div className="persistent-session-weekly-usage-labels">
         <span className="persistent-session-weekly-usage-status" role="status">{message}</span>
-        {loadState === "connectionError" ? <DashboardIconCap appearance="bare" size="small" className="persistent-session-weekly-usage-retry" label="주간 사용량 다시 시도" disabled={loading} onClick={onRetry}>
+        {loadState === "connectionError" ? <DashboardIconCap appearance="bare" size="small" className="persistent-session-weekly-usage-retry" label={t("persistent.usage.retry")} disabled={loading} onClick={onRetry}>
           <RefreshCw className="size-4" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
         </DashboardIconCap> : null}
       </div>
       <div className="persistent-session-weekly-usage-track" aria-hidden="true" />
     </div> : null}
-    {node ? <button type="button" className="persistent-session-weekly-usage-node" aria-label={`노드 바꾸기, 현재 ${node.nodeId}`} onClick={onNextNode}>
+    {node ? <button type="button" className="persistent-session-weekly-usage-node" aria-label={t("persistent.usage.switchNode", { node: node.nodeId })} onClick={onNextNode}>
       <span>{node.nodeId}</span><ChevronRight className="persistent-session-weekly-usage-chevron size-4" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
     </button> : <div className="persistent-session-weekly-usage-node is-placeholder" aria-hidden="true" />}
   </div>;

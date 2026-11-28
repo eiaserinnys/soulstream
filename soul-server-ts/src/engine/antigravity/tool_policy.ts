@@ -72,6 +72,8 @@ export interface AntigravityGatePolicy {
   edit: AntigravityGatePathPolicy;
   command: AntigravityGateCommandPolicy;
   mcp: AntigravityGateMcpPolicy;
+  allowedTools?: string[];
+  subagents?: string[];
 }
 
 export interface AntigravityToolPolicy {
@@ -132,6 +134,8 @@ export function computeAntigravityToolPolicy(input: AntigravityToolPolicyInput):
       mcp.deny.push(item);
       continue;
     }
+    const parsed = parseClaudeToolItem(item);
+    if (parsed?.name === "Agent" && parsed.parameter !== undefined) continue;
     const base = item.split("(")[0] ?? item;
     for (const name of DEFINITION_TOOLS_BY_CLAUDE_NAME[base] ?? []) denied.add(name);
   }
@@ -213,6 +217,18 @@ if (!toolCall || typeof toolCall !== "object" || typeof toolCall.name !== "strin
 const name = toolCall.name;
 const args = toolCall.args && typeof toolCall.args === "object" ? toolCall.args : {};
 
+let isSubagent = false;
+if (policy.allowedTools) {
+  let parentConversation = "";
+  try { parentConversation = fs.readFileSync(policy.parentConversationFile, "utf8").trim(); } catch (error) {}
+  isSubagent = typeof input.conversationId === "string" && parentConversation !== "" && input.conversationId !== parentConversation;
+  const aliases = { read_file: "view_file", write_file: "write_to_file", edit_file: "replace_file_content" };
+  const canonical = aliases[name] || name;
+  const tools = isSubagent ? policy.subagentTools : policy.allowedTools;
+  if (name !== "call_mcp_tool" && tools.indexOf(canonical) < 0) deny("tool not allowed");
+  if (!isSubagent && name === "invoke_subagent" && (!policy.subagents || policy.subagents.indexOf(args.TypeName) < 0)) deny("subagent not allowed");
+}
+
 const WRITE_TOOLS = ["write_file", "write_to_file"];
 const EDIT_TOOLS = ["edit_file", "replace_file_content", "multi_replace_file_content", "notebook_edit"];
 
@@ -229,6 +245,32 @@ function pathAllowed(family, value) {
     }
   }
   return false;
+}
+
+function canonicalPath(value) {
+  let current = path.resolve(value);
+  const suffix = [];
+  while (true) {
+    try { return path.resolve(fs.realpathSync(current), ...suffix); } catch (error) {
+      if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+      const parent = path.dirname(current);
+      if (parent === current) throw error;
+      suffix.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+function protectedPath(value) {
+  if (!policy.protectedPaths || typeof value !== "string" || value === "") return false;
+  const target = path.resolve(value);
+  const realTarget = canonicalPath(target);
+  return (policy.protectedPaths || []).some(root => {
+    const absolute = path.resolve(root);
+    const realRoot = canonicalPath(absolute);
+    return [target, realTarget].some(candidate => [absolute, realRoot].some(parent =>
+      candidate === parent || candidate.startsWith(parent + path.sep)));
+  });
 }
 
 function unsafeShell(command) {
@@ -258,11 +300,14 @@ if (WRITE_TOOLS.indexOf(name) >= 0 || EDIT_TOOLS.indexOf(name) >= 0) {
   const value = args.Path !== undefined
     ? args.Path
     : (args.TargetFile !== undefined ? args.TargetFile : args.AbsolutePath);
-  if (pathAllowed(family, value)) allow();
+  try {
+    if (!protectedPath(value) && pathAllowed(family, value)) allow();
+  } catch (error) {}
   deny("path not allowed");
 }
 
 if (name === "run_command") {
+  if (isSubagent) allow();
   const command = typeof args.CommandLine === "string" ? args.CommandLine.trim() : "";
   if (command === "") deny("missing command");
   if (policy.command.all) allow();

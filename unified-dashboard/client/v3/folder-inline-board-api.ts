@@ -1,3 +1,4 @@
+import { FolderMessageError } from "./folder-messages";
 import {
   fetchWithProjectionRetry,
   fetchMarkdownDocument,
@@ -180,7 +181,7 @@ export async function fetchFolderBoardContainerItems(
     }),
     signal,
   );
-  if (!response.ok) throw new Error(`보드 항목을 불러오지 못했습니다 (${response.status})`);
+  if (!response.ok) throw new FolderMessageError("folders.errors.boardItems", { status: response.status });
   const payload = await response.json() as { boardItems?: CatalogBoardItem[] };
   return payload.boardItems ?? [];
 }
@@ -208,22 +209,10 @@ export async function fetchInlineCustomView(
   customViewId: string,
   fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<CustomViewDocument> {
-  return await fetchDocument<CustomViewDocument>(
+  const response = await fetchImplementation(
     `/api/custom-views/${encodeURIComponent(customViewId)}`,
-    "커스텀 뷰를",
-    fetchImplementation,
+    { credentials: "same-origin", headers: { Accept: "application/json" } },
   );
-}
-
-async function fetchDocument<T>(
-  path: string,
-  label: string,
-  fetchImplementation: typeof globalThis.fetch,
-): Promise<T> {
-  const response = await fetchImplementation(path, {
-    credentials: "same-origin",
-    headers: { Accept: "application/json" },
-  });
-  if (!response.ok) throw new Error(`${label} 불러오지 못했습니다 (${response.status})`);
-  return await response.json() as T;
+  if (!response.ok) throw new FolderMessageError("folders.errors.customViewHttp", { status: response.status });
+  return await response.json() as CustomViewDocument;
 }

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import {
   Button, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, Input,
@@ -5,8 +6,6 @@ import {
 import { ANTIGRAVITY_ACKNOWLEDGEMENT } from "../lib/antigravity-backend-api";
 import "./claude-accounts/claude-account-pool.css";
 import "./antigravity-backend-row.css";
-
-export const ANTIGRAVITY_TERMS_WARNING = "구글은 약관으로 agy를 자동화에 사용하는 것을 금지합니다. 그래도 켜시겠습니까?";
 
 /** 켜기 전에 약관 경고를 보이고, 확인 문구를 그대로 입력해야 켜기 단추가 살아나는 대화상자. */
 export function AntigravityConsentDialog({ open, pending, error, onOpenChange, onConfirm }: {
@@ -16,18 +15,19 @@ export function AntigravityConsentDialog({ open, pending, error, onOpenChange, o
   onOpenChange(open: boolean): void;
   onConfirm(): void;
 }) {
+  const { t } = useTranslation();
   const [typed, setTyped] = useState("");
   useEffect(() => { if (open) setTyped(""); }, [open]);
   const confirmed = typed.trim() === ANTIGRAVITY_ACKNOWLEDGEMENT;
   return <Dialog open={open} onOpenChange={(next) => { if (!pending) onOpenChange(next); }}>
     <DialogPopup className="approved-dialog max-w-sm" closeProps={{ disabled: pending }}>
       <DialogHeader>
-        <DialogTitle>Antigravity(agy) 켜기</DialogTitle>
-        <DialogDescription>{ANTIGRAVITY_TERMS_WARNING}</DialogDescription>
+        <DialogTitle>{t("accounts.antigravity.title")}</DialogTitle>
+        <DialogDescription>{t("accounts.antigravity.terms")}</DialogDescription>
       </DialogHeader>
       <DialogPanel>
         <div className="agy-consent-field">
-          <label htmlFor="agy-consent-input" className="agy-consent-label">계속하려면 &lsquo;{ANTIGRAVITY_ACKNOWLEDGEMENT}&rsquo;를 입력하세요.</label>
+          <label htmlFor="agy-consent-input" className="agy-consent-label">{t("accounts.antigravity.acknowledge", { phrase: ANTIGRAVITY_ACKNOWLEDGEMENT })}</label>
           <Input
             id="agy-consent-input"
             autoComplete="off"
@@ -40,8 +40,8 @@ export function AntigravityConsentDialog({ open, pending, error, onOpenChange, o
         </div>
       </DialogPanel>
       <DialogFooter variant="bare">
-        <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>취소</Button>
-        <Button type="button" disabled={!confirmed || pending} onClick={onConfirm}>{error ? "다시 시도" : "켜기"}</Button>
+        <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>{t("accounts.common.cancel")}</Button>
+        <Button type="button" disabled={!confirmed || pending} onClick={onConfirm}>{error ? t("accounts.common.retry") : t("accounts.antigravity.enable")}</Button>
       </DialogFooter>
     </DialogPopup>
   </Dialog>;

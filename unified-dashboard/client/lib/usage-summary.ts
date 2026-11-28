@@ -1,9 +1,11 @@
 import type { UsageSummarySnapshot } from "@seosoyoung/soul-ui";
 
+import { adminTranslation, type AdminTranslate } from "../components/config/admin-translation";
 import { HttpResponseError } from "./http-response-error";
 
 export async function fetchUsageSummary(
   request: typeof fetch = fetch,
+  t?: AdminTranslate,
 ): Promise<UsageSummarySnapshot> {
   const response = await request("/api/usage/summary", {
     method: "GET",
@@ -12,7 +14,7 @@ export async function fetchUsageSummary(
   });
   if (!response.ok) {
     throw new HttpResponseError(
-      `사용량 요약을 불러오지 못했습니다 (${response.status})`,
+      (t ?? adminTranslation())("admin.stats.summaryLoadError", { status: response.status }),
       response.status,
     );
   }
@@ -21,6 +23,7 @@ export async function fetchUsageSummary(
 
 export async function refreshUsageSummary(
   request: typeof fetch = fetch,
+  t?: AdminTranslate,
 ): Promise<UsageSummarySnapshot> {
   const response = await request("/api/usage/refresh", {
     method: "POST",
@@ -29,7 +32,7 @@ export async function refreshUsageSummary(
   });
   if (!response.ok) {
     throw new HttpResponseError(
-      `사용량을 새로 고치지 못했습니다 (${response.status})`,
+      (t ?? adminTranslation())("admin.stats.summaryRefreshError", { status: response.status }),
       response.status,
     );
   }

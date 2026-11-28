@@ -1,3 +1,5 @@
+import { folderErrorText } from "./folder-messages";
+import { useTranslation } from "react-i18next";
 import { useCallback, useState } from "react";
 import type { CatalogFolder } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
@@ -5,7 +7,6 @@ import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import { loadStarredPlannerFolder, type PlannerFolder, type StarredPlannerFolder } from "./planner-data";
 import type { FolderParentMoveDialogProps } from "./FolderParentMoveDialog";
 import type { FolderParentTarget } from "./folder-parent-move";
-import { errorText } from "./v3-dashboard-utils";
 
 export function useFolderParentMoveController({
   api,
@@ -18,6 +19,7 @@ export function useFolderParentMoveController({
   moveFolder(task: PlannerFolder, target: FolderParentTarget): Promise<void>;
   notify(message: string): void;
 }) {
+  const { t } = useTranslation();
   const [task, setFolder] = useState<PlannerFolder | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,9 +31,9 @@ export function useFolderParentMoveController({
     try {
       openFolder(await loadStarredPlannerFolder(api, task, folders));
     } catch (cause) {
-      notify(`폴더 불러오기 실패 · ${errorText(cause)}`);
+      notify(t("folders.errors.folderRead", { detail: folderErrorText(t, cause) }));
     }
-  }, [api, folders, notify, openFolder]);
+  }, [t, api, folders, notify, openFolder]);
   const currentFolderId = task?.parentFolderId ?? null;
   const close = useCallback(() => {
     if (!pending) setFolder(null);
@@ -43,11 +45,11 @@ export function useFolderParentMoveController({
     void moveFolder(task, target).then(() => {
       setFolder(null);
     }).catch((cause: unknown) => {
-      setError(`폴더 이동 실패 · ${errorText(cause)}`);
+      setError(t("folders.errors.folderMove", { detail: folderErrorText(t, cause) }));
     }).finally(() => {
       setPending(false);
     });
-  }, [moveFolder, pending, task]);
+  }, [t, moveFolder, pending, task]);
   const dialogProps: FolderParentMoveDialogProps = {
     task,
     currentFolderId,

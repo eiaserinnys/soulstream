@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
 import { useOrchestratorStore, type OrchestratorNode } from "../../store/orchestrator-store";
 import { SettingsListHeader, SettingsListRow, SettingsListSection } from "./SettingsListDetail";
@@ -23,13 +24,14 @@ export function SettingsNodeList({ description, nodeList, selectedId, onSelect }
   selectedId: string | null;
   onSelect(nodeId: string): void;
 }) {
+  const { t } = useTranslation();
   return <>
-    <SettingsListHeader title="노드" description={description} actions={null} />
-    <SettingsListSection isEmpty={nodeList.length === 0} emptyText="연결된 노드가 없습니다.">
+    <SettingsListHeader title={t("admin.config.nodes")} description={description} actions={null} />
+    <SettingsListSection isEmpty={nodeList.length === 0} emptyText={t("admin.config.noNodes")}>
       {nodeList.map((node) => <SettingsListRow
         key={node.nodeId}
         title={node.nodeId}
-        meta={node.status === "connected" ? "연결됨" : "연결 끊김"}
+        meta={node.status === "connected" ? t("admin.config.connected") : t("admin.config.disconnected")}
         selected={node.nodeId === selectedId}
         onSelect={() => onSelect(node.nodeId)}
       />)}

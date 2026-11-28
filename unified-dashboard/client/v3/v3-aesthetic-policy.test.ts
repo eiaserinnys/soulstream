@@ -25,7 +25,7 @@ describe("v3 aesthetic policy", () => {
     const css = read("./v3-folder-workspace.css");
     const sectionRule = css.match(/\.v3-detail-section\s*\{[^}]*\}/s)?.[0] ?? "";
 
-    expect(detail).toContain("<h3>정보</h3>");
+    expect(detail).toContain('<h3>{t("folders.sections.information")}</h3>');
     expect(detail).not.toContain("<h3>설명</h3>");
     expect(detail).not.toContain("<h3>컨텍스트</h3>");
     expect(sectionRule).not.toContain("border-top");

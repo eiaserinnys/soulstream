@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from "react-i18next";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, FrameLoading, FrameNotice } from '@seosoyoung/soul-ui';
 import { navigateDashboard } from '../dashboard-navigation';
@@ -18,6 +19,7 @@ export function PersistentSessionEmptyState({ api, defaults, isAdmin, onOpenCodi
   onOpenCodingAgents(): void;
   onCreate(): void;
 }) {
+  const { t } = useTranslation();
   const bootstrapEnabled = defaults.bootstrap_enabled === true;
   const reason = defaults.unavailable_reason;
   const canBootstrap = bootstrapEnabled && !reason;
@@ -48,36 +50,36 @@ export function PersistentSessionEmptyState({ api, defaults, isAdmin, onOpenCodi
     if (state.phase === 'failed') return <FrameNotice data-testid="persistent-empty-bootstrap-failed">
       <div className="persistent-empty-state">
         {state.retrying
-          ? <FrameLoading inline label="기본 영구 세션을 다시 만드는 중입니다" data-testid="persistent-empty-retrying" />
-          : <p role="alert" data-v3-selectable-content="true">{`기본 영구 세션을 만들지 못했습니다. ${state.message}`}</p>}
+          ? <FrameLoading inline label={t("persistent.empty.retrying")} data-testid="persistent-empty-retrying" />
+          : <p role="alert" data-v3-selectable-content="true">{t("persistent.empty.createFailed", { detail: state.message })}</p>}
         <Button
           className="aria-disabled:pointer-events-none aria-disabled:opacity-64 aria-disabled:shadow-none"
           aria-disabled={state.retrying ? 'true' : undefined}
           onClick={() => { if (!state.retrying) void run(); }}
-        >다시 시도</Button>
+        >{t("persistent.retry")}</Button>
       </div>
     </FrameNotice>;
-    return <FrameLoading label="기본 영구 세션을 만드는 중입니다" data-testid="persistent-empty-creating" />;
+    return <FrameLoading label={t("persistent.empty.creating")} data-testid="persistent-empty-creating" />;
   }
   // 서버가 보낸 사유(unavailable_reason)는 기술 문장이라 화면에 그리지 않는다. canBootstrap 판정에만 쓴다.
   if (bootstrapEnabled) return <FrameNotice data-testid="persistent-empty-unavailable">
     <div className="persistent-empty-state persistent-empty-state--steps">
       {isAdmin
-        ? <p>기본 영구 세션을 만들기 위해<br />코딩 에이전트에 로그인해주세요.</p>
-        : <p>기본 영구 세션을 만들기 위해<br />관리자가 코딩 에이전트에 로그인해야 합니다.</p>}
+        ? <p><Trans t={t} i18nKey="persistent.empty.signIn" /></p>
+        : <p><Trans t={t} i18nKey="persistent.empty.adminSignIn" /></p>}
       {isAdmin ? <>
         <ol className="persistent-empty-steps">
-          <li>설정에서 Claude나 Codex 가운데 하나를 연결합니다</li>
-          <li>안내대로 로그인하고 설정을 닫습니다</li>
+          <li>{t("persistent.empty.chooseAgent")}</li>
+          <li>{t("persistent.empty.signInStep")}</li>
         </ol>
-        <Button onClick={onOpenCodingAgents}>코딩 에이전트 연결</Button>
+        <Button onClick={onOpenCodingAgents}>{t("persistent.empty.connect")}</Button>
       </> : null}
     </div>
   </FrameNotice>;
   return <FrameNotice data-testid="persistent-empty-manual">
     <div className="persistent-empty-state">
-      <p>영구 세션이 없습니다</p>
-      <Button onClick={onCreate}>영구 세션 만들기</Button>
+      <p>{t("persistent.empty.none")}</p>
+      <Button onClick={onCreate}>{t("persistent.empty.create")}</Button>
     </div>
   </FrameNotice>;
 }

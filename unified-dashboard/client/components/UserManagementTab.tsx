@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import { adminTranslation, type AdminTranslate } from "./config/admin-translation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Edit, Plus, Trash2 } from "lucide-react";
 import { V3ErrorNotice } from "../v3/V3ErrorNotice";
@@ -60,6 +62,7 @@ const EMPTY_FORM: UserFormState = {
 };
 
 export function UserManagementTab({ request = fetch, initialEditor }: { initialEditor?: "create" | "edit"; request?: typeof fetch } = {}) {
+  const { t } = useTranslation();
   const initializedEditor = useRef(false);
   const saveInFlight = useRef(false);
   const [editorError, setEditorError] = useState<string | null>(null);
@@ -68,7 +71,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{ detail?: string } | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
   const [form, setForm] = useState<UserFormState>(EMPTY_FORM);
@@ -89,7 +92,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
       setUsers(data.users ?? []);
       setFolders(data.folders ?? []);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "사용자 목록을 불러오지 못했습니다");
+      setLoadError(err instanceof Error ? { detail: err.message } : {});
     } finally {
       setLoading(false);
     }
@@ -149,7 +152,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
       setEditorOpen(false);
       await load();
     } catch (err) {
-      setEditorError(err instanceof Error ? err.message : "저장하지 못했습니다");
+      setEditorError(err instanceof Error ? err.message : t("admin.users.saveError"));
     } finally {
       saveInFlight.current = false;
       setSaving(false);
@@ -157,7 +160,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
   };
 
   const remove = async (user: DashboardUser) => {
-    if (!confirmUserRemoval(user.email)) return;
+    if (!confirmUserRemoval(user.email, t)) return;
     setError(null);
     const res = await request(`/api/admin/users/${encodeURIComponent(user.email)}`, {
       method: "DELETE",
@@ -183,12 +186,12 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
     <div className="flex min-h-[420px] flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold">사용자</h3>
-          <p className="text-xs text-muted-foreground">대시보드 로그인과 폴더 접근 권한</p>
+          <h3 className="text-sm font-semibold">{t("admin.users.title")}</h3>
+          <p className="text-xs text-muted-foreground">{t("admin.users.description")}</p>
         </div>
         <Button size="sm" className="gap-1.5" onClick={openCreate}>
           <Plus className="h-4 w-4" />
-          추가
+          {t("admin.users.add")}
         </Button>
       </div>
 
@@ -198,30 +201,30 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
         </div>
       )}
 
-      {loadError !== null ? <V3ErrorNotice message="사용자 목록을 불러오지 못했습니다." detail={loadError} onRetry={() => { void load(); }} /> : <div
+      {loadError !== null ? <V3ErrorNotice message={t("admin.users.loadError")} detail={loadError.detail ?? t("admin.users.loadDetail")} retryLabel={t("admin.users.retry")} onRetry={() => { void load(); }} /> : <div
         data-testid="user-management-table-scroll"
         className="overflow-x-auto rounded-floor border border-border"
       >
         <Table className="min-w-[720px]">
           <TableHeader>
             <TableRow>
-              <TableHead>이메일</TableHead>
-              <TableHead className="w-24">권한</TableHead>
-              <TableHead>폴더</TableHead>
-              <TableHead className="w-24 text-right">작업</TableHead>
+              <TableHead>{t("admin.users.email")}</TableHead>
+              <TableHead className="w-24">{t("admin.users.permissions")}</TableHead>
+              <TableHead>{t("admin.users.folders")}</TableHead>
+              <TableHead className="w-24 text-right">{t("admin.users.actions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
                 <TableCell colSpan={4}>
-                  <FrameLoading inline label="불러오는 중..." />
+                  <FrameLoading inline label={t("admin.users.loading")} />
                 </TableCell>
               </TableRow>
             ) : users.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
-                  등록된 사용자가 없습니다
+                  {t("admin.users.empty")}
                 </TableCell>
               </TableRow>
             ) : users.map((user) => (
@@ -261,14 +264,14 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
       <Dialog open={editorOpen} onOpenChange={(next) => { if (!saveInFlight.current) setEditorOpen(next); }}>
         <DialogPopup className="approved-dialog max-w-xl" closeProps={{ disabled: saving }}>
           <DialogHeader>
-            <DialogTitle>{editingEmail ? "사용자 편집" : "사용자 추가"}</DialogTitle>
-            <DialogDescription>이메일과 폴더 권한을 설정합니다.</DialogDescription>
+            <DialogTitle>{editingEmail ? t("admin.users.edit") : t("admin.users.create")}</DialogTitle>
+            <DialogDescription>{t("admin.users.editorDescription")}</DialogDescription>
           </DialogHeader>
           <DialogPanel>
             <div className="space-y-4">
               {editorError && <div role="alert" className="text-sm text-destructive-foreground" data-v3-selectable-content="true">{editorError}</div>}
               <label className="block space-y-1.5">
-                <span className="text-sm font-medium text-muted-foreground">이메일</span>
+                <span className="text-sm font-medium text-muted-foreground">{t("admin.users.email")}</span>
                 <Input
                   value={form.email}
                   autoFocus
@@ -277,7 +280,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
                 />
               </label>
               <label className="block space-y-1.5">
-                <span className="text-sm font-medium text-muted-foreground">이름</span>
+                <span className="text-sm font-medium text-muted-foreground">{t("admin.users.name")}</span>
                 <Input
                   disabled={saving}
                   value={form.displayName}
@@ -293,8 +296,8 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
                 />
               </div>
               <div className={cn("space-y-2", form.isAdmin && "opacity-50")}>
-                <div className="text-sm font-medium text-muted-foreground">폴더</div>
-                <p className="text-sm text-muted-foreground">{form.isAdmin ? "관리자는 전체 폴더에 접근할 수 있습니다." : form.allowedFolderIds.length === 0 ? "선택한 폴더가 없으면 전체 폴더에 접근할 수 있습니다." : "선택한 폴더에만 접근할 수 있습니다."}</p>
+                <div className="text-sm font-medium text-muted-foreground">{t("admin.users.folders")}</div>
+                <p className="text-sm text-muted-foreground">{form.isAdmin ? t("admin.users.adminAccess") : form.allowedFolderIds.length === 0 ? t("admin.users.allAccess") : t("admin.users.selectedAccess")}</p>
                 <ScrollArea className="h-48 rounded-floor border border-border">
                   <div className="space-y-1 p-2">
                     {folders.map((folder) => (
@@ -311,7 +314,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
                       </label>
                     ))}
                     {folders.length === 0 && (
-                      <div className="py-8 text-center text-sm text-muted-foreground">폴더가 없습니다</div>
+                      <div className="py-8 text-center text-sm text-muted-foreground">{t("admin.users.noFolders")}</div>
                     )}
                   </div>
                 </ScrollArea>
@@ -320,10 +323,10 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
           </DialogPanel>
           <DialogFooter>
             <Button variant="outline" size="sm" disabled={saving} onClick={() => { if (!saveInFlight.current) setEditorOpen(false); }}>
-              취소
+              {t("admin.users.cancel")}
             </Button>
             <Button size="sm" disabled={saving || !form.email.trim()} onClick={() => void save()}>
-              {saving ? "저장 중..." : "저장"}
+              {saving ? t("admin.users.saving") : t("admin.users.save")}
             </Button>
           </DialogFooter>
         </DialogPopup>
@@ -339,8 +342,9 @@ function FolderBadges({
   user: DashboardUser;
   folderById: Map<string, FolderSummary>;
 }) {
+  const { t } = useTranslation();
   if (user.isAdmin || user.allowedFolderIds.length === 0) {
-    return <span className="text-xs text-muted-foreground">전체</span>;
+    return <span className="text-xs text-muted-foreground">{t("admin.users.all")}</span>;
   }
   return (
     <div className="flex flex-wrap gap-1">
@@ -348,7 +352,7 @@ function FolderBadges({
         const folder = folderById.get(folderId);
         return (
           <Badge key={folderId} variant={folder ? "secondary" : "outline"} size="sm">
-            {folder?.name ?? "삭제된 폴더"}
+            {folder?.name ?? t("admin.users.deletedFolder")}
           </Badge>
         );
       })}
@@ -362,4 +366,6 @@ async function readError(res: Response): Promise<string> {
   return `HTTP ${res.status}`;
 }
 
-export function confirmUserRemoval(email: string) { return window.confirm(`${email} 사용자를 삭제할까요?`); }
+export function confirmUserRemoval(email: string, t: AdminTranslate = adminTranslation()) {
+  return window.confirm(t("admin.users.confirmRemove", { email }));
+}

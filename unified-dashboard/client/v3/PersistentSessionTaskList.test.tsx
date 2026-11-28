@@ -1,3 +1,4 @@
+import { createI18n } from "@soulstream/i18n";
 /** @vitest-environment jsdom */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -8,6 +9,7 @@ import { CardRowView } from "./CardRow";
 import { PersistentSessionTaskList, groupPersistentSessionTasks, isQuestionTooltipCard, latestUnansweredTooltipQuestion, persistentTaskTooltipContent } from "./PersistentSessionTaskList";
 import { reviewSession } from "./components-review-fixtures";
 
+const { t } = createI18n("ko");
 const membershipMock = vi.hoisted(() => vi.fn());
 vi.mock("./use-card-membership", () => ({ useCardMembership: membershipMock }));
 
@@ -231,14 +233,14 @@ describe("persistent session task list", () => {
       baseCard("running", "running"), baseCard("awaiting", "awaiting_verification"),
     ];
 
-    expect(groupPersistentSessionTasks(cards).map(group => group.status)).toEqual([
+    expect(groupPersistentSessionTasks(cards, t).map(group => group.status)).toEqual([
       "running", "blocked", "awaiting_verification", "review", "queued", "todo",
     ]);
-    expect(groupPersistentSessionTasks(cards).find(group => group.status === "awaiting_verification")?.label)
+    expect(groupPersistentSessionTasks(cards, t).find(group => group.status === "awaiting_verification")?.label)
       .toBe("검증 대기");
-    expect(groupPersistentSessionTasks(cards).flatMap(group => group.cards.map(card => card.id)))
+    expect(groupPersistentSessionTasks(cards, t).flatMap(group => group.cards.map(card => card.id)))
       .not.toContain("done");
-    expect(groupPersistentSessionTasks(cards).flatMap(group => group.cards.map(card => card.id)))
+    expect(groupPersistentSessionTasks(cards, t).flatMap(group => group.cards.map(card => card.id)))
       .not.toContain("cancelled");
   });
 
@@ -250,7 +252,7 @@ describe("persistent session task list", () => {
       changed(baseCard("queued-z", "queued", "a", "z"), "2026-10-09T00:00:00Z"),
       changed(baseCard("queued-a", "queued", "z", "a"), "2026-10-03T00:00:00Z"),
     ];
-    const groups = groupPersistentSessionTasks(cards);
+    const groups = groupPersistentSessionTasks(cards, t);
 
     expect(groups.find(group => group.status === "running")?.cards.map(card => card.id))
       .toEqual(["running-new", "running-old"]);

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useState, type FormEvent } from "react";
 import { Button } from "@seosoyoung/soul-ui";
 import { nodeGitErrorText, nodeGitRequestErrorOf, putNodeGitIdentity, type NodeGitRequestError } from "../../lib/node-git-api";
@@ -7,14 +8,13 @@ import { SettingsGroupBox } from "../config/SettingsListDetail";
 import { gitTextField } from "./git-field";
 import type { NodeGitSectionProps } from "./NodeGitPanel";
 
-const NAME_FIELD = gitTextField("name", "이름");
-const EMAIL_FIELD = gitTextField("email", "이메일");
-
 function FieldError({ error }: { error: NodeGitRequestError | null }) {
-  return error ? <p role="alert" data-v3-selectable-content="true" className="text-xs text-destructive-foreground">{nodeGitErrorText(error)}</p> : null;
+  const { t } = useTranslation();
+  return error ? <p role="alert" data-v3-selectable-content="true" className="text-xs text-destructive-foreground">{nodeGitErrorText(error, t)}</p> : null;
 }
 
 export function GitIdentitySection({ nodeId, request, snapshot, onSnapshot }: NodeGitSectionProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState(snapshot.identity.name ?? "");
   const [email, setEmail] = useState(snapshot.identity.email ?? "");
   const [busy, setBusy] = useState(false);
@@ -37,12 +37,12 @@ export function GitIdentitySection({ nodeId, request, snapshot, onSnapshot }: No
     }
   };
 
-  return <SettingsGroupBox title="Git 사용자">
+  return <SettingsGroupBox title={t("accounts.git.identity")}>
     <form className="space-y-4" onSubmit={(event) => { void save(event); }}>
-      <SettingFieldWidget field={NAME_FIELD} value={name} onChange={setName} statusSlot={<FieldError error={error?.field === "name" ? error : null} />} />
-      <SettingFieldWidget field={EMAIL_FIELD} value={email} onChange={setEmail} statusSlot={<div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" size="sm" aria-disabled={busy || undefined} className={busyButtonClassName}>저장</Button>
-        {saved ? <span role="status" className="text-xs text-muted-foreground">저장했습니다</span> : null}
+      <SettingFieldWidget field={gitTextField("name", t("accounts.git.name"))} value={name} onChange={setName} statusSlot={<FieldError error={error?.field === "name" ? error : null} />} />
+      <SettingFieldWidget field={gitTextField("email", t("accounts.git.email"))} value={email} onChange={setEmail} statusSlot={<div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" size="sm" aria-disabled={busy || undefined} className={busyButtonClassName}>{t("accounts.common.save")}</Button>
+        {saved ? <span role="status" className="text-xs text-muted-foreground">{t("accounts.git.saved")}</span> : null}
         <FieldError error={error && error.field !== "name" ? error : null} />
       </div>} />
     </form>

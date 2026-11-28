@@ -1,10 +1,10 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DashboardIconCap, type ProviderQuotaSlots } from "@seosoyoung/soul-ui";
 import { ChevronDown, ChevronUp, Plus } from "lucide-react";
 import type { ClaudeAccount, ClaudeAccountDeleteResult, ClaudeAccountList, ClaudeAuthLoginFlow } from "../../../../packages/wire-schema/generated/typescript/index";
-import { ProviderQuotaGrid, ProviderQuotaSkeleton } from "./ProviderQuotaGrid";
-import { clockLabel } from "../CogitoNodeHealthClock";
+import { accountClockLabel, ProviderQuotaGrid, ProviderQuotaSkeleton } from "./ProviderQuotaGrid";
 import {
   accountPath,
   CENTRAL_CLAUDE_TARGET,
@@ -50,10 +50,10 @@ function ordered(accounts: readonly ClaudeAccount[]): ClaudeAccount[] {
 }
 
 /** 앱의 poolAvailabilityLabel 과 같은 문구를 쓴다. 주간 잔여는 게이지가 이미 보여 준다. */
-function summaryText(list: ClaudeAccountList): string {
+function summaryText(list: ClaudeAccountList, t: ReturnType<typeof useTranslation>["t"]): string {
   const pool = list.pool;
-  if (!pool) return `${list.accounts.length}개 계정`;
-  return `${pool.available_count}/${pool.total_count} 가용`;
+  if (!pool) return t("accounts.claude.accountTotal", { value: list.accounts.length });
+  return t("accounts.claude.available", { value: pool.available_count, value1: pool.total_count });
 }
 
 function existingAccountId(error: unknown): string | null {
@@ -78,6 +78,8 @@ const ACTIVE_LOGIN_STATES: ReadonlySet<ClaudeAuthLoginFlow["state"]> = new Set([
 ]);
 
 export function ClaudePoolRow(props: Props) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage;
   const { request, initialList, slots, loading = false, centralReceiveRow } = props;
   const target = useMemo<ClaudeAccountTarget>(
     () => props.central ? CENTRAL_CLAUDE_TARGET : nodeClaudeTarget(props.nodeId),
@@ -224,13 +226,13 @@ export function ClaudePoolRow(props: Props) {
       invalidateNodeAccounts();
     } catch (error) {
       queryClient.setQueryData(queryKey, previous);
-      setActionError(requestErrorMessage(error));
+      setActionError(requestErrorMessage(error, t));
       const existing = existingAccountId(error);
       if (existing) setHighlightAccountId(existing);
     } finally {
       setBusyAccountId(null);
     }
-  }, [invalidateNodeAccounts, list, queryClient, queryKey, request, target]);
+  }, [invalidateNodeAccounts, list, queryClient, queryKey, request, t, target]);
 
   const moveAccount = useCallback(async (account: ClaudeAccount, index: number, direction: -1 | 1) => {
     // 순위와 이동은 보이는 로컬 계정만으로 센다. 중앙 계정의 순서에는 손대지 않는다.
@@ -268,11 +270,11 @@ export function ClaudePoolRow(props: Props) {
       } catch {
         queryClient.setQueryData(queryKey, previous);
       }
-      setActionError(requestErrorMessage(error));
+      setActionError(requestErrorMessage(error, t));
     } finally {
       setBusyAccountId(null);
     }
-  }, [accounts, invalidateNodeAccounts, list, queryClient, queryKey, reloadAccounts, request, target]);
+  }, [accounts, invalidateNodeAccounts, list, queryClient, queryKey, reloadAccounts, request, t, target]);
 
   const deleteAccount = useCallback(async (accountId: string) => {
     const previous = queryClient.getQueryData<ClaudeAccountList>(queryKey) ?? list;
@@ -285,21 +287,21 @@ export function ClaudePoolRow(props: Props) {
         // 중앙 삭제는 deferred 없이 곧바로 지워지므로 목록을 다시 읽어 화면을 맞춘다.
         await requestClaudeAuthData<{ success: boolean }>(request, accountPath(target, accountId), { method: "DELETE" });
         await reloadAccounts();
-        setNotice("계정 삭제됨");
+        setNotice(t("accounts.claude.removed"));
       } else {
         const result = await requestClaudeAuthData<ClaudeAccountDeleteResult>(request, accountPath(target, accountId), { method: "DELETE" });
         await reloadAccounts();
-        setNotice(result.deferred ? "삭제 예약됨 · 활성 세션 종료 후 제거" : "계정 삭제됨");
+        setNotice(result.deferred ? t("accounts.claude.deferredRemoval") : t("accounts.claude.removed"));
       }
       setConfirmingDeleteId(null);
       invalidateNodeAccounts();
     } catch (error) {
       queryClient.setQueryData(queryKey, previous);
-      setActionError(requestErrorMessage(error));
+      setActionError(requestErrorMessage(error, t));
     } finally {
       setBusyAccountId(null);
     }
-  }, [invalidateNodeAccounts, isCentral, list, queryClient, queryKey, reloadAccounts, request, target]);
+  }, [invalidateNodeAccounts, isCentral, list, queryClient, queryKey, reloadAccounts, request, t, target]);
 
   async function beginLogin(accountId: string | null = null) {
     loginOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -307,7 +309,7 @@ export function ClaudePoolRow(props: Props) {
     try {
       await startLogin(accountId);
     } catch (error) {
-      setActionError(requestErrorMessage(error));
+      setActionError(requestErrorMessage(error, t));
       const existing = existingAccountId(error);
       if (existing) setHighlightAccountId(existing);
     } finally {
@@ -322,7 +324,7 @@ export function ClaudePoolRow(props: Props) {
   const available = list.pool?.available_count ?? accounts.filter((account) => account.enabled && account.auth_state !== "idle" && !account.blocked).length;
   const earliestAvailableAt = list.pool?.earliest_available_at ?? null;
   const poolBlocked = list.pool !== null && list.pool.available_count < list.pool.total_count && earliestAvailableAt !== null;
-  const releaseLabel = poolBlocked ? clockLabel(earliestAvailableAt) : null;
+  const releaseLabel = poolBlocked ? accountClockLabel(earliestAvailableAt, locale) : null;
   const unconfigured = list.pool?.total_count === 0;
   const sessionCount = list.accounts.reduce((total, account) => total + account.active_sessions, 0);
   const statusColor = available > 0
@@ -342,20 +344,20 @@ export function ClaudePoolRow(props: Props) {
       <div className="c724-account-identity">
         <span className="c724-status-dot" style={{ backgroundColor: statusColor }} />
         <span className="c724-account-email">Claude</span>
-        {unconfigured ? null : <span className="c724-pool-summary">{summaryText(list)}</span>}
-        {!expanded && releaseLabel ? <span className="c724-badge c724-badge-warn">{releaseLabel} 해제</span> : null}
-        {sessionCount > 0 ? <span className="c724-meta-inline">세션 {sessionCount}</span> : null}
+        {unconfigured ? null : <span className="c724-pool-summary">{summaryText(list, t)}</span>}
+        {!expanded && releaseLabel ? <span className="c724-badge c724-badge-warn">{t("accounts.quota.resets", { value: releaseLabel })}</span> : null}
+        {sessionCount > 0 ? <span className="c724-meta-inline">{t("accounts.claude.sessions", { number: sessionCount })}</span> : null}
       </div>
-      {unconfigured ? <span className="c724-meta-inline">미설정</span> : null}
+      {unconfigured ? <span className="c724-meta-inline">{t("accounts.common.unconfigured")}</span> : null}
       <div className="c724-account-actions" onClick={(event) => event.stopPropagation()}>
         {expanded ? <Button variant="outline" size="sm" disabled={busyAccountId !== null || loginFlow !== null} onClick={() => void beginLogin()}>
-          <Plus className="size-4" aria-hidden="true" /> 계정 추가
+          <Plus className="size-4" aria-hidden="true" />{" "}{t("accounts.claude.addAccount")}
         </Button> : null}
         {!expanded && unconfigured
-          ? <Button size="sm" disabled={busyAccountId !== null || loginFlow !== null} onClick={() => void beginLogin()}>연결</Button>
+          ? <Button size="sm" disabled={busyAccountId !== null || loginFlow !== null} onClick={() => void beginLogin()}>{t("accounts.common.connect")}</Button>
           : null}
-        {!expanded && !unconfigured ? <span className="c724-meta-inline">계정 {accounts.length}</span> : null}
-        <DashboardIconCap size="small" label={expanded ? "계정 접기" : "계정 펼치기"} aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
+        {!expanded && !unconfigured ? <span className="c724-meta-inline">{t("accounts.claude.accountCount", { number: accounts.length })}</span> : null}
+        <DashboardIconCap size="small" label={expanded ? t("accounts.claude.collapseAccounts") : t("accounts.claude.expandAccounts")} aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
           {expanded ? <ChevronUp className="size-4" aria-hidden="true" /> : <ChevronDown className="size-4" aria-hidden="true" />}
         </DashboardIconCap>
       </div>
@@ -386,7 +388,7 @@ export function ClaudePoolRow(props: Props) {
         </div>)}
       </div>
     </div> : loading ? <ProviderQuotaSkeleton /> : slots.some((slot) => slot !== null)
-      ? <ProviderQuotaGrid slots={slots} label="Claude 사용량" />
+      ? <ProviderQuotaGrid slots={slots} label={t("accounts.claude.usage")} />
       : null}
 
     {loginFlow ? <ClaudeAuthLoginSheet

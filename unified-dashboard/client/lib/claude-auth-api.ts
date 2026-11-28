@@ -1,3 +1,4 @@
+import type { useTranslation } from "react-i18next";
 import type {
   ClaudeAccountList,
   ClaudeAccount,
@@ -31,6 +32,7 @@ export class ClaudeAuthRequestError extends Error {
     message: string,
     readonly status: number,
     readonly apiError: ClaudeAuthError | null,
+    readonly invalidResponse = false,
   ) {
     super(message);
     this.name = "ClaudeAuthRequestError";
@@ -73,14 +75,14 @@ export async function requestClaudeAuthData<T>(
   if (!response.ok) {
     const apiError = parseApiError(payload);
     throw new ClaudeAuthRequestError(
-      apiError?.message || `Claude 계정 요청에 실패했습니다 (${response.status})`,
+      apiError?.message || `HTTP ${response.status}`,
       response.status,
       apiError,
     );
   }
 
   if (!isRecord(payload)) {
-    throw new ClaudeAuthRequestError("Claude 계정 응답 형식이 올바르지 않습니다.", response.status, null);
+    throw new ClaudeAuthRequestError("Invalid Claude account response", response.status, null, true);
   }
   return payload as T;
 }
@@ -153,16 +155,18 @@ export function replaceAccount(
   };
 }
 
-export function claudeAuthErrorMessage(error: ClaudeAuthError | null | undefined): string {
-  if (!error) return "인증을 완료하지 못했습니다.";
-  if (error.code === "account_exists") return "이미 등록된 계정입니다.";
-  if (error.code === "account_identity_mismatch") return "인증한 계정이 기존 계정과 다릅니다. 기존 계정을 유지했습니다.";
-  return error.message || "인증을 완료하지 못했습니다.";
+export function claudeAuthErrorMessage(error: ClaudeAuthError | null | undefined, t: ReturnType<typeof useTranslation>["t"]): string {
+  if (!error) return t("accounts.claude.authFailed");
+  if (error.code === "account_exists") return t("accounts.claude.accountExists");
+  if (error.code === "account_identity_mismatch") return t("accounts.claude.identityMismatch");
+  return error.message || t("accounts.claude.authFailed");
 }
 
-export function requestErrorMessage(error: unknown): string {
-  if (error instanceof ClaudeAuthRequestError && error.apiError) {
-    return claudeAuthErrorMessage(error.apiError);
+export function requestErrorMessage(error: unknown, t: ReturnType<typeof useTranslation>["t"]): string {
+  if (error instanceof ClaudeAuthRequestError) {
+    if (error.apiError) return claudeAuthErrorMessage(error.apiError, t);
+    if (error.invalidResponse) return t("accounts.claude.invalidResponse");
+    return t("accounts.claude.requestStatus", { value: error.status });
   }
-  return error instanceof Error ? error.message : "Claude 계정 요청에 실패했습니다.";
+  return error instanceof Error ? error.message : t("accounts.claude.requestFailed");
 }

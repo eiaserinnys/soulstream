@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { inputControlClassName, inputFieldClassName } from "@seosoyoung/soul-ui/components/ui/input";
 
@@ -55,17 +56,18 @@ export function SettingsListHeader({ title, description, actions }: {
   );
 }
 
-export function SettingsListSection({ title, isEmpty, emptyText = "없음", children }: {
+export function SettingsListSection({ title, isEmpty, emptyText, children }: {
   title?: string;
   isEmpty: boolean;
   emptyText?: string;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="mb-4">
       {title ? <p className="mb-1 text-xs font-medium text-muted-foreground">{title}</p> : null}
       <div className="space-y-1">
-        {isEmpty ? <p className="px-2 py-1 text-xs text-muted-foreground">{emptyText}</p> : children}
+        {isEmpty ? <p className="px-2 py-1 text-xs text-muted-foreground">{emptyText ?? t("admin.config.empty")}</p> : children}
       </div>
     </div>
   );
@@ -101,6 +103,7 @@ export function SettingsListRow({ title, meta, selected, onSelect, portrait, bad
 
 /** 좁은 폭(640px 미만)에서 긴 부제를 세 줄로 접고 「더 보기」로 펼친다. 넘치지 않으면 단추가 없다. */
 function ClampedSubtitle({ text }: { text: string }) {
+  const { t } = useTranslation();
   const ref = useRef<HTMLParagraphElement>(null);
   const [open, setOpen] = useState(false);
   const [overflow, setOverflow] = useState(false);
@@ -118,7 +121,7 @@ function ClampedSubtitle({ text }: { text: string }) {
     <>
       <p ref={ref} data-v3-selectable-content="true" className={`text-xs text-muted-foreground ${open ? "" : "max-sm:line-clamp-3"}`}>{text}</p>
       {(overflow || open) && (
-        <button type="button" aria-expanded={open} className="mt-1 rounded-floor text-xs font-medium text-muted-foreground underline outline-none focus-visible:ring-2 focus-visible:ring-ring sm:hidden" onClick={() => setOpen(!open)}>{open ? "접기" : "더 보기"}</button>
+        <button type="button" aria-expanded={open} className="mt-1 rounded-floor text-xs font-medium text-muted-foreground underline outline-none focus-visible:ring-2 focus-visible:ring-ring sm:hidden" onClick={() => setOpen(!open)}>{open ? t("admin.config.collapse") : t("admin.config.expand")}</button>
       )}
     </>
   );
