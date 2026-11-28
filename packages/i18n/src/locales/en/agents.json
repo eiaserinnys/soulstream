@@ -41,7 +41,16 @@
   "assignment": {
     "executionNode": "Run node",
     "noNodesOption": "No connected nodes",
-    "noNodes": "No connected nodes."
+    "noNodes": "No connected nodes.",
+    "loadError": "Couldn't load agents ({{status}})",
+    "node": "Node",
+    "chooseNode": "Select node",
+    "defaultNode": "Default run node",
+    "model": "Model",
+    "executionModel": "Run model",
+    "executionAgent": "Run agent",
+    "chooseAgent": "Select agent",
+    "defaultAgent": "Default run agent"
   },
   "bundle": {
     "manage": "Edit bundles",
