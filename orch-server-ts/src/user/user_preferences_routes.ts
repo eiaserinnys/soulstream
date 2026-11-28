@@ -24,6 +24,7 @@ const GLASS_NUMERIC_LIMITS = {
 } as const;
 
 export type NormalizedUserPreferences = {
+  language?: "ko" | "en";
   appearance: "system" | "light" | "dark";
   chatFontSize: 14 | 15 | 16 | 17 | 18;
   wallpaper: {
@@ -192,6 +193,7 @@ export function normalizeUserPreferences(value: unknown): NormalizedUserPreferen
   }
 
   return {
+    ...(source.language === "ko" || source.language === "en" ? { language: source.language } : {}),
     appearance,
     chatFontSize: normalizeChatFontSize(source.chatFontSize),
     wallpaper,
@@ -208,12 +210,13 @@ export function preferencesFromPayload(
   if (isRecord(payload.prefs)) {
     Object.assign(patch, payload.prefs);
   }
-  for (const key of ["appearance", "chatFontSize", "wallpaper", "glass"] as const) {
+  for (const key of ["appearance", "chatFontSize", "wallpaper", "glass", "language"] as const) {
     if (Object.hasOwn(payload, key)) {
       patch[key] = payload[key];
     }
   }
   return normalizeUserPreferences({
+    language: Object.hasOwn(patch, "language") ? patch.language : existing.language,
     appearance: Object.hasOwn(patch, "appearance") ? patch.appearance : existing.appearance,
     chatFontSize: Object.hasOwn(patch, "chatFontSize") ? patch.chatFontSize : existing.chatFontSize,
     wallpaper: Object.hasOwn(patch, "wallpaper") ? patch.wallpaper : existing.wallpaper,

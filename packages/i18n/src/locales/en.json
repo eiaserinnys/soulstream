@@ -1,0 +1,109 @@
+{
+  "auth": {
+    "continue": "Sign in to continue",
+    "authFailed": "Authentication failed.",
+    "accountNotAllowed": "This account is not allowed.",
+    "authError": "Authentication error.",
+    "enterPassword": "Enter your password.",
+    "loginFailed": "Sign in failed.",
+    "enterEmail": "Enter your email.",
+    "tailscale": "Open this server’s Serve address on a device signed in to an allowed Tailscale account.",
+    "password": "Password",
+    "signingIn": "Signing in...",
+    "signIn": "Sign in",
+    "email": "Email",
+    "nameOptional": "Name (optional)",
+    "devLogin": "Sign in (Dev)"
+  },
+  "settings": {
+    "language": "Language",
+    "tabs": {
+      "appearance": {
+        "label": "Appearance and reading",
+        "description": "Choose a comfortable background and chat text size."
+      },
+      "owned_agents": {
+        "label": "External agents",
+        "description": "Manage names, availability, and connection keys for external agents."
+      },
+      "access_links": {
+        "label": "Access links",
+        "description": "Manage links that let external agents work in your sessions."
+      },
+      "webhooks": {
+        "label": "Webhooks",
+        "description": "Manage webhooks between your sessions and external services."
+      },
+      "persistent": {
+        "label": "Persistent agent sessions",
+        "description": "Manage instructions, display, and history for persistent sessions."
+      },
+      "persistent_defaults": {
+        "label": "Persistent session default model",
+        "description": "Set the default model and fallback order for new persistent sessions. Existing sessions are unchanged."
+      },
+      "summaries": {
+        "label": "Summaries",
+        "description": "Choose whether to enable summaries and set model order."
+      },
+      "card_dispatch": {
+        "label": "Run cards",
+        "description": "Adjust how cards run and how many run at once."
+      },
+      "recurring_jobs": {
+        "label": "Recurring jobs",
+        "description": "Manage recurring jobs and their next run."
+      },
+      "agents": {
+        "label": "Agent profiles",
+        "description": "Manage agent profiles and default environments."
+      },
+      "mcp": {
+        "label": "MCP",
+        "description": "Manage central MCP servers, profiles, and authentication keys."
+      },
+      "skills": {
+        "label": "Skills and catalogs",
+        "description": "View connections, usage, and validation for skills and catalogs."
+      },
+      "coding_agents": {
+        "label": "Coding agent connections",
+        "description": "Connect coding agent logins on each node."
+      },
+      "git_repos": {
+        "label": "Git and repositories",
+        "description": "Configure Git users, SSH keys, and repositories on each node."
+      },
+      "nodes": {
+        "label": "Nodes",
+        "description": "Check devices and their connection status."
+      },
+      "usage_stats": {
+        "label": "Session statistics",
+        "description": "View tokens and estimated list prices by period."
+      },
+      "usage_log": {
+        "label": "Usage log",
+        "description": "View usage and narrow the results."
+      },
+      "session_review": {
+        "label": "Request review",
+        "description": "Choose requests that need review before execution."
+      },
+      "users": {
+        "label": "Users",
+        "description": "Manage people and access to the server."
+      },
+      "file_storage": {
+        "label": "File storage",
+        "description": "Connect storage for attachments."
+      }
+    },
+    "groups": {
+      "personal": "Personal",
+      "sessions": "Sessions and jobs",
+      "agents": "Agents and nodes",
+      "records": "Records and administration"
+    }
+  }
+}

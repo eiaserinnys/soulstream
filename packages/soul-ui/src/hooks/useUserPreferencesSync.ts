@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import {
   dataUrlToBlob,
   fetchUserPreferences,
@@ -20,6 +21,8 @@ import {
 } from "./useTheme";
 
 export function useUserPreferencesSync(email: string | null | undefined): void {
+  const { i18n } = useTranslation();
+  const language = i18n.resolvedLanguage === "ko" ? "ko" : "en";
   const accountKey = useMemo(() => normalizeEmail(email), [email]);
   const [appearance] = useAppearancePreference();
   const wallpaper = useDashboardStore((state) => state.wallpaper);
@@ -41,7 +44,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     let cancelled = false;
     const cached = readCachedUserPreferences(accountKey);
     if (cached) {
-      applySnapshot(cached, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef);
+      applySnapshot(cached, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef, i18n);
       hydratedAccountRef.current = accountKey;
     }
 
@@ -49,7 +52,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
       .then((response) => {
         if (cancelled) return;
         setUploadedBackgroundUrl(response.backgroundUrl);
-        applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef);
+        applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef, i18n);
         writeCachedUserPreferences(accountKey, response.preferences);
         hydratedAccountRef.current = accountKey;
       })
@@ -62,13 +65,14 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     return () => {
       cancelled = true;
     };
-  }, [accountKey, setChatFontSize, setLiquidGlass, setUploadedBackgroundUrl, setWallpaper]);
+  }, [accountKey, i18n, setChatFontSize, setLiquidGlass, setUploadedBackgroundUrl, setWallpaper]);
 
   useEffect(() => {
     if (!accountKey || hydratedAccountRef.current !== accountKey) return;
 
     const snapshot = normalizeUserPreferences({
       appearance,
+      language,
       wallpaper: wallpaperForServer(wallpaper),
       glass: liquidGlass,
       chatFontSize,
@@ -84,7 +88,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
         .then((response) => {
           if (saveSeqRef.current !== saveSeq) return;
           setUploadedBackgroundUrl(response.backgroundUrl);
-          applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef);
+          applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef, i18n);
           writeCachedUserPreferences(accountKey, response.preferences);
         })
         .catch(() => {
@@ -93,7 +97,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [accountKey, appearance, chatFontSize, liquidGlass, wallpaper, setChatFontSize, setLiquidGlass, setUploadedBackgroundUrl, setWallpaper]);
+  }, [accountKey, appearance, chatFontSize, language, liquidGlass, wallpaper, setChatFontSize, setLiquidGlass, setUploadedBackgroundUrl, setWallpaper]);
 }
 
 async function persistSnapshot(snapshot: UserPreferencesSnapshot) {
@@ -102,6 +106,7 @@ async function persistSnapshot(snapshot: UserPreferencesSnapshot) {
     const uploaded = await uploadUserBackground(await dataUrlToBlob(customImage));
     return saveUserPreferences({
       appearance: snapshot.appearance,
+      language: snapshot.language,
       glass: snapshot.glass,
       chatFontSize: snapshot.chatFontSize,
       wallpaper: uploaded.preferences.wallpaper,
@@ -117,8 +122,10 @@ function applySnapshot(
   setLiquidGlass: (settings: UserPreferencesSnapshot["glass"]) => void,
   setChatFontSize: (fontSize: UserPreferencesSnapshot["chatFontSize"]) => void,
   appliedSnapshotKeyRef: { current: string | null },
+  i18n: ReturnType<typeof import("@soulstream/i18n").createI18n>,
 ) {
-  const normalized = normalizeUserPreferences(snapshot);
+  const normalized = normalizeUserPreferences({ ...snapshot, language: snapshot.language ?? (i18n.resolvedLanguage === "ko" ? "ko" : "en") });
+  if (snapshot.language && snapshot.language !== i18n.resolvedLanguage) void i18n.changeLanguage(snapshot.language);
   appliedSnapshotKeyRef.current = stableSnapshotKey(normalized);
   setAppearancePreference(normalized.appearance);
   setWallpaper(normalized.wallpaper);

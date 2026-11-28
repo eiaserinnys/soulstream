@@ -21,6 +21,7 @@ import {
 } from "./chat-typography";
 
 export interface UserPreferencesSnapshot {
+  language?: "ko" | "en";
   appearance: Appearance;
   wallpaper: WallpaperSettings;
   glass: LiquidGlassSettings;
@@ -40,6 +41,7 @@ export function normalizeUserPreferences(value: unknown): UserPreferencesSnapsho
   if (!value || typeof value !== "object") return DEFAULT_USER_PREFERENCES;
   const source = value as Partial<UserPreferencesSnapshot>;
   return {
+    ...(source.language === "ko" || source.language === "en" ? { language: source.language } : {}),
     appearance: normalizeAppearance(source.appearance),
     wallpaper: normalizeWallpaperSettings(source.wallpaper),
     glass: normalizeLiquidGlassSettings(source.glass),

@@ -54,6 +54,7 @@ import {
 } from "../lib/persistent-session-device-preferences";
 import { LiquidGlassTab } from "./LiquidGlassTab";
 import { ChatTypographyTab } from "./ChatTypographyTab";
+import { LanguageSettings } from "./LanguageSettings";
 import { SessionReviewPolicyTab } from "./SessionReviewPolicyTab";
 import { UsageLogTab } from "./UsageLogTab";
 import { RecurringJobsTab } from "./RecurringJobsTab";
@@ -166,6 +167,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
               <header className="config-detail-heading"><h2>{activeLabel}</h2><p>{selectedDefinition?.description ?? "서버에 적용할 값을 변경한 뒤 저장하세요."}</p></header>
               {selectedDefinition?.id === "appearance" ? <div className="config-appearance">
                 <WallpaperPicker local={Boolean(api)} />
+                <LanguageSettings />
                 <ChatTypographyTab preference={api ? {value:localChat,set:setLocalChat} : undefined}/>
                 {userEmail ? <SettingFieldWidget
                   className="config-pas-open-on-start"

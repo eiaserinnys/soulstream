@@ -8,13 +8,9 @@
  */
 
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../../providers/AuthProvider";
 import { AuthSurface } from "./AuthSurface";
-
-const ERROR_MESSAGES: Record<string, string> = {
-  auth_failed: "인증에 실패했습니다.",
-  no_user: "허용되지 않은 계정입니다.",
-};
 
 interface LoginProps {
   title?: string;
@@ -30,6 +26,7 @@ export function buildGoogleAuthUrl(
 }
 
 export function Login({ title = "Dashboard" }: LoginProps) {
+  const { t } = useTranslation();
   const { devModeEnabled, passwordLoginEnabled, tailscaleAuthEnabled, devLogin, passwordLogin } = useAuth();
   const [devEmail, setDevEmail] = useState("");
   const [devName, setDevName] = useState("");
@@ -43,7 +40,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
     const params = new URLSearchParams(window.location.search);
     const errorParam = params.get("error");
     if (errorParam) {
-      setError(ERROR_MESSAGES[errorParam] ?? "인증 중 오류가 발생했습니다.");
+      setError(errorParam === "auth_failed" ? t("auth.authFailed") : errorParam === "no_user" ? t("auth.accountNotAllowed") : t("auth.authError"));
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
@@ -55,7 +52,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!password) {
-      setError("비밀번호를 입력해주세요.");
+      setError(t("auth.enterPassword"));
       return;
     }
     setIsSubmitting(true);
@@ -64,7 +61,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
       await passwordLogin(password);
       // 성공 시 AuthProvider가 isAuthenticated: true로 전환 → AuthGate에서 App 렌더링
     } catch (err) {
-      setError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
+      setError(err instanceof Error ? err.message : t("auth.loginFailed"));
       // 제출 단추가 비활성으로 바뀌며 초점을 잃으므로, 다시 입력할 비밀번호 칸으로 돌린다.
       passwordInputRef.current?.focus();
     } finally {
@@ -75,7 +72,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
   const handleDevLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!devEmail.trim()) {
-      setError("이메일을 입력해주세요.");
+      setError(t("auth.enterEmail"));
       return;
     }
     setIsSubmitting(true);
@@ -84,7 +81,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
       await devLogin(devEmail.trim(), devName.trim() || undefined);
       // 성공 시 AuthProvider가 isAuthenticated: true로 전환 → AuthGate에서 App 렌더링
     } catch (err) {
-      setError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
+      setError(err instanceof Error ? err.message : t("auth.loginFailed"));
     } finally {
       setIsSubmitting(false);
     }
@@ -99,7 +96,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
         {/* 제목 */}
         <div className="text-center">
           <h1 className="text-xl font-bold text-foreground">{title}</h1>
-          <p className="text-sm text-muted-foreground mt-1">계속하려면 로그인하세요</p>
+          <p className="text-sm text-muted-foreground mt-1">{t("auth.continue")}</p>
         </div>
 
         {/* 에러 메시지 */}
@@ -112,14 +109,14 @@ export function Login({ title = "Dashboard" }: LoginProps) {
           </div>
         )}
 
-        {tailscaleAuthEnabled && <p className="text-sm text-muted-foreground">Tailscale에 허용된 계정으로 로그인한 기기에서 이 서버의 Serve 주소로 접속하세요.</p>}
+        {tailscaleAuthEnabled && <p className="text-sm text-muted-foreground">{t("auth.tailscale")}</p>}
 
         {/* 설치 비밀번호 로그인 (password 모드) */}
         {passwordLoginEnabled && !tailscaleAuthEnabled && (
           <form onSubmit={handlePasswordLogin} className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="password-login" className="text-sm text-muted-foreground">
-                비밀번호
+                {t("auth.password")}
               </label>
               <input
                 type="password"
@@ -139,7 +136,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
               data-testid="password-login-button"
               className="w-full py-2 bg-accent-blue border-accent-blue text-white rounded-full text-sm font-medium hover:bg-accent-blue/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
             >
-              {isSubmitting ? "로그인 중..." : "로그인"}
+              {isSubmitting ? t("auth.signingIn") : t("auth.signIn")}
             </button>
           </form>
         )}
@@ -196,7 +193,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
               <form onSubmit={handleDevLogin} className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1.5">
                   <label htmlFor="dev-email" className="text-sm text-muted-foreground">
-                    이메일
+                    {t("auth.email")}
                   </label>
                   <input
                     type="email"
@@ -211,7 +208,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label htmlFor="dev-name" className="text-sm text-muted-foreground">
-                    이름 (선택)
+                    {t("auth.nameOptional")}
                   </label>
                   <input
                     type="text"
@@ -229,7 +226,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
                   data-testid="dev-login-button"
                   className="w-full py-2 bg-accent-blue border-accent-blue text-white rounded-full text-sm font-medium hover:bg-accent-blue/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
                 >
-                  {isSubmitting ? "로그인 중..." : "로그인 (Dev)"}
+                  {isSubmitting ? t("auth.signingIn") : t("auth.devLogin")}
                 </button>
               </form>
             </div>

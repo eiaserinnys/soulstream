@@ -1,0 +1,19 @@
+{
+  "name": "@soulstream/i18n",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run --maxWorkers=2 --minWorkers=1 --testTimeout=60000",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "i18next": "26.7.2"
+  }
+}

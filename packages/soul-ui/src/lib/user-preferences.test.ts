@@ -187,3 +187,10 @@ function jsonResponse(body: unknown): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+describe("language preferences", () => {
+  it("keeps supported language and drops unsupported values", () => {
+    expect(normalizeUserPreferences({ language: "en" })).toMatchObject({ language: "en" });
+    expect(normalizeUserPreferences({ language: "fr" })).not.toHaveProperty("language");
+  });
+});

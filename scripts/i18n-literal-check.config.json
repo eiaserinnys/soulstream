@@ -1,0 +1,4 @@
+{
+  "roots": ["packages/soul-ui/src/components", "unified-dashboard/client"],
+  "baseline": "scripts/i18n-literal-baseline.json"
+}

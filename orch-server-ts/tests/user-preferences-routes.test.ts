@@ -496,3 +496,21 @@ describe("user preferences route harness", () => {
     await app.close();
   });
 });
+
+describe("language preferences", () => {
+  it("stores and reads English, drops unsupported language, and preserves it in partial writes", async () => {
+    let row: UserPreferencesRecord | null = null;
+    const repository: UserPreferencesRepository = {
+      get: () => row,
+      put: (email, prefs) => { row = { email, prefs }; return row; },
+    };
+    const app = createApp({ config, userPreferencesRoutes: { repository, resolveAuthenticatedEmail: () => "user@example.com" } });
+    await app.inject({ method: "PUT", url: "/api/user/preferences", payload: { language: "en" } });
+    expect((await app.inject({ method: "GET", url: "/api/user/preferences" })).json().preferences.language).toBe("en");
+    await app.inject({ method: "PUT", url: "/api/user/preferences", payload: { appearance: "dark" } });
+    expect((await app.inject({ method: "GET", url: "/api/user/preferences" })).json().preferences.language).toBe("en");
+    await app.inject({ method: "PUT", url: "/api/user/preferences", payload: { language: "fr" } });
+    expect((await app.inject({ method: "GET", url: "/api/user/preferences" })).json().preferences.language).not.toBe("fr");
+    await app.close();
+  });
+});
