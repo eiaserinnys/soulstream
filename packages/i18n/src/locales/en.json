@@ -17,10 +17,11 @@
   },
   "settings": {
     "language": "Language",
+    "languageHelp": "Save the display language to your account.",
     "tabs": {
       "appearance": {
-        "label": "Appearance and reading",
-        "description": "Choose a comfortable background and chat text size."
+        "label": "Appearance",
+        "description": "Choose the display language, background, and chat text size."
       },
       "owned_agents": {
         "label": "External agents",
@@ -35,11 +36,11 @@
         "description": "Manage webhooks between your sessions and external services."
       },
       "persistent": {
-        "label": "Persistent agent sessions",
+        "label": "Persistent sessions",
         "description": "Manage instructions, display, and history for persistent sessions."
       },
       "persistent_defaults": {
-        "label": "Persistent session default model",
+        "label": "Default session model",
         "description": "Set the default model and fallback order for new persistent sessions. Existing sessions are unchanged."
       },
       "summaries": {
@@ -67,7 +68,7 @@
         "description": "View connections, usage, and validation for skills and catalogs."
       },
       "coding_agents": {
-        "label": "Coding agent connections",
+        "label": "Coding agent logins",
         "description": "Connect coding agent logins on each node."
       },
       "git_repos": {

@@ -17,6 +17,7 @@
   },
   "settings": {
     "language": "언어",
+    "languageHelp": "화면 문구의 언어를 계정에 저장합니다.",
     "tabs": {
       "appearance": {
         "label": "화면과 읽기",

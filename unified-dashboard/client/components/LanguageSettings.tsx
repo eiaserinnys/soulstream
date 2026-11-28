@@ -9,6 +9,8 @@ export function LanguageSettings() {
     <CatalogSelectionField
       label={t("settings.language")}
       ariaLabel={t("settings.language")}
+      labelClassName="block text-sm font-semibold text-foreground"
+      description={<div className="mt-0.5 text-xs text-muted-foreground">{t("settings.languageHelp")}</div>}
       value={language}
       selectedLabel={supportedLanguages.find(item => item.code === language)?.name}
       options={supportedLanguages.map(item => ({ value: item.code, label: item.name }))}
