@@ -172,7 +172,7 @@
   "sessionMissingRefresh": "Couldn't find the session. Refresh the list.",
   "sessionNumber": "Session #{{number}}",
   "sessionSearch": "Session search",
-  "sessionStatus": "Session {{status}}",
+  "sessionStatus": "{{status}}",
   "sharedMaterials": "Materials to include",
   "shellChanges": "Files changed through the shell appear here",
   "snapshotTime": " · As of {{time}}",
