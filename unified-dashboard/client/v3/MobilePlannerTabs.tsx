@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { useGlassSurface } from "@seosoyoung/soul-ui";
 
@@ -5,10 +6,10 @@ import type { MobilePlannerTab } from "./mobile-planner-state";
 
 const MOBILE_PLANNER_QUERY = "(max-width: 760px)";
 const TABS: ReadonlyArray<{ id: MobilePlannerTab; icon: string; label: string }> = [
-  { id: "today", icon: "▦", label: "카드" },
-  { id: "projects", icon: "📁", label: "전체 폴더" },
-  { id: "task", icon: "📋", label: "폴더" },
-  { id: "chat", icon: "💬", label: "채팅" },
+  { id: "today", icon: "▦", label: "folders.sections.cards" },
+  { id: "projects", icon: "📁", label: "folders.mobile.allFolders" },
+  { id: "task", icon: "📋", label: "folders.common.folder" },
+  { id: "chat", icon: "💬", label: "folders.mobile.chat" },
 ];
 
 export function MobilePlannerTabs({
@@ -18,6 +19,7 @@ export function MobilePlannerTabs({
   activeTab: MobilePlannerTab;
   onSelect(tab: MobilePlannerTab): void;
 }) {
+  const { t } = useTranslation();
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
 
@@ -26,7 +28,7 @@ export function MobilePlannerTabs({
       ref={surfaceRef}
       className="v3-mobile-tabs border border-glass-border glass-strong glass-chrome"
       data-liquid-glass-webgl={webglActive ? "true" : undefined}
-      aria-label="모바일 화면 탭"
+      aria-label={t("folders.mobile.tabs")}
       role="tablist"
     >
       {TABS.map((tab) => (
@@ -39,7 +41,7 @@ export function MobilePlannerTabs({
           data-testid={`v3-mobile-tab-${tab.id}`}
           onClick={() => onSelect(tab.id)}
         >
-          <span className="v3-emoji" aria-hidden="true">{tab.icon}</span> {tab.label}
+          <span className="v3-emoji" aria-hidden="true">{tab.icon}</span> {t(tab.label)}
         </button>
       ))}
     </nav>

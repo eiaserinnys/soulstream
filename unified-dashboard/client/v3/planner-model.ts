@@ -1,3 +1,4 @@
+import { type FolderTranslate } from "./folder-messages";
 import type { BlockDto, PageDto } from "../../../packages/page-model/src/types";
 import type {
   CatalogFolder,
@@ -6,10 +7,10 @@ import type {
 } from "@seosoyoung/soul-ui";
 
 const STATUS_PRESENTATION = {
-  open: { icon: "○", label: "Open" },
-  in_progress: { icon: "●", label: "진행" },
-  review: { icon: "◆", label: "검수" },
-  completed: { icon: "✓", label: "완료" },
+  open: { icon: "○", label: "folders.planner.statusOpen" },
+  in_progress: { icon: "●", label: "folders.planner.inProgress" },
+  review: { icon: "◆", label: "folders.planner.review" },
+  completed: { icon: "✓", label: "folders.planner.completed" },
 } as const satisfies Record<PlannerFolderStatus, { icon: string; label: string }>;
 
 export function derivePlannerFolderStatus(snapshot: {
@@ -22,8 +23,9 @@ export function derivePlannerFolderStatus(snapshot: {
   return "open";
 }
 
-export function plannerStatusPresentation(status: PlannerFolderStatus) {
-  return STATUS_PRESENTATION[status];
+export function plannerStatusPresentation(status: PlannerFolderStatus, t: FolderTranslate) {
+  const { icon, label } = STATUS_PRESENTATION[status];
+  return { icon, label: t(label) };
 }
 
 export function folderContextCount(blocks: readonly BlockDto[]): number {

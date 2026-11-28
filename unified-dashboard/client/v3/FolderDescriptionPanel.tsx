@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { DashboardIconCap, MarkdownContent } from "@seosoyoung/soul-ui";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
@@ -7,8 +8,8 @@ import { Check, Pencil } from "lucide-react";
 export function FolderDescriptionPanel({
   markdown,
   onSave,
-  ariaLabel = "폴더 설명",
-  emptyText = "클릭해서 폴더 설명을 작성하세요.",
+  ariaLabel: ariaLabelProp,
+  emptyText: emptyTextProp,
   variant = "default",
   initialEditing = false,
   onEditingChange,
@@ -23,6 +24,9 @@ export function FolderDescriptionPanel({
   onEditingChange?(editing: boolean): void;
   testId?: string;
 }) {
+  const { t } = useTranslation();
+  const ariaLabel = ariaLabelProp ?? t("folders.description.label");
+  const emptyText = emptyTextProp ?? t("folders.description.empty");
   const [editing, setEditing] = useState(initialEditing);
   const [draft, setDraft] = useState(markdown);
   const [saving, setSaving] = useState(false);
@@ -75,7 +79,7 @@ export function FolderDescriptionPanel({
             ref={editorRef}
             autoFocus
             value={draft}
-            aria-label={`${ariaLabel} 마크다운`}
+            aria-label={t("folders.description.markdown", { label: ariaLabel })}
             onChange={(event) => setDraft(event.target.value)}
             onBlur={() => { void finish(); }}
             onKeyDown={(event) => {
@@ -87,7 +91,7 @@ export function FolderDescriptionPanel({
           />
           <div className="v3-description-actions">
             <DashboardIconCap size="small"
-              label={saving ? `${ariaLabel} 저장 중` : `${ariaLabel} 저장`}
+              label={saving ? t("folders.description.saving", { label: ariaLabel }) : t("folders.description.save", { label: ariaLabel })}
               disabled={saving} aria-busy={saving || undefined}
               onMouseDown={event => event.preventDefault()} onClick={() => { void finish(); }}>
               <Check className="h-4 w-4" aria-hidden="true" />
@@ -111,7 +115,7 @@ export function FolderDescriptionPanel({
             {markdown ? <MarkdownContent content={markdown} codeBlockLayout="document" /> : <span className="v3-description-empty">{emptyText}</span>}
           </div>
           <div className="v3-description-actions">
-            <DashboardIconCap size="small" label={`${ariaLabel} 편집`} onClick={() => changeEditing(true)}>
+            <DashboardIconCap size="small" label={t("folders.description.edit", { label: ariaLabel })} onClick={() => changeEditing(true)}>
               <Pencil className="h-4 w-4" aria-hidden="true" />
             </DashboardIconCap>
           </div>

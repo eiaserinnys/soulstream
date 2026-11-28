@@ -1,3 +1,4 @@
+import { FolderMessageError } from "./folder-messages";
 import type { BlockDto, PageDto } from "../../../packages/page-model/src/types";
 
 export interface ProjectAtomReference {
@@ -86,7 +87,7 @@ export async function fetchProjectPageDetails(
     `/api/pages/${encodeURIComponent(pageId)}?include_blocks=true`,
     { credentials: "same-origin", headers: { Accept: "application/json" } },
   );
-  if (!response.ok) throw new Error(`프로젝트 컨텍스트를 불러오지 못했습니다 (${response.status})`);
+  if (!response.ok) throw new FolderMessageError("folders.errors.projectContextHttp", { status: response.status });
   const payload = await response.json() as {
     page: PageDto;
     blocks?: BlockDto[];

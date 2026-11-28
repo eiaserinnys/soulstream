@@ -1,3 +1,5 @@
+import { folderErrorText } from "./folder-messages";
+import { useTranslation } from "react-i18next";
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
@@ -19,7 +21,6 @@ import type { FolderMoveTarget } from "./folder-move-targets";
 import { setFolderStatus } from "./folder-workspace-api";
 import { clearFolderStarChange, publishFolderStarChange } from "./folder-star-store";
 import { renameFolderPageTitle as renameFolderIdentityTitle } from "./folder-workspace-page-api";
-import { errorText } from "./v3-dashboard-utils";
 import { plannerEntryForFolder } from "./folder-workspace-model";
 
 export function useV3PlannerActions({
@@ -43,13 +44,14 @@ export function useV3PlannerActions({
   moveFolderParentInPlanner(task: PlannerFolder, targetFolderId: string | null): void;
   refreshFolder(folderId: string): void;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
 
   const completeFolder = useCallback(async (task: PlannerFolder) => {
     const folderId = task.page.id;
     try {
       const folder = folders.find((candidate) => candidate.id === task.folderId);
-      if (!folder) throw new Error("폴더를 찾을 수 없습니다.");
+      if (!folder) throw new Error(t("folders.errors.noFolder"));
       const result = await setFolderStatus(folder, "completed");
       const state = useDashboardStore.getState();
       if (state.catalog) state.setCatalog({
@@ -57,12 +59,12 @@ export function useV3PlannerActions({
         folders: state.catalog.folders.map((candidate) => candidate.id === folder.id ? result.folder : candidate),
       });
       patchFolder(folderId, (current) => ({ ...current, status: "completed" }));
-      notify(`폴더 완료 · ${task.page.title}`);
+      notify(t("folders.planner.folderCompleted", { name: task.page.title }));
     } catch (error) {
-      notifyWriteFailure("폴더 완료", error);
+      notifyWriteFailure(t("folders.planner.completeFolder"), error);
       throw error;
     }
-  }, [folders, notify, notifyWriteFailure, patchFolder]);
+  }, [t, folders, notify, notifyWriteFailure, patchFolder]);
 
   const resolveStarredFolder = useCallback(async (task: StarredPlannerFolder) => {
     try {
@@ -72,10 +74,10 @@ export function useV3PlannerActions({
       }
       return await loadStarredPlannerFolder(api, task, folders);
     } catch (error) {
-      notify(`별표 폴더 불러오기 실패 · ${errorText(error)}`);
+      notify(t("folders.errors.starredRead", { detail: folderErrorText(t, error) }));
       throw error;
     }
-  }, [api, folders, notify]);
+  }, [t, api, folders, notify]);
 
   const completeStarredFolder = useCallback(async (task: StarredPlannerFolder) => {
     await completeFolder(await resolveStarredFolder(task));
@@ -84,12 +86,12 @@ export function useV3PlannerActions({
   const renameSession = useCallback(async (sessionId: string, displayName: string | null) => {
     try {
       await renameSessionOptimistic(sessionId, displayName, { queryClient });
-      notify("세션 이름을 변경했습니다");
+      notify(t("folders.planner.sessionRenamed"));
     } catch (error) {
-      notifyWriteFailure("세션 이름 변경", error);
+      notifyWriteFailure(t("folders.planner.renameSession"), error);
       throw error;
     }
-  }, [notify, notifyWriteFailure, queryClient]);
+  }, [t, notify, notifyWriteFailure, queryClient]);
 
   const renameFolderPageTitle = useCallback(async (task: PlannerFolder, title: string) => {
     const mutationId = publishFolderStarChange({
@@ -99,38 +101,38 @@ export function useV3PlannerActions({
     try {
       const page = await renameFolderIdentityTitle(api, task.page.id, title);
       patchFolder(task.page.id, (current) => ({ ...current, page }));
-      notify("폴더 제목을 변경했습니다");
+      notify(t("folders.planner.folderRenamed"));
       return page.title;
     } catch (error) {
-      notifyWriteFailure("폴더 제목 변경", error);
+      notifyWriteFailure(t("folders.planner.renameFolder"), error);
       throw error;
     } finally {
       clearFolderStarChange(task.page.id, mutationId);
     }
-  }, [api, notify, notifyWriteFailure, patchFolder]);
+  }, [t, api, notify, notifyWriteFailure, patchFolder]);
 
   const deleteSessions = useCallback(async (sessionIds: string[]) => {
     try {
       await deleteSessionRecords(sessionIds);
       removeSessionsFromPlanner(sessionIds);
-      notify("세션을 삭제했습니다");
+      notify(t("folders.planner.sessionDeleted"));
     } catch (error) {
-      notifyWriteFailure("세션 삭제", error);
+      notifyWriteFailure(t("folders.planner.deleteSession"), error);
       throw error;
     }
-  }, [notify, notifyWriteFailure, removeSessionsFromPlanner]);
+  }, [t, notify, notifyWriteFailure, removeSessionsFromPlanner]);
 
   const moveSession = useCallback(async (sessionId: string, targetFolder: FolderMoveTarget) => {
     try {
       const sessionIds = await moveSessionTree(sessionId,targetFolder.folderId);
       useDashboardStore.getState().moveSessionsToFolder(sessionIds,targetFolder.folderId);
       for (const id of sessionIds) moveSessionInPlanner(id, targetFolder.page.id);
-      notify(`세션 이동 · ${targetFolder.page.title}`);
+      notify(t("folders.planner.sessionMoved", { name: targetFolder.page.title }));
     } catch (error) {
-      notifyWriteFailure("세션 이동", error);
+      notifyWriteFailure(t("folders.planner.moveSession"), error);
       throw error;
     }
-  }, [moveSessionInPlanner, notify, notifyWriteFailure]);
+  }, [t, moveSessionInPlanner, notify, notifyWriteFailure]);
 
   const moveFolderParent = useCallback(async (
     task: PlannerFolder,
@@ -138,20 +140,20 @@ export function useV3PlannerActions({
   ) => {
     try {
       const folder = folders.find((candidate) => candidate.id === task.folderId);
-      if (!folder) throw new Error("이동할 폴더를 찾을 수 없습니다");
+      if (!folder) throw new Error(t("folders.errors.noMoveFolder"));
       await runOptimisticFolderMove({
         folder,
         task,
         target,
         project: moveFolderParentInPlanner,
       });
-      notify(`폴더 이동 · ${folders.find((candidate) => candidate.id === target.folderId)?.name ?? target.folderId}`);
+      notify(t("folders.planner.folderMoved", { name: folders.find((candidate) => candidate.id === target.folderId)?.name ?? target.folderId }));
     } catch (error) {
       refreshFolder(task.page.id);
-      notifyWriteFailure("폴더 이동", error);
+      notifyWriteFailure(t("folders.move.title"), error);
       throw error;
     }
-  }, [api, folders, moveFolderParentInPlanner, notify, notifyWriteFailure, refreshFolder]);
+  }, [t, api, folders, moveFolderParentInPlanner, notify, notifyWriteFailure, refreshFolder]);
 
   return { completeFolder, completeStarredFolder, renameFolderPageTitle, renameSession, deleteSessions, moveSession, moveFolderParent };
 }

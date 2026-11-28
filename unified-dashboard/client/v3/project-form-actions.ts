@@ -1,3 +1,4 @@
+import { FolderMessageError } from "./folder-messages";
 import type { BlockDto } from "../../../packages/page-model/src/types";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import type { PageStructureOperation } from "@seosoyoung/soul-ui/page/page-structure-operation";
@@ -49,7 +50,7 @@ export async function saveProjectFormContext(
   };
   for (const row of guidance) {
     const text = row.text.trim();
-    if (!text) throw new Error("지침을 입력하거나 빈 항목을 제거하세요");
+    if (!text) throw new FolderMessageError("folders.dialog.instructionRequired");
     const prior = baseline.guidance.find(item => item.blockId === row.blockId);
     if (!row.blockId) create(row.key, "guidance", text, { enabled: true, scope: "project" });
     else if (prior?.text !== text) operations.push({ op: "update_block_text", block_id: row.blockId, text });
@@ -85,7 +86,7 @@ async function finishAttempt(api: PageApiClient, session: ProjectContextSaveSess
     blocks = (await api.getPage(attempt.pageId)).blocks;
     mapping = recoverIds(attempt, blocks, result.temp_id_mapping);
   }
-  if (!mapping) throw new Error("저장 결과를 확인하지 못했습니다. 같은 요청으로 다시 확인하세요.");
+  if (!mapping) throw new FolderMessageError("folders.errors.saveUnconfirmed");
   session.ids = { ...session.ids, ...mapping };
   session.previous = parseProjectPageDetails(blocks);
   delete session.attempt;

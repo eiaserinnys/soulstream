@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useTranslation } from "react-i18next";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   History,
   Info,
@@ -22,13 +23,12 @@ export interface FolderSectionFocusRequest {
 const TASK_SECTIONS: readonly {
   id: FolderSectionId;
   label: string;
-  accessibleLabel: string;
   Icon: LucideIcon;
 }[] = [
-  { id: "information", label: "정보", accessibleLabel: "정보", Icon: Info },
-  { id: "cards", label: "카드", accessibleLabel: "카드", Icon: ListChecks },
-  { id: "board", label: "보드", accessibleLabel: "보드", Icon: LayoutGrid },
-  { id: "sessions", label: "세션", accessibleLabel: "세션", Icon: History },
+  { id: "information", label: "folders.sections.information", Icon: Info },
+  { id: "cards", label: "folders.sections.cards", Icon: ListChecks },
+  { id: "board", label: "folders.sections.board", Icon: LayoutGrid },
+  { id: "sessions", label: "folders.sections.sessions", Icon: History },
 ];
 
 export function FolderSectionNavigation(props: {
@@ -36,7 +36,12 @@ export function FolderSectionNavigation(props: {
   focusRequest?: FolderSectionFocusRequest | null; focusTargetReady?: boolean;
   onFocusRequestHandled?(requestId: number): void;
 }) {
-  return <SectionNavigation {...props} sections={TASK_SECTIONS} ariaLabel="폴더 섹션" />;
+  const { t } = useTranslation();
+  const sections = useMemo(() => TASK_SECTIONS.map(({ id, label: key, Icon }) => {
+    const label = t(key);
+    return { id, label, accessibleLabel: label, Icon };
+  }), [t]);
+  return <SectionNavigation {...props} sections={sections} ariaLabel={t("folders.sections.label")} />;
 }
 export function SectionNavigation<Id extends string>({scrollRef, sectionRefs, sections, focusRequest, focusTargetReady = true, onFocusRequestHandled, ariaLabel}: {
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -45,6 +50,7 @@ export function SectionNavigation<Id extends string>({scrollRef, sectionRefs, se
   focusRequest?: {requestId:number;sectionId:Id;sessionId?:string}|null;
   focusTargetReady?: boolean; onFocusRequestHandled?(requestId:number):void; ariaLabel:string;
 }) {
+  const { t } = useTranslation();
   const requestedSectionRef = useRef<Id | null>(null);
   const requestedSectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeSection, setActiveSection] = useState<Id>(sections[0].id);
@@ -142,7 +148,7 @@ export function SectionNavigation<Id extends string>({scrollRef, sectionRefs, se
           key={id}
           type="button"
           className="v3-task-section-anchor"
-          aria-label={`${accessibleLabel} 섹션으로 이동`}
+          aria-label={t("folders.sections.jump", { name: accessibleLabel })}
           aria-current={activeSection === id ? "location" : undefined}
           onClick={() => moveToSection(id)}
         >

@@ -1,3 +1,6 @@
+import { folderErrorText } from "./folder-messages";
+import { dictionaries } from "@soulstream/i18n";
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import {
   Button,
@@ -49,7 +52,7 @@ const EMPTY_DETAILS: ProjectPageDetails = {
 export function ProjectDialog({
   request, assignment,
   target,
-  createLabel = "새 폴더",
+  createLabel,
   onClose,
   onCreateIdentity,
   onRename,
@@ -66,6 +69,7 @@ export function ProjectDialog({
   onSaveContext(pageId: string, previous: ProjectPageDetails, value: ProjectFormValue, attempt?: ProjectContextSaveSession): Promise<void>;
   onSaved(folder: CatalogFolder): void;
 }) {
+  const { t } = useTranslation();
   const attempt = useRef<ProjectContextSaveSession>({});
   const busy = useRef(false);
   const trigger = useRef<HTMLElement | null>(null);
@@ -85,6 +89,7 @@ export function ProjectDialog({
   const [loadFailed, setLoadFailed] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dialogError, setDialogError] = useState<{ key: string; cause: unknown } | null>(null);
   const defaultsNode = value.sessionDefaults?.nodeId ?? "";
   const suppliedCatalog = assignment?.modelPresetCatalog.nodeId === defaultsNode ? assignment.modelPresetCatalog : null;
   const internalCatalog = useNodeModelPresetCatalog(suppliedCatalog ? "" : defaultsNode, setError);
@@ -99,6 +104,7 @@ export function ProjectDialog({
     setEditor(null);
     setCreatedFolder(null);
     setError(null);
+    setDialogError(null);
     setLoadFailed(false);
     if (!target) return;
     if (target.mode === "create") {
@@ -117,18 +123,22 @@ export function ProjectDialog({
     }).catch((cause: unknown) => {
       if (active) {
         setLoadFailed(true);
-        setError(`폴더 설정을 불러오지 못했습니다 · ${errorText(cause)}`);
+        setDialogError({ key: "folders.dialog.loadError", cause });
       }
     }).finally(() => {
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [target]);
+  }, [request, target]);
 
-  const title = target?.mode === "create" && !createdFolder ? createLabel : "폴더 설정";
+  const visibleError = dialogError
+    ? t(dialogError.key, { detail: folderErrorText(t, dialogError.cause) }) : error;
+  const newFolderLabel = createLabel && createLabel !== dictionaries.ko.folders.common.newFolder
+    ? createLabel : t("folders.common.newFolder");
+  const title = target?.mode === "create" && !createdFolder ? newFolderLabel : t("folders.dialog.title");
   const description = target?.mode === "create" && target.parentName
-    ? `${target.parentName} 아래에 만듭니다.`
-    : target?.mode === "create" ? "폴더를 먼저 만들고, 작업에 필요한 컨텍스트를 더하세요." : "폴더의 이름과 작업 컨텍스트를 관리합니다.";
+    ? t("folders.dialog.createUnder", { name: target.parentName })
+    : target?.mode === "create" ? t("folders.dialog.createHint") : t("folders.dialog.settingsHint");
   const canSubmit = !loadFailed && value.title.trim().length > 0
     && assignmentValid
     && value.guidance.every((item) => item.text.trim().length > 0)
@@ -144,6 +154,7 @@ export function ProjectDialog({
     busy.current = true;
     setPending(true);
     setError(null);
+    setDialogError(null);
     try {
       let folder = effectiveFolder;
       if (!folder) {
@@ -157,7 +168,7 @@ export function ProjectDialog({
       onSaved(folder);
       onClose();
     } catch (cause) {
-      setError(`폴더 저장 실패 · ${errorText(cause)}`);
+      setDialogError({ key: "folders.dialog.saveError", cause });
     } finally {
       busy.current = false;
       setPending(false);
@@ -169,7 +180,7 @@ export function ProjectDialog({
       <DialogPopup className="max-w-xl project-purpose-dialog" closeProps={{ disabled: pending }}
         onKeyDown={(event) => { if (event.key === "Escape" && editor) { event.preventDefault(); event.stopPropagation(); if (!treeOpen) closeEditor(); else setTreeOpen(false); } }}>
         <DialogHeader>
-          <DialogTitle>{editor ? editor.kind === "atom" ? "참고 자료" : "기본 실행 환경" : title}</DialogTitle>
+          <DialogTitle>{editor ? editor.kind === "atom" ? t("folders.dialog.references") : t("folders.dialog.sessionDefaults") : title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <DialogPanel>
@@ -185,16 +196,16 @@ export function ProjectDialog({
               onModelPresetValidityChange={setEditorValid} onError={setError} />
           ) : null}
           <div hidden={editor !== null}>
-          {loading ? <FrameLoading label="폴더 설정을 불러오는 중…" /> : loadFailed ? null : (
+          {loading ? <FrameLoading label={t("folders.dialog.loading")} /> : loadFailed ? null : (
             <ProjectFormFields key={target?.mode === "edit" ? target.folder.id : "create"}
               value={value} disabled={pending} defaultsInvalid={!assignmentValid} onChange={setValue} onEdit={openEditor} />
           )}
           </div>
-          {error ? <p className="v3-project-star-error" role="alert" data-v3-selectable-content="true">{error}</p> : null}
+          {visibleError ? <p className="v3-project-star-error" role="alert" data-v3-selectable-content="true">{visibleError}</p> : null}
         </DialogPanel>
         <DialogFooter variant="bare">
           {editor ? <>
-            <Button variant="outline" onClick={closeEditor}>취소</Button>
+            <Button variant="outline" onClick={closeEditor}>{t("folders.common.cancel")}</Button>
             <Button disabled={editor.kind === "atom" ? treeOpen || treeStatus !== "ready" || !isProjectAtomValid(editor.value) : !editorValid}
               onClick={() => {
                 if (editor.kind === "atom") {
@@ -211,11 +222,11 @@ export function ProjectDialog({
                   setValue({ ...value, sessionDefaults: item.agentId || item.nodeId || item.modelPreset ? item : null });
                               }
                 closeEditor();
-              }}>{editor.kind === "atom" && editor.index === null ? "자료 추가" : "확인"}</Button>
+              }}>{editor.kind === "atom" && editor.index === null ? t("folders.dialog.addReference") : t("folders.common.confirm")}</Button>
           </> : <>
-          <Button type="button" variant="outline" disabled={pending} onClick={onClose}>취소</Button>
+          <Button type="button" variant="outline" disabled={pending} onClick={onClose}>{t("folders.common.cancel")}</Button>
           <Button type="button" disabled={loading || pending || !canSubmit} onClick={() => { void submit(); }}>
-            {pending ? "저장 중…" : target?.mode === "create" && !createdFolder ? "만들기" : "저장"}
+            {pending ? t("folders.common.saving") : target?.mode === "create" && !createdFolder ? t("folders.common.create") : t("folders.common.save")}
           </Button>
           </>}
         </DialogFooter>
@@ -228,6 +239,7 @@ function ProjectFormFields({ value, disabled, defaultsInvalid, onChange, onEdit 
   value: ProjectFormValue; disabled: boolean; defaultsInvalid: boolean; onChange(value: ProjectFormValue): void;
   onEdit(editor: Editor, trigger: HTMLElement): void;
 }) {
+  const { t } = useTranslation();
   const guidanceInputs = useRef<Array<HTMLTextAreaElement | null>>([]);
   const focusGuidance = useRef<number | null>(null);
   useEffect(() => {
@@ -236,46 +248,42 @@ function ProjectFormFields({ value, disabled, defaultsInvalid, onChange, onEdit 
     input?.focus(); input?.scrollIntoView?.({ block: "nearest" }); focusGuidance.current = null;
   }, [value.guidance]);
   return <div className="v3-project-dialog-form" data-testid="v3-project-dialog-form">
-    <label><span>폴더 이름 <small className="project-required">필수</small></span>
-      <input aria-label="폴더 이름" placeholder="예: 대시보드 개선" autoFocus value={value.title} disabled={disabled}
+    <label><span>{t("folders.dialog.folderName")} <small className="project-required">{t("folders.dialog.required")}</small></span>
+      <input aria-label={t("folders.dialog.folderName")} placeholder={t("folders.dialog.folderExample")} autoFocus value={value.title} disabled={disabled}
         onChange={event => onChange({ ...value, title: event.target.value })} /></label>
-    <div className="project-optional-heading"><strong>작업 컨텍스트</strong><span>선택, 나중에 추가할 수 있어요</span></div>
-    <CreationDisclosure className="project-context-disclosure" title="작업 지침" summary="에이전트가 참고할 목표와 규칙" defaultExpanded={value.guidance.length > 0}>
-      <fieldset><legend className="sr-only">작업 지침</legend>
+    <div className="project-optional-heading"><strong>{t("folders.dialog.workContext")}</strong><span>{t("folders.dialog.optional")}</span></div>
+    <CreationDisclosure className="project-context-disclosure" title={t("folders.dialog.instructions")} summary={t("folders.dialog.instructionsHint")} defaultExpanded={value.guidance.length > 0}>
+      <fieldset><legend className="sr-only">{t("folders.dialog.instructions")}</legend>
         {value.guidance.map((item, index) => <div className="v3-project-dialog-entry" key={item.blockId ?? item.draftId ?? index}>
-          <textarea rows={4} aria-label={`작업 지침 ${index + 1}`} ref={element => { guidanceInputs.current[index] = element; }} value={item.text} disabled={disabled}
+          <textarea rows={4} aria-label={t("folders.dialog.instructionNumber", { number: index + 1 })} ref={element => { guidanceInputs.current[index] = element; }} value={item.text} disabled={disabled}
             onChange={event => onChange({ ...value, guidance: value.guidance.map((candidate, i) => i === index ? { ...candidate, text: event.target.value } : candidate) })} />
-          {!item.text.trim() ? <small>지침을 입력하거나 빈 항목을 제거하세요</small> : null}
-          <Button variant="ghost" disabled={disabled} onClick={() => onChange({ ...value, guidance: value.guidance.filter((_, i) => i !== index) })}>제거</Button>
+          {!item.text.trim() ? <small>{t("folders.dialog.instructionRequired")}</small> : null}
+          <Button variant="ghost" disabled={disabled} onClick={() => onChange({ ...value, guidance: value.guidance.filter((_, i) => i !== index) })}>{t("folders.common.remove")}</Button>
         </div>)}
         <Button variant="outline" disabled={disabled} onClick={() => {
           const empty = value.guidance.findIndex(item => !item.text.trim());
           if (empty >= 0) { guidanceInputs.current[empty]?.focus(); guidanceInputs.current[empty]?.scrollIntoView?.({ block: "nearest" }); return; }
           focusGuidance.current = value.guidance.length;
           onChange({ ...value, guidance: [...value.guidance, { blockId: null, draftId: crypto.randomUUID(), text: "" }] });
-        }}>지침 추가</Button>
+        }}>{t("folders.dialog.addInstructions")}</Button>
       </fieldset>
     </CreationDisclosure>
-    <CreationDisclosure className="project-context-disclosure" title="참고 자료" summary="atom에서 가져올 지식과 문서" defaultExpanded={value.atomReferences.length > 0}>
-      <fieldset><legend className="sr-only">참고 자료</legend>
+    <CreationDisclosure className="project-context-disclosure" title={t("folders.dialog.references")} summary={t("folders.dialog.referencesHint")} defaultExpanded={value.atomReferences.length > 0}>
+      <fieldset><legend className="sr-only">{t("folders.dialog.references")}</legend>
         {value.atomReferences.map((item, index) => <div className="v3-project-dialog-entry" key={item.blockId ?? item.draftId ?? index}>
           <Button variant="outline" disabled={disabled} onClick={event => onEdit({ kind: "atom", value: { ...item }, index }, event.currentTarget)}>{item.nodeTitle} / {item.instance}</Button>
-          <Button variant="ghost" disabled={disabled} onClick={() => onChange({ ...value, atomReferences: value.atomReferences.filter((_, i) => i !== index) })}>제거</Button>
+          <Button variant="ghost" disabled={disabled} onClick={() => onChange({ ...value, atomReferences: value.atomReferences.filter((_, i) => i !== index) })}>{t("folders.common.remove")}</Button>
         </div>)}
         <Button variant="outline" disabled={disabled} onClick={event => onEdit({ kind: "atom", index: null,
-          value: { blockId: null, instance: "atom", nodeId: "", nodeTitle: "", depth: 3, titlesOnly: false, limit: null } }, event.currentTarget)}>atom에서 추가</Button>
+          value: { blockId: null, instance: "atom", nodeId: "", nodeTitle: "", depth: 3, titlesOnly: false, limit: null } }, event.currentTarget)}>{t("folders.dialog.addFromAtom")}</Button>
       </fieldset>
     </CreationDisclosure>
-    <CreationDisclosure className="project-context-disclosure" title="기본 실행 환경" invalid={defaultsInvalid} summary="이 폴더에서 사용할 에이전트와 모델" defaultExpanded={value.sessionDefaults !== null}>
-      <fieldset><legend className="sr-only">기본 에이전트</legend>
-        {value.sessionDefaults ? <p>{value.sessionDefaults.agentId || "에이전트 상속"} / {value.sessionDefaults.nodeId || "노드 상속"} / {value.sessionDefaults.modelPreset || "모델 상속"}</p> : null}
-        <Button variant="outline" disabled={disabled} onClick={event => onEdit({ kind: "defaults", value: value.sessionDefaults ? { ...value.sessionDefaults } : { blockId: null, agentId: "", nodeId: "", modelPreset: "" } }, event.currentTarget)}>{value.sessionDefaults ? "기본 실행 환경 편집" : "＋ 기본 에이전트"}</Button>
-        {value.sessionDefaults ? <Button variant="ghost" disabled={disabled} onClick={() => onChange({ ...value, sessionDefaults: null })}>제거</Button> : null}
+    <CreationDisclosure className="project-context-disclosure" title={t("folders.dialog.sessionDefaults")} invalid={defaultsInvalid} summary={t("folders.dialog.sessionDefaultsHint")} defaultExpanded={value.sessionDefaults !== null}>
+      <fieldset><legend className="sr-only">{t("folders.dialog.defaultAgent")}</legend>
+        {value.sessionDefaults ? <p>{value.sessionDefaults.agentId || t("folders.dialog.inheritAgent")} / {value.sessionDefaults.nodeId || t("folders.dialog.inheritNode")} / {value.sessionDefaults.modelPreset || t("folders.dialog.inheritModel")}</p> : null}
+        <Button variant="outline" disabled={disabled} onClick={event => onEdit({ kind: "defaults", value: value.sessionDefaults ? { ...value.sessionDefaults } : { blockId: null, agentId: "", nodeId: "", modelPreset: "" } }, event.currentTarget)}>{value.sessionDefaults ? t("folders.dialog.editSessionDefaults") : t("folders.dialog.addDefaultAgent")}</Button>
+        {value.sessionDefaults ? <Button variant="ghost" disabled={disabled} onClick={() => onChange({ ...value, sessionDefaults: null })}>{t("folders.common.remove")}</Button> : null}
       </fieldset>
     </CreationDisclosure>
   </div>;
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : String(error);
 }

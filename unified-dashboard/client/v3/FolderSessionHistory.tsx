@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useMemo, useRef, useState, type MouseEvent } from "react";
 import { DashboardIconCap, useSessionMenu, type SessionSummary, retainEqualValue } from "@seosoyoung/soul-ui";
 import { Plus } from "lucide-react";
@@ -58,6 +59,8 @@ export function FolderSessionHistory({
   onOpenSession(session: SessionSummary): void;
   onSessionCreated(session: SessionSummary): void;
 }) {
+  const { t, i18n } = useTranslation();
+  const number = new Intl.NumberFormat(i18n.resolvedLanguage);
   const treeRef = useRef<ReturnType<typeof buildRunTree>>([]);
   const predecessorOptionsRef = useRef<ReturnType<typeof buildSuccessionSessionOptions>>([]);
   const tree = useMemo(
@@ -93,12 +96,12 @@ export function FolderSessionHistory({
   return (
     <section className="v3-detail-section v3-runs">
       <div className="v3-detail-section-head">
-        <h3>세션 히스토리</h3><span>{runHistoryTotal > tree.length ? `${tree.length}/${runHistoryTotal}회` : `${tree.length}회`}</span><span className="v3-spacer" />
-        <DashboardIconCap ref={newSessionButton} size="small" label="새 세션" onClick={() => setSuccessionOpen(true)}>
+        <h3>{t("folders.session.history")}</h3><span>{runHistoryTotal > tree.length ? t("folders.session.partialRuns", { shown: number.format(tree.length), total: number.format(runHistoryTotal) }) : t("folders.session.runs", { count: tree.length })}</span><span className="v3-spacer" />
+        <DashboardIconCap ref={newSessionButton} size="small" label={t("folders.session.new")} onClick={() => setSuccessionOpen(true)}>
           <Plus className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </div>
-      {tree.length === 0 ? <p className="v3-detail-empty">아직 실행된 세션이 없습니다.</p> : null}
+      {tree.length === 0 ? <p className="v3-detail-empty">{t("folders.session.noRuns")}</p> : null}
       <SessionRunList tree={tree} activeSessionId={activeSessionId}
         onOpenSession={onOpenSession} onContextMenu={openRunContextMenu} />
       <RunHistoryAutoLoader hasMore={runHistoryHasMore} loading={runHistoryLoading}

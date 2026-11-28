@@ -1,3 +1,5 @@
+import { folderErrorText } from "./folder-messages";
+import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
 import {
   MarkdownDeleteDialog,
@@ -35,6 +37,7 @@ export function FolderDocumentContextMenu({
   onMove(item: CatalogBoardItem, target: FolderMoveTarget): Promise<void>;
   onDelete(item: CatalogBoardItem): Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [moveItem, setMoveItem] = useState<CatalogBoardItem | null>(null);
   const [deleteItem, setDeleteItem] = useState<CatalogBoardItem | null>(null);
   const [deletePending, setDeletePending] = useState(false);
@@ -82,7 +85,7 @@ export function FolderDocumentContextMenu({
           void onDelete(deleteItem)
             .then(() => setDeleteItem(null))
             .catch((error: unknown) => {
-              setDeleteError(error instanceof Error ? error.message : "문서를 삭제하지 못했습니다.");
+              setDeleteError(error instanceof Error ? folderErrorText(t, error) : t("folders.board.deleteError"));
             })
             .finally(() => setDeletePending(false));
         }}

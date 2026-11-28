@@ -19,7 +19,7 @@ export function useFolderWorkspaceFolder({ folder, aggregate, knownFolder }: {
         stateVector: "",
         folderId: folder.id,
         status: derivePlannerFolderStatus({ folder: aggregate.folder, cards: aggregate.cards }),
-        assignee: knownFolder?.assignee ?? "담당 미지정",
+        assignee: knownFolder?.assignee ?? "담당 미지정", // i18n-ignore: Unassigned fallback consumed by PlannerFolderCard
         contextCount: folderContextCount(aggregate.blocks),
         progress: aggregate.cards.length ? Math.round(100 * completed / aggregate.cards.length) : null,
         parentFolderId: aggregate.folder.parentFolderId ?? null,

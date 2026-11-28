@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { SessionNodeConnectivity } from "@seosoyoung/soul-ui/lib/session-node-connectivity";
 import { useState, type MouseEvent } from "react";
 import { type SessionSummary } from "@seosoyoung/soul-ui";
@@ -51,13 +52,14 @@ export function PlannerFolderCardView({
   onArchive,
   folderStar,
 }: PlannerFolderCardProps & { folderStar: ReturnType<typeof useFolderStar> }) {
+  const { t } = useTranslation();
   const [contextMenu, setContextMenu] = useState<V3ContextMenuTarget | null>(null);
-  const status = plannerStatusPresentation(task.status);
+  const status = plannerStatusPresentation(task.status, t);
   const run = latestRun(task.sessionIds, sessions);
   const runStatus = run ? sessionPresentationStatus(run.session, nodeConnectivity) : null;
-  const showAssignee = task.assignee !== "담당 미지정" && task.assignee !== "담당 미확인";
+  const showAssignee = task.assignee !== "담당 미지정" && task.assignee !== "담당 미확인"; // i18n-ignore: Unassigned sentinel produced by planner-data, folder-workspace-model and use-folder-workspace-entry
   const showRun = runStatus === "running" || runStatus === "offline";
-  const runState = runStatus === "offline" ? "노드 오프라인" : "실행 중";
+  const runState = runStatus === "offline" ? t("folders.planner.offline") : t("folders.planner.running");
   const openContextMenu = (event: MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -67,16 +69,16 @@ export function PlannerFolderCardView({
   return (
     <>
       <RunRowFrame size="small" variant="folder"
-        onOpen={onOpen} openLabel={`${task.page.title} 폴더 열기`}
+        onOpen={onOpen} openLabel={t("folders.planner.openFolder", { name: task.page.title })}
         onContextMenu={openContextMenu} testId={`v3-task-${task.page.id}`}
         avatar={<Folder aria-hidden="true"/>}
         title={<strong title={task.page.title}>{singleLinePreview(task.page.title, TASK_TITLE_PREVIEW_LENGTH)}</strong>}
         agentLine={showAssignee ? <span>{task.assignee}</span> : null}
-        status={{label:navigationLabel ?? (task.status === "in_progress" || task.status === "review" ? `카드 집계 · ${status.label}` : `폴더 ${task.status === "open" ? "열림" : status.label}`),tone:navigationLabel?undefined:task.status}}
-        secondaryStatus={showRun && run ? {label:`세션 #${run.number} ${runState}`,tone:runStatus??undefined} : undefined}
+        status={{label:navigationLabel ?? (task.status === "in_progress" || task.status === "review" ? t("folders.planner.cardStatus", { status: status.label }) : t("folders.planner.folderStatus", { status: task.status === "open" ? t("folders.planner.folderOpen") : status.label })),tone:navigationLabel?undefined:task.status}}
+        secondaryStatus={showRun && run ? {label:t("folders.planner.sessionRun", { number: run.number, status: runState }),tone:runStatus??undefined} : undefined}
         actions={[
-          ...(onRename ? [{kind:"menu" as const,label:`${task.page.title} 관리 메뉴`,onAction:(event:MouseEvent<HTMLButtonElement>)=>{const rect=event.currentTarget.getBoundingClientRect();setContextMenu({x:rect.left,y:rect.bottom});}}] : []),
-          {kind:"star",label:`${task.page.title} ${folderStar.starred?"별표 해제":"별표 추가"}`,pressed:folderStar.starred,pending:folderStar.pending,onAction:()=>{void folderStar.toggle();}},
+          ...(onRename ? [{kind:"menu" as const,label:t("folders.planner.manageFolder", { name: task.page.title }),onAction:(event:MouseEvent<HTMLButtonElement>)=>{const rect=event.currentTarget.getBoundingClientRect();setContextMenu({x:rect.left,y:rect.bottom});}}] : []),
+          {kind:"star",label:t(folderStar.starred ? "folders.planner.unstarFolder" : "folders.planner.starFolder", { name: task.page.title }),pressed:folderStar.starred,pending:folderStar.pending,onAction:()=>{void folderStar.toggle();}},
         ]}/>
 
       <V3ContextMenu
