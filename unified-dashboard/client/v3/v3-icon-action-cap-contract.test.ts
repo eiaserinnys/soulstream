@@ -63,8 +63,8 @@ describe("v3 icon action cap contract", () => {
 
     expect(board).toMatch(/<InlineMarkdownCard key=\{item\.id\} title=\{title\} expanded=\{expanded\}[\s\S]*?onToggle=\{\(\) => setExpandedId\(expanded \? null : item\.id\)\}[\s\S]*?onRename=\{\(\) => beginRename\(item\)\}/);
     expect(inlineCard).toContain("DashboardIconCap");
-    expect(inlineCard).toContain('label={`${title} ${expanded ? "접기" : "펼치기"}`}');
-    expect(inlineCard).toContain('label={`${title} 이름 수정`}');
+    expect(inlineCard).toContain('label={t("cards.toggleDocument", {title,action:expanded?t("cards.collapse"):t("cards.expand")})}');
+    expect(inlineCard).toContain('label={t("cards.renameDocument", {title})}');
     expect(inlineCard).toContain("aria-expanded={expanded} onClick={onToggle}");
     expect(inlineCard).toContain("onClick={onRename}");
   });

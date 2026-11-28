@@ -1,7 +1,5 @@
 export type CompletedPeriod = "7" | "30" | "all" | "custom";
 export type CompletedCardParams = { folderId?: string; completedFrom?: string; completedBefore?: string; q?: string; limit?: number; cursor?: string };
-import type { CardTranslate } from "./card-api";
-
 export function mergeCompletedRefresh<T extends {id:string;completedAt?:string|null}>(
   first:{cards:T[];nextCursor:string|null}, previous:{cards:T[];cursor:string|null},
 ):{cards:T[];cursor:string|null} {
@@ -18,7 +16,10 @@ export const completedPeriods = [
   {value:"custom",label:"기간 지정"}, // i18n-ignore: 소울앱 기간 선택의 한국어 기본값.
 ] as const;
 
-export function completedPeriodLabel(option: (typeof completedPeriods)[number], t?:CardTranslate) {
+export function completedPeriodLabel(
+  option: (typeof completedPeriods)[number],
+  t?: (key: string, options: { defaultValue: string }) => string,
+) {
   return t?.(`cards.period.${option.value}`, { defaultValue:option.label }) ?? option.label;
 }
 export function localDate(date: Date) {
