@@ -205,7 +205,9 @@ def run_view(browser, base, out, language, width, fixtures, observations):
 
         fake.stats = "loading"
         choose(page, settings, "usage_stats")
-        expect(detail.get_by_role("status", name=copy["stats"]["loading"])).to_be_visible()
+        spinner = detail.get_by_role("status", name=copy["stats"]["loading"])
+        spinner.scroll_into_view_if_needed()
+        expect(spinner).to_be_in_viewport()
         capture_surface(page, detail, out, f"{prefix}-loading", observations)
         fake.stats = "error"
         for route in fake.held:
