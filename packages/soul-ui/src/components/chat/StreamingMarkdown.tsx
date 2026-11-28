@@ -55,7 +55,7 @@ export function preloadStreamingMarkdown(): Promise<WordsMarkdownComponent | nul
     .catch((error: unknown) => {
       // 스트리밍은 평문으로 이어 간다. 다음 장착에서 다시 시도할 수 있게 약속을 비운다.
       loadPromise = null;
-      console.warn("스트리밍 마크다운 모듈을 불러오지 못해 평문으로 보여줍니다.", error);
+      console.warn("스트리밍 마크다운 모듈을 불러오지 못해 평문으로 보여줍니다.", error); // i18n-ignore: 개발자 콘솔 경고
       return null;
     });
   return loadPromise;

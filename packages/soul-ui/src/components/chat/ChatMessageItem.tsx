@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { removeRepresentedAttachmentPathNotes } from "../../lib/attachment-path-notes";
 import { stripEventTruncationSuffix } from "../../lib/event-truncation-display";
 import { memo, useState, type ReactNode } from "react";
@@ -65,6 +66,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
   onRetryDelivery?: (message: { text: string; attachmentPaths: readonly string[] }) => void;
   onRestoreDelivery?: (text: string) => void;
 }) {
+  const { t } = useTranslation();
   const hasAttachmentSignal = msg.role === "user" || msg.role === "intervention" || msg.role === "assistant"
     ? Boolean(msg.attachmentIds?.length || msg.attachmentPaths?.length || msg.attachmentCount || msg.attachmentDisplayIds?.length)
     : false;
@@ -110,14 +112,14 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
     />;
   } else if (attachmentState.loading) {
     attachmentSlot = <div className="chat-image-run" data-chat-image-role={attachmentRole} data-chat-attachment-tone={attachmentTone} data-chat-attachment-state="loading">
-      <div className="chat-image-frame"><span className="chat-image-status" role="status">첨부 불러오는 중…</span></div>
+      <div className="chat-image-frame"><span className="chat-image-status" role="status">{t("ui.attachment.loading")}</span></div>
     </div>;
   } else if (attachmentState.error) {
     const { retryable } = attachmentState;
     attachmentSlot = <div className="chat-image-run" data-chat-image-role={attachmentRole} data-chat-attachment-tone={attachmentTone} data-chat-attachment-state="error">
       <div className="chat-image-frame">
-        <span className="chat-image-status" role="status">{retryable ? "첨부 정보를 불러오지 못했습니다." : attachmentState.error}</span>
-        {retryable && <Button variant="outline" size="sm" onClick={attachmentState.reload}>다시 시도</Button>}
+        <span className="chat-image-status" role="status">{retryable ? t("ui.attachment.metadataFailed") : attachmentState.error}</span>
+        {retryable && <Button variant="outline" size="sm" onClick={attachmentState.reload}>{t("ui.common.retry")}</Button>}
       </div>
     </div>;
   }

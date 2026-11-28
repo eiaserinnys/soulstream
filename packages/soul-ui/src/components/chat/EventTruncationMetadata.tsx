@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
 import type { EventTruncation } from "@soulstream/wire-schema";
 import { projectChatAttachmentItems } from "../../lib/chat-attachment-model";
@@ -14,6 +15,7 @@ export function EventTruncationMetadata({
   sessionId?: string;
   eventId?: number;
 }) {
+  const { t } = useTranslation();
   const [viewer, setViewer] = useState<{ trigger: HTMLElement } | null>(null);
   const attachment = truncation?.attachment;
   const items = useMemo(() => {
@@ -33,12 +35,12 @@ export function EventTruncationMetadata({
 
   const size = formatFileSize(truncation.original_bytes);
   const canOpen = Boolean(attachment && sessionId);
-  const prefix = canOpen ? `잘림 · 전체 ${size} · ` : undefined;
+  const prefix = canOpen ? t("ui.chat.truncatedPrefix", { size }) : undefined;
   const label = attachment === null
-    ? `잘림 · 전체 ${size} · 전문 보관 실패`
+    ? t("ui.chat.truncatedArchiveFailed", { size })
     : canOpen
-      ? "전문 열기"
-      : `잘림 · 전체 ${size}`;
+      ? t("ui.chat.openFullText")
+      : t("ui.chat.truncatedSize", { size });
 
   return (
     <>

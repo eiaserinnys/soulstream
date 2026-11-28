@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
 import { useId, useState } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { MANUSCRIPT_ADJACENT_USER_ROW_CLASS_NAME } from "./ChatManuscriptList";
@@ -28,6 +29,7 @@ export function ManuscriptAgentMessageGroupView({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useTranslation();
   const bodyId = useId();
   const firstMessage = messages[0];
 
@@ -42,7 +44,7 @@ export function ManuscriptAgentMessageGroupView({
         <CollapsibleCaptionHeader
           id={bodyId}
           expanded={expanded}
-          title={`다른 세션 메시지 ${messages.length}건`}
+          title={t("ui.chat.otherSessionMessages", { total: messages.length })}
           align="end"
           alignmentInset="content"
           onToggle={onToggle}

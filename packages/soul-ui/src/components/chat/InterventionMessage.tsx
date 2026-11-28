@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/cn";
 import { memo, type ReactNode } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
@@ -29,7 +30,8 @@ export const InterventionMessage = memo(function InterventionMessage({ msg, pres
   );
 
   const resolvePortraitUrl = useAgentPortraitUrlResolver();
-  const display = computeInterventionDisplay(msg, callerAvatarUrl, resolvePortraitUrl);
+  const { t } = useTranslation();
+  const display = computeInterventionDisplay(t, msg, callerAvatarUrl, resolvePortraitUrl);
   const manuscript = presentation === "manuscript";
 
   return (

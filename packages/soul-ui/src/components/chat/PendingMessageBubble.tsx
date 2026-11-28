@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { memo } from "react";
 import type { PendingChatSend } from "../../stores/dashboard-store-types";
 import { DeliveryFailureBlock } from "./DeliveryFailureBlock";
@@ -16,6 +17,7 @@ export const PendingMessageBubble = memo(function PendingMessageBubble({
   onRetry: (sessionId: string, pending: PendingChatSend) => void;
   onRestore: (sessionId: string, pending: PendingChatSend) => void;
 }) {
+  const { t } = useTranslation();
   const isSending = pending.status === "sending";
   const manuscript = presentation === "manuscript";
 
@@ -35,7 +37,7 @@ export const PendingMessageBubble = memo(function PendingMessageBubble({
         </div>
         {isSending ? (
           <div className={manuscript ? "mt-1 text-right text-xs text-muted-foreground" : "mt-1 text-right text-xs text-white/75"} aria-live="polite">
-            보내는 중
+            {t("ui.chat.sending")}
           </div>
         ) : (
           <DeliveryFailureBlock

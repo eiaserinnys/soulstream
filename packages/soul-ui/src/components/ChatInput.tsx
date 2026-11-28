@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { handleClipboardFiles } from "../lib/clipboard-files";
 /**
  * ChatInput - 인터벤션 / 세션 계속 전송 컴포넌트
@@ -74,6 +75,7 @@ export function ChatInput({
   composerAnchorRef,
   onSessionChange,
 }: ChatInputProps = {}) {
+  const { t } = useTranslation();
   const closeChatUiFeedback = useCloseChatUiFeedback();
   const report = usePersistentReport();
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
@@ -355,7 +357,7 @@ export function ChatInput({
   const mode = resolveChatInputMode({
     isFinished,
     sending,
-  });
+  }, t);
   const pendingAttachments = effectiveFileUploadUrl && files.length > 0 ? (
     <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {files.map((f) => (

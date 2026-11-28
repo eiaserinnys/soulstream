@@ -7,6 +7,7 @@
  * 순수 함수 — React 의존 없음.
  */
 
+import type { useTranslation } from "react-i18next";
 import type { ButtonVariant } from "../ui/button";
 
 export interface ChatInputModeInput {
@@ -23,13 +24,13 @@ export interface ChatInputModeView {
   buttonVariant: Extract<ButtonVariant, "default" | "warning">;
 }
 
-export function resolveChatInputMode(input: ChatInputModeInput): ChatInputModeView {
+export function resolveChatInputMode(input: ChatInputModeInput, t: ReturnType<typeof useTranslation>["t"]): ChatInputModeView {
   const { isFinished, sending } = input;
 
-  const placeholder = isFinished ? "대화를 이어서 입력하세요" : "메시지를 입력하세요";
-  const buttonLabel = sending ? "..." : isFinished ? "보내기" : "개입";
+  const placeholder = isFinished ? t("ui.chat.continuePlaceholder") : t("ui.chat.messagePlaceholder");
+  const buttonLabel = sending ? "..." : isFinished ? t("ui.chat.send") : t("ui.chat.intervention");
   const modeIcon = isFinished ? "\u{1F4AC}" : "\u270B";
-  const modeLabel = isFinished ? "대화 이어가기" : "개입";
+  const modeLabel = isFinished ? t("ui.chat.continue") : t("ui.chat.intervention");
 
   // 색상 의미는 유지하되 Button variant 정본만 호출한다.
   const borderColor = isFinished ? "focus:border-accent-blue/40" : "chat-focus-warning";

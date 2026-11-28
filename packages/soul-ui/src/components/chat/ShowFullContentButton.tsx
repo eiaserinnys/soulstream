@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { memo, type MouseEvent } from "react";
 
 export const ShowFullContentButton = memo(function ShowFullContentButton({
@@ -13,6 +14,7 @@ export const ShowFullContentButton = memo(function ShowFullContentButton({
   prefix?: string;
   label?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="mt-1 text-xs text-muted-foreground">
       {prefix && <span>{prefix}</span>}
@@ -25,10 +27,10 @@ export const ShowFullContentButton = memo(function ShowFullContentButton({
           {loading ? (
             <>
               <span className="inline-block w-3 h-3 border border-accent-blue/40 border-t-accent-blue rounded-full animate-spin" />
-              불러오는 중
+              {t("ui.common.loading")}
             </>
           ) : (
-            label ?? "\u2026 전체 내용 보기"
+            label ?? t("ui.chat.showFullContent")
           )}
         </button>
       ) : label ? (
