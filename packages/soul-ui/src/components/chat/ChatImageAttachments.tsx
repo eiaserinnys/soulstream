@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import { AttachmentViewer } from "../AttachmentViewer";
 import { MarkdownImage } from "../MarkdownImage";
@@ -92,6 +93,7 @@ function ChatImageThumbnail({
   onOpen(index: number, trigger: HTMLElement): void;
   openFailedImage?: boolean;
 }) {
+  const { t } = useTranslation();
   const [failedSource, setFailedSource] = useState<string | null>(null);
   useImageMetadata(image, onMetadata);
   const filename = image.filename ?? metadata?.filename ?? getChatImageFilename(image.src);
@@ -105,13 +107,13 @@ function ChatImageThumbnail({
             <button
               type="button"
               className="chat-image-status cursor-zoom-in outline-none"
-              aria-label={filename ? `첨부 열기: ${filename}` : "첨부 열기"}
+              aria-label={filename ? t("ui.attachment.openNamed", { filename }) : t("ui.attachment.open")}
               onClick={event => onOpen(galleryIndex, event.currentTarget)}
             >
-              <span role="status">불러오지 못함</span>
+              <span role="status">{t("ui.attachment.loadFailed")}</span>
             </button>
           ) : (
-            <span className="chat-image-status" role="status">불러오지 못함</span>
+            <span className="chat-image-status" role="status">{t("ui.attachment.loadFailed")}</span>
           )}
         </div>
       ) : (
@@ -119,7 +121,7 @@ function ChatImageThumbnail({
           src={image.src}
           alt={image.alt}
           mimeType={image.mimeType ?? metadata?.mimeType}
-          ariaLabel={filename ? `이미지 확대: ${filename}` : "이미지 확대"}
+          ariaLabel={filename ? t("ui.attachment.zoomNamed", { filename }) : t("ui.attachment.zoom")}
           variant="chatRefined"
           className="chat-image-thumbnail-image"
           frameClassName="chat-image-thumbnail-frame"

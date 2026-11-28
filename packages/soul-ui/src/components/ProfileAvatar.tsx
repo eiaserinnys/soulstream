@@ -11,6 +11,7 @@
  *    경우 onError 대신 onLoad를 발생시키므로 두 가드를 함께 둔다.
  */
 
+import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { Link, Webhook } from "lucide-react";
 import { normalizeAgentPortraitUrl } from "../lib/agent-portrait";
@@ -27,6 +28,7 @@ interface ProfileAvatarProps {
 }
 
 export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl, external, shape = 'rounded' }: ProfileAvatarProps) {
+  const { t } = useTranslation();
   const dictionary = useAgentPortraitDictionary();
   // 오류는 그 주소에만 붙는다. 주소가 바뀌면(초상을 새로 올렸거나 목록을 다시 받은 뒤) 다시 시도한다.
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl, e
 
   if (external) {
     const Icon = external.icon === "webhook" ? Webhook : Link;
-    return <span role="img" aria-label={`외부 연동 ${external.title}`} title={external.title}
+    return <span role="img" aria-label={t("ui.avatar.externalIntegration", { title: external.title })} title={external.title}
       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--lg-line)] bg-[var(--control-surface)] text-muted-foreground">
       <Icon size={16} aria-hidden="true" />
     </span>;
@@ -52,7 +54,7 @@ export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl, e
   return (
     <img
       src={src}
-      alt={role === "user" ? "사용자" : "어시스턴트"}
+      alt={role === "user" ? t("ui.chat.user") : t("ui.chat.assistant")}
       className={`w-8 h-8 ${shape === 'circle' ? 'rounded-full' : 'rounded-floor'} shrink-0 object-cover`}
       onError={() => setFailedSrc(src)}
       onLoad={(e) => {

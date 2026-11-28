@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Bell, DatabaseZap, Radio } from "lucide-react";
 
 import type {
@@ -13,6 +14,7 @@ export function ClaudeRuntimeSignalRows({
   signals: ClaudeRuntimeSignalsView;
   tone?: "default" | "calm";
 }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-2">
       {signals.notifications.map((notification) => (
@@ -37,7 +39,7 @@ export function ClaudeRuntimeSignalRows({
             <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
               tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
             }`}>
-              미러
+              {t("ui.runtime.mirror")}
             </span>
             <span className="truncate text-xs text-muted-foreground">
               {signals.mirror.transcriptSessionId
@@ -84,6 +86,7 @@ function NotificationRow({ notification }: { notification: ClaudeRuntimeNotifica
 }
 
 function RemoteTriggerRow({ trigger }: { trigger: ClaudeRuntimeRemoteTriggerView }) {
+  const { t } = useTranslation();
   const label = trigger.originName
     ?? trigger.originFrom
     ?? trigger.triggerType
@@ -93,7 +96,7 @@ function RemoteTriggerRow({ trigger }: { trigger: ClaudeRuntimeRemoteTriggerView
       <div className="flex min-w-0 items-center gap-2">
         <Radio className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="rounded-full bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
-          원격
+          {t("ui.runtime.remote")}
         </span>
         <span className="truncate text-xs font-medium">{label}</span>
       </div>

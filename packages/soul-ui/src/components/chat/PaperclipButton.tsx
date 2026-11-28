@@ -3,6 +3,7 @@
  * ChatInput 에서만 쓰이는 순수 프레젠테이션 컴포넌트.
  */
 
+import { useTranslation } from "react-i18next";
 import { Paperclip } from "lucide-react";
 import { DashboardIconCap } from "../DashboardIconCap";
 
@@ -13,11 +14,12 @@ interface PaperclipButtonProps {
 }
 
 export function PaperclipButton({ onClick, disabled, presentation = "default" }: PaperclipButtonProps) {
+  const { t } = useTranslation();
   return (
     <DashboardIconCap
       size="small"
       appearance={presentation === "manuscript" ? "bare" : "default"}
-      label="파일 첨부"
+      label={t("ui.chat.attachFile")}
       disabled={disabled}
       onClick={onClick}
       className="self-end"

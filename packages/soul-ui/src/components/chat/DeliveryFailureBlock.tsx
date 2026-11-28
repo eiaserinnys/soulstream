@@ -1,7 +1,6 @@
+import { useTranslation } from "react-i18next";
 import { memo } from "react";
 import { Button } from "../ui/button";
-
-export const DELIVERY_FAILURE_TEXT = "전달을 확인하지 못했습니다";
 
 export type DeliveryFailureActions = {
   onRetry?: () => void;
@@ -16,7 +15,7 @@ export type DeliveryFailureActions = {
  * 다시 보내기가 불가능한 경우(첨부 경로를 얻지 못함)에는 복원 단추만 남는다.
  */
 export const DeliveryFailureBlock = memo(function DeliveryFailureBlock({
-  text = DELIVERY_FAILURE_TEXT,
+  text,
   manuscript = false,
   onRetry,
   onRestore,
@@ -26,6 +25,7 @@ export const DeliveryFailureBlock = memo(function DeliveryFailureBlock({
   onRetry?: () => void;
   onRestore?: () => void;
 }) {
+  const { t } = useTranslation();
   if (!onRetry && !onRestore) return null;
   const buttonClassName = manuscript
     ? "text-foreground"
@@ -36,17 +36,17 @@ export const DeliveryFailureBlock = memo(function DeliveryFailureBlock({
         className={manuscript ? "mt-1 text-right text-xs text-destructive" : "mt-1 text-right text-xs text-white/90"}
         role="status"
       >
-        {text}
+        {text ?? t("ui.chat.deliveryUnconfirmed")}
       </div>
       <div className="mt-2 flex justify-end gap-2">
         {onRetry && (
           <Button size="sm" variant="glass" className={buttonClassName} onClick={onRetry}>
-            다시 보내기
+            {t("ui.chat.resend")}
           </Button>
         )}
         {onRestore && (
           <Button size="sm" variant="glass" className={buttonClassName} onClick={onRestore}>
-            입력창으로
+            {t("ui.chat.restoreInput")}
           </Button>
         )}
       </div>

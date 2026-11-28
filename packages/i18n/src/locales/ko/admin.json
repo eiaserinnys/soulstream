@@ -129,7 +129,6 @@
     "all": "전체",
     "deletedFolder": "삭제된 폴더",
     "confirmRemove": "{{email}} 사용자를 삭제할까요?",
-    "close": "닫기",
     "retry": "다시 불러오기"
   },
   "storage": {
@@ -184,7 +183,6 @@
     "folderMatch": "폴더 · {{name}}",
     "results_one": "{{count}}개 결과",
     "results_other": "{{count}}개 결과",
-    "close": "닫기",
     "results": "{{count}}개 결과"
   },
   "connection": {

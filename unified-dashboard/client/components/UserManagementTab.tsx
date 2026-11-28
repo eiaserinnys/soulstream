@@ -262,7 +262,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
       </div>}
 
       <Dialog open={editorOpen} onOpenChange={(next) => { if (!saveInFlight.current) setEditorOpen(next); }}>
-        <DialogPopup className="approved-dialog max-w-xl" closeProps={{ disabled: saving, "aria-label": t("admin.users.close") }}>
+        <DialogPopup className="approved-dialog max-w-xl" closeProps={{ disabled: saving }}>
           <DialogHeader>
             <DialogTitle>{editingEmail ? t("admin.users.edit") : t("admin.users.create")}</DialogTitle>
             <DialogDescription>{t("admin.users.editorDescription")}</DialogDescription>

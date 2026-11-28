@@ -1,9 +1,9 @@
+import { useTranslation } from "react-i18next";
 import { memo, useId, useMemo, useState } from "react";
 import { Paperclip } from "lucide-react";
 import type { ContextItem } from "@soulstream/wire-schema";
 import {
   buildContextPromptTokenMetrics,
-  formatPromptTokenCount,
 } from "../../lib/prompt-token-metrics";
 import { ContextContentRenderer } from "../ContextContentRenderer";
 import { CollapsibleCaptionHeader } from "./CollapsibleCaption";
@@ -16,6 +16,7 @@ export const ContextBlock = memo(function ContextBlock({
   items: ContextItem[];
   variant?: "default" | "caption";
 }) {
+  const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
   const metrics = useMemo(() => buildContextPromptTokenMetrics(items), [items]);
@@ -26,7 +27,7 @@ export const ContextBlock = memo(function ContextBlock({
           <div className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5 flex items-center gap-1.5 flex-wrap">
             <span>{item.label}</span>
             <span className="normal-case tracking-normal rounded-full bg-input px-1.5 leading-4">
-              프롬프트 {formatPromptTokenCount(metrics.items[index]?.tokens ?? 0)}
+              {t("ui.chat.promptTokens", { total: (metrics.items[index]?.tokens ?? 0).toLocaleString(i18n.resolvedLanguage) })}
             </span>
           </div>
           <ContextContentRenderer content={item.content} />
@@ -44,7 +45,7 @@ export const ContextBlock = memo(function ContextBlock({
           title={
             <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
               <Paperclip className="size-3.5 shrink-0" aria-hidden="true" />
-              <span className="min-w-0 truncate font-medium">맥락 {items.length}</span>
+              <span className="min-w-0 truncate font-medium">{t("ui.chat.contextCount", { total: items.length })}</span>
             </span>
           }
           align="end"
@@ -70,9 +71,9 @@ export const ContextBlock = memo(function ContextBlock({
       >
         <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
         <span>{"\u{1F4CB}"}</span>
-        <span className="font-medium">맥락 ({items.length})</span>
+        <span className="font-medium">{t("ui.chat.contextCountParenthesized", { total: items.length })}</span>
         <span className="text-xs leading-4 rounded-full bg-input px-1.5 text-muted-foreground">
-          프롬프트 {formatPromptTokenCount(metrics.totalTokens)}
+          {t("ui.chat.promptTokens", { total: metrics.totalTokens.toLocaleString(i18n.resolvedLanguage) })}
         </span>
       </button>
       {expanded && itemList}

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { BookOpenText, ChevronDown } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useId, useRef, useState, type ComponentPropsWithoutRef } from "react";
 
@@ -25,6 +26,7 @@ export function SessionStoryDisclosure({
   mode?: "disclosure" | "settings";
   request?: typeof fetch;
 }) {
+  const { t } = useTranslation();
   const panelId = useId();
   const requestRef = useRef<AbortController | null>(null);
   const [open, setOpen] = useState(false);
@@ -89,7 +91,7 @@ export function SessionStoryDisclosure({
         {loading ? <LoadingState /> : null}
         {!loading && error ? (
           <div className="session-story-settings-error" role="alert">
-            <p data-slot="dialog-error-message">스토리를 불러오지 못했습니다.</p>
+            <p data-slot="dialog-error-message">{t("ui.session.storyLoadFailed")}</p>
             <Button
               type="button"
               size="sm"
@@ -97,7 +99,7 @@ export function SessionStoryDisclosure({
               data-testid="session-story-retry"
               onClick={() => void loadStory()}
             >
-              다시 시도
+              {t("ui.common.retry")}
             </Button>
           </div>
         ) : null}
@@ -119,7 +121,7 @@ export function SessionStoryDisclosure({
           data-testid="session-story-trigger"
         >
           <BookOpenText className="size-3.5" aria-hidden="true" />
-          <span>스토리</span>
+          <span>{t("ui.session.story")}</span>
           <ChevronDown
             className={cn(
               "size-3.5 transition-transform",
@@ -136,7 +138,7 @@ export function SessionStoryDisclosure({
         <PopoverPopup
           id={panelId}
           role="region"
-          aria-label="세션 스토리"
+          aria-label={t("ui.session.sessionStory")}
           data-testid="session-story-panel"
           side="bottom"
           align="end"
@@ -147,7 +149,7 @@ export function SessionStoryDisclosure({
           {loading ? <LoadingState /> : null}
           {!loading && error ? (
             <p className="text-sm text-muted-foreground">
-              스토리를 불러오지 못했습니다. 패널을 다시 열어 주세요.
+              {t("ui.session.storyLoadFailedHelp")}
             </p>
           ) : null}
           {!loading && !error && story ? (
@@ -160,7 +162,8 @@ export function SessionStoryDisclosure({
 }
 
 function LoadingState() {
-  return <FrameLoading inline label="스토리를 불러오는 중입니다." />;
+  const { t } = useTranslation();
+  return <FrameLoading inline label={t("ui.session.storyLoading")} />;
 }
 
 function StoryContent({
@@ -172,6 +175,7 @@ function StoryContent({
   story: SessionStory;
   mode: "disclosure" | "settings";
 }) {
+  const { t } = useTranslation();
   const highlightId = `${panelId}-highlight`;
   const narrativeId = `${panelId}-narrative`;
   const highlight = story.highlight?.trim() ?? "";
@@ -182,7 +186,7 @@ function StoryContent({
   if (empty) {
     return (
       <p className={mode === "settings" ? "session-story-settings-empty" : "text-sm text-muted-foreground"}>
-        아직 정리된 스토리가 없습니다.
+        {t("ui.session.noStory")}
       </p>
     );
   }
@@ -195,7 +199,7 @@ function StoryContent({
             id={highlightId}
             className={mode === "settings" ? "session-story-settings-label" : "mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"}
           >
-            하이라이트
+            {t("ui.session.highlights")}
           </h3>
           <p data-slot="session-story-body" className={mode === "settings" ? "session-story-settings-copy" : "whitespace-pre-wrap text-sm leading-relaxed text-foreground"}>
             {highlight}
@@ -209,7 +213,7 @@ function StoryContent({
             id={narrativeId}
             className={mode === "settings" ? "session-story-settings-label" : "mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"}
           >
-            줄거리
+            {t("ui.session.plot")}
           </h3>
           <div className={mode === "settings" ? "session-story-settings-copies" : "space-y-2 text-sm leading-relaxed text-foreground"}>
             {narrative ? <p data-slot="session-story-body" className={mode === "settings" ? "session-story-settings-copy" : "whitespace-pre-wrap"}>{narrative}</p> : null}

@@ -129,7 +129,6 @@
     "all": "All",
     "deletedFolder": "Deleted folder",
     "confirmRemove": "Delete {{email}}?",
-    "close": "Close",
     "retry": "Retry"
   },
   "storage": {
@@ -184,7 +183,6 @@
     "folderMatch": "Folder · {{name}}",
     "results_one": "{{count}} result",
     "results_other": "{{count}} results",
-    "close": "Close",
     "results": "{{count}} results"
   },
   "connection": {

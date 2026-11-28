@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { FrameLoading } from "../FrameLoading";
 import type { HistoryLoadBlockReason } from "./useMessageHistoryBuffer";
 
@@ -16,6 +17,7 @@ export function ChatHistoryStatus({
   blockedReason,
   onRetry,
 }: ChatHistoryStatusProps) {
+  const { t } = useTranslation();
   if (blockedReason !== null) {
     return (
       <div className="flex justify-center px-3 py-2">
@@ -25,14 +27,14 @@ export function ChatHistoryStatus({
           onClick={onRetry}
           className="rounded-full border border-glass-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:cursor-wait disabled:opacity-60"
         >
-          {loading ? "이전 대화를 불러오는 중" : "이전 대화를 불러오지 못했습니다. 다시 시도"}
+          {loading ? t("ui.chat.historyLoading") : t("ui.chat.historyRetry")}
         </button>
       </div>
     );
   }
 
   if (loading) {
-    return <FrameLoading inline label="이전 대화를 불러오는 중" />;
+    return <FrameLoading inline label={t("ui.chat.historyLoading")} />;
   }
 
   return null;

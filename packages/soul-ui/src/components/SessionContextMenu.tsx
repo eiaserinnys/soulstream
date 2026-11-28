@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {SessionContinueErrorDialog,SessionDeleteDialog} from "./SessionDialogViews";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useIsMobile } from "../hooks/use-mobile";
@@ -79,6 +80,8 @@ export function SessionContextMenu({
   extraActions = [],
   resolveSessionIds,
 }: SessionContextMenuProps) {
+  const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage;
   const isMobile = useIsMobile();
 
   // 데스크톱 컨텍스트 메뉴: 마우스 좌표를 VirtualElement anchor로 변환
@@ -180,7 +183,7 @@ export function SessionContextMenu({
                   status: schedule.status,
                 } }
               : current.eligibility,
-            message: resumeScheduleMessage(schedule.run_at),
+            message: resumeScheduleMessage(schedule.run_at, language, t),
             error: null,
           }
         : current);
@@ -194,7 +197,7 @@ export function SessionContextMenu({
           }
         : current);
     }
-  }, [activeResumeAfterLimit, contextSessionId]);
+  }, [activeResumeAfterLimit, contextSessionId, language, t]);
 
   const handleCancelResumeAfterLimit = useCallback(async () => {
     if (!contextSessionId || !currentResumeSchedule || !activeResumeAfterLimit || activeResumeAfterLimit.busy) return;
@@ -208,8 +211,8 @@ export function SessionContextMenu({
             eligibility: current.eligibility
               ? { ...current.eligibility, schedule: response.deleted ? null : current.eligibility.schedule }
               : current.eligibility,
-            message: response.deleted ? "재개 예약을 취소했습니다." : null,
-            error: response.deleted ? null : "이미 재개 처리가 시작되어 취소할 수 없습니다.",
+            message: response.deleted ? t("ui.session.resumeCanceled") : null,
+            error: response.deleted ? null : t("ui.session.resumeAlreadyStarted"),
           }
         : current);
     } catch (error) {
@@ -222,24 +225,24 @@ export function SessionContextMenu({
           }
         : current);
     }
-  }, [activeResumeAfterLimit, contextSessionId, currentResumeSchedule]);
+  }, [activeResumeAfterLimit, contextSessionId, currentResumeSchedule, t]);
 
-  const resumeDescription = activeResumeAfterLimit === null
-    ? "예약 가능 여부 확인 중…"
-    : activeResumeAfterLimit.loading
-      ? "예약 가능 여부 확인 중…"
-      : activeResumeAfterLimit.error
-        ?? activeResumeAfterLimit.message
-        ?? (currentResumeSchedule
-          ? resumeScheduleMessage(currentResumeSchedule.run_at)
-          : activeResumeAfterLimit.eligibility?.eligible
-            ? activeResumeAfterLimit.eligibility.resets_at
-              ? `${resumeScheduleTime(activeResumeAfterLimit.eligibility.resets_at)} 해제 예정`
-              : null
-            : activeResumeAfterLimit.eligibility?.reason ?? null);
+  const resetsAt = activeResumeAfterLimit?.eligibility?.resets_at;
+  const resetTime = resetsAt
+    ? resumeScheduleTime(resetsAt, language)
+    : undefined;
+  const resumeDescription = !activeResumeAfterLimit || activeResumeAfterLimit.loading
+    ? t("ui.session.checkingSchedule")
+    : activeResumeAfterLimit.error
+      ?? activeResumeAfterLimit.message
+      ?? (currentResumeSchedule
+        ? resumeScheduleMessage(currentResumeSchedule.run_at, language, t)
+        : activeResumeAfterLimit.eligibility?.eligible
+          ? resetTime ? t("ui.session.limitResetsAt", { time: resetTime }) : null
+          : activeResumeAfterLimit.eligibility?.reason ?? null);
   const resumeExtraActions: SessionContextMenuExtraAction[] = [
     {
-      label: "리밋이 풀릴 때 재개",
+      label: t("ui.session.resumeAfterLimit"),
       closeOnClick: false,
       onClick: handleScheduleResumeAfterLimit,
       disabled: !activeResumeAfterLimit
@@ -250,11 +253,11 @@ export function SessionContextMenu({
       description: resumeDescription ?? undefined,
     },
     ...[{
-          label: "재개 예약 취소",
+          label: t("ui.session.cancelResume"),
           closeOnClick: false,
           onClick: handleCancelResumeAfterLimit,
           disabled: !currentResumeSchedule || (activeResumeAfterLimit?.busy ?? true),
-          description: currentResumeSchedule ? undefined : "취소할 재개 예약이 없습니다.",
+          description: currentResumeSchedule ? undefined : t("ui.session.noScheduledResume"),
         }],
   ];
   const menuExtraActions = [...extraActions, ...resumeExtraActions];
@@ -262,7 +265,7 @@ export function SessionContextMenu({
   const continueDisabledReason =
     contextMenu && onContinueSession
       ? getContinueSessionDisabledReason?.(contextMenu.sessionId) ?? null
-      : "이어 시작을 지원하지 않습니다.";
+      : t("ui.session.continueUnsupported");
 
   const handleCopyId = useCallback(() => {
     if (!contextMenu) return;
@@ -325,19 +328,19 @@ export function SessionContextMenu({
     await onDeleteSessions(sessionIds);
   }, [deleteDialog, onDeleteSessions]);
 
-  const moveReason = !onRequestMoveSession ? "폴더 이동을 지원하지 않습니다."
+  const moveReason = !onRequestMoveSession ? t("ui.session.moveUnsupported")
     : contextMenu ? getMoveSessionDisabledReason?.(contextMenu.sessionId) : null;
   const actions = [
-    {label:"세션 ID 복사",onClick:handleCopyId},
-    {label:"이 세션을 이어서 시작하기",onClick:handleContinueClick,
+    {label:t("ui.session.copyId"),onClick:handleCopyId},
+    {label:t("ui.session.continue"),onClick:handleContinueClick,
       disabled:!!continueDisabledReason,description:continueDisabledReason ?? undefined},
     ...menuExtraActions,
-    {label:"이름 변경",onClick:handleRenameClick,disabled:!onRenameSession,
-      description:!onRenameSession ? "이름 변경을 지원하지 않습니다." : undefined},
-    {label:"다른 폴더로 이동",onClick:handleMoveClick,disabled:!!moveReason,
+    {label:t("ui.session.rename"),onClick:handleRenameClick,disabled:!onRenameSession,
+      description:!onRenameSession ? t("ui.session.renameUnsupported") : undefined},
+    {label:t("ui.session.move"),onClick:handleMoveClick,disabled:!!moveReason,
       description:moveReason ?? undefined},
-    {label:"삭제",onClick:handleDeleteClick,disabled:!onDeleteSessions,className:"text-destructive",
-      description:!onDeleteSessions ? "삭제를 지원하지 않습니다." : undefined},
+    {label:t("ui.common.delete"),onClick:handleDeleteClick,disabled:!onDeleteSessions,className:"text-destructive",
+      description:!onDeleteSessions ? t("ui.session.deleteUnsupported") : undefined},
   ];
   return (
     <>
@@ -399,14 +402,21 @@ export function SessionContextMenu({
   );
 }
 
-function resumeScheduleMessage(runAt: string): string {
-  return `${resumeScheduleTime(runAt)} 재개 예약`;
+function resumeScheduleMessage(
+  runAt: string,
+  language: string | undefined,
+  t: ReturnType<typeof useTranslation>["t"],
+): string {
+  const time = resumeScheduleTime(runAt, language);
+  return time ? t("ui.session.resumeScheduled", { time }) : t("ui.session.scheduledResume");
 }
 
-function resumeScheduleTime(value: string): string {
+function resumeScheduleTime(value: string, language: string | undefined): string | undefined {
   const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "재개 예약";
-  const hour = String(date.getHours()).padStart(2, "0");
-  const minute = String(date.getMinutes()).padStart(2, "0");
-  return `${date.getMonth() + 1}월 ${date.getDate()}일 ${hour}:${minute}`;
+  if (!Number.isFinite(date.getTime())) return undefined;
+  const day = date.toLocaleDateString(language, { month: "short", day: "numeric" });
+  const time = date.toLocaleTimeString(language, language === "ko"
+    ? { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }
+    : { hour: "numeric", minute: "2-digit" });
+  return `${day} ${time}`;
 }

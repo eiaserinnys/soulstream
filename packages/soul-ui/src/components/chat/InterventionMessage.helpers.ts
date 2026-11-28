@@ -12,6 +12,7 @@
  * F-11 (2026-05-09, atom F-11): system 분기 신설.
  */
 
+import type { useTranslation } from "react-i18next";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { externalSenderDisplay, type ExternalSender } from "./externalSender";
 import { pickMessageAvatarUrl } from "./userAvatarSelectors";
@@ -35,6 +36,7 @@ const FALLBACK_USER = "\u{270B}"; // ✋ raised hand — intervention
 
 /** 분기 결정 + 모든 표시 필드 도출. 순수 함수. */
 export function computeInterventionDisplay(
+  t: ReturnType<typeof useTranslation>["t"],
   msg: ChatMessage,
   callerAvatarUrl: string | null | undefined,
   /** 에이전트 id → 중앙 초상 주소(없으면 빈 문자열). 노드 id로 주소를 만들지 않는다. */
@@ -70,7 +72,7 @@ export function computeInterventionDisplay(
     };
   }
 
-  const external = externalSenderDisplay(msg.callerInfo);
+  const external = externalSenderDisplay(msg.callerInfo, t);
   if (external) {
     return { isSystem: false, isAgent: false, displayName: external.name, displayId: null,
       portraitUrl: null, hasPortrait: false, fallbackEmoji: "", external };
@@ -79,7 +81,7 @@ export function computeInterventionDisplay(
   // ---- agent 분기 ----
   if (isAgent) {
     const agentInfo = msg.agentInfo!;
-    const agentName = agentInfo.agent_name ?? agentInfo.agent_id ?? "에이전트";
+    const agentName = agentInfo.agent_name ?? agentInfo.agent_id ?? t("ui.chat.agent");
     const displayId = `${agentName}@${agentInfo.agent_node}`;
     const portraitUrl = (agentInfo.agent_id ? resolvePortraitUrl(agentInfo.agent_id) : "") || null;
     return {
@@ -98,7 +100,7 @@ export function computeInterventionDisplay(
   const displayName =
     typeof callerName === "string" && callerName.length > 0
       ? callerName
-      : "개입";
+      : t("ui.chat.intervention");
   const portraitUrl = pickMessageAvatarUrl(
     msg.callerInfo,
     callerAvatarUrl ?? null,

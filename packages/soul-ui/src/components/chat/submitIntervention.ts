@@ -1,4 +1,5 @@
 import { appendAttachmentPathNotes } from "@soulstream/wire-schema/attachment-path-notes";
+import { dictionaries } from "@soulstream/i18n";
 import { extractErrorMessage } from "./submitErrors";
 import type { InterveneResponse } from "../../shared/api-types";
 import type { ReportContextItem } from '../../shared/persistent-report';
@@ -23,8 +24,8 @@ export interface SubmitInterventionResult {
 }
 
 export class SubmitInterventionHttpError extends Error {
-  constructor(message: string, readonly status: number) {
-    super(message);
+  constructor(readonly detail: string | undefined, readonly status: number) {
+    super(detail ?? dictionaries.ko.ui.chat.unknownError);
     this.name = "SubmitInterventionHttpError";
   }
 }
@@ -60,9 +61,9 @@ export async function submitIntervention(
   if (!response.ok) {
     const body = await response
       .json()
-      .catch(() => ({ detail: "알 수 없는 오류" }));
+      .catch(() => undefined);
     throw new SubmitInterventionHttpError(
-      extractErrorMessage(body, response.status),
+      body === undefined ? undefined : extractErrorMessage(body, response.status),
       response.status,
     );
   }

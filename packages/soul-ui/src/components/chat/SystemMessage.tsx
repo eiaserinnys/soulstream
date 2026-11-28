@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { memo } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { cn } from "../../lib/cn";
@@ -10,17 +11,18 @@ import { ManuscriptAgentMessageGroup } from "./ManuscriptAgentMessageGroup";
 import { useReportTimelineRow } from "./ReportTimelineRowSlot";
 
 export const SystemMessage = memo(function SystemMessage({ msg, presentation = "default" }: { msg: ChatMessage; presentation?: "default" | "manuscript" }) {
+  const { t } = useTranslation();
   const renderReportTimelineRow = useReportTimelineRow();
   if (msg.manuscriptAgentMessages) {
     return <ManuscriptAgentMessageGroup messages={msg.manuscriptAgentMessages} />;
   }
   const alignmentInset = presentation === "manuscript" ? "content" : "avatar";
   if (msg.reportTimeline) return renderReportTimelineRow?.(msg.reportTimeline, alignmentInset) ?? null;
-  if (msg.treeNodeType === "generation_started") return <LabeledDivider label={msg.contextReset ? "새 세대 · 문맥 초기화" : "새 세대"} alignmentInset={alignmentInset} />;
+  if (msg.treeNodeType === "generation_started") return <LabeledDivider label={msg.contextReset ? t("ui.chat.newGenerationReset") : t("ui.chat.newGeneration")} alignmentInset={alignmentInset} />;
   if (msg.treeNodeType === "persistent_jev_candidates") {
     const candidates = msg.jevCandidates ?? [];
     const lines = formatPersistentJevCandidates({ selected: candidates });
-    return <CollapsibleCaption title={`Jev 후보 ${candidates.length}`} align="end" alignmentInset={alignmentInset}>
+    return <CollapsibleCaption title={t("ui.chat.jevCandidates", { total: candidates.length })} align="end" alignmentInset={alignmentInset}>
       {lines.map((line, index) => <div className="min-w-0 truncate text-xs text-muted-foreground" key={`${index}-${line}`}>{line}</div>)}
     </CollapsibleCaption>;
   }

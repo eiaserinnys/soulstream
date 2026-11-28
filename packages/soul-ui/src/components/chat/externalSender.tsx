@@ -1,14 +1,15 @@
+import type { useTranslation } from "react-i18next";
 import { Link, Webhook } from 'lucide-react';
 import type { CallerInfo } from '@soulstream/wire-schema';
 
-export function externalSenderDisplay(caller: CallerInfo | undefined) {
+export function externalSenderDisplay(caller: CallerInfo | undefined, t: ReturnType<typeof useTranslation>["t"]) {
   if (caller?.source !== 'external') return null;
   const webhook = caller.transport === 'webhook';
   return {
-    prefix: '외부 연동',
+    prefix: t("ui.chat.externalConnection"),
     name: caller.display_name || '',
     icon: webhook ? 'webhook' as const : 'link' as const,
-    title: webhook ? '웹훅' : '접속 링크',
+    title: webhook ? t("ui.chat.webhook") : t("ui.chat.accessLink"),
   };
 }
 

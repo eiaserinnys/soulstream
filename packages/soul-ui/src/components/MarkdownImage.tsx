@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { isSvgImageSource, useHeicImageSource } from "../lib/image-source";
 
@@ -28,6 +29,7 @@ export function MarkdownImage({
   frameClassName?: string;
   loading?: "eager" | "lazy";
 }) {
+  const { t } = useTranslation();
   const [loadState, setLoadState] = useState<{
     src: string | undefined;
     status: "loading" | "loaded" | "error";
@@ -104,7 +106,7 @@ export function MarkdownImage({
     <div className={["chat-image-frame", frameClassName ?? ""].filter(Boolean).join(" ")}>
       {image}
       {loadStatus === "loading" && (
-        <span className="chat-image-status" role="status">이미지 불러오는 중…</span>
+        <span className="chat-image-status" role="status">{t("ui.attachment.imageLoading")}</span>
       )}
     </div>
   );

@@ -445,7 +445,7 @@ export function SearchModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className="max-w-xl" closeProps={{ "aria-label": t("admin.search.close") }}>
+      <DialogPopup className="max-w-xl">
         <DialogHeader>
           <DialogTitle>{t("admin.search.title")}</DialogTitle>
         </DialogHeader>

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { memo, useRef, useState } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { submitToolApproval } from "../../lib/input-request-actions";
@@ -15,6 +16,7 @@ export const ChatToolApproval = memo(function ChatToolApproval({
   sessionId: string;
   presentation?: "default" | "manuscript";
 }) {
+  const { t } = useTranslation();
   const [selected, setSelected] = useState<"approved" | "rejected" | null>(null);
   const [failureMessage, setFailureMessage] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -55,7 +57,7 @@ export const ChatToolApproval = memo(function ChatToolApproval({
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          도구 승인
+          {t("ui.chat.toolApproval")}
         </div>
         <div className="text-sm font-semibold leading-[1.5] text-foreground">{msg.toolName}</div>
         {msg.toolResult && (
@@ -71,7 +73,7 @@ export const ChatToolApproval = memo(function ChatToolApproval({
             "text-xs",
             finalDecision === "approved" ? "chat-tone-success-text" : "chat-tone-danger-text",
           )}>
-            {finalDecision === "approved" ? "승인됨" : "거부됨"}
+            {finalDecision === "approved" ? t("ui.chat.approved") : t("ui.chat.denied")}
             {msg.approvalMessage ? ` — ${msg.approvalMessage}` : ""}
           </div>
         ) : (
@@ -83,7 +85,7 @@ export const ChatToolApproval = memo(function ChatToolApproval({
                 onClick={() => handleDecision("rejected")}
                 className="h-auto rounded-full px-3.5 py-1.5 text-xs font-normal"
               >
-                거부
+                {t("ui.chat.deny")}
               </Button>
               <Button
                 variant="success"
@@ -91,7 +93,7 @@ export const ChatToolApproval = memo(function ChatToolApproval({
                 onClick={() => handleDecision("approved")}
                 className="h-auto rounded-full px-3.5 py-1.5 text-xs font-semibold"
               >
-                승인
+                {t("ui.chat.approve")}
               </Button>
             </div>
             {failureMessage && (

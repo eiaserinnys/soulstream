@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { HTMLAttributes, ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 
@@ -20,8 +21,9 @@ export function FrameLoading({
   className,
   ...props
 }: FrameLoadingProps) {
+  const { t } = useTranslation();
   const accessibleName =
-    typeof label === "string" && label.trim() ? label.trim() : "불러오는 중";
+    typeof label === "string" && label.trim() ? label.trim() : t("ui.common.loading");
 
   return (
     <div
