@@ -226,7 +226,14 @@ if (policy.allowedTools) {
   const canonical = aliases[name] || name;
   const tools = isSubagent ? policy.subagentTools : policy.allowedTools;
   if (name !== "call_mcp_tool" && tools.indexOf(canonical) < 0) deny("tool not allowed");
-  if (!isSubagent && name === "invoke_subagent" && (!policy.subagents || policy.subagents.indexOf(args.TypeName) < 0)) deny("subagent not allowed");
+  if (!isSubagent && name === "invoke_subagent") {
+    if (args.TypeName !== "research" || !policy.subagents || policy.subagents.indexOf(args.Role) < 0) {
+      deny('subagent not allowed: use TypeName "research" and Role with an allowed name: ' + (policy.subagents || []).join(", "));
+    }
+    if ((args.Workspace !== undefined && args.Workspace !== "inherit") || (args.Model !== undefined && args.Model !== "inherit")) {
+      deny("subagent not allowed: Workspace and Model must be omitted or inherit");
+    }
+  }
 }
 
 const WRITE_TOOLS = ["write_file", "write_to_file"];
