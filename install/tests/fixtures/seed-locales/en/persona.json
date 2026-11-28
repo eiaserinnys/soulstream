@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "lang": "en",
+  "chunk": "persona",
+  "entries": {
+    "seosoyoung.root": {
+      "title": "Fixture title",
+      "content": "Fixture content."
+    }
+  }
+}

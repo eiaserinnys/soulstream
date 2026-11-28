@@ -1,13 +1,12 @@
 // After the services are up: wait for them, create the default workspace folder, refresh the model presets.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readInstallerText } from '../seed/locales/installer-text.mjs';
 import { fail, httpRequest, log, readEnvValue, sleep, waitFor, withLogTails } from './lib.mjs';
 
 const WORKSPACE_FOLDER = '작업실';
 const DAILY_REVIEW_JOB = {
   idempotencyKey: 'clean-install-daily-review',
-  name: '일간 정리',
-  prompt: 'daily-review 스킬을 발동하여 지난 하루의 작업을 정리한다.',
   timezone: 'UTC',
   scheduleExpressions: ['0 9 * * *'],
   nodeId: 'local',
@@ -38,7 +37,7 @@ async function registerDailyReviewJob(ctx, headers) {
   const folder = (folders.json?.folders ?? []).find((item) => item.name === WORKSPACE_FOLDER);
   if (!folder) throw fail('The workspace folder was not found.');
   const created = await httpRequest(`${orchUrl(ctx)}/api/recurring-jobs`, {
-    method: 'POST', headers, body: { ...DAILY_REVIEW_JOB, folderId: folder.id },
+    method: 'POST', headers, body: { ...DAILY_REVIEW_JOB, ...readInstallerText(ctx.lang ?? 'ko').dailyReview, folderId: folder.id },
   });
   if (created.status !== 200 && created.status !== 201) {
     log(`Could not register the daily review recurring job (HTTP ${created.status}). Create it later in the recurring jobs settings tab.`);

@@ -306,6 +306,8 @@ printf 'orch=%s\\n' "$(read_env_value "$ROOT/.env.orch" DASHBOARD_ADMIN_PASSWORD
       assert.equal(jobRequests.length, 1, 'the paused daily review job is registered once');
       const job = JSON.parse(jobRequests[0].body);
       assert.equal(job.idempotencyKey, 'clean-install-daily-review');
+      assert.equal(job.name, '일간 정리');
+      assert.equal(job.prompt, 'daily-review 스킬을 발동하여 지난 하루의 작업을 정리한다.');
       assert.equal(job.enabled, false);
       assert.equal(job.agentId, 'seosoyoung');
       assert.equal(job.nodeId, 'local');

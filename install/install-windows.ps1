@@ -19,7 +19,8 @@ param(
     [string]$AdminPasswordFile = "",
     [string]$RepositoryUrl = "https://github.com/eiaserinnys/soulstream.git",
     [string]$AtomRepositoryUrl = "https://github.com/eiaserinnys/atom.git",
-    [switch]$NonInteractive
+    [switch]$NonInteractive,
+    [string]$Lang = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,9 +45,13 @@ function Write-Warn { param([string]$Message) Write-Host "   WARNING: $Message" 
 # $ErrorActionPreference = "Stop" whenever stderr is redirected or the host output is captured. Every native command
 # runs through these two with the preference relaxed; the exit code decides.
 function Invoke-Native {
-    param([string]$File, [string[]]$Arguments)
+    param([string]$File, [string[]]$Arguments, [switch]$InheritConsole)
     $ErrorActionPreference = "Continue"
-    & $File @Arguments 2>&1 | ForEach-Object { "$_" }
+    if ($InheritConsole) {
+        & $File @Arguments
+    } else {
+        & $File @Arguments 2>&1 | ForEach-Object { "$_" }
+    }
     if ($LASTEXITCODE -ne 0) { throw "$File $($Arguments -join ' ') failed with exit code $LASTEXITCODE." }
 }
 
@@ -317,7 +322,9 @@ if ($PublicUrl) { $common += @("--public-url", $PublicUrl) }
 if ($AtomPublicUrl) { $common += @("--atom-public-url", $AtomPublicUrl) }
 $prepare = @($setup, "prepare") + $common
 if ($AdminPasswordFile) { $prepare += @("--admin-password-file", (Resolve-Path -LiteralPath $AdminPasswordFile).Path) }
-Invoke-Native "node" $prepare
+if ($Lang) { $prepare += @("--lang", $Lang) }
+if ($NonInteractive) { $prepare += @("--non-interactive", "true") }
+Invoke-Native "node" $prepare -InheritConsole:(-not $NonInteractive)
 Remove-Item Env:\SOULSTREAM_PG_PASSWORD
 
 # ---- 7. Haniel in its own virtual environment ----

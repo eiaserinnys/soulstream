@@ -11,6 +11,8 @@ disable_xtrace
 ATOM_URL=http://127.0.0.1:4200
 ATOM_API_KEY_RE='^[A-Za-z0-9._~+/=-]+$'
 ATOM_SEED_WARNINGS=
+INSTALL_LANG=ko
+INSTALL_SOURCE=
 # Exported seed names that configuration reads from config/.atom-seed-map.json.
 ATOM_SEED_NAMES='skill_catalog domain_catalog common_rules common_rules_extra codex_rules claude_common_rules coding_common_rules coding_common_rules_extra seosoyoung_rules seosoyoung_general seosoyoung_skills seosoyoung_rules_pas seosoyoung_skills_pas seosoyoung_rules_extra_pas card_orchestrator_root'
 # Tests reassign these three after sourcing.
@@ -83,8 +85,9 @@ cleanup_temp_files() {
 }
 
 usage() {
-  printf 'Usage: install.sh [--backends claude,codex,antigravity] [--ref git-ref] [--atom-ref git-ref] [--worker-port port] [--public-url url] [--atom-public-url url] [--admin-password-file path | --set-admin-password] [--tailscale [--tailscale-auth-key-file path] [--tailscale-user login]] [--help]\n'
+  printf 'Usage: install.sh [--backends claude,codex,antigravity] [--lang language] [--ref git-ref] [--atom-ref git-ref] [--worker-port port] [--public-url url] [--atom-public-url url] [--admin-password-file path | --set-admin-password] [--tailscale [--tailscale-auth-key-file path] [--tailscale-user login]] [--help]\n'
   printf '  --backends  comma-separated list of claude, codex, antigravity (default: claude,codex)\n'
+  printf '  --lang  installation language: ko|en|ja|zh-Hans when available (default: saved language or system locale)\n'
   printf '  --worker-port  loopback port of the worker, 1024-65534; its MCP port is the next one (default: 4205, or the port of the previous install)\n'
   printf '  --public-url  address the browser opens the dashboard at, such as http://127.0.0.1:15200 (password mode; default: the current address, or http://127.0.0.1:5200)\n'
   printf '  --atom-public-url  address the browser opens atom at, such as http://127.0.0.1:14200 (password mode; default: the current address, or http://127.0.0.1:4200)\n'
@@ -171,6 +174,7 @@ resolve_worker_port() {
 parse_args() {
   disable_xtrace
   BACKENDS=claude,codex
+  REQUESTED_LANG=
   REF=
   REF_SET=false
   ATOM_REF=
@@ -193,7 +197,7 @@ parse_args() {
       --help) usage; exit 0 ;;
       --tailscale) TAILSCALE=true; shift ;;
       --set-admin-password) SET_ADMIN_PASSWORD=true; shift ;;
-      --backends|--ref|--atom-ref|--worker-port|--public-url|--atom-public-url|--admin-password-file|--tailscale-auth-key|--tailscale-auth-key-file|--tailscale-user)
+      --backends|--lang|--ref|--atom-ref|--worker-port|--public-url|--atom-public-url|--admin-password-file|--tailscale-auth-key|--tailscale-auth-key-file|--tailscale-user)
         if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then arg_error "$1 needs a value"; fi
         case "$1" in
           --ref) REF=$2; REF_SET=true ;;
@@ -202,6 +206,7 @@ parse_args() {
           --public-url) valid_origin "$2" || arg_error "invalid --public-url value \"$2\": use http:// or https:// followed by a host and an optional port, without a path"; PUBLIC_URL=$2 ;;
           --atom-public-url) valid_origin "$2" || arg_error "invalid --atom-public-url value \"$2\": use http:// or https:// followed by a host and an optional port, without a path"; ATOM_PUBLIC_URL_OPT=$2 ;;
           --backends) BACKENDS=$2 ;;
+          --lang) REQUESTED_LANG=$2 ;;
           --admin-password-file) ADMIN_PASSWORD_FILE=$2 ;;
           --tailscale-auth-key) TAILSCALE_AUTH_KEY=$2 ;;
           --tailscale-auth-key-file) TAILSCALE_AUTH_KEY_FILE=$2 ;;
@@ -641,13 +646,26 @@ pas_disallowed_tools_yaml() {
 YAML
 }
 
+installer_text_path() {
+  local install_dir=$INSTALL_SOURCE
+  if [[ -z "$install_dir" ]]; then install_dir=$(dirname -- "${BASH_SOURCE[0]}") || return 1; fi
+  printf '%s/seed/locales/%s/installer.json' "$install_dir" "$INSTALL_LANG"
+}
+
 render_agents() {
   local home=$1 root=$2 first=${BACKENDS%%,*} backend name rules
+  local profile_names
+  profile_names=$(jq -er --arg lang "$INSTALL_LANG" '
+    .profiles | [.seosoyoung, ."seosoyoung-pas", ."card-orchestrator"] |
+    .[] | if $lang == "ko" then . else tojson end
+  ' "$(installer_text_path)") || return 1
+  local -a localized_names
+  mapfile -t localized_names <<< "$profile_names"
   rules=$(backend_rules_context "$first")
   printf 'agents:\n'
   cat <<YAML
   - id: seosoyoung
-    name: 서소영
+    name: ${localized_names[0]}
     backend: ${first}
     default_preset: $(backend_preset "$first")
     workspace_dir: ${home}/workspace
@@ -665,7 +683,7 @@ YAML
   atom_contexts_yaml common_rules:5 common_rules_extra:index $rules seosoyoung_rules:5 seosoyoung_skills:1
   cat <<YAML
   - id: seosoyoung-pas
-    name: 서소영 (PAS)
+    name: ${localized_names[1]}
     backend: ${first}
     default_preset: $(backend_preset "$first")
     workspace_dir: ${home}/workspace
@@ -682,7 +700,7 @@ YAML
   if has_backend claude; then
     cat <<YAML
   - id: card-orchestrator
-    name: 카드 오케스트레이터
+    name: ${localized_names[2]}
     backend: claude
     default_preset: $(jq -er '.profiles["card-orchestrator"]' <<< "$INSTALL_DEFAULTS")
     workspace_dir: ${home}/workspace
@@ -834,7 +852,7 @@ ENV
   fi
   rm -f "$fresh_orch" "$fresh_worker"
   work=$(mktemp -d)
-  render_agents "$home" "$root" > "$work/agents"
+  render_agents "$home" "$root" > "$work/agents" || { rm -rf "$work"; return 1; }
   cat > "$work/mcp-registry" <<YAML
 servers:
   - id: soulstream
@@ -1263,6 +1281,18 @@ check_repositories() {
   check_repository atom "$atom_root" "$ATOM_REPO_URL" "$ATOM_REF" "$ATOM_REF_SET" || return 1
   protect_atom_backup "$root"
 }
+
+resolve_install_language() (
+  local root=$1 scratch dir=install/seed/locales
+  local -a args=("$root/config")
+  if [[ -n "$REQUESTED_LANG" ]]; then args+=("$REQUESTED_LANG"); fi
+  scratch=$(mktemp -d) || exit 1
+  trap 'rm -rf -- "$scratch"' EXIT
+  as_soul git -C "$root" archive "${REPO_TARGET[soulstream]}" \
+    "$dir/installer-language.mjs" "$dir/languages.mjs" "$dir/languages.json" |
+    tar -xf - -C "$scratch" || exit 1
+  node "$scratch/$dir/installer-language.mjs" "${args[@]}"
+)
 # Prints one repository's entry for install-state.json; missing commits are null.
 repo_state_json() {
   local name=$1 path=${REPO_PATH[$1]-} current=
@@ -1488,7 +1518,7 @@ load_atom_instructions() {
   local root=$1 output status=0 line
   mkdir -p "$root/config"
   chown soulstream:soulstream "$root/config"
-  output=$(as_soul node "$root/install/seed/load_atom_seed.mjs" --atom-url "$ATOM_URL" --password-file "$root/.admin-password" --state-dir "$root/config") || status=$?
+  output=$(as_soul node "$root/install/seed/load_atom_seed.mjs" --atom-url "$ATOM_URL" --password-file "$root/.admin-password" --state-dir "$root/config" --lang "$INSTALL_LANG") || status=$?
   if [[ -n "$output" ]]; then printf '%s\n' "$output"; fi
   while IFS= read -r line; do
     if [[ "$line" == 'WARNING: '* ]]; then ATOM_SEED_WARNINGS+="${line#WARNING: }"$'\n'; fi
@@ -1595,7 +1625,7 @@ UNIT
 register_daily_review_job() {
   local folder_id body status
   folder_id=$(curl -fsS "$@" http://127.0.0.1:5200/api/folders | jq -r '[.folders[] | select(.name=="작업실")][0].id') || return 1
-  body=$(jq -n --arg folder "$folder_id" '{idempotencyKey: "clean-install-daily-review", name: "일간 정리", prompt: "daily-review 스킬을 발동하여 지난 하루의 작업을 정리한다.", timezone: "UTC", scheduleExpressions: ["0 9 * * *"], nodeId: "local", agentId: "seosoyoung", modelPreset: null, folderId: $folder, enabled: false}') || return 1
+  body=$(jq --arg folder "$folder_id" '{idempotencyKey: "clean-install-daily-review", name: .dailyReview.name, prompt: .dailyReview.prompt, timezone: "UTC", scheduleExpressions: ["0 9 * * *"], nodeId: "local", agentId: "seosoyoung", modelPreset: null, folderId: $folder, enabled: false}' "$(installer_text_path)") || return 1
   status=$(curl -s -o /dev/null -w '%{http_code}' "$@" -X POST -H 'Content-Type: application/json' --data "$body" http://127.0.0.1:5200/api/recurring-jobs)
   if [[ "$status" != 200 && "$status" != 201 ]]; then
     printf 'Could not register the daily review recurring job (HTTP %s). Create it later in the recurring jobs settings tab.\n' "$status" >&2
@@ -1759,7 +1789,9 @@ finish_message() {
     printf 'Generated administrator password (for Soulstream and atom): %s\n' "$ADMIN_PASSWORD" >&4
     exec 4>&-
   fi
-  printf 'PAS: once you connect a coding agent, the dashboard creates a default 서소영 (PAS) persistent session.\n'
+  local pas_name
+  pas_name=$(jq -er '.profiles."seosoyoung-pas"' "$(installer_text_path)") || return 1
+  printf 'PAS: once you connect a coding agent, the dashboard creates a default %s persistent session.\n' "$pas_name"
   if [[ -n "${ATOM_SEED_WARNINGS:-}" ]]; then
     printf 'Atom instructions:\n'
     while IFS= read -r line; do
@@ -1841,8 +1873,11 @@ run_install() {
   run_step 'Installing Node.js' install_node
   run_step 'Installing selected CLIs' install_clis
   run_step 'Checking repositories' check_repositories "$root" "$atom_root"
+  STEP='Choosing installation language'
+  INSTALL_LANG=$(resolve_install_language "$root")
   run_step 'Stopping services' stop_services "$root"
   run_step 'Checking out revisions' checkout_revisions
+  INSTALL_SOURCE=$root/install
   run_step 'Preparing secrets' setup_secrets "$root" "$atom_root"
   run_step 'Preparing databases' setup_database
   run_step 'Building atom' build_atom "$atom_root"
