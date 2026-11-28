@@ -237,7 +237,7 @@ export function SessionSuccessionModal({
         eventCount: 0,
         createdAt: now,
         updatedAt: now,
-        displayName: `${folderTitle} 세션`, // i18n-ignore: persisted session name
+        displayName: t("sessions.createdSessionTitle", { folder: folderTitle }),
         nodeId: result.nodeId ?? selectedNodeId,
         agentId: selectedAgentId,
         agentName: selectedAgent?.name ?? selectedAgentId,

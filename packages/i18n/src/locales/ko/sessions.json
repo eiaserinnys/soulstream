@@ -31,6 +31,7 @@
   "consentLifetime": "30일 안에 쓰면 계속 이어짐",
   "consentLoadFailed": "동의를 불러오지 못했습니다.",
   "continuePrevious": "이전 세션 이어받기",
+  "createdSessionTitle": "{{folder}} 세션",
   "copyFolderId": "폴더 ID 복사",
   "copyPageId": "페이지 ID 복사",
   "default": "기본값",

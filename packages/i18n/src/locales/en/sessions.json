@@ -31,6 +31,7 @@
   "consentLifetime": "Use within 30 days to stay connected",
   "consentLoadFailed": "Couldn't load the consent request.",
   "continuePrevious": "Continue a previous session",
+  "createdSessionTitle": "{{folder}} session",
   "copyFolderId": "Copy folder ID",
   "copyPageId": "Copy page ID",
   "default": "Default",
