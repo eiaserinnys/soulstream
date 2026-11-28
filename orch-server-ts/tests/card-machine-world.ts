@@ -108,7 +108,7 @@ export async function createCardMachineWorld() {
       case "HUMAN_MESSAGE":await cards.resumeBlockedCardOnHumanInput({cardId,expectedVersion:(await row()).version});return;
       case "HUMAN_COMMENT":await cards.addComment({...human,cardId,body:"이어갑니다"});return;
       case "AGENT_COMMENT":await cards.addComment({...await agent(),cardId,body:"확인했습니다"});return;
-      case "REQUEST_REVIEW":await cards.requestCardReview({...await agent(),cardId,ask:"결과를 확인해 주세요"});return;
+      case "REQUEST_REVIEW":await cards.requestCardReview({...await agent(),cardId,ask:"결과를 확인해 주세요",report:"결과 보고"});return;
       case "START_ADMITTED_WORK":{
         const d=(await h.sql`SELECT * FROM card_orchestration_dispatches WHERE card_id=${cardId} AND state='admitted'`)[0]!;
         await h.sql`UPDATE system_settings SET value='{"enabled":true}' WHERE setting_key='card_orchestration'`;

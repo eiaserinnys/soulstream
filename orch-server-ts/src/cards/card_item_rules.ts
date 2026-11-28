@@ -229,10 +229,10 @@ export function checkCardReviewAsk(ask:string|undefined):string|undefined {
 }
 
 /** Formatting accepts the checked value and never repeats the input validation. */
-export function reviewCardNowFromCheckedAsk(current:CardNow|null,checkedAsk:string|undefined,at:string,sessionId:string|null):CardNow|null {
-  if (checkedAsk === undefined) return current;
+export function reviewCardNowFromCheckedAsk(_current:CardNow|null,checkedAsk:string|undefined,at:string,sessionId:string|null):CardNow|null {
+  if (checkedAsk === undefined) return null;
   return {
-    text: current?.text ?? checkedAsk,
+    text: "",
     turn: "user",
     ask: checkedAsk,
     updatedAt: at,

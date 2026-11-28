@@ -8,15 +8,15 @@ import { permitted, inside, any, fact } from './card_decision_guards.js';
 export const COMMAND_LABELS:Record<CardDecisionCommand,string>={CREATE:'카드를 만든다',SET_STATUS:'상태를 옮긴다',REQUEST_REVIEW:'검수를 요청한다',HUMAN_INPUT:'사용자가 담당에게 말한다',ASK_QUESTION:'질문을 올린다',ANSWER_QUESTION:'질문에 답한다',WITHDRAW_QUESTION:'질문을 철회한다',ADD_COMMENT:'커멘트를 남긴다',START_WORK:'작업 착수를 확인한다',CONFIRM_EXECUTION:'서버가 실행을 확인한다',DISPATCH:'서버가 실행을 배정한다',BLOCK_FOR_LIMIT:'현재 담당의 한도 종료를 기록한다',RESUME_SHORT_LIMIT:'짧은 한도 시각이 되어 잇는다',RESUME_LONG_LIMIT:'시각 없는 한도 예약을 잇는다',RESUME_VERIFICATION:'검증 시각이 되어 잇는다',NOTE_MISSING:'담당 에이전트 없음을 적는다',BULK_SET_STATUS:'여러 카드의 상태를 옮긴다',MERGE_SOURCE:'시작 전 카드를 합쳐 닫는다',UPDATE_UNSTARTED:'시작 전 카드를 고친다',SAVE_EXECUTION_SETTINGS:'실행 설정을 저장한다',PATCH_CARD_CONTROL:'담당과 보관을 고친다',REGISTER_REPLACEMENT:'등록된 새 담당으로 바꾼다'};
 export const COMMAND_RULES:Partial<Record<CardDecisionCommand,string>>={
  CREATE:'queue 입력에 따라 todo 또는 queued로 만들고 전달한 담당을 기록한다. 새 카드는 활성 상태이며 queued이면 새 대기열 순서 키를 쓴다.',
- REQUEST_REVIEW:'항목이 있으면 ask가 필요하며, agent는 현재 담당이거나 담당 확보 후보여야 한다. review로 옮기고 완료 정보, 대기열 순서와 예약을 지우며 ask가 있으면 검수 요청 상황판을 쓴다.',
+ REQUEST_REVIEW:'항목이 있으면 ask가 필요하며, agent는 현재 담당이거나 담당 확보 후보여야 한다. review로 옮기고 완료 정보, 대기열 순서와 예약을 지우며 옛 상황판을 지우고 ask가 있으면 text를 빈 문자열로 두고 사용자 차례와 ask만 남긴다.',
  START_WORK:'agent 세션의 오케스트레이션 목적이 아닌 유효한 현재 실행이 필요하며, 자동 실행의 영수증이 있으면 일치하는 fenced admission도 확인한다. 현재 담당이나 담당 확보 후보 또는 검증된 자동 실행만 running으로 옮기고 완료 정보, 대기열 순서와 예약을 지운다.',
- BULK_SET_STATUS:'agent 세션만 todo, queued, on_hold, cancelled를 요청할 수 있고 사람 담당 카드는 거절하며, 담당 세션이 없으면 담당 확보 후보를 확인한다. 담당 세션이 있는 카드는 조회 실패, 카드의 running, 담당의 running 또는 initializing을 거절하고 나머지 유휴 담당은 on_hold와 cancelled만 허용한다.',
+ BULK_SET_STATUS:'agent 세션만 todo, queued, on_hold, cancelled를 요청할 수 있고 사람 담당 카드는 거절하며, 담당 세션이 없으면 담당 확보 후보를 확인한다. 담당 세션이 있는 카드는 조회 실패, 카드의 running, 담당의 running 또는 initializing을 거절하고 나머지 유휴 담당은 on_hold와 cancelled만 허용한다. 완료, 취소, 보류로 옮기면 상황판을 지운다.',
  MERGE_SOURCE:'보관되지 않고 사람 담당이나 연결된 담당 세션이 없으며 todo, queued, on_hold인 카드만 합치고 미확인 실행 요청이 있으면 거절한다. 원본을 cancelled로 옮기고 완료 정보, 대기열 순서와 예약을 지우며 합친 대상 안내를 상황판에 남긴다.',
  UPDATE_UNSTARTED:'보관되지 않고 사람 담당이나 연결된 담당 세션이 없으며 todo, queued, on_hold인 카드만 고칠 수 있고 미확인 실행 요청이 있으면 거절한다. 요청한 필드를 저장하며 agent 입력이 있으면 에이전트 담당으로 바꾸고 카드 상태는 보존한다.',
  SAVE_EXECUTION_SETTINGS:'미확인 실행 요청이나 연결된 담당 세션이 있으면 거절한다. 요청한 실행 설정과 선택한 에이전트 담당을 저장하고 에이전트 입력이 없으면 담당을 비우며, 폴더가 달라지면 먼저 이동하고 카드 상태는 보존한다.',
  REGISTER_REPLACEMENT:'등록 예약에 기록된 이전 담당과 현재 담당이 일치하지 않으면 거절한다. 새 세션을 담당으로 연결하고 한도 예약을 지우며, 한도 예약이 있었고 별도 now 쓰기가 없으면 담당 교체 안내를 남기되 상태와 검증 예약은 보존한다.',
  NOTE_MISSING:'현재 상태를 제한하지 않고 blocked_detail에 「담당 에이전트 없음」을 쓴다. queued일 때는 담당 없음 하위 상태로 표시하고 담당, 완료 정보와 대기열 순서는 보존한다.',
- SET_STATUS:'agent는 현재 담당이거나 담당 확보 후보이면 상태를 바꿀 수 있고, 담당 종류가 사람이나 세션이 아닌 카드는 다른 agent 세션도 todo, queued, on_hold, cancelled로 옮길 수 있다. 담당 확보 후보는 담당 세션 없이 에이전트로만 배정된 카드에 연결된 같은 에이전트의 세션이며, 같은 카드에 연결된 호출자 세션이 없어야 한다. 검증 대기는 담당 세션과 유효한 wake_at과 waiting_for가 필요하다. 검수 대기 카드는 그 카드를 감독하는 영구 세션도 완료로 옮길 수 있다. 같은 done 재지정도 완료 정보를 다시 쓰고 같은 queued 재지정도 새 대기열 순서 키를 요청한다.',
+ SET_STATUS:'agent는 현재 담당이거나 담당 확보 후보이면 상태를 바꿀 수 있고, 담당 종류가 사람이나 세션이 아닌 카드는 다른 agent 세션도 todo, queued, on_hold, cancelled로 옮길 수 있다. 담당 확보 후보는 담당 세션 없이 에이전트로만 배정된 카드에 연결된 같은 에이전트의 세션이며, 같은 카드에 연결된 호출자 세션이 없어야 한다. 검증 대기는 담당 세션과 유효한 wake_at과 waiting_for가 필요하다. 검수 대기 카드는 그 카드를 감독하는 영구 세션도 완료로 옮길 수 있다. 완료, 취소, 보류로 옮기면 상황판을 지운다. 같은 done 재지정도 완료 정보를 다시 쓰고 같은 queued 재지정도 새 대기열 순서 키를 요청한다.',
  HUMAN_INPUT:'보관되지 않은 세션 담당의 검증 대기 또는 한도 아닌 막힘을 재개하고 열린 질문을 모두 닫는다.',
  ASK_QUESTION:'다른 세션 담당 여부를 확인한다. 새 질문이면 질문 행을 추가하고 질문 막힘으로 옮기며 완료 정보와 대기열 순서를 지운다. question_id가 있으면 같은 카드의 열린 질문만 제자리에서 고치고 카드 상태와 예약은 바꾸지 않는다.',
  ANSWER_QUESTION:'사람만 열린 질문에 답한다. 마지막 열린 질문이고 질문 막힘일 때만 실행 중으로 옮긴다. 완료 뒤 늦은 답은 상태를 보존한다.',
@@ -45,6 +45,7 @@ function patchExtras(c:CardDecisionCommand,target:string,extra:DecisionAction[]=
  const general=['SET_STATUS','BULK_SET_STATUS','REQUEST_REVIEW','HUMAN_INPUT'].includes(c);
  const actions:DecisionAction[]=[mark('writeStatus'),write({blocked_detail:['question','limit','noReport','other'].includes(target)?bind('command.blockedDetail.nullable'):literal(null)}),...extra];
  if(general)actions.push(target==='done'?complete():clearCompletion());
+ if(['SET_STATUS','BULK_SET_STATUS'].includes(c)&&['done','cancelled','hold'].includes(target))actions.push(write({now:literal(null)}));
  if(['ASK_QUESTION','START_WORK','CONFIRM_EXECUTION','MERGE_SOURCE'].includes(c))actions.push(clearCompletion());
  if(general)actions.push(write({queue_position_key:target==='queued'?bind('queue.new'):target==='limit'?bind('card.queue_position_key'):literal(null)}));
  if(['ASK_QUESTION','START_WORK','CONFIRM_EXECUTION','RESUME_SHORT_LIMIT','RESUME_VERIFICATION','MERGE_SOURCE'].includes(c))actions.push(write({queue_position_key:literal(null)}));
@@ -120,7 +121,7 @@ function augment(region:string,c:CardDecisionCommand,condition:any,actions:Decis
 }
 // Symbolic writes which do not follow directly from a region target.
 // Conditional targetless transitions live in their effect region, separate from verdict priority.
-put('question','REQUEST_REVIEW',undefined,[fact('hasAsk')],[write({now:bind('formatted.review')})]);
+put('question','REQUEST_REVIEW',undefined,[],[write({now:bind('formatted.review')})]);
 for(const c of ['PATCH_CARD_CONTROL','SAVE_EXECUTION_SETTINGS','UPDATE_UNSTARTED','REGISTER_REPLACEMENT'] as const)verdictExtras[c]!.push({type:'spreadControl',params:{stage:'state'}});
 for(const c of ['PATCH_CARD_CONTROL','SAVE_EXECUTION_SETTINGS','REGISTER_REPLACEMENT','CONFIRM_EXECUTION'] as const)
  augment('archive',c,and([fact('assignmentChanged'),any('r_limit','r_longLimit'),not(fact('hasNow'))]),[write({now:bind('formatted.replacement')})]);

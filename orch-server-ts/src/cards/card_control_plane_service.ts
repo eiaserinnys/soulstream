@@ -22,7 +22,7 @@ import { normalizeAttachmentLegacyPath, attachmentScopeFromRegistrationScope } f
 import { createCardAttachmentPreparer, type CardAttachmentReusableAsset, type CardAttachmentSourceStoreDeps } from "../attachments/card_attachment_source_import.js";
 import { mergeCardSourceAttachmentRefs, resolveCardLegacySourceRefsTx, type CardLegacyLocation } from "./card_attachment_legacy_refs.js";
 import { applyCardMoveTx } from "./control_plane/card_move.js";
-import { readAssignedCardContext } from "./assigned_card_context.js";
+import { findDirectInputCardId, readAssignedCardContext } from "./assigned_card_context.js";
 import { readSupervisedCardContext } from "./supervised_card_context.js";
 import {
   parseCardReference,
@@ -86,7 +86,7 @@ type CreateCardParams = FolderActorParams & {
   dependsOn?: string[];
   allowedFolderIds?: readonly string[] | null;
 };
-type AddCommentParams = CardMutationParams & { body:string; kind?:"comment" | "spoken"; mode?:"spoken" | "reply"; itemId?:number; questionId?:string };
+type AddCommentParams = CardMutationParams & { body:string; kind?:"comment" | "spoken"; mode?:"spoken" | "reply"; itemId?:number; questionId?:string; alreadyDelivered?:boolean };
 /** Path attachments already turned into R2 assets before the create transaction ran. */
 type PreparedCardAttachments = { refs: AttachmentRef[]; skip: CardLegacyLocation[] };
 type CardCommentRow = NonNullable<Awaited<ReturnType<CardRepository["getComment"]>>>;
@@ -125,6 +125,7 @@ export class CardControlPlaneService {
     });
   }
   getAssignedCardContext(sessionId: string) { return readAssignedCardContext(this.repoSql,sessionId); }
+  getDirectInputCardId(sessionId: string) { return findDirectInputCardId(this.repoSql,sessionId); }
   getSupervisedCardContext(params: { sessionId: string; folderIds: string[] | null; cardLimit: number; questionLimit: number }): Promise<SupervisedCardSnapshot> {
     return readSupervisedCardContext(this.repoSql, params);
   }
@@ -494,6 +495,7 @@ export class CardControlPlaneService {
     });
   }
   async addComment(params: AddCommentParams) {
+    if (params.actorKind === "agent" && params.mode === undefined && params.kind === undefined) params = { ...params, mode: "reply" };
     const existing=params.idempotencyKey ? await this.repo.getOperationByIdempotencyKey(params.idempotencyKey) : null;
     const existingCommentId=existing?.operation_type === "add_card_comment" && existing.target_kind === "card" && existing.target_id === params.cardId
       && typeof existing.payload_json.comment_id === "string" ? existing.payload_json.comment_id : null;
@@ -693,7 +695,7 @@ export class CardControlPlaneService {
     await this.patchDecisionWrites(sql,card,claim,params,eventId);
     await this.insertCommentTx(sql,card,params,{id:commentId,authorKind:reply ? "agent" : "user",
       authorId:external || reply ? null : params.actorUserId ?? null,sessionId:external ? null : params.actorSessionId,
-      kind,body:params.body,itemId:params.itemId ?? null,questionId:params.questionId ?? null});
+      kind,body:params.body,itemId:params.itemId ?? null,questionId:params.questionId ?? null,alreadyDelivered:params.alreadyDelivered});
     await this.patchDecisionWrites(sql,card,writes.filter(write=>write.stage!=='claim'),params,eventId);
     const close=writes.find(write=>write.kind==='closeQuestions');
     if(close)return this.closeOpenQuestionsTx(sql,card.id,String(close.fields.withdrawal_reason));
@@ -702,13 +704,13 @@ export class CardControlPlaneService {
   /** 커멘트 본문의 참조를 걷어 attachment_refs를 만들고 한 줄을 넣는다. 적용 순서는 호출자가 정한다. */
   private async insertCommentTx(sql:RepositorySql,card:CardRow,params:FolderActorParams,
     comment:{id:string;authorKind:"agent" | "user";authorId:string | null;sessionId:string | null;
-      kind:"comment" | "spoken" | "note";body:string;itemId:number | null;questionId:string | null}) {
+      kind:"comment" | "spoken" | "note";body:string;itemId:number | null;questionId:string | null;alreadyDelivered?:boolean}) {
     const existingRefs=attachmentRefsOf(card.attachment_refs);
     await validateCardSourceRefsTx(sql,{cardId:card.id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:comment.body,existingRefs});
     const legacyRefs=await resolveCardLegacySourceRefsTx(sql,{cardId:card.id,assigneeSessionId:card.assignee_session_id,actor:params,body:comment.body,format:"markdown"});
     const refs=mergeCardSourceAttachmentRefs(collectCardAttachmentRefs({request:comment.body,attachments:[],items:card.items ?? [],previousRefs:existingRefs,previousItems:card.items ?? []}),legacyRefs);
-    await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,item_id,question_id,attachment_refs)
-      VALUES(${comment.id},${card.id},${comment.authorKind},${comment.authorId},${comment.sessionId},${comment.kind},${comment.body},${comment.itemId},${comment.questionId},${sql.json(refs)})`;
+    await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,item_id,question_id,attachment_refs,delivered_at)
+      VALUES(${comment.id},${card.id},${comment.authorKind},${comment.authorId},${comment.sessionId},${comment.kind},${comment.body},${comment.itemId},${comment.questionId},${sql.json(refs)},${comment.alreadyDelivered ? new Date() : null})`;
   }
   /** 같은 idempotency_key 재시도에서 결과 보고 커멘트를 다시 만들지 않도록 기존 작업의 id를 다시 쓴다. */
   private async reportCommentId(params:CardMutationParams):Promise<string> {

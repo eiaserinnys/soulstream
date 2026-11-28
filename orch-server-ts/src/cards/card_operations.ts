@@ -58,12 +58,11 @@ export const cardOperationSchemas={
   reorder_card_queue:mutation.extend({ afterCardId:id.nullable().optional() }),
   add_card_report:append.extend({ title:id,format:z.enum(["markdown","html"]),body:z.string() }),
   update_card_brief:mutation.extend({ brief:z.string() }),
-  add_card_comment:append.extend({ body:z.string(),kind:z.enum(["comment","spoken"]).optional(),mode:z.enum(["spoken","reply"]).optional(),itemId:itemId.optional(),questionId:id.optional() })
+  add_card_comment:append.extend({ body:z.string(),kind:z.enum(["comment","spoken"]).optional(),mode:z.literal("reply").optional(),itemId:itemId.optional(),questionId:id.optional() })
     .strict().superRefine((value,ctx)=>{
       if (value.questionId === undefined) return;
       if (value.itemId !== undefined) ctx.addIssue({code:"custom",path:["itemId"],message:"질문 글타래에는 항목을 함께 줄 수 없습니다"});
       if (value.kind === "spoken") ctx.addIssue({code:"custom",path:["kind"],message:"질문 글타래에는 spoken을 쓸 수 없습니다"});
-      if (value.mode === "spoken") ctx.addIssue({code:"custom",path:["mode"],message:"질문 글타래에는 spoken을 쓸 수 없습니다"});
     }),
   ask_card_question:append.extend({ text:id,title:cardQuestionTitleSchema.optional(),kind:cardQuestionKindSchema.optional(),
     options:cardQuestionOptionsInputSchema.optional(),attachments:cardQuestionAttachmentsSchema.optional(),questionId:id.optional() })
@@ -77,7 +76,7 @@ export const cardOperationSchemas={
   update_card_now:append.extend({ now:z.string(),turn:z.enum(["agent","user","outside"]),ask:z.string().optional() }),
   set_card_depends_on:append.extend({ dependsOn:z.array(id).max(10) }),
   add_card_note:append.extend({ text:z.string() }),
-  request_card_review:append.extend({ ask:z.string().optional(),report:z.string().optional() }),
+  request_card_review:append.extend({ ask:z.string().optional(),report:z.string().refine(value=>value.trim().length>0 && [...value.trim()].length<=2000).optional() }),
 } as const;
 export type CardOperation=keyof typeof cardOperationSchemas;
 /** 답 operation은 mode가 있으면 그 꼴의 엄격 schema로, 없으면 옛 꼴 그대로 읽는다. */
@@ -108,7 +107,10 @@ export async function executeCardOperation(service:CardControlPlaneService,opera
   const userPatch=userFields && operation === "update_card";
   if (userPatch && typeof body === "object" && body !== null && Object.hasOwn(body,"snoozedUntil"))
     body={ ...body,snoozedUntil:parseSnoozedUntil((body as Record<string,unknown>).snoozedUntil) };
-  const parsed=operation === "answer_card_question" ? parseCardQuestionAnswer(body) : (userPatch ? updateCardUserSchema : cardOperationSchemas[operation]).strict().parse(body);
+  const schema = operation === "request_card_review" && actor.actorKind === "agent"
+    ? cardOperationSchemas.request_card_review.extend({ report:cardOperationSchemas.request_card_review.shape.report.unwrap() })
+    : userPatch ? updateCardUserSchema : cardOperationSchemas[operation];
+  const parsed=operation === "answer_card_question" ? parseCardQuestionAnswer(body) : schema.strict().parse(body);
   if (operation === "add_card_comment") {
     const common={ ...actor,cardId:id.parse(cardId) };
     const comment=await service.addComment({ ...common,...cardOperationSchemas.add_card_comment.parse(parsed) });

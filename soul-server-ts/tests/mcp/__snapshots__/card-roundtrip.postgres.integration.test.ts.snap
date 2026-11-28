@@ -38,18 +38,18 @@ exports[`card orchestrator MCP roundtrip > preserves brief success 1`] = `
 }"
 `;
 
-exports[`card orchestrator MCP roundtrip > preserves comment default spoken 1`] = `
+exports[`card orchestrator MCP roundtrip > preserves comment default reply 1`] = `
 "{
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"id\\": \\"<random-id>\\",\\n  \\"kind\\": \\"spoken\\",\\n  \\"authorKind\\": \\"user\\",\\n  \\"createdAt\\": \\"<time>\\"\\n}"
+      "text": "{\\n  \\"id\\": \\"<random-id>\\",\\n  \\"kind\\": \\"comment\\",\\n  \\"authorKind\\": \\"agent\\",\\n  \\"createdAt\\": \\"<time>\\"\\n}"
     }
   ],
   "structuredContent": {
     "id": "<random-id>",
-    "kind": "spoken",
-    "authorKind": "user",
+    "kind": "comment",
+    "authorKind": "agent",
     "createdAt": "<time>"
   }
 }"

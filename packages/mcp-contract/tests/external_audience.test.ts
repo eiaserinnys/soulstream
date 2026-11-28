@@ -123,3 +123,21 @@ test("invariant detects each forbidden class even with an explicit false hint", 
     { name: "example", config: { inputSchema: {}, annotations: { destructiveHint: true } } },
   ]) assert.throws(() => assertPublicTools([{ ...definition, audience: "all" }]));
 });
+
+test("review requires a nonblank report", () => {
+  const review = z.object(cardTools.request_card_review.config.inputSchema).strict();
+  assert.equal(review.safeParse({ card_id: "card-1" }).success, false);
+  assert.equal(review.safeParse({ card_id: "card-1", report: "   " }).success, false);
+  assert.equal(review.safeParse({ card_id: "card-1", report: "완료" }).success, true);
+});
+test("comment rejects spoken mode", () => {
+  const comment = z.object(cardTools.add_card_comment.config.inputSchema).strict();
+  assert.equal(comment.safeParse({ card_id: "card-1", text: "안내", mode: "spoken" }).success, false);
+  assert.equal(comment.safeParse({ card_id: "card-1", text: "안내" }).success, true);
+});
+
+test("external review can omit a report while internal review requires it", () => {
+  const external = z.object(cardTools.request_card_review.externalInputSchema).strict();
+  assert.equal(external.safeParse({ card_id: "card-1" }).success, true);
+  assert.equal(external.safeParse({ card_id: "card-1", report: "보고" }).success, true);
+});

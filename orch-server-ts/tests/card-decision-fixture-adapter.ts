@@ -24,7 +24,10 @@ export function predictObservation(r:DecisionObservation) {
  const row=r.before as any, c:{type:CardCommand['type'];[key:string]:any}={...r.command,type:METHODS[r.method]!},actor=r.actor;
  // 운영 answerQuestion처럼 답 꼴(mode)을 저장될 답 글과 고른 안으로 풀어 기계에 넘긴다.
  if(c.type==='ANSWER_QUESTION'&&'mode' in c)Object.assign(c,resolveCardQuestionAnswer(undefined,c as never,false));
- if(c.type==='ADD_COMMENT')c.entrance=r.method==='addCommentTx'?'followup':'direct';
+ if(c.type==='ADD_COMMENT'){
+  c.entrance=r.method==='addCommentTx'?'followup':'direct';
+  if(c.entrance==='direct'&&actor.kind==='agent'&&c.mode===undefined&&c.kind===undefined)c.mode='reply';
+ }
  const reads=r.evidence.decisionReads as any;
  const session=(id:unknown)=>reads.sessions.find((s:any)=>s.session_id===id);
  const worker=session(actor.sessionId);

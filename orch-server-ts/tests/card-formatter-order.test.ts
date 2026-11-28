@@ -52,11 +52,11 @@ describe('baseline a564fb0 formatter/validation order',()=>{
     ['file.ts',identifier],
     ['가'.repeat(100),'ask은 60자까지입니다. 지금 100자입니다'],
   ])('validates review ask %s before another agent permission',async(ask,message)=>{
-    await expect(harness().service.requestCardReview({...other,ask}))
+    await expect(harness().service.requestCardReview({...other,ask,report:"결과 보고"}))
       .rejects.toMatchObject({statusCode:422,code:'INVALID_CARD_REQUEST',message});
   });
   it('keeps the version fence before review ask validation',async()=>{
-    await expect(harness().service.requestCardReview({...other,expectedVersion:1,ask:'file.ts'}))
+    await expect(harness().service.requestCardReview({...other,expectedVersion:1,ask:'file.ts',report:'결과 보고'}))
       .rejects.toMatchObject({statusCode:409,message:'카드 card의 판이 바뀌었습니다(읽은 판 1, 지금 판 2). get_card로 다시 읽고 새 version으로 다시 부르세요.'});
   });
   it('keeps wake_at format validation at the original pre-transaction boundary',async()=>{

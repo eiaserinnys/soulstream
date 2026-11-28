@@ -88,6 +88,10 @@ export const START_CARD_WORK_EXECUTION_REQUIRED =
   "이 세션에는 카드 실행 신원이 없어 start_card_work를 쓸 수 없습니다. 카드 실행으로 뜬 담당 세션만 부를 수 있으니, 상태만 바꾸려면 set_card_status(running)를 쓰세요.";
 const itemId = z.number().int().positive();
 const itemEvidence = cardEvidenceSchema;
+const reviewReport = z.string().refine(value => value.trim().length > 0 && [...value.trim()].length <= 2000)
+  .describe("일을 마친 결과 보고. 카드 커멘트로 남는다. 2000자까지");
+const reviewInput = { ...scope, ask:z.string().describe("사용자가 볼 것 한 줄. 60자까지, 식별자 없이").optional(), report:reviewReport };
+
 export const cardTools = {
   ...cardMaintenanceTools,
   create_card: { name: "create_card", timeoutMs: 60000, config: {
@@ -133,8 +137,8 @@ export const cardTools = {
     inputSchema: { ...scope, title: id, format: z.enum(["markdown", "html"]), body: z.string() },
   }, audience: "all" },
   add_card_comment: { name: "add_card_comment", config: {
-    description: 'spoken은 사용자 발언 요약을 사용자 글로 기록하며 첫 줄은 "아래는 사용자의 발언을 요약하여 옮긴 것입니다"입니다. reply는 담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 mode가 필수이고 답은 1200자까지 한 번만 받습니다. 진행은 add_card_note에, 일을 마친 결과 보고는 request_card_review나 set_card_status(done)의 report에 씁니다. item_id로 대상 항목을 표시할 수 있습니다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다. 사용자가 질문에 되묻거나 덧붙인 글에 답할 때는 mode=reply와 question_id를 붙입니다. 이 답은 질문을 닫거나 카드 상태를 바꾸지 않습니다.',
-    inputSchema: { ...scope, text: id, mode: z.enum(["spoken", "reply"]).optional(), item_id:itemId.optional(), question_id:id.optional() },
+    description: '담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 답은 1200자까지 한 번만 받습니다. 진행은 add_card_note에, 일을 마친 결과 보고는 request_card_review나 set_card_status(done)의 report에 씁니다. item_id로 대상 항목을 표시할 수 있습니다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다. 사용자가 질문에 되묻거나 덧붙인 글에 답할 때는 mode=reply와 question_id를 붙입니다. 이 답은 질문을 닫거나 카드 상태를 바꾸지 않습니다.',
+    inputSchema: { ...scope, text: id, mode: z.literal("reply").optional(), item_id:itemId.optional(), question_id:id.optional() },
   }, audience: "all" },
   set_card_status: { name: "set_card_status", config: {
     description: "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다. 보류(on_hold)는 완료도 취소도 아닌 채 검수 대기와 PAS 판에서 내려 두는 상태다. 담당 세션이 없는 카드(드래프트, 대기)는 담당이 아닌 에이전트 세션도 할 일, 대기, 보류, 취소로 옮길 수 있다. 검수 대기 카드는 그 카드를 감독하는 퍼시스턴트 세션도 완료로 옮길 수 있다. 검증 대기(awaiting_verification)는 담당이 작업을 끝내기 전에 스스로 기다리는 상태다. 배포 뒤 실제 사용 확인이나 정한 시각의 재측정처럼 담당이 그 시각에 다시 확인할 때 쓴다. 이 상태에는 wake_at과 waiting_for가 모두 필수이고 다른 상태에는 둘 다 주지 않는다. 서버는 wake_at이 지나면 담당을 깨워 실행 중으로 되돌리고, 담당이 없거나 깨우지 못하면 막힘으로 옮긴다. 검증 대기는 PAS 판에 장을 만들지 않고 실행 중으로 세지 않는다. 남이 풀어 줄 일은 막힘, 사용자 판단은 ask_card_question이다. status=done으로 스스로 완료할 때 report에 결과 보고를 적으면 카드 커멘트로 남습니다(담당 세션만, 2000자까지). done이 아니면 report를 주지 않습니다." + ` ${EXPECTED_VERSION_HINT} ${IDEMPOTENCY_KEY_HINT}`,
@@ -150,9 +154,8 @@ export const cardTools = {
     inputSchema: {...scope,expected_version:z.number().int().positive(),idempotency_key:id,reason:id.optional()},
   }, audience: "internal" },
   request_card_review: { name: "request_card_review", config: {
-    description: "담당 카드의 검수를 요청합니다. 확인 항목이 있으면 ask에 사용자가 볼 것을 한 줄로 적으세요. ask는 60자까지이며 식별자를 넣지 않습니다. report에 일을 마친 결과 보고를 적으면 카드 커멘트로 남습니다(2000자까지). 사용자가 대화창을 열지 않고 카드에서 읽는 글이니 첫 세 줄에 요점을 쓰세요. 보고나 미답 질문은 상태 변경을 막지 않습니다.", inputSchema: { ...scope,ask:z.string().describe("사용자가 볼 것 한 줄. 60자까지, 식별자 없이").optional(),
-      report:z.string().describe("일을 마친 결과 보고. 카드 커멘트로 남는다. 2000자까지").optional() },
-  }, audience: "all" },
+    description: "담당 카드의 검수를 요청합니다. 확인 항목이 있으면 ask에 사용자가 볼 것을 한 줄로 적으세요. ask는 60자까지이며 식별자를 넣지 않습니다. 담당 세션은 report에 일을 마친 결과 보고를 반드시 적습니다. 카드 커멘트로 남습니다(2000자까지). 사용자가 대화창을 열지 않고 카드에서 읽는 글이니 첫 세 줄에 요점을 쓰세요. 보고나 미답 질문은 상태 변경을 막지 않습니다.", inputSchema: reviewInput,
+  }, externalInputSchema: { ...reviewInput, report: reviewReport.optional() }, audience: "all" },
   ask_card_question: { name: "ask_card_question", config: {
     description: "AskUserQuestion 대신 카드에 결정 하나를 묻고 이 턴을 끝내 답을 기다린다. title에 정할 것 한 줄(40자까지), text에 배경(무슨 일인지, 왜 지금 정하는지, 급한 정도를 일상어로 400자 안팎, 1200자까지)을 쓴다. options에는 선택지 1~3개를 {label(12자까지), description(고르면 벌어지는 일 한 줄, 80자까지), recommended(권하는 안 하나에 true)}로 둔다. 시안 그림이나 링크는 attachments(4개까지, 확인 항목 증거와 같은 꼴)로 붙인다. 사용자가 손수 할 일은 kind=request로 묻고 options는 보내지 않는다. 사용자는 선택지 밖의 글로도 답할 수 있으니 「다른 안」 같은 선택지를 넣지 않는다. 열린 질문을 고치려면 question_id와 함께 전체 내용을 다시 보낸다. 고쳐도 알림은 다시 가지 않는다. 다른 세션이 담당인 카드에는 담당 세션만 쓴다.",
     inputSchema: {
@@ -178,7 +181,7 @@ export const cardTools = {
     inputSchema: { ...scope,items:z.array(z.object({title:id}).strict()) },
   }, audience: "internal" },
   add_card_item: { name: "add_card_item", config: {
-    description: "사용자가 새로 말한 결과를 담당 카드에 더합니다. from_comment_id에 이 카드의 사용자 커멘트나 발언 기록 ID를 넣으세요. 제목은 40자까지입니다. 확인하지 않은 항목이 여섯이면 사용자의 확인을 기다립니다.",
+    description: "사용자가 새로 말한 결과를 담당 카드에 더합니다. from_comment_id에 이 카드의 사용자 글(커멘트, 채팅 직접 입력)의 ID를 넣으세요. 제목은 40자까지입니다. 확인하지 않은 항목이 여섯이면 사용자의 확인을 기다립니다.",
     inputSchema: { ...scope,title:id,from_comment_id:id },
   }, audience: "internal" },
   report_card_item: { name: "report_card_item", config: {

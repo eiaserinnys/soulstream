@@ -282,7 +282,7 @@ describe("card MCP execution", () => {
       ["set_card_status", { card_id: "card-1", status: "done", expected_version: 3, idempotency_key: "status" }, { card }],
       ["transfer_card_assignee", { card_id: "card-1", target_session_id: "session-2", expected_version: 3, idempotency_key: "transfer" }, { card }],
       ["start_card_work", { card_id: "card-1", expected_version: 3, idempotency_key: "start" }, { card }],
-      ["request_card_review", { card_id: "card-1", ask: "확인해 주세요" }, { card }],
+      ["request_card_review", { card_id: "card-1", ask: "확인해 주세요", report: "결과 보고" }, { card }],
       ["update_card_now", { card_id: "card-1", now: "진행 중", turn: "agent" }, { card }],
       ["ask_card_question", { card_id: "card-1", text: "질문", options: ["진행"] }, { card, guidance: "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다." }],
       ["move_card", { card_id: "card-1", folder_id: "folder-2" }, { card, folderId: "folder-2" }],
@@ -490,9 +490,23 @@ describe("card MCP execution", () => {
     expect(h.service.createCard.mock.calls[0]![0]).not.toHaveProperty("run");
     expect(result.structuredContent).toMatchObject({ card: { id: "card-1" }, execution: { state: "started" } });
   });
-  it("exposes spoken/reply and forwards replies without rewriting their text", async () => {
+  it("allows an external caller to request review without a report", async () => {
     const h = cardHarness();
-    for (const mode of ["spoken", "reply"] as const) {
+    const result = await call(h.options, "request_card_review", { card_id: "card-1" },
+      { ...context, principal: "external", callerSessionId: null });
+    expect(result.isError).not.toBe(true);
+    expect(h.service.requestCardReview).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "llm" }));
+  });
+  it("rejects review without report and spoken comment at the input boundary", async () => {
+    const h = cardHarness();
+    expect((await call(h.options, "request_card_review", { card_id: "card-1" })).isError).toBe(true);
+    expect((await call(h.options, "add_card_comment", { card_id: "card-1", text: "내용", mode: "spoken" })).isError).toBe(true);
+    expect(h.service.requestCardReview).not.toHaveBeenCalled();
+    expect(h.service.addComment).not.toHaveBeenCalled();
+  });
+  it("forwards replies without rewriting their text", async () => {
+    const h = cardHarness();
+    for (const mode of ["reply"] as const) {
       expect((await call(h.options, "add_card_comment", { card_id: "card-1", text: "그대로 보존", mode })).isError).not.toBe(true);
       expect(h.service.addComment).toHaveBeenLastCalledWith(expect.objectContaining({ body: "그대로 보존", mode }));
     }
@@ -503,7 +517,7 @@ describe("card MCP execution", () => {
       body: "글타래 답", mode: "reply", questionId: "question-1",
     }));
     expect((await call(h.options, "add_card_comment", { card_id: "card-1", text: "답변", mode: "invalid" })).isError).toBe(true);
-    expect(h.service.addComment).toHaveBeenCalledTimes(3);
+    expect(h.service.addComment).toHaveBeenCalledTimes(2);
   });
   it("reads notes through the assigned-session service and returns the cursor envelope",async()=>{
     const h=cardHarness();
@@ -530,7 +544,7 @@ describe("card MCP execution", () => {
   it("returns a server conflict without hiding it", async () => {
     const h = cardHarness();
     h.service.requestCardReview.mockRejectedValue(Object.assign(new Error("낡은 카드 버전"), { statusCode: 409 }));
-    const result = await call(h.options, "request_card_review", { card_id: "card-1" });
+    const result = await call(h.options, "request_card_review", { card_id: "card-1", report: "결과 보고" });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result)).toContain("낡은 카드 버전");
   });
