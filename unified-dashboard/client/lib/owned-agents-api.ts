@@ -1,6 +1,7 @@
 import type { OwnedAgent, OwnedAgentKey, OwnedAgentsResponse } from '@seosoyoung/soul-ui';
+import type { WebhookTranslate } from './webhooks-api';
 
-export function createOwnedAgentsApi(request: typeof fetch = fetch) {
+export function createOwnedAgentsApi(request: typeof fetch, t: WebhookTranslate) {
   const root = '/api/owned-agents';
   async function call<T>(path: string, method?: string, body?: object): Promise<T> {
     const response = await request(root + path, {
@@ -9,7 +10,7 @@ export function createOwnedAgentsApi(request: typeof fetch = fetch) {
     });
     if (!response.ok) {
       const error = await response.json().catch(() => null);
-      throw new Error(error?.detail ?? `요청을 처리하지 못했습니다 (HTTP ${response.status})`);
+      throw new Error(error?.detail ?? t('webhooks.owned.httpError', { status: response.status }));
     }
     return response.status === 204 ? undefined as T : response.json();
   }
