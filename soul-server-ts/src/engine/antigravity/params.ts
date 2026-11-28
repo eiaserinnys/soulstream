@@ -7,6 +7,7 @@ export function antigravityArguments(
   params: EngineExecuteParams,
   logPath: string,
   definition?: AntigravityAgentSelection,
+  workspaceDirectory?: string,
 ): string[] {
   if (params.reasoningEffort !== undefined && !antigravityTransportEfforts().includes(params.reasoningEffort)) {
     throw new Error(`Unsupported Antigravity effort: ${params.reasoningEffort}`);
@@ -17,6 +18,7 @@ export function antigravityArguments(
   if (params.reasoningEffort !== undefined) args.push("--effort", params.reasoningEffort);
   if (params.resumeSessionId) args.push("--conversation", params.resumeSessionId);
   else if (definition) args.push("--agent", definition.name);
+  if (workspaceDirectory) args.push("--add-dir", workspaceDirectory);
   return args;
 }
 

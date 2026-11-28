@@ -31,9 +31,18 @@ export interface DefinitionOptions {
   bodySuffix?: string;
 }
 
-function mcpServers(options: DefinitionOptions): object[] {
+interface AntigravityMcpServer {
+  name: string;
+  url?: string;
+  headers?: Record<string, string>;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+export function antigravityMcpServers(options: DefinitionOptions): AntigravityMcpServer[] {
   if (options.useMcp === false) return [];
-  const servers: object[] = [];
+  const servers: AntigravityMcpServer[] = [];
   for (const server of options.resolvedMcpServers ?? []) {
     const name = server.name;
     if (!name || !isSoulstreamInternalMcpServer({ name, type: server.type })) continue;
@@ -96,7 +105,7 @@ export function antigravityAgentDefinitionText(options: DefinitionOptions): { na
   const name = antigravityDefinitionName(options.agentSessionId);
   const frontmatter = stringify({ name, description: "Soulstream session instructions", mainAgent: true,
     subagent: false, tools: [...(options.tools ?? ANTIGRAVITY_AGENT_TOOLS)],
-    ...(options.hooks ? { hooks: [...options.hooks] } : {}), mcpServers: mcpServers(options) });
+    ...(options.hooks ? { hooks: [...options.hooks] } : {}), mcpServers: antigravityMcpServers(options) });
   return { name, text: `---\n${frontmatter}---\n${options.systemPrompt}${options.bodySuffix ?? ""}\n` };
 }
 

@@ -58,7 +58,7 @@ if(model==='blocking'){
 const testHome = makeTempDirSync("agy-adapter-home-");
 vi.mock("node:os", async importOriginal => ({ ...await importOriginal<typeof import("node:os")>(), homedir: () => testHome }));
 const agents = join(testHome, ".gemini/config/agents");
-const definitionFile = () => join(agents, readdirSync(agents).find(name => name.startsWith("soulstream-"))!);
+const definitions = () => existsSync(agents) ? readdirSync(agents).filter(name => name.startsWith("soulstream-")) : [];
 const input = { agentSessionId: "test-session", prompt: "요청", systemPrompt: "지시", model: "normal" };
 async function collect(engine: AntigravityEngineAdapter, params: Parameters<AntigravityEngineAdapter["execute"]>[0] = input) {
   const events = []; for await (const event of engine.execute(params)) events.push(event); return events;
@@ -92,7 +92,7 @@ describe("AntigravityEngineAdapter", () => {
       expect(JSON.parse(readFileSync(path, "utf8")).servers.map((x: { name: string }) => x.name)).toEqual(["alpha"]);
       servers.splice(0, 1, { name: "beta", type: "stdio", command: "node" });
       for await (const event of engine.execute({ ...input, resumeSessionId: "fixture-conversation" })) {
-        if (event.type === "session") expect(readdirSync(agents).filter(name => name.startsWith("soulstream-"))).toEqual([]);
+        if (event.type === "session") expect(definitions()).toEqual([]);
       }
       expect(JSON.parse(readFileSync(path, "utf8")).servers.map((x: { name: string }) => x.name)).toEqual(["beta"]);
       expect(statSync(path).mode & 0o777).toBe(0o600);
@@ -146,7 +146,7 @@ describe("AntigravityEngineAdapter", () => {
         first_call: { input_tokens: 5, cached_input_tokens: 3 },
       }) }),
     ]));
-    expect(readdirSync(agents).filter(name => name.startsWith("soulstream-"))).toEqual([]);
+    expect(definitions()).toEqual([]);
     expect(existsSync(join(state, "antigravity-agent"))).toBe(false);
     expect(existsSync(join(directory, ".agents"))).toBe(false);
     await engine.close();
@@ -175,14 +175,14 @@ describe("AntigravityEngineAdapter", () => {
     for await (const event of engine.execute({ ...input, model: "blocking" })) {
       events.push(event);
       if(event.type === "assistant_message") {
-        const file = definitionFile();
+        const file = join(state, "antigravity-workspace", "instructions", "chunk-000000.txt");
         expect(statSync(file).mode & 0o777).toBe(0o600);
         expect(readFileSync(file,"utf8")).toContain("지시");
         expect(await engine.intervene({ prompt: "새 메시지" })).toEqual({ status: "not_delivered", mechanism: "interrupt_then_next_turn", reason: "next_turn_required" });
       }
     }
     expect(events.map(x=>x.type)).not.toContain("complete"); expect(events.map(x=>x.type)).not.toContain("error");
-    expect(readdirSync(agents).filter(name => name.startsWith("soulstream-"))).toEqual([]);
+    expect(definitions()).toEqual([]);
     expect(existsSync(join(state,"antigravity-agent"))).toBe(false);
     const resume = { ...input, resumeSessionId: "fixture-conversation", prompt: "다음" };
     const next = await collect(engine, resume);
@@ -251,7 +251,7 @@ describe("AntigravityEngineAdapter", () => {
   it.each(["parse-error","missing-result","bad-exit"])("returns one fatal for %s and cleans up", async model => {
     const { engine, state }=fixture(); const events=await collect(engine,{ ...input, model });
     expect(events.filter(x=>x.type==='error')).toHaveLength(1); expect(events.filter(x=>x.type==='complete')).toHaveLength(0);
-    expect(readdirSync(agents).filter(name => name.startsWith("soulstream-"))).toEqual([]);
+    expect(definitions()).toEqual([]);
     expect(existsSync(join(state,"antigravity-agent"))).toBe(false); await engine.close();
   });
   it("rejects simultaneous turns and closed use; close waits for active process cleanup", async () => {
@@ -260,7 +260,7 @@ describe("AntigravityEngineAdapter", () => {
       await expect(collect(engine)).rejects.toThrow(/active/);
       await engine.close();
     }
-    expect(readdirSync(agents).filter(name => name.startsWith("soulstream-"))).toEqual([]);
+    expect(definitions()).toEqual([]);
     expect(existsSync(join(state,"antigravity-agent"))).toBe(false);
     await expect(collect(engine)).rejects.toThrow(/closed/);
     expect(await engine.interrupt()).toBe(false);
@@ -275,11 +275,11 @@ describe("AntigravityEngineAdapter", () => {
 
 describe("Antigravity new-conversation instructions", () => {
   it("allows an explicit empty system prompt", async () => {
-    const {engine} = fixture();
+    const {engine, state} = fixture();
     const events = [];
     for await (const event of engine.execute({...input, systemPrompt:""})) {
       events.push(event);
-      if (event.type === "session") expect(readFileSync(definitionFile(), "utf8").split("---\n")[2]).toBe("\n");
+      if (event.type === "session") expect(readFileSync(join(state, "antigravity-workspace", "instructions", "chunk-000000.txt"), "utf8")).toBe("");
     }
     expect(events.find(x=>x.type==='complete')).toBeDefined();
     await engine.close();

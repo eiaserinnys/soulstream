@@ -81,6 +81,12 @@ describe("Antigravity restricted tool policy", () => {
     expect(policy.definitionTools).toEqual(["run_command", "find_by_name", "list_dir", "finish"]);
   });
 
+  it("denies Agent entirely only for a bare Agent restriction", () => {
+    const policy = computeAntigravityToolPolicy({ allowedTools: ["Agent"], disallowedTools: ["Agent"], agentId: "test" });
+    expect(policy.definitionTools).not.toContain("invoke_subagent");
+    expect(policy.definitionTools).not.toContain("wait");
+  });
+
   it("maps a Claude eye definition's tools for a subagent", () => {
     expect(antigravitySubagentTools(["Read", "Grep", "Glob", "Bash"])).toEqual([
       "view_file",
