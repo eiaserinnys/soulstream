@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from "react-i18next";
 // 설정의 「스킬과 카탈로그」 탭. 목록에서 고른 스킬의 본문, 연결, 쓰이는 곳, 검증 결과를 본다.
 // 정본은 atom이라 여기서 고치지 않는다. 고치기는 문서마다 「atom에서 열기」로 나간다.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -66,20 +67,21 @@ function useExecNodeId(): string {
  * 날짜는 줄지 않고 한 줄로 남는 폭을 채우며, 한 칸 폭에서는 실패 안내가 다음 줄 끝으로 내려가 단추가 날짜 줄 오른쪽 끝에 남는다.
  */
 function ReportHead({ report, verify }: { report: GuideReport | null; verify: ReturnType<typeof useVerify> }) {
-  const time = reportTime(report);
+  const { t, i18n } = useTranslation();
+  const time = reportTime(report, i18n.resolvedLanguage);
   const noticeRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => { noticeRef.current?.focus(); }, [verify.phase]);
   const waiting = verify.phase === "waiting";
   return (
     <div className="flex min-h-[var(--v3-action-size)] flex-wrap items-center gap-x-3 gap-y-1" data-testid="skill-catalog-report">
-      <p className="grow shrink-0 whitespace-nowrap text-sm" data-v3-selectable-content="true">{time ? <><strong className="font-semibold">{time}</strong> 검증</> : "검증 보고 없음"}</p>
+      <p className="grow shrink-0 whitespace-nowrap text-sm" data-v3-selectable-content="true">{time ? <Trans i18nKey="agents.report.verifiedAt" values={{ time }} components={{ date: <strong className="font-semibold" /> }} /> : t("agents.report.empty")}</p>
       {verify.phase === "conflict" ? (
-        <p ref={noticeRef} tabIndex={-1} role="status" className="shrink-0 text-xs text-muted-foreground">검증 작업이 없습니다</p>
+        <p ref={noticeRef} tabIndex={-1} role="status" className="shrink-0 text-xs text-muted-foreground">{t("agents.report.noJob")}</p>
       ) : report?.verify_job_id ? (
         <>
-          {verify.phase === "failed" && <p role="alert" className="shrink-0 text-xs text-destructive-foreground max-sm:order-3 max-sm:basis-full max-sm:text-end">요청하지 못했습니다</p>}
+          {verify.phase === "failed" && <p role="alert" className="shrink-0 text-xs text-destructive-foreground max-sm:order-3 max-sm:basis-full max-sm:text-end">{t("agents.report.requestError")}</p>}
           <Button type="button" size="sm" variant="outline" className="shrink-0" aria-disabled={waiting || undefined} aria-busy={waiting || undefined} onClick={() => { if (!waiting) void verify.start(); }}>
-            {waiting ? <Loader2 className="animate-spin" aria-hidden="true" /> : <RotateCw aria-hidden="true" />}{waiting ? "검증 중" : "다시 검증"}
+            {waiting ? <Loader2 className="animate-spin" aria-hidden="true" /> : <RotateCw aria-hidden="true" />}{waiting ? t("agents.report.verifying") : t("agents.report.verifyAgain")}
           </Button>
         </>
       ) : null}
@@ -111,8 +113,9 @@ function useKeepScroll(listRef: { current: HTMLElement | null }) {
 const SKELETON_ROWS = 7;
 
 function ListSkeleton() {
+  const { t } = useTranslation();
   return (
-    <div className="space-y-1" role="status" aria-label="목록을 불러오는 중" data-testid="skill-catalog-skeleton">
+    <div className="space-y-1" role="status" aria-label={t("agents.skill.loadingList")} data-testid="skill-catalog-skeleton">
       {Array.from({ length: SKELETON_ROWS }, (_, index) => (
         <div key={index} className="space-y-2 px-2 py-2">
           <span className="flex items-center gap-2"><span className="v3-run-skeleton v3-run-skeleton--title" /><span className="v3-run-skeleton v3-run-skeleton--badge" /></span>
@@ -124,8 +127,9 @@ function ListSkeleton() {
 }
 
 function DetailSkeleton() {
+  const { t } = useTranslation();
   return (
-    <div className="space-y-3" role="status" aria-label="상세를 불러오는 중">
+    <div className="space-y-3" role="status" aria-label={t("agents.skill.loadingDetail")}>
       <span className="v3-run-skeleton v3-run-skeleton--title" />
       <span className="v3-run-skeleton v3-run-skeleton--preview" />
     </div>
@@ -135,6 +139,7 @@ function DetailSkeleton() {
 type Item = { kind: "skill"; item: SkillGuide } | { kind: "catalog"; item: CatalogGuide };
 
 export function SkillCatalogTab({ request = fetch }: { request?: typeof fetch }) {
+  const { t, i18n } = useTranslation();
   const { state, reload, refresh } = useSkillGuides(request);
   const data = state.status === "ready" ? state.data : null;
   const verify = useVerify(request, data?.report ?? null, refresh);
@@ -149,8 +154,8 @@ export function SkillCatalogTab({ request = fetch }: { request?: typeof fetch })
   const listRef = useRef<HTMLElement>(null);
 
   const usage = useMemo(
-    () => computeSkillUsage(overview.state.status === "ready" ? overview.state.data : null, data?.skills ?? []),
-    [overview.state, data],
+    () => computeSkillUsage(overview.state.status === "ready" ? overview.state.data : null, data?.skills ?? [], t),
+    [overview.state, data, t],
   );
 
   const items = useMemo<Item[]>(() => {
@@ -186,8 +191,8 @@ export function SkillCatalogTab({ request = fetch }: { request?: typeof fetch })
       <div data-testid="skill-catalog-settings" className="space-y-4">
         <FrameNotice>
           <div className="flex flex-col items-center gap-3">
-            <p role="alert" className="text-sm text-destructive-foreground">스킬을 불러오지 못했습니다.</p>
-            <Button type="button" size="sm" variant="outline" onClick={reload}>다시 시도</Button>
+            <p role="alert" className="text-sm text-destructive-foreground">{t("agents.skill.loadError")}</p>
+            <Button type="button" size="sm" variant="outline" onClick={reload}>{t("agents.retry")}</Button>
           </div>
         </FrameNotice>
       </div>
@@ -195,18 +200,18 @@ export function SkillCatalogTab({ request = fetch }: { request?: typeof fetch })
   }
 
   const usageFooter = (skill: SkillGuide) => overview.state.status === "ready"
-    ? <span className="text-xs text-muted-foreground">프로필 {profileCount(usage.get(skill.name))}</span>
+    ? <span className="text-xs text-muted-foreground">{t("agents.skill.profileCount", { profiles: profileCount(usage.get(skill.name)).toLocaleString(i18n.resolvedLanguage) })}</span>
     : overview.state.status === "loading" ? <span className="v3-run-skeleton v3-run-skeleton--badge" /> : undefined;
 
   const list = (
-    <section ref={listRef} aria-label={kind === "skill" ? "스킬 목록" : "카탈로그 목록"}>
+    <section ref={listRef} aria-label={kind === "skill" ? t("agents.skill.list") : t("agents.catalog.list")}>
       <SettingsListHeader
-        title={kind === "skill" ? "스킬" : "카탈로그"}
+        title={kind === "skill" ? t("agents.skill.label") : t("agents.catalog.label")}
         description=""
-        actions={<Button type="button" size="sm" variant={warningsOnly ? "default" : "outline"} aria-pressed={warningsOnly} disabled={!data} onClick={() => setWarningsOnly(!warningsOnly)}>경고 있는 것만</Button>}
+        actions={<Button type="button" size="sm" variant={warningsOnly ? "default" : "outline"} aria-pressed={warningsOnly} disabled={!data} onClick={() => setWarningsOnly(!warningsOnly)}>{t("agents.skill.warningsOnly")}</Button>}
       />
       {!data ? <ListSkeleton /> : (
-        <SettingsListSection isEmpty={items.length === 0} emptyText={warningsOnly ? "경고가 없습니다." : "항목이 없습니다."}>
+        <SettingsListSection isEmpty={items.length === 0} emptyText={warningsOnly ? t("agents.skill.noWarnings") : t("agents.skill.empty")}>
           {items.map(entry => (
             <SettingsListRow
               key={entry.item.name}
@@ -226,15 +231,15 @@ export function SkillCatalogTab({ request = fetch }: { request?: typeof fetch })
   return (
     <div data-testid="skill-catalog-settings" className="space-y-4">
       <div className={detailOpen ? "max-lg:hidden" : undefined}>
-        {data ? <ReportHead report={data.report} verify={verify} /> : <div className="flex min-h-[var(--v3-action-size)] items-center" role="status" aria-label="보고를 불러오는 중"><span className="v3-run-skeleton v3-run-skeleton--title" /></div>}
+        {data ? <ReportHead report={data.report} verify={verify} /> : <div className="flex min-h-[var(--v3-action-size)] items-center" role="status" aria-label={t("agents.report.loading")}><span className="v3-run-skeleton v3-run-skeleton--title" /></div>}
       </div>
       <div className={`guides-kind-tabs${detailOpen ? " max-lg:hidden" : ""}`}>
-        <DetailTabs<Kind> id="guide-kind" label="종류" panelId="guide-kind-panel" tabs={[["skill", "스킬"], ["catalog", "카탈로그"]]} value={kind} onChange={(next) => { setKind(next); setSelected(null); setDetailOpen(false); }} />
+        <DetailTabs<Kind> id="guide-kind" label={t("agents.skill.kind")} panelId="guide-kind-panel" tabs={[["skill", t("agents.skill.label")], ["catalog", t("agents.catalog.label")]]} value={kind} onChange={(next) => { setKind(next); setSelected(null); setDetailOpen(false); }} />
       </div>
       <div id="guide-kind-panel" role="tabpanel" aria-labelledby={`guide-kind-${kind}`} className="skill-catalog-panel" data-detail-open={detailOpen ? "true" : undefined}>
         <SettingsListDetailFrame testId="skill-catalog-frame" list={list} fill detailOpen={detailOpen}>
           <div className="lg:hidden">
-            <DashboardIconCap ref={backRef} size="small" label="목록으로" onClick={closeDetail}><ArrowLeft className="size-4" aria-hidden="true" /></DashboardIconCap>
+            <DashboardIconCap ref={backRef} size="small" label={t("agents.skill.backToList")} onClick={closeDetail}><ArrowLeft className="size-4" aria-hidden="true" /></DashboardIconCap>
           </div>
           {!data ? <DetailSkeleton />
             // 항목이 없다는 안내는 목록 자리에만 두고 상세 자리는 비운다.

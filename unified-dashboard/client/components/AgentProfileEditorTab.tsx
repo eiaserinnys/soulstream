@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 // This file remains over 500 lines because the requested profile, portrait,
 // and preview workflows stay together in one tab. Bundle rows and CRUD live
 // in separate components; another split would change the planned boundary.
@@ -52,10 +53,10 @@ interface NodeAgent {
   source?: "db" | "yaml";
 }
 
-const VERSION_CONFLICT_MESSAGE =
-  "다른 사용자가 먼저 수정했습니다. 최신 프로필을 다시 불러온 뒤 변경을 다시 적용하세요.";
+type Translate = ReturnType<typeof useTranslation>["t"];
 
 export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEditMcpProfile }: { request?: typeof fetch; initialMcpTarget?: { agentId: string; nodeId: string }; onEditMcpProfile?: (profileId: string) => void }) {
+  const { t } = useTranslation();
   const nodes = useOrchestratorStore((state) => state.nodes);
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
   const [bundles, setBundles] = useState<ContextBundle[]>([]);
@@ -67,7 +68,8 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | VersionConflictError | null>(null);
+  const errorText = error instanceof VersionConflictError ? t("agents.profile.conflict") : error;
   const [portraitFile, setPortraitFile] = useState<File | null>(null);
   const [portraitPreviewUrl, setPortraitPreviewUrl] = useState<string | null>(null);
   const [removePortrait, setRemovePortrait] = useState(false);
@@ -99,9 +101,9 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
         const bundle = bundles.find((candidate) => candidate.bundle_id === bundleId);
         return bundle?.atom_contexts.map((context) => ({ context, source: bundleId })) ?? [];
       }),
-      ...draft.atom_contexts.map((context) => ({ context, source: "프로필" })),
+      ...draft.atom_contexts.map((context) => ({ context, source: t("agents.profile.label") })),
     ];
-  }, [draft, bundles]);
+  }, [draft, bundles, t]);
 
   useEffect(() => {
     if (!portraitFile) {
@@ -153,10 +155,10 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
     try {
       const [response, nextBundles] = await Promise.all([
         request("/api/agent-profiles", { credentials: "same-origin" }),
-        fetchBundles(request),
+        fetchBundles(request, t),
       ]);
       const body = await responseJson(response);
-      if (!response.ok) throw new Error(responseMessage(body, "프로필을 불러오지 못했습니다."));
+      if (!response.ok) throw new Error(responseMessage(body, t("agents.profile.loadError")));
       const nextProfiles = Array.isArray(body.profiles) ? body.profiles as AgentProfile[] : [];
       setProfiles(nextProfiles);
       setBundles(nextBundles);
@@ -168,14 +170,14 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
       setPortraitFile(null);
       setRemovePortrait(false);
     } catch (caught) {
-      setError(errorMessage(caught));
+      setError(errorMessage(caught, t));
     } finally {
       setLoading(false);
     }
   };
 
   const refreshBundles = async () => {
-    setBundles(await fetchBundles(request));
+    setBundles(await fetchBundles(request, t));
     setSelectedBundleToAdd("");
   };
 
@@ -228,21 +230,21 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
 
   const save = async () => {
     if (!draft || !draft.agent_id.trim() || !draft.name.trim()) {
-      setError("에이전트 ID와 이름을 입력하세요.");
+      setError(t("agents.profile.required"));
       return;
     }
     setSaving(true);
     setError(null);
     setMessage(null);
     try {
-      let current = await putProfile(draft, request);
+      let current = await putProfile(draft, request, t);
       setDraft(profileDraft(current));
 
       if (portraitFile) {
-        current = withPortrait(current, await putPortrait(current.agent_id, portraitFile, request));
+        current = withPortrait(current, await putPortrait(current.agent_id, portraitFile, request, t));
         await useAgentPortraitStore.getState().refresh();
       } else if (removePortrait && savedPortraitUrl(current.agent_id, current.has_portrait)) {
-        await deletePortrait(current.agent_id, request);
+        await deletePortrait(current.agent_id, request, t);
         current = withPortrait(current, null);
         await useAgentPortraitStore.getState().refresh();
       }
@@ -253,13 +255,13 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
       setRemovePortrait(false);
       setMessage(JSON.stringify(current.effective_atom_contexts.map(({ node_id }) => node_id))
         === JSON.stringify(effectiveContexts.map(({ context }) => context.node_id))
-        ? "프로필을 저장했습니다."
-        : "프로필을 저장했습니다. 서버의 실제 주입 순서가 달라 최신 버전을 다시 확인하세요.");
+        ? t("agents.profile.saved")
+        : t("agents.profile.savedOrderChanged"));
     } catch (caught) {
       if (caught instanceof VersionConflictError) {
-        setError(VERSION_CONFLICT_MESSAGE);
+        setError(caught);
       } else {
-        setError(errorMessage(caught));
+        setError(errorMessage(caught, t));
       }
     } finally {
       setSaving(false);
@@ -272,24 +274,24 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
     setError(null);
     setMessage(null);
     try {
-      if (portraitFile) await putPortrait(agentId, portraitFile, request);
-      else if (removePortrait) await deletePortrait(agentId, request);
+      if (portraitFile) await putPortrait(agentId, portraitFile, request, t);
+      else if (removePortrait) await deletePortrait(agentId, request, t);
       await useAgentPortraitStore.getState().refresh();
       setPortraitFile(null);
       setRemovePortrait(false);
-      setMessage("초상화를 저장했습니다.");
+      setMessage(t("agents.portrait.saved"));
     } catch (caught) {
-      setError(errorMessage(caught));
+      setError(errorMessage(caught, t));
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <FrameLoading label="프로필을 불러오는 중..." />;
+  if (loading) return <FrameLoading label={t("agents.profile.loading")} />;
   // 첫 읽기 실패: 편집 영역 안의 오류 줄만 남기지 않고, 로더와 같은 자리에서
   // 실패 안내를 보여 준다. 프로필이 이미 있으면 종전처럼 편집기 안 오류 줄을 쓴다.
   if (error && profiles.length === 0 && !draft) {
-    return <FrameNotice><p role="alert" className="rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{error}</p></FrameNotice>;
+    return <FrameNotice><p role="alert" className="rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{errorText}</p></FrameNotice>;
   }
 
   return (
@@ -298,9 +300,9 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
       <div className="mb-2 grid grid-cols-2 items-end gap-2 sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-0">
         {managingBundles ? <span /> : (
           <label className="text-xs font-medium">
-            실행 노드
-            <select aria-label="실행 노드" className={inputClassName} value={selectedNodeId} onChange={(event) => setSelectedNodeId(event.target.value)}>
-              {connectedNodeIds.length === 0 && <option value="">연결된 노드 없음</option>}
+            {t("agents.assignment.executionNode")}
+            <select aria-label={t("agents.assignment.executionNode")} className={inputClassName} value={selectedNodeId} onChange={(event) => setSelectedNodeId(event.target.value)}>
+              {connectedNodeIds.length === 0 && <option value="">{t("agents.assignment.noNodesOption")}</option>}
               {selectedNodeId && !connectedNodeIds.includes(selectedNodeId) && <option value={selectedNodeId}>{selectedNodeId}</option>}
               {connectedNodeIds.map((nodeId) => <option key={nodeId} value={nodeId}>{nodeId}</option>)}
             </select>
@@ -308,9 +310,9 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
         )}
         {!managingBundles && !overview && (
           <label className="min-w-0 text-xs font-medium sm:hidden">
-            프로필
+            {t("agents.profile.label")}
             <select
-              aria-label="프로필"
+              aria-label={t("agents.profile.label")}
               className={inputClassName}
               value={selectedNodeProfile ? `node:${selectedNodeProfile.id}` : draft?.version ? `central:${draft.agent_id}` : ""}
               onChange={(event) => {
@@ -320,13 +322,13 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
                 if (kind === "central" && profile) selectProfile(profile);
               }}
             >
-              {!draft?.version && !selectedNodeProfile && <option value="">새 프로필</option>}
+              {!draft?.version && !selectedNodeProfile && <option value="">{t("agents.profile.new")}</option>}
               {profiles.map((profile) => <option key={profile.agent_id} value={`central:${profile.agent_id}`}>{profile.name}</option>)}
               {selectedNodeProfile && !nodeOnlyProfiles.some((agent) => agent.id === selectedNodeProfile.id) && (
                 <option value={`node:${selectedNodeProfile.id}`}>{selectedNodeProfile.name}</option>
               )}
               {nodeOnlyProfiles.length > 0 && (
-                <optgroup label="노드 설정">
+                <optgroup label={t("agents.profile.nodeSettings")}>
                   {nodeOnlyProfiles.map((agent) => <option key={agent.id} value={`node:${agent.id}`}>{agent.name}</option>)}
                 </optgroup>
               )}
@@ -334,24 +336,24 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
           </label>
         )}
         <div className="col-span-2 flex flex-wrap justify-end gap-2 sm:col-span-1">
-          {!managingBundles && !overview && <Button type="button" size="sm" variant="outline" className="sm:hidden" onClick={startProfile}>새 프로필</Button>}
+          {!managingBundles && !overview && <Button type="button" size="sm" variant="outline" className="sm:hidden" onClick={startProfile}>{t("agents.profile.new")}</Button>}
           {!managingBundles && <Button type="button" size="sm" variant="outline" onClick={() => setOverview(!overview)}>
-            {overview ? "← 프로필 편집으로" : "한눈에"}
+            {overview ? t("agents.profile.backToEdit") : t("agents.profile.overview")}
           </Button>}
           {!overview && <Button type="button" size="sm" variant="outline" onClick={() => setManagingBundles(!managingBundles)}>
-            {managingBundles ? "← 프로필 편집으로" : "컨텍스트 번들 편집"}
+            {managingBundles ? t("agents.profile.backToEdit") : t("agents.bundle.manage")}
           </Button>}
         </div>
       </div>
       {overview ? (
-        !selectedNodeId ? <FrameNotice>연결된 노드가 없습니다.</FrameNotice> : <ProfileOverviewMatrix nodeId={selectedNodeId} request={request} />
+        !selectedNodeId ? <FrameNotice>{t("agents.assignment.noNodes")}</FrameNotice> : <ProfileOverviewMatrix nodeId={selectedNodeId} request={request} />
       ) : managingBundles ? (
         <ContextBundleEditor request={request} bundles={bundles} onBundlesChanged={refreshBundles} />
       ) : (
     <div className="grid h-[520px] min-h-0 grid-cols-1 overflow-hidden rounded-floor border border-border sm:h-auto sm:flex-1 sm:grid-cols-[13rem_minmax(0,1fr)]">
       <aside className="min-h-0 overflow-y-auto border-r border-border bg-muted/20 p-2 max-sm:hidden">
         <Button type="button" size="sm" variant="outline" className="mb-2 w-full" onClick={startProfile}>
-          새 프로필
+          {t("agents.profile.new")}
         </Button>
         {profiles.map((profile) => {
           const listPortraitUrl = savedPortraitUrl(profile.agent_id, profile.has_portrait);
@@ -376,7 +378,7 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
           </button>
           );
         })}
-        {nodeOnlyProfiles.length > 0 && <p className="mb-1 mt-3 px-3 text-xs text-muted-foreground">노드 설정</p>}
+        {nodeOnlyProfiles.length > 0 && <p className="mb-1 mt-3 px-3 text-xs text-muted-foreground">{t("agents.profile.nodeSettings")}</p>}
         {nodeOnlyProfiles.map((agent) => {
           const listPortraitUrl = savedPortraitUrl(agent.id, Boolean(agent.portraitUrl));
           return (
@@ -403,14 +405,14 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
       </aside>
 
       <div className="flex min-h-0 flex-col p-4" data-testid="agent-profile-editor">
-        {selectedNodeProfile && loadedNodeId !== selectedNodeId ? <FrameLoading label="노드 에이전트를 불러오는 중…" /> : selectedNodeProfile ? (
+        {selectedNodeProfile && loadedNodeId !== selectedNodeId ? <FrameLoading label={t("agents.profile.loadingNodeAgentsEllipsis")} /> : selectedNodeProfile ? (
           <>
           {/* 노드 설정 전용 프로필은 프로필 항목을 여기서 고치지 않는다. 편집 탭은 열어 초상 칸만 보인다. */}
           <div className="mcp-tabs"><DetailTabs<"assembly" | "edit" | "mcp">
             id="agent-profile-pane"
-            label="프로필 보기"
+            label={t("agents.profile.views")}
             panelId="agent-profile-pane-panel"
-            tabs={[["assembly", "구성"], ["edit", "편집"], ["mcp", "MCP"]]}
+            tabs={[["assembly", t("agents.profile.assembly")], ["edit", t("agents.profile.edit")], ["mcp", "MCP"]]}
             value={pane}
             onChange={setPane}
           /></div>
@@ -430,13 +432,13 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
                     }}
                   />
                 </section>
-                {error && <p role="alert" className="rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{error}</p>}
+                {error && <p role="alert" className="rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{errorText}</p>}
                 {message && <p role="status" className="rounded-floor bg-accent-blue/10 px-3 py-2 text-sm">{message}</p>}
                 <div className="flex justify-end gap-2">
-                  <Button type="button" size="sm" disabled={saving || (!portraitFile && !removePortrait)} onClick={() => void saveNodePortrait(selectedNodeProfile.id)}>{saving ? "저장 중..." : "초상화 저장"}</Button>
+                  <Button type="button" size="sm" disabled={saving || (!portraitFile && !removePortrait)} onClick={() => void saveNodePortrait(selectedNodeProfile.id)}>{saving ? t("agents.saving") : t("agents.portrait.save")}</Button>
                 </div>
               </div>
-            ) : pane === "mcp" ? !selectedNodeId ? <FrameNotice>연결된 노드가 없습니다.</FrameNotice> : <AgentMcpConnectionPane key={`${selectedNodeProfile.id}:${selectedNodeId}`} agentId={selectedNodeProfile.id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} focusOnMount={focusMcpTarget} onFocusHandled={() => setFocusMcpTarget(false)} /> : <AgentContextAssemblyView
+            ) : pane === "mcp" ? !selectedNodeId ? <FrameNotice>{t("agents.assignment.noNodes")}</FrameNotice> : <AgentMcpConnectionPane key={`${selectedNodeProfile.id}:${selectedNodeId}`} agentId={selectedNodeProfile.id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} focusOnMount={focusMcpTarget} onFocusHandled={() => setFocusMcpTarget(false)} /> : <AgentContextAssemblyView
               key={`node:${selectedNodeProfile.id}`}
               target={{ kind: "node", agentId: selectedNodeProfile.id }}
               nodeId={selectedNodeId}
@@ -447,22 +449,22 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
           </div>
           </>
         ) : !draft ? (
-          <div className="py-10 text-center text-sm text-muted-foreground">편집할 프로필을 선택하거나 새로 만드세요.</div>
+          <div className="py-10 text-center text-sm text-muted-foreground">{t("agents.profile.empty")}</div>
         ) : (
           <>
           <div className="mcp-tabs"><DetailTabs<"assembly" | "edit" | "mcp">
             id="agent-profile-pane"
-            label="프로필 보기"
+            label={t("agents.profile.views")}
             panelId="agent-profile-pane-panel"
-            tabs={[["assembly", "구성"], ["edit", "편집"], ["mcp", "MCP", !draft.version]]}
+            tabs={[["assembly", t("agents.profile.assembly")], ["edit", t("agents.profile.edit")], ["mcp", "MCP", !draft.version]]}
             value={pane}
             onChange={setPane}
           /></div>
           <div id="agent-profile-pane-panel" role="tabpanel" className="mt-3 flex min-h-0 flex-1 flex-col">
-          {pane === "mcp" ? !selectedNodeId ? <FrameNotice>연결된 노드가 없습니다.</FrameNotice> : <AgentMcpConnectionPane key={`${draft.agent_id}:${selectedNodeId}`} agentId={draft.agent_id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} focusOnMount={focusMcpTarget} onFocusHandled={() => setFocusMcpTarget(false)} /> : pane === "assembly" ? !selectedNodeId ? (
-            <FrameNotice>연결된 노드가 없습니다.</FrameNotice>
+          {pane === "mcp" ? !selectedNodeId ? <FrameNotice>{t("agents.assignment.noNodes")}</FrameNotice> : <AgentMcpConnectionPane key={`${draft.agent_id}:${selectedNodeId}`} agentId={draft.agent_id} nodeId={selectedNodeId} request={request} onEditProfile={onEditMcpProfile ?? (() => {})} focusOnMount={focusMcpTarget} onFocusHandled={() => setFocusMcpTarget(false)} /> : pane === "assembly" ? !selectedNodeId ? (
+            <FrameNotice>{t("agents.assignment.noNodes")}</FrameNotice>
           ) : loadedNodeId !== selectedNodeId ? (
-            <FrameLoading label="노드 에이전트를 불러오는 중..." />
+            <FrameLoading label={t("agents.profile.loadingNodeAgents")} />
           ) : (
             <AgentContextAssemblyView
               key={`central:${draft.agent_id}`}
@@ -476,16 +478,16 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
             <section className="grid grid-cols-2 gap-3">
               <LabeledInput
-                label="에이전트 ID"
+                label={t("agents.profile.agentId")}
                 value={draft.agent_id}
                 disabled={draft.version > 0}
                 onChange={(value) => setDraft({ ...draft, agent_id: value })}
               />
-              <LabeledInput label="이름" value={draft.name} onChange={(value) => setDraft({ ...draft, name: value })} />
+              <LabeledInput label={t("agents.profile.name")} value={draft.name} onChange={(value) => setDraft({ ...draft, name: value })} />
               <LabeledInput
-                label="기본 프리셋"
+                label={t("agents.profile.defaultPreset")}
                 value={draft.default_preset ?? ""}
-                placeholder="미지정"
+                placeholder={t("agents.unassigned")}
                 onChange={(value) => setDraft({ ...draft, default_preset: value || null })}
               />
               <PortraitField
@@ -502,8 +504,8 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
             </section>
 
             <section>
-              <SectionHeading title="컨텍스트 번들" />
-              <p className="mb-2 text-xs text-muted-foreground">번들 자체의 내용을 고치려면 상단 「컨텍스트 번들 편집」으로 가십시오.</p>
+              <SectionHeading title={t("agents.bundle.title")} />
+              <p className="mb-2 text-xs text-muted-foreground">{t("agents.bundle.editHelp")}</p>
               <div className="space-y-2">
                 {draft.context_bundles.map((bundleId, index) => {
                   const bundle = bundles.find((candidate) => candidate.bundle_id === bundleId);
@@ -512,26 +514,26 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
                       <span className="min-w-0 flex-1 truncate" title={bundle?.description} data-v3-selectable-content="true">
                         <strong>{bundleId}</strong>{bundle?.description ? ` · ${bundle.description}` : ""}
                       </span>
-                      <Button type="button" size="sm" variant="ghost" aria-label={`${bundleId} 위로`} disabled={index === 0} onClick={() => setDraft(moveBundleReference(draft, index, -1))}>위로</Button>
-                      <Button type="button" size="sm" variant="ghost" aria-label={`${bundleId} 아래로`} disabled={index === draft.context_bundles.length - 1} onClick={() => setDraft(moveBundleReference(draft, index, 1))}>아래로</Button>
-                      <Button type="button" size="sm" variant="ghost" aria-label={`${bundleId} 제거`} onClick={() => setDraft({
+                      <Button type="button" size="sm" variant="ghost" aria-label={t("agents.bundle.moveUpLabel", { bundleId })} disabled={index === 0} onClick={() => setDraft(moveBundleReference(draft, index, -1))}>{t("agents.moveUp")}</Button>
+                      <Button type="button" size="sm" variant="ghost" aria-label={t("agents.bundle.moveDownLabel", { bundleId })} disabled={index === draft.context_bundles.length - 1} onClick={() => setDraft(moveBundleReference(draft, index, 1))}>{t("agents.moveDown")}</Button>
+                      <Button type="button" size="sm" variant="ghost" aria-label={t("agents.bundle.removeLabel", { bundleId })} onClick={() => setDraft({
                         ...draft,
                         context_bundles: draft.context_bundles.filter((_, current) => current !== index),
-                      })}>제거</Button>
+                      })}>{t("agents.remove")}</Button>
                     </div>
                   );
                 })}
-                {draft.context_bundles.length === 0 && <p className="text-xs text-muted-foreground">참조 중인 번들이 없습니다.</p>}
+                {draft.context_bundles.length === 0 && <p className="text-xs text-muted-foreground">{t("agents.bundle.noReferences")}</p>}
                 <div className="flex items-end gap-2">
                   <label className="min-w-0 flex-1 text-xs font-medium">
-                    번들 선택
+                    {t("agents.bundle.select")}
                     <select
-                      aria-label="추가할 번들"
+                      aria-label={t("agents.bundle.toAdd")}
                       className={inputClassName}
                       value={selectedBundleToAdd}
                       onChange={(event) => setSelectedBundleToAdd(event.target.value)}
                     >
-                      <option value="">추가할 번들 선택</option>
+                      <option value="">{t("agents.bundle.selectToAdd")}</option>
                       {bundles.filter((bundle) => !draft.context_bundles.includes(bundle.bundle_id)).map((bundle) => (
                         <option key={bundle.bundle_id} value={bundle.bundle_id}>{bundle.bundle_id} · {bundle.description}</option>
                       ))}
@@ -540,15 +542,15 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
                   <Button type="button" size="sm" variant="outline" disabled={!selectedBundleToAdd} onClick={() => {
                     setDraft({ ...draft, context_bundles: [...draft.context_bundles, selectedBundleToAdd] });
                     setSelectedBundleToAdd("");
-                  }}>번들 추가</Button>
+                  }}>{t("agents.bundle.add")}</Button>
                 </div>
               </div>
             </section>
 
             <section>
               <SectionHeading
-                title="Atom 컨텍스트"
-                actionLabel="소스 추가"
+                title={t("agents.context.atom")}
+                actionLabel={t("agents.context.addSource")}
                 onAction={() => setDraft({ ...draft, atom_contexts: [...draft.atom_contexts, { node_id: "", mode: "full" }] })}
               />
               <div className="space-y-3">
@@ -564,34 +566,34 @@ export function AgentProfileEditorTab({ request = fetch, initialMcpTarget, onEdi
                     })}
                   />
                 ))}
-                {draft.atom_contexts.length === 0 && <p className="text-xs text-muted-foreground">등록된 컨텍스트 소스가 없습니다.</p>}
+                {draft.atom_contexts.length === 0 && <p className="text-xs text-muted-foreground">{t("agents.context.noSources")}</p>}
               </div>
             </section>
 
             <section>
               <SectionHeading
-                title="별칭"
-                actionLabel="별칭 추가"
+                title={t("agents.profile.aliases")}
+                actionLabel={t("agents.profile.addAlias")}
                 onAction={() => setDraft({ ...draft, aliases: [...draft.aliases, { id: "", default_preset: "" }] })}
               />
               <div className="space-y-2">
                 {draft.aliases.map((alias, index) => (
                   <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
-                    <LabeledInput label="별칭 ID" value={alias.id} onChange={(value) => updateAlias(draft, setDraft, index, { ...alias, id: value })} />
-                    <LabeledInput label="별칭 프리셋" value={alias.default_preset} placeholder="기본값 상속" onChange={(value) => updateAlias(draft, setDraft, index, { ...alias, default_preset: value })} />
-                    <Button type="button" size="sm" variant="ghost" className="mt-5" onClick={() => setDraft({ ...draft, aliases: draft.aliases.filter((_, current) => current !== index) })}>삭제</Button>
+                    <LabeledInput label={t("agents.profile.aliasId")} value={alias.id} onChange={(value) => updateAlias(draft, setDraft, index, { ...alias, id: value })} />
+                    <LabeledInput label={t("agents.profile.aliasPreset")} value={alias.default_preset} placeholder={t("agents.profile.inheritPreset")} onChange={(value) => updateAlias(draft, setDraft, index, { ...alias, default_preset: value })} />
+                    <Button type="button" size="sm" variant="ghost" className="mt-5" onClick={() => setDraft({ ...draft, aliases: draft.aliases.filter((_, current) => current !== index) })}>{t("agents.delete")}</Button>
                   </div>
                 ))}
               </div>
             </section>
 
-            {error && <p role="alert" className="rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{error}</p>}
+            {error && <p role="alert" className="rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{errorText}</p>}
             {message && <p role="status" className="rounded-floor bg-accent-blue/10 px-3 py-2 text-sm">{message}</p>}
             <div className="flex justify-end gap-2">
-              {error === VERSION_CONFLICT_MESSAGE && (
-                <Button type="button" size="sm" variant="outline" onClick={() => void loadProfiles(draft.agent_id)}>최신 버전 다시 불러오기</Button>
+              {error instanceof VersionConflictError && (
+                <Button type="button" size="sm" variant="outline" onClick={() => void loadProfiles(draft.agent_id)}>{t("agents.reloadLatest")}</Button>
               )}
-              <Button type="button" size="sm" disabled={saving} onClick={() => void save()}>{saving ? "저장 중..." : "프로필 저장"}</Button>
+              <Button type="button" size="sm" disabled={saving} onClick={() => void save()}>{saving ? t("agents.saving") : t("agents.profile.save")}</Button>
             </div>
           </div>
           )}
@@ -613,9 +615,10 @@ function PortraitField({ name, previewUrl, savedUrl, removePortrait, onFile, onR
   onFile(event: ChangeEvent<HTMLInputElement>): void;
   onRemoveChange(remove: boolean): void;
 }) {
+  const { t } = useTranslation();
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium">초상화</label>
+      <label className="mb-1 block text-xs font-medium">{t("agents.portrait.label")}</label>
       <div className="flex items-start gap-3">
         {!removePortrait && (previewUrl || savedUrl) ? (
           <img
@@ -630,7 +633,7 @@ function PortraitField({ name, previewUrl, savedUrl, removePortrait, onFile, onR
         )}
         <div className="min-w-0 flex-1">
           <input
-            aria-label="초상화"
+            aria-label={t("agents.portrait.label")}
             type="file"
             accept="image/png,image/jpeg,image/webp,image/gif"
             className="block w-full text-xs"
@@ -643,7 +646,7 @@ function PortraitField({ name, previewUrl, savedUrl, removePortrait, onFile, onR
                 checked={removePortrait}
                 onChange={(event) => onRemoveChange(event.target.checked)}
               />
-              기존 초상화 삭제
+              {t("agents.portrait.remove")}
             </label>
           )}
         </div>
@@ -684,14 +687,14 @@ function moveBundleReference(draft: ProfileDraft, index: number, offset: -1 | 1)
   return { ...draft, context_bundles: contextBundles };
 }
 
-async function fetchBundles(request: typeof fetch): Promise<ContextBundle[]> {
+async function fetchBundles(request: typeof fetch, t: Translate): Promise<ContextBundle[]> {
   const response = await request("/api/context-bundles", { credentials: "same-origin" });
   const body = await responseJson(response);
-  if (!response.ok) throw new Error(responseMessage(body, "번들을 불러오지 못했습니다."));
+  if (!response.ok) throw new Error(responseMessage(body, t("agents.bundle.loadError")));
   return Array.isArray(body.bundles) ? body.bundles as ContextBundle[] : [];
 }
 
-async function putProfile(draft: ProfileDraft, request: typeof fetch): Promise<AgentProfile> {
+async function putProfile(draft: ProfileDraft, request: typeof fetch, t: Translate): Promise<AgentProfile> {
   const response = await request(`/api/agent-profiles/${encodeURIComponent(draft.agent_id.trim())}`, {
     method: "PUT",
     credentials: "same-origin",
@@ -707,7 +710,7 @@ async function putProfile(draft: ProfileDraft, request: typeof fetch): Promise<A
       expected_version: draft.version || null,
     }),
   });
-  return profileResponse(response, "프로필 저장에 실패했습니다.");
+  return profileResponse(response, t("agents.profile.saveError"));
 }
 
 const PORTRAIT_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -719,25 +722,25 @@ interface PortraitItem {
 }
 
 /** 중앙 초상 저장소에 올린다. 중앙 프로필 행이 없는 에이전트도 같은 길이다. */
-async function putPortrait(agentId: string, file: File, request: typeof fetch): Promise<PortraitItem> {
-  if (!PORTRAIT_MIMES.includes(file.type)) throw new Error("초상화는 PNG, JPEG, WebP, GIF만 지원합니다.");
+async function putPortrait(agentId: string, file: File, request: typeof fetch, t: Translate): Promise<PortraitItem> {
+  if (!PORTRAIT_MIMES.includes(file.type)) throw new Error(t("agents.portrait.invalidFormat"));
   const response = await request(`/api/agent-portraits/${encodeURIComponent(agentId)}`, {
     method: "PUT",
     credentials: "same-origin",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ data_base64: await fileBase64(file), mime: file.type }),
+    body: JSON.stringify({ data_base64: await fileBase64(file, t), mime: file.type }),
   });
   const body = await responseJson(response);
-  if (!response.ok) throw new Error(responseMessage(body, "초상화 저장에 실패했습니다."));
+  if (!response.ok) throw new Error(responseMessage(body, t("agents.portrait.saveError")));
   return body as unknown as PortraitItem;
 }
 
-async function deletePortrait(agentId: string, request: typeof fetch): Promise<void> {
+async function deletePortrait(agentId: string, request: typeof fetch, t: Translate): Promise<void> {
   const response = await request(`/api/agent-portraits/${encodeURIComponent(agentId)}`, {
     method: "DELETE",
     credentials: "same-origin",
   });
-  if (!response.ok) throw new Error(responseMessage(await responseJson(response), "초상화 삭제에 실패했습니다."));
+  if (!response.ok) throw new Error(responseMessage(await responseJson(response), t("agents.portrait.deleteError")));
 }
 
 function withPortrait(profile: AgentProfile, item: PortraitItem | null): AgentProfile {
@@ -773,8 +776,8 @@ async function responseJson(response: Response): Promise<Record<string, any>> {
   }
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "요청 처리에 실패했습니다.";
+function errorMessage(error: unknown, t: Translate): string {
+  return error instanceof Error ? error.message : t("agents.requestError");
 }
 
 function upsertProfile(profiles: AgentProfile[], profile: AgentProfile): AgentProfile[] {
@@ -791,10 +794,10 @@ function choosePortrait(
   setRemove(false);
 }
 
-function fileBase64(file: File): Promise<string> {
+function fileBase64(file: File, t: Translate): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("초상화 파일을 읽지 못했습니다."));
+    reader.onerror = () => reject(new Error(t("agents.portrait.readError")));
     reader.onload = () => {
       const value = typeof reader.result === "string" ? reader.result : "";
       resolve(value.includes(",") ? value.slice(value.indexOf(",") + 1) : value);

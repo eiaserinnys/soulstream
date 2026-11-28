@@ -1,32 +1,34 @@
+import { useTranslation } from "react-i18next";
 // 구성 보기, 「스킬과 카탈로그」 탭, 한눈에 표가 함께 쓰는 작은 표시들.
+import { dictionaries } from "@soulstream/i18n";
 import { ArrowRight } from "lucide-react";
 import { Badge } from "@seosoyoung/soul-ui";
 
 import { worstFinding, type GuideFinding, type LoadedHow, type SkillGuide, type SkillLink } from "../../lib/skill-guides";
 
-const LEVEL_LABEL = { error: "오류", warning: "경고", info: "정보" } as const;
 const LEVEL_VARIANT = { error: "error", warning: "warning", info: "outline" } as const;
-const HOW_LABEL: Record<LoadedHow, string> = { body: "본문까지", entry: "이름과 설명만", title: "제목만" };
 
 /** 가장 무거운 진단 하나를 배지로 보인다. 진단이 없으면 아무것도 그리지 않는다. */
 export function FindingBadge({ findings }: { findings: readonly GuideFinding[] }) {
+  const { t, i18n } = useTranslation();
   const worst = worstFinding(findings);
   if (!worst) return null;
-  return <Badge variant={LEVEL_VARIANT[worst.level]} size="sm">{LEVEL_LABEL[worst.level]} {worst.count}</Badge>;
+  return <Badge variant={LEVEL_VARIANT[worst.level]} size="sm">{t(`agents.finding.${worst.level}`)} {worst.count.toLocaleString(i18n.resolvedLanguage)}</Badge>;
 }
 
 /** 스킬의 진단 배지. 보고는 있는데 이 스킬만 빠졌으면 「보고에 없음」을 보인다. */
 export function SkillLintBadge({ skill, reportExists }: { skill: SkillGuide; reportExists: boolean }) {
+  const { t } = useTranslation();
   if (skill.lint) return <FindingBadge findings={skill.lint.findings} />;
-  return reportExists ? <Badge variant="outline" size="sm">보고에 없음</Badge> : null;
+  return reportExists ? <Badge variant="outline" size="sm">{t("agents.report.notListed")}</Badge> : null;
 }
 
 export function FindingCodeBadge({ finding }: { finding: GuideFinding }) {
   return <Badge variant={LEVEL_VARIANT[finding.level]} size="sm">{finding.code}</Badge>;
 }
 
-export function howLabel(how: LoadedHow): string {
-  return HOW_LABEL[how];
+export function howLabel(how: LoadedHow, t?: ReturnType<typeof useTranslation>["t"]): string {
+  return t ? t(`agents.how.${how}`) : dictionaries.ko.agents.how[how];
 }
 
 /** 나가는 연결을 이름 칩으로 보인다. limit를 넘는 것은 개수로 접는다. */

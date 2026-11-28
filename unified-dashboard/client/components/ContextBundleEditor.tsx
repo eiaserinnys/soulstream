@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { Button } from "@seosoyoung/soul-ui";
 
@@ -12,17 +13,16 @@ export interface ContextBundle {
   updated_at: string;
 }
 
-const VERSION_CONFLICT_MESSAGE =
-  "다른 사용자가 먼저 수정했습니다. 최신 번들을 다시 불러온 뒤 변경을 다시 적용하세요.";
 
 export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch }: {
   request?: typeof fetch;
   bundles: ContextBundle[];
   onBundlesChanged: () => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState<ContextBundle | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | VersionConflictError | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const selectBundle = (bundle: ContextBundle) => {
@@ -46,7 +46,7 @@ export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch
 
   const save = async () => {
     if (!draft?.bundle_id.trim()) {
-      setError("번들 ID를 입력하세요.");
+      setError(t("agents.bundle.idRequired"));
       return;
     }
     setSaving(true);
@@ -65,12 +65,12 @@ export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch
       });
       const body = await responseJson(response);
       if (body.code === "context_bundle_version_conflict") throw new VersionConflictError();
-      if (!response.ok) throw new Error(responseMessage(body, "번들 저장에 실패했습니다."));
+      if (!response.ok) throw new Error(responseMessage(body, t("agents.bundle.saveError")));
       setDraft(body as ContextBundle);
       await onBundlesChanged();
-      setMessage("번들을 저장했습니다.");
+      setMessage(t("agents.bundle.saved"));
     } catch (caught) {
-      setError(caught instanceof VersionConflictError ? VERSION_CONFLICT_MESSAGE : errorMessage(caught));
+      setError(caught instanceof VersionConflictError ? caught : errorMessage(caught, t("agents.requestError")));
     } finally {
       setSaving(false);
     }
@@ -93,14 +93,14 @@ export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch
       if (!response.ok) {
         const referencedBy = Array.isArray(body.referenced_by) ? body.referenced_by.join(", ") : "";
         throw new Error(referencedBy
-          ? `이 번들을 참조하는 프로필: ${referencedBy}`
-          : responseMessage(body, "번들 삭제에 실패했습니다."));
+          ? t("agents.bundle.referencedBy", { profiles: referencedBy })
+          : responseMessage(body, t("agents.bundle.deleteError")));
       }
       setDraft(null);
       await onBundlesChanged();
-      setMessage("번들을 삭제했습니다.");
+      setMessage(t("agents.bundle.deleted"));
     } catch (caught) {
-      setError(caught instanceof VersionConflictError ? VERSION_CONFLICT_MESSAGE : errorMessage(caught));
+      setError(caught instanceof VersionConflictError ? caught : errorMessage(caught, t("agents.requestError")));
     } finally {
       setSaving(false);
     }
@@ -114,23 +114,23 @@ export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch
         credentials: "same-origin",
       });
       const body = await responseJson(response);
-      if (!response.ok) throw new Error(responseMessage(body, "번들을 불러오지 못했습니다."));
+      if (!response.ok) throw new Error(responseMessage(body, t("agents.bundle.loadError")));
       setDraft(body as ContextBundle);
       await onBundlesChanged();
     } catch (caught) {
-      setError(errorMessage(caught));
+      setError(errorMessage(caught, t("agents.requestError")));
     }
   };
 
   return (
     <div className="grid h-[520px] min-h-0 grid-cols-1 grid-rows-[auto_minmax(0,1fr)_minmax(0,2fr)] overflow-hidden rounded-floor border border-border sm:h-auto sm:flex-1 sm:grid-cols-[13rem_minmax(0,1fr)] sm:grid-rows-[auto_minmax(0,1fr)]">
       <header className="border-b border-border px-4 py-3 sm:col-span-2">
-        <h2 className="text-sm font-semibold">컨텍스트 번들</h2>
-        <p className="mt-1 text-xs text-muted-foreground">여러 프로필이 함께 쓰는 atom 컨텍스트 묶음입니다. 여기서 번들을 만들고 고치면, 각 프로필의 「컨텍스트 번들」 절에서 참조합니다. 참조 중인 번들은 삭제할 수 없습니다.</p>
+        <h2 className="text-sm font-semibold">{t("agents.bundle.title")}</h2>
+        <p className="mt-1 text-xs text-muted-foreground">{t("agents.bundle.help")}</p>
       </header>
       <aside className="min-h-0 overflow-y-auto border-r border-border bg-muted/20 p-2">
         <Button type="button" size="sm" variant="outline" className="mb-2 w-full" onClick={startBundle}>
-          새 번들
+          {t("agents.bundle.new")}
         </Button>
         {bundles.map((bundle) => (
           <button
@@ -141,36 +141,36 @@ export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch
             onClick={() => selectBundle(bundle)}
           >
             <span className="block font-semibold">{bundle.bundle_id}</span>
-            <span className="block truncate text-xs">{bundle.description || "설명 없음"} · v{bundle.version}</span>
+            <span className="block truncate text-xs">{bundle.description || t("agents.bundle.noDescription")} · v{bundle.version}</span>
           </button>
         ))}
       </aside>
 
       <div className="min-h-0 overflow-y-auto overscroll-contain p-4" data-testid="context-bundle-editor">
         {!draft ? (
-          <div className="py-10 text-center text-sm text-muted-foreground">편집할 번들을 선택하거나 새로 만드세요.</div>
+          <div className="py-10 text-center text-sm text-muted-foreground">{t("agents.bundle.empty")}</div>
         ) : (
           <div className="space-y-5">
             <section className="grid grid-cols-2 gap-3">
               <LabeledInput
-                label="번들 ID"
+                label={t("agents.bundle.id")}
                 value={draft.bundle_id}
                 disabled={draft.version > 0}
                 onChange={(value) => setDraft({ ...draft, bundle_id: value })}
               />
               <LabeledInput
-                label="설명"
+                label={t("agents.bundle.description")}
                 value={draft.description}
                 onChange={(value) => setDraft({ ...draft, description: value })}
               />
             </section>
             <section>
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Atom 컨텍스트</h3>
+                <h3 className="text-sm font-semibold">{t("agents.context.atom")}</h3>
                 <Button type="button" size="sm" variant="outline" onClick={() => setDraft({
                   ...draft,
                   atom_contexts: [...draft.atom_contexts, { node_id: "", mode: "full" }],
-                })}>소스 추가</Button>
+                })}>{t("agents.context.addSource")}</Button>
               </div>
               <div className="space-y-3">
                 {draft.atom_contexts.map((context, index) => (
@@ -188,21 +188,21 @@ export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch
                     })}
                   />
                 ))}
-                {draft.atom_contexts.length === 0 && <p className="text-xs text-muted-foreground">등록된 컨텍스트 소스가 없습니다.</p>}
+                {draft.atom_contexts.length === 0 && <p className="text-xs text-muted-foreground">{t("agents.context.noSources")}</p>}
               </div>
             </section>
             <div className="flex justify-end gap-2">
-              {error === VERSION_CONFLICT_MESSAGE && (
-                <Button type="button" size="sm" variant="outline" onClick={() => void reloadLatest()}>최신 버전 다시 불러오기</Button>
+              {error instanceof VersionConflictError && (
+                <Button type="button" size="sm" variant="outline" onClick={() => void reloadLatest()}>{t("agents.reloadLatest")}</Button>
               )}
               {draft.version > 0 && (
-                <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void remove()}>번들 삭제</Button>
+                <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void remove()}>{t("agents.bundle.delete")}</Button>
               )}
-              <Button type="button" size="sm" disabled={saving} onClick={() => void save()}>{saving ? "저장 중..." : "번들 저장"}</Button>
+              <Button type="button" size="sm" disabled={saving} onClick={() => void save()}>{saving ? t("agents.saving") : t("agents.bundle.save")}</Button>
             </div>
           </div>
         )}
-        {error && <p role="alert" className="mt-3 rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground">{error}</p>}
+        {error && <p role="alert" className="mt-3 rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground">{error instanceof VersionConflictError ? t("agents.bundle.conflict") : error}</p>}
         {message && <p role="status" className="mt-3 rounded-floor bg-accent-blue/10 px-3 py-2 text-sm">{message}</p>}
       </div>
     </div>
@@ -223,6 +223,6 @@ function responseMessage(body: Record<string, any>, fallback: string): string {
   return typeof body.detail === "string" ? body.detail : fallback;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "요청 처리에 실패했습니다.";
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }

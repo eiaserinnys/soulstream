@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 // 「스킬과 카탈로그」 탭의 상세: 스킬은 본문 / 연결 / 쓰이는 곳 / 검증, 카탈로그는 축, 구성, 쓰는 스킬, 진단.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
@@ -14,11 +15,12 @@ import { FindingCodeBadge, ProfileInitial, howLabel } from "./GuideParts";
 type Pane = "body" | "links" | "usage" | "verify";
 
 function Retry({ message, onRetry }: { message: string; onRetry(): void }) {
+  const { t } = useTranslation();
   return (
     <FrameNotice>
       <div className="flex flex-col items-center gap-3">
         <p role="alert" className="text-sm text-destructive-foreground">{message}</p>
-        <Button type="button" size="sm" variant="outline" onClick={onRetry}>다시 시도</Button>
+        <Button type="button" size="sm" variant="outline" onClick={onRetry}>{t("agents.retry")}</Button>
       </div>
     </FrameNotice>
   );
@@ -34,12 +36,13 @@ export function SkillDetail({ skill, guides, request, usage, overview, nodeId, o
   onSelect(name: string): void;
   onSelectCatalog(name: string): void;
 }) {
+  const { t, i18n } = useTranslation();
   const [pane, setPane] = useState<Pane>("body");
   const atomBaseUrl = useAtomPublicUrl();
   const worst = skill.lint ? worstFinding(skill.lint.findings) : null;
   const tabs: Array<readonly [Pane, ReactNode]> = [
-    ["body", "본문"], ["links", "연결"], ["usage", "쓰이는 곳"],
-    ["verify", worst && worst.level !== "info" ? <>검증<Badge variant={worst.level === "error" ? "error" : "warning"} size="sm">{worst.count}</Badge></> : "검증"],
+    ["body", t("agents.skill.body")], ["links", t("agents.skill.links")], ["usage", t("agents.skill.usage")],
+    ["verify", worst && worst.level !== "info" ? <>{t("agents.skill.verify")}<Badge variant={worst.level === "error" ? "error" : "warning"} size="sm">{worst.count.toLocaleString(i18n.resolvedLanguage)}</Badge></> : t("agents.skill.verify")],
   ];
   return (
     <>
@@ -49,10 +52,10 @@ export function SkillDetail({ skill, guides, request, usage, overview, nodeId, o
         inlineActions
         clampSubtitle
         subtitle={skill.description}
-        actions={atomBaseUrl ? <DashboardIconCap size="small" label="atom에서 열기" onClick={() => window.open(`${atomBaseUrl}/#${skill.body_node_id}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap> : null}
+        actions={atomBaseUrl ? <DashboardIconCap size="small" label={t("agents.openInAtom")} onClick={() => window.open(`${atomBaseUrl}/#${skill.body_node_id}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap> : null}
       />
       <div className="guides-detail-tabs">
-        <DetailTabs<Pane> id="guide-detail" label="스킬 보기" panelId="guide-detail-panel" tabs={tabs} value={pane} onChange={setPane} />
+        <DetailTabs<Pane> id="guide-detail" label={t("agents.skill.views")} panelId="guide-detail-panel" tabs={tabs} value={pane} onChange={setPane} />
       </div>
       <div id="guide-detail-panel" role="tabpanel" aria-labelledby={`guide-detail-${pane}`} data-pane={pane} className={pane === "body" ? "flex min-h-0 flex-1 flex-col gap-3" : "min-h-0 flex-1 space-y-3 overflow-y-auto"}>
         {pane === "body" ? <BodyPane name={skill.name} request={request} />
@@ -65,6 +68,7 @@ export function SkillDetail({ skill, guides, request, usage, overview, nodeId, o
 }
 
 function BodyPane({ name, request }: { name: string; request: typeof fetch }) {
+  const { t } = useTranslation();
   const [state, setState] = useState<{ status: "loading" } | { status: "ready"; markdown: string } | { status: "error" }>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -79,8 +83,8 @@ function BodyPane({ name, request }: { name: string; request: typeof fetch }) {
     })();
     return () => controller.abort();
   }, [request, name, attempt]);
-  if (state.status === "loading") return <FrameLoading label="본문을 불러오는 중..." />;
-  if (state.status === "error") return <Retry message="본문을 읽지 못했습니다." onRetry={() => setAttempt(value => value + 1)} />;
+  if (state.status === "loading") return <FrameLoading label={t("agents.skill.loadingBody")} />;
+  if (state.status === "error") return <Retry message={t("agents.skill.readError")} onRetry={() => setAttempt(value => value + 1)} />;
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-v3-selectable-content="true">
       <ContextContentRenderer content={state.markdown} fill />
@@ -91,6 +95,7 @@ function BodyPane({ name, request }: { name: string; request: typeof fetch }) {
 interface LinkRow { kind: LinkKind | null; name: string; targetKind: "skill" | "catalog" | null }
 
 function LinksPane({ skill, guides, onSelect, onSelectCatalog }: { skill: SkillGuide; guides: SkillGuides; onSelect(name: string): void; onSelectCatalog(name: string): void }) {
+  const { t } = useTranslation();
   const descriptions = useMemo(() => new Map<string, string>([
     ...guides.skills.map(item => [item.name, item.description] as const),
     ...guides.catalogs.map(item => [item.name, item.description] as const),
@@ -103,7 +108,7 @@ function LinksPane({ skill, guides, onSelect, onSelectCatalog }: { skill: SkillG
     for (const name of skill.lint?.called_by ?? []) if (!rows.some(row => row.name === name)) rows.push({ kind: null, name, targetKind: "skill" });
     return rows;
   }, [guides, skill]);
-  if (!skill.lint) return <FrameNotice>보고에 없음</FrameNotice>;
+  if (!skill.lint) return <FrameNotice>{t("agents.report.notListed")}</FrameNotice>;
   const row = (link: LinkRow, key: string) => (
     // 눌림 바탕만 상자 안쪽 여백으로 내고(-mx-2 px-2) 글은 묶음 제목 시작선에 맞춘다. 종류 배지는 같은 폭 칸에 둔다.
     <li key={key} className="-mx-2">
@@ -116,12 +121,12 @@ function LinksPane({ skill, guides, onSelect, onSelectCatalog }: { skill: SkillG
   );
   return (
     <>
-      <SettingsGroupBox title="나가는 연결">
-        {skill.lint.links.length === 0 ? <p className="text-xs text-muted-foreground">없음</p>
+      <SettingsGroupBox title={t("agents.skill.outgoingLinks")}>
+        {skill.lint.links.length === 0 ? <p className="text-xs text-muted-foreground">{t("agents.none")}</p>
           : <ul>{skill.lint.links.map(link => row({ kind: link.kind, name: link.target, targetKind: link.target_kind }, `${link.kind}:${link.target}`))}</ul>}
       </SettingsGroupBox>
-      <SettingsGroupBox title="들어오는 연결">
-        {incoming.length === 0 ? <p className="text-xs text-muted-foreground">없음</p>
+      <SettingsGroupBox title={t("agents.skill.incomingLinks")}>
+        {incoming.length === 0 ? <p className="text-xs text-muted-foreground">{t("agents.none")}</p>
           : <ul>{incoming.map(link => row(link, `${link.kind}:${link.name}`))}</ul>}
       </SettingsGroupBox>
     </>
@@ -129,10 +134,11 @@ function LinksPane({ skill, guides, onSelect, onSelectCatalog }: { skill: SkillG
 }
 
 function UsagePane({ usage, overview, nodeId }: { usage: readonly SkillUsage[]; overview: { state: OverviewState; reload(): void }; nodeId: string }) {
-  if (!nodeId) return <FrameNotice>연결된 노드가 없습니다.</FrameNotice>;
-  if (overview.state.status === "loading") return <FrameLoading label="프로필을 모으는 중..." />;
-  if (overview.state.status === "error") return <Retry message="프로필을 모으지 못했습니다." onRetry={overview.reload} />;
-  if (usage.length === 0) return <FrameNotice>상시 목록에 넣은 프로필이 없습니다.</FrameNotice>;
+  const { t } = useTranslation();
+  if (!nodeId) return <FrameNotice>{t("agents.assignment.noNodes")}</FrameNotice>;
+  if (overview.state.status === "loading") return <FrameLoading label={t("agents.overview.loading")} />;
+  if (overview.state.status === "error") return <Retry message={t("agents.overview.error")} onRetry={overview.reload} />;
+  if (usage.length === 0) return <FrameNotice>{t("agents.skill.noUsage")}</FrameNotice>;
   return (
     <ul className="space-y-2" data-testid="skill-guide-usage">
       {usage.map(item => {
@@ -143,10 +149,10 @@ function UsagePane({ usage, overview, nodeId }: { usage: readonly SkillUsage[]; 
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium" data-v3-selectable-content="true">{item.profileName}</span>
               <span className="block truncate text-xs text-muted-foreground">
-                {[item.origin, [item.sourceParent, item.sourceTitle].filter(Boolean).join(" / "), condition || "항상"].filter(Boolean).join(" · ")}
+                {[item.origin, [item.sourceParent, item.sourceTitle].filter(Boolean).join(" / "), condition || t("agents.always")].filter(Boolean).join(" · ")}
               </span>
             </span>
-            <span className={`shrink-0 whitespace-nowrap text-xs ${item.how === "body" ? "" : "text-muted-foreground"}`}>{howLabel(item.how)}</span>
+            <span className={`shrink-0 whitespace-nowrap text-xs ${item.how === "body" ? "" : "text-muted-foreground"}`}>{howLabel(item.how, t)}</span>
           </li>
         );
       })}
@@ -155,7 +161,8 @@ function UsagePane({ usage, overview, nodeId }: { usage: readonly SkillUsage[]; 
 }
 
 function FindingList({ findings }: { findings: readonly GuideFinding[] }) {
-  if (findings.length === 0) return <FrameNotice>진단이 없습니다.</FrameNotice>;
+  const { t } = useTranslation();
+  if (findings.length === 0) return <FrameNotice>{t("agents.finding.empty")}</FrameNotice>;
   return (
     <ul className="space-y-2" data-testid="skill-guide-findings">
       {findings.map((finding, index) => (
@@ -169,19 +176,21 @@ function FindingList({ findings }: { findings: readonly GuideFinding[] }) {
 }
 
 function VerifyPane({ skill, reportExists }: { skill: SkillGuide; reportExists: boolean }) {
-  if (!reportExists) return <FrameNotice>검증 보고 없음</FrameNotice>;
-  if (!skill.lint) return <FrameNotice>보고에 없음</FrameNotice>;
+  const { t } = useTranslation();
+  if (!reportExists) return <FrameNotice>{t("agents.report.empty")}</FrameNotice>;
+  if (!skill.lint) return <FrameNotice>{t("agents.report.notListed")}</FrameNotice>;
   return <FindingList findings={skill.lint.findings} />;
 }
 
 export function CatalogDetail({ catalog, reportExists, onSelect }: { catalog: CatalogGuide; reportExists: boolean; onSelect(name: string): void }) {
+  const { t } = useTranslation();
   const lint = catalog.lint;
   const atomBaseUrl = useAtomPublicUrl();
   const axis = listText(lint?.axis);
   const composition = listText(lint?.composition);
   const group = (title: string, lines: string[]) => (
     <SettingsGroupBox title={title}>
-      {lines.length === 0 ? <p className="text-xs text-muted-foreground">없음</p> : (
+      {lines.length === 0 ? <p className="text-xs text-muted-foreground">{t("agents.none")}</p> : (
         <ul className="space-y-1">{lines.map(line => <li key={line} className="text-sm" data-v3-selectable-content="true" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>{line}</li>)}</ul>
       )}
     </SettingsGroupBox>
@@ -194,15 +203,15 @@ export function CatalogDetail({ catalog, reportExists, onSelect }: { catalog: Ca
         inlineActions
         clampSubtitle
         subtitle={catalog.description}
-        actions={atomBaseUrl && catalog.node_id ? <DashboardIconCap size="small" label="atom에서 열기" onClick={() => window.open(`${atomBaseUrl}/#${catalog.node_id}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap> : null}
+        actions={atomBaseUrl && catalog.node_id ? <DashboardIconCap size="small" label={t("agents.openInAtom")} onClick={() => window.open(`${atomBaseUrl}/#${catalog.node_id}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap> : null}
       />
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
-        {!lint ? <FrameNotice>{reportExists ? "보고에 없음" : "검증 보고 없음"}</FrameNotice> : (
+        {!lint ? <FrameNotice>{reportExists ? t("agents.report.notListed") : t("agents.report.empty")}</FrameNotice> : (
           <>
-            {group("축", axis)}
-            {group("구성", composition)}
-            <SettingsGroupBox title="쓰는 스킬">
-              {lint.used_by.length === 0 ? <p className="text-xs text-muted-foreground">없음</p> : (
+            {group(t("agents.catalog.axes"), axis)}
+            {group(t("agents.catalog.composition"), composition)}
+            <SettingsGroupBox title={t("agents.catalog.usedBy")}>
+              {lint.used_by.length === 0 ? <p className="text-xs text-muted-foreground">{t("agents.none")}</p> : (
                 <ul>
                   {lint.used_by.map(name => (
                     <li key={name} className="-mx-2">
@@ -212,7 +221,7 @@ export function CatalogDetail({ catalog, reportExists, onSelect }: { catalog: Ca
                 </ul>
               )}
             </SettingsGroupBox>
-            <SettingsGroupBox title="진단"><FindingList findings={lint.findings} /></SettingsGroupBox>
+            <SettingsGroupBox title={t("agents.finding.label")}><FindingList findings={lint.findings} /></SettingsGroupBox>
           </>
         )}
       </div>

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 // 한눈에: 줄은 소스(지침 묶음과 스킬 목록), 칸은 프로필, 값은 항상 · 조건부 · 없음. 쓰이는 곳 표를 돌린 것이다.
 import { useMemo, type CSSProperties } from "react";
 import { Circle, TriangleAlert } from "lucide-react";
@@ -10,8 +11,9 @@ import "./guides.css";
 const SKELETON_ROWS = 6;
 
 function MatrixSkeleton() {
+  const { t } = useTranslation();
   return (
-    <div className="guides-matrix-frame" data-testid="agent-context-overview" role="status" aria-label="프로필을 모으는 중">
+    <div className="guides-matrix-frame" data-testid="agent-context-overview" role="status" aria-label={t("agents.overview.loadingLabel")}>
       <div className="space-y-3 p-3">
         {Array.from({ length: SKELETON_ROWS }, (_, index) => (
           <span key={index} className="flex items-center gap-3"><span className="v3-run-skeleton v3-run-skeleton--title" /><span className="v3-run-skeleton v3-run-skeleton--badge" /></span>
@@ -21,9 +23,10 @@ function MatrixSkeleton() {
   );
 }
 
-const cellLabel = (cell: MatrixCell | undefined): string => !cell ? "없음" : cell.state === "always" ? "항상" : `조건부: ${cell.condition}`;
+const cellLabel = (cell: MatrixCell | undefined, t: ReturnType<typeof useTranslation>["t"]): string => !cell ? t("agents.none") : cell.state === "always" ? t("agents.always") : t("agents.overview.condition", { condition: cell.condition });
 
 export function ProfileOverviewMatrix({ nodeId, request = fetch }: { nodeId: string; request?: typeof fetch }) {
+  const { t } = useTranslation();
   const overview = useContextOverview(nodeId, request);
   const guides = useSkillGuides(request);
   const matrix = useMemo(
@@ -35,14 +38,14 @@ export function ProfileOverviewMatrix({ nodeId, request = fetch }: { nodeId: str
     return (
       <FrameNotice>
         <div className="flex flex-col items-center gap-3">
-          <p role="alert" className="text-sm text-destructive-foreground">프로필을 모으지 못했습니다.</p>
-          <Button type="button" size="sm" variant="outline" onClick={() => { if (overview.state.status === "error") overview.reload(); if (guides.state.status === "error") guides.reload(); }}>다시 시도</Button>
+          <p role="alert" className="text-sm text-destructive-foreground">{t("agents.overview.error")}</p>
+          <Button type="button" size="sm" variant="outline" onClick={() => { if (overview.state.status === "error") overview.reload(); if (guides.state.status === "error") guides.reload(); }}>{t("agents.retry")}</Button>
         </div>
       </FrameNotice>
     );
   }
   if (!matrix) return <MatrixSkeleton />;
-  if (matrix.profiles.length === 0) return <FrameNotice>이 노드에는 프로필이 없습니다.</FrameNotice>;
+  if (matrix.profiles.length === 0) return <FrameNotice>{t("agents.overview.noProfiles")}</FrameNotice>;
 
   const { profiles, rows, ownGuides, ownSkills } = matrix;
   const firstNode = profiles.find(profile => profile.source === "yaml")?.agent_id ?? null;
@@ -53,8 +56,8 @@ export function ProfileOverviewMatrix({ nodeId, request = fetch }: { nodeId: str
   const cells = (values: Record<string, MatrixCell>, label: string) => profiles.map(profile => {
     const cell = values[profile.agent_id];
     return (
-      <td key={profile.agent_id} {...columnProps(profile)} title={cell ? `${profileLabel(profile)} · ${label} · ${cellLabel(cell)}` : undefined}>
-        {cell && <Circle className={`size-3 ${cell.state === "always" ? "fill-current" : ""}`} aria-label={cellLabel(cell)} />}
+      <td key={profile.agent_id} {...columnProps(profile)} title={cell ? `${profileLabel(profile)} · ${label} · ${cellLabel(cell, t)}` : undefined}>
+        {cell && <Circle className={`size-3 ${cell.state === "always" ? "fill-current" : ""}`} aria-label={cellLabel(cell, t)} />}
       </td>
     );
   });
@@ -65,13 +68,13 @@ export function ProfileOverviewMatrix({ nodeId, request = fetch }: { nodeId: str
           <tr>
             <th scope="col" className="guides-matrix-corner">
               <span className="guides-matrix-legend">
-                <span><Circle className="size-3 fill-current text-foreground" aria-hidden="true" />항상</span>
-                <span><Circle className="size-3 text-foreground" aria-hidden="true" />조건부</span>
+                <span><Circle className="size-3 fill-current text-foreground" aria-hidden="true" />{t("agents.always")}</span>
+                <span><Circle className="size-3 text-foreground" aria-hidden="true" />{t("agents.overview.conditional")}</span>
               </span>
             </th>
             {profiles.map(profile => (
-              <th key={profile.agent_id} scope="col" className="guides-matrix-profile" {...columnProps(profile)} title={profile.status === "error" ? `${profileLabel(profile)} · ${profile.error ?? "읽지 못했습니다"}` : profileLabel(profile)}>
-                {profile.status === "error" && <TriangleAlert className="guides-matrix-error size-3" aria-label="읽지 못함" />}
+              <th key={profile.agent_id} scope="col" className="guides-matrix-profile" {...columnProps(profile)} title={profile.status === "error" ? `${profileLabel(profile)} · ${profile.error ?? t("agents.overview.readError")}` : profileLabel(profile)}>
+                {profile.status === "error" && <TriangleAlert className="guides-matrix-error size-3" aria-label={t("agents.overview.unreadable")} />}
                 <span>{profileLabel(profile)}</span>
               </th>
             ))}
@@ -93,12 +96,12 @@ export function ProfileOverviewMatrix({ nodeId, request = fetch }: { nodeId: str
             );
           })}
           <tr data-group-start={rows.length > 0 ? "true" : undefined}>
-            <th scope="row"><span>프로필마다 따로 둔 지침</span></th>
-            {cells(ownGuides, "프로필마다 따로 둔 지침")}
+            <th scope="row"><span>{t("agents.overview.perProfile")}</span></th>
+            {cells(ownGuides, t("agents.overview.perProfile"))}
           </tr>
           <tr>
-            <th scope="row"><span>스킬 목록</span></th>
-            {cells(ownSkills, "스킬 목록")}
+            <th scope="row"><span>{t("agents.skill.list")}</span></th>
+            {cells(ownSkills, t("agents.skill.list"))}
           </tr>
         </tbody>
       </table>

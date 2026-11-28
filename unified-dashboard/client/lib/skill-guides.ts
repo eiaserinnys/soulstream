@@ -1,6 +1,7 @@
 // 지침과 스킬 보기의 자료층. 서버 응답 꼴(snake_case) 그대로 읽고, 쓰이는 곳과 실린 방식은 화면이 계산한다.
 //  - GET /api/skill-guides: 스킬과 카탈로그 목록, 린트 보고(lint, report)
 //  - GET /api/nodes/:node_id/agents/context-overview: 노드의 프로필마다 실린 소스와 문서
+import type { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 export type LinkKind = "call" | "include" | "pick" | "uses";
@@ -237,8 +238,10 @@ export function useExecNode(): [string, (nodeId: string) => void] {
 
 export const profileLabel = (profile: { agent_id: string; display_name: string | null }): string => profile.display_name || profile.agent_id;
 
-export const originLabel = (origin: SourceOrigin): string =>
-  origin.kind === "bundle" ? origin.bundle_name : origin.kind === "profile" ? "프로필" : "노드 설정";
+type Translate = ReturnType<typeof useTranslation>["t"];
+
+const originLabel = (origin: SourceOrigin, t: Translate): string =>
+  origin.kind === "bundle" ? origin.bundle_name : origin.kind === "profile" ? t("agents.profile.label") : t("agents.profile.nodeSettings");
 
 /** 조건 한 줄: `backend: codex · card_role: assignee`. 조건이 없으면 빈 글. */
 export function conditionText(appliesWhen: Record<string, string[]> | null | undefined): string {
@@ -286,7 +289,7 @@ export interface SkillUsage {
 }
 
 /** 스킬 이름마다 어느 프로필의 어느 소스에 어떻게 실리는지. 오류 프로필은 건너뛴다. */
-export function computeSkillUsage(overview: ContextOverview | null, skills: readonly SkillGuide[]): Map<string, SkillUsage[]> {
+export function computeSkillUsage(overview: ContextOverview | null, skills: readonly SkillGuide[], t: Translate): Map<string, SkillUsage[]> {
   const usage = new Map<string, SkillUsage[]>();
   if (!overview) return usage;
   const byCard = skillsByEntryCard(skills);
@@ -299,7 +302,7 @@ export function computeSkillUsage(overview: ContextOverview | null, skills: read
         const how = skill ? loadedHow(source, document, byCard, nodeIds) : null;
         if (!skill || !how) continue;
         const list = usage.get(skill.name) ?? [];
-        const origin = originLabel(source.origin);
+        const origin = originLabel(source.origin, t);
         if (!list.some(item => item.profileId === profile.agent_id && item.origin === origin && item.sourceTitle === source.title && item.how === how)) {
           list.push({ profileId: profile.agent_id, profileName: profileLabel(profile), origin, sourceTitle: source.title, sourceParent: source.parent_title, appliesWhen: source.applies_when, how });
         }
@@ -379,19 +382,19 @@ export function severityRank(findings: readonly GuideFinding[]): number {
 export const skillFindings = (skill: SkillGuide): readonly GuideFinding[] => skill.lint?.findings ?? [];
 export const catalogFindings = (catalog: CatalogGuide): readonly GuideFinding[] => catalog.lint?.findings ?? [];
 
-const REPORT_TIME = new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Seoul" });
+const REPORT_TIME_OPTIONS = { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Seoul" } satisfies Intl.DateTimeFormatOptions;
 
-export function formatReportTime(iso: string | null | undefined): string | null {
+function formatReportTime(iso: string | null | undefined, language: string | undefined): string | null {
   if (!iso) return null;
   const time = new Date(iso);
-  return Number.isNaN(time.getTime()) ? null : REPORT_TIME.format(time);
+  return Number.isNaN(time.getTime()) ? null : new Intl.DateTimeFormat(language, REPORT_TIME_OPTIONS).format(time);
 }
 
 /** 보고 시각. 만든 때가 없으면 올린 때를 쓴다. */
-export const reportTime = (report: GuideReport | null): string | null => formatReportTime(report?.generated_at ?? report?.uploaded_at);
+export const reportTime = (report: GuideReport | null, language: string | undefined): string | null => formatReportTime(report?.generated_at ?? report?.uploaded_at, language);
 
 /** 글자 수는 목록의 모든 수에서 이 꼴 하나로 적는다. */
-export const formatChars = (chars: number): string => `${chars.toLocaleString()}자`;
+export const formatChars = (chars: number, t: Translate, language: string | undefined): string => t("agents.charCount", { chars: chars.toLocaleString(language) });
 
 /** 카탈로그 lint의 axis와 composition처럼 꼴이 느슨한 값을 글 목록으로 편다. */
 export function listText(value: unknown): string[] {

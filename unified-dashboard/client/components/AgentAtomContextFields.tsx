@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { InputHTMLAttributes } from "react";
 import { Button } from "@seosoyoung/soul-ui";
 
@@ -14,13 +15,13 @@ export interface AgentAtomContext {
 }
 
 const CONDITION_FIELDS: ReadonlyArray<{ field: AppliesWhenField; label: string }> = [
-  { field: "source", label: "호출 소스" },
-  { field: "node_id", label: "세션 노드" },
-  { field: "folder_id", label: "폴더 ID" },
-  { field: "agent", label: "에이전트" },
-  { field: "backend", label: "백엔드" },
-  { field: "os", label: "OS" },
-  { field: "card_role", label: "카드 역할" },
+  { field: "source", label: "agents.context.callerSource" },
+  { field: "node_id", label: "agents.context.sessionNode" },
+  { field: "folder_id", label: "agents.context.folderId" },
+  { field: "agent", label: "agents.agent" },
+  { field: "backend", label: "agents.context.backend" },
+  { field: "os", label: "agents.context.os" },
+  { field: "card_role", label: "agents.context.cardRole" },
 ];
 
 export const inputClassName = "mt-1 h-8 w-full rounded-floor border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
@@ -44,6 +45,7 @@ export function AgentAtomContextFields({ context, index, onChange, onRemove }: {
   onChange: (context: AgentAtomContext) => void;
   onRemove: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="rounded-floor border border-border bg-muted/10 p-3">
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 lg:grid-cols-[minmax(0,1fr)_7rem_5rem_auto]">
@@ -53,9 +55,9 @@ export function AgentAtomContextFields({ context, index, onChange, onRemove }: {
           onChange={(value) => onChange({ ...context, node_id: value })}
         /></div>
         <label className="text-xs font-medium">
-          모드
+          {t("agents.context.mode")}
           <select
-            aria-label={`컨텍스트 ${index + 1} 모드`}
+            aria-label={t("agents.context.modeLabel", { number: index + 1 })}
             className={inputClassName}
             value={context.mode ?? "full"}
             onChange={(event) => onChange({ ...context, mode: event.target.value as AtomContextMode })}
@@ -66,7 +68,7 @@ export function AgentAtomContextFields({ context, index, onChange, onRemove }: {
           </select>
         </label>
         <LabeledInput
-          label="깊이"
+          label={t("agents.context.depth")}
           type="number"
           min="0"
           value={context.depth === undefined ? "" : String(context.depth)}
@@ -75,14 +77,14 @@ export function AgentAtomContextFields({ context, index, onChange, onRemove }: {
             onChange(value === "" ? withoutDepth : { ...context, depth: Number(value) });
           }}
         />
-        <Button type="button" size="sm" variant="ghost" className="mt-5" onClick={onRemove}>삭제</Button>
+        <Button type="button" size="sm" variant="ghost" className="mt-5" onClick={onRemove}>{t("agents.delete")}</Button>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-3">
         {CONDITION_FIELDS.map(({ field, label }) => (
           <LabeledInput
             key={field}
-            label={`조건 · ${label}`}
-            placeholder="쉼표로 OR"
+            label={t("agents.context.conditionLabel", { label: t(label) })}
+            placeholder={t("agents.context.separateConditions")}
             value={conditionText(context.applies_when?.[field])}
             onChange={(value) => onChange(updateCondition(context, field, value))}
           />

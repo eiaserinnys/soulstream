@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo } from "@seosoyoung/soul-ui";
 import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
@@ -49,6 +50,7 @@ export function AgentNodeAssignmentFields({
   onModelPresetValidityChange?(valid: boolean): void;
   onError?(message: string): void;
 }) {
+  const { t, i18n } = useTranslation();
   const modelPresetCatalog = data?.modelPresetCatalog ?? suppliedModelPresetCatalog;
   const nodes = useOrchestratorStore((state) => state.nodes);
   const aliveNodes = useMemo(
@@ -84,7 +86,7 @@ export function AgentNodeAssignmentFields({
       credentials: "same-origin",
       headers: { Accept: "application/json" },
     }).then(async (response) => {
-      if (!response.ok) throw new Error(`에이전트 목록을 불러오지 못했습니다 (${response.status})`);
+      if (!response.ok) throw new Error(i18n.t("agents.assignment.loadError", { status: response.status }));
       return await response.json() as { agents?: AgentInfo[] };
     }).then((payload) => {
       if (!active) return;
@@ -95,7 +97,7 @@ export function AgentNodeAssignmentFields({
       if (active) onErrorRef.current?.(caught instanceof Error ? caught.message : String(caught));
     });
     return () => { active = false; };
-  }, [nodeId, data]);
+  }, [nodeId, data, i18n]);
 
   useEffect(() => {
     if (!nodeId) {
@@ -126,10 +128,10 @@ export function AgentNodeAssignmentFields({
     }} />;
   const nodeField = (
     <CatalogSelectionField className="v3-assignment-field" value={nodeId} disabled={disabled}
-      label={presentation === "session" ? "노드" : "실행 노드"}
-      ariaLabel={presentation === "session" ? "노드 선택" : "기본 실행 노드"}
-      selectedLabel={nodeId || "미지정"}
-      options={[{ value: "", label: "미지정" }, ...nodeOptions.map(node => ({ value: node.nodeId, label: node.nodeId }))]}
+      label={presentation === "session" ? t("agents.assignment.node") : t("agents.assignment.executionNode")}
+      ariaLabel={presentation === "session" ? t("agents.assignment.chooseNode") : t("agents.assignment.defaultNode")}
+      selectedLabel={nodeId || t("agents.unassigned")}
+      options={[{ value: "", label: t("agents.unassigned") }, ...nodeOptions.map(node => ({ value: node.nodeId, label: node.nodeId }))]}
       onValueChange={onNodeIdChange} />
   );
   const modelField = (
@@ -137,7 +139,7 @@ export function AgentNodeAssignmentFields({
       className="v3-model-preset-field"
       nodeId={nodeId}
       value={modelPreset}
-      label={presentation === "session" ? "모델" : "실행 모델"}
+      label={presentation === "session" ? t("agents.assignment.model") : t("agents.assignment.executionModel")}
       disabled={disabled}
       triggerClassName="v3-model-preset-trigger"
       modelPresetCatalog={modelPresetCatalog}

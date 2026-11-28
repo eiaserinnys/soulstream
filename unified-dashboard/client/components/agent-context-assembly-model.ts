@@ -1,4 +1,5 @@
 // 구성 보기(AgentContextAssemblyView)의 자료와 순수 계산. 미리보기 응답을 줄로 바꾸고, 줄의 글을 만든다.
+import type { useTranslation } from "react-i18next";
 import { conditionSummary, type AgentAtomContext } from "./AgentAtomContextFields";
 import { loadedHow, skillForCard, type LoadedHow, type SkillGuide } from "../lib/skill-guides";
 
@@ -48,7 +49,7 @@ export interface Row {
 
 type Specs = Array<{ context: AgentAtomContext; source: string }>;
 
-export function buildRows(specs: Specs | null, data: PreviewResponse | null): Row[] {
+export function buildRows(specs: Specs | null, data: PreviewResponse | null, nodeSettings: string): Row[] {
   const sections = data?.sections ?? [];
   const sources = data?.manifest.sources ?? [];
   if (specs) {
@@ -76,7 +77,7 @@ export function buildRows(specs: Specs | null, data: PreviewResponse | null): Ro
       key: `${section.spec_index}`,
       nodeId: manifest.node_id,
       context: { node_id: manifest.node_id, depth: manifest.depth, mode: manifest.mode as AgentAtomContext["mode"], applies_when: manifest.applies_when },
-      origin: "노드 설정",
+      origin: nodeSettings,
       title: manifest.title ?? section.title,
       parentTitle: manifest.parent_title ?? null,
       documents: manifest.documents ?? null,
@@ -92,13 +93,13 @@ export function rowTitle(row: Row): string {
   return row.title ?? row.nodeId.slice(0, 8);
 }
 
-export function contextShape(context: AgentAtomContext): string {
-  const mode = context.mode === "index" ? "색인 · " : context.mode === "titles" ? "제목만 · " : "전체 · ";
-  return `${mode}깊이 ${context.depth ?? 3}`;
+export function contextShape(context: AgentAtomContext, t: ReturnType<typeof useTranslation>["t"]): string {
+  const mode = context.mode === "index" ? t("agents.context.index") : context.mode === "titles" ? t("agents.context.titles") : t("agents.context.full");
+  return t("agents.context.shape", { mode, depth: context.depth ?? 3 });
 }
 
-export function rowMeta(row: Row): string {
-  return [row.origin, contextShape(row.context), conditionSummary(row.context.applies_when) || null].filter(Boolean).join(" · ");
+export function rowMeta(row: Row, t: ReturnType<typeof useTranslation>["t"]): string {
+  return [row.origin, contextShape(row.context, t), conditionSummary(row.context.applies_when) || null].filter(Boolean).join(" · ");
 }
 
 export function formatTokens(tokens: number): string {
