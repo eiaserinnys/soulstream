@@ -1,12 +1,33 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { installationLanguage } from '../windows/cli.mjs';
 import { parseArgs } from '../windows/lib.mjs';
+
+test('the Windows full installer passes language and console options to setup prepare', () => {
+  const source = readFileSync(new URL('../install-windows.ps1', import.meta.url), 'utf8');
+  assert.match(source, /\[string\]\$Lang\s*=/);
+  assert.match(source, /\$prepare \+= @\("--lang", \$Lang\)/);
+  assert.match(source, /\$NonInteractive\) \{ \$prepare \+= @\("--non-interactive", "true"\)/);
+  assert.match(source, /Invoke-Native "node" \$prepare -InheritConsole:\(-not \$NonInteractive\)/);
+
+  const root = mkdtempSync(join(tmpdir(), 'windows-prepare-lang-'));
+  try {
+    const setup = new URL('../windows/setup.mjs', import.meta.url);
+    const result = spawnSync(process.execPath, [
+      fileURLToPath(setup), 'prepare', '--install-root', root, '--lang', 'en', '--non-interactive', 'true',
+    ], { encoding: 'utf8', timeout: 5000 });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /^언어 en은\(는\) 아직 준비되지 않았습니다.*ko/m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('Windows option parsing forwards the requested language and respects existing state', async () => {
   const root = mkdtempSync(join(tmpdir(), 'windows-lang-'));

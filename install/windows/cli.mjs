@@ -17,10 +17,14 @@ const INSTALL_HINTS = {
 
 const isFile = (path) => { try { return statSync(path).isFile(); } catch { return false; } };
 
-export function installationLanguage(ctx, options) {
-  return selectInstallLanguage(join(ctx.soulDir, 'config'), options.lang, {
-    interactive: options['non-interactive'] !== 'true',
-  });
+export async function installationLanguage(ctx, options) {
+  try {
+    return await selectInstallLanguage(join(ctx.soulDir, 'config'), options.lang, {
+      interactive: options['non-interactive'] !== 'true',
+    });
+  } catch (error) {
+    throw fail(error.message);
+  }
 }
 
 export function findCli(name, env = process.env) {
