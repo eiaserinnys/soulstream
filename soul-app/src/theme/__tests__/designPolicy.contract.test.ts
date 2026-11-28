@@ -161,7 +161,6 @@ describe('v3 design policy contract', () => {
       'components/planner/Card.styles.ts',
       'components/planner/FolderBoardContent.tsx',
       'components/planner/TabletMarkdownEditor.tsx',
-      'components/planner/DailyMemo.tsx',
       'components/planner/ProjectContextEditorView.tsx',
       'components/planner/FolderWorkspace.styles.ts',
     ]) {
@@ -174,11 +173,9 @@ describe('v3 design policy contract', () => {
     for (const file of [
       'screens/ProjectListScreen.tsx',
       'components/split/SidebarPane.tsx',
-      'components/planner/DailyMemo.tsx',
     ]) {
       expect(read(file)).toContain('t.cardLayout.gap');
     }
-    expect(read('screens/DailyPlannerScreen.tsx')).toContain('gap: t.uiSpacing.lg');
     const groupedSheet = read('components/planner/GroupedGlassSheet.tsx');
     expect(groupedSheet).toContain('grouped.dividerColor');
     expect(read('components/planner/FolderBoardContent.tsx')).toContain('<GroupedGlassSheet');
@@ -227,7 +224,6 @@ describe('v3 design policy contract', () => {
       expect(read(file)).toContain('...planner.typography.cardTitle');
     }
     for (const file of [
-      'components/planner/DailyMemo.tsx',
       'components/planner/PlannerSectionHeader.tsx',
     ]) {
       expect(read(file)).toContain('...planner.typography.section');
@@ -253,16 +249,6 @@ describe('v3 design policy contract', () => {
     expect(isDeclarationException(exceptions, 'components/Example.tsx', 'fontSize: 13,')).toBe(true);
     expect(isDeclarationException(exceptions, 'components/Example.tsx', 'fontSize: 15,')).toBe(false);
     expect(isDeclarationException(exceptions, 'components/Other.tsx', 'fontSize: 13,')).toBe(false);
-  });
-
-  test('데일리 날짜·메모·카드는 같은 content column에서 시작한다', () => {
-    const source = read('screens/DailyPlannerScreen.tsx');
-    expect(source).toContain('testID="daily-date-row"');
-    expect(source).toContain('testID="daily-centered-date"');
-    expect(source).not.toContain('daily-card-summary');
-    expect(source).toMatch(
-      /content:\s*\{[\s\S]*paddingHorizontal:\s*t\.uiSpacing\.lg,[\s\S]*paddingVertical:\s*t\.spacing\.lg/,
-    );
   });
 });
 

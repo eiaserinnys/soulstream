@@ -51,7 +51,7 @@ jest.mock('../SessionSuccessionHost', () => ({ SessionSuccessionHost: () => null
 
 import { Alert, PixelRatio, StyleSheet } from 'react-native';
 import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
-import type { PlannerFolder, PlannerToday } from '../../../api/plannerTypes';
+import type { PlannerFolder } from '../../../api/plannerTypes';
 import { usePlannerStore } from '../../../store/plannerStore';
 import { useSessionStore } from '../../../store/sessionStore';
 import { FolderWorkspace } from '../FolderWorkspace';
@@ -73,7 +73,6 @@ const plannerFolder = {
     title: '실제 업무 제목',
     metadata: {},
     version: 1,
-    dailyDate: null,
     archived: false,
     createdAt: '',
     updatedAt: '',
@@ -296,21 +295,10 @@ test('태블릿 header와 phone content가 같은 중요·오늘 토글 정본�
   } as PlannerFolder;
   usePlannerStore.setState({
     selectedFolderSnapshot: starredFolder,
-    dailyByDate: {
-      '2026-07-17': {
-        daily: { page: { ...plannerFolder.page, id: 'daily' }, blocks: [], stateVector: 'sv' },
-        projects: [],
-        memoBlocks: [],
-        folders: [starredFolder],
-        attention: [], running: [], queued: [],
-        reviewSessionIds: [],
-      },
-    },
   });
   const api = {
     getFolderBoardItems: jest.fn(() => new Promise(() => undefined)),
     getFolderSnapshot: jest.fn(() => new Promise(() => undefined)),
-    getPlannerToday: jest.fn().mockResolvedValue(plannerToday([starredFolder])),
   } as unknown as ApiClient;
   const tabletScreen = render(<FolderWorkspace api={api} folderPageId="task-1" />);
 
@@ -318,17 +306,10 @@ test('태블릿 header와 phone content가 같은 중요·오늘 토글 정본�
     .findByProps({ testID: 'task-workspace-toggle-actions' })).toBeTruthy();
   expect(tabletScreen.getByLabelText('중요 폴더 지정 해제').props.accessibilityState)
     .toMatchObject({ selected: true });
-  expect(tabletScreen.getByLabelText('오늘 데일리에서 제거').props.accessibilityState)
-    .toMatchObject({ selected: true });
-  await waitFor(() => expect(
-    tabletScreen.getByLabelText('오늘 데일리에서 제거').props.accessibilityState.disabled,
-  ).toBe(false));
   await act(async () => {
     fireEvent.press(tabletScreen.getByLabelText('중요 폴더 지정 해제'));
-    fireEvent.press(tabletScreen.getByLabelText('오늘 데일리에서 제거'));
   });
   expect(mockSetFolderStarred).toHaveBeenCalledWith(starredFolder, false);
-  expect(mockSetFolderToday).toHaveBeenCalledWith(starredFolder, '2026-07-17', false);
 
   tabletScreen.unmount();
   mockDeviceType = 'phone';
@@ -336,49 +317,6 @@ test('태블릿 header와 phone content가 같은 중요·오늘 토글 정본�
   const scrollJson = findJsonByTestId(phoneScreen.toJSON(), 'task-workspace-scroll');
   expect(findJsonByTestId(scrollJson, 'task-workspace-details-group')).toBeTruthy();
   expect(phoneScreen.getByTestId('task-workspace-toggle-actions')).toBeTruthy();
-  await waitFor(() => expect(
-    phoneScreen.getByLabelText('오늘 데일리에서 제거').props.accessibilityState.disabled,
-  ).toBe(false));
-  await settleTimers();
-});
-
-test.each([
-  ['포함', [plannerFolder], '오늘 데일리에서 제거', true],
-  ['미포함', [], '오늘 데일리에 추가', false],
-] as const)('cold-entry 오늘 snapshot %s 응답을 기다린 뒤 상태를 확정한다', async (
-  _case,
-  folders,
-  label,
-  selected,
-) => {
-  let resolveToday!: (value: PlannerToday) => void;
-  const todayRequest = new Promise<PlannerToday>((resolve) => { resolveToday = resolve; });
-  const getPlannerToday = jest.fn(() => todayRequest);
-  const api = {
-    getPlannerToday,
-    getFolderBoardItems: jest.fn().mockResolvedValue([]),
-    getFolderSnapshot: jest.fn(() => new Promise(() => undefined)),
-  } as unknown as ApiClient;
-  const screen = render(<FolderWorkspace api={api} folderPageId="task-1" />);
-
-  await waitFor(() => expect(getPlannerToday).toHaveBeenCalledWith('2026-07-17'));
-  expect(usePlannerStore.getState().dailyByDate['2026-07-17']).toBeUndefined();
-  expect(screen.getByTestId('task-workspace-today-toggle').props.accessibilityState)
-    .toMatchObject({ disabled: true, busy: true });
-  expect(screen.getByTestId('task-workspace-starred-toggle').props.accessibilityState)
-    .toMatchObject({ disabled: false });
-  await act(async () => {
-    fireEvent.press(screen.getByTestId('task-workspace-starred-toggle'));
-  });
-  expect(mockSetFolderStarred).toHaveBeenCalledWith(plannerFolder, true);
-
-  await act(async () => {
-    resolveToday(plannerToday([...folders]));
-    await todayRequest;
-  });
-
-  await waitFor(() => expect(screen.getByLabelText(label).props.accessibilityState)
-    .toMatchObject({ selected, disabled: false, busy: false }));
   await settleTimers();
 });
 
@@ -840,27 +778,6 @@ function findJsonByTestId(tree: any, testID: string): any {
   if (tree.props?.testID === testID) return tree;
   return findJsonByTestId(tree.children, testID);
 }
-
-function plannerToday(folders: PlannerFolder[]): PlannerToday {
-  return {
-    daily: {
-      page: {
-        ...plannerFolder.page,
-        id: 'daily-2026-07-17',
-        title: '2026-07-17',
-        dailyDate: '2026-07-17',
-      },
-      blocks: [],
-      stateVector: 'sv-daily',
-    },
-    projects: [],
-    memoBlocks: [],
-    folders,
-    attention: [], running: [], queued: [],
-    reviewSessionIds: [],
-  };
-}
-
 
 test('폰에서 닫은 설명 초안은 태블릿 편집에 복원되고 취소하면 서버 값으로 돌아간다', async () => {
   await useAuthStore.persist.rehydrate();

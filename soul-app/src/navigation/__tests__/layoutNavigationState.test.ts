@@ -221,6 +221,7 @@ describe('buildPhoneState', () => {
       ? { originTab: 'SettingsTab', kind: 'settings', category: null }
       : location.kind === 'chat'
         ? { ...location, originTab: 'FeedTab' }
+        : location.kind === 'dailyHistory' ? { originTab: 'DailyTab', kind: 'daily' }
         : location;
     expect(readPhoneLocation(buildPhoneState(location))).toEqual(expected);
   });

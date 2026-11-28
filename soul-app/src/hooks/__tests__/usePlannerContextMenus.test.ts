@@ -255,7 +255,7 @@ test('POST 실패는 오류를 알리고 예약 성공으로 표시하지 않는
 
 const folder = {
   page: {
-    id: 'task-1', title: '업무', dailyDate: null, version: 1, archived: false,
+    id: 'task-1', title: '업무', version: 1, archived: false,
     metadata: {}, createdAt: '', updatedAt: '',
   },
   blocks: [], folderId: 'task-1', folderSummary: null, status: 'open', assignee: '',

@@ -196,7 +196,7 @@ function plannerFolder(): PlannerFolder {
 
 function page(id: string, title: string): PlannerPage {
   return {
-    id, title, dailyDate: null, version: 1, archived: false,
+    id, title, version: 1, archived: false,
     metadata: {}, createdAt: '', updatedAt: '',
   };
 }
@@ -211,7 +211,7 @@ test.each([true, false])('듀오 폴더 메뉴는 항목을 직접 넘기고 중
   const view = render(<DuoSideBandContext.Provider value><FolderWorkspace api={null} folderId="task-1" folderPageId="task-1" /></DuoSideBandContext.Provider>);
   const actions = usePhoneRailActions.getState().overrides.at(-1)!.actions;
   expect(actions.find(action => action.id === 'starred')?.menuLabel).toBe(starred ? '중요 폴더 해제' : '중요 폴더로 지정');
-  expect(actions.find(action => action.id === 'today')?.menuLabel).toBe('오늘 데일리에 추가');
+  expect(actions.find(action => action.id === 'today')).toBeUndefined();
   const menu = actions.find(action => action.id === 'menu')!;
   expect(menu.menuTitle).toBe('폴더 이름');
   expect(menu.menuItems?.()).toEqual(mockProjectMenuItems.mock.results.at(-1)?.value);

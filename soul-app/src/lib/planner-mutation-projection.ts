@@ -5,7 +5,6 @@ import type {
   PlannerSessionSummary,
   PlannerFolder,
   PlannerFolderSessionPage,
-  PlannerToday,
 } from '../api/plannerTypes';
 import {
   mapIfChanged,
@@ -16,7 +15,6 @@ import {
 } from './planner-projection-helpers';
 
 export interface PlannerProjectionState {
-  dailyByDate: Record<string, PlannerToday | undefined>;
   starred: PlannerPageSlice<PlannerFolder>;
   folderByPageId: Record<string, PlannerFolderCollection | undefined>;
   folderChildPages: Record<string, PlannerPageSlice<PlannerFolder> | undefined>;
@@ -30,7 +28,6 @@ export function capturePlannerProjection(
   state: PlannerProjectionState,
 ): PlannerProjectionSnapshot {
   return {
-    dailyByDate: state.dailyByDate,
     starred: state.starred,
     folderByPageId: state.folderByPageId,
     folderChildPages: state.folderChildPages,
@@ -44,9 +41,6 @@ export function replaceFolderProjection(
   folder: PlannerFolder,
 ): PlannerProjectionState {
   const folderPageId = folder.page.id;
-  const dailyByDate = mapRecord(state.dailyByDate, (daily) => daily
-    ? replaceDailyFolder(daily, folder)
-    : daily);
   const folderChildPages = mapRecord(state.folderChildPages, (page) => page
     ? replaceFolderPage(page, folder)
     : page);
@@ -61,7 +55,6 @@ export function replaceFolderProjection(
     : { ...state.starred, items: starredItems };
   return {
     ...state,
-    dailyByDate,
     folderChildPages,
     folderByPageId,
     starred,
@@ -74,14 +67,10 @@ export function replaceFolderProjection(
 export function insertFolderProjection(
   state: PlannerProjectionState,
   folder: PlannerFolder,
-  dailyDate?: string,
 ): PlannerProjectionState {
   let next = replaceFolderProjection(state, folder);
   if (folder.projectPageId) {
     next = insertFolderIntoParent(next, folder.projectPageId, folder);
-  }
-  if (dailyDate) {
-    next = setFolderDailyMembership(next, dailyDate, folder, true);
   }
   return next;
 }
@@ -90,9 +79,6 @@ export function removeFolderProjection(
   state: PlannerProjectionState,
   folderPageId: string,
 ): PlannerProjectionState {
-  const dailyByDate = mapRecord(state.dailyByDate, (daily) => daily
-    ? removeDailyFolder(daily, folderPageId)
-    : daily);
   const folderChildPages = mapRecord(state.folderChildPages, (page) => {
     if (!page) return page;
     const items = removeById(page.items, folderPageId, (item) => item.page.id);
@@ -108,7 +94,6 @@ export function removeFolderProjection(
   const starredItems = removeById(state.starred.items, folderPageId, (item) => item.page.id);
   return {
     ...state,
-    dailyByDate,
     folderChildPages,
     folderByPageId,
     starred: starredItems === state.starred.items
@@ -131,31 +116,7 @@ export function completeFolderProjection(
     status: 'completed',
     folderSummary: folder.folderSummary ? { ...folder.folderSummary, status: 'completed' } : null,
   };
-  const replaced = replaceFolderProjection(state, completed);
-  return {
-    ...replaced,
-    dailyByDate: mapRecord(replaced.dailyByDate, (daily) => daily
-      ? removeDailyFolder(daily, folderPageId)
-      : daily),
-  };
-}
-
-export function setFolderDailyMembership(
-  state: PlannerProjectionState,
-  date: string,
-  folder: PlannerFolder,
-  present: boolean,
-): PlannerProjectionState {
-  const daily = state.dailyByDate[date];
-  if (!daily) return state;
-  const folders = present
-    ? upsertById(daily.folders, folder, (item) => item.page.id)
-    : removeById(daily.folders, folder.page.id, (item) => item.page.id);
-  if (folders === daily.folders) return state;
-  return {
-    ...state,
-    dailyByDate: { ...state.dailyByDate, [date]: { ...daily, folders } },
-  };
+  return replaceFolderProjection(state, completed);
 }
 
 export function moveFolderParentProjection(
@@ -298,10 +259,8 @@ export function acknowledgeFolderSessionProjection(
         : session);
     return sessions === folder.sessions ? folder : { ...folder, sessions };
   });
-  return { ...next, dailyByDate: mapRecord(next.dailyByDate, (daily) =>
-    daily?.reviewSessionIds.includes(sessionId)
-      ? { ...daily, reviewSessionIds: daily.reviewSessionIds.filter((id) => id !== sessionId) }
-      : daily) };
+
+  return next;
 }
 
 function mapAllFolders(
@@ -315,9 +274,6 @@ function mapAllFolders(
     seen.add(folder.page.id);
     next = replaceFolderProjection(next, transform(folder));
   };
-  for (const daily of Object.values(state.dailyByDate)) {
-    for (const folder of daily?.folders ?? []) visit(folder);
-  }
   for (const page of Object.values(state.folderChildPages)) {
     for (const folder of page?.items ?? []) visit(folder);
   }
@@ -371,10 +327,6 @@ export function findPlannerFolderProjection(
   folderPageId: string,
 ): PlannerFolder | undefined {
   if (state.selectedFolderSnapshot?.page.id === folderPageId) return state.selectedFolderSnapshot;
-  for (const daily of Object.values(state.dailyByDate)) {
-    const folder = daily?.folders.find((item) => item.page.id === folderPageId);
-    if (folder) return folder;
-  }
   for (const page of Object.values(state.folderChildPages)) {
     const folder = page?.items.find((item) => item.page.id === folderPageId);
     if (folder) return folder;
@@ -388,11 +340,6 @@ function findFolderSession(
   state: PlannerProjectionState,
   sessionId: string,
 ): PlannerSessionSummary | undefined {
-  for (const daily of Object.values(state.dailyByDate)) {
-    const session = daily?.folders.flatMap((folder) => folder.sessions)
-      .find((item) => item.agentSessionId === sessionId);
-    if (session) return session;
-  }
   for (const page of Object.values(state.folderChildPages)) {
     const session = page?.items.flatMap((folder) => folder.sessions)
       .find((item) => item.agentSessionId === sessionId);
@@ -403,16 +350,6 @@ function findFolderSession(
   if (starredSession) return starredSession;
   return state.selectedFolderSnapshot?.sessions
     .find((item) => item.agentSessionId === sessionId);
-}
-
-function replaceDailyFolder(daily: PlannerToday, folder: PlannerFolder): PlannerToday {
-  const folders = replaceById(daily.folders, folder, (item) => item.page.id);
-  return folders === daily.folders ? daily : { ...daily, folders };
-}
-
-function removeDailyFolder(daily: PlannerToday, folderPageId: string): PlannerToday {
-  const folders = removeById(daily.folders, folderPageId, (item) => item.page.id);
-  return folders === daily.folders ? daily : { ...daily, folders };
 }
 
 function replaceFolderPage(

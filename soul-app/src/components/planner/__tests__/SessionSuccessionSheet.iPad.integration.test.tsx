@@ -178,7 +178,6 @@ function affectedFolder(): PlannerFolder {
     page: {
       id: '1822c134-b7a7-403e-8d20-a9d87a0bbff7',
       title: '소울앱 오동작 수정',
-      dailyDate: null,
       version: 1,
       archived: false,
       metadata: {},

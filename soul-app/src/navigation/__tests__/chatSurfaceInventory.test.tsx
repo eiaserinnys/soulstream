@@ -18,10 +18,6 @@ jest.mock('@react-navigation/bottom-tabs', () => ({
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../../hooks/useSessionsStream', () => ({ useSessionsStream: jest.fn() }));
-jest.mock('../../screens/DailyPlannerScreen', () => {
-  const ReactModule = require('react');
-  return { DailyPlannerScreen: ReactModule.forwardRef(() => null) };
-});
 jest.mock('../../screens/StarredFoldersScreen', () => ({ StarredFoldersScreen: () => null }));
 jest.mock('../../screens/ProjectListScreen', () => ({
   ProjectHeaderAddButton: () => null,

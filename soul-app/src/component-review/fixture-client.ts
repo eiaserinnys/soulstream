@@ -73,7 +73,6 @@ export const cardChecksSessionId = 'public-shell-session-0';
 const api = {
   ...createReviewApi('normal', { home: true }),
   getCatalog: async () => ({ folders, sessions: {}, sessionList: [], total: 0 }),
-  getDailyHistory: async () => ({ dates: [] }),
   getStarredFolders: async () => ({ items: [], nextCursor: null }),
   catalogStreamUrl: () => '', nodeStreamUrl: () => '',
 };
@@ -115,7 +114,6 @@ const entryShellApi = {
     entryShellFeedRequests.push({ type: 'getSessionsByIds', sessionIds: [...sessionIds] });
     return feedFixtureSessionLookup(sessionIds);
   },
-  getDailyHistory: async () => ({ dates: [] }),
   getStarredFolders: async () => ({ items: [], nextCursor: null }),
   catalogStreamUrl: reviewFeedStreamUrl, nodeStreamUrl: () => '',
 };

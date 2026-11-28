@@ -48,7 +48,6 @@ describe('N3 planner visual roles', () => {
 
   test('N3 표면에 N7 공통 행·sheet·tree를 더한 20 files / 25 units는 미할당 0이다', () => {
     const expected = new Map<string, string[]>([
-      ['components/planner/DailyMemo.tsx', ['DailyMemo']],
       ['components/planner/PlannerMarkdownText.tsx', ['PlannerMarkdownText']],
       ['components/planner/PlannerFolderRow.tsx', ['PlannerFolderRow']],
       ['components/planner/GroupedGlassSheet.tsx', ['GroupedGlassSheet', 'GroupedGlassRow']],
@@ -62,7 +61,6 @@ describe('N3 planner visual roles', () => {
       ['components/planner/FolderSessionHistory.tsx', ['FolderSessionHistory']],
       ['components/planner/FolderWorkspace.tsx', ['FolderWorkspace']],
       ['components/planner/FolderWorkspaceReadOverlay.tsx', ['FolderWorkspaceReadOverlay']],
-      ['screens/DailyPlannerScreen.tsx', ['DailyPlannerScreen']],
       ['screens/ProjectListScreen.tsx', ['ProjectHeaderAddButton', 'ProjectListScreen']],
       ['components/planner/FolderWorkspaceSections.tsx', ['FolderWorkspaceSections']],
       ['screens/StarredFoldersScreen.tsx', ['StarredFoldersScreen']],

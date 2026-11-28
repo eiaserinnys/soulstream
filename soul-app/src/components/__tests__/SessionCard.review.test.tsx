@@ -48,7 +48,7 @@ beforeEach(() => {
   usePlannerStore.getState().resetForTest();
   const plannerFolder = {
     page: {
-      id: 'task-1', title: '업무', dailyDate: null, version: 1, archived: false,
+      id: 'task-1', title: '업무', version: 1, archived: false,
       metadata: {}, createdAt: '', updatedAt: '',
     },
     blocks: [], folderId: 'task-1', folderSummary: null, status: 'review', assignee: '',

@@ -16,7 +16,7 @@ beforeEach(() => {
     folderByPageId: {
       'page-1': {
         project: {
-          id: 'page-1', title: '프로젝트', dailyDate: null, version: 1,
+          id: 'page-1', title: '프로젝트', version: 1,
           archived: false, metadata: {}, createdAt: '', updatedAt: '',
         },
         folders: { items: [], nextCursor: null },

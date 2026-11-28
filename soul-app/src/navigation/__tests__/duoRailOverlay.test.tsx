@@ -20,10 +20,6 @@ jest.mock('../../components/AppKeyboardAvoidingView', () => {
   const { View } = require('react-native');
   return { AppKeyboardAvoidingView: ({ children, ...props }: Record<string, unknown>) => ReactModule.createElement(View, props, children) };
 });
-jest.mock('../../screens/DailyPlannerScreen', () => {
-  const ReactModule = require('react');
-  return { DailyPlannerScreen: ReactModule.forwardRef(() => null) };
-});
 jest.mock('../../screens/StarredFoldersScreen', () => ({ StarredFoldersScreen: () => null }));
 jest.mock('../../screens/ProjectListScreen', () => ({
   ProjectHeaderAddButton: () => null,
@@ -127,7 +123,7 @@ test('DailyTab 루트는 레일 폭을 비우지 않고 다른 탭과 데일리 
   const tabsLayout = tabs().navigatorProps!.screenLayout as (args: Record<string, unknown>) => React.ReactElement;
   const dailyComponent = tabs().screens.find((screen) => screen.name === 'DailyTab')!.component as React.ComponentType;
   const daily = render(<PersistentSessionProvider><PhonePanelHistoryProvider>{React.createElement(dailyComponent)}</PhonePanelHistoryProvider></PersistentSessionProvider>);
-  const dailyCapture = getNativeStackCaptures().find((capture) => capture.screens.some((screen) => screen.name === 'DailyHistory'))!;
+  const dailyCapture = getNativeStackCaptures().find((capture) => capture.screens.some((screen) => screen.name === 'Daily'))!;
   const dailyLayout = dailyCapture.navigatorProps!.screenLayout as (args: Record<string, unknown>) => React.ReactElement;
   expect(dailyLayout).toEqual(expect.any(Function));
 

@@ -340,7 +340,6 @@ function affectedFolder(): PlannerFolder {
     page: {
       id: '05e70c70-578c-47e8-844e-5c436c78cd64',
       title: '서소영 온디바이스 앱',
-      dailyDate: null,
       version: 19,
       archived: false,
       metadata: {},

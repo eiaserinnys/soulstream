@@ -16,11 +16,10 @@ export interface PlannerContextMenuAction {
 const ENABLED: MenuCapability = { enabled: true };
 
 export function buildFolderContextMenuActions(input: {
-  state: { starred: boolean; completed: boolean; inToday: boolean; system?: boolean };
+  state: { starred: boolean; completed: boolean; system?: boolean };
   capability?: {
     moveToProject?: MenuCapability;
     complete?: MenuCapability;
-    toggleToday?: MenuCapability;
   };
   actions: {
     open(): void | Promise<void>;
@@ -28,7 +27,6 @@ export function buildFolderContextMenuActions(input: {
     toggleStar(): void | Promise<void>;
     moveToProject(): void | Promise<void>;
     complete(): void | Promise<void>;
-    toggleToday(): void | Promise<void>;
   };
 }): PlannerContextMenuAction[] {
   const complete = input.state.completed
@@ -47,12 +45,6 @@ export function buildFolderContextMenuActions(input: {
       capability: complete,
       destructive: true,
     })] : []),
-    ...(!input.state.system ? [action(
-      'toggle-today',
-      input.state.inToday ? '오늘 플래너에서 제거' : '오늘 플래너에 추가',
-      input.actions.toggleToday,
-      { capability: input.capability?.toggleToday },
-    )] : []),
   ];
 }
 

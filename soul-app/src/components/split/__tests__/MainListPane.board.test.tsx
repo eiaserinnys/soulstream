@@ -5,8 +5,6 @@ jest.mock('../../planner/FolderWorkspace', () => ({ FolderWorkspace: (props: any
   return React.createElement(Pressable, { testID: 'folder-existing', onPress: () => props.cardDisplay.onChange(true) },
     React.createElement(Text, null, String(props.cardDisplay?.includeCompleted)));
 } }));
-jest.mock('../../../screens/DailyPlannerScreen', () => ({ DailyPlannerScreen: () => require('react').createElement(require('react-native').Text, null, '기존 데일리') }));
-jest.mock('../../planner/DailyHeaderActions', () => ({ DailyHeaderActions: () => null }));
 jest.mock('../../../api/client', () => ({ createApiClient: () => ({ listCards: mockList, listCompletedCards: mockCompleted, listNodes: async () => ({ nodes: [] }) }) }));
 jest.mock('../../planner/CardDetailSheet', () => ({ CardDetailSheet: () => null }));
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';

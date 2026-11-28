@@ -3,7 +3,7 @@ import type { PlannerBlock, PlannerPage, PlannerFolder } from '../plannerTypes';
 import { ApiHttpError } from '../clientCore';
 
 const page: PlannerPage = {
-  id: 'task-1', title: '업무', dailyDate: null, version: 4,
+  id: 'task-1', title: '업무', version: 4,
   archived: false, metadata: {}, createdAt: '', updatedAt: '',
 };
 const blocks: PlannerBlock[] = [
@@ -28,7 +28,7 @@ function apiMock(overrides: Partial<PlannerMutationApi> = {}): PlannerMutationAp
   return {
     getPage: jest.fn().mockResolvedValue({ page, blocks, stateVector: 'AQID' }),
     getPageBacklinks: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
-    getDailyPage: jest.fn(),
+
     applyPageOperations: jest.fn().mockResolvedValue({
       page, blocks, operation: { id: 'op' }, tempIdMapping: {}, idempotent: false,
     }),
@@ -187,40 +187,6 @@ test('업무 mutation은 task 작업에 folderId, 페이지 작업에 page.id를
   }));
 });
 
-test('오늘 데일리 해제는 같은 제목이 있어도 업무 pageId의 마운트만 삭제한다', async () => {
-  const unrelatedMount = {
-    ...block('unrelated-mount', '[[업무]]', 'paragraph', {}),
-    pageId: 'daily-1',
-  };
-  const folderMount = {
-    ...block('task-mount', '[[업무]]', 'paragraph', {}),
-    pageId: 'daily-1',
-  };
-  const daily = pageRead('daily-1', [unrelatedMount, folderMount]);
-  const api = apiMock({
-    getDailyPage: jest.fn().mockResolvedValue({ page: daily.page, created: false }),
-    getPage: jest.fn().mockResolvedValue(daily),
-    getPageBacklinks: jest.fn().mockResolvedValue({
-      items: [{
-        linkKind: 'mount',
-        sourcePageId: 'daily-1',
-        sourceBlockId: 'task-mount',
-        targetPageId: 'task-1',
-      }],
-      nextCursor: null,
-    }),
-  });
-
-  await createPlannerMutationPort(api).setFolderToday(plannerFolder(), '2026-07-26', false);
-
-  expect(api.applyPageOperations).toHaveBeenCalledWith(
-    'daily-1',
-    expect.objectContaining({
-      operations: [{ op: 'delete_block_subtree', block_id: 'task-mount' }],
-    }),
-  );
-});
-
 test('새 세션 page anchor는 version conflict 409 뒤 fresh page로 정확히 한 번 재시도한다', async () => {
   const current = pageRead('task-1', []);
   const fresh = {
@@ -323,27 +289,6 @@ test('폴더 이동은 parentFolderId와 현재 folder version을 사용한다',
   }));
 });
 
-test('새 폴더를 만들고 선택하면 오늘 page에 마운트한다', async () => {
-  const daily = pageRead('daily-1', []);
-  const api = apiMock({
-    createFolder: jest.fn().mockResolvedValue({
-      folder: { id: 'folder-new', version: 1 }, operation: { id: 'op' }, idempotent: false,
-    }),
-    getDailyPage: jest.fn().mockResolvedValue({ page: daily.page, created: false }),
-    getPage: jest.fn().mockResolvedValue(daily),
-  });
-  await createPlannerMutationPort(api).createFolder({
-    title: '새 폴더', description: '', folderId: 'folder-1',
-    projectPageId: 'project-1', dailyDate: '2026-07-17',
-    initialContext: { guidance: '직접 지침', atomReferences: [] },
-  });
-  expect(api.createFolder).toHaveBeenCalledWith(expect.objectContaining({
-    name: '새 폴더', parentFolderId: 'folder-1',
-    initialContext: expect.objectContaining({ guidance: '직접 지침' }),
-  }));
-  expect(api.getPage).toHaveBeenCalledWith('daily-1');
-});
-
 function plannerFolder(): PlannerFolder {
   return {
     page,
@@ -400,19 +345,4 @@ test('reasoningEffort가 없으면 요청에서 생략하여 노드가 preset �
 
   expect((api.createSession as jest.Mock).mock.calls[0]?.[0])
     .not.toHaveProperty('reasoningEffort');
-});
-
-test('생성 성공 뒤 오늘 반영 실패는 같은 생성 결과와 페이지 요청으로 재개한다', async () => {
-  const result = { folder: { id: 'new-folder' } };
-  const api = apiMock({ createFolder: jest.fn().mockResolvedValue(result),
-    getDailyPage: jest.fn().mockResolvedValue({ page }),
-    applyPageOperations: jest.fn().mockRejectedValueOnce(new Error('응답 유실')).mockResolvedValue({ page }) });
-  const port = createPlannerMutationPort(api);
-  const input = { title: '새 폴더', description: '설명', folderId: 'parent', projectPageId: 'parent-page', dailyDate: '2026-10-03',
-    creation: { idempotencyKey: 'stable-folder-key' } };
-  await expect(port.createFolder(input)).rejects.toThrow('응답 유실');
-  await expect(port.createFolder(input)).resolves.toEqual(result);
-  expect(api.createFolder).toHaveBeenCalledTimes(1);
-  expect(api.createFolder).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'stable-folder-key' }));
-  expect((api.applyPageOperations as jest.Mock).mock.calls[1]).toEqual((api.applyPageOperations as jest.Mock).mock.calls[0]);
 });

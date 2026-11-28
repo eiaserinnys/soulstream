@@ -10,7 +10,6 @@ function read(file: string) {
 describe('N3 production planner surface rhythm', () => {
   test('각 시각 표면은 planner visual role 정본을 직접 소비한다', () => {
     for (const file of [
-      'components/planner/DailyMemo.tsx',
       'components/planner/PlannerMarkdownText.tsx',
       'components/planner/PlannerFolderRow.tsx',
       'components/planner/GroupedGlassSheet.tsx',
@@ -24,7 +23,6 @@ describe('N3 production planner surface rhythm', () => {
       'components/planner/FolderWorkspace.styles.ts',
       'components/planner/FolderWorkspaceDetails.tsx',
       'components/planner/FolderWorkspaceReadOverlay.tsx',
-      'screens/DailyPlannerScreen.tsx',
       'screens/ProjectListScreen.tsx',
       'components/planner/FolderWorkspaceSections.tsx',
       'screens/StarredFoldersScreen.tsx',

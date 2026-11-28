@@ -28,8 +28,6 @@ export function buildNewFolderSubmission(
     title: string;
     description: string;
     selectedProjectPageId: string;
-    mountToday: boolean;
-    dailyDate: string;
     initialContext: InitialFolderContext;
   },
   options: readonly ProjectFolderOption[],
@@ -46,6 +44,5 @@ export function buildNewFolderSubmission(
     folderId: project.folderId,
     projectPageId: project.projectPageId,
     initialContext: input.initialContext,
-    ...(input.mountToday ? { dailyDate: input.dailyDate } : {}),
   };
 }

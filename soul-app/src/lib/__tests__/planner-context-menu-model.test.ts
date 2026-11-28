@@ -23,11 +23,10 @@ test('폴더 메뉴에는 새 폴더와 완료 동작만 제공한다', () => {
 
 test('시스템 폴더에는 별표와 오늘 업무 메뉴를 표시하지 않는다', () => {
   const menu = buildFolderContextMenuActions({
-    state: { starred: false, completed: false, inToday: false, system: true },
+    state: { starred: false, completed: false, system: true },
     actions: {
       open: noop, copyId: noop, toggleStar: noop, moveToProject: noop,
-      complete: noop, toggleToday: noop,
-    },
+      complete: noop, },
   });
   expect(menu.map((action) => action.key)).not.toContain('toggle-star');
   expect(menu.map((action) => action.key)).not.toContain('toggle-today');
@@ -35,7 +34,7 @@ test('시스템 폴더에는 별표와 오늘 업무 메뉴를 표시하지 않�
 
 test('업무 메뉴는 렌더 위치 없이 상태와 capability만으로 같은 배열을 만든다', () => {
   const input = {
-    state: { starred: false, completed: false, inToday: true },
+    state: { starred: false, completed: false },
     capability: {
       moveToProject: { enabled: false, reason: '이동할 다른 프로젝트가 없습니다.' },
     },
@@ -45,8 +44,7 @@ test('업무 메뉴는 렌더 위치 없이 상태와 capability만으로 같은
       toggleStar: noop,
       moveToProject: noop,
       complete: noop,
-      toggleToday: noop,
-    },
+      },
   };
 
   const daily = buildFolderContextMenuActions(input);
@@ -63,7 +61,6 @@ test('업무 메뉴는 렌더 위치 없이 상태와 capability만으로 같은
     '별표 추가',
     '다른 프로젝트로 이동',
     '완료 처리',
-    '오늘 플래너에서 제거',
   ]);
   expect(daily[3]).toMatchObject({
     disabled: true,
@@ -152,12 +149,11 @@ test('세션 메뉴는 Feed·실행 이력·Chat 어댑터에서 capability가 �
 
 test('완료 상태는 호출부가 complete capability를 활성화해도 다시 완료할 수 없다', () => {
   const menu = buildFolderContextMenuActions({
-    state: { starred: false, completed: true, inToday: false },
+    state: { starred: false, completed: true },
     capability: { complete: { enabled: true } },
     actions: {
       open: noop, copyId: noop, toggleStar: noop, moveToProject: noop,
-      complete: noop, toggleToday: noop,
-    },
+      complete: noop, },
   });
 
   expect(menu.find((action) => action.key === 'complete')).toMatchObject({
@@ -168,16 +164,13 @@ test('완료 상태는 호출부가 complete capability를 활성화해도 다�
 
 test('오늘 플래너에 없는 업무는 웹과 같은 추가 라벨을 사용한다', () => {
   const menu = buildFolderContextMenuActions({
-    state: { starred: false, completed: false, inToday: false },
+    state: { starred: false, completed: false },
     actions: {
       open: noop, copyId: noop, toggleStar: noop, moveToProject: noop,
-      complete: noop, toggleToday: noop,
-    },
+      complete: noop, },
   });
 
-  expect(menu.find((action) => action.key === 'toggle-today')).toMatchObject({
-    label: '오늘 플래너에 추가',
-  });
+  expect(menu.find((action) => action.key === 'toggle-today')).toBeUndefined();
 });
 
 test('화면 파일은 빌더 정본의 메뉴 라벨을 직접 선언하지 않는다', () => {
@@ -189,7 +182,6 @@ test('화면 파일은 빌더 정본의 메뉴 라벨을 직접 선언하지 않
 
   for (const label of [
     '오늘 플래너에 추가',
-    '오늘 플래너에서 제거',
     '카드 페이지 ID 복사',
     '다른 프로젝트로 이동',
     '이 세션을 이어서 시작하기',

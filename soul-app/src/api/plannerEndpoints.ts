@@ -3,13 +3,11 @@ import type { CatalogFolder } from './types';
 import {
   parsePlannerFolderDetail,
   parsePlannerFolderPageSlice,
-  parsePlannerToday,
   type PlannerFolderDetailWire,
   type PlannerPageSliceWire,
   type PlannerFolderSessionPage,
   type PlannerSessionSummaryWire,
   type PlannerFolderWire,
-  type PlannerTodayWire,
 } from './plannerTypes';
 
 function pageQuery(cursor: string | undefined): URLSearchParams {
@@ -29,11 +27,6 @@ export function createPlannerEndpoints({
   readJson,
 }: ApiRequestContext) {
   return {
-    getPlannerToday: (date: string) =>
-      authFetch(`${base}/api/planner/today?${new URLSearchParams({ date })}`)
-        .then((response) => readJson<PlannerTodayWire>(response, 'getPlannerToday'))
-        .then(parsePlannerToday),
-
     getStarredFolders: (cursor?: string) => {
       const query = pageQuery(cursor);
       return authFetch(withQuery(`${base}/api/planner/starred-folders`, query))
@@ -50,14 +43,6 @@ export function createPlannerEndpoints({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pageId, beforePageId }),
       }).then((response) => readJson<{ ok: true }>(response, 'moveStarredFolderOrder')),
-
-    getDailyHistory: (before: string) =>
-      authFetch(`${base}/api/planner/daily-history?${new URLSearchParams({
-        before,
-      })}`).then((response) => readJson<{ dates: string[] }>(
-        response,
-        'getDailyHistory',
-      )),
 
     getPlannerFolder: (folderId: string,options?:{includeCompleted?:boolean}) =>
       authFetch(`${base}/api/planner/folders/${encodeURIComponent(folderId)}${options?.includeCompleted===undefined?'':`?includeCompleted=${options.includeCompleted}`}`)

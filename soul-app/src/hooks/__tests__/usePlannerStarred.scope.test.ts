@@ -22,7 +22,7 @@ function deferred<T>() {
 function folder(id: string, title = id): PlannerFolder {
   return {
     page: {
-      id, title, dailyDate: null, version: 1, archived: false,
+      id, title, version: 1, archived: false,
       metadata: {}, createdAt: '', updatedAt: '',
     },
     blocks: [], folderId: id, folderSummary: null, status: 'open', assignee: '',

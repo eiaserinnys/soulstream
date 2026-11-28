@@ -10,7 +10,6 @@ import { AppGlassCard } from '../components/AppGlassCard';
 import { ProjectTreeSheet } from '../components/planner/ProjectTreeSheet';
 import { usePlannerActions } from '../hooks/usePlannerActions';
 import { usePlannerContextMenus } from '../hooks/usePlannerContextMenus';
-import { useUIStore } from '../store/uiStore';
 import {
   promptText,
   reportPlannerError,
@@ -57,7 +56,6 @@ export function ProjectListScreen({
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   const actions = usePlannerActions(api);
   const menus = usePlannerContextMenus(api);
-  const today = useUIStore((state) => state.todayDate);
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
   const rows = useMemo(
     () => buildPlannerProjectTreeRows(folders, expandedFolderIds),
@@ -82,7 +80,6 @@ export function ProjectListScreen({
         title,
         folderId: folder.id,
         projectPageId,
-        dailyDate: today,
       }).catch(reportPlannerError('폴더를 만들지 못했습니다.'));
     });
   return (

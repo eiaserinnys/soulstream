@@ -80,8 +80,7 @@ function descriptionBlock(pageId: string, text: string): PlannerBlock {
 function folder(pageId: string, text: string): PlannerFolder {
   return {
     page: {
-      id: pageId, title: `${pageId} 업무`, metadata: {}, version: 1, dailyDate: null,
-      archived: false, createdAt: '', updatedAt: '',
+      id: pageId, title: `${pageId} 업무`, metadata: {}, version: 1, archived: false, createdAt: '', updatedAt: '',
     },
     blocks: [descriptionBlock(pageId, text)],
     folderId: pageId, folderSummary: null, status: 'open', assignee: '담당 미지정',

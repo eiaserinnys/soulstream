@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import {
   type BottomTabBarButtonProps,
@@ -17,10 +17,6 @@ import {
   type NavigatorScreenParams,
 } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import {
-  DailyPlannerScreen,
-  type DailyPlannerScreenHandle,
-} from '../screens/DailyPlannerScreen';
 import { FolderListScreen, type FolderListTab } from '../screens/FolderListScreen';
 import { ProjectHeaderAddButton, useCreateProject } from '../screens/ProjectListScreen';
 import { SessionFeedScreen } from '../screens/SessionFeedScreen';
@@ -53,7 +49,6 @@ import { PhonePersistentSession, PersistentPhoneTabIcon } from './PhonePersisten
 import { usePersistentSessionHost, usePersistentSessionScene } from './PersistentSessionContext';
 import { ROOT_SECTION_CONFIG, type RootSectionKey } from './rootSectionConfig';
 import { RootSectionHeaderTitle } from '../components/navigation/RootSectionHeaderTitle';
-import { DailyHeaderActions } from '../components/planner/DailyHeaderActions';
 import { useCardDisplay } from '../hooks/useCardDisplay';
 import { PhoneCardHome } from './PhoneCardHome';
 import { DuoSafeTop } from './DuoSafeTop';
@@ -280,7 +275,6 @@ export type RootTabParamList = {
 
 export type DailyStackParamList = {
   Daily: undefined;
-  DailyHistory: undefined;
   FolderWorkspace: { folderPageId: string; folderTitle: string; folderId?: string };
   CardDetail: { cardId: string };
   MarkdownDocument: MarkdownDocumentRouteParams;
@@ -348,39 +342,6 @@ function DuoRailReserve({ children }: { children: React.ReactNode }) {
   return <View style={{ flex: 1, paddingRight: width }}>{children}</View>;
 }
 
-function PhoneDailyHistoryScreen({ navigation }: NativeStackScreenProps<DailyStackParamList, 'DailyHistory'>) {
-  const dailyRef = useRef<DailyPlannerScreenHandle>(null);
-  const duo = useDuoSideBand();
-  const focused = useIsFocused();
-  useRegisterDuoRailOverride('daily-history', duo && focused, [
-    { id: 'back', label: '뒤로', icon: 'chevron-back', onPress: () => navigation.goBack() },
-    { id: 'folder-add', label: '폴더 추가', icon: 'add', onPress: () => dailyRef.current?.openNewFolder() },
-    { id: 'review', label: '모닝 리뷰', icon: 'sunny-outline', onPress: () => dailyRef.current?.openReview() },
-  ]);
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <DailyHeaderActions
-          onOpenReview={() => dailyRef.current?.openReview()}
-          onOpenNewFolder={() => dailyRef.current?.openNewFolder()}
-        />
-      ),
-    });
-  }, [navigation]);
-  return (
-    <DuoSafeTop><DailyPlannerScreen
-      ref={dailyRef}
-      active={focused}
-      onOpenSession={(id) => openPhoneChat(navigation, id)}
-      onOpenFolder={(folder) => navigation.navigate('FolderWorkspace', {
-        folderPageId: folder.page.id,
-        folderTitle: folder.page.title,
-        folderId: folder.folderId,
-      })}
-    /></DuoSafeTop>
-  );
-}
-
 function PhoneDailyFolderWorkspace({ route, navigation }: NativeStackScreenProps<DailyStackParamList, 'FolderWorkspace'>) {
   return <PhoneFolderWorkspace folderPageId={route.params.folderPageId} folderId={route.params.folderId} navigation={navigation} />;
 }
@@ -394,7 +355,6 @@ function DailyNavigator() {
         ? <>{children}</>
         : <DuoRailReserve>{children}</DuoRailReserve>}>
       <DailyStack.Screen name="Daily" component={PhoneCardHome} options={{ ...rootScreenOptions('DailyTab'), headerShown: !duo }} />
-      <DailyStack.Screen name="DailyHistory" component={PhoneDailyHistoryScreen} options={{ title: '데일리 기록', headerShown: !duo }} />
       <DailyStack.Screen
         name="FolderWorkspace"
         component={PhoneDailyFolderWorkspace}

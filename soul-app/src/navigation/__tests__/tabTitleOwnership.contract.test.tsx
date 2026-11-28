@@ -29,18 +29,6 @@ jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true,
   useFocusEffect: (effect: () => void) => require('react').useEffect(effect, [effect]) }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../../hooks/useSessionsStream', () => ({ useSessionsStream: jest.fn() }));
-jest.mock('../../screens/DailyPlannerScreen', () => {
-  const ReactModule = require('react');
-  return {
-    DailyPlannerScreen: ReactModule.forwardRef((_props: unknown, ref: React.Ref<unknown>) => {
-      ReactModule.useImperativeHandle(ref, () => ({
-        openReview: mockOpenDailyReview,
-        openNewFolder: mockOpenDailyNewFolder,
-      }));
-      return null;
-    }),
-  };
-});
 jest.mock('../../screens/StarredFoldersScreen', () => ({ StarredFoldersScreen: () => null }));
 jest.mock('../../screens/ProjectListScreen', () => ({
   ProjectHeaderAddButton: () => null,
@@ -164,7 +152,7 @@ test('phone card home header keeps create and completion actions, daily route re
   expect(mockOpenCardCreate).toHaveBeenCalledTimes(1);
   expect(header.queryByLabelText('기존 데일리 기록')).toBeNull();
   expect(header.queryByLabelText('보드 확대')).toBeNull();
-  expect(getNativeStackCaptures()[0]!.screens.some((screen) => screen.name === 'DailyHistory')).toBe(true);
+  expect(getNativeStackCaptures()[0]!.screens.some((screen) => screen.name === 'DailyHistory')).toBe(false);
 });
 
 test('Feed phone root는 native title을 보존하되 large title과 toolbar 검색 통합을 허용하지 않는다', () => {

@@ -406,7 +406,7 @@ export function buildPhoneState(
       break;
     case 'dailyHistory':
       activeTab = 'DailyTab';
-      setStack('DailyTab', [{ name: 'Daily' }, { name: 'DailyHistory' }]);
+      setStack('DailyTab', [{ name: 'Daily' }]);
       break;
     case 'folderList':
       activeTab = 'FolderTab';

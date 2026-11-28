@@ -16,7 +16,6 @@ import {
 import type { ResumeAfterLimitResponse } from '../api/sessionEndpoints';
 import { usePlannerStore } from '../store/plannerStore';
 import { useSessionStore } from '../store/sessionStore';
-import { useUIStore } from '../store/uiStore';
 import { usePlannerActions } from './usePlannerActions';
 import { useAuthScopeGeneration } from '../lib/auth-scope';
 import { confirmPlannerAction, promptPlannerText } from '../components/planner/plannerNativeUI';
@@ -40,22 +39,17 @@ export function usePlannerContextMenus(api: ApiClient | null) {
   const actions = usePlannerActions(api);
   const scopeGeneration = useAuthScopeGeneration();
   const folders = useSessionStore((state) => state.catalog.folders);
-  const today = useUIStore((state) => state.todayDate);
   const [sessionSuccession, setSessionSuccession] = useState<SessionSuccessionRequest | null>(null);
   const resumeAfterLimitInFlight = useRef(new Set<string>());
   useEffect(() => setSessionSuccession(null), [scopeGeneration]);
 
   const openFolderMenu = useCallback((folder: PlannerFolder, onOpen: () => void) => {
-    const plannerState = usePlannerStore.getState();
     const projectTargets = folders.filter((candidate) =>
       !!candidate.projectPageId && !candidate.archived && candidate.id !== folder.folderId);
-    const inToday = plannerState.dailyByDate[today]?.folders
-      .some((candidate) => candidate.page.id === folder.page.id) === true;
     showAppContextMenu(buildFolderContextMenuActions({
       state: {
         starred: folder.page.metadata.starred === true,
         completed: folder.status === 'completed',
-        inToday,
         system: folder.folderId === 'claude' || folder.folderId === 'llm',
       },
       capability: {
@@ -94,10 +88,9 @@ export function usePlannerContextMenus(api: ApiClient | null) {
           '카드를 물리 삭제하지 않고 완료 상태로 전환합니다.',
           () => report(actions.completeFolder(folder)),
         ),
-        toggleToday: () => report(actions.setFolderToday(folder, today, !inToday)),
       },
     }), folder.page.title);
-  }, [actions, folders, today]);
+  }, [actions, folders]);
 
   const projectMenuItems = useCallback((input: {
     folder: Folder;
@@ -265,9 +258,6 @@ export function usePlannerContextMenus(api: ApiClient | null) {
 
 function allFolders(state: ReturnType<typeof usePlannerStore.getState>): PlannerFolder[] {
   const byId = new Map<string, PlannerFolder>();
-  for (const daily of Object.values(state.dailyByDate)) {
-    for (const folder of daily?.folders ?? []) byId.set(folder.page.id, folder);
-  }
   for (const page of Object.values(state.folderChildPages)) {
     for (const folder of page?.items ?? []) byId.set(folder.page.id, folder);
   }

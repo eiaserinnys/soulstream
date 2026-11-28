@@ -34,7 +34,6 @@ export function folderPage(folder: Folder): PlannerPage {
   return {
     id: folder.projectPageId!,
     title: folder.name,
-    dailyDate: null,
     version: 1,
     archived: false,
     metadata: {},

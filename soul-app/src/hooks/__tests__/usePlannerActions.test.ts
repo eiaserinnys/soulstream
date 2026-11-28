@@ -1,5 +1,5 @@
 import type { ApiClient } from '../../api/client';
-import type { PlannerFolder, PlannerToday } from '../../api/plannerTypes';
+import type { PlannerFolder } from '../../api/plannerTypes';
 import { createPlannerActions } from '../usePlannerActions';
 import { usePlannerStore } from '../../store/plannerStore';
 import { useAuthStore } from '../../store/authStore';
@@ -11,7 +11,7 @@ import { ApiHttpError } from '../../api/clientCore';
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'request-id') }));
 
 const page = {
-  id: 'task-1', title: '기존 업무', dailyDate: null, version: 1,
+  id: 'task-1', title: '기존 업무', version: 1,
   archived: false, metadata: {}, createdAt: '', updatedAt: '',
 };
 const folder: PlannerFolder = {
@@ -22,38 +22,15 @@ const folder: PlannerFolder = {
   status: 'open', assignee: '', contextCount: 0, progress: null,
   projectPageId: 'project-1', sessions: [], sessionIds: [],
 };
-const daily: PlannerToday = {
-  daily: { page: { ...page, id: 'daily' }, blocks: [], stateVector: 'sv' },
-  projects: [], memoBlocks: [], folders: [folder], attention: [], running: [], queued: [], reviewSessionIds: [],
-};
-
 beforeEach(() => {
   useSettingsStore.setState({ serverUrl: 'https://planner.test' });
   useAuthStore.setState({ jwt: 'scope-a-jwt' });
   usePlannerStore.getState().resetForTest();
   useSessionStore.setState({ sessions: {}, catalog: { folders: [], sessions: {} } });
   usePlannerStore.setState({
-    dailyByDate: {
-      '2026-07-17': daily,
-      '2026-07-16': { ...daily, folders: [] },
-    },
     folderChildPages: { 'project-1': { items: [folder], nextCursor: null } },
     selectedFolderSnapshot: folder,
   });
-});
-
-test('오늘 제거 실패는 낙관 membership을 원래 snapshot으로 복원한다', async () => {
-  let rejectMutation!: (error: unknown) => void;
-  const mutation = new Promise<never>((_, reject) => { rejectMutation = reject; });
-  const setFolderToday = jest.fn(() => mutation);
-  const api = { plannerMutations: { setFolderToday } } as unknown as ApiClient;
-
-  const pending = createPlannerActions(api).setFolderToday(folder, '2026-07-17', false);
-  expect(usePlannerStore.getState().dailyByDate['2026-07-17']?.folders).toEqual([]);
-
-  rejectMutation(new Error('daily failed'));
-  await expect(pending).rejects.toThrow('daily failed');
-  expect(usePlannerStore.getState().dailyByDate['2026-07-17']?.folders).toEqual([folder]);
 });
 
 test('폴더 생성은 한 경로를 사용하고 카탈로그에 반영한다', async () => {

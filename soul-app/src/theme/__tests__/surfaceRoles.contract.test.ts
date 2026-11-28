@@ -10,7 +10,6 @@ const SRC_ROOT = path.resolve(__dirname, '../..');
 
 const ACTIVE_CANVAS_FILES = [
   'navigation/TabNavigator.tsx',
-  'screens/DailyPlannerScreen.tsx',
   'screens/StarredFoldersScreen.tsx',
   'screens/ProjectListScreen.tsx',
   'screens/SessionFeedScreen.tsx',
@@ -42,14 +41,12 @@ const HIGH_DENSITY_TOKEN_SURFACES = [
 const GLASS_CARD_SURFACES = [
   'components/SessionCardView.tsx',
   'components/planner/GroupedGlassSheet.tsx',
-  'components/planner/DailyMemo.tsx',
   'components/planner/ProjectContextEditorView.tsx',
   'components/planner/FolderWorkspace.tsx',
   'components/split/SidebarPane.tsx',
 ] as const;
 
 const MODAL_SURFACES = [
-  'components/planner/MorningReviewSheet.tsx',
   'components/planner/NewFolderSheet.tsx',
   'components/planner/SessionSuccessionDiagnosticFallback.tsx',
   'components/planner/SessionSuccessionSheet.tsx',
@@ -58,7 +55,6 @@ const MODAL_SURFACES = [
 ] as const;
 
 const CUSTOM_OVERLAY_SURFACES = [
-  'components/planner/MorningReviewSheet.tsx',
 ] as const;
 
 const NATIVE_SHEET_SURFACES = [
@@ -237,8 +233,6 @@ describe('surface role contract', () => {
   });
 
   test('오늘 카드는 폴더와 같은 CardRow를 쓴다', () => {
-    expect(read('screens/DailyPlannerScreen.tsx')).toContain('<TodayCards');
-    expect(read('components/planner/TodayCards.tsx')).toContain('<CardRow');
     expect(read('components/planner/FolderCards.tsx')).toContain('<FolderCardList');
     expect(read('components/planner/FolderCardList.tsx')).toContain('<CardRow');
   });

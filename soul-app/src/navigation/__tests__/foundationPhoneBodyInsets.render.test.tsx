@@ -20,7 +20,6 @@ jest.mock('../../hooks/usePlannerContextMenus', () => ({
     closeSessionSuccession: jest.fn(),
   }),
 }));
-jest.mock('../../components/planner/DailyMemo', () => ({ DailyMemo: () => null }));
 jest.mock('../../components/planner/PlannerFolderRow', () => ({ PlannerFolderRow: () => null }));
 jest.mock('../../components/planner/NewFolderSheet', () => ({ NewFolderSheet: () => null }));
 jest.mock('../../components/planner/SessionSuccessionHost', () => ({ SessionSuccessionHost: () => null }));
@@ -36,7 +35,6 @@ jest.mock('../../components/SessionCardById', () => ({
 import { StyleSheet } from 'react-native';
 import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import { useTokens } from '../../theme/tokens';
-import { DailyPlannerScreen } from '../../screens/DailyPlannerScreen';
 import { SessionFeedScreen } from '../../screens/SessionFeedScreen';
 import { SettingsScreen } from '../../screens/SettingsScreen';
 import { useSessionStore } from '../../store/sessionStore';
@@ -66,14 +64,6 @@ afterAll(() => jest.useRealTimers());
 test('phone bodies use their approved insets without adding duplicate page titles', () => {
   const tokenHook = renderHook(() => useTokens());
   const t = tokenHook.result.current;
-  const daily = render(<DailyPlannerScreen />);
-  const dailyStyle = StyleSheet.flatten(daily.getByTestId('phone-daily-body').props.contentContainerStyle);
-  expect(dailyStyle.paddingHorizontal).toBe(t.uiSpacing.lg);
-  expect(StyleSheet.flatten(daily.getByTestId('daily-composer-dock').props.style).paddingHorizontal).toBe(dailyStyle.paddingHorizontal);
-  expect(daily.getAllByTestId('daily-centered-date')).toHaveLength(1);
-  expect(daily.queryByText('📅 데일리')).toBeNull();
-  expect(daily.queryByText('오늘 업무')).toBeNull();
-
   const feed = render(<SessionFeedScreen />);
   const feedStyle = StyleSheet.flatten(feed.getByTestId('phone-feed-body').props.contentContainerStyle);
   expect(feedStyle.paddingHorizontal).toBe(t.foundation.pageInset);
@@ -87,7 +77,6 @@ test('phone bodies use their approved insets without adding duplicate page title
   expect(settingsStyle.paddingHorizontal).toBe(t.foundation.pageInset);
   expect(settings.getByTestId('settings-modal-header')).toBeTruthy();
 
-  daily.unmount();
   feed.unmount();
   settings.unmount();
   tokenHook.unmount();

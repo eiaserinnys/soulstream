@@ -32,10 +32,8 @@ jest.mock('../../../hooks/usePlannerFolder', () => ({
 
 import { PixelRatio, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import type { PlannerBlock } from '../../../api/plannerTypes';
 import { resetAuthScopeForTest } from '../../../lib/auth-scope';
 import { useAuthStore } from '../../../store/authStore';
-import { DailyMemo } from '../DailyMemo';
 import { TabletMarkdownEditor } from '../TabletMarkdownEditor';
 import { FolderBoardContent } from '../FolderBoardContent';
 import { FolderCards } from '../FolderCards';
@@ -44,17 +42,6 @@ import { cardFixture } from '../../../test-support/cards';
 // promises) must settle inside act before RNTL's cleanup yields to the event loop.
 const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
-const memoBlock = {
-  id: 'memo-1',
-  pageId: 'daily-1',
-  parentId: null,
-  positionKey: 'a',
-  blockType: 'paragraph',
-  text: '메모 본문',
-  properties: {},
-  collapsed: false,
-} as PlannerBlock;
-
 beforeEach(() => {
   mockDeviceType = 'phone';
   jest.spyOn(PixelRatio, 'getFontScale').mockReturnValue(1);
@@ -62,18 +49,7 @@ beforeEach(() => {
   resetAuthScopeForTest();
   mockUsePlannerFolder.mockReset().mockReturnValue({ data: null, loading: false, error: null });
 });
-
-afterEach(() => {
-  jest.restoreAllMocks();
-});
-
-test('phone fontScale1 DailyMemo는 두 줄 입력을 composer56 minHeight로 확장한다', () => {
-  const screen = render(<DailyMemo blocks={[memoBlock]} onSave={jest.fn()} />);
-  assertNaturalMinHeight(screen.getByTestId('daily-memo-memo-1-input'), 56);
-  assertNaturalMinHeight(screen.getByTestId('daily-memo-new-input'), 56);
-  expect(screen.queryByTestId('daily-memo-add-action')).toBeNull();
-  expect(screen.getByTestId('daily-memo-memo-1-input').props.allowFontScaling).not.toBe(false);
-});
+afterEach(() => jest.restoreAllMocks());
 
 test('iPad fontScale2 TabletMarkdownEditor는 memo112·action48을 고정 height 없이 확장한다', () => {
   mockDeviceType = 'tabletPortrait';

@@ -6,7 +6,6 @@ import type { PlannerFolderStatus } from '../../../packages/soul-ui/src/lib/plan
 export interface PlannerPageWire {
   id: string;
   title: string;
-  daily_date: string | null;
   version: number;
   archived: boolean;
   metadata: Record<string, unknown>;
@@ -57,20 +56,6 @@ export interface PlannerPageSliceWire<T> {
   nextCursor: string | null;
 }
 
-export interface PlannerTodayWire {
-  attention: CardDto[];
-  running: CardDto[];
-  queued: CardDto[];
-  daily: {
-    page: PlannerPageWire;
-    blocks: PlannerBlockWire[];
-    state_vector: string;
-  };
-  memoBlocks: PlannerBlockWire[];
-  folders: PlannerFolderWire[];
-  reviewSessionIds: string[];
-}
-
 export interface PlannerFolderDetailWire {
   folder: CatalogFolder;
   page: PlannerPageWire;
@@ -92,7 +77,6 @@ export interface PlannerFolderDetail {
 export interface PlannerPage {
   id: string;
   title: string;
-  dailyDate: string | null;
   version: number;
   archived: boolean;
   metadata: Record<string, unknown>;
@@ -164,17 +148,6 @@ export interface PlannerPageSlice<T> {
   nextCursor: string | null;
 }
 
-export interface PlannerToday {
-  attention: CardDto[];
-  running: CardDto[];
-  queued: CardDto[];
-  daily: { page: PlannerPage; blocks: PlannerBlock[]; stateVector: string };
-  projects: PlannerPage[];
-  memoBlocks: PlannerBlock[];
-  folders: PlannerFolder[];
-  reviewSessionIds: string[];
-}
-
 export interface PlannerFolderCollection {
   project: PlannerPage;
   folders: PlannerPageSlice<PlannerFolder>;
@@ -186,13 +159,12 @@ export interface PlannerFolderSession {
 
 export type PlannerFolderSessionPage = PlannerPageSlice<PlannerFolderSession>;
 
-type PlannerFolderParseSource = 'daily' | 'project' | 'project-page' | 'starred';
+type PlannerFolderParseSource = 'project' | 'project-page' | 'starred';
 
 export function parsePlannerPage(raw: PlannerPageWire): PlannerPage {
   return {
     id: raw.id,
     title: raw.title,
-    dailyDate: raw.daily_date,
     version: raw.version,
     archived: raw.archived,
     metadata: raw.metadata,
@@ -277,23 +249,6 @@ export function parsePlannerFolderPageSlice(
   return {
     items: parsePlannerFolders(raw.items, source),
     nextCursor: raw.nextCursor,
-  };
-}
-
-export function parsePlannerToday(raw: PlannerTodayWire): PlannerToday {
-  return {
-    attention: raw.attention,
-    running: raw.running,
-    queued: raw.queued,
-    daily: {
-      page: parsePlannerPage(raw.daily.page),
-      blocks: raw.daily.blocks.map(parsePlannerBlock),
-      stateVector: raw.daily.state_vector,
-    },
-    projects: [],
-    memoBlocks: raw.memoBlocks.map(parsePlannerBlock),
-    folders: parsePlannerFolders(raw.folders, 'daily'),
-    reviewSessionIds: raw.reviewSessionIds,
   };
 }
 

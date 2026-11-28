@@ -2,25 +2,18 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  DailyPlannerScreen,
-  type DailyPlannerScreenHandle,
-} from '../../screens/DailyPlannerScreen';
 import { FolderWorkspace } from '../planner/FolderWorkspace';
 import { createApiClient } from '../../api/client';
 import { useSettingsStore } from '../../store/settingsStore';
-import { openPlannerFolderWorkspace } from '../../lib/planner-folder-workspace';
 import { useSessionStore } from '../../store/sessionStore';
 import { useUIStore } from '../../store/uiStore';
 import { createSurfaceRoles, useTokens, type DesignTokens } from '../../theme';
 import { LiquidGlassButton } from '../LiquidGlassButton';
 import { AppGlassCard } from '../AppGlassCard';
 import { RootSectionHeaderTitle } from '../navigation/RootSectionHeaderTitle';
-import { DailyHeaderActions } from '../planner/DailyHeaderActions';
 import { TabletPaneHeader } from './TabletPaneHeader';
 import { SessionSearchField } from '../search/SessionSearchField';
 import { useSearchStore } from '../../store/searchStore';
-import { recordUiUsageEvent } from '../../lib/ui-usage-events';
 import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
 import { CardBoardHeaderActions, CardBoardWorkspace, type CardBoardWorkspaceHandle } from '../planner/CardBoardWorkspace';
 import { useAuthScopeGeneration } from '../../lib/auth-scope';
@@ -48,7 +41,6 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
   const t = useTokens();
   const c = t.colors;
   const styles = useMemo(() => makeStyles(t), [t]);
-  const dailyRef = useRef<DailyPlannerScreenHandle>(null);
   const boardRef = useRef<CardBoardWorkspaceHandle>(null);
   const [boardRefreshing, setBoardRefreshing] = useState(false);
   useImperativeHandle(ref, () => ({
@@ -83,7 +75,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
   const searchFocusRequestId = useSearchStore((state) => state.focusRequestId);
   const searchInputRef = useRef<TextInput>(null);
   const title = activeSection.kind === 'daily'
-    ? view === 'board' ? '카드' : '데일리 기록'
+    ? '카드'
     : folders.find((folder) => folder.id === activeSection.folderId)?.name ?? '프로젝트';
   useEffect(() => {
     if (effectiveShowSearch && searchFocusRequestId > 0) {
@@ -134,12 +126,6 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
         {view === 'board' && !effectiveShowSearch ? <CardBoardHeaderActions cardDisplay={cardDisplay} refreshing={boardRefreshing}
           slotTestID="tablet-board-header-refresh-slot" compact={compactHeader} overflowOpen={overflowOpen}
           onToggleOverflow={() => setOverflowOpen(open => !open)} onCreate={() => boardRef.current?.openCreate()} onExpand={() => boardRef.current?.openExpanded()} /> : null}
-        {activeSection.kind === 'daily' && !effectiveShowSearch && view === 'existing' ? (
-          <DailyHeaderActions
-            onOpenReview={() => dailyRef.current?.openReview()}
-            onOpenNewFolder={() => dailyRef.current?.openNewFolder()}
-          />
-        ) : null}
         <TabletPersistentEntry />
         </View>
       </TabletPaneHeader> : null}
@@ -153,24 +139,6 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
             title={effectiveShowSearch ? title : undefined}
             cardDisplay={cardDisplay} reserveHomeComposerSpace onAutoRefreshChange={duo ? undefined : setBoardRefreshing} onOpen={(id) => useUIStore.getState().openCardOverlay(id)} />
         </View> : null}
-        {view === 'existing' && activeSection.kind === 'daily' ? (
-          <DailyPlannerScreen
-            ref={dailyRef}
-            date={activeSection.date}
-            layout="tablet"
-            onOpenSession={(id) => useUIStore.getState().openSessionOverlay(id)}
-            onDateChange={(date) => {
-              recordUiUsageEvent({
-                type: 'view_open',
-                target: { kind: 'view', id: `daily:${date}` },
-                from: { kind: 'view', id: `daily:${activeSection.date}` },
-                entry: 'nav',
-              });
-              setActiveSection({ kind: 'daily', date });
-            }}
-            onOpenFolder={openPlannerFolderWorkspace}
-          />
-        ) : null}
         {view === 'existing' && activeSection.kind === 'project' ? (
           <FolderWorkspace
             api={api}

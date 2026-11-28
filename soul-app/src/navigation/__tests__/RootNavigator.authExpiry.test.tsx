@@ -127,7 +127,7 @@ beforeEach(() => {
       }));
     }
     if (
-      url.includes('/api/planner/today')
+      url.includes('/api/planner/starred-folders')
       || isFolderRequest(input)
       || url.includes('/api/sessions')
     ) {
@@ -488,13 +488,13 @@ test('auth 설정 조회 실패 뒤 데일리 조회 401도 로그인 화면으�
   await waitFor(() => expect(screen.getByTestId('authenticated-app')).toBeTruthy());
 
   await act(async () => {
-    await expect(createApiClient(BASE).getPlannerToday('2026-09-23'))
+    await expect(createApiClient(BASE).getStarredFolders())
       .rejects.toMatchObject({ status: 401 });
   });
 
   await waitFor(() => expect(screen.getByTestId('login-screen')).toBeTruthy());
   expect(useAuthStore.getState()).toMatchObject({ jwt: null, authRejected: true });
-  expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/planner/today'))).toBe(true);
+  expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/planner/starred-folders'))).toBe(true);
 
   fetchMock.mockImplementation((input: RequestInfo | URL) => {
     const url = String(input);
@@ -528,7 +528,7 @@ test('401 이후 늦게 끝난 설정 조회 실패가 로그인 거부 신호�
   const screen = render(<RootNavigator />);
 
   await act(async () => {
-    await expect(createApiClient(BASE).getPlannerToday('2026-09-23'))
+    await expect(createApiClient(BASE).getStarredFolders())
       .rejects.toMatchObject({ status: 401 });
   });
   await waitFor(() => expect(screen.getByTestId('login-screen')).toBeTruthy());

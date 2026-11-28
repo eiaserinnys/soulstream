@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react-native';
 import type { ApiClient } from '../../api/client';
-import type { PlannerFolderCollection, PlannerFolder, PlannerToday } from '../../api/plannerTypes';
+import type { PlannerFolderCollection, PlannerFolder } from '../../api/plannerTypes';
 import { resolveFolderRunSession } from '../../components/planner/FolderSessionHistory';
 import { resetAuthScopeForTest } from '../../lib/auth-scope';
 import { useAuthStore } from '../../store/authStore';
@@ -27,7 +27,7 @@ jest.mock('../useSSEStream', () => ({
 }));
 
 const folderPage = {
-  id: 'task-page-1', title: '열린 업무', dailyDate: null, version: 1,
+  id: 'task-page-1', title: '열린 업무', version: 1,
   archived: false, metadata: {}, createdAt: '', updatedAt: '',
 };
 const folder: PlannerFolder = {
@@ -42,14 +42,6 @@ const folder: PlannerFolder = {
   status: 'open', assignee: '', contextCount: 0, progress: null,
   projectPageId: 'project-1', sessions: [], sessionIds: [],
 };
-const today: PlannerToday = {
-  daily: {
-    page: { ...folderPage, id: 'daily-1', title: '오늘' },
-    blocks: [],
-    stateVector: 'sv',
-  },
-  projects: [], memoBlocks: [], folders: [folder], attention: [], running: [], queued: [], reviewSessionIds: [],
-};
 const project: PlannerFolderCollection = {
   project: { ...folderPage, id: 'project-1', title: '프로젝트' },
   folders: { items: [folder], nextCursor: null },
@@ -62,7 +54,6 @@ beforeEach(() => {
   resetAuthScopeForTest();
   usePlannerStore.getState().resetForTest();
   usePlannerStore.setState({
-    dailyByDate: { '2026-07-19': today },
     folderByPageId: { 'project-1': project },
     folderChildPages: { 'project-1': project.folders },
     folderSessionPages: {
@@ -121,7 +112,6 @@ test('업무 실행 세션 생성과 completed 갱신은 open 업무와 session 
 function assertOpenFolderRemainsLinked(sessionId: string): void {
   const state = usePlannerStore.getState();
   for (const current of [
-    state.dailyByDate['2026-07-19']?.folders[0],
     state.folderChildPages['project-1']?.items[0],
     state.folderByPageId['project-1']?.folders.items[0],
     state.selectedFolderSnapshot,

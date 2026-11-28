@@ -133,7 +133,7 @@ export function boardFixtureCards(fixture: BoardFixture): CardDto[] {
 export const folderTabReviewFolders: CatalogFolder[] = folders.map(folder => ({ ...folder, projectPageId: folder.id }));
 
 export const starredFolders: PlannerFolder[] = folders.map((folder) => ({
-  page: { id: folder.id, title: folder.name, dailyDate: null, version: 1,
+  page: { id: folder.id, title: folder.name, version: 1,
     archived: false, metadata: {}, createdAt: time, updatedAt: time },
   blocks: [], folderId: folder.id, folderSummary: null, status: 'open', assignee: '',
   contextCount: 0, progress: null, projectPageId: null, sessions: [], sessionIds: [],
@@ -225,7 +225,7 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
     if (state === 'loading') return new Promise(() => {});
     return value;
   };
-  const api: Pick<ApiClient, 'sessionEventsUrl' | 'getTimeline' | 'uploadAttachment' | 'getPage' | 'getPlannerFolder' | 'getFolderSnapshot' | 'getPlannerToday' | 'getPlannerFolderSessions' | 'getPlannerFolderSubfolders' | 'getFolderBoardItems' | 'listCards' | 'listCompletedCards' | 'getCard' | 'createCard' | 'executeCard' | 'updateCard' | 'getCardExecution' | 'saveCardExecutionSettings' | 'getSessionsByIds' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
+  const api: Pick<ApiClient, 'sessionEventsUrl' | 'getTimeline' | 'uploadAttachment' | 'getPage' | 'getPlannerFolder' | 'getFolderSnapshot' | 'getPlannerFolderSessions' | 'getPlannerFolderSubfolders' | 'getFolderBoardItems' | 'listCards' | 'listCompletedCards' | 'getCard' | 'createCard' | 'executeCard' | 'updateCard' | 'getCardExecution' | 'saveCardExecutionSettings' | 'getSessionsByIds' | 'setCardStatus' | 'getStarredFolders' | 'listNodes' | 'listNodeAgents' | 'listModelPresets'> = {
     sessionEventsUrl: reviewSessionEventsUrl,
     // Entry-shell chat receives its public messages through actual SSE parsing.
     getTimeline: async () => read({ messages: [], next_cursor: null }),
@@ -238,7 +238,6 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
       return read({folder,page:{...starredFolders[0].page,id:pageId,title:folder.name},blocks:[],cards:[...cards.values()].filter(card=>card.folderId===id&&(query?.includeCompleted!==false||card.status!=='done')),subfolders:{items:[],nextCursor:null},sessions:{items:[],nextCursor:null}});
     },
     getFolderSnapshot:async (id,query)=>read({folder:entryShellFolderFor(id) ?? folders[0],cards:[...cards.values()].filter(card=>card.folderId===id&&(query?.includeCompleted!==false||card.status!=='done'))}),
-    getPlannerToday:async()=>read({daily:{page:starredFolders[0].page,blocks:[],stateVector:''},attention:[],running:[],queued:[],projects:[],memoBlocks:[],folders:[],reviewSessionIds:[]}),
     getPlannerFolderSessions:async(pageId,cursor)=>{
       let releaseResponse:(()=>void)|undefined;
       const gatedResponse=options.folderSessionPages==='many'&&cursor==='1'

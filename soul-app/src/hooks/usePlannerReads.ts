@@ -8,7 +8,6 @@ import {
   replaceFolderProjection,
 } from '../lib/planner-mutation-projection';
 import {
-  selectDaily,
   selectFolderSessions,
   usePlannerStore,
   selectPlannerFolder,
@@ -96,49 +95,6 @@ export function usePlannerPageDetail(
     error: current.error,
     refresh,
   };
-}
-
-export function usePlannerDaily(
-  api: ApiClient | null,
-  date: string,
-  enabled = true,
-) {
-  const data = usePlannerStore(selectDaily(date));
-  const loading = usePlannerStore((state) => state.loading[`daily:${date}`] ?? false);
-  const error = usePlannerStore((state) => state.error[`daily:${date}`] ?? null);
-  const refreshKey = usePlannerStore(
-    (state) => selectPlannerInvalidationKeys(state.invalidation).daily,
-  );
-  const setDaily = usePlannerStore((state) => state.setDaily);
-  const setLoading = usePlannerStore((state) => state.setLoading);
-  const setError = usePlannerStore((state) => state.setError);
-  const requestGeneration = useRef(0);
-  const scopeGeneration = useAuthScopeGeneration();
-  useEffect(() => () => { requestGeneration.current += 1; }, []);
-
-  const refresh = useCallback(async () => {
-    const generation = ++requestGeneration.current;
-    if (!api || !enabled) return;
-    const key = `daily:${date}`;
-    setLoading(key, true);
-    setError(key, null);
-    try {
-      const result = await api.getPlannerToday(date);
-      if (!isCurrentRequest(requestGeneration, generation, scopeGeneration)) return;
-      setDaily(date, result);
-    } catch (cause) {
-      if (!isCurrentRequest(requestGeneration, generation, scopeGeneration)) return;
-      setError(key, errorText(cause));
-    } finally {
-      if (isCurrentRequest(requestGeneration, generation, scopeGeneration)) setLoading(key, false);
-    }
-  }, [api, date, enabled, scopeGeneration, setDaily, setError, setLoading]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh, refreshKey]);
-
-  return { data, loading, error, refresh };
 }
 
 export function usePlannerFolderDetail(
@@ -299,54 +255,6 @@ export function usePlannerFolderSessions(
     refresh,
     loadMore,
   };
-}
-
-export function usePlannerDailyHistory(
-  api: ApiClient | null,
-  before: string,
-  enabled = true,
-) {
-  const requestGeneration = useRef(0);
-  const scopeGeneration = useAuthScopeGeneration();
-  const ownerKey = `${scopeGeneration}\u0000${before}`;
-  const [local, setLocal] = useState(() => ({
-    ownerKey,
-    dates: [] as string[],
-    loading: false,
-    error: null as string | null,
-  }));
-  const current = local.ownerKey === ownerKey
-    ? local
-    : { ownerKey, dates: [] as string[], loading: false, error: null as string | null };
-
-  useEffect(() => {
-    const generation = ++requestGeneration.current;
-    setLocal({ ownerKey, dates: [], loading: Boolean(api && enabled), error: null });
-    if (!api || !enabled) return;
-    let active = true;
-    void api.getDailyHistory(before).then((result) => {
-      if (active && isCurrentRequest(requestGeneration, generation, scopeGeneration)) {
-        setLocal((previous) => previous.ownerKey === ownerKey
-          ? { ...previous, dates: result.dates }
-          : previous);
-      }
-    }).catch((cause: unknown) => {
-      if (active && isCurrentRequest(requestGeneration, generation, scopeGeneration)) {
-        setLocal((previous) => previous.ownerKey === ownerKey
-          ? { ...previous, error: errorText(cause) }
-          : previous);
-      }
-    }).finally(() => {
-      if (active && isCurrentRequest(requestGeneration, generation, scopeGeneration)) {
-        setLocal((previous) => previous.ownerKey === ownerKey
-          ? { ...previous, loading: false }
-          : previous);
-      }
-    });
-    return () => { active = false; };
-  }, [api, before, enabled, ownerKey, scopeGeneration]);
-
-  return { dates: current.dates, loading: current.loading, error: current.error };
 }
 
 function emptyPageDetailState(ownerKey: string): {
