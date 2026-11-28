@@ -20,10 +20,10 @@ test('the Windows full installer passes language and console options to setup pr
   try {
     const setup = new URL('../windows/setup.mjs', import.meta.url);
     const result = spawnSync(process.execPath, [
-      fileURLToPath(setup), 'prepare', '--install-root', root, '--lang', 'en', '--non-interactive', 'true',
+      fileURLToPath(setup), 'prepare', '--install-root', root, '--lang', 'ja', '--non-interactive', 'true',
     ], { encoding: 'utf8', timeout: 5000 });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /^언어 en은\(는\) 아직 준비되지 않았습니다.*ko/m);
+    assert.match(result.stderr, /^Language ja is not available yet\. Available languages: ko/m);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -31,12 +31,14 @@ test('the Windows full installer passes language and console options to setup pr
 
 test('Windows option parsing forwards the requested language and respects existing state', async () => {
   const root = mkdtempSync(join(tmpdir(), 'windows-lang-'));
+  const savedLocale = process.env.LC_ALL;
+  process.env.LC_ALL = 'ko_KR.UTF-8';
   try {
     const ctx = { soulDir: root };
     const select = (...args) => installationLanguage(ctx, parseArgs(['prepare', ...args]).options);
     assert.equal(await select('--lang', 'ko'), 'ko');
     assert.equal(await select('--non-interactive', 'true'), 'ko');
-    await assert.rejects(select('--lang', 'en'), /아직 준비되지 않았습니다/);
+    await assert.rejects(select('--lang', 'ja'), /Language ja is not available yet/);
     mkdirSync(join(root, 'config'));
     const state = join(root, 'config', '.atom-seed-state.json');
     writeFileSync(state, '{"lang":"en"}');
@@ -44,6 +46,8 @@ test('Windows option parsing forwards the requested language and respects existi
     writeFileSync(state, '{}');
     assert.equal(await select(), 'ko');
   } finally {
+    if (savedLocale === undefined) delete process.env.LC_ALL;
+    else process.env.LC_ALL = savedLocale;
     rmSync(root, { recursive: true, force: true });
   }
 });

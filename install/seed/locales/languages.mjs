@@ -15,7 +15,7 @@ export function requireKnownLanguage(lang) {
 export function requireCompleteLanguage(lang) {
   requireKnownLanguage(lang);
   if (!completeLanguages.includes(lang)) {
-    throw new Error(`언어 ${lang}은(는) 아직 준비되지 않았습니다. 선택 가능한 언어 / Available languages: ${completeLanguages.join(', ')}.`);
+    throw new Error(`Language ${lang} is not available yet. Available languages: ${completeLanguages.join(', ')}.`);
   }
 }
 

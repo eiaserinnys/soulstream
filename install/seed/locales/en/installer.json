@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "seosoyoung": "Seo Soyoung",
+    "seosoyoung-pas": "Seo Soyoung (PAS)",
+    "card-orchestrator": "Card orchestrator"
+  },
+  "dailyReview": {
+    "name": "Daily review",
+    "prompt": "Run the daily-review skill to review the past day's work."
+  },
+  "workspaceFolder": "Workspace",
+  "codingAgentsPath": "Settings → Coding agent logins"
+}

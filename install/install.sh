@@ -1623,8 +1623,10 @@ UNIT
 # never overwrites what the user switched on or edited. A refusal (for example no signed-in backend yet) only warns:
 # the job can be created later from the recurring jobs tab.
 register_daily_review_job() {
+  local workspace_folder=$1
+  shift
   local folder_id body status
-  folder_id=$(curl -fsS "$@" http://127.0.0.1:5200/api/folders | jq -r '[.folders[] | select(.name=="작업실")][0].id') || return 1
+  folder_id=$(curl -fsS "$@" http://127.0.0.1:5200/api/folders | jq -r --arg name "$workspace_folder" '[.folders[] | select(.name==$name)][0].id') || return 1
   body=$(jq --arg folder "$folder_id" '{idempotencyKey: "clean-install-daily-review", name: .dailyReview.name, prompt: .dailyReview.prompt, timezone: "UTC", scheduleExpressions: ["0 9 * * *"], nodeId: "local", agentId: "seosoyoung", modelPreset: null, folderId: $folder, enabled: false}' "$(installer_text_path)") || return 1
   status=$(curl -s -o /dev/null -w '%{http_code}' "$@" -X POST -H 'Content-Type: application/json' --data "$body" http://127.0.0.1:5200/api/recurring-jobs)
   if [[ "$status" != 200 && "$status" != 201 ]]; then
@@ -1633,7 +1635,9 @@ register_daily_review_job() {
   return 0
 }
 wait_and_create_workspace() {
-  local root=$1 header cookie deadline status count worker_port
+  local root=$1 header cookie deadline status count worker_port workspace_folder workspace_body
+  workspace_folder=$(jq -er '.workspaceFolder' "$(installer_text_path)") || return 1
+  workspace_body=$(jq -n --arg name "$workspace_folder" '{name: $name, idempotencyKey: "clean-install-default-workspace"}') || return 1
   worker_port=$(read_env_value "$root/.env.soul-server-ts" PORT) || return 1
   header=$(mktemp) || return 1
   register_temp_file "$header"
@@ -1648,12 +1652,12 @@ wait_and_create_workspace() {
   done
   if [[ "$TAILSCALE" == true ]]; then
     printf 'Tailscale-User-Login: %s\n' "$TAILSCALE_USER" > "$cookie"
-    count=$(curl -fsS -H "@$cookie" http://127.0.0.1:5200/api/folders | jq '[.folders[] | select(.name=="작업실")] | length')
+    count=$(curl -fsS -H "@$cookie" http://127.0.0.1:5200/api/folders | jq --arg name "$workspace_folder" '[.folders[] | select(.name==$name)] | length')
     if [[ "$count" == 0 ]]; then
-      curl -fsS -H "@$cookie" -X POST -H 'Content-Type: application/json' --data '{"name":"작업실","idempotencyKey":"clean-install-default-workspace"}' http://127.0.0.1:5200/api/folders >/dev/null
+      curl -fsS -H "@$cookie" -X POST -H 'Content-Type: application/json' --data "$workspace_body" http://127.0.0.1:5200/api/folders >/dev/null
     fi
-    curl -fsS -H "@$cookie" http://127.0.0.1:5200/api/folders | jq -e '[.folders[] | select(.name=="작업실")] | length == 1' >/dev/null
-    register_daily_review_job -H "@$cookie" || { rm -f "$header" "$cookie"; return 1; }
+    curl -fsS -H "@$cookie" http://127.0.0.1:5200/api/folders | jq -e --arg name "$workspace_folder" '[.folders[] | select(.name==$name)] | length == 1' >/dev/null
+    register_daily_review_job "$workspace_folder" -H "@$cookie" || { rm -f "$header" "$cookie"; return 1; }
     status=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5200/api/folders)
     [[ "$status" == 401 ]]
     status=$(curl -s -o /dev/null -w '%{http_code}' -H "@$cookie" -H 'Tailscale-Funnel-Request: ?1' http://127.0.0.1:5200/api/folders)
@@ -1670,12 +1674,12 @@ wait_and_create_workspace() {
     rm -f "$header" "$cookie"
     return 1
   fi
-  count=$(curl -fsS -b "$cookie" http://127.0.0.1:5200/api/folders | jq '[.folders[] | select(.name=="작업실")] | length')
+  count=$(curl -fsS -b "$cookie" http://127.0.0.1:5200/api/folders | jq --arg name "$workspace_folder" '[.folders[] | select(.name==$name)] | length')
   if [[ "$count" == 0 ]]; then
-    curl -fsS -b "$cookie" -X POST -H 'Content-Type: application/json' --data '{"name":"작업실","idempotencyKey":"clean-install-default-workspace"}' http://127.0.0.1:5200/api/folders >/dev/null
+    curl -fsS -b "$cookie" -X POST -H 'Content-Type: application/json' --data "$workspace_body" http://127.0.0.1:5200/api/folders >/dev/null
   fi
-  curl -fsS -b "$cookie" http://127.0.0.1:5200/api/folders | jq -e '[.folders[] | select(.name=="작업실")] | length == 1' >/dev/null
-  register_daily_review_job -b "$cookie" || { rm -f "$header" "$cookie"; return 1; }
+  curl -fsS -b "$cookie" http://127.0.0.1:5200/api/folders | jq -e --arg name "$workspace_folder" '[.folders[] | select(.name==$name)] | length == 1' >/dev/null
+  register_daily_review_job "$workspace_folder" -b "$cookie" || { rm -f "$header" "$cookie"; return 1; }
   status=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5200/api/folders)
   rm -f "$header" "$cookie"
   [[ "$status" == 401 ]]
@@ -1789,8 +1793,9 @@ finish_message() {
     printf 'Generated administrator password (for Soulstream and atom): %s\n' "$ADMIN_PASSWORD" >&4
     exec 4>&-
   fi
-  local pas_name
+  local pas_name coding_agents_path
   pas_name=$(jq -er '.profiles."seosoyoung-pas"' "$(installer_text_path)") || return 1
+  coding_agents_path=$(jq -er '.codingAgentsPath' "$(installer_text_path)") || return 1
   printf 'PAS: once you connect a coding agent, the dashboard creates a default %s persistent session.\n' "$pas_name"
   if [[ -n "${ATOM_SEED_WARNINGS:-}" ]]; then
     printf 'Atom instructions:\n'
@@ -1805,11 +1810,11 @@ finish_message() {
     done <<< "$MANAGED_CONFIG_WARNINGS"
   fi
   if has_backend antigravity; then
-    printf 'Login: connect Claude, Codex, and Antigravity in the dashboard under Settings → 코딩 에이전트 연결.\n'
-    printf "Antigravity stays off until you turn it on under Settings → 코딩 에이전트 연결 and accept Google's terms.\n"
+    printf 'Login: connect Claude, Codex, and Antigravity in the dashboard under %s.\n' "$coding_agents_path"
+    printf "Antigravity stays off until you turn it on under %s and accept Google's terms.\n" "$coding_agents_path"
     printf 'SSH alternative: Codex with "sudo -Hu soulstream /usr/local/bin/codex login --device-auth" (enable device code login in ChatGPT security settings), Antigravity by running ~/.local/bin/agy as the soulstream user.\n'
   else
-    printf 'Login: connect Claude and Codex in the dashboard under Settings → 코딩 에이전트 연결.\n'
+    printf 'Login: connect Claude and Codex in the dashboard under %s.\n' "$coding_agents_path"
     if has_backend codex; then printf 'SSH alternative: Codex with "sudo -Hu soulstream /usr/local/bin/codex login --device-auth" (enable device code login in ChatGPT security settings).\n'; fi
   fi
   printf 'After login, presets update within five minutes. To refresh now as root:\n'

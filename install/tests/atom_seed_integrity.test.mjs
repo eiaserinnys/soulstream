@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildCreatePayload, placeholderKeys, validateSeed } from '../seed/load_atom_seed.mjs';
 
+import { readInstallerText } from '../seed/locales/installer-text.mjs';
 import { completeLanguages } from '../seed/locales/languages.mjs';
 import { readLocalizedSeed } from '../seed/locales/seed.mjs';
 import { forbiddenSeedText } from '../seed/locales/text.mjs';
@@ -31,16 +32,15 @@ const PORTRAIT_PATHS = {
 const SEED = JSON.parse(fs.readFileSync(SEED_PATH, 'utf8'));
 const CARDS = SEED.entries.filter((entry) => entry.entry_kind === 'card');
 const SYMLINKS = SEED.entries.filter((entry) => entry.entry_kind === 'symlink');
-const REPLACEMENTS = CARDS.filter((entry) => placeholderKeys(entry.content ?? '').length > 0);
 const UUID_RE = /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g;
 
-function seedTexts() {
+function seedTexts(seed) {
   const rows = [];
-  for (const entry of SEED.entries) {
+  for (const entry of seed.entries) {
     rows.push([`title:${entry.key}`, entry.title ?? '']);
     rows.push([`content:${entry.key}`, entry.content ?? '']);
   }
-  for (const [name, key] of Object.entries(SEED.exported_keys)) {
+  for (const [name, key] of Object.entries(seed.exported_keys)) {
     rows.push([`exported:${name}`, String(key)]);
   }
   return rows;
@@ -83,34 +83,6 @@ test('validateSeed accepts the approved seed and rejects contract violations', (
   const badExport = clone();
   badExport.exported_keys = { ...badExport.exported_keys, broken: 'no.such.key' };
   assert.throws(() => validateSeed(badExport), /does not exist/);
-});
-
-test('titles are non-empty and at most 50 code points', () => {
-  for (const entry of SEED.entries) {
-    assert.equal(typeof entry.title, 'string');
-    assert.ok(entry.title.length > 0, `empty title for ${entry.key}`);
-    assert.ok([...entry.title].length <= 50, `title over 50 code points: ${entry.key}`);
-  }
-});
-
-test('placeholders: 47 cards, 79 references, 70 distinct card keys, no card_id form', () => {
-  const cardKeys = new Set(CARDS.map((entry) => entry.key));
-  const distinct = new Set();
-  let references = 0;
-  for (const entry of REPLACEMENTS) {
-    for (const key of placeholderKeys(entry.content ?? '')) {
-      references += 1;
-      distinct.add(key);
-      assert.ok(cardKeys.has(key), `placeholder points at a non-card key: ${key}`);
-    }
-  }
-  assert.equal(REPLACEMENTS.length, 47);
-  assert.equal(references, 79);
-  assert.equal(distinct.size, 70);
-  for (const [, text] of seedTexts()) {
-    assert.equal(text.includes('{{card_id:'), false, 'seed must not use the {{card_id: placeholder form');
-  }
-  assert.equal(SYMLINKS.some((entry) => entry.content !== undefined), false, 'symlink entries must not carry content');
 });
 
 test('buildCreatePayload: 172 creates, seed order, positions, body under the Fastify limit', () => {
@@ -221,38 +193,12 @@ function parseLinkBlockBody(body) {
   return { kind, fields };
 }
 
-test('link blocks follow the load_skill rules and contain only placeholder node references', () => {
-  let blockCount = 0;
-  for (const entry of CARDS) {
-    for (const body of extractLinkBlocks(entry.content ?? '')) {
-      blockCount += 1;
-      assert.doesNotThrow(() => parseLinkBlockBody(body), `invalid link block in ${entry.key}`);
-      assert.equal(UUID_RE.test(body), false, `raw node id inside a link block of ${entry.key}`);
-      UUID_RE.lastIndex = 0;
-      for (const line of body.split('\n')) {
-        const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/.exec(line);
-        if (!match) continue;
-        if (!/node_?id/i.test(match[1])) continue;
-        assert.match(match[2].trim(), /^\{\{node_id:[^}]+\}\}$/, `node reference must be a placeholder in ${entry.key}`);
-      }
-    }
-  }
-  assert.ok(blockCount > 0, 'the seed is expected to contain link blocks');
-});
-
 // --- forbidden patterns ----------------------------------------------------
-
-test('forbidden patterns: seed titles, content and exports contain only public text', () => {
-  for (const [where, text] of seedTexts()) {
-    const violation = forbiddenSeedText(text);
-    assert.equal(violation, undefined, `${where}: ${violation}`);
-  }
-});
 
 // Every string in the seed, wherever it sits: object keys and values at any depth (entry key, title,
 // content, tags, parent, symlink target, exported keys and the rest). Locations name the entry key and
 // the field path only.
-function seedStringFields() {
+function seedStringFields(seed) {
   const rows = [];
   const walk = (value, where) => {
     if (typeof value === 'string') rows.push([where, value]);
@@ -264,20 +210,13 @@ function seedStringFields() {
       }
     }
   };
-  for (const [name, value] of Object.entries(SEED)) {
+  for (const [name, value] of Object.entries(seed)) {
     if (name === 'entries') continue;
     walk(value, `seed.${name}`);
   }
-  for (const entry of SEED.entries) walk(entry, `entry:${entry.key}`);
+  for (const entry of seed.entries) walk(entry, `entry:${entry.key}`);
   return rows;
 }
-
-test('all Korean seed strings follow the public seed text rules', () => {
-  for (const [where, text] of seedStringFields()) {
-    const violation = forbiddenSeedText(text);
-    assert.equal(violation, undefined, `${where}: ${violation}`);
-  }
-});
 
 // --- install profile arguments ---------------------------------------------
 
@@ -453,16 +392,86 @@ test('seed guidance names the settings tabs the way the dashboard does', () => {
 const adminMark = { ko: '(관리자)', en: ' (Admin)', ja: '（管理者）', 'zh-Hans': '（管理员）' };
 
 for (const lang of completeLanguages) {
+  const { seed } = readLocalizedSeed(SEED_PATH, lang);
+  const cards = seed.entries.filter((entry) => entry.entry_kind === 'card');
+  const file = new URL(`../../packages/i18n/src/locales/${lang}/settings.json`, import.meta.url);
+  const dictionary = JSON.parse(fs.readFileSync(file, 'utf8'));
+
+  test(`${lang} titles are non-empty and at most 50 code points`, () => {
+    for (const entry of seed.entries) {
+      assert.equal(typeof entry.title, 'string');
+      assert.ok(entry.title.length > 0, `empty title for ${entry.key}`);
+      assert.ok([...entry.title].length <= 50, `title over 50 code points: ${entry.key}`);
+    }
+  });
+
+  test(`${lang} placeholders: 47 cards, 79 references, 70 distinct card keys, no card_id form`, () => {
+    const replacements = cards.filter((entry) => placeholderKeys(entry.content ?? '').length > 0);
+    const symlinks = seed.entries.filter((entry) => entry.entry_kind === 'symlink');
+    const cardKeys = new Set(cards.map((entry) => entry.key));
+    const distinct = new Set();
+    let references = 0;
+    for (const entry of replacements) {
+      for (const key of placeholderKeys(entry.content ?? '')) {
+        references += 1;
+        distinct.add(key);
+        assert.ok(cardKeys.has(key), `placeholder points at a non-card key: ${key}`);
+      }
+    }
+    assert.equal(replacements.length, 47);
+    assert.equal(references, 79);
+    assert.equal(distinct.size, 70);
+    for (const [, text] of seedTexts(seed)) {
+      assert.equal(text.includes('{{card_id:'), false, 'seed must not use the {{card_id: placeholder form');
+    }
+    assert.equal(symlinks.some((entry) => entry.content !== undefined), false, 'symlink entries must not carry content');
+  });
+
+  test(`${lang} link blocks follow the load_skill rules and contain only placeholder node references`, () => {
+    let blockCount = 0;
+    for (const entry of cards) {
+      for (const body of extractLinkBlocks(entry.content ?? '')) {
+        blockCount += 1;
+        assert.doesNotThrow(() => parseLinkBlockBody(body), `invalid link block in ${entry.key}`);
+        assert.equal(UUID_RE.test(body), false, `raw node id inside a link block of ${entry.key}`);
+        UUID_RE.lastIndex = 0;
+        for (const line of body.split('\n')) {
+          const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/.exec(line);
+          if (!match) continue;
+          if (!/node_?id/i.test(match[1])) continue;
+          assert.match(match[2].trim(), /^\{\{node_id:[^}]+\}\}$/, `node reference must be a placeholder in ${entry.key}`);
+        }
+      }
+    }
+    assert.ok(blockCount > 0, 'the seed is expected to contain link blocks');
+  });
+
+  test(`${lang} forbidden patterns: seed titles, content and exports contain only public text`, () => {
+    for (const [where, text] of seedTexts(seed)) {
+      const violation = forbiddenSeedText(text);
+      assert.equal(violation, undefined, `${where}: ${violation}`);
+    }
+  });
+
+  test(`${lang} all seed strings follow the public seed text rules`, () => {
+    for (const [where, text] of seedStringFields(seed)) {
+      const violation = forbiddenSeedText(text);
+      assert.equal(violation, undefined, `${where}: ${violation}`);
+    }
+  });
+
+  test(`${lang} installer text uses the dashboard coding agent login path`, () => {
+    const expected = `${dictionary.title} → ${dictionary.tabs.coding_agents.label}`;
+    assert.equal(readInstallerText(lang).codingAgentsPath, expected);
+  });
+
   test(`${lang} settings card lists every dashboard group and tab with the same admin marks`, () => {
     const source = fs.readFileSync(new URL('../../unified-dashboard/client/components/config/configTabs.ts', import.meta.url), 'utf8');
-    const file = new URL(`../../packages/i18n/src/locales/${lang}/settings.json`, import.meta.url);
-    const dictionary = JSON.parse(fs.readFileSync(file, 'utf8'));
     const tabs = [...source.matchAll(/\{ id: "(\w+)", label: "([^"]+)",[^\n]*?group: "(\w+)", adminOnly: (true|false)/g)]
       .map(([, id, , group, admin]) => ({ label: dictionary.tabs[id].label, group, adminOnly: admin === 'true' }));
     const groups = [...source.matchAll(/\{ id: "(\w+)", label: "([^"]+)" \}/g)].map(([, id]) => dictionary.groups[id]);
     assert.equal(tabs.length, 20, 'expected 20 CONFIG_TABS labels');
     assert.equal(groups.length, 4, 'expected 4 CONFIG_TAB_GROUPS labels');
-    const { seed } = readLocalizedSeed(SEED_PATH, lang);
     const settings = seed.entries.find((entry) => entry.key === 'common.soulstream_guide.settings').content;
     for (const group of groups) assert.ok(settings.includes(`## ${group}\n`), `settings is missing the group heading ${group}`);
     for (const tab of tabs) {

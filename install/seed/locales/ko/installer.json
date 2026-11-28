@@ -7,5 +7,7 @@
   "dailyReview": {
     "name": "일간 정리",
     "prompt": "daily-review 스킬을 발동하여 지난 하루의 작업을 정리한다."
-  }
+  },
+  "workspaceFolder": "작업실",
+  "codingAgentsPath": "설정 → 코딩 에이전트 연결"
 }

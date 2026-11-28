@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { readInstallerText } from '../seed/locales/installer-text.mjs';
 import { fail, httpRequest, log, readEnvValue, sleep, waitFor, withLogTails } from './lib.mjs';
 
-const WORKSPACE_FOLDER = '작업실';
 const DAILY_REVIEW_JOB = {
   idempotencyKey: 'clean-install-daily-review',
   timezone: 'UTC',
@@ -24,20 +23,20 @@ async function adminSession(ctx) {
   return { Cookie: login.cookie };
 }
 
-const folderCount = async (ctx, headers) => {
+const folderCount = async (ctx, headers, workspaceFolder) => {
   const response = await httpRequest(`${orchUrl(ctx)}/api/folders`, { headers });
-  return (response.json?.folders ?? []).filter((folder) => folder.name === WORKSPACE_FOLDER).length;
+  return (response.json?.folders ?? []).filter((folder) => folder.name === workspaceFolder).length;
 };
 
 // Registers the paused daily review job once. The server returns the existing job for a repeated key, so a reinstall
 // never overwrites what the user switched on or edited. A refusal (for example no signed-in backend yet) only warns:
 // the job can be created later from the recurring jobs tab.
-async function registerDailyReviewJob(ctx, headers) {
+async function registerDailyReviewJob(ctx, headers, workspaceFolder, dailyReview) {
   const folders = await httpRequest(`${orchUrl(ctx)}/api/folders`, { headers });
-  const folder = (folders.json?.folders ?? []).find((item) => item.name === WORKSPACE_FOLDER);
+  const folder = (folders.json?.folders ?? []).find((item) => item.name === workspaceFolder);
   if (!folder) throw fail('The workspace folder was not found.');
   const created = await httpRequest(`${orchUrl(ctx)}/api/recurring-jobs`, {
-    method: 'POST', headers, body: { ...DAILY_REVIEW_JOB, ...readInstallerText(ctx.lang ?? 'ko').dailyReview, folderId: folder.id },
+    method: 'POST', headers, body: { ...DAILY_REVIEW_JOB, ...dailyReview, folderId: folder.id },
   });
   if (created.status !== 200 && created.status !== 201) {
     log(`Could not register the daily review recurring job (HTTP ${created.status}). Create it later in the recurring jobs settings tab.`);
@@ -45,6 +44,7 @@ async function registerDailyReviewJob(ctx, headers) {
 }
 
 export async function waitAndCreateWorkspace(ctx) {
+  const { workspaceFolder, dailyReview } = readInstallerText(ctx.lang ?? 'ko');
   const bearer = { Authorization: `Bearer ${readEnvValue(join(ctx.soulDir, '.env.orch'), 'AUTH_BEARER_TOKEN')}` };
   const serviceLogs = ['haniel.err.log', 'haniel.log', 'atom.log', 'orch.log', 'worker.log'].map((name) => join(ctx.logsDir, name));
   await withLogTails(serviceLogs, () => waitFor('Soulstream, the worker and the local node', async () => {
@@ -54,14 +54,14 @@ export async function waitAndCreateWorkspace(ctx) {
     return (nodes.json?.nodes ?? []).some((node) => node.nodeId === 'local' && node.connected === true);
   }, { timeoutMs: 180000 }));
   const session = await adminSession(ctx);
-  if ((await folderCount(ctx, session)) === 0) {
+  if ((await folderCount(ctx, session, workspaceFolder)) === 0) {
     const created = await httpRequest(`${orchUrl(ctx)}/api/folders`, {
-      method: 'POST', headers: session, body: { name: WORKSPACE_FOLDER, idempotencyKey: 'clean-install-default-workspace' },
+      method: 'POST', headers: session, body: { name: workspaceFolder, idempotencyKey: 'clean-install-default-workspace' },
     });
     if (created.status >= 300) throw fail(`Creating the workspace folder failed with HTTP ${created.status}.`);
   }
-  if ((await folderCount(ctx, session)) !== 1) throw fail('The workspace folder was not created exactly once.');
-  await registerDailyReviewJob(ctx, session);
+  if ((await folderCount(ctx, session, workspaceFolder)) !== 1) throw fail('The workspace folder was not created exactly once.');
+  await registerDailyReviewJob(ctx, session, workspaceFolder, dailyReview);
   const anonymous = await httpRequest(`${orchUrl(ctx)}/api/folders`);
   if (anonymous.status !== 401) throw fail(`An unauthenticated request to /api/folders answered HTTP ${anonymous.status}, expected 401.`);
 }

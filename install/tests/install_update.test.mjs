@@ -336,9 +336,9 @@ test('an unavailable install language stops the update before stopping services'
   const t = setup();
   try {
     installed(t);
-    const result = await t.run(FLOW.replace('\nparse_args\n', '\nparse_args --lang en\n'));
+    const result = await t.run(FLOW.replace('\nparse_args\n', '\nparse_args --lang ja\n'));
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /아직 준비되지 않았습니다.*ko/);
+    assert.match(result.stderr, /Language ja is not available yet\. Available languages: ko/);
     assert.equal(t.systemctl(), false);
   } finally {
     t.cleanup();
