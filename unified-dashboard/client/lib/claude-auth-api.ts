@@ -1,4 +1,3 @@
-import { createI18n } from "@soulstream/i18n";
 import type { useTranslation } from "react-i18next";
 import type {
   ClaudeAccountList,
@@ -163,7 +162,7 @@ export function claudeAuthErrorMessage(error: ClaudeAuthError | null | undefined
   return error.message || t("accounts.claude.authFailed");
 }
 
-export function requestErrorMessage(error: unknown, t: ReturnType<typeof useTranslation>["t"] = createI18n("ko").t): string {
+export function requestErrorMessage(error: unknown, t: ReturnType<typeof useTranslation>["t"]): string {
   if (error instanceof ClaudeAuthRequestError) {
     if (error.apiError) return claudeAuthErrorMessage(error.apiError, t);
     if (error.invalidResponse) return t("accounts.claude.invalidResponse");

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 /**
  * NodePanel - 좌측 하단 노드 목록 패널 (unified-dashboard)
  *
@@ -14,13 +15,14 @@ import { useOrchestratorStore } from "../store/orchestrator-store";
 import { fetchUsageSummary, refreshUsageSummary } from "../lib/usage-summary";
 import { useCogitoHealth } from "../hooks/useCogitoHealth";
 import { CogitoNodeHealthNote, CogitoNodeHealthRow } from "./CogitoHealthPanel";
-import { clockLabel } from "./CogitoNodeHealthClock";
+import { accountClockLabel } from "./claude-accounts/ProviderQuotaGrid";
 import { NodeProvidersPanel } from "./NodeProvidersPanel";
 import { NodePanelCentralCard } from "./NodePanelCentralCard";
 import { NodeCardBody, NodeCardFrame, NodeCardHeader } from "./NodePanelFrame";
 import "./claude-accounts/claude-account-pool.css";
 
 export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sampleNodes?: ReturnType<typeof useOrchestratorStore.getState>["nodes"] } = {}) {
+  const { t, i18n } = useTranslation();
   const storedNodes = useOrchestratorStore((s) => s.nodes);
   const nodes = sampleNodes ?? storedNodes;
   const [theme] = useTheme();
@@ -72,7 +74,7 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
           data-testid="node-card-list"
           className="flex min-h-28 flex-col items-center justify-center rounded-floor border border-border bg-muted/10 text-sm text-muted-foreground/40"
         >
-          연결된 노드가 없습니다
+          {t("accounts.nodes.empty")}
         </div>
       ) : (
         <div data-testid="node-card-list" className="space-y-2">
@@ -82,8 +84,8 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
             const isDark = theme === "dark";
             const isExpanded = expandedNodeId === node.nodeId;
             const summaryNode = isExpanded ? findUsageSummaryNode(summary, node.nodeId) : null;
-            const updated = clockLabel(summaryNode?.fetchedAt ?? null);
-            const staleSince = summaryNode?.stale ? clockLabel(summaryNode.staleSince) : null;
+            const updated = accountClockLabel(summaryNode?.fetchedAt ?? null, i18n.resolvedLanguage);
+            const staleSince = summaryNode?.stale ? accountClockLabel(summaryNode.staleSince, i18n.resolvedLanguage) : null;
             const cogitoNode = cogitoByNode.get(node.nodeId);
 
             return (
@@ -113,20 +115,20 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
                     // 좁은 폭에서는 배지가 이름 자리를 먹지 않도록 펼친 패널 안으로 내린다.
                     // `.c724-badge`의 display가 Tailwind hidden을 이기므로 숨김은 바깥 상자가 맡는다.
                     <span className="hidden shrink-0 sm:inline-flex">
-                      <span className="c724-badge c724-badge-warn">수집 지연 · {staleSince}</span>
+                      <span className="c724-badge c724-badge-warn">{t("accounts.nodes.stale", { time: staleSince })}</span>
                     </span>
                   ) : isExpanded && updated ? (
                     // 좁은 폭에서는 이름이 먼저 남고 시각 글이 물러난다. 시각은 펼친 cogito 행이 그대로 보여 준다.
-                    <span className="hidden min-w-0 shrink-[100] truncate text-xs text-muted-foreground sm:inline">{updated} 갱신</span>
+                    <span className="hidden min-w-0 shrink-[100] truncate text-xs text-muted-foreground sm:inline">{t("accounts.claude.updated", { time: updated })}</span>
                   ) : null}
                   {/* 실패 배지는 새로 고침 단추 왼쪽에 붙여, 나타날 때 단추가 밀리지 않게 한다. */}
                   {isExpanded && refreshFailedNodeId === node.nodeId ? (
-                    <span className="c724-badge c724-badge-danger">갱신 실패</span>
+                    <span className="c724-badge c724-badge-danger">{t("accounts.nodes.refreshError")}</span>
                   ) : null}
                   {isExpanded ? (
                     <DashboardIconCap
                       size="small"
-                      label="사용량 새로 고침"
+                      label={t("accounts.nodes.refreshUsage")}
                       className="shrink-0"
                       // 갱신 중에도 초점을 잃지 않도록 disabled 대신 aria-disabled를 쓰고,
                       // 다시 눌러도 handleRefresh가 중복 실행되지 않게 막는다.
@@ -153,7 +155,7 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
                 {isExpanded && <NodeCardBody>
                   {staleSince ? (
                     <div className="mb-2 sm:hidden">
-                      <span className="c724-badge c724-badge-warn">수집 지연 · {staleSince}</span>
+                      <span className="c724-badge c724-badge-warn">{t("accounts.nodes.stale", { time: staleSince })}</span>
                     </div>
                   ) : null}
                   <NodeProvidersPanel

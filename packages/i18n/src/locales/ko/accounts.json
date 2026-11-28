@@ -15,7 +15,8 @@
     "checkAgain": "다시 확인",
     "check": "확인",
     "unconfigured": "미설정",
-    "genericError": "오류가 발생했습니다."
+    "genericError": "오류가 발생했습니다.",
+    "loading": "불러오는 중…"
   },
   "login": {
     "reconnectPrompt": "다시 연결할까요? 지금 로그인은 새 로그인으로 바뀝니다.",
@@ -107,7 +108,8 @@
     "sessions": "세션 {{number}}",
     "accountCount": "계정 {{number}}",
     "observed": "{{time}} 확인",
-    "updated": "{{time}} 갱신"
+    "updated": "{{time}} 갱신",
+    "centralPool": "중앙 풀"
   },
   "quota": {
     "unknownReset": "해제 시각 미정",
@@ -119,7 +121,8 @@
     "usage": "{{value}} 사용량",
     "inMinutes": "{{number}}분 후",
     "inHours": "{{number}}시간 후",
-    "weekdayTime": "{{weekday}} {{time}}"
+    "weekdayTime": "{{weekday}} {{time}}",
+    "delayed": "사용량 확인 지연"
   },
   "agents": {
     "selectNode": "코딩 에이전트를 연결할 노드",
@@ -135,5 +138,30 @@
     "acknowledge": "계속하려면 ‘{{phrase}}’를 입력하세요.",
     "conflict": "설정이 다른 곳에서 바뀌어 다시 읽었습니다. 다시 시도해 주세요.",
     "saveError": "설정을 저장하지 못했습니다 ({{status}})"
+  },
+  "models": {
+    "missingOnNode": "이 노드 목록에 없음",
+    "unspecified": "미지정",
+    "checkingSelected": "선택한 모델 확인 중…",
+    "selected": "선택한 모델",
+    "loadError": "모델 목록을 불러오지 못했습니다",
+    "unavailable": "선택한 모델을 이 노드에서 사용할 수 없습니다. 모델을 다시 선택해 주세요.",
+    "none": "쓸 수 있는 모델이 없습니다. 설정의 「코딩 에이전트 연결」에서 이 노드의 로그인을 확인하세요."
+  },
+  "nodes": {
+    "empty": "연결된 노드가 없습니다",
+    "stale": "수집 지연 · {{time}}",
+    "refreshError": "갱신 실패",
+    "refreshUsage": "사용량 새로 고침",
+    "collapse": "접기",
+    "expand": "펼치기"
+  },
+  "providers": {
+    "loadError": "조회 오류",
+    "unauthenticated": "미인증",
+    "deleteToken": "토큰 삭제",
+    "login": "로그인",
+    "openAnthropic": "Anthropic 인증 페이지 열기 →",
+    "pasteAnthropicCode": "Anthropic 페이지에 표시된 코드를 붙여넣으세요."
   }
 }
