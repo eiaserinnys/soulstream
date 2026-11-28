@@ -31,11 +31,9 @@ import {
 import { AppGlassPressable } from '../AppGlassCard';
 import { usePlannerActions } from '../../hooks/usePlannerActions';
 import { usePlannerContextMenus } from '../../hooks/usePlannerContextMenus';
-import {
-  promptText,
-  reportPlannerError,
-  showProjectManagement,
-} from '../planner/projectManagement';
+import { reportPlannerError, showProjectManagement } from '../planner/projectManagement';
+import { NewFolderSheet } from '../planner/NewFolderSheet';
+import { useFolderSettingsActions } from '../planner/folderSettingsActions';
 import { SettingsModal } from '../settings/SettingsModal';
 import { ProjectTreeSheet } from '../planner/ProjectTreeSheet';
 import { TabletPaneHeader } from './TabletPaneHeader';
@@ -74,6 +72,8 @@ export function SidebarPane({
   const today = useUIStore((state) => state.todayDate);
   const actions = usePlannerActions(api);
   const menus = usePlannerContextMenus(api);
+  const folderSettingsActions = useFolderSettingsActions(api);
+  const [newFolderParent, setNewFolderParent] = useState<string | null | undefined>(undefined);
   const [starredDragging, setStarredDragging] = useState(false);
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
   const treeRows = useMemo(
@@ -170,13 +170,7 @@ export function SidebarPane({
               folder,
               projectPageId,
               onOpen: () => select({ kind: 'project', folderId: folder.id, projectPageId }),
-              onCreateFolder: () => promptText('새 폴더', '폴더 이름', (title) => {
-                void actions.createFolder({
-                  title,
-                  folderId: folder.id,
-                  projectPageId,
-                }).catch(reportPlannerError('폴더를 만들지 못했습니다.'));
-              }),
+              onCreateFolder: () => setNewFolderParent(projectPageId),
             })}
             onManage={(folder) => showProjectManagement(folder, actions)}
           />
@@ -223,11 +217,10 @@ export function SidebarPane({
                 t={t}
               />
               <TouchableOpacity
+                testID="sidebar-new-root-folder"
                 accessibilityLabel="새 프로젝트"
                 style={styles.iconAction}
-                onPress={() => promptText('새 프로젝트', '프로젝트 이름', (name) => {
-                  void actions.createRootFolder(name).catch(reportPlannerError('프로젝트를 만들지 못했습니다.'));
-                })}
+                onPress={() => setNewFolderParent(null)}
               >
                 <Ionicons name="add" color={t.colors.accent} size={t.iconSize.action} />
               </TouchableOpacity>
@@ -254,6 +247,14 @@ export function SidebarPane({
       </View>
     </View>
     <SettingsModal visible={settingsVisible} onClose={closeSettings} />
+    <NewFolderSheet
+      visible={newFolderParent !== undefined}
+      api={api}
+      folders={folders}
+      target={{ kind: 'create', parentProjectPageId: newFolderParent ?? null }}
+      onClose={() => setNewFolderParent(undefined)}
+      onSubmit={folderSettingsActions.createFolder}
+    />
     </>
   );
 }

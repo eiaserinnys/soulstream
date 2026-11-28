@@ -197,7 +197,6 @@
     "components/planner/CardBoard.tsx",
     "components/planner/CardCommentComposer.tsx",
     "components/planner/FolderWorkspace.tsx",
-    "components/planner/ProjectContextEditorView.tsx",
     "components/planner/TodayCardComposer.tsx",
     "components/planner/plannerNativeUI.ts",
     "components/planner/projectManagement.ts",

@@ -1,5 +1,4 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { ActionSheetIOS } from 'react-native';
 import type { ApiClient } from '../../../api/client';
 import type { Folder } from '../../../api/types';
 import type { PlannerFolder } from '../../../api/plannerTypes';
@@ -59,6 +58,13 @@ const mockUseNewSessionSelection = jest.fn((_input?: unknown) => ({
 jest.mock('../../../hooks/usePlannerReads', () => ({
   usePlannerPageDetail: () => mockUsePlannerPageDetail(),
 }));
+let mockChain: any = { data: null, loading: false, error: null };
+let mockPageDefaults: any = { data: null, loading: false, error: null };
+jest.mock('../useFolderContext', () => ({
+  useFolderContextChain: () => mockChain,
+  usePageSessionDefaults: () => mockPageDefaults,
+  useExecutionDefaultsNames: () => ({ nodeName: null, agentName: null, modelName: null, loading: false }),
+}));
 jest.mock('../../../hooks/usePlannerActions', () => ({
   usePlannerActions: () => ({ createFolderSession: mockCreateFolderSession }),
 }));
@@ -75,6 +81,7 @@ import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { resetAuthScopeForTest } from '../../../lib/auth-scope';
 
+const createTarget = { kind: 'create' as const, parentProjectPageId: 'project-page' };
 const folders: Folder[] = [{
   id: 'project-folder',
   name: '프로젝트',
@@ -90,6 +97,8 @@ beforeEach(() => {
   useAuthStore.setState({ jwt: 'scope-a' });
   resetAuthScopeForTest();
   mockPageDetailResult = { data: { blocks: [] }, loading: false, error: null };
+  mockChain = { data: null, loading: false, error: null };
+  mockPageDefaults = { data: null, loading: false, error: null };
   mockAttachments = [];
   mockUploading = false;
   mockModelPresetSelectionInvalid = false;
@@ -109,6 +118,7 @@ test.each([
     visible
     api={null}
     folders={folders}
+    target={createTarget}
     onClose={jest.fn()}
     onSubmit={jest.fn().mockResolvedValue(undefined)}
   />);
@@ -121,7 +131,7 @@ test.each([
   expect(style(newFolder.getByTestId('new-task-content').props.contentContainerStyle))
     .toMatchObject({ paddingHorizontal: 20 });
   expect(style(newFolder.getByTestId('new-task-project-selection').props.style))
-    .toMatchObject({ minHeight: 52 });
+    .toMatchObject({ minHeight: hitTarget });
   expect(style(newFolder.getByTestId('new-task-project-selection').props.style))
     .not.toHaveProperty('height');
   expect(newFolder.UNSAFE_getByType(require('react-native').Modal).props.supportedOrientations)
@@ -147,7 +157,7 @@ test.each([
   fireEvent.press(succession.getByTestId('succession-execution-disclosure'));
   expect(style(succession.getByTestId('succession-selection-node').props.style))
     .toMatchObject({ minHeight: 52 });
-  expect(style(succession.getByTestId('succession-check-task-context').props.style))
+  expect(style(succession.getByTestId('succession-check-task-context-row').props.style))
     .toMatchObject({ minHeight: hitTarget });
   expect(style(succession.getByTestId('succession-selection-node').props.style))
     .not.toHaveProperty('height');
@@ -170,6 +180,7 @@ test('새 폴더 시트는 열린 중 catalog identity가 바뀌어도 입력을
     visible: true,
     api: null,
     folders,
+    target: createTarget,
     onClose: jest.fn(),
     onSubmit: jest.fn().mockResolvedValue(undefined),
   };
@@ -189,7 +200,7 @@ test('새 폴더 시트는 날짜 마운트 없이 폴더를 만든다', async (
     visible
     api={null}
     folders={folders}
-    defaultProjectPageId="project-page"
+    target={createTarget}
     onClose={jest.fn()}
     onSubmit={onSubmit}
   />);
@@ -203,26 +214,20 @@ test('새 폴더 시트는 날짜 마운트 없이 폴더를 만든다', async (
   expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('dailyDate');
 });
 
-test('새 폴더 시트는 직접 지침과 기본 에이전트를 생성 요청 하나에 담는다', async () => {
+test('새 폴더 시트는 직접 정한 지침과 기본 실행 환경을 생성 요청 하나에 담는다', async () => {
   const onSubmit = jest.fn().mockResolvedValue(undefined);
-  jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions')
-    .mockImplementation((_options, callback) => callback(1));
   const screen = render(<NewFolderSheet
     visible
     api={null}
     folders={folders}
+    target={createTarget}
     onClose={jest.fn()}
     onSubmit={onSubmit}
   />);
 
-  fireEvent.press(screen.getByTestId('new-task-direct-context-toggle'));
-  fireEvent.changeText(
-    screen.getByPlaceholderText('이 폴더에서만 사용할 지침을 적어두세요.'),
-    '직접 지침',
-  );
-  fireEvent.press(screen.getByTestId('new-task-defaults-edit'));
-  fireEvent.press(screen.getByTestId('new-task-default-agent'));
-  fireEvent.press(screen.getByLabelText('기본 환경 확인'));
+  fireEvent.press(screen.getByTestId('settings-segment-folder-guidance-own'));
+  fireEvent.changeText(screen.getByPlaceholderText('이 폴더에서 에이전트가 따를 지침'), '직접 지침');
+  fireEvent.press(screen.getByTestId('settings-segment-folder-defaults-own'));
   fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '새 폴더');
   await act(async () => { fireEvent.press(screen.getByText('만들기')); });
 
@@ -235,62 +240,53 @@ test('새 폴더 시트는 직접 지침과 기본 에이전트를 생성 요청
   }));
 });
 
-test('새 폴더 직접 지정에도 기본 모델 선택 행을 함께 표시한다', () => {
-  const screen = render(<NewFolderSheet
-    visible
-    api={null}
-    folders={folders}
-    onClose={jest.fn()}
-    onSubmit={jest.fn().mockResolvedValue(undefined)}
-  />);
-
-  fireEvent.press(screen.getByTestId('new-task-direct-context-toggle'));
-
-  fireEvent.press(screen.getByTestId('new-task-defaults-edit'));
-  expect(screen.getByTestId('new-task-default-node')).toBeTruthy();
-  expect(screen.getByTestId('new-task-default-agent')).toBeTruthy();
-  expect(screen.getByTestId('new-task-default-model')).toBeTruthy();
+test('새 폴더 순서는 상위 폴더, 이름, 설명, 지침, 참고 자료, 기본 실행 환경이고 칸은 노드, 에이전트, 모델이다', () => {
+  const screen = render(<NewFolderSheet visible api={null} folders={folders} target={createTarget}
+    onClose={jest.fn()} onSubmit={jest.fn().mockResolvedValue(undefined)} />);
+  const headings = screen.getAllByRole('header').map((node) => node.props.children);
+  expect(headings).toEqual(['새 폴더', '이름', '설명', '지침', '참고 자료', '기본 실행 환경']);
+  expect(screen.getByText('상위 폴더')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('settings-segment-folder-defaults-own'));
+  expect(['folder-defaults-node', 'folder-defaults-agent', 'folder-defaults-model']
+    .map((id) => screen.getByTestId(id).props.accessibilityLabel)).toEqual(['기본 노드', '기본 에이전트', '기본 모델']);
+  expect(screen.getByText('Agent A')).toBeTruthy();
+  expect(screen.queryByText('agent-a')).toBeNull();
 });
 
-test('유효하지 않은 preset 경고는 가용성이 회복되면 단방향 래치 없이 해제된다', async () => {
+test('유효하지 않은 preset은 만들기를 막고, 가용성이 회복되면 단방향 래치 없이 다시 연다', async () => {
   const props = {
     visible: true,
     api: null,
     folders,
+    target: createTarget,
     onClose: jest.fn(),
     onSubmit: jest.fn().mockResolvedValue(undefined),
   };
   const screen = render(<NewFolderSheet {...props} />);
-  fireEvent.press(screen.getByTestId('new-task-direct-context-toggle'));
-
-  fireEvent.press(screen.getByTestId('new-task-defaults-edit'));
+  fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '모델 확인');
+  fireEvent.press(screen.getByTestId('settings-segment-folder-defaults-own'));
   mockModelPresetSelectionInvalid = true;
   screen.rerender(<NewFolderSheet {...props} />);
-  await waitFor(() => expect(screen.getByText(
-    '기본 담당은 노드와 에이전트를 모두 선택하고 사용 가능한 모델을 지정해야 합니다.',
-  )).toBeTruthy());
+  await waitFor(() => expect(screen.getByTestId('new-task-submit')).toBeDisabled());
+  expect(screen.queryByText('노드와 에이전트를 고르고, 쓸 수 있는 모델을 정해 주세요.')).toBeNull();
 
   mockModelPresetSelectionInvalid = false;
   screen.rerender(<NewFolderSheet {...props} />);
-  await waitFor(() => expect(screen.queryByText(
-    '기본 담당은 노드와 에이전트를 모두 선택하고 사용 가능한 모델을 지정해야 합니다.',
-  )).toBeNull());
-  expect(screen.queryByText('기본 담당 선택을 마쳐야 합니다.')).toBeNull();
+  await waitFor(() => expect(screen.getByTestId('new-task-submit')).toBeEnabled());
 });
 
-test('기본 환경을 취소하면 폴더 작성 내용과 상속 설정을 보존한다', async () => {
+test('기본 실행 환경을 물려받기로 되돌리면 폴더 작성 내용을 보존하고 기본값을 싣지 않는다', async () => {
   const onSubmit = jest.fn().mockResolvedValue(undefined);
-  const screen = render(<NewFolderSheet visible api={null} folders={folders} onClose={jest.fn()} onSubmit={onSubmit} />);
+  const screen = render(<NewFolderSheet visible api={null} folders={folders} target={createTarget} onClose={jest.fn()} onSubmit={onSubmit} />);
   fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '상속 유지');
-  fireEvent.press(screen.getByTestId('new-task-direct-context-toggle'));
-  fireEvent.press(screen.getByTestId('new-task-defaults-edit'));
-  fireEvent.press(screen.getByLabelText('기본 환경 취소'));
+  fireEvent.press(screen.getByTestId('settings-segment-folder-defaults-own'));
+  fireEvent.press(screen.getByTestId('settings-segment-folder-defaults-inherit'));
   expect(screen.getByPlaceholderText('폴더 이름').props.value).toBe('상속 유지');
   await act(async () => fireEvent.press(screen.getByTestId('new-task-submit')));
   expect(onSubmit.mock.calls[0][0].initialContext.sessionDefaults).toBeUndefined();
 });
 
-test('새 폴더 시트는 같은 Atom 선택 화면에서 정한 옵션을 생성 요청에 담는다', async () => {
+test('새 폴더 시트는 기본 실행 환경 없이도 같은 피커에서 정한 참고 자료를 생성 요청에 담는다', async () => {
   const onSubmit = jest.fn().mockResolvedValue(undefined);
   const api = {
     listAtomRootNodes: jest.fn().mockResolvedValue({
@@ -302,57 +298,51 @@ test('새 폴더 시트는 같은 Atom 선택 화면에서 정한 옵션을 생�
     visible
     api={api}
     folders={folders}
+    target={createTarget}
     onClose={jest.fn()}
     onSubmit={onSubmit}
   />);
 
-  fireEvent.press(screen.getByTestId('new-task-direct-context-toggle'));
-  fireEvent.press(screen.getByTestId('new-task-add-atom'));
+  fireEvent.press(screen.getByTestId('folder-reference-add'));
   await act(async () => { await Promise.resolve(); });
   fireEvent.press(screen.getByTestId('atom-picker-select-atom-node'));
-  fireEvent.press(screen.getByTestId('atom-picker-depth-4'));
+  fireEvent.press(screen.getByTestId('settings-segment-atom-picker-depth-4'));
   fireEvent(screen.getByTestId('atom-picker-titles-only'), 'valueChange', true);
   fireEvent.press(screen.getByTestId('atom-picker-add-selected'));
+  expect(screen.getByText('깊이 4 · 제목만')).toBeTruthy();
   fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), 'Atom 폴더');
   await act(async () => { fireEvent.press(screen.getByText('만들기')); });
 
   expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
-    initialContext: expect.objectContaining({
+    initialContext: {
+      guidance: '',
       atomReferences: [{
         instance: 'atom', nodeId: 'atom-node', nodeTitle: '규칙', depth: 4, titlesOnly: true,
       }],
-    }),
+    },
   }));
 });
 
 test('새 업무 시트는 auth scope 전환 즉시 이전 draft와 프로젝트 컨텍스트 미리보기를 버린다', async () => {
-  mockPageDetailResult = {
-    data: {
-      blocks: [plannerBlock(
-        'old-guidance', 'guidance', '이전 계정 프로젝트 지침', { enabled: true },
-      )],
-    },
-    loading: false,
-    error: null,
-  };
+  mockChain = { data: { guidance: [{ blockId: 'old-guidance', text: '이전 계정 프로젝트 지침', scope: 'project',
+    source: { folderId: 'project-folder', folderName: '프로젝트', pageId: 'project-page' } }], atomReferences: [], sessionDefaults: [] },
+  loading: false, error: null };
   const props = {
     visible: true,
     api: null,
     folders,
+    target: createTarget,
     onClose: jest.fn(),
     onSubmit: jest.fn().mockResolvedValue(undefined),
   };
   const screen = render(<NewFolderSheet {...props} />);
   fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), 'A 계정 draft');
   fireEvent.changeText(screen.getByPlaceholderText('목표와 완료 조건을 적어두세요.'), 'A 계정 설명');
-  fireEvent.press(screen.getByTestId('new-task-direct-context-toggle'));
-  fireEvent.changeText(
-    screen.getByPlaceholderText('이 폴더에서만 사용할 지침을 적어두세요.'),
-    'A 계정 직접 지침',
-  );
   expect(screen.getByText('이전 계정 프로젝트 지침')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('settings-segment-folder-guidance-own'));
+  fireEvent.changeText(screen.getByPlaceholderText('이 폴더에서 에이전트가 따를 지침'), 'A 계정 직접 지침');
 
-  mockPageDetailResult = { data: undefined, loading: true, error: null };
+  mockChain = { data: null, loading: true, error: null };
   await act(async () => {
     useAuthStore.getState().setJwt('scope-b');
     await Promise.resolve();
@@ -360,8 +350,8 @@ test('새 업무 시트는 auth scope 전환 즉시 이전 draft와 프로젝트
 
   expect(screen.getByPlaceholderText('폴더 이름').props.value).toBe('');
   expect(screen.getByPlaceholderText('목표와 완료 조건을 적어두세요.').props.value).toBe('');
-  fireEvent.press(screen.getByTestId('new-task-direct-context-toggle'));
-  expect(screen.getByPlaceholderText('이 폴더에서만 사용할 지침을 적어두세요.').props.value).toBe('');
+  fireEvent.press(screen.getByTestId('settings-segment-folder-guidance-own'));
+  expect(screen.getByPlaceholderText('이 폴더에서 에이전트가 따를 지침').props.value).toBe('');
   expect(screen.queryByText('이전 계정 프로젝트 지침')).toBeNull();
 });
 
@@ -439,22 +429,11 @@ test('승계 시트는 기존 첨부 UI로 고른 경로를 첫 세션 생성 �
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 
-test('승계 시트는 업무 기본 담당을 프로젝트와 이전 세션보다 먼저 선택한다', () => {
-  mockPageDetailResult = {
-    data: { blocks: [plannerBlock('project-defaults', 'session_defaults', '', {
-      agentId: 'project-agent', nodeId: 'project-node',
-    })] },
-    loading: false,
-    error: null,
-  };
-  const directFolder = folder('running');
-  directFolder.blocks = [plannerBlock('task-defaults', 'session_defaults', '', {
-    agentId: 'task-agent', nodeId: 'task-node',
-  })];
-
+test('승계 시트는 서버가 해석한 폴더 기본 실행 환경을 이전 세션보다 먼저 선택한다', () => {
+  mockPageDefaults = { data: { defaults: { agentId: 'task-agent', nodeId: 'task-node', modelPreset: null }, sourceName: '업무', sourcePageId: 'task-1' }, loading: false, error: null };
   render(<SessionSuccessionSheet
     api={null}
-    folder={directFolder}
+    folder={folder('running')}
     predecessorSessionId="session-1"
     visible
     onClose={jest.fn()}
@@ -467,29 +446,62 @@ test('승계 시트는 업무 기본 담당을 프로젝트와 이전 세션보�
   }));
 });
 
-test('승계 시트는 내부 context source와 중복 일반명을 숨기고 의미 있는 항목만 한 번 표시한다', () => {
-  const directFolder = folder('running');
-  directFolder.blocks = [
-    plannerBlock('guidance', 'guidance', '검수 원칙', { enabled: true }),
-    plannerBlock('guidance-copy', 'guidance', ' 검수 원칙 ', { enabled: true }),
-    plannerBlock('runbook', 'runbook_ref', '', { runbookId: 'runbook-1' }),
-    plannerBlock('session-a', 'session_ref', '', { sessionId: 'session-a' }),
-    plannerBlock('session-b', 'session_ref', '', { sessionId: 'session-b' }),
-    plannerBlock('future', 'future_context_source', '컨텍스트'),
-  ];
-
+test('새 세션은 시작할 폴더, 무엇을 시작할까요, 실행 환경, 함께 전달할 자료 순서이고 요약 줄은 표시 이름이다', () => {
+  mockChain = { data: {
+    guidance: [{ blockId: 'g', text: '검수 원칙', scope: 'project', source: { folderId: 'task-1', folderName: '업무', pageId: 'task-1' } }],
+    atomReferences: ['a', 'b'].map((nodeId) => ({ blockId: nodeId, instance: 'atom', nodeId, nodeTitle: nodeId, depth: 1, titlesOnly: false,
+      source: { folderId: 'task-1', folderName: '업무', pageId: 'task-1' } })),
+    sessionDefaults: [],
+  }, loading: false, error: null };
+  mockPageDefaults = { data: { defaults: { agentId: 'agent-a', nodeId: 'node-a', modelPreset: null }, sourceName: '업무', sourcePageId: 'task-1' }, loading: false, error: null };
   const screen = render(<SessionSuccessionSheet
     api={null}
-    folder={directFolder}
+    folder={folder('running')}
     predecessorSessionId={null}
     visible
     onClose={jest.fn()}
     onCreated={jest.fn()}
   />);
 
-  expect(screen.getAllByText(/검수 원칙/)).toHaveLength(1);
-  expect(screen.getAllByText(/^함께 가져갈 컨텍스트$/)).toHaveLength(1);
-  expect(screen.queryByText(/runbook-1|session-a|session-b/)).toBeNull();
+  expect(screen.getByText('시작할 폴더')).toBeTruthy();
+  expect(screen.getAllByRole('header').map((node) => node.props.children))
+    .toEqual(['무엇을 시작할까요?', '실행 환경', '함께 전달할 자료']);
+  expect(screen.getByTestId('succession-execution-summary')).toHaveTextContent('Agent A · node-a · 자동 선택');
+  expect(screen.getByText('지침 · 참고 자료 2 · 기본 실행 환경')).toBeTruthy();
+  expect(screen.queryByText(/[✓○]/)).toBeNull();
+  expect(screen.getByTestId('succession-check-predecessor').props.disabled).toBe(true);
+  expect(screen.getByText('이전 세션 없음')).toBeTruthy();
+});
+
+test('새 세션에서 더한 참고 자료는 extraContextItems에 웹과 같은 atom 항목으로 실린다', async () => {
+  mockCreateFolderSession.mockResolvedValue({ agentSessionId: 'session-new' });
+  const api = {
+    listAtomRootNodes: jest.fn().mockResolvedValue({ nodes: [{ id: 'atom-ui', title: 'UI 디자인 기준' }] }),
+    listAtomNodeChildren: jest.fn(),
+  } as unknown as ApiClient;
+  const screen = render(<SessionSuccessionSheet
+    api={api}
+    folder={folder('running')}
+    predecessorSessionId={null}
+    visible
+    onClose={jest.fn()}
+    onCreated={jest.fn()}
+  />);
+  fireEvent.press(screen.getByTestId('succession-reference-add'));
+  await act(async () => { await Promise.resolve(); });
+  fireEvent.press(screen.getByTestId('atom-picker-select-atom-ui'));
+  fireEvent.press(screen.getByTestId('settings-segment-atom-picker-depth-1'));
+  fireEvent.press(screen.getByTestId('atom-picker-add-selected'));
+  expect(screen.getByTestId('succession-reference-atom-ui')).toBeTruthy();
+  await act(async () => { fireEvent.press(screen.getByLabelText('세션 시작')); });
+
+  expect(mockCreateFolderSession).toHaveBeenCalledWith(expect.objectContaining({
+    extraContextItems: [
+      { key: 'planner-folder', label: '업무', content: { pageId: 'task-1', folderId: 'task-1' } },
+      { key: 'atom_context_sources', label: '선택한 atom 노드',
+        content: { nodes: [{ node_id: 'atom-ui', depth: 1, titles_only: false }] } },
+    ],
+  }));
 });
 
 function folder(status: string): PlannerFolder {
@@ -516,24 +528,6 @@ function folder(status: string): PlannerFolder {
   };
 }
 
-function plannerBlock(
-  id: string,
-  blockType: string,
-  text: string,
-  properties: Record<string, unknown> = {},
-) {
-  return {
-    id,
-    pageId: 'project-page',
-    parentId: null,
-    positionKey: id,
-    blockType,
-    text,
-    properties,
-    collapsed: false,
-  };
-}
-
 function style(value: unknown) {
   return require('react-native').StyleSheet.flatten(value) as Record<string, unknown>;
 }
@@ -542,7 +536,7 @@ test('폴더 제출 snapshot은 실패 후 동일 키로 재시도하고 pending
   let reject!: (cause: Error) => void;
   const onSubmit = jest.fn().mockImplementationOnce(() => new Promise((_, no) => { reject = no; })).mockResolvedValue(undefined);
   const onClose = jest.fn();
-  const screen = render(<NewFolderSheet visible api={null} folders={folders} onClose={onClose} onSubmit={onSubmit} />);
+  const screen = render(<NewFolderSheet visible api={null} folders={folders} target={createTarget} onClose={onClose} onSubmit={onSubmit} />);
   fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '한 번만');
   await waitFor(() => expect(screen.getByTestId('new-task-submit')).toBeEnabled());
   const { Modal } = require('react-native');
@@ -565,7 +559,7 @@ test('명시적 거절 뒤 생성 성공과 오늘 반영 실패가 오면 생�
     })
     .mockResolvedValueOnce(undefined);
   const onClose = jest.fn();
-  const screen = render(<NewFolderSheet visible api={null} folders={folders} onClose={onClose} onSubmit={onSubmit} />);
+  const screen = render(<NewFolderSheet visible api={null} folders={folders} target={createTarget} onClose={onClose} onSubmit={onSubmit} />);
   fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '생성된 폴더');
   await waitFor(() => expect(screen.getByTestId('new-task-submit')).toBeEnabled());
   await act(async () => fireEvent.press(screen.getByTestId('new-task-submit')));
@@ -576,4 +570,28 @@ test('명시적 거절 뒤 생성 성공과 오늘 반영 실패가 오면 생�
   expect(onSubmit.mock.calls[2][0].creation).toBe(onSubmit.mock.calls[1][0].creation);
   expect(onSubmit.mock.calls[2][0].creation.result).toEqual({ folderId: 'created-folder' });
   expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test('새 세션에서 이전 세션 스위치를 끄면 요청에 이전 세션을 싣지 않고, 스위치 이름은 보이는 글과 같다', async () => {
+  mockCreateFolderSession.mockResolvedValue({ agentSessionId: 'session-new' });
+  const screen = render(<SessionSuccessionSheet api={null} folder={folder('running')} predecessorSessionId="session-1"
+    visible onClose={jest.fn()} onCreated={jest.fn()} />);
+  expect(screen.getByTestId('succession-check-predecessor').props.accessibilityLabel).toBe('이전 세션');
+  expect(screen.getByTestId('succession-check-task-context').props.accessibilityLabel).toBe('폴더 맥락');
+  fireEvent(screen.getByTestId('succession-check-predecessor'), 'valueChange', false);
+  await act(async () => { fireEvent.press(screen.getByLabelText('세션 시작')); });
+  expect(mockCreateFolderSession).toHaveBeenCalledTimes(1);
+  expect(mockCreateFolderSession.mock.calls[0][0]).not.toHaveProperty('predecessorSessionId');
+});
+
+test('새 세션의 폴더 맥락 조회가 실패하면 없다고 말하지 않고 다시 시도를 둔다', () => {
+  const retry = jest.fn();
+  mockChain = { data: null, loading: false, error: '일시 실패', retry };
+  mockPageDefaults = { data: null, loading: false, error: null, retry: jest.fn() };
+  const screen = render(<SessionSuccessionSheet api={null} folder={folder('running')} predecessorSessionId={null}
+    visible onClose={jest.fn()} onCreated={jest.fn()} />);
+  expect(screen.getByText('맥락을 불러오지 못했습니다.')).toBeTruthy();
+  expect(screen.queryByText('연결된 맥락 없음')).toBeNull();
+  fireEvent.press(screen.getByTestId('succession-check-task-context-retry'));
+  expect(retry).toHaveBeenCalledTimes(1);
 });

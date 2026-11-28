@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { createApiClient } from '../api/client';
+import { FolderCreateSheetHost, useFolderCreateRequest } from '../components/planner/FolderCreateSheetHost';
 import type { Folder } from '../api/types';
 import { useSessionStore } from '../store/sessionStore';
 import { useSettingsStore } from '../store/settingsStore';
@@ -10,20 +11,13 @@ import { AppGlassCard } from '../components/AppGlassCard';
 import { ProjectTreeSheet } from '../components/planner/ProjectTreeSheet';
 import { usePlannerActions } from '../hooks/usePlannerActions';
 import { usePlannerContextMenus } from '../hooks/usePlannerContextMenus';
-import {
-  promptText,
-  reportPlannerError,
-  showProjectManagement,
-} from '../components/planner/projectManagement';
+import { showProjectManagement } from '../components/planner/projectManagement';
 import { buildPlannerProjectTreeRows } from '../lib/planner-project-tree';
 
+/** Opens the new folder sheet for a top-level folder; ProjectListScreen hosts the sheet. */
 export function useCreateProject() {
-  const serverUrl = useSettingsStore((state) => state.serverUrl);
-  const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
-  const actions = usePlannerActions(api);
-  return React.useCallback(() => promptText('새 프로젝트', '프로젝트 이름', (name) => {
-    void actions.createRootFolder(name).catch(reportPlannerError('프로젝트를 만들지 못했습니다.'));
-  }), [actions]);
+  const open = useFolderCreateRequest((state) => state.open);
+  return React.useCallback(() => open(null), [open]);
 }
 
 export function ProjectHeaderAddButton() {
@@ -74,14 +68,7 @@ export function ProjectListScreen({
     verticalInset: t.uiSpacing.lg,
   });
 
-  const createFolder = (folder: Folder, projectPageId: string) =>
-    promptText('새 폴더', '폴더 이름', (title) => {
-      void actions.createFolder({
-        title,
-        folderId: folder.id,
-        projectPageId,
-      }).catch(reportPlannerError('폴더를 만들지 못했습니다.'));
-    });
+  const openNewFolder = useFolderCreateRequest((state) => state.open);
   return (
     <View
       testID="project-list-root"
@@ -124,12 +111,13 @@ export function ProjectListScreen({
             folder,
             projectPageId,
             onOpen: () => onOpenProject?.(folder, projectPageId),
-            onCreateFolder: () => createFolder(folder, projectPageId),
+            onCreateFolder: () => openNewFolder(projectPageId),
           })}
           onManage={(folder) => showProjectManagement(folder, actions)}
         />
         {rows.length === 0 ? <Text style={styles.empty}>프로젝트가 없습니다.</Text> : null}
       </ScrollView>
+      <FolderCreateSheetHost />
     </View>
   );
 }

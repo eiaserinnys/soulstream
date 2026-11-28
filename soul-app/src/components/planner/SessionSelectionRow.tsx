@@ -9,7 +9,7 @@ export function SessionSelectionRow({ testID, label, value, onPress, styles, dis
 }) {
   return <TouchableOpacity testID={testID} style={styles.selectionRow} onPress={onPress}
     disabled={disabled} accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
-    <Text style={styles.fieldLabel}>{label}</Text>
-    <Text style={styles.selectionValue} numberOfLines={valueLines}>{value}</Text>
+    <Text style={[styles.fieldLabel, disabled && styles.disabled]}>{label}</Text>
+    <Text style={[styles.selectionValue, disabled && styles.disabled]} numberOfLines={valueLines}>{value}</Text>
   </TouchableOpacity>;
 }

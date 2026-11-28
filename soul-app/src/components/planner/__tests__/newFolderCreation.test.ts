@@ -26,14 +26,22 @@ test('제목·설명·프로젝트를 생성 계약으로 만든다', () => {
   expect(buildNewFolderSubmission({
     title: ' 새 업무 ',
     description: '설명',
-    selectedProjectPageId: 'page-a',
-
+    parent: projectOptionsFromFolders(folders).find((option) => option.projectPageId === 'page-a'),
     initialContext,
-  }, projectOptionsFromFolders(folders))).toEqual({
+  })).toEqual({
     title: '새 업무',
     description: '설명',
     folderId: 'project-a',
     projectPageId: 'page-a',
     initialContext,
   });
+});
+
+test('최상위 새 폴더는 상위 없이 같은 생성 계약을 쓰고, 고른 상위가 사라졌으면 막는다', () => {
+  const initialContext = { guidance: '', atomReferences: [] };
+  expect(buildNewFolderSubmission({ title: '최상위', description: '', parent: null, initialContext })).toEqual({
+    title: '최상위', description: '', folderId: null, projectPageId: null, initialContext,
+  });
+  expect(() => buildNewFolderSubmission({ title: '하위', description: '', parent: undefined, initialContext }))
+    .toThrow('상위 폴더를 선택');
 });

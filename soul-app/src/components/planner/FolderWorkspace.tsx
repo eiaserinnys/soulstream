@@ -11,7 +11,6 @@ import { usePlannerFolderDetail, usePlannerPageDetail } from '../../hooks/usePla
 import { selectPlannerFolder, usePlannerStore } from '../../store/plannerStore';
 import { mergeServerDraft } from '../../lib/server-draft';
 import { useDeviceType, useTokens } from '../../theme';
-import { buildPlannerContextPresentation } from '../../lib/planner-context-presentation';
 import { plannerDescriptionText } from '../../lib/planner-description-blocks';
 import { useSessionStore } from '../../store/sessionStore';
 import { SessionSuccessionHost } from './SessionSuccessionHost';
@@ -25,6 +24,9 @@ import { AppGlassCard } from '../AppGlassCard';
 import { FolderBoardContent } from './FolderBoardContent';
 import { TabletMarkdownEditor, type TabletMarkdownSaveAttempt } from './TabletMarkdownEditor';
 import { FolderWorkspaceDetails } from './FolderWorkspaceDetails';
+import { FolderContextSection } from './FolderContextSection';
+import { NewFolderSheet } from './NewFolderSheet';
+import { useFolderSettingsActions } from './folderSettingsActions';
 import {
   coordinateFolderWorkspaceClose,
   plannerFolderTitleSaveCoordinator,
@@ -96,8 +98,6 @@ export function FolderWorkspace({
   const localCardDisplay = useCardDisplay(folderSummary?.folderId ?? folderId ?? folderPageId);
   const folderCardDisplay = cardDisplay ?? localCardDisplay;
   const folderCardsRef = useRef<FolderCardsHandle>(null);
-  const parentPageId = folders.find((candidate) => candidate.id === folder?.parentFolderId)?.projectPageId ?? null;
-  const projectPageDetail = usePlannerPageDetail(api, parentPageId, active);
   const scopeGeneration = useAuthScopeGeneration();
   const sessionNearEndRef = useRef<(() => void) | null>(null);
   const notifySessionNearEnd = useCallback(() => {
@@ -110,6 +110,8 @@ export function FolderWorkspace({
     return scope.serverUrl ? createApiClient(scope.serverUrl, { authScope: scope }) : null;
   }, [api, scopeGeneration]);
   const actions = usePlannerActions(scopedApi, scopeGeneration);
+  const settingsActions = useFolderSettingsActions(scopedApi);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const menus = usePlannerContextMenus(api);
   const renameWorkspace = useCallback((_current: PlannerFolder, nextTitle: string) => {
     if (!folder) throw new Error('폴더를 불러오는 중입니다.');
@@ -406,12 +408,6 @@ export function FolderWorkspace({
     }
   };
 
-  const projectName = folders.find((candidate) => candidate.id === folder?.parentFolderId)?.name ?? '폴더';
-  const context = buildPlannerContextPresentation({
-    projectName,
-    projectBlocks: projectPageDetail.data?.blocks ?? [],
-    folderBlocks: folderSummary.blocks,
-  });
   const parentFolder = folders.find((candidate) => candidate.id === folder?.parentFolderId);
   return (
     <AppKeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
@@ -479,19 +475,10 @@ export function FolderWorkspace({
         {pageDetail.error ? <Text style={styles.error}>{pageDetail.error}</Text> : null}
         {duo && !tablet ? <Text testID="task-workspace-phone-title" style={styles.title} numberOfLines={3}>{visibleTitle}</Text> : null}
         <FolderWorkspaceDetails
-          api={api}
           folderSummary={folderSummary}
-          contexts={context.contexts}
-          assignment={context.assignment}
           onEditTitle={!tablet && !editingPhoneTitle
             ? () => setEditingPhoneTitle(true)
             : undefined}
-          onSaveAssignment={async (value) => {
-            await actions.saveFolderSessionDefaults(folderSummary, {
-              ...value,
-              blockId: context.assignment?.blockId ?? null,
-            });
-          }}
         />
         {!tablet && !duo ? (
           <View style={styles.topActions}>{toggleActions}</View>
@@ -574,6 +561,8 @@ export function FolderWorkspace({
             </>
           )}
         </View>
+        <FolderContextSection api={api} folderId={folderSummary.folderId} folderPageId={folderSummary.page.id}
+          folders={folders} active={active} onOpenSettings={() => setSettingsOpen(true)} />
         <FolderCards ref={folderCardsRef} api={api} folderId={folderSummary.folderId} active={active} onOpenSession={onOpenSession} cardDisplay={folderCardDisplay} virtualHost/>
         </>}
         footer={<>
@@ -610,6 +599,14 @@ export function FolderWorkspace({
           />
         </View>
         </>}/>
+      <NewFolderSheet
+        visible={settingsOpen}
+        api={api}
+        folders={folders}
+        target={{ kind: 'edit', folder: folderSummary }}
+        onClose={() => setSettingsOpen(false)}
+        onSave={settingsActions.saveFolderSettings}
+      />
       <SessionSuccessionHost
         api={api}
         request={ownsDraft && successionId !== undefined

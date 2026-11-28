@@ -1,5 +1,4 @@
 import type {
-  PlannerPage,
   PlannerPageSlice,
   PlannerFolderCollection,
   PlannerSessionSummary,
@@ -147,31 +146,6 @@ export function setFolderStarredProjection(
       metadata: { ...folder.page.metadata, starred },
     },
   });
-}
-
-export function patchFolderBlocksProjection(
-  state: PlannerProjectionState,
-  folderPageId: string,
-  blocks: PlannerFolder['blocks'],
-): PlannerProjectionState {
-  const folder = findPlannerFolderProjection(state, folderPageId);
-  return folder ? replaceFolderProjection(state, { ...folder, blocks }) : state;
-}
-
-export function patchProjectPageProjection(
-  state: PlannerProjectionState,
-  projectPageId: string,
-  page: PlannerPage,
-): PlannerProjectionState {
-  const project = state.folderByPageId[projectPageId];
-  if (!project) return state;
-  return {
-    ...state,
-    folderByPageId: {
-      ...state.folderByPageId,
-      [projectPageId]: { ...project, project: page },
-    },
-  };
 }
 
 export function addFolderSessionProjection(

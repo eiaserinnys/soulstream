@@ -60,8 +60,9 @@ export function createPlannerMutationPort(api: PlannerMutationApi) {
     createFolder: async (input: {
       title: string;
       description: string;
-      folderId: string;
-      projectPageId: string;
+      /** Parent folder; null creates a top-level folder. */
+      folderId: string | null;
+      projectPageId?: string | null;
       initialContext?: InitialFolderContext;
       creation?: FolderCreationAttempt;
     }) => {
@@ -103,9 +104,6 @@ export function createPlannerMutationPort(api: PlannerMutationApi) {
       folder: PlannerFolder,
       target: { folderId: string; projectPageId: string },
     ) => moveFolderParent(api, folder, target),
-
-    saveProjectContext: (projectPageId: string, markdown: string) =>
-      savePageDescription(api, projectPageId, markdown, 'project-context'),
 
     createRootFolder: (name: string) => api.createFolder({
       name: requiredText(name, '프로젝트 이름'),

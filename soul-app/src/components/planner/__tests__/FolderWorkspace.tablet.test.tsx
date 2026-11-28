@@ -94,22 +94,6 @@ const folder = {
   status: 'open' as const, version: 1, archived: false,
 };
 
-const contextualFolder = {
-  ...plannerFolder,
-  blocks: [
-    {
-      id: 'context-guidance', pageId: 'task-1', parentId: null, positionKey: 'a',
-      blockType: 'guidance', text: '규칙 A', properties: { enabled: true }, collapsed: false,
-    },
-    {
-      id: 'context-atom', pageId: 'task-1', parentId: null, positionKey: 'b',
-      blockType: 'atom_ref', text: '',
-      properties: { instance: 'atom', nodeId: 'node-b', title: '원자 B' }, collapsed: false,
-    },
-  ],
-  contextCount: 2,
-} as PlannerFolder;
-
 beforeEach(() => {
   jest.clearAllMocks();
   mockDeviceType = 'tabletPortrait';
@@ -228,7 +212,7 @@ test('phone 폴더 화면의 여섯 섹션은 같은 머리와 전경 텍스트 
     expect(StyleSheet.flatten(header.props.style)).toMatchObject({ minHeight: 52, alignItems: 'center' });
   }
   expect(screen.queryByTestId('planner-section-header-documents')).toBeNull();
-  const headerTitles = ['설명', '프로젝트 컨텍스트', '하위 폴더', '카드', '보드', '세션'];
+  const headerTitles = ['설명', '맥락', '하위 폴더', '카드', '보드', '세션'];
   const titleStyles = headerTitles.map((title) => StyleSheet.flatten(screen.getByText(title).props.style));
   for (const style of titleStyles.slice(1)) {
     expect(style.fontSize).toBe(titleStyles[0].fontSize);
@@ -244,16 +228,19 @@ test('phone 폴더 화면의 여섯 섹션은 같은 머리와 전경 텍스트 
     StyleSheet.flatten(glass.props.style).zIndex ?? 0,
   );
   expect(foreground.findAllByType(input.type).includes(input)).toBe(true);
-  const labels = ['상태', '담당', '컨텍스트', '기본 담당'];
+  expect(screen.queryByText('프로젝트 컨텍스트')).toBeNull();
+  const labels = ['상태', '담당', '지침', '참고 자료', '기본 실행 환경'];
   const widths = labels.map((label) => StyleSheet.flatten(screen.getByText(label).props.style).width);
   expect(new Set(widths).size).toBe(1);
   await settleTimers();
 });
 
-test('업무 기본 담당 편집은 노드·에이전트와 같은 표면에서 모델을 선택한다', async () => {
+test('폴더 설정의 기본 실행 환경은 노드·에이전트와 같은 표면에서 모델을 선택한다', async () => {
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
 
-  fireEvent.press(screen.getByLabelText('기본 담당 수정'));
+  fireEvent.press(screen.getByText('설정'));
+  expect(screen.getByText('폴더 설정')).toBeTruthy();
+  expect(screen.queryByTestId('settings-segment-folder-defaults-own')).toBeNull();
 
   expect(screen.getByText('노드')).toBeTruthy();
   expect(screen.getByText('에이전트')).toBeTruthy();
@@ -261,7 +248,7 @@ test('업무 기본 담당 편집은 노드·에이전트와 같은 표면에서
   await settleTimers();
 });
 
-test('모델 목록 준비가 매달려도 기존 업무 기본 담당 저장 버튼은 활성 상태를 유지한다', async () => {
+test('모델 목록 준비가 매달려도 기본 실행 환경이 있는 폴더 설정의 저장 버튼은 활성 상태를 유지한다', async () => {
   const assignedFolder = {
     ...plannerFolder,
     blocks: [{
@@ -271,16 +258,17 @@ test('모델 목록 준비가 매달려도 기존 업무 기본 담당 저장 �
       positionKey: 'a',
       blockType: 'session_defaults',
       text: '',
-      properties: { agentId: 'agent-a', nodeId: 'node-a' },
+      properties: { agentId: 'agent-a', nodeId: 'node-a', scope: 'session' },
       collapsed: false,
     }],
   } as PlannerFolder;
   usePlannerStore.getState().setSelectedFolderSnapshot(assignedFolder);
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
 
-  fireEvent.press(screen.getByLabelText('기본 담당 수정'));
+  fireEvent.press(screen.getByText('설정'));
 
-  expect(screen.getByTestId('task-default-assignment-save').props.accessibilityState.disabled)
+  expect(screen.getByTestId('folder-defaults-fields')).toBeTruthy();
+  expect(screen.getByTestId('new-task-submit').props.accessibilityState.disabled)
     .toBe(false);
   await settleTimers();
 });
@@ -332,7 +320,7 @@ test('phone 기본 읽기는 native title만 소유하고 명시적 편집에서
   expect(screen.queryByTestId('task-workspace-title-heading')).toBeNull();
   const scrollJson = findJsonByTestId(screen.toJSON(), 'task-workspace-scroll');
   expect(findJsonByTestId(scrollJson, 'task-workspace-details-group')).toBeTruthy();
-  expect(screen.getAllByTestId('task-workspace-context-empty')).toHaveLength(1);
+  expect(screen.getAllByTestId('folder-context-summary')).toHaveLength(1);
   expect(StyleSheet.flatten(
     screen.getByTestId('task-workspace-scroll').props.contentContainerStyle,
   )).toMatchObject({ padding: 20 });
@@ -411,29 +399,15 @@ test.each([
   expect(screen.getByTestId('task-workspace-details-group')).toBeTruthy();
   expect(screen.getByTestId('folder-cards')).toBeTruthy();
   expect(screen.getByTestId('task-board-content')).toBeTruthy();
-  expect(screen.getAllByTestId('task-workspace-context-empty')).toHaveLength(1);
-  const contextRow = screen.getByTestId('task-workspace-context-row');
-  expect(StyleSheet.flatten(contextRow.props.style)).toMatchObject({
-    minHeight: 52,
-    paddingVertical: 8,
-  });
-  expect(StyleSheet.flatten(contextRow.props.style)).not.toHaveProperty('height');
-  expect(StyleSheet.flatten(screen.getByTestId('task-workspace-context-empty').props.style))
-    .toMatchObject({ minHeight: 52 });
-  const assignmentRow = screen.getByTestId('task-workspace-default-assignment-row');
-  expect(StyleSheet.flatten(assignmentRow.props.style)).toMatchObject({
-    minHeight: 52,
-    paddingVertical: 8,
-  });
-  expect(StyleSheet.flatten(assignmentRow.props.style)).not.toHaveProperty('height');
-  const assignmentSummary = screen.getByLabelText('기본 담당 수정');
-  expect(StyleSheet.flatten(assignmentSummary.props.style)).toMatchObject({ minHeight: actionSize });
-  expect(StyleSheet.flatten(assignmentSummary.props.style)).not.toHaveProperty('height');
-  const addContext = screen.getByTestId('task-workspace-add-context');
-  expect(StyleSheet.flatten(addContext.props.style)).toMatchObject({
-    minWidth: actionSize,
-    minHeight: actionSize,
-  });
+  expect(screen.queryByTestId('task-workspace-add-context')).toBeNull();
+  expect(screen.queryByTestId('task-workspace-default-assignment-row')).toBeNull();
+  for (const id of ['folder-context-guidance', 'folder-context-references', 'folder-context-defaults']) {
+    const row = screen.getByTestId(id);
+    expect(StyleSheet.flatten(row.props.style)).toMatchObject({ minHeight: 52, paddingVertical: 8 });
+    expect(StyleSheet.flatten(row.props.style)).not.toHaveProperty('height');
+  }
+  const settings = screen.getByRole('button', { name: '설정' });
+  expect(StyleSheet.flatten(settings.props.style)).toMatchObject({ minWidth: actionSize, minHeight: actionSize });
   const action = device === 'phone'
     ? screen.getByTestId('task-workspace-title-edit-action')
     : screen.getByTestId('task-workspace-close');
@@ -443,21 +417,6 @@ test.each([
   });
   expect(StyleSheet.flatten(action.props.style)).not.toHaveProperty('height');
 
-  screen.unmount();
-  usePlannerStore.getState().setSelectedFolderSnapshot(contextualFolder);
-  const contextual = render(
-    <FolderWorkspace
-      api={null}
-      folderPageId="task-1"
-      onClose={device === 'phone' ? undefined : jest.fn()}
-    />,
-  );
-  expect(contextual.queryByTestId('task-workspace-context-empty')).toBeNull();
-  for (const id of ['context-guidance', 'context-atom']) {
-    const item = contextual.getByTestId(`task-workspace-context-item-${id}`);
-    expect(StyleSheet.flatten(item.props.style)).toMatchObject({ minHeight: 52 });
-    expect(StyleSheet.flatten(item.props.style)).not.toHaveProperty('height');
-  }
   await settleTimers();
 });
 

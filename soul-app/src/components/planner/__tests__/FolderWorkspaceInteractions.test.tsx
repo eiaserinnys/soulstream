@@ -46,16 +46,14 @@ jest.mock('../../../hooks/usePlannerActions', () => ({
     createFolder: jest.fn(),
     renameFolderPage: jest.fn(),
     saveFolderDescription: jest.fn(),
-    saveFolderSessionDefaults: jest.fn(),
   }),
 }));
-jest.mock('../ProjectContextEditor', () => ({
-  ProjectContextEditor: () => require('react').createElement(require('react-native').View, { testID: 'folder-context-editor' }),
+jest.mock('../FolderContextSection', () => ({
+  FolderContextSection: () => require('react').createElement(require('react-native').View, { testID: 'folder-context-section' }),
 }));
 jest.mock('../NewFolderSheet', () => ({ NewFolderSheet: (props: { visible: boolean }) => props.visible
   ? require('react').createElement(require('react-native').View, { testID: 'new-folder-sheet' })
   : null }));
-jest.mock('../FolderDefaultAssignment', () => ({ FolderDefaultAssignment: () => null }));
 jest.mock('../FolderCards', () => ({
   FolderCards: require('react').forwardRef((_props: unknown, ref: any) => {
     const React = require('react');
@@ -91,9 +89,9 @@ test('폴더 문맥은 남고 문서 동작 메뉴는 열리지 않는다', asyn
   usePlannerStore.setState({ selectedFolderSnapshot: folder });
 
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
-  fireEvent(screen.getByText('설계 문서'), 'longPress');
+  fireEvent(screen.getByTestId('folder-context-section'), 'longPress');
 
-  expect(screen.getByText('설계 문서')).toBeTruthy();
+  expect(screen.getByTestId('folder-context-section')).toBeTruthy();
   expect(mockOpenProjectMenu).not.toHaveBeenCalled();
   expect(mockOpenChildFolderManagement).not.toHaveBeenCalled();
   await settleTimers();
@@ -170,7 +168,8 @@ test('서버 필드가 없는 폴더에서도 카드 목록은 항상 렌더된�
 
   const screen = render(<FolderWorkspace api={null} folderId="folder-1" folderPageId="project-1" />);
   expect(screen.queryByTestId('folder-parent-action')).toBeNull();
-  expect(screen.getByTestId('folder-context-editor')).toBeTruthy();
+  expect(screen.getByTestId('folder-context-section')).toBeTruthy();
+  expect(screen.queryByText('프로젝트 컨텍스트')).toBeNull();
   expect(screen.getByText('설명')).toBeTruthy();
   expect(screen.getByTestId('folder-checklist')).toBeTruthy();
   await settleTimers();

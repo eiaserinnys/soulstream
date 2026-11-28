@@ -51,6 +51,15 @@ jest.mock('../../../lib/planner-context-presentation', () => ({
     mockBuildPlannerContextPresentation(...args)
   ),
 }));
+// The sheet resolves folder defaults through this hook; the same mock reproduces the build 89 failure there.
+jest.mock('../useFolderContext', () => ({
+  useFolderContextChain: () => ({ data: null, loading: false, error: null }),
+  usePageSessionDefaults: () => {
+    const assignment = mockBuildPlannerContextPresentation()?.assignment;
+    return { data: assignment ? { defaults: { agentId: assignment.agentId, nodeId: assignment.nodeId, modelPreset: assignment.modelPreset ?? null },
+      sourceName: null, sourcePageId: 'defaults-page' } : null, loading: false, error: null };
+  },
+}));
 jest.mock('../../../hooks/usePlannerReads', () => ({
   usePlannerPageDetail: () => ({
     data: { blocks: [{
