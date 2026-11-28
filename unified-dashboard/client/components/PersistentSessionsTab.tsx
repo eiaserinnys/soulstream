@@ -1,3 +1,5 @@
+import { createI18n } from "@soulstream/i18n";
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
@@ -20,7 +22,7 @@ import { usePersistentSessionDetailsController } from "./PersistentSessionDetail
 import { PersistentSessionSettingsSections } from "./PersistentSessionSettingsSections";
 import { NodeModelPresetSelect } from "./NodeModelPresetSelect";
 import { SettingFieldWidget } from "./config/SettingFieldWidget";
-import { currentModelText, textField } from "./persistent-session-fields";
+import { agentLabel, currentModelText, textField } from "./persistent-session-fields";
 import {
   SettingsAlert,
   SettingsDetailHeader,
@@ -51,7 +53,7 @@ const editorFromDefaults = (defaults: PersistentCreateDefaults | null): Editor =
 /** 입력 검증에서 막힌 경우. 서버에 도달하지 않았으므로 일부 저장 안내를 붙이지 않는다. */
 class FormError extends Error {}
 
-const PARTIAL_SAVE_NOTE = "일부 변경이 저장됐을 수 있습니다. 다시 읽거나 저장해 주세요.";
+type Translate = ReturnType<typeof useTranslation>["t"];
 
 /** 서버가 분명히 거절한 응답(4xx)이 아니면 요청이 처리됐는지 알 수 없다. */
 const isClearRejection = (caught: unknown) => caught instanceof HttpResponseError && caught.status < 500;
@@ -64,7 +66,8 @@ export function PersistentSessionsTab({ request, assignment, initialPersistentSe
   /** 저장이 끝난 뒤 저장값을 바깥 화면(PAS 창)에 알린다. 목록 갱신과 표시 설정 반영은 이 탭이 이미 한다. */
   onSessionSaved?(session: PersistentSession): void;
 }) {
-  const api = useMemo(() => createPersistentSessionsApi(request), [request]);
+  const { t, i18n } = useTranslation();
+  const api = useMemo(() => createPersistentSessionsApi(request, i18n.t), [i18n, request]);
   const catalog = useDashboardStore((state) => state.catalog);
   const setPersistentSessionDisplaySettings = useDashboardStore((state) => state.setPersistentSessionDisplaySettings);
   const [sessions, setSessions] = useState<PersistentSession[]>([]);
@@ -142,7 +145,7 @@ export function PersistentSessionsTab({ request, assignment, initialPersistentSe
     try {
       await action();
     } catch (caught) {
-      fail(caught instanceof FormError || isClearRejection(caught) ? message(caught) : `${message(caught)} ${PARTIAL_SAVE_NOTE}`);
+      fail(caught instanceof FormError || isClearRejection(caught) ? message(caught) : `${message(caught)} ${t("jobs.persistent.partialSave")}`);
       if (caught instanceof PersistentSessionError && caught.code === "NOT_PERSISTENT") {
         void refresh({ select: selected?.session_id ?? null, keepEditor: true });
       }
@@ -153,11 +156,11 @@ export function PersistentSessionsTab({ request, assignment, initialPersistentSe
 
   const validName = () => {
     const name = editor.name.trim();
-    if (!name) throw new FormError("세션 이름을 입력하세요.");
+    if (!name) throw new FormError(t("jobs.persistent.missingName"));
     return name;
   };
   const defaultModelWrite = () => {
-    if (!editor.modelPreset) throw new FormError("기본 모델을 선택하세요.");
+    if (!editor.modelPreset) throw new FormError(t("jobs.persistent.missingDefaultModel"));
     return { default_model: { model_preset: editor.modelPreset, reasoning_effort: null } };
   };
 
@@ -176,8 +179,8 @@ export function PersistentSessionsTab({ request, assignment, initialPersistentSe
   };
 
   const create = () => mutate(async () => {
-    if (!editor.agentId) throw new FormError("에이전트를 선택하세요.");
-    if (!editor.folderId) throw new FormError("생성 폴더를 선택하세요.");
+    if (!editor.agentId) throw new FormError(t("jobs.persistent.missingAgent"));
+    if (!editor.folderId) throw new FormError(t("jobs.persistent.missingCreationFolder"));
     const display_name = validName();
     const input = {
       display_name,
@@ -207,7 +210,7 @@ export function PersistentSessionsTab({ request, assignment, initialPersistentSe
   });
 
   const release = async () => {
-    if (!selected || !confirmPersistentSessionRelease(selected.display_name ?? "이름 없음")) return;
+    if (!selected || !confirmPersistentSessionRelease(selected.display_name ?? t("jobs.persistent.unnamed"), t)) return;
     await mutate(async () => {
       await api.update(selected.session_id, { enabled: false });
       await refresh();
@@ -224,14 +227,14 @@ export function PersistentSessionsTab({ request, assignment, initialPersistentSe
     triggerClassName="v3-model-preset-trigger"
     nodeId={modelNodeId}
     value={editor.modelPreset}
-    label="기본 모델"
+    label={t("jobs.common.defaultModel")}
     disabled={busy || nodeUnknown}
     modelPresetCatalog={modelPresetCatalog}
     onValueChange={(modelPreset) => setEditor((current) => ({ ...current, modelPreset }))}
     onError={fail}
   />;
   const nameField = <SettingFieldWidget
-    field={textField("display_name", "세션 이름", editor.name, nodeUnknown)}
+    field={textField("display_name", t("jobs.persistent.name"), editor.name, nodeUnknown)}
     value={editor.name}
     onChange={(name) => setEditor((current) => ({ ...current, name }))}
   />;
@@ -239,30 +242,30 @@ export function PersistentSessionsTab({ request, assignment, initialPersistentSe
   return (
     <SettingsListDetailFrame testId="persistent-sessions-tab" list={<>
       <SettingsListHeader
-        title="영구 세션"
-        description="등록된 세션 목록"
+        title={t("jobs.persistent.title")}
+        description={t("jobs.persistent.list")}
         actions={<>
-          <Button type="button" size="sm" variant="outline" data-testid="persistent-sessions-refresh" onClick={() => void refresh({ select: selected?.session_id ?? null, keepEditor: true })}>새로고침</Button>
-          <Button type="button" size="sm" variant="outline" onClick={startCreate}>새 세션</Button>
+          <Button type="button" size="sm" variant="outline" data-testid="persistent-sessions-refresh" onClick={() => void refresh({ select: selected?.session_id ?? null, keepEditor: true })}>{t("jobs.common.refresh")}</Button>
+          <Button type="button" size="sm" variant="outline" onClick={startCreate}>{t("jobs.persistent.newSession")}</Button>
         </>}
       />
       {loadError ? <div className="mb-4 space-y-2">
         <SettingsAlert><span data-v3-selectable-content="true">{loadError}</span></SettingsAlert>
-        <Button type="button" size="sm" variant="outline" onClick={() => void refresh({ select: selected?.session_id ?? null, keepEditor: true })}>다시 시도</Button>
+        <Button type="button" size="sm" variant="outline" onClick={() => void refresh({ select: selected?.session_id ?? null, keepEditor: true })}>{t("jobs.common.retry")}</Button>
       </div> : null}
-      {loaded ? <SettingsListSection isEmpty={sessions.length === 0} emptyText="등록된 영구 에이전트 세션이 없습니다.">
+      {loaded ? <SettingsListSection isEmpty={sessions.length === 0} emptyText={t("jobs.persistent.empty")}>
         {sessions.map((session) => <SettingsListRow
           key={session.session_id}
-          title={session.display_name ?? "이름 없음"}
-          meta={`${agentLabel(session)} · ${currentModelText(session)}`}
+          title={session.display_name ?? t("jobs.persistent.unnamed")}
+          meta={`${agentLabel(session, t)} · ${currentModelText(session, t)}`}
           selected={selected?.session_id === session.session_id}
           onSelect={() => choose(session)}
         />)}
-      </SettingsListSection> : loadError ? null : <FrameLoading inline label="불러오는 중…" />}
+      </SettingsListSection> : loadError ? null : <FrameLoading inline label={t("jobs.common.loading")} />}
     </>}>
       {selected || defaults ? <SettingsDetailHeader selectableTitle={Boolean(selected)}
-        title={selected ? selected.display_name ?? "이름 없음" : "새 영구 에이전트 세션"}
-        actions={selected ? <Button type="button" size="sm" variant="outline" disabled={busy || details.pending || nodeUnknown} onClick={() => void release()}>영구 세션 해제</Button> : null}
+        title={selected ? selected.display_name ?? t("jobs.persistent.unnamed") : t("jobs.persistent.newPersistentSession")}
+        actions={selected ? <Button type="button" size="sm" variant="outline" disabled={busy || details.pending || nodeUnknown} onClick={() => void release()}>{t("jobs.persistent.release")}</Button> : null}
       /> : null}
 
       {error && !selected ? <SettingsAlert key={error.key} scrollIntoView><span data-v3-selectable-content="true">{error.message}</span></SettingsAlert> : null}
@@ -278,13 +281,13 @@ export function PersistentSessionsTab({ request, assignment, initialPersistentSe
         modelPresetCatalog={modelPresetCatalog}
       /> : defaults ? <>
         {defaults.unavailable_reason ? <SettingsAlert><span data-v3-selectable-content="true">{defaults.unavailable_reason}</span></SettingsAlert> : null}
-        {registration ? <SettingsAlert scrollIntoView><span data-v3-selectable-content="true">세션은 만들어졌으나 등록하지 못했습니다. “{registration.name}” 세션이 일반 세션으로 남아 있습니다.</span></SettingsAlert> : null}
-        {createUnknown ? <SettingsAlert scrollIntoView><span data-v3-selectable-content="true">세션이 만들어졌는지 알 수 없습니다. 일반 세션으로 만들어졌을 수 있으니 세션 목록에서 확인하고, 이 목록을 다시 읽어 주세요.</span></SettingsAlert> : null}
+        {registration ? <SettingsAlert scrollIntoView><span data-v3-selectable-content="true">{t("jobs.persistent.registrationFailed", { name: registration.name })}</span></SettingsAlert> : null}
+        {createUnknown ? <SettingsAlert scrollIntoView><span data-v3-selectable-content="true">{t("jobs.persistent.creationUnknown")}</span></SettingsAlert> : null}
         <div>
           {nameField}
-          <SettingFieldWidget field={textField("node", "노드", nodeId, true)} value={nodeId} onChange={() => undefined} />
+          <SettingFieldWidget field={textField("node", t("jobs.persistent.node"), nodeId, true)} value={nodeId} onChange={() => undefined} />
         </div>
-        <SettingsGroupBox title="실행 대상">
+        <SettingsGroupBox title={t("jobs.common.executionTarget")}>
           <div className="v3-succession-assignment">
             <AgentSelectionField
               agents={agents}
@@ -301,34 +304,30 @@ export function PersistentSessionsTab({ request, assignment, initialPersistentSe
             folders={catalog?.folders ?? []}
             selectedFolderId={editor.folderId || null}
             onFolderChange={(folderId) => setEditor((current) => ({ ...current, folderId: folderId ?? "" }))}
-            label="생성 폴더"
-            placeholder="폴더를 선택하세요"
+            label={t("jobs.persistent.creationFolder")}
+            placeholder={t("jobs.common.selectFolder")}
           />
         </SettingsGroupBox>
         <SettingsMultilineField
-          label="첫 메시지 (선택)"
+          label={t("jobs.persistent.firstMessage")}
           value={editor.firstMessage}
           placeholder={defaults.initial_instruction}
           onChange={(firstMessage) => setEditor((current) => ({ ...current, firstMessage }))}
         />
         <div className="flex flex-wrap gap-2">
           {createUnknown
-            ? <Button type="button" size="sm" variant="outline" onClick={() => void refresh({ keepEditor: true })}>목록 다시 읽기</Button>
+            ? <Button type="button" size="sm" variant="outline" onClick={() => void refresh({ keepEditor: true })}>{t("jobs.persistent.reloadList")}</Button>
             : registration
-              ? <Button type="button" size="sm" disabled={busy} onClick={() => void retryRegistration()}>{busy ? "등록 중..." : "등록 다시 시도"}</Button>
-              : <Button type="button" size="sm" disabled={busy || !editor.modelPreset} onClick={() => void create()}>{busy ? "추가 중..." : "세션 추가"}</Button>}
+              ? <Button type="button" size="sm" disabled={busy} onClick={() => void retryRegistration()}>{busy ? t("jobs.persistent.registering") : t("jobs.persistent.retryRegistration")}</Button>
+              : <Button type="button" size="sm" disabled={busy || !editor.modelPreset} onClick={() => void create()}>{busy ? t("jobs.persistent.adding") : t("jobs.persistent.addSession")}</Button>}
         </div>
       </> : null}
     </SettingsListDetailFrame>
   );
 }
 
-function agentLabel(session: PersistentSession): string {
-  return session.agent_name ?? session.agent_id ?? "에이전트 정보 없음";
-}
-
 function message(value: unknown): string { return value instanceof Error ? value.message : String(value); }
 
-export function confirmPersistentSessionRelease(name: string) {
-  return window.confirm(`“${name}” 영구 세션을 해제할까요? 세션과 대화 기록은 남습니다.`);
+export function confirmPersistentSessionRelease(name: string, t: Translate = createI18n("ko").t) {
+  return window.confirm(t("jobs.persistent.confirmRelease", { name }));
 }

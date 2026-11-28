@@ -21,7 +21,7 @@ const defaults: PersistentSessionDevicePreferences = {
 
 export function persistentSessionDevicePreferenceKey(email: string): string {
   const normalizedEmail = email.trim().toLowerCase();
-  if (!normalizedEmail) throw new Error("이메일이 있어야 기기별 영구 세션 설정을 저장할 수 있습니다.");
+  if (!normalizedEmail) throw new Error("이메일이 있어야 기기별 영구 세션 설정을 저장할 수 있습니다."); // i18n-ignore: 이메일 없는 내부 저장소 호출을 알리는 예외입니다.
   return `soulstream-pas-device:${normalizedEmail}`;
 }
 

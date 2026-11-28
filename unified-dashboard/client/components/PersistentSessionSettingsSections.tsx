@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useState, type ReactNode } from "react";
 import { SessionStoryDisclosure } from "@seosoyoung/soul-ui";
 
@@ -29,6 +30,7 @@ export function PersistentSessionSettingsSections({ resource, api, request, deta
   busy: boolean;
   modelPresetCatalog?: NodeModelPresetCatalog;
 }) {
+  const { t } = useTranslation();
   const monitoring = usePersistentSessionMonitoring({ sessionId: resource.session_id, nodeId: resource.node_id ?? "", request });
   const instructions = usePersistentSessionInstructions({ sessionId: resource.session_id, api });
   const [modelError, setModelError] = useState<string | null>(null);
@@ -44,10 +46,10 @@ export function PersistentSessionSettingsSections({ resource, api, request, deta
     onSave: () => { void details.save(); },
   };
   return <div className="space-y-4" data-testid="persistent-session-settings-sections">
-    <Section name="instructions" label="지속 지시">
+    <Section name="instructions" label={t("jobs.instructions.title")}>
       <PersistentSessionInstructionsView variant="pas" state={instructions.state} actions={instructions.actions} />
     </Section>
-    <Section name="account" label="계정과 모델">
+    <Section name="account" label={t("jobs.persistent.accountAndModel")}>
       <PersistentSessionDetails
         {...common}
         section="account"
@@ -57,13 +59,13 @@ export function PersistentSessionSettingsSections({ resource, api, request, deta
       />
       {modelError ? <SettingsAlert><span data-v3-selectable-content="true">{modelError}</span></SettingsAlert> : null}
     </Section>
-    <Section name="display" label="표시와 모션">
+    <Section name="display" label={t("jobs.persistent.displayAndMotion")}>
       <PersistentSessionDetails {...common} section="display" error={details.errorScope === "display" ? details.error : null} immediateDisplaySave />
     </Section>
-    <Section name="record" label="기록">
+    <Section name="record" label={t("jobs.persistent.record")}>
       <PersistentSessionDetails {...common} section="record" error={null} monitoring={<PersistentSessionMonitoringView state={monitoring} />} />
     </Section>
-    <Section name="story" label="세션 스토리">
+    <Section name="story" label={t("jobs.persistent.story")}>
       <SessionStoryDisclosure sessionId={resource.session_id} mode="settings" request={request} />
     </Section>
   </div>;
