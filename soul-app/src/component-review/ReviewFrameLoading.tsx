@@ -7,10 +7,8 @@ import { CardDetailContent } from '../components/planner/CardDetailSheet';
 import { FolderCards } from '../components/planner/FolderCards';
 import { SettingsSection } from '../components/settings/SettingsSection';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
-import { DailyPlannerScreen } from '../screens/DailyPlannerScreen';
 import { SessionFeedScreen } from '../screens/SessionFeedScreen';
 import { StarredFoldersWorkspace } from '../screens/StarredFoldersScreen';
-import { usePlannerStore } from '../store/plannerStore';
 import { useSessionStore } from '../store/sessionStore';
 import { useTokens } from '../theme';
 import { createReviewApi } from './fixtures';
@@ -23,7 +21,6 @@ const modes = [
   { value: 'boardExpanded', label: '확대 보드' },
   { value: 'completedLane', label: '완료 칸 첫 로딩' },
   { value: 'completedFirst', label: '완료 먼저' },
-  { value: 'daily', label: '데일리' },
   { value: 'starred', label: '별표 폴더' },
   { value: 'folderCards', label: '폴더 카드' },
   { value: 'feed', label: '세션 피드' },
@@ -63,11 +60,6 @@ export function ReviewFrameLoading() {
   }, [mode]);
 
   useEffect(() => {
-    if (mode !== 'daily') return;
-    usePlannerStore.getState().setLoading('daily:2026-10-02', true);
-  }, [mode]);
-
-  useEffect(() => {
     if (mode !== 'feed') return;
     useSessionStore.setState({ catalogLoadState: 'loading' });
     return () => { useSessionStore.setState({ catalogLoadState: 'ready' }); };
@@ -96,7 +88,6 @@ export function ReviewFrameLoading() {
       return <CardBoardWorkspace ref={board} api={mode === 'completedLane' ? completedPendingApi : activePendingApi}
         cardDisplay={{ includeCompleted: true, onChange: () => {} }} onOpen={() => {}} />;
     }
-    if (mode === 'daily') return <DailyPlannerScreen active={false} date="2026-10-02" />;
     if (mode === 'starred') return <StarredFoldersWorkspace api={pendingApi} />;
     if (mode === 'folderCards') return <FolderCards api={pendingApi} folderId="frame-loading-folder" />;
     if (mode === 'feed') return <SessionFeedScreen active={false} />;

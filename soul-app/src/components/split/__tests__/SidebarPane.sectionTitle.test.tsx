@@ -2,9 +2,6 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 const mockRefreshStarred = jest.fn();
 const mockMoveStarredFolderOrder = jest.fn();
 const mockStarredFolderListProps = jest.fn();
-jest.mock('../../../hooks/usePlannerReads', () => ({
-  usePlannerDailyHistory: () => ({ dates: [], loading: false, error: null }),
-}));
 jest.mock('../../../hooks/usePlannerStarred', () => ({
   usePlannerStarred: () => ({
     data: { items: [], nextCursor: null },
@@ -46,9 +43,7 @@ const settleTimers = () => act(async () => { await new Promise(resolve => setTim
 test('iPad 사이드바 chrome은 단색 시스템 아이콘과 하나의 section-title 역할을 쓴다', () => {
   useSessionStore.setState({ catalog: { folders: [], sessions: {} } });
   const screen = render(<SidebarPane active={false} />);
-  const labels = ['카드', '중요 작업', '프로젝트'].map(
-    (label) => screen.getByText(label),
-  );
+  const labels = [screen.getByTestId('tablet-sidebar-title'), screen.getByText('중요 작업'), screen.getByText('프로젝트')];
   const styles = labels.map((label) => StyleSheet.flatten(label.props.style));
   const header = StyleSheet.flatten(screen.getByTestId('tablet-sidebar-header').props.style);
   const icons = [
@@ -79,12 +74,10 @@ test('iPad 사이드바 chrome은 단색 시스템 아이콘과 하나의 sectio
 test('데일리·중요 작업·설정 표면은 같은 20pt 좌우 인셋을 공유한다', () => {
   useSessionStore.setState({ catalog: { folders: [], sessions: {} } });
   const screen = render(<SidebarPane active={false} />);
-  const daily = StyleSheet.flatten(screen.getByTestId('sidebar-daily-date-list').props.style);
   const starred = StyleSheet.flatten(screen.getByTestId('sidebar-starred-section').props.style);
   const settings = StyleSheet.flatten(screen.getByTestId('sidebar-settings-footer').props.style);
   const list = StyleSheet.flatten(screen.getByTestId('sidebar-main-list').props.style);
 
-  expect(daily.paddingHorizontal).toBe(20);
   expect(starred.paddingHorizontal).toBe(20);
   expect(settings.paddingHorizontal).toBe(20);
   expect(list.marginTop).toBeLessThan(0);

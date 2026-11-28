@@ -74,7 +74,7 @@ const folderD = plannerFolder('d');
 function plannerFolder(id: string): PlannerFolder {
   return {
     page: {
-      id, title: `업무 ${id}`, dailyDate: null, version: 1, archived: false,
+      id, title: `업무 ${id}`, version: 1, archived: false,
       metadata: { starred: true }, createdAt: '', updatedAt: '',
     },
     blocks: [], folderId: `task-${id}`, folderSummary: null, status: 'open', assignee: '',

@@ -8,7 +8,6 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,
   default: () => mockDimensions,
 }));
-jest.mock('../../../screens/DailyPlannerScreen', () => ({ DailyPlannerScreen: () => null }));
 jest.mock('../../../screens/SessionFeedScreen', () => ({ SessionFeedScreen: () => null }));
 jest.mock('../../planner/FolderWorkspaceReadOverlay', () => ({ FolderWorkspaceReadOverlay: () => null }));
 jest.mock('../../planner/FolderWorkspace', () => ({
@@ -19,9 +18,6 @@ jest.mock('../../planner/FolderWorkspace', () => ({
     testID: `folder-workspace-${folderId}`,
     onPress: () => onOpenFolder('child', 'child-page', '하위 폴더'),
   }),
-}));
-jest.mock('../../../hooks/usePlannerReads', () => ({
-  usePlannerDailyHistory: () => ({ dates: [] }),
 }));
 jest.mock('../../../hooks/usePlannerStarred', () => ({
   usePlannerStarred: () => ({ data: { items: [], nextCursor: null }, loading: false, error: null, loadMore: jest.fn() }),

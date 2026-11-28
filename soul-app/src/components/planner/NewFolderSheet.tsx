@@ -40,7 +40,6 @@ export function NewFolderSheet({
   visible,
   api,
   folders,
-  dailyDate,
   defaultProjectPageId = null,
   onClose,
   onSubmit,
@@ -48,7 +47,6 @@ export function NewFolderSheet({
   visible: boolean;
   api: ApiClient | null;
   folders: readonly Folder[];
-  dailyDate: string;
   defaultProjectPageId?: string | null;
   onClose(): void;
   onSubmit(input: {
@@ -57,7 +55,6 @@ export function NewFolderSheet({
     folderId: string;
     projectPageId: string;
     initialContext: InitialFolderContext;
-    dailyDate?: string;
     creation?: FolderCreationAttempt;
   }): Promise<unknown>;
 }) {
@@ -71,7 +68,6 @@ export function NewFolderSheet({
   const guidanceDraft = usePersistentDraft('folder-create-guidance', [defaultProjectPageId ?? 'root'], '');
   const ready = descriptionDraft.ready && guidanceDraft.ready;
   const [projectPageId, setProjectPageId] = useState('');
-  const [mountToday, setMountToday] = useState(true);
   const [initialContext, setInitialContext] = useState<InitialFolderContext>(emptyInitialFolderContext);
   const [assignmentIncomplete, setAssignmentIncomplete] = useState(false);
   const [defaultsOpen, setDefaultsOpen] = useState(false);
@@ -107,7 +103,6 @@ export function NewFolderSheet({
     setRetryingSnapshot(false);
     setTitle('');
     setProjectPageId(defaults.defaultProjectPageId ?? defaults.firstProjectPageId);
-    setMountToday(true);
     setInitialContext(emptyInitialFolderContext());
     setAssignmentIncomplete(false);
     setAtomPickerOpen(false);
@@ -149,8 +144,6 @@ export function NewFolderSheet({
         title: visibleTitle,
         description: visibleDescription,
         selectedProjectPageId: visibleProjectPageId,
-        mountToday,
-        dailyDate,
         initialContext: visibleInitialContext,
       }, options);
       if (submission.current?.rejected && JSON.stringify(submission.current.input) !== JSON.stringify(candidate)) submission.current = null;
@@ -311,20 +304,6 @@ export function NewFolderSheet({
                 onOpenAtomPicker={() => setAtomPickerOpen(true)}
                 onOpenDefaultsPicker={() => setDefaultsOpen(true)}
               />
-              <TouchableOpacity
-                testID="new-task-today-row"
-                disabled={locked}
-                style={styles.todayRow}
-                onPress={() => setMountToday((current) => !current)}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: mountToday }}
-              >
-                <Text style={styles.check}>{mountToday ? '✓' : '○'}</Text>
-                <View style={styles.todayBody}>
-                  <Text style={styles.rowTitle}>오늘에 마운트</Text>
-                  <Text style={styles.meta}>{dailyDate}</Text>
-                </View>
-              </TouchableOpacity>
               {retryingSnapshot ? <Text style={styles.meta}>이전 제출의 남은 저장을 다시 시도합니다. 폴더를 새로 만들지 않습니다.</Text> : null}
               {error ? <SheetErrorNotice summary="폴더를 저장하지 못했습니다. 입력을 유지했습니다. 다시 시도해 주세요." detail={error} /> : null}
             </ScrollView>
@@ -390,16 +369,6 @@ function makeStyles(t: DesignTokens) {
     contextValueRow: { flexDirection: 'row', alignItems: 'flex-start', gap: t.spacing.sm },
     contextValue: { flex: 1, color: t.colors.textPrimary, ...t.foundation.typography.body },
     contextSource: { color: t.colors.textTertiary, ...t.foundation.typography.meta, marginLeft: 'auto', flexShrink: 1 },
-    todayRow: {
-      minHeight: t.foundation.hitTarget,
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: t.spacing.sm,
-      paddingVertical: t.spacing.sm,
-    },
-    check: { width: t.iconSize.standard, color: t.colors.accent, fontSize: t.iconSize.standard },
-    todayBody: { flex: 1, gap: t.spacing.xxs },
-    rowTitle: { color: t.colors.textPrimary, ...t.foundation.typography.cardTitle },
     meta: { color: t.colors.textTertiary, ...t.foundation.typography.meta },
     error: { color: t.colors.errorText, ...t.foundation.typography.meta },
   });

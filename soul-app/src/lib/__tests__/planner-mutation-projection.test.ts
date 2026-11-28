@@ -1,7 +1,6 @@
 import type {
   PlannerPage,
   PlannerFolder,
-  PlannerToday,
 } from '../../api/plannerTypes';
 import {
   acknowledgeFolderSessionProjection,
@@ -36,20 +35,15 @@ const folder: PlannerFolder = {
 };
 
 function page(id: string, title: string): PlannerPage {
-  return { id, title, dailyDate: null, version: 1, archived: false, metadata: {}, createdAt: '', updatedAt: '' };
+  return { id, title, version: 1, archived: false, metadata: {}, createdAt: '', updatedAt: '' };
 }
 
 function makeState(): PlannerProjectionState {
-  const daily: PlannerToday = {
-    daily: { page: page('daily', 'Daily'), blocks: [], stateVector: 'sv' },
-    projects: [page('project-1', '프로젝트')], memoBlocks: [], folders: [folder], attention: [], running: [], queued: [], reviewSessionIds: [],
-  };
   const project = {
     project: page('project-1', '프로젝트'),
     folders: { items: [folder], nextCursor: null },
   };
   return {
-    dailyByDate: { '2026-07-17': daily, '2026-07-16': { ...daily, folders: [] } },
     starred: { items: [], nextCursor: null },
     folderByPageId: { 'project-1': project },
     folderChildPages: { 'project-1': project.folders },
@@ -63,8 +57,6 @@ test('업무 변경은 daily·project·starred·selected를 동시에 패치하�
   const renamed = { ...folder, page: { ...folder.page, title: '새 업무', metadata: { starred: true } } };
   const after = replaceFolderProjection(before, renamed);
 
-  expect(after.dailyByDate['2026-07-17']?.folders[0]).toBe(renamed);
-  expect(after.dailyByDate['2026-07-16']).toBe(before.dailyByDate['2026-07-16']);
   expect(after.folderChildPages['project-1']?.items[0]).toBe(renamed);
   expect(after.folderByPageId['project-1']?.folders.items[0]).toBe(renamed);
   expect(after.starred.items).toEqual([renamed]);
@@ -74,7 +66,6 @@ test('업무 변경은 daily·project·starred·selected를 동시에 패치하�
 
 test('업무 완료는 task completed로 남기고 daily에서만 제거한다', () => {
   const after = completeFolderProjection(makeState(), 'task-1');
-  expect(after.dailyByDate['2026-07-17']?.folders).toEqual([]);
   expect(after.folderChildPages['project-1']?.items[0]).toMatchObject({
     status: 'completed', folderSummary: { status: 'completed' },
   });
@@ -91,7 +82,6 @@ test('별표는 task snapshot과 starred 목록을 대칭 갱신한다', () => {
 test('세션 rename/delete는 모든 task snapshot과 run history를 함께 갱신한다', () => {
   const renamed = renameFolderSessionProjection(makeState(), 'session-1', '새 세션');
   expect(renamed.selectedFolderSnapshot?.sessions[0].displayName).toBe('새 세션');
-  expect(renamed.dailyByDate['2026-07-17']?.folders[0].sessions[0].displayName).toBe('새 세션');
   const deleted = deleteFolderSessionProjection(renamed, 'session-1');
   expect(deleted.selectedFolderSnapshot?.sessions).toEqual([]);
   expect(deleted.selectedFolderSnapshot?.sessionIds).toEqual([]);
@@ -124,22 +114,14 @@ test('세션 이동은 원본 run history에서 제거하고 대상 업무에만
 
 test('검수 확인은 모든 task snapshot과 daily review 목록을 함께 갱신한다', () => {
   const before = makeState();
-  before.dailyByDate['2026-07-17'] = {
-    ...before.dailyByDate['2026-07-17']!,
-    attention: [], running: [], queued: [],
-    reviewSessionIds: ['session-1', 'session-2'],
-  };
-
   const after = acknowledgeFolderSessionProjection(before, 'session-1');
 
   expect(after.selectedFolderSnapshot?.sessions[0].reviewState).toBe('acknowledged');
-  expect(after.dailyByDate['2026-07-17']?.reviewSessionIds).toEqual(['session-2']);
 });
 
 test('snapshot은 복원할 slice 참조를 그대로 캡처한다', () => {
   const before = makeState();
   const snapshot = capturePlannerProjection(before);
-  expect(snapshot.dailyByDate).toBe(before.dailyByDate);
   expect(snapshot.folderByPageId).toBe(before.folderByPageId);
   expect(snapshot.folderSessionPages).toBe(before.folderSessionPages);
 });

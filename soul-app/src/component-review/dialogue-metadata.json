@@ -28,10 +28,6 @@
       "label": "세션 실패 진단",
       "source": "planner/SessionSuccessionDiagnosticFallback.tsx"
     },
-    "morning-review": {
-      "label": "오늘 검토",
-      "source": "planner/MorningReviewSheet.tsx"
-    },
     "search-filter": {
       "label": "검색 필터",
       "source": "search/SearchFilterModal.tsx"
@@ -115,8 +111,7 @@
       "title": "상태와 확인",
       "ids": [
         "card-status",
-        "session-diagnostic",
-        "morning-review"
+        "session-diagnostic"
       ]
     },
     {
@@ -220,7 +215,6 @@
     "hooks/usePlannerContextMenus.ts",
     "navigation/RootNavigator.tsx",
     "navigation/phoneSessionNavigation.ts",
-    "screens/DailyPlannerScreen.tsx",
     "screens/PersistentSessionScreen.tsx",
     "screens/SettingsContent.tsx",
     "screens/StarredFoldersScreen.tsx"

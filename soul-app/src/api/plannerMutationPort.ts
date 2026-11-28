@@ -1,5 +1,5 @@
 import * as Crypto from 'expo-crypto';
-import type { PlannerBlock, PlannerPage, PlannerFolder } from './plannerTypes';
+import type { PlannerBlock, PlannerFolder } from './plannerTypes';
 import type { FolderMutationResult } from './types';
 import type { FolderSnapshot } from './cardTypes';
 import type {
@@ -11,9 +11,8 @@ import type {
 import type { InitialFolderContext } from './initialFolderContext';
 import type { CreateSessionRequest, CreateSessionResponse } from './sessionEndpoints';
 import { requirePlannerFolderId } from './plannerFolderIdentity';
-import { loadAllPlannerBacklinks, pageMountBlockIds } from './plannerBacklinks';
 import { isPlannerDescriptionRoot } from '../lib/planner-description-blocks';
-import { isPageMutationVersionConflict, retryPageMutationVersionConflict } from './pageMutationRetry';
+import { retryPageMutationVersionConflict } from './pageMutationRetry';
 
 export interface PlannerMutationApi {
   getFolderSnapshot(folderId: string): Promise<FolderSnapshot>;
@@ -22,7 +21,6 @@ export interface PlannerMutationApi {
     pageId: string,
     cursor?: string,
   ): Promise<{ items: PageBacklink[]; nextCursor: string | null }>;
-  getDailyPage(date?: string): Promise<{ page: PlannerPage; created: boolean }>;
   applyPageOperations(pageId: string, input: ApplyPageOperationsInput): Promise<PageMutationResult>;
   setPageStarred(pageId: string, input: {
     starred: boolean;
@@ -55,8 +53,6 @@ export interface PlannerMutationApi {
 export interface FolderCreationAttempt {
   idempotencyKey: string;
   result?: FolderMutationResult;
-  dailyWrite?: { pageId: string; input: ApplyPageOperationsInput };
-  dailyComplete?: boolean;
 }
 
 export function createPlannerMutationPort(api: PlannerMutationApi) {
@@ -67,7 +63,6 @@ export function createPlannerMutationPort(api: PlannerMutationApi) {
       folderId: string;
       projectPageId: string;
       initialContext?: InitialFolderContext;
-      dailyDate?: string;
       creation?: FolderCreationAttempt;
     }) => {
       const creation = input.creation ?? { idempotencyKey: operationId('folder-create') };
@@ -79,28 +74,6 @@ export function createPlannerMutationPort(api: PlannerMutationApi) {
         idempotencyKey: creation.idempotencyKey,
       });
       creation.result = result;
-      if (input.dailyDate && !creation.dailyComplete) {
-        if (!creation.dailyWrite) {
-          const daily = await api.getDailyPage(input.dailyDate);
-          const current = await api.getPage(daily.page.id);
-          if (!current.blocks.some((block) => mountTitle(block) === input.title)) {
-            creation.dailyWrite = { pageId: current.page.id, input: pageWrite(current, 'folder-daily-mount', [{
-              op: 'create_block', temp_id: operationId('folder-daily-mount-block'), parent_id: null,
-              after_block_id: lastRootId(current.blocks), block_type: 'paragraph', text: `[[${input.title}]]`,
-              properties: {}, collapsed: false,
-            }]) };
-          }
-        }
-        if (creation.dailyWrite) {
-          try { await api.applyPageOperations(creation.dailyWrite.pageId, creation.dailyWrite.input); }
-          catch (cause) {
-            // An explicit version rejection did not write; the next click reads a fresh page.
-            if (isPageMutationVersionConflict(cause)) creation.dailyWrite = undefined;
-            throw cause;
-          }
-        }
-        creation.dailyComplete = true;
-      }
       return result;
     },
 
@@ -113,42 +86,8 @@ export function createPlannerMutationPort(api: PlannerMutationApi) {
       );
     },
 
-    setFolderToday: async (folder: PlannerFolder, date: string, present: boolean) => {
-      const daily = await api.getDailyPage(date);
-      const [current, backlinks] = await Promise.all([
-        api.getPage(daily.page.id),
-        loadAllPlannerBacklinks(api, folder.page.id),
-      ]);
-      const mountIds = pageMountBlockIds(backlinks, daily.page.id, folder.page.id);
-      if (present && mountIds.length === 0) {
-        return appendMount(api, current, folder.page.title, 'folder-today-add');
-      }
-      if (!present && mountIds.length > 0) {
-        return api.applyPageOperations(current.page.id, pageWrite(
-          current,
-          'folder-today-remove',
-          mountIds.map((blockId) => ({ op: 'delete_block_subtree', block_id: blockId })),
-        ));
-      }
-      return null;
-    },
-
     saveFolderDescription: (pageId: string, markdown: string) =>
       savePageDescription(api, pageId, markdown, 'folder-description'),
-
-    saveDailyMemo: async (dailyPageId: string, blockId: string | null, text: string) => {
-      const current = await api.getPage(dailyPageId);
-      if (blockId) {
-        const block = current.blocks.find((candidate) => candidate.id === blockId);
-        if (!block) throw new Error('편집할 메모 블록이 사라졌습니다.');
-        if (block.text === text) return null;
-        return api.applyPageOperations(dailyPageId, pageWrite(current, 'daily-memo', [
-          { op: 'update_block_text', block_id: blockId, text },
-        ]));
-      }
-      if (!text.trim()) return null;
-      return appendBlock(api, current, text, 'daily-memo');
-    },
 
     setFolderStarred: async (pageId: string, starred: boolean) => {
       const current = await api.getPage(pageId);
@@ -272,18 +211,6 @@ async function savePageDescription(
   return api.applyPageOperations(pageId, pageWrite(current, prefix, operations));
 }
 
-function appendMount(api: PlannerMutationApi, page: PageReadResult, title: string, prefix: string) {
-  return appendBlock(api, page, `[[${title}]]`, prefix);
-}
-
-function appendBlock(api: PlannerMutationApi, page: PageReadResult, text: string, prefix: string) {
-  return api.applyPageOperations(page.page.id, pageWrite(page, prefix, [{
-    op: 'create_block', temp_id: operationId(`${prefix}-block`), parent_id: null,
-    after_block_id: lastRootId(page.blocks), block_type: 'paragraph', text,
-    properties: {}, collapsed: false,
-  }]));
-}
-
 async function moveFolderParent(
   api: PlannerMutationApi,
   folder: PlannerFolder,
@@ -310,11 +237,6 @@ function pageWrite(
     reason: `soul-app v3 ${prefix}`,
     operations,
   };
-}
-
-function mountTitle(block: PlannerBlock): string | null {
-  const match = /^\[\[([^\]]+)\]\]$/.exec(block.text.trim());
-  return match?.[1]?.trim() || null;
 }
 
 function lastRootId(blocks: PlannerBlock[]): string | null {

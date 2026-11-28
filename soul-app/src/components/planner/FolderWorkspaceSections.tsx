@@ -6,7 +6,6 @@ import type { Folder } from '../../api/types';
 import { usePlannerActions } from '../../hooks/usePlannerActions';
 import { usePlannerContextMenus } from '../../hooks/usePlannerContextMenus';
 import { useSessionStore } from '../../store/sessionStore';
-import { useUIStore } from '../../store/uiStore';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { GroupedGlassSheet } from './GroupedGlassSheet';
 import { FrameLoading } from '../FrameLoading';
@@ -37,7 +36,6 @@ export function FolderWorkspaceSections({
   const menus = usePlannerContextMenus(api);
   const actions = usePlannerActions(api);
   const folders = useSessionStore((state) => state.catalog.folders);
-  const today = useUIStore((state) => state.todayDate);
   const children = detail?.subfolders.items ?? [];
   return (
     <>
@@ -78,7 +76,6 @@ export function FolderWorkspaceSections({
         visible={newFolderDraft !== null}
         api={api}
         folders={folders}
-        dailyDate={today}
         defaultProjectPageId={newFolderDraft?.parentPageId ?? folder.projectPageId!}
         onClose={() => onNewFolderDraftChange(null)}
         onSubmit={actions.createFolder}

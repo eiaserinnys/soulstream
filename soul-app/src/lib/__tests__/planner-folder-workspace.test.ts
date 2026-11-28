@@ -1,4 +1,4 @@
-import type { PlannerFolder, PlannerToday } from '../../api/plannerTypes';
+import type { PlannerFolder } from '../../api/plannerTypes';
 import { bindPlannerFolderScope, usePlannerStore } from '../../store/plannerStore';
 import { useAuthStore } from '../../store/authStore';
 import { useSessionStore } from '../../store/sessionStore';
@@ -202,9 +202,7 @@ test('제목 queue는 generation+page ID로 격리되어 이전 scope의 늦은 
 
 test('세션 선택은 캐시된 소속 업무가 있으면 업무 문맥과 함께 연다', () => {
   openPlannerFolderWorkspace(folder);
-  usePlannerStore.getState().setDaily('2026-07-17', {
-    folders: [folder],
-  } as PlannerToday);
+  usePlannerStore.getState().setStarred({ items: [folder], nextCursor: null }, 'replace');
 
   openPlannerSessionWorkspace('session-1');
 
@@ -229,14 +227,12 @@ test('세션 선택은 캐시된 소속 업무가 있으면 업무 문맥과 함
 
 test('같은 sessionId라도 인증 scope가 바뀌면 이전 planner projection cache를 재사용하지 않는다', () => {
   openPlannerFolderWorkspace(folder);
-  usePlannerStore.getState().setDaily('2026-07-17', { folders: [folder] } as PlannerToday);
+  usePlannerStore.getState().setStarred({ items: [folder], nextCursor: null }, 'replace');
   openPlannerSessionWorkspace('session-1');
   expect(usePlannerStore.getState().selectedFolderSnapshot).toBe(folder);
 
   useAuthStore.setState({ jwt: 'other-account-jwt' });
-  usePlannerStore.getState().setDaily('2026-07-18', {
-    folders: [{ ...folder, page: { id: 'other-task' }, sessionIds: ['other-session'] }],
-  } as PlannerToday);
+  usePlannerStore.getState().setStarred({ items: [], nextCursor: null }, 'replace');
   openPlannerSessionWorkspace('session-1');
 
   expect(usePlannerStore.getState().selectedFolderSnapshot).toBeNull();
@@ -247,8 +243,8 @@ test('같은 sessionId라도 인증 scope가 바뀌면 이전 planner projection
 });
 
 test('scope 전환 직후 이전 화면의 업무 카드를 탭해도 새 scope store나 resolver를 prime하지 않는다', () => {
-  usePlannerStore.getState().setDaily('2026-07-17', { folders: [folder] } as PlannerToday);
-  const previousFolder = usePlannerStore.getState().dailyByDate['2026-07-17']!.folders[0];
+  usePlannerStore.getState().setStarred({ items: [folder], nextCursor: null }, 'replace');
+  const previousFolder = usePlannerStore.getState().starred.items[0];
   useUIStore.setState({ selectedFolderPageId: null, folderOverlayVisible: false });
 
   useAuthStore.getState().setJwt('scope-b-jwt');
@@ -321,7 +317,7 @@ test('cache miss linked session은 folderId로 폴더 aggregate를 읽어 업무
       status: 'open', version: 1,
     },
     page: {
-      id: 'task-page-1', title: '연결 업무', dailyDate: null, version: 1,
+      id: 'task-page-1', title: '연결 업무', version: 1,
       archived: false, metadata: {}, createdAt: '', updatedAt: '',
     },
     blocks: [], cards: [],

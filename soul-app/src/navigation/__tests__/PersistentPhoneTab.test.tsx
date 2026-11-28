@@ -15,7 +15,6 @@ jest.mock('@react-navigation/bottom-tabs', () => ({ createBottomTabNavigator: re
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true, useFocusEffect: jest.fn() }));
 jest.mock('../../hooks/useSessionsStream', () => ({ useSessionsStream: jest.fn() }));
 jest.mock('../../hooks/useNodeConnectivityStream', () => ({ useNodeConnectivityStream: jest.fn() }));
-jest.mock('../../screens/DailyPlannerScreen', () => ({ DailyPlannerScreen: require('react').forwardRef(() => null) }));
 jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: () => null }));
 jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent: jest.fn(() => null) }));
 jest.mock('../../screens/PersistentSessionScreen', () => ({ PersistentSessionScreen: jest.fn(() => null) }));

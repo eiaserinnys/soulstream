@@ -3,7 +3,6 @@ jest.mock('expo-document-picker', () => ({}));
 const mockRenameFolder = jest.fn(async () => undefined);
 const mockSaveFolderDescription = jest.fn(async () => undefined);
 const mockSetFolderStarred = jest.fn(async () => undefined);
-const mockSetFolderToday = jest.fn(async () => undefined);
 
 jest.mock('../../../theme', () => ({
   ...jest.requireActual('../../../theme'),
@@ -34,7 +33,6 @@ jest.mock('../../../hooks/usePlannerActions', () => ({
     renameFolderPage: mockRenameFolder,
     saveFolderDescription: mockSaveFolderDescription,
     setFolderStarred: mockSetFolderStarred,
-    setFolderToday: mockSetFolderToday,
   }),
 }));
 jest.mock('../../../hooks/usePlannerContextMenus', () => ({
@@ -76,8 +74,7 @@ function deferred<T>() {
 function folderWithDescription(text: string, title = '업무'): PlannerFolder {
   return {
     page: {
-      id: 'task-1', title, metadata: {}, version: 1, dailyDate: null,
-      archived: false, createdAt: '', updatedAt: '',
+      id: 'task-1', title, metadata: {}, version: 1, archived: false, createdAt: '', updatedAt: '',
     },
     blocks: [{
       id: 'description', pageId: 'task-1', parentId: null, positionKey: 'a',
@@ -99,7 +96,6 @@ beforeEach(() => {
   mockRenameFolder.mockResolvedValue(undefined);
   mockSaveFolderDescription.mockResolvedValue(undefined);
   mockSetFolderStarred.mockResolvedValue(undefined);
-  mockSetFolderToday.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -312,7 +308,6 @@ test('설명 편집 표면 inventory는 task 공통 경로와 runbook 제외 근
   )).map(repoRelative).sort();
 
   expect(tabletEditorMounts).toEqual([
-    'src/components/planner/DailyMemo.tsx',
     'src/components/planner/FolderWorkspace.tsx',
   ]);
   expect(folderWorkspaceMounts).toEqual([

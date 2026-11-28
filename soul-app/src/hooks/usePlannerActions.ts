@@ -10,10 +10,6 @@ import type {
 } from '../api/plannerTypes';
 import { requirePlannerFolderId } from '../api/plannerFolderIdentity';
 import {
-  mergeDailyPageProjection,
-  patchDailyMemoProjection,
-} from '../lib/planner-daily-projection';
-import {
   acknowledgeFolderSessionProjection,
   addFolderSessionProjection,
   capturePlannerProjection,
@@ -24,7 +20,6 @@ import {
   patchFolderBlocksProjection,
   renameFolderSessionProjection,
   replaceFolderProjection,
-  setFolderDailyMembership,
   setFolderStarredProjection,
   type PlannerProjectionState,
 } from '../lib/planner-mutation-projection';
@@ -152,7 +147,6 @@ export function createPlannerActions(
       folderId: string;
       projectPageId: string;
       initialContext?: InitialFolderContext;
-      dailyDate?: string;
       creation?: import('../api/plannerMutationPort').FolderCreationAttempt;
     }) => {
       const client = requireApi();
@@ -187,17 +181,6 @@ export function createPlannerActions(
       });
     },
 
-    setFolderToday: (folder: PlannerFolder, date: string, present: boolean) => {
-      const client = requireApi();
-      return runPlannerMutationTransaction({
-        capture: plannerSnapshot,
-        project: (before) => applyPlanner(setFolderDailyMembership(before, date, folder, present)),
-        mutate: () => client.plannerMutations.setFolderToday(folder, date, present),
-        merge: () => markChanged('page'),
-        restore: applyPlanner,
-      });
-    },
-
     saveFolderDescription: (folder: PlannerFolder, markdown: string) => {
       const client = requireApi();
       const blocks = projectDescriptionBlocks(folder.blocks, folder.page.id, markdown);
@@ -223,31 +206,6 @@ export function createPlannerActions(
       applyPlanner(patchFolderBlocksProjection(plannerSnapshot(), folder.page.id, result.blocks));
       markChanged('page');
       return result;
-    },
-
-    saveDailyMemo: (
-      date: string,
-      dailyPageId: string,
-      blockId: string | null,
-      text: string,
-    ) => {
-      const client = requireApi();
-      return runPlannerMutationTransaction({
-        capture: plannerSnapshot,
-        project: (before) => applyPlanner(patchDailyMemoProjection(before, date, blockId, text)),
-        mutate: () => client.plannerMutations.saveDailyMemo(dailyPageId, blockId, text),
-        merge: (result) => {
-          if (result) applyPlanner(mergeDailyPageProjection(
-            plannerSnapshot(),
-            date,
-            result.page,
-            result.blocks,
-          ));
-          markChanged('page');
-        },
-        restore: applyPlanner,
-        revalidate: () => targetedPageRead(client, dailyPageId),
-      });
     },
 
     setFolderStarred: (folder: PlannerFolder, starred: boolean) => {

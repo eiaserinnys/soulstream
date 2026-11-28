@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import type { ApiClient } from '../api/client';
 import { CardBoardHeaderActions, CardBoardWorkspace, type CardBoardWorkspaceHandle } from '../components/planner/CardBoardWorkspace';
@@ -16,7 +16,6 @@ import { SidebarPane } from '../components/split/SidebarPane';
 import { GlassButton } from '../components/GlassSurface';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 import { StarredFoldersWorkspace } from '../screens/StarredFoldersScreen';
-import { DailyPlannerScreen } from '../screens/DailyPlannerScreen';
 import { usePlannerStarred } from '../hooks/usePlannerStarred';
 import { usePlannerStore } from '../store/plannerStore';
 import { useDeviceType, useTokens } from '../theme';
@@ -25,7 +24,7 @@ import { createReviewApi, makeCard, starredFolders } from './fixtures';
 const modes = [
   { value: 'boardInternal', label: '내부 헤더' }, { value: 'boardExternal', label: '외부 헤더' },
   { value: 'starred', label: '별표' }, { value: 'sidebar', label: '사이드바' },
-  { value: 'picker', label: '폴더 선택기' }, { value: 'daily', label: '데일리 불변' },
+  { value: 'picker', label: '폴더 선택기' },
 ] as const;
 type Mode = typeof modes[number]['value'];
 
@@ -87,9 +86,6 @@ export function ReviewAutoRefresh() {
       getStarredFolders: async () => { await pending.current?.promise; return { items, nextCursor: empty ? null : 'public-next' }; },
     } as ApiClient;
   }, [empty, alignment, manyCompleted, completedError]);
-  useEffect(() => {
-    if (mode === 'daily') void api.getPlannerToday('2026-10-02').then(data => usePlannerStore.getState().setDaily('2026-10-02', data));
-  }, [api, mode]);
   // Sidebar's real owner is inactive here; this local read supplies its shared projection.
   usePlannerStarred(api, mode === 'sidebar');
   const begin = useCallback(() => {
@@ -98,12 +94,10 @@ export function ReviewAutoRefresh() {
     const promise = new Promise<void>(done => { resolve = done; });
     pending.current = { promise, resolve };
     setPhase('pending');
-    if (mode === 'daily') usePlannerStore.getState().setLoading('daily:2026-10-02', true);
-    else usePlannerStore.getState().invalidate('folder');
+    usePlannerStore.getState().invalidate('folder');
   }, [mode]);
   const finish = useCallback(() => {
     pending.current?.resolve(); pending.current = null;
-    usePlannerStore.getState().setLoading('daily:2026-10-02', false);
     setPhase('after'); setCycles(value => value + 1);
   }, []);
   const frame = new URLSearchParams(window.location.search).get('duoFrame');
@@ -132,7 +126,6 @@ export function ReviewAutoRefresh() {
     {mode.startsWith('board') ? <CardBoardWorkspace ref={board} api={api} externalHeader={mode === 'boardExternal'} onAutoRefreshChange={phone ? undefined : setRefreshing} cardDisplay={{ includeCompleted, onChange: setIncludeCompleted }} onOpen={() => {}} />
       : mode === 'starred' ? <StarredFoldersWorkspace api={api} />
         : mode === 'sidebar' ? <SidebarPane active={false} />
-          : mode === 'daily' ? <DailyPlannerScreen active={false} date="2026-10-02" />
             : pickerOpen ? <FolderSelectionSheet api={api} onClose={() => setPickerOpen(false)} onSelect={() => {}} /> : null}
   </View>;
 }

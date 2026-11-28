@@ -8,9 +8,6 @@ jest.mock('../../settings/SettingsModal', () => ({
     ? require('react').createElement(require('react-native').View, { testID: 'settings-modal' })
     : null,
 }));
-jest.mock('../../../hooks/usePlannerReads', () => ({
-  usePlannerDailyHistory: () => ({ dates: [], loading: false, error: null }),
-}));
 jest.mock('../../../hooks/usePlannerStarred', () => ({
   usePlannerStarred: () => ({ data: { items: [], nextCursor: null }, loading: false, error: null }),
 }));

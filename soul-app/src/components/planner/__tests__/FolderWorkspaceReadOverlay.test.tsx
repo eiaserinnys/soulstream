@@ -243,7 +243,6 @@ test('듀오 세로 메인의 확대 보드 안 폴더는 닫기와 폴더 단�
   const folder = within(screen.getByTestId('task-workspace-tablet-header'));
   expect(folder.getByLabelText('폴더 패널 닫기')).toBeTruthy();
   expect(folder.getByTestId('task-workspace-starred-toggle')).toBeTruthy();
-  expect(folder.getByTestId('task-workspace-today-toggle')).toBeTruthy();
   expect(folder.getByLabelText('폴더 메뉴')).toBeTruthy();
   expect(usePhoneRailActions.getState().overrides).toHaveLength(0);
   screen.unmount();

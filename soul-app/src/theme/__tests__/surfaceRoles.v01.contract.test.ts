@@ -58,7 +58,6 @@ describe('surface roles v0.1', () => {
     expect(read('components/settings/SettingsSection.tsx')).toContain('role="glassSoft"');
     expect(read('components/split/ChatPane.tsx')).toContain('roles.glassDense');
     expect(read('components/events/AssistantMessage.tsx')).toContain('roles.glassDense');
-    expect(read('components/planner/DailyMemo.tsx')).toContain('contentOnly');
     expect(read('components/planner/FolderWorkspace.styles.ts')).not.toContain('roles.glassCard');
     expect(read('components/planner/FolderWorkspaceReadOverlay.tsx')).toContain('roles.glassCard');
 

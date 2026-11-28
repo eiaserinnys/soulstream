@@ -46,9 +46,8 @@ describe('N3 planner visual roles', () => {
     });
   });
 
-  test('N3 표면에 N7 공통 행·sheet·tree를 더한 20 files / 25 units는 미할당 0이다', () => {
+  test('N3 표면에 N7 공통 행·sheet·tree를 더한 18 files / 23 units는 미할당 0이다', () => {
     const expected = new Map<string, string[]>([
-      ['components/planner/DailyMemo.tsx', ['DailyMemo']],
       ['components/planner/PlannerMarkdownText.tsx', ['PlannerMarkdownText']],
       ['components/planner/PlannerFolderRow.tsx', ['PlannerFolderRow']],
       ['components/planner/GroupedGlassSheet.tsx', ['GroupedGlassSheet', 'GroupedGlassRow']],
@@ -62,7 +61,6 @@ describe('N3 planner visual roles', () => {
       ['components/planner/FolderSessionHistory.tsx', ['FolderSessionHistory']],
       ['components/planner/FolderWorkspace.tsx', ['FolderWorkspace']],
       ['components/planner/FolderWorkspaceReadOverlay.tsx', ['FolderWorkspaceReadOverlay']],
-      ['screens/DailyPlannerScreen.tsx', ['DailyPlannerScreen']],
       ['screens/ProjectListScreen.tsx', ['ProjectHeaderAddButton', 'ProjectListScreen']],
       ['components/planner/FolderWorkspaceSections.tsx', ['FolderWorkspaceSections']],
       ['screens/StarredFoldersScreen.tsx', ['StarredFoldersScreen']],
@@ -70,8 +68,8 @@ describe('N3 planner visual roles', () => {
       ['hooks/usePlannerContextMenus.ts', ['usePlannerContextMenus']],
     ]);
 
-    expect(expected.size).toBe(20);
-    expect([...expected.values()].flat()).toHaveLength(25);
+    expect(expected.size).toBe(18);
+    expect([...expected.values()].flat()).toHaveLength(23);
     for (const [file, units] of expected) {
       const source = fs.readFileSync(path.join(SRC_ROOT, file), 'utf8');
       for (const unit of units) {

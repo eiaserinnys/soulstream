@@ -16,8 +16,6 @@ jest.mock('@react-navigation/native', () => ({
 }));
 
 jest.mock('@expo/vector-icons/Ionicons', () => () => null);
-
-jest.mock('../../screens/DailyPlannerScreen', () => ({ DailyPlannerScreen: () => null }));
 jest.mock('../../screens/StarredFoldersScreen', () => ({ StarredFoldersScreen: () => null }));
 jest.mock('../../screens/ProjectListScreen', () => ({ ProjectListScreen: () => null }));
 jest.mock('../../screens/ChatScreen', () => ({ ChatScreen: () => null }));

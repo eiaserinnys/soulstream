@@ -131,19 +131,6 @@ test('생성·완료·반려·대기·빼기·취소·이동·순서·담당·�
   expect(calls[9]).toEqual({ url: 'https://cards.test/api/cards/card%2F1/questions/question%2F1/answer', method: 'POST', body: { mode: 'choice', option: '네', idempotencyKey: 'answer' } });
 });
 
-test('오늘 파서는 attention/running/queued와 메모를 함께 보존한다', async () => {
-  jest.spyOn(global, 'fetch').mockResolvedValue(response({
-    daily: { page: { id: 'daily', title: '', daily_date: '2026-09-30', version: 1, archived: false,
-      metadata: {}, created_at: '', updated_at: '' }, blocks: [], state_vector: '' },
-    memoBlocks: [], folders: [], reviewSessionIds: [], attention: [cardFixture], running: [], queued: [],
-  }));
-  const result = await createApiClient('https://cards.test').getPlannerToday('2026-09-30');
-  expect(result.attention).toEqual([cardFixture]);
-  expect(result.running).toEqual([]);
-  expect(result.queued).toEqual([]);
-  expect(result.memoBlocks).toEqual([]);
-});
-
 test('카드 세션의 실제 updatedAt과 callerSessionId를 보존하고 구버전 응답도 읽는다', async () => {
   jest.spyOn(global, 'fetch').mockResolvedValue(response({ ...detail, sessions: [
     { ...session, createdAt: '2026-09-29T00:00:00Z', updatedAt: '2026-09-30T01:00:00Z', callerSessionId: 'parent' },

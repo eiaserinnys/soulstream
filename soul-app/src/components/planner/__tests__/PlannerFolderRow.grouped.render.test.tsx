@@ -9,7 +9,6 @@ const folder: PlannerFolder = {
   page: {
     id: 'task-page',
     title: '🧪 아주 긴 전체 업무 제목은 접근성에 그대로 남는다',
-    dailyDate: null,
     version: 1,
     archived: false,
     metadata: { starred: true },

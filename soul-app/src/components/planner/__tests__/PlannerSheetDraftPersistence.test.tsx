@@ -109,7 +109,6 @@ test.each([
     visible
     api={null}
     folders={folders}
-    dailyDate="2026-07-18"
     onClose={jest.fn()}
     onSubmit={jest.fn().mockResolvedValue(undefined)}
   />);
@@ -123,8 +122,6 @@ test.each([
     .toMatchObject({ paddingHorizontal: 20 });
   expect(style(newFolder.getByTestId('new-task-project-selection').props.style))
     .toMatchObject({ minHeight: 52 });
-  expect(style(newFolder.getByTestId('new-task-today-row').props.style))
-    .toMatchObject({ minHeight: hitTarget });
   expect(style(newFolder.getByTestId('new-task-project-selection').props.style))
     .not.toHaveProperty('height');
   expect(newFolder.UNSAFE_getByType(require('react-native').Modal).props.supportedOrientations)
@@ -173,7 +170,6 @@ test('새 폴더 시트는 열린 중 catalog identity가 바뀌어도 입력을
     visible: true,
     api: null,
     folders,
-    dailyDate: '2026-07-18',
     onClose: jest.fn(),
     onSubmit: jest.fn().mockResolvedValue(undefined),
   };
@@ -187,20 +183,18 @@ test('새 폴더 시트는 열린 중 catalog identity가 바뀌어도 입력을
   expect(screen.getByPlaceholderText('목표와 완료 조건을 적어두세요.').props.value).toBe('지켜야 하는 설명');
 });
 
-test('새 폴더 시트는 오늘 마운트 선택을 그대로 제공한다', async () => {
+test('새 폴더 시트는 날짜 마운트 없이 폴더를 만든다', async () => {
   const onSubmit = jest.fn().mockResolvedValue(undefined);
   const screen = render(<NewFolderSheet
     visible
     api={null}
     folders={folders}
-    dailyDate="2026-07-18"
     defaultProjectPageId="project-page"
     onClose={jest.fn()}
     onSubmit={onSubmit}
   />);
   expect(screen.getByText('새 폴더')).toBeTruthy();
-  expect(screen.getByTestId('new-task-today-row')).toBeTruthy();
-  fireEvent.press(screen.getByTestId('new-task-today-row'));
+  expect(screen.queryByTestId('new-task-today-row')).toBeNull();
   fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '자료실');
   await act(async () => { fireEvent.press(screen.getByText('만들기')); });
   expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
@@ -217,7 +211,6 @@ test('새 폴더 시트는 직접 지침과 기본 에이전트를 생성 요청
     visible
     api={null}
     folders={folders}
-    dailyDate="2026-07-18"
     onClose={jest.fn()}
     onSubmit={onSubmit}
   />);
@@ -247,7 +240,6 @@ test('새 폴더 직접 지정에도 기본 모델 선택 행을 함께 표시�
     visible
     api={null}
     folders={folders}
-    dailyDate="2026-07-18"
     onClose={jest.fn()}
     onSubmit={jest.fn().mockResolvedValue(undefined)}
   />);
@@ -265,7 +257,6 @@ test('유효하지 않은 preset 경고는 가용성이 회복되면 단방향 �
     visible: true,
     api: null,
     folders,
-    dailyDate: '2026-07-18',
     onClose: jest.fn(),
     onSubmit: jest.fn().mockResolvedValue(undefined),
   };
@@ -289,7 +280,7 @@ test('유효하지 않은 preset 경고는 가용성이 회복되면 단방향 �
 
 test('기본 환경을 취소하면 폴더 작성 내용과 상속 설정을 보존한다', async () => {
   const onSubmit = jest.fn().mockResolvedValue(undefined);
-  const screen = render(<NewFolderSheet visible api={null} folders={folders} dailyDate="2026-07-18" onClose={jest.fn()} onSubmit={onSubmit} />);
+  const screen = render(<NewFolderSheet visible api={null} folders={folders} onClose={jest.fn()} onSubmit={onSubmit} />);
   fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '상속 유지');
   fireEvent.press(screen.getByTestId('new-task-direct-context-toggle'));
   fireEvent.press(screen.getByTestId('new-task-defaults-edit'));
@@ -311,7 +302,6 @@ test('새 폴더 시트는 같은 Atom 선택 화면에서 정한 옵션을 생�
     visible
     api={api}
     folders={folders}
-    dailyDate="2026-07-18"
     onClose={jest.fn()}
     onSubmit={onSubmit}
   />);
@@ -349,7 +339,6 @@ test('새 업무 시트는 auth scope 전환 즉시 이전 draft와 프로젝트
     visible: true,
     api: null,
     folders,
-    dailyDate: '2026-07-18',
     onClose: jest.fn(),
     onSubmit: jest.fn().mockResolvedValue(undefined),
   };
@@ -506,7 +495,7 @@ test('승계 시트는 내부 context source와 중복 일반명을 숨기고 �
 function folder(status: string): PlannerFolder {
   return {
     page: {
-      id: 'task-1', title: '업무', dailyDate: null, version: 1, archived: false,
+      id: 'task-1', title: '업무', version: 1, archived: false,
       metadata: {}, createdAt: '', updatedAt: '',
     },
     blocks: [],
@@ -553,7 +542,7 @@ test('폴더 제출 snapshot은 실패 후 동일 키로 재시도하고 pending
   let reject!: (cause: Error) => void;
   const onSubmit = jest.fn().mockImplementationOnce(() => new Promise((_, no) => { reject = no; })).mockResolvedValue(undefined);
   const onClose = jest.fn();
-  const screen = render(<NewFolderSheet visible api={null} folders={folders} dailyDate="2026-07-18" onClose={onClose} onSubmit={onSubmit} />);
+  const screen = render(<NewFolderSheet visible api={null} folders={folders} onClose={onClose} onSubmit={onSubmit} />);
   fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '한 번만');
   await waitFor(() => expect(screen.getByTestId('new-task-submit')).toBeEnabled());
   const { Modal } = require('react-native');
@@ -576,7 +565,7 @@ test('명시적 거절 뒤 생성 성공과 오늘 반영 실패가 오면 생�
     })
     .mockResolvedValueOnce(undefined);
   const onClose = jest.fn();
-  const screen = render(<NewFolderSheet visible api={null} folders={folders} dailyDate="2026-07-18" onClose={onClose} onSubmit={onSubmit} />);
+  const screen = render(<NewFolderSheet visible api={null} folders={folders} onClose={onClose} onSubmit={onSubmit} />);
   fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '생성된 폴더');
   await waitFor(() => expect(screen.getByTestId('new-task-submit')).toBeEnabled());
   await act(async () => fireEvent.press(screen.getByTestId('new-task-submit')));

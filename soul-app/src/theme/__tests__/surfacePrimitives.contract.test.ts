@@ -75,7 +75,6 @@ describe('surface primitive roles', () => {
   test('header icon consumers는 공용 iconOnly glass 경계를 사용한다', () => {
     const consumers = [
       'navigation/TabNavigator.tsx',
-      'components/planner/DailyHeaderActions.tsx',
       'components/split/MainListPane.tsx',
       'components/split/TabletSessionFeedPane.tsx',
     ];

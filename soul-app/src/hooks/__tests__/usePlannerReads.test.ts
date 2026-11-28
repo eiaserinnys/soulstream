@@ -1,10 +1,9 @@
 import { usePlannerStarred } from '../usePlannerStarred';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { ApiClient } from '../../api/client';
-import type { PlannerFolderDetail, PlannerFolder, PlannerToday } from '../../api/plannerTypes';
+import type { PlannerFolderDetail, PlannerFolder } from '../../api/plannerTypes';
 import type { CatalogFolder } from '../../api/types';
 import {
-  usePlannerDaily,
   usePlannerPageDetail,
   usePlannerFolderDetail,
 } from '../usePlannerReads';
@@ -13,96 +12,11 @@ import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { resetAuthScopeForTest } from '../../lib/auth-scope';
 
-const daily: PlannerToday = {
-  daily: {
-    page: {
-      id: 'daily',
-      title: 'Daily',
-      dailyDate: '2026-07-17',
-      version: 1,
-      archived: false,
-      metadata: {},
-      createdAt: '',
-      updatedAt: '',
-    },
-    blocks: [],
-    stateVector: 'sv',
-  },
-  projects: [],
-  memoBlocks: [],
-  folders: [],
-  attention: [], running: [], queued: [],
-  reviewSessionIds: [],
-};
-
 beforeEach(() => {
   useSettingsStore.setState({ serverUrl: 'https://planner.test' });
   useAuthStore.setState({ jwt: 'scope-a' });
   resetAuthScopeForTest();
   usePlannerStore.getState().resetForTest();
-});
-
-test('session_updated는 daily 재조회를 유발하지 않고 replay는 현재 화면만 재조회한다', async () => {
-  const getPlannerToday = jest.fn().mockResolvedValue(daily);
-  const api = { getPlannerToday } as unknown as ApiClient;
-  const { rerender } = renderHook(
-    ({ enabled }: { enabled: boolean }) => usePlannerDaily(api, '2026-07-17', enabled),
-    { initialProps: { enabled: true } },
-  );
-  await waitFor(() => expect(getPlannerToday).toHaveBeenCalledTimes(1));
-
-  act(() => usePlannerStore.getState().invalidate('session_updated'));
-  await act(async () => Promise.resolve());
-  expect(getPlannerToday).toHaveBeenCalledTimes(1);
-
-  rerender({ enabled: false });
-  act(() => usePlannerStore.getState().invalidate('replay'));
-  await act(async () => Promise.resolve());
-  expect(getPlannerToday).toHaveBeenCalledTimes(1);
-
-  rerender({ enabled: true });
-  await waitFor(() => expect(getPlannerToday).toHaveBeenCalledTimes(2));
-});
-
-test('늦게 도착한 이전 daily 응답은 최신 응답을 덮지 않는다', async () => {
-  let resolveOld!: (value: PlannerToday) => void;
-  let resolveLatest!: (value: PlannerToday) => void;
-  const oldRequest = new Promise<PlannerToday>((resolve) => { resolveOld = resolve; });
-  const latestRequest = new Promise<PlannerToday>((resolve) => { resolveLatest = resolve; });
-  const getPlannerToday = jest.fn()
-    .mockReturnValueOnce(oldRequest)
-    .mockReturnValueOnce(latestRequest);
-  const api = { getPlannerToday } as unknown as ApiClient;
-  const { result } = renderHook(() => usePlannerDaily(api, '2026-07-17', true));
-  await waitFor(() => expect(getPlannerToday).toHaveBeenCalledTimes(1));
-
-  act(() => { void result.current.refresh(); });
-  await waitFor(() => expect(getPlannerToday).toHaveBeenCalledTimes(2));
-
-  const latest = { ...daily, reviewSessionIds: ['latest'] };
-  const old = { ...daily, reviewSessionIds: ['old'] };
-  await act(async () => { resolveLatest(latest); await latestRequest; });
-  await act(async () => { resolveOld(old); await oldRequest; });
-
-  expect(usePlannerStore.getState().dailyByDate['2026-07-17']).toBe(latest);
-  expect(usePlannerStore.getState().loading['daily:2026-07-17']).toBe(false);
-});
-
-test('화면이 비활성화된 뒤 도착한 daily 응답은 store에 쓰지 않는다', async () => {
-  let resolveRequest!: (value: PlannerToday) => void;
-  const request = new Promise<PlannerToday>((resolve) => { resolveRequest = resolve; });
-  const getPlannerToday = jest.fn().mockReturnValue(request);
-  const api = { getPlannerToday } as unknown as ApiClient;
-  const { rerender } = renderHook(
-    ({ enabled }: { enabled: boolean }) => usePlannerDaily(api, '2026-07-17', enabled),
-    { initialProps: { enabled: true } },
-  );
-  await waitFor(() => expect(getPlannerToday).toHaveBeenCalledTimes(1));
-
-  rerender({ enabled: false });
-  await act(async () => { resolveRequest(daily); await request; });
-
-  expect(usePlannerStore.getState().dailyByDate['2026-07-17']).toBeUndefined();
 });
 
 test('폴더 새로고침은 먼저 시작한 하위 폴더 페이지 응답을 폐기한다', async () => {
@@ -448,7 +362,7 @@ test('같은 pageId라도 auth generation이 바뀌면 이전 data를 즉시 숨
 function plannerFolder(id: string, title: string): PlannerFolder {
   return {
     page: {
-      id, title, dailyDate: null, version: 1, archived: false,
+      id, title, version: 1, archived: false,
       metadata: {}, createdAt: '', updatedAt: '',
     },
     blocks: [], folderId: id, folderSummary: null, status: 'open', assignee: '',
@@ -478,7 +392,7 @@ function catalogFolder(id: string, name: string, projectPageId: string | null): 
 function pageRead(title: string) {
   return {
     page: {
-      id: 'task-1', title, dailyDate: null, version: 1, archived: false,
+      id: 'task-1', title, version: 1, archived: false,
       metadata: {}, createdAt: '', updatedAt: '',
     },
     blocks: [],

@@ -5,7 +5,6 @@ import {
   View,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import {
   createPrimitiveRoles,
   useTokens,
@@ -13,28 +12,20 @@ import {
 } from '../../theme';
 import { capsuleRadius } from '../../theme/tokens';
 
-type ToggleAction = 'starred' | 'today';
+type ToggleAction = 'starred';
 
 export function FolderWorkspaceToggleActions({
   starred,
-  inToday,
   starredDisabled = false,
-  todayDisabled = false,
-  todayLoading = false,
   showToggles = true,
   onToggleStarred,
-  onToggleToday,
   onOpenMenu,
   onError,
 }: {
   starred: boolean;
-  inToday: boolean;
   starredDisabled?: boolean;
-  todayDisabled?: boolean;
-  todayLoading?: boolean;
   showToggles?: boolean;
   onToggleStarred(): Promise<unknown>;
-  onToggleToday(): Promise<unknown>;
   onOpenMenu?: () => void;
   onError(action: ToggleAction, error: unknown): void;
 }) {
@@ -60,24 +51,6 @@ export function FolderWorkspaceToggleActions({
           )}
           onToggle={onToggleStarred}
           onError={(error) => onError('starred', error)}
-        />
-        <ToggleIconButton
-          testID="task-workspace-today-toggle"
-          active={inToday}
-          label={inToday ? '오늘 데일리에서 제거' : '오늘 데일리에 추가'}
-          disabled={todayDisabled}
-          loading={todayLoading}
-          styles={styles}
-          icon={(
-            <MaterialCommunityIcons
-              testID="task-workspace-today-icon"
-              name={inToday ? 'calendar-minus' : 'calendar-plus-outline'}
-              size={t.iconSize.navigation}
-              color={inToday ? t.colors.accent : t.colors.textSecondary}
-            />
-          )}
-          onToggle={onToggleToday}
-          onError={(error) => onError('today', error)}
         />
       </> : null}
       {onOpenMenu ? <TouchableOpacity

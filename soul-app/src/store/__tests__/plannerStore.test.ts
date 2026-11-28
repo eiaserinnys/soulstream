@@ -76,40 +76,15 @@ test('내용 동등 refetch는 daily·project·starred 참조를 유지한다', 
     nextCursor: null,
   } as any;
   const store = usePlannerStore.getState();
-  store.setDaily('2026-07-17', daily);
   store.setProject('project', project);
   store.setStarred(starred, 'replace');
   const before = usePlannerStore.getState();
 
-  store.setDaily('2026-07-17', structuredClone(daily));
   store.setProject('project', structuredClone(project));
   store.setStarred(structuredClone(starred), 'replace');
   const after = usePlannerStore.getState();
 
-  expect(after.dailyByDate).toBe(before.dailyByDate);
-  expect(after.dailyByDate['2026-07-17']).toBe(daily);
   expect(after.folderByPageId).toBe(before.folderByPageId);
   expect(after.folderByPageId.project).toBe(before.folderByPageId.project);
   expect(after.starred).toBe(before.starred);
-});
-
-test('부분 변경 refetch는 바뀐 경로만 교체하고 동등한 자식 참조는 유지한다', () => {
-  const daily = {
-    daily: { page: { id: 'daily' }, blocks: [], stateVector: 'sv' },
-    projects: [], memoBlocks: [{ id: 'memo', text: '메모' }],
-    folders: [{ page: { id: 'task', title: '업무' }, blocks: [] }],
-    reviewSessionIds: [],
-  } as any;
-  usePlannerStore.getState().setDaily('2026-07-17', daily);
-
-  usePlannerStore.getState().setDaily('2026-07-17', {
-    ...structuredClone(daily),
-    reviewSessionIds: ['session-1'],
-  });
-  const after = usePlannerStore.getState().dailyByDate['2026-07-17']!;
-
-  expect(after).not.toBe(daily);
-  expect(after.memoBlocks).toBe(daily.memoBlocks);
-  expect(after.folders).toBe(daily.folders);
-  expect(after.reviewSessionIds).toEqual(['session-1']);
 });

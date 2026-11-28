@@ -7,9 +7,8 @@ import { createApiClient, type ApiClient } from '../../api/client';
 import { type PlannerFolder, plannerFolderDetailToSummary } from '../../api/plannerTypes';
 import { usePlannerActions } from '../../hooks/usePlannerActions';
 import { usePlannerContextMenus } from '../../hooks/usePlannerContextMenus';
-import { usePlannerDaily, usePlannerFolderDetail, usePlannerPageDetail } from '../../hooks/usePlannerReads';
+import { usePlannerFolderDetail, usePlannerPageDetail } from '../../hooks/usePlannerReads';
 import { selectPlannerFolder, usePlannerStore } from '../../store/plannerStore';
-import { useUIStore } from '../../store/uiStore';
 import { mergeServerDraft } from '../../lib/server-draft';
 import { useDeviceType, useTokens } from '../../theme';
 import { buildPlannerContextPresentation } from '../../lib/planner-context-presentation';
@@ -97,16 +96,6 @@ export function FolderWorkspace({
   const localCardDisplay = useCardDisplay(folderSummary?.folderId ?? folderId ?? folderPageId);
   const folderCardDisplay = cardDisplay ?? localCardDisplay;
   const folderCardsRef = useRef<FolderCardsHandle>(null);
-  const today = useUIStore((state) => state.todayDate);
-  const todayDaily = usePlannerDaily(api, today, active);
-  const folderInToday = todayDaily.data
-    ? todayDaily.data.folders.some((candidate) => candidate.page.id === folderPageId)
-    : undefined;
-  const todayReady = active
-    && todayDaily.data !== undefined
-    && !todayDaily.loading
-    && todayDaily.error === null;
-  const todayLoading = !!api && active && todayDaily.error === null && !todayReady;
   const parentPageId = folders.find((candidate) => candidate.id === folder?.parentFolderId)?.projectPageId ?? null;
   const projectPageDetail = usePlannerPageDetail(api, parentPageId, active);
   const scopeGeneration = useAuthScopeGeneration();
@@ -147,22 +136,20 @@ export function FolderWorkspace({
   const [successionId, setSuccessionId] = useState<string | null | undefined>(undefined);
   const [newFolderDraft, setNewFolderDraft] = useState<{ parentPageId: string } | null>(null);
   const togglePending = useRef(false);
-  const runRailToggle = async (kind: 'starred' | 'today') => {
+  const runRailToggle = async () => {
     if (!folderSummary || togglePending.current) return;
     togglePending.current = true;
     try {
-      if (kind === 'starred') await actions.setFolderStarred(folderSummary, folderSummary.page.metadata.starred !== true);
-      else if (folderInToday !== undefined) await actions.setFolderToday(folderSummary, today, !folderInToday);
+      await actions.setFolderStarred(folderSummary, folderSummary.page.metadata.starred !== true);
     } catch (error) {
-      Alert.alert(kind === 'starred' ? '중요 폴더를 변경하지 못했습니다.' : '오늘 데일리를 변경하지 못했습니다.', errorText(error));
+      Alert.alert('중요 폴더를 변경하지 못했습니다.', errorText(error));
     } finally { togglePending.current = false; }
   };
   const railActions: PhoneRailAction[] = [
     ...(onClose ? [{ id: 'back', label: tablet ? '폴더 패널 닫기' : '뒤로', icon: (tablet ? 'close' : 'chevron-back') as PhoneRailAction['icon'],
       onPress: () => coordinateFolderWorkspaceClose(folderSummary?.page.id ?? folderPageId, onClose) }] : []),
     ...(folderSummary && folder?.id !== 'claude' && folder?.id !== 'llm' ? [
-      { id: 'starred', label: '중요 폴더', menuLabel: folderSummary.page.metadata.starred === true ? '중요 폴더 해제' : '중요 폴더로 지정', icon: (folderSummary.page.metadata.starred ? 'star' : 'star-outline') as PhoneRailAction['icon'], selected: folderSummary.page.metadata.starred === true, disabled: !scopedApi, onPress: () => { void runRailToggle('starred'); } },
-      { id: 'today', label: '오늘 데일리', menuLabel: folderInToday ? '오늘 데일리에서 제거' : '오늘 데일리에 추가', icon: (folderInToday ? 'sunny' : 'sunny-outline') as PhoneRailAction['icon'], selected: folderInToday === true, disabled: !scopedApi || !todayReady, onPress: () => { void runRailToggle('today'); } },
+      { id: 'starred', label: '중요 폴더', menuLabel: folderSummary.page.metadata.starred === true ? '중요 폴더 해제' : '중요 폴더로 지정', icon: (folderSummary.page.metadata.starred ? 'star' : 'star-outline') as PhoneRailAction['icon'], selected: folderSummary.page.metadata.starred === true, disabled: !scopedApi, onPress: () => { void runRailToggle(); } },
     ] : []),
     ...(folder?.projectPageId ? [{ id: 'menu', kind: 'menu' as const, label: '폴더 메뉴', icon: 'ellipsis-horizontal' as const,
       menuTitle: folder.name,
@@ -371,20 +358,14 @@ export function FolderWorkspace({
     <FolderWorkspaceToggleActions
       key={folderSummary.page.id}
       starred={folderSummary.page.metadata.starred === true}
-      inToday={folderInToday === true}
       showToggles={folder?.id !== 'claude' && folder?.id !== 'llm'}
       starredDisabled={!scopedApi}
-      todayDisabled={!scopedApi || !todayReady}
-      todayLoading={todayLoading}
       onToggleStarred={() => actions.setFolderStarred(
         folderSummary,
         folderSummary.page.metadata.starred !== true,
       )}
-      onToggleToday={() => folderInToday === undefined
-        ? Promise.resolve()
-        : actions.setFolderToday(folderSummary, today, !folderInToday)}
-      onError={(action, error) => Alert.alert(
-        action === 'starred' ? '중요 폴더를 변경하지 못했습니다.' : '오늘 데일리를 변경하지 못했습니다.',
+      onError={(_action, error) => Alert.alert(
+        '중요 폴더를 변경하지 못했습니다.',
         errorText(error),
       )}
       onOpenMenu={folder?.projectPageId ? () => menus.openProjectMenu({

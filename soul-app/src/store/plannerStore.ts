@@ -10,7 +10,6 @@ import type {
   PlannerFolderCollection,
   PlannerFolder,
   PlannerFolderSessionPage,
-  PlannerToday,
 } from '../api/plannerTypes';
 import { replaceEqualDeep } from '../lib/structural-sharing';
 import {
@@ -22,7 +21,6 @@ type PageMode = 'replace' | 'append';
 
 interface PlannerStore {
   scopeGeneration: string;
-  dailyByDate: Record<string, PlannerToday | undefined>;
   starred: PlannerPageSlice<PlannerFolder>;
   starredRefreshRequired: boolean;
   folderByPageId: Record<string, PlannerFolderCollection | undefined>;
@@ -35,7 +33,6 @@ interface PlannerStore {
 
   setLoading: (key: string, loading: boolean) => void;
   setError: (key: string, error: string | null) => void;
-  setDaily: (date: string, daily: PlannerToday) => void;
   setStarred: (page: PlannerPageSlice<PlannerFolder>, mode: PageMode) => void;
   setStarredRefreshRequired: (required: boolean) => void;
   setProject: (pageId: string, project: PlannerFolderCollection) => void;
@@ -56,7 +53,6 @@ const folderScopes = new WeakMap<PlannerFolder, string>();
 function initialState(scopeGeneration = captureAuthScope().generation) {
   return {
     scopeGeneration,
-    dailyByDate: {},
     starred: EMPTY_PAGE as PlannerPageSlice<PlannerFolder>,
     starredRefreshRequired: false,
     folderByPageId: {},
@@ -77,12 +73,6 @@ export const usePlannerStore = create<PlannerStore>((set) => ({
   setError: (key, error) => set((state) => ({
     error: { ...state.error, [key]: error },
   })),
-  setDaily: (date, daily) => set((state) => {
-    bindFolderList(daily.folders, state.scopeGeneration);
-    const shared = replaceEqualDeep(state.dailyByDate[date], daily) as PlannerToday;
-    if (shared === state.dailyByDate[date]) return state;
-    return { dailyByDate: { ...state.dailyByDate, [date]: shared } };
-  }),
   setStarred: (page, mode) => set((state) => {
     bindFolderList(page.items, state.scopeGeneration);
     const next = mode === 'replace'
@@ -151,8 +141,6 @@ export const usePlannerStore = create<PlannerStore>((set) => ({
   resetForTest: () => set(initialState()),
 }));
 
-export const selectDaily = (date: string) => (state: PlannerStore) =>
-  state.dailyByDate[date];
 export const selectProject = (pageId: string) => (state: PlannerStore) =>
   state.folderByPageId[pageId];
 export const selectFolderChildren = (pageId: string) => (state: PlannerStore) =>
@@ -162,10 +150,6 @@ export const selectFolderSessions = (pageId: string) => (state: PlannerStore) =>
 export const selectPlannerFolder = (pageId: string) => (state: PlannerStore) => {
   if (state.selectedFolderSnapshot?.page.id === pageId) {
     return state.selectedFolderSnapshot;
-  }
-  for (const daily of Object.values(state.dailyByDate)) {
-    const folder = daily?.folders.find((candidate) => candidate.page.id === pageId);
-    if (folder) return folder;
   }
   for (const page of Object.values(state.folderChildPages)) {
     const folder = page?.items.find((candidate) => candidate.page.id === pageId);
@@ -216,9 +200,6 @@ function bindFolderList(folders: readonly PlannerFolder[], generation: string): 
 
 function bindProjectionFolders(state: Partial<PlannerStore>, generation: string): void {
   if (state.selectedFolderSnapshot) bindPlannerFolderScope(state.selectedFolderSnapshot, generation);
-  for (const daily of Object.values(state.dailyByDate ?? {})) {
-    if (daily) bindFolderList(daily.folders, generation);
-  }
   for (const page of Object.values(state.folderChildPages ?? {})) {
     if (page) bindFolderList(page.items, generation);
   }

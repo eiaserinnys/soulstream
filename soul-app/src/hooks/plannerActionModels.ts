@@ -8,7 +8,7 @@ import { isPlannerDescriptionRoot } from '../lib/planner-description-blocks';
 
 export function pendingPage(id: string, title: string): PlannerPage {
   return {
-    id, title: title.trim(), dailyDate: null, version: 0, archived: false,
+    id, title: title.trim(), version: 0, archived: false,
     metadata: { pending: true }, createdAt: '', updatedAt: '',
   };
 }

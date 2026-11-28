@@ -66,8 +66,6 @@ export function createDialogueApi(): ApiClient {
     getPlannerFolderSessions: async () => ({ items: reviewSessionPortraits(catalogSessions), nextCursor: null }),
     getPlannerFolderSubfolders: async () => ({ items: [], nextCursor: null }),
     getStarredFolders: async () => ({ items: [dialogueFolder], nextCursor: null }),
-    getDailyHistory: async () => ({ dates: ['2026-10-01'] }),
-    getPlannerToday: async (date: string) => ({ ...(await base.getPlannerToday(date)), folders: date === '2026-10-01' ? [dialogueFolder] : [] }),
     createFolder: async (input: Parameters<ApiClient['createFolder']>[0]) => {
       const folder = { ...dialogueFolders[0], id: 'public-created-folder-' + ++sequence, name: input.name, parentFolderId: input.parentFolderId ?? null };
       catalogFolders.push(folder);
@@ -82,7 +80,6 @@ export function createDialogueApi(): ApiClient {
       ...(await base.getPage(id)), page: { ...(await base.getPage(id)).page, version: input.expectedVersion + 1 },
       tempIdMapping: Object.fromEntries(input.operations.filter(op => op.op === 'create_block').map(op => [op.temp_id, 'public-anchor-' + ++sequence])),
     }),
-    getDailyPage: async () => ({ page: dialogueFolder.page, created: false }),
     getPageBacklinks: async () => ({ items: [], nextCursor: null }),
     getTimeline: async (sessionId: string, params?: Parameters<ApiClient['getTimeline']>[1]) => ({
       messages: sessionId === 'public-idle' && !params?.before ? dialogueMessages : [], next_cursor: null,

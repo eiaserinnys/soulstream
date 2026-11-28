@@ -109,16 +109,6 @@ export function createPageEndpoints({ base, authFetch, readJson }: ApiRequestCon
       ).then((response) => readJson(response, 'getPageBacklinks'));
     },
 
-    getDailyPage: (date?: string): Promise<{ page: PlannerPage; created: boolean }> =>
-      authFetch(`${base}/api/pages/daily`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(date === undefined ? {} : { date }),
-      }).then((response) => readJson<{ page: PlannerPageWire; created: boolean }>(
-        response,
-        'getDailyPage',
-      )).then((result) => ({ page: parsePlannerPage(result.page), created: result.created })),
-
     applyPageOperations: (
       pageId: string,
       input: ApplyPageOperationsInput,

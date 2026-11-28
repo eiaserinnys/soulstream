@@ -8,7 +8,6 @@ jest.mock('react-native-screens', () => {
 jest.mock('../../hooks/useSessionsStream', () => ({ useSessionsStream: jest.fn() }));
 jest.mock('../../hooks/useNodeConnectivityStream', () => ({ useNodeConnectivityStream: jest.fn() }));
 jest.mock('../../components/UiUsageEventsHost', () => ({ UiUsageEventsHost: () => null }));
-jest.mock('../../screens/DailyPlannerScreen', () => ({ DailyPlannerScreen: require('react').forwardRef(() => null) }));
 jest.mock('../PhoneCardHome', () => ({ PhoneCardHome: () => require('react').createElement(require('react-native').View, { testID: 'real-daily' }) }));
 jest.mock('../../screens/FolderListScreen', () => ({ FolderListScreen: () => require('react').createElement(require('react-native').View, { testID: 'real-folder' }) }));
 jest.mock('../../screens/SessionFeedScreen', () => ({ SessionFeedScreen: () => require('react').createElement(require('react-native').View, { testID: 'real-feed' }) }));

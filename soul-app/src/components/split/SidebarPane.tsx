@@ -17,7 +17,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createApiClient } from '../../api/client';
 import { StarredFolderList } from '../planner/StarredFolderList';
-import { usePlannerDailyHistory } from '../../hooks/usePlannerReads';
 import { usePlannerStarred } from '../../hooks/usePlannerStarred';
 import { buildPlannerProjectTreeRows } from '../../lib/planner-project-tree';
 import { openStarredPageWorkspace } from '../../lib/planner-folder-workspace';
@@ -73,14 +72,9 @@ export function SidebarPane({
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   const starred = usePlannerStarred(api, active);
   const today = useUIStore((state) => state.todayDate);
-  const dailyHistory = usePlannerDailyHistory(api, today, active);
   const actions = usePlannerActions(api);
   const menus = usePlannerContextMenus(api);
   const [starredDragging, setStarredDragging] = useState(false);
-  const dailyDates = useMemo(
-    () => Array.from(new Set([today, ...dailyHistory.dates])),
-    [dailyHistory.dates, today],
-  );
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
   const treeRows = useMemo(
     () => buildPlannerProjectTreeRows(folders, expandedFolderIds),
@@ -120,17 +114,6 @@ export function SidebarPane({
       reportPlannerError('작업을 완료하지 못했습니다.')(cause);
     }
   }, [starred.moveFolderOrder]);
-
-  const isActive = (section: ActiveSection) => {
-    if (section.kind !== activeSection.kind) return false;
-    if (section.kind === 'daily' && activeSection.kind === 'daily') {
-      return section.date === activeSection.date;
-    }
-    if (section.kind === 'project' && activeSection.kind === 'project') {
-      return section.projectPageId === activeSection.projectPageId;
-    }
-    return true;
-  };
 
   return (
     <>
@@ -192,7 +175,6 @@ export function SidebarPane({
                   title,
                   folderId: folder.id,
                   projectPageId,
-                  dailyDate: today,
                 }).catch(reportPlannerError('폴더를 만들지 못했습니다.'));
               }),
             })}
@@ -201,22 +183,8 @@ export function SidebarPane({
         )}
         ListHeaderComponent={
           <View style={styles.headerContent}>
-            <View testID="sidebar-daily-date-list" style={styles.dateList}>
-              {dailyDates.map((date, index) => {
-                const section: ActiveSection = { kind: 'daily', date };
-                return (
-                  <SidebarRow
-                    key={date}
-                    label={index === 0 ? `오늘 · ${date}` : date}
-                    icon="calendar-outline"
-                    active={isActive(section) && activeSection.kind === 'daily' && activeSection.date === date}
-                    onPress={() => select(section)}
-                    styles={styles}
-                    t={t}
-                  />
-                );
-              })}
-            </View>
+            <SidebarRow label="카드" icon="grid-outline" active={activeSection.kind === 'daily'}
+              onPress={() => select({ kind: 'daily', date: today })} styles={styles} t={t} />
             <View testID="sidebar-starred-section" style={styles.starred}>
               <SidebarSectionTitle
                 testID="sidebar-section-starred"
