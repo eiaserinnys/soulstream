@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createI18n, resolveLanguage } from "./index";
-import ko from "./locales/ko.json";
-import en from "./locales/en.json";
+import { createI18n, dictionaries, resolveLanguage } from "./index";
 
 describe("language selection", () => {
   it("prefers account language and otherwise selects the first supported browser language", () => {
@@ -17,7 +15,7 @@ describe("dictionaries", () => {
     function keys(value: Record<string, unknown>, prefix = ""): string[] {
       return Object.entries(value).flatMap(([key, item]) => typeof item === "string" ? [prefix + key] : keys(item as Record<string, unknown>, prefix + key + "."));
     }
-    expect(keys(ko).filter(key => !keys(en).includes(key))).toEqual([]);
+    expect(keys(dictionaries.ko).sort()).toEqual(keys(dictionaries.en).sort());
   });
   it("falls back to Korean when English is missing a key", async () => {
     const instance = await createI18n("en");
