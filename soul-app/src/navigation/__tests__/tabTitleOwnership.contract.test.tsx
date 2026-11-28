@@ -14,8 +14,6 @@ import {
 
 const mockSettingsScreen = jest.fn((_props: Record<string, unknown>) => null);
 const mockFolderWorkspace = jest.fn((_props: Record<string, unknown>) => null);
-const mockOpenDailyReview = jest.fn();
-const mockOpenDailyNewFolder = jest.fn();
 const mockOpenCardCreate = jest.fn();
 const mockCardHomeProps = jest.fn();
 
@@ -63,8 +61,6 @@ beforeEach(async () => {
   resetNavigationCapture();
   mockSettingsScreen.mockClear();
   mockFolderWorkspace.mockClear();
-  mockOpenDailyReview.mockClear();
-  mockOpenDailyNewFolder.mockClear();
   mockOpenCardCreate.mockClear();
   mockCardHomeProps.mockClear();
   useSettingsStore.setState({ cardIncludeCompleted: {} });

@@ -54,9 +54,6 @@ const MODAL_SURFACES = [
   'components/chat/ClaudeRuntimeTasksStrip.tsx',
 ] as const;
 
-const CUSTOM_OVERLAY_SURFACES = [
-] as const;
-
 const NATIVE_SHEET_SURFACES = [
   'components/planner/NewFolderSheet.tsx',
   'components/planner/SessionSuccessionDiagnosticFallback.tsx',
@@ -278,12 +275,6 @@ describe('surface role contract', () => {
     expect(source).toContain('<AppModalSurface');
     expect(source).not.toMatch(/<Modal\b/);
     expect(source).not.toMatch(/<AppGlassCard\b[^>]*role=["']modal["']/);
-  });
-
-  test.each(CUSTOM_OVERLAY_SURFACES)('%s는 custom dim+glass 계약을 선택한다', (file) => {
-    const source = read(file);
-    expect(source).toContain('variant="compact"');
-    expect(source).not.toContain('presentationStyle=');
   });
 
   test.each(NATIVE_SHEET_SURFACES)('%s는 UIKit sheet+opaque surface 계약을 선택한다', (file) => {
