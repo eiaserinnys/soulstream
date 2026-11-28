@@ -1,3 +1,4 @@
+import type { useTranslation } from "react-i18next";
 import type {
   NodeGitCloneJob,
   NodeGitError,
@@ -5,6 +6,8 @@ import type {
   NodeGitSshCheckResult,
 } from "../../../packages/wire-schema/generated/typescript/index";
 import { isRecord } from "../../../packages/wire-schema/src/json_record";
+
+type Translate = ReturnType<typeof useTranslation>["t"];
 
 export type NodeGitField = NonNullable<NodeGitError["field"]>;
 
@@ -15,7 +18,7 @@ export class NodeGitRequestError extends Error {
     readonly code: string,
     readonly field: NodeGitField | null,
   ) {
-    super(`Git 요청에 실패했습니다 (${status} ${code})`);
+    super(`HTTP ${status} ${code}`);
     this.name = "NodeGitRequestError";
   }
 }
@@ -73,49 +76,60 @@ export const startNodeGitClone = (request: typeof fetch, nodeId: string, body: {
 export const getNodeGitClone = (request: typeof fetch, nodeId: string, cloneId: string) =>
   requestNodeGit<NodeGitCloneJob>(request, `${gitPath(nodeId)}/clones/${encodeURIComponent(cloneId)}`);
 
-const FIELD_TEXT: Record<NodeGitField, string> = {
-  name: "이름을 확인하세요.",
-  email: "이메일 주소를 확인하세요.",
-  host: "호스트 이름을 확인하세요.",
-  url: "원격 주소를 확인하세요.",
-  repo_name: "폴더 이름을 확인하세요.",
+const FIELD_KEY: Record<NodeGitField, string> = {
+  name: "accounts.git.invalidName",
+  email: "accounts.git.invalidEmail",
+  host: "accounts.git.invalidHost",
+  url: "accounts.git.invalidUrl",
+  repo_name: "accounts.git.invalidRepoName",
 };
 
-const CODE_TEXT: Record<string, string> = {
-  node_not_connected: "노드가 연결되어 있지 않습니다.",
-  node_git_unsupported: "이 노드를 업데이트하면 쓸 수 있습니다.",
-  node_command_timeout: "노드가 제때 응답하지 않았습니다.",
-  node_command_failed: "노드에 요청을 보내지 못했습니다.",
-  node_command_rejected: "노드가 요청을 거절했습니다.",
-  ssh_key_exists: "이 노드에는 이미 SSH 키가 있습니다.",
-  ssh_key_create_failed: "SSH 키를 만들지 못했습니다.",
-  ssh_not_installed: "이 노드에 ssh가 설치되어 있지 않습니다.",
-  git_not_installed: "이 노드에 git이 설치되어 있지 않습니다.",
-  repo_exists: "같은 이름의 폴더가 이미 있습니다.",
-  clone_busy: "다른 저장소를 가져오는 중입니다.",
-  clone_not_found: "가져오기 작업을 찾을 수 없습니다.",
-  projects_root_unavailable: "이 노드의 저장소 폴더를 쓸 수 없습니다.",
-  clone_timeout: "시간이 너무 오래 걸려 가져오기를 멈췄습니다.",
-  auth_failed: "인증에 실패했습니다.",
-  repo_not_found: "저장소를 찾을 수 없습니다.",
-  unreachable: "저장소 서버에 닿지 못했습니다.",
-  clone_failed: "저장소를 가져오지 못했습니다.",
+const CODE_KEY: Record<string, string> = {
+  node_not_connected: "accounts.git.offline",
+  node_git_unsupported: "accounts.git.updateNode",
+  node_command_timeout: "accounts.git.commandTimeout",
+  node_command_failed: "accounts.git.commandFailed",
+  node_command_rejected: "accounts.git.commandRejected",
+  ssh_key_exists: "accounts.git.sshKeyExists",
+  ssh_key_create_failed: "accounts.git.sshKeyCreateFailed",
+  ssh_not_installed: "accounts.git.sshMissing",
+  git_not_installed: "accounts.git.gitMissing",
+  repo_exists: "accounts.git.repoExists",
+  clone_busy: "accounts.git.cloneBusy",
+  clone_not_found: "accounts.git.cloneNotFound",
+  projects_root_unavailable: "accounts.git.rootUnavailable",
+  clone_timeout: "accounts.git.cloneTimeout",
+  auth_failed: "accounts.git.authFailed",
+  repo_not_found: "accounts.git.repoNotFound",
+  unreachable: "accounts.git.repoUnreachable",
+  clone_failed: "accounts.git.cloneFailed",
 };
 
-export const SSH_CHECK_REASON_TEXT: Record<Exclude<NodeGitSshCheckResult["reason"], "connected">, string> = {
-  auth_failed: "공개키가 저장소 서비스에 등록되어 있지 않습니다.",
-  unreachable: "호스트에 닿지 못했습니다.",
-  host_key_mismatch: "호스트 키가 이전과 다릅니다.",
-  failed: "연결을 확인하지 못했습니다.",
+const SSH_CHECK_REASON_KEY: Record<Exclude<NodeGitSshCheckResult["reason"], "connected">, string> = {
+  auth_failed: "accounts.git.sshAuthFailed",
+  unreachable: "accounts.git.hostUnreachable",
+  host_key_mismatch: "accounts.git.hostKeyMismatch",
+  failed: "accounts.git.sshCheckFailed",
 };
 
 /** 요청 오류와 클론 작업 오류를 화면 문구로 옮긴다. 입력 칸 오류는 칸 이름을 붙여 말한다. */
-export function nodeGitErrorText(error: { code: string; field?: NodeGitField | null }): string {
-  if (error.code === "invalid_request" && error.field) return FIELD_TEXT[error.field];
-  return CODE_TEXT[error.code] ?? "Git 요청에 실패했습니다.";
+export function nodeGitErrorText(error: { code: string; field?: NodeGitField | null }, t: Translate): string {
+  if (error.code === "invalid_request" && error.field) return t(FIELD_KEY[error.field]);
+  return t(Object.hasOwn(CODE_KEY, error.code) ? CODE_KEY[error.code] : "accounts.git.requestFailed");
 }
 
 /** 요청이 던진 값을 화면이 보일 오류로 바꾼다. 응답을 받지 못한 경우(네트워크)도 같은 모양이다. */
 export function nodeGitRequestErrorOf(error: unknown): NodeGitRequestError {
   return error instanceof NodeGitRequestError ? error : new NodeGitRequestError(0, "node_command_failed", null);
+}
+
+export function nodeGitSshCheckErrorText(reason: NodeGitSshCheckResult["reason"], t: Translate): string {
+  return t(reason === "connected" ? "accounts.git.sshCheckFailed" : SSH_CHECK_REASON_KEY[reason]);
+}
+
+export function nodeGitRequestDetail(error: unknown, t: Translate): string {
+  if (error instanceof NodeGitRequestError) {
+    return t("accounts.git.requestStatus", { status: error.status, code: error.code });
+  }
+  return error instanceof Error ? error.message : String(error);
 }

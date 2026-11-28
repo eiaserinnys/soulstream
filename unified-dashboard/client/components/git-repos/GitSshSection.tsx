@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@seosoyoung/soul-ui";
@@ -7,7 +8,8 @@ import {
   createNodeGitSshKey,
   nodeGitErrorText,
   nodeGitRequestErrorOf,
-  SSH_CHECK_REASON_TEXT,
+  nodeGitRequestDetail,
+  nodeGitSshCheckErrorText,
   type NodeGitRequestError,
 } from "../../lib/node-git-api";
 import { V3ErrorNotice } from "../../v3/V3ErrorNotice";
@@ -21,16 +23,18 @@ const DEFAULT_HOST = "github.com";
 const COPIED_MS = 2000;
 
 export function GitSshSection(props: NodeGitSectionProps) {
+  const { t } = useTranslation();
   const { ssh } = props.snapshot;
   const [justCreated, setJustCreated] = useState(false);
-  return <SettingsGroupBox title="SSH 키">
+  return <SettingsGroupBox title={t("accounts.git.sshKey")}>
     {ssh.state === "ready" && ssh.public_key !== null ? <ReadyKey {...props} publicKey={ssh.public_key} keyPath={ssh.key_path} focusCopy={justCreated} />
       : ssh.state === "missing" ? <MissingKey {...props} onCreated={() => setJustCreated(true)} />
-        : <SettingsAlert>공개키 파일(id_ed25519.pub)이 없습니다.</SettingsAlert>}
+        : <SettingsAlert>{t("accounts.git.noPublicKey")}</SettingsAlert>}
   </SettingsGroupBox>;
 }
 
 function MissingKey({ nodeId, request, onSnapshot, onCreated }: NodeGitSectionProps & { onCreated(): void }) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<NodeGitRequestError | null>(null);
   const create = async () => {
@@ -47,12 +51,13 @@ function MissingKey({ nodeId, request, onSnapshot, onCreated }: NodeGitSectionPr
     }
   };
   return <div className="space-y-2">
-    <Button type="button" size="sm" aria-disabled={busy || undefined} className={busyButtonClassName} onClick={() => { void create(); }}>SSH 키 만들기</Button>
-    {error ? <V3ErrorNotice message={nodeGitErrorText(error)} detail={error.message} /> : null}
+    <Button type="button" size="sm" aria-disabled={busy || undefined} className={busyButtonClassName} onClick={() => { void create(); }}>{t("accounts.git.createSshKey")}</Button>
+    {error ? <V3ErrorNotice message={nodeGitErrorText(error, t)} detail={nodeGitRequestDetail(error, t)} /> : null}
   </div>;
 }
 
 function ReadyKey({ nodeId, request, publicKey, keyPath, focusCopy }: NodeGitSectionProps & { publicKey: string; keyPath: string; focusCopy: boolean }) {
+  const { t } = useTranslation();
   const copyRef = useRef<HTMLButtonElement>(null);
   const [copied, setCopied] = useState(false);
   const [host, setHost] = useState(DEFAULT_HOST);
@@ -87,7 +92,7 @@ function ReadyKey({ nodeId, request, publicKey, keyPath, focusCopy }: NodeGitSec
 
   return <div className="space-y-4">
     <SettingFieldWidget
-      field={gitTextField("public_key", "공개키", keyPath)}
+      field={gitTextField("public_key", t("accounts.git.publicKey"), keyPath)}
       value={publicKey}
       onChange={() => undefined}
       controlSlot={<div className="min-w-0 space-y-2">
@@ -95,26 +100,26 @@ function ReadyKey({ nodeId, request, publicKey, keyPath, focusCopy }: NodeGitSec
         <Button ref={copyRef} type="button" variant="outline" size="sm" onClick={() => {
           void navigator.clipboard?.writeText(publicKey).then(() => setCopied(true)).catch(() => undefined);
         }}>
-          {copied ? <><Check className="size-4" aria-hidden="true" /> 복사됨</> : <><Copy className="size-4" aria-hidden="true" /> 복사</>}
+          {copied ? <><Check className="size-4" aria-hidden="true" />{" "}{t("accounts.common.copied")}</> : <><Copy className="size-4" aria-hidden="true" />{" "}{t("accounts.common.copy")}</>}
         </Button>
       </div>}
     />
     <form onSubmit={(event) => { void check(event); }}>
       <SettingFieldWidget
-        field={gitTextField("host", "호스트")}
+        field={gitTextField("host", t("accounts.git.host"))}
         value={host}
         onChange={setHost}
         statusSlot={<div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" size="sm" variant="outline" aria-disabled={busy || undefined} className={busyButtonClassName}>연결 확인</Button>
-          {result?.ok ? <span role="status" className="inline-flex items-center gap-1 break-keep text-xs text-muted-foreground"><Check className="size-4" aria-hidden="true" /> 연결됨</span> : null}
+          <Button type="submit" size="sm" variant="outline" aria-disabled={busy || undefined} className={busyButtonClassName}>{t("accounts.git.checkConnection")}</Button>
+          {result?.ok ? <span role="status" className="inline-flex items-center gap-1 break-keep text-xs text-muted-foreground"><Check className="size-4" aria-hidden="true" />{" "}{t("accounts.git.connected")}</span> : null}
         </div>}
       />
     </form>
     {result?.ok ? <details className="text-xs text-muted-foreground">
-      <summary className="cursor-pointer">기술 상세</summary>
+      <summary className="cursor-pointer">{t("accounts.git.details")}</summary>
       <pre data-v3-selectable-content="true" className="mt-1 whitespace-pre-wrap break-words">{result.output}</pre>
     </details> : null}
-    {result && !result.ok ? <V3ErrorNotice message={result.reason === "connected" ? "연결을 확인하지 못했습니다." : SSH_CHECK_REASON_TEXT[result.reason]} detail={result.output} /> : null}
-    {error ? <V3ErrorNotice message={nodeGitErrorText(error)} detail={error.message} /> : null}
+    {result && !result.ok ? <V3ErrorNotice message={nodeGitSshCheckErrorText(result.reason, t)} detail={result.output} /> : null}
+    {error ? <V3ErrorNotice message={nodeGitErrorText(error, t)} detail={nodeGitRequestDetail(error, t)} /> : null}
   </div>;
 }
