@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useTranslation } from "react-i18next";
+import { createI18n } from "@soulstream/i18n";
 import {
   Button,
   FrameLoading,
@@ -15,6 +17,7 @@ import {
   listRecurringJobs,
   previewRecurringSchedule,
   recurringJobConditionText,
+  RecurringJobRequestError,
   runRecurringJob,
   updateRecurringJob,
   type RecurringJob,
@@ -41,6 +44,8 @@ import {
   SettingsListSection,
   SettingsMultilineField,
 } from "./config/SettingsListDetail";
+
+type Translate = ReturnType<typeof useTranslation>["t"];
 
 type Editor = {
   name: string;
@@ -71,6 +76,8 @@ const emptyEditor = (): Editor => ({
 export const recurringJobsApi = { archiveRecurringJob, createRecurringJob, listRecurringJobRuns, listRecurringJobs, previewRecurringSchedule, runRecurringJob, updateRecurringJob };
 
 export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?: typeof recurringJobsApi; assignment?: import("../v3/AgentNodeAssignmentFields").AssignmentData } = {}) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage;
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
   const catalog = useDashboardStore((state) => state.catalog);
   const [jobs, setJobs] = useState<RecurringJob[]>([]);
@@ -122,8 +129,8 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
   }, [loadRuns]);
 
   useEffect(() => {
-    void refresh().catch((caught: unknown) => setError(message(caught)));
-  }, [refresh]);
+    void refresh().catch((caught: unknown) => setError(message(caught, t)));
+  }, [refresh, t]);
 
   useLayoutEffect(() => {
     const pending = pendingCreateFocus.current;
@@ -139,24 +146,24 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
     setError(null);
     setActionError(null);
     try {
-      const write = writeFromEditor(editor, selected?.schedule_kind);
+      const write = writeFromEditor(t, editor, selected?.schedule_kind);
       const saved = selected
         ? await api.updateRecurringJob(selected.job_id, { ...write, expected_version: selected.version })
         : await api.createRecurringJob({ ...write, idempotency_key: `recurring-job:${crypto.randomUUID()}` });
       if (createButton) pendingCreateFocus.current = { jobId: saved.job_id, button: createButton };
       await refresh(saved.job_id).catch((caught: unknown) => {
         pendingCreateFocus.current = null;
-        setError(message(caught));
+        setError(message(caught, t));
       });
     } catch (caught) {
       if (isVersionConflict(caught) && selected) {
         try {
           await refresh(selected.job_id, { preserveEditor: true });
-          failAction("다른 변경을 반영했습니다. 입력은 보존했습니다. 최신 버전으로 다시 저장하세요.");
+          failAction(t("jobs.recurring.conflict"));
         } catch (reloadError) {
-          setError(message(reloadError));
+          setError(message(reloadError, t));
         }
-      } else failAction(message(caught));
+      } else failAction(message(caught, t));
     } finally {
       setBusy(false);
     }
@@ -175,7 +182,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
       });
       await refresh(saved.job_id);
     } catch (caught) {
-      setError(message(caught));
+      setError(message(caught, t));
     } finally {
       setBusy(false);
     }
@@ -183,7 +190,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
 
   const archive = async () => {
     if (busy) return;
-    if (!selected || !confirmRecurringArchive(selected.name)) return;
+    if (!selected || !confirmRecurringArchive(selected.name, t)) return;
     setBusy(true);
     setError(null);
     setActionError(null);
@@ -194,7 +201,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
       setPreview([]);
       await refresh();
     } catch (caught) {
-      setError(message(caught));
+      setError(message(caught, t));
     } finally {
       setBusy(false);
     }
@@ -215,7 +222,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
         setRuns((current) => [run, ...current.filter((item) => item.run_id !== run.run_id)]);
       }
     } catch (caught) {
-      setError(message(caught));
+      setError(message(caught, t));
     } finally {
       setBusy(false);
     }
@@ -233,7 +240,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
       });
       setPreview(result.nextRuns);
     } catch (caught) {
-      failAction(message(caught));
+      failAction(message(caught, t));
     } finally {
       setBusy(false);
     }
@@ -244,46 +251,46 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
 
   return (
     <SettingsListDetailFrame testId="recurring-jobs-tab" list={<>
-        <SettingsListHeader title="반복 작업" description="서버가 다음 실행을 계산합니다." actions={<><Button type="button" size="sm" variant="outline" data-testid="recurring-jobs-refresh" onClick={() => { setError(null); setActionError(null); void refresh(selected?.job_id, { preserveEditor: true }).catch((caught: unknown) => setError(message(caught))); }}>새로고침</Button><Button type="button" size="sm" variant="outline" onClick={() => {
+        <SettingsListHeader title={t("jobs.recurring.title")} description={t("jobs.recurring.description")} actions={<><Button type="button" size="sm" variant="outline" data-testid="recurring-jobs-refresh" onClick={() => { setError(null); setActionError(null); void refresh(selected?.job_id, { preserveEditor: true }).catch((caught: unknown) => setError(message(caught, t))); }}>{t("jobs.common.refresh")}</Button><Button type="button" size="sm" variant="outline" onClick={() => {
             setSelected(null); setEditor(emptyEditor()); setRuns([]); setPreview([]); setError(null); setActionError(null);
-          }}>새 작업</Button></>} />
+          }}>{t("jobs.recurring.newJob")}</Button></>} />
         {!listFailed && loaded ? <><JobList
-          title="활성"
+          title={t("jobs.recurring.active")}
           jobs={activeJobs}
           selectedId={selected?.job_id ?? null}
-          onSelect={(job) => { setSelected(job); setEditor(editorFromJob(job)); setPreview([]); setError(null); setActionError(null); void loadRuns(job.job_id).catch((caught: unknown) => setError(message(caught))); }}
+          onSelect={(job) => { setSelected(job); setEditor(editorFromJob(job)); setPreview([]); setError(null); setActionError(null); void loadRuns(job.job_id).catch((caught: unknown) => setError(message(caught, t))); }}
         />
         {archivedJobs.length > 0 ? <JobList
-          title="보관됨"
+          title={t("jobs.recurring.archived")}
           jobs={archivedJobs}
           selectedId={selected?.job_id ?? null}
-          onSelect={(job) => { setSelected(job); setEditor(editorFromJob(job)); setPreview([]); setError(null); setActionError(null); void loadRuns(job.job_id).catch((caught: unknown) => setError(message(caught))); }}
-        /> : null}</> : !listFailed ? <FrameLoading inline label="불러오는 중…" /> : null}
+          onSelect={(job) => { setSelected(job); setEditor(editorFromJob(job)); setPreview([]); setError(null); setActionError(null); void loadRuns(job.job_id).catch((caught: unknown) => setError(message(caught, t))); }}
+        /> : null}</> : !listFailed ? <FrameLoading inline label={t("jobs.common.loading")} /> : null}
     </>}>
         <SettingsDetailHeader selectableTitle={Boolean(selected)}
-          title={selected ? selected.name : "새 반복 작업"}
-          subtitle={selected ? `다음 실행: ${displayTime(selected.next_run_at)}` : null}
+          title={selected ? selected.name : t("jobs.recurring.newRecurringJob")}
+          subtitle={selected ? t("jobs.recurring.nextRun", { time: displayTime(selected.next_run_at, locale, t) }) : null}
           actions={selected ? <>
-            <Button type="button" size="sm" variant="outline" className={busyButtonClassName} aria-disabled={busy} disabled={selected.archived_at !== null} onClick={() => void runNow()}>지금 실행</Button>
-            {selected.archived_at === null ? <Button type="button" size="sm" variant="outline" className={busyButtonClassName} aria-disabled={busy} onClick={() => void setEnabled(!selected.enabled)}>{selected.enabled ? "일시정지" : "재개"}</Button> : null}
-            <Button type="button" size="sm" variant="outline" className={busyButtonClassName} aria-disabled={busy} disabled={selected.archived_at !== null} onClick={() => void archive()}>보관</Button>
+            <Button type="button" size="sm" variant="outline" className={busyButtonClassName} aria-disabled={busy} disabled={selected.archived_at !== null} onClick={() => void runNow()}>{t("jobs.recurring.runNow")}</Button>
+            {selected.archived_at === null ? <Button type="button" size="sm" variant="outline" className={busyButtonClassName} aria-disabled={busy} onClick={() => void setEnabled(!selected.enabled)}>{selected.enabled ? t("jobs.recurring.pause") : t("jobs.recurring.resume")}</Button> : null}
+            <Button type="button" size="sm" variant="outline" className={busyButtonClassName} aria-disabled={busy} disabled={selected.archived_at !== null} onClick={() => void archive()}>{t("jobs.recurring.archive")}</Button>
           </> : null}
         />
 
         {error ? <SettingsAlert><span data-v3-selectable-content="true">{error}</span></SettingsAlert> : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <SettingsField label="작업 이름"><Input className="min-w-0" aria-label="작업 이름" value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} /></SettingsField>
-          {editor.schedule.mode !== "once" ? <SettingsField label="시간대"><Input className="min-w-0" aria-label="시간대" value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })} placeholder="Asia/Seoul" /></SettingsField> : null}
-          <SettingsField label="오프라인 허용 초"><Input className="min-w-0" aria-label="오프라인 허용 초" type="number" min="1" value={editor.lateRunWindowSeconds} onChange={(event) => setEditor({ ...editor, lateRunWindowSeconds: event.target.value })} /></SettingsField>
+          <SettingsField label={t("jobs.recurring.name")}><Input className="min-w-0" aria-label={t("jobs.recurring.name")} value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} /></SettingsField>
+          {editor.schedule.mode !== "once" ? <SettingsField label={t("jobs.recurring.timeZone")}><Input className="min-w-0" aria-label={t("jobs.recurring.timeZone")} value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })} placeholder="Asia/Seoul" /></SettingsField> : null}
+          <SettingsField label={t("jobs.recurring.offlineGrace")}><Input className="min-w-0" aria-label={t("jobs.recurring.offlineGrace")} type="number" min="1" value={editor.lateRunWindowSeconds} onChange={(event) => setEditor({ ...editor, lateRunWindowSeconds: event.target.value })} /></SettingsField>
         </div>
         {selected?.schedule_kind === "event"
-          ? <div className="rounded-floor border border-border p-3 text-sm" data-testid="recurring-event-condition" data-v3-selectable-content="true">{recurringJobConditionText(selected)}</div>
+          ? <div className="rounded-floor border border-border p-3 text-sm" data-testid="recurring-event-condition" data-v3-selectable-content="true">{recurringJobConditionText(selected, t)}</div>
           : <RecurringScheduleEditor value={editor.schedule} scheduleKind={selected?.schedule_kind} onChange={(schedule) => setEditor((current) => ({ ...current, schedule }))} />}
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editor.enabled} onChange={(event) => setEditor({ ...editor, enabled: event.target.checked })} />생성·저장 후 자동 실행</label>
-        <SettingsMultilineField label="작업 내용" value={editor.prompt} onChange={(prompt) => setEditor({ ...editor, prompt })} />
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editor.enabled} onChange={(event) => setEditor({ ...editor, enabled: event.target.checked })} />{t("jobs.recurring.enableAfterSave")}</label>
+        <SettingsMultilineField label={t("jobs.recurring.prompt")} value={editor.prompt} onChange={(prompt) => setEditor({ ...editor, prompt })} />
 
-        <SettingsGroupBox title="실행 대상">
+        <SettingsGroupBox title={t("jobs.common.executionTarget")}>
           <AgentNodeAssignmentFields data={assignment}
             agentId={editor.agentId}
             nodeId={editor.nodeId}
@@ -304,18 +311,18 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
               ...current,
               folderId: folderId ?? "",
             }))}
-            label="결과 폴더"
-            placeholder="폴더를 선택하세요"
+            label={t("jobs.recurring.resultFolder")}
+            placeholder={t("jobs.common.selectFolder")}
           />
-          <p className="text-sm text-muted-foreground">선택한 폴더에 결과 세션을 저장합니다.</p>
+          <p className="text-sm text-muted-foreground">{t("jobs.recurring.resultFolderHelp")}</p>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" ? <Button type="button" size="sm" variant="outline" className={busyButtonClassName} aria-disabled={busy} onClick={() => void previewSchedule()}>다음 5회 보기</Button> : null}
-          <Button ref={saveButtonRef} type="button" size="sm" className={busyButtonClassName} aria-disabled={busy} disabled={selected?.archived_at != null} onClick={(event) => void save(event)}>{busy ? "저장 중..." : selected ? "변경 저장" : editor.schedule.mode === "once" ? "1회 예약 생성" : "반복 작업 생성"}</Button>
+          {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" ? <Button type="button" size="sm" variant="outline" className={busyButtonClassName} aria-disabled={busy} onClick={() => void previewSchedule()}>{t("jobs.recurring.preview")}</Button> : null}
+          <Button ref={saveButtonRef} type="button" size="sm" className={busyButtonClassName} aria-disabled={busy} disabled={selected?.archived_at != null} onClick={(event) => void save(event)}>{busy ? t("jobs.common.savingLegacy") : selected ? t("jobs.common.saveChanges") : editor.schedule.mode === "once" ? t("jobs.recurring.createOnce") : t("jobs.recurring.createRecurring")}</Button>
         </div>
         {actionError ? <SettingsAlert key={actionError.key} scrollIntoView><span data-v3-selectable-content="true">{actionError.message}</span></SettingsAlert> : null}
-        {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" && preview.length > 0 ? <div className="rounded-floor border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">다음 5회</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time} data-v3-selectable-content="true">{displayTime(time)}</li>)}</ol></div> : null}
+        {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" && preview.length > 0 ? <div className="rounded-floor border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">{t("jobs.recurring.nextFive")}</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time} data-v3-selectable-content="true">{displayTime(time, locale, t)}</li>)}</ol></div> : null}
 
         {selected ? <RunHistory runs={runs} onOpenSession={setActiveSession} /> : null}
     </SettingsListDetailFrame>
@@ -323,17 +330,19 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
 }
 
 function JobList({ title, jobs, selectedId, onSelect }: { title: string; jobs: RecurringJob[]; selectedId: string | null; onSelect(job: RecurringJob): void }) {
-  return <SettingsListSection title={title} isEmpty={jobs.length === 0}>{jobs.map((job) => <SettingsListRow key={job.job_id} title={job.name} meta={jobMeta(job)} selected={selectedId === job.job_id} onSelect={() => onSelect(job)} />)}</SettingsListSection>;
+  const { t, i18n } = useTranslation();
+  return <SettingsListSection emptyText={t("jobs.common.none")} title={title} isEmpty={jobs.length === 0}>{jobs.map((job) => <SettingsListRow key={job.job_id} title={job.name} meta={jobMeta(job, i18n.resolvedLanguage, t)} selected={selectedId === job.job_id} onSelect={() => onSelect(job)} />)}</SettingsListSection>;
 }
 
 function RunHistory({ runs, onOpenSession }: { runs: RecurringJobRun[]; onOpenSession(sessionId: string): void }) {
-  return <section className="rounded-floor border border-border p-3"><h4 className="mb-2 text-sm font-medium">최근 실행</h4>{runs.length === 0 ? <p className="text-sm text-muted-foreground">아직 실행 이력이 없습니다.</p> : <ul className="space-y-2">{runs.map((run) => {
-    const action = sessionAction(run);
-    return <li key={run.run_id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2 text-sm last:border-0 last:pb-0"><div><span className="font-medium" data-v3-selectable-content="true">{run.state}</span><span className="ml-2 text-xs text-muted-foreground" data-v3-selectable-content="true">{displayTime(run.scheduled_for ?? run.created_at)}</span>{run.reason_message || action.message ? <p className="mt-1 text-xs text-muted-foreground" data-v3-selectable-content="true">{run.reason_message ?? action.message}</p> : null}</div><Button type="button" size="sm" variant="outline" disabled={!action.canOpen} onClick={() => onOpenSession(run.session_id)}>{action.label}</Button></li>;
+  const { t, i18n } = useTranslation();
+  return <section className="rounded-floor border border-border p-3"><h4 className="mb-2 text-sm font-medium">{t("jobs.recurring.recentRuns")}</h4>{runs.length === 0 ? <p className="text-sm text-muted-foreground">{t("jobs.recurring.noRuns")}</p> : <ul className="space-y-2">{runs.map((run) => {
+    const action = sessionAction(run, t);
+    return <li key={run.run_id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2 text-sm last:border-0 last:pb-0"><div><span className="font-medium" data-v3-selectable-content="true">{run.state}</span><span className="ml-2 text-xs text-muted-foreground" data-v3-selectable-content="true">{displayTime(run.scheduled_for ?? run.created_at, i18n.resolvedLanguage, t)}</span>{run.reason_message || action.message ? <p className="mt-1 text-xs text-muted-foreground" data-v3-selectable-content="true">{run.reason_message ?? action.message}</p> : null}</div><Button type="button" size="sm" variant="outline" disabled={!action.canOpen} onClick={() => onOpenSession(run.session_id)}>{action.label}</Button></li>;
   })}</ul>}</section>;
 }
 
-function sessionAction(run: RecurringJobRun): { label: string; canOpen: boolean; message: string | null } {
+function sessionAction(run: RecurringJobRun, t: Translate): { label: string; canOpen: boolean; message: string | null } {
   const noSessionState = new Set(["queued", "waiting_for_node", "skipped_overlap", "skipped_late", "cancelled"]);
   const noSessionError = run.state === "error" && (
     run.reason_code === "RUN_SNAPSHOT_INVALID" ||
@@ -341,16 +350,16 @@ function sessionAction(run: RecurringJobRun): { label: string; canOpen: boolean;
     run.reason_code === "CREATE_SESSION_BEFORE_SEND_FAILED"
   );
   if (noSessionState.has(run.state) || noSessionError) {
-    return { label: "세션 없음", canOpen: false, message: "이 회차에는 열 수 있는 세션이 없습니다." };
+    return { label: t("jobs.recurring.noSession"), canOpen: false, message: t("jobs.recurring.noSessionHelp") };
   }
   if (
     run.state === "dispatching" ||
     run.state === "awaiting_session" ||
     run.reason_code === "CREATE_SESSION_REJECTED"
   ) {
-    return { label: "고정 세션 열기", canOpen: true, message: null };
+    return { label: t("jobs.recurring.openFixedSession"), canOpen: true, message: null };
   }
-  return { label: "세션 열기", canOpen: true, message: null };
+  return { label: t("jobs.recurring.openSession"), canOpen: true, message: null };
 }
 
 function editorFromJob(job: RecurringJob): Editor {
@@ -370,17 +379,17 @@ function editorFromJob(job: RecurringJob): Editor {
   };
 }
 
-function jobMeta(job: RecurringJob): string {
-  if (job.archived_at) return "보관됨";
-  if (!job.enabled) return "일시정지";
-  if (job.schedule_kind === "event") return recurringJobConditionText(job);
-  if (job.schedule_kind === "once") return `1회 · ${displayTime(job.next_run_at ?? job.run_at)}`;
-  return displayTime(job.next_run_at);
+function jobMeta(job: RecurringJob, locale: string | undefined, t: Translate): string {
+  if (job.archived_at) return t("jobs.recurring.archived");
+  if (!job.enabled) return t("jobs.recurring.paused");
+  if (job.schedule_kind === "event") return recurringJobConditionText(job, t);
+  if (job.schedule_kind === "once") return t("jobs.recurring.onceAt", { time: displayTime(job.next_run_at ?? job.run_at, locale, t) });
+  return displayTime(job.next_run_at, locale, t);
 }
 
-function writeFromEditor(editor: Editor, scheduleKind?: RecurringJob["schedule_kind"]): RecurringJobWrite {
+function writeFromEditor(t: Translate, editor: Editor, scheduleKind?: RecurringJob["schedule_kind"]): RecurringJobWrite {
   const lateRunWindowSeconds = Number(editor.lateRunWindowSeconds);
-  if (!Number.isSafeInteger(lateRunWindowSeconds) || lateRunWindowSeconds < 1) throw new Error("오프라인 허용 초는 1 이상의 정수여야 합니다.");
+  if (!Number.isSafeInteger(lateRunWindowSeconds) || lateRunWindowSeconds < 1) throw new Error(t("jobs.recurring.invalidOfflineGrace"));
   const common = {
     name: editor.name.trim(),
     prompt: editor.prompt.trim(),
@@ -397,19 +406,26 @@ function writeFromEditor(editor: Editor, scheduleKind?: RecurringJob["schedule_k
   if (scheduleKind === "event") return common;
   if (editor.schedule.mode === "once") {
     const runAt = new Date(editor.schedule.runAtLocal);
-    if (!editor.schedule.runAtLocal || !Number.isFinite(runAt.getTime())) throw new Error("실행 일시를 입력해야 합니다.");
+    if (!editor.schedule.runAtLocal || !Number.isFinite(runAt.getTime())) throw new Error(t("jobs.recurring.missingRunAt"));
     return { ...common, run_at: runAt.toISOString() };
   }
   return { ...common, schedule_expressions: recurringScheduleExpressions(editor.schedule) };
 }
 
-function displayTime(value: string | null): string { return value ? new Date(value).toLocaleString() : "없음"; }
+function displayTime(value: string | null, locale: string | undefined, t: Translate): string {
+  return value ? new Date(value).toLocaleString(locale) : t("jobs.common.none");
+}
 function toLocalDateTime(value: string): string {
   const date = new Date(value);
   const parts = [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")];
   return `${String(parts[0]).padStart(4, "0")}-${parts[1]}-${parts[2]}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
-function message(value: unknown): string { return value instanceof Error ? value.message : String(value); }
+function message(value: unknown, t: Translate): string {
+  if (value instanceof RecurringJobRequestError) return t("jobs.recurring.requestFailed", { status: value.status });
+  return value instanceof Error ? value.message : String(value);
+}
 function isVersionConflict(value: unknown): value is HttpResponseError { return value instanceof HttpResponseError && value.status === 409; }
 
-export function confirmRecurringArchive(name: string) {return window.confirm(`“${name}” 작업을 보관할까요?`);}
+export function confirmRecurringArchive(name: string, t: Translate = createI18n("ko").t) {
+  return window.confirm(t("jobs.recurring.confirmArchive", { name }));
+}

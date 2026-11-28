@@ -1,3 +1,4 @@
+import type { useTranslation } from "react-i18next";
 import { HttpResponseError } from "./http-response-error";
 
 export type RecurringJobEventTrigger = {
@@ -34,9 +35,10 @@ export type RecurringJob = {
 
 export function recurringJobConditionText(
   job: Pick<RecurringJob, "node_id" | "event_trigger">,
+  t: ReturnType<typeof useTranslation>["t"],
 ): string {
   const nodeId = job.event_trigger?.node_id ?? job.node_id;
-  return `${nodeId}가 붙으면 · ${job.event_trigger?.repeat ? "매번" : "1회"}`;
+  return t("jobs.recurring.connectionTrigger", { node: nodeId, frequency: job.event_trigger?.repeat ? t("jobs.recurring.everyConnection") : t("jobs.schedule.once") });
 }
 
 export type RecurringJobRun = {
@@ -131,10 +133,18 @@ async function request(
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
   });
   if (response.ok) return response;
-  throw new HttpResponseError(await errorMessage(response), response.status);
+  const message = await errorMessage(response);
+  if (message !== undefined) throw new HttpResponseError(message, response.status);
+  throw new RecurringJobRequestError(response.status);
 }
 
-async function errorMessage(response: Response): Promise<string> {
+export class RecurringJobRequestError extends HttpResponseError {
+  constructor(status: number) {
+    super(`HTTP ${status}`, status);
+  }
+}
+
+async function errorMessage(response: Response): Promise<string | undefined> {
   try {
     const payload = await response.json() as {
       detail?: { error?: { message?: unknown } } | string;
@@ -145,7 +155,6 @@ async function errorMessage(response: Response): Promise<string> {
     if (typeof payload.error === "string") return payload.error;
     if (typeof payload.error?.message === "string") return payload.error.message;
   } catch {
-    // A compact status below is more useful than an unreadable server body.
   }
-  return `반복 작업 요청 실패 (${response.status})`;
+  return undefined;
 }
