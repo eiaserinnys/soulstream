@@ -1,3 +1,4 @@
+import { createI18n } from "@soulstream/i18n";
 import { describe, expect, it } from "vitest";
 import {
   newUnit,
@@ -7,6 +8,7 @@ import {
   validateUnits,
   writeDefinition,
 } from "./definition";
+const t = createI18n("ko").t;
 
 describe("연결 정보 편집", () => {
   it("편집할 수 없는 헤더와 env 값도 저장할 때 보존한다", () => {
@@ -66,13 +68,13 @@ describe("연결 정보 편집", () => {
         value: "{{secret:missing}}",
       }),
     );
-    expect(validateUnits([draft], [], {})).toContain("missing");
-    expect(validateUnits([draft], ["missing"], {})).toBeNull();
+    expect(validateUnits([draft], [], {}, t)).toContain("missing");
+    expect(validateUnits([draft], ["missing"], {}, t)).toBeNull();
     expect(
-      validateUnits([draft], [], { missing: "obviously-fake-value" }),
+      validateUnits([draft], [], { missing: "obviously-fake-value" }, t),
     ).toBeNull();
     draft.units[0].name = "";
-    expect(validateUnits([draft], ["missing"], {})).toContain("이름");
+    expect(validateUnits([draft], ["missing"], {}, t)).toContain("이름");
   });
   it("값 없는 쿼리와 조각을 순서대로 보존한다", () => {
     const definition = {

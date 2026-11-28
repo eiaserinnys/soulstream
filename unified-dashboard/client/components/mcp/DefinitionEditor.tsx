@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Checkbox, Input } from "@seosoyoung/soul-ui";
 import {
@@ -32,6 +33,7 @@ export function McpValueUnit({
   onRemove(): void;
   onSecretValue(name: string, value: string | null): void;
 }) {
+  const { t } = useTranslation();
   const [replace, setReplace] = useState(false);
   const replaceButton = useRef<HTMLButtonElement>(null);
   const listId = useId();
@@ -82,10 +84,10 @@ export function McpValueUnit({
         <SettingsField
           label={
             unit.kind === "header"
-              ? "헤더 이름"
+              ? t("mcp.headerName")
               : unit.kind === "query"
-                ? "쿼리 이름"
-                : "환경 변수 이름"
+                ? t("mcp.queryName")
+                : t("mcp.envName")
           }
         >
           <Input
@@ -95,7 +97,7 @@ export function McpValueUnit({
             }
           />
         </SettingsField>
-        <SettingsField label="참조">
+        <SettingsField label={t("mcp.reference")}>
           <span className="grid min-w-0 gap-1">
             <span className="flex min-w-0 items-center gap-2">
               <span
@@ -104,7 +106,7 @@ export function McpValueUnit({
                 data-slot="input-control"
               >
                 <select
-                  aria-label="참조 종류"
+                  aria-label={t("mcp.referenceType")}
                   value={ref.kind === "literal" ? "secret" : ref.kind}
                   onChange={(event) =>
                     updateReference(
@@ -114,14 +116,14 @@ export function McpValueUnit({
                   }
                   className={selectClass}
                 >
-                  <option value="secret">비밀</option>
-                  <option value="env">환경 변수</option>
+                  <option value="secret">{t("mcp.secretReference")}</option>
+                  <option value="env">{t("mcp.environmentVariable")}</option>
                 </select>
               </span>
             </span>
             <Input
               ref={referenceInput}
-              aria-label="참조 이름"
+              aria-label={t("mcp.referenceName")}
               className="min-w-0 [&_[data-slot=input]]:truncate [&_[data-slot=input]:focus]:text-clip"
               title={ref.name}
               list={ref.kind !== "env" ? listId : undefined}
@@ -140,7 +142,7 @@ export function McpValueUnit({
             </datalist>
             {ref.kind === "secret" ? (
               <span className="shrink-0 text-xs text-muted-foreground">
-                {secretNames.includes(ref.name) ? "DB에 저장됨" : "DB에 없음"}
+                {secretNames.includes(ref.name) ? t("mcp.storedInDb") : t("mcp.missingFromDb")}
               </span>
             ) : null}
           </span>
@@ -155,7 +157,7 @@ export function McpValueUnit({
               onClick={() => setShowReference(!showReference)}
               data-testid="mcp-reference-full-toggle"
             >
-              {showReference ? "참조 이름 접기" : "참조 이름 전체 보기"}
+              {showReference ? t("mcp.collapseReference") : t("mcp.expandReference")}
             </Button>
             {showReference ? (
               <p data-v3-selectable-content="true" className="break-all text-sm">
@@ -180,7 +182,7 @@ export function McpValueUnit({
             setReplace(!replace);
           }}
         >
-          {replace ? "교체 취소" : "값 교체"}
+          {replace ? t("mcp.cancelReplacement") : t("mcp.replaceValue")}
         </Button>
         <Button
           type="button"
@@ -191,11 +193,11 @@ export function McpValueUnit({
             onRemove();
           }}
         >
-          줄 빼기
+          {t("mcp.removeRow")}
         </Button>
       </div>
       {replace ? (
-        <SettingsField label="새 값">
+        <SettingsField label={t("mcp.newValue")}>
           <Input
             type="password"
             autoFocus
@@ -238,6 +240,7 @@ export function DefinitionEditor({
   onChange(next: DefinitionDraft): void;
   onSecretValue(unitId: string, name: string, value: string | null): void;
 }) {
+  const { t } = useTranslation();
   const [newKind, setNewKind] = useState<Unit["kind"] | "bearer">(
     value.type === "stdio" ? "env" : "header",
   );
@@ -252,12 +255,12 @@ export function DefinitionEditor({
     onChange({ ...value, config });
   };
   return (
-    <SettingsGroupBox title="연결 및 인증">
+    <SettingsGroupBox title={t("mcp.connectionAndAuth")}>
       <div className="space-y-3">
-        <SettingsField label="전송 방식">
+        <SettingsField label={t("mcp.transport")}>
           <span className={inputControlClassName} data-slot="input-control">
             <select
-              aria-label="전송 방식"
+              aria-label={t("mcp.transport")}
               value={value.type}
               onChange={(event) => {
                 const type = event.target.value as DefinitionDraft["type"];
@@ -281,7 +284,7 @@ export function DefinitionEditor({
               />
             </SettingsField>
             <SettingsMultilineField
-              label="args (한 줄에 하나)"
+              label={t("mcp.args")}
               value={
                 Array.isArray(value.config.args)
                   ? value.config.args.join("\n")
@@ -333,7 +336,7 @@ export function DefinitionEditor({
         ))}
         <div className="space-y-1">
           {value.type !== "stdio" ? (
-            <span className="text-sm text-muted-foreground">인증 방식</span>
+            <span className="text-sm text-muted-foreground">{t("mcp.authType")}</span>
           ) : null}
           <div className="flex items-center gap-2">
             {value.type !== "stdio" ? (
@@ -343,16 +346,16 @@ export function DefinitionEditor({
                 data-slot="input-control"
               >
                 <select
-                  aria-label="인증 방식"
+                  aria-label={t("mcp.authType")}
                   value={effectiveKind}
                   onChange={(event) =>
                     setNewKind(event.target.value as Unit["kind"] | "bearer")
                   }
                   className={selectClass}
                 >
-                  <option value="header">헤더</option>
+                  <option value="header">{t("mcp.header")}</option>
                   <option value="bearer">Bearer</option>
-                  <option value="query">쿼리</option>
+                  <option value="query">{t("mcp.query")}</option>
                 </select>
               </span>
             ) : null}
@@ -377,11 +380,11 @@ export function DefinitionEditor({
                 })
               }
             >
-              줄 더하기
+              {t("mcp.addRow")}
             </Button>
           </div>
         </div>
-        <SettingsField label="타임아웃">
+        <SettingsField label={t("mcp.timeout")}>
           <Input
             type="number"
             min="1"
@@ -401,7 +404,7 @@ export function DefinitionEditor({
               setConfig("cache_tools_list", checked)
             }
           />
-          도구 목록 캐시
+          {t("mcp.cacheToolList")}
         </label>
       </div>
     </SettingsGroupBox>
