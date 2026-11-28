@@ -28,7 +28,7 @@ export const cardRouteAuthRequirements:Record<string,boolean>=Object.fromEntries
   ...mutations.map(([method,path])=>[`${method} ${path}`,true]),
   ["POST /api/cards/:id/execute",true],["GET /api/cards/:id/execution",true],["POST /api/cards/:id/execution-settings",true],
   ["GET /api/cards",true],["GET /api/cards/:id",true],["GET /api/cards/:id/reports",true],
-  ["GET /api/cards/:id/messages",true],["POST /api/cards/:id/messages",true],
+  ["GET /api/cards/:id/messages",true],["POST /api/cards/:id/messages",true],["GET /api/cards/:id/progress",true],
 ]);
 export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOptions) {
   const mutation=z.object({expectedVersion:z.number().int().positive(),idempotencyKey:z.string().min(1)}).strict();
@@ -78,6 +78,16 @@ export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOpt
       catch (error) { const failure = cardRouteErrorResponse(error); return reply.code(failure.status).send(failure.body); }
     });
   }
+  app.get<{ Params: { id: string } }>("/api/cards/:id/progress", async (request, reply) => {
+    try {
+      const allowedIds = await cardAllowedFolderIds(options, () => options.accessProvider.resolveAccess(request));
+      const service = await options.cardServiceProvider!();
+      const detail = await service.getCard(request.params.id, allowedIds);
+      if (!detail) throw new CardNotFoundError();
+      await allowed(options, () => options.accessProvider.resolveAccess(request), detail.card.folder_id);
+      return await service.getCardProgress(request.params.id);
+    } catch (error) { const failure = cardRouteErrorResponse(error); return reply.code(failure.status).send(failure.body); }
+  });
   app.get<{ Params: { id: string }; Querystring: { sessionId?: string; limit?: string } }>("/api/cards/:id/messages", async (request, reply) => {
     try {
       const service = await options.cardServiceProvider!();

@@ -12,7 +12,7 @@ import {
   type TurnSummaryStartEvidence,
 } from "./turn_summary_completion_evidence.js";
 
-const TURN_EVENT_TYPES = [
+export const TURN_EVENT_TYPES = [
   "user_message",
   "intervention_sent",
   "session_notification",
