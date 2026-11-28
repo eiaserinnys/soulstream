@@ -1,4 +1,6 @@
 /** @vitest-environment jsdom */
+import { createI18n } from "@soulstream/i18n";
+import { I18nextProvider } from "react-i18next";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
@@ -53,16 +55,19 @@ it("저장된 서버와 편집 중인 초안을 각각 선택 노드에서 시�
   } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
 });
 
-it("서버 연결 시험의 관리자 거부를 한국어로 보여 준다", async () => {
+it.each([
+  ["ko", "연결 시험", "관리자만 볼 수 있습니다."],
+  ["en", "Test", "Admins only."],
+] as const)("shows the connection test permission error in %s", async (language, testLabel, permissionError) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const request = vi.fn(async (url: RequestInfo | URL) => String(url) === "/api/mcp/config"
     ? Response.json(sample())
     : Response.json({ detail: "Admin access required" }, { status: 403 }));
   const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
   try {
-    await act(async () => { root.render(<McpSettingsTab request={request as typeof fetch} />); await new Promise(resolve => setTimeout(resolve, 0)); });
-    await click(button(host, "연결 시험"));
-    expect(host.textContent).toContain("관리자만 볼 수 있습니다.");
+    await act(async () => { root.render(<I18nextProvider i18n={createI18n(language)}><McpSettingsTab request={request as typeof fetch} /></I18nextProvider>); await new Promise(resolve => setTimeout(resolve, 0)); });
+    await click(button(host, testLabel));
+    expect(host.textContent).toContain(permissionError);
     expect(host.textContent).not.toContain("Admin access required");
   } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
 });

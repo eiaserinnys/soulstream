@@ -1,3 +1,4 @@
+import type { createI18n } from "@soulstream/i18n";
 import type { Definition, McpType } from "../../lib/mcp-api";
 
 export type Unit = {
@@ -62,22 +63,23 @@ export function validateUnits(
   drafts: DefinitionDraft[],
   secretNames: string[],
   pending: Record<string, string>,
+  t: ReturnType<typeof createI18n>["t"],
 ): string | null {
   for (const draft of drafts)
     for (const unit of draft.units) {
-      if (!unit.name.trim()) return "값 단위의 이름을 입력해 주세요.";
+      if (!unit.name.trim()) return t("mcp.valueNameRequired");
       if (
         typeof unit.value === "string" &&
         /\{\{(?:secret|env):\}\}/.test(unit.value)
       )
-        return "참조 이름이나 새 값을 입력해 주세요.";
+        return t("mcp.referenceOrValueRequired");
       const ref = reference(unit.value);
       if (
         ref.kind === "secret" &&
         !secretNames.includes(ref.name) &&
         !(ref.name in pending)
       )
-        return `비밀 ${ref.name}이 DB에 없습니다. 값을 입력하거나 저장된 비밀을 선택해 주세요.`;
+        return t("mcp.missingSecret", { name: ref.name });
     }
   return null;
 }

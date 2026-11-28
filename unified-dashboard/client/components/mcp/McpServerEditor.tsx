@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Button, Checkbox, Input } from "@seosoyoung/soul-ui";
 import {
@@ -67,6 +68,7 @@ export function McpServerEditor({
   dismissCreated,
   test,
 }: Props) {
+  const { t } = useTranslation();
   const [id, setId] = useState(server?.id ?? "");
   const [draft, setDraft] = useState<DefinitionDraft>(() =>
     server
@@ -154,8 +156,8 @@ export function McpServerEditor({
   const runTest = async () => {
     if (!test || !testNode) return;
     const pending = pendingSecrets([draft, ...Object.values(overrides)], secrets);
-    const clean = (value: string) => Object.values(pending).filter(Boolean).reduce((text, secret) => text.split(secret).join("[비공개]"), value);
-    const issue = validateUnits([draft, ...Object.values(overrides)], secretNames, pending);
+    const clean = (value: string) => Object.values(pending).filter(Boolean).reduce((text, secret) => text.split(secret).join(t("mcp.redacted")), value);
+    const issue = validateUnits([draft, ...Object.values(overrides)], secretNames, pending, t);
     if (issue) { setTestError(issue); return; }
     setTesting(true); setTestError(""); setTestResult(null);
     try {
@@ -166,18 +168,18 @@ export function McpServerEditor({
       });
       setTestResult(result.ok ? { ...result, tools: result.tools.map(clean), ...(result.server_info ? { server_info: { name: clean(result.server_info.name), version: clean(result.server_info.version) } } : {}) }
         : { ...result, error_message: clean(result.error_message) });
-    } catch (caught) { setTestError(clean(mcpRequestErrorText(caught))); }
+    } catch (caught) { setTestError(clean(mcpRequestErrorText(caught, t))); }
     finally { setTesting(false); }
   };
   return (
     <div className="space-y-4">
       <SettingsDetailHeader
-        title={server?.name || server?.id || "새 서버"}
-        subtitle={server ? `${server.type} / 판 ${server.version}` : undefined}
+        title={server?.name || server?.id || t("mcp.newServer")}
+        subtitle={server ? t("mcp.serverVersion", { transport: server.type, revision: server.version }) : undefined}
         leadingIcon={<McpIconTile id={id || "M"} icon={icon} />}
         actions={
           <>
-          {test ? <><label className="flex items-center gap-2 text-sm">시험 노드<select aria-label="시험 노드" className="h-9 rounded-floor border border-border bg-background px-2 sm:h-8" value={testNode} onChange={event => { setTestNode(event.target.value); setTestResult(null); }}><option value="" disabled>노드 선택</option>{testNodes.map(node => <option key={node.node_id} value={node.node_id}>{node.node_id}</option>)}</select></label><Button type="button" variant="outline" disabled={busy || testing || !testNode} onClick={() => void runTest()}>{testing ? "시험 중…" : "연결 시험"}</Button></> : null}
+          {test ? <><label className="flex items-center gap-2 text-sm">{t("mcp.testNode")}<select aria-label={t("mcp.testNode")} className="h-9 rounded-floor border border-border bg-background px-2 sm:h-8" value={testNode} onChange={event => { setTestNode(event.target.value); setTestResult(null); }}><option value="" disabled>{t("mcp.selectNode")}</option>{testNodes.map(node => <option key={node.node_id} value={node.node_id}>{node.node_id}</option>)}</select></label><Button type="button" variant="outline" disabled={busy || testing || !testNode} onClick={() => void runTest()}>{testing ? t("mcp.testing") : t("mcp.testConnection")}</Button></> : null}
           {server ? (
             <>
               <Button
@@ -185,30 +187,30 @@ export function McpServerEditor({
                 variant="outline"
                 onClick={() => rollback(server)}
               >
-                되돌리기
+                {t("mcp.rollback")}
               </Button>
               <Button
                 type="button"
                 variant="destructive-outline"
                 onClick={() => remove(server)}
               >
-                삭제
+                {t("mcp.delete")}
               </Button>
             </>
           ) : null}
           </>
         }
       />
-      {testing ? <p role="status" className="text-sm text-muted-foreground">연결을 시험하는 중…</p> : null}
+      {testing ? <p role="status" className="text-sm text-muted-foreground">{t("mcp.testingConnection")}</p> : null}
       {testError ? <SettingsAlert>{testError}</SettingsAlert> : null}
-      {testResult ? <SettingsGroupBox title="연결 시험 결과">{testResult.ok ? <div className="space-y-2 text-sm"><p data-v3-selectable-content="true">성공 · {testResult.latency_ms}ms{testResult.server_info ? ` · ${testResult.server_info.name} ${testResult.server_info.version}` : ""}</p><p data-v3-selectable-content="true">도구 {testResult.tool_count}개</p>{testResult.tools.length > 10 ? <details className="config-advanced"><summary>도구 이름 보기</summary><p className="break-words" data-v3-selectable-content="true">{testResult.tools.join(", ")}{testResult.tool_count > testResult.tools.length ? ` 외 ${testResult.tool_count - testResult.tools.length}개` : ""}</p></details> : <p className="break-words" data-v3-selectable-content="true">{testResult.tools.join(", ")}{testResult.tool_count > testResult.tools.length ? ` 외 ${testResult.tool_count - testResult.tools.length}개` : ""}</p>}</div> : <div className="space-y-1" data-v3-selectable-content="true"><p className="text-sm">{{ config: "서버 정의를 확인해 주세요.", connect: "서버에 연결하지 못했습니다.", initialize: "서버가 MCP 초기화에 응하지 않았습니다.", list_tools: "도구 목록을 받지 못했습니다.", timeout: "제한 시간 안에 응답이 없었습니다." }[testResult.error_stage]}</p>{testResult.error_message !== `MCP ${testResult.error_stage} failed` ? <p className="break-words text-xs text-muted-foreground">{testResult.error_message}</p> : null}</div>}</SettingsGroupBox> : null}
+      {testResult ? <SettingsGroupBox title={t("mcp.testResult")}>{testResult.ok ? <div className="space-y-2 text-sm"><p data-v3-selectable-content="true">{t("mcp.testSuccess", { latency: testResult.latency_ms })}{testResult.server_info ? ` · ${testResult.server_info.name} ${testResult.server_info.version}` : ""}</p><p data-v3-selectable-content="true">{t("mcp.toolCount", { count: testResult.tool_count })}</p>{testResult.tools.length > 10 ? <details className="config-advanced"><summary>{t("mcp.showTools")}</summary><p className="break-words" data-v3-selectable-content="true">{testResult.tools.join(", ")}{testResult.tool_count > testResult.tools.length ? " " + t("mcp.remainingCount", { count: testResult.tool_count - testResult.tools.length }) : ""}</p></details> : <p className="break-words" data-v3-selectable-content="true">{testResult.tools.join(", ")}{testResult.tool_count > testResult.tools.length ? " " + t("mcp.remainingCount", { count: testResult.tool_count - testResult.tools.length }) : ""}</p>}</div> : <div className="space-y-1" data-v3-selectable-content="true"><p className="text-sm">{{ config: t("mcp.testConfigError"), connect: t("mcp.testConnectError"), initialize: t("mcp.testInitializeError"), list_tools: t("mcp.testListToolsError"), timeout: t("mcp.testTimeout") }[testResult.error_stage]}</p>{testResult.error_message !== `MCP ${testResult.error_stage} failed` ? <p className="break-words text-xs text-muted-foreground">{testResult.error_message}</p> : null}</div>}</SettingsGroupBox> : null}
       {justCreated && server ? (
         <div
           ref={createdPrompt}
           tabIndex={-1}
           className="rounded-floor focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <SettingsGroupBox title="어느 프로필에 바로 추가할까요?">
+          <SettingsGroupBox title={t("mcp.chooseProfiles")}>
             <div className="space-y-2">
               {config.profiles.map((profile) => (
                 <label
@@ -245,7 +247,7 @@ export function McpServerEditor({
                     pickerButton.current?.focus();
                   }}
                 >
-                  나중에
+                  {t("mcp.later")}
                 </Button>
                 <Button
                   type="button"
@@ -261,24 +263,24 @@ export function McpServerEditor({
                     })
                   }
                 >
-                  선택한 프로필에 추가
+                  {t("mcp.addToSelectedProfiles")}
                 </Button>
               </div>
             </div>
           </SettingsGroupBox>
         </div>
       ) : null}
-      <SettingsGroupBox title="기본 정보 및 아이콘">
+      <SettingsGroupBox title={t("mcp.detailsAndIcon")}>
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            <SettingsField label="서버 ID">
+            <SettingsField label={t("mcp.serverId")}>
               <Input
                 value={id}
                 disabled={Boolean(server)}
                 onChange={(event) => { setId(event.target.value); markEdit(); }}
               />
             </SettingsField>
-            <SettingsField label="전송 이름">
+            <SettingsField label={t("mcp.transportName")}>
               <Input
                 value={draft.name}
                 onChange={(event) => { setDraft({ ...draft, name: event.target.value }); markEdit(); }}
@@ -292,7 +294,7 @@ export function McpServerEditor({
             aria-expanded={picker}
             onClick={() => setPicker(!picker)}
           >
-            아이콘 고르기
+            {t("mcp.chooseIcon")}
           </Button>
           {picker ? (
             <div
@@ -322,7 +324,7 @@ export function McpServerEditor({
         onChange={(value) => { setDraft(value); markEdit(); }}
         onSecretValue={setSecret}
       />
-      <SettingsGroupBox title="적용 노드 및 덮어쓰기">
+      <SettingsGroupBox title={t("mcp.nodesAndOverrides")}>
         <div className="space-y-3">
           <div className="flex flex-wrap gap-3">
             {config.managed_nodes.map((node) => (
@@ -352,7 +354,7 @@ export function McpServerEditor({
             ))}
           </div>
           <details className="config-advanced">
-            <summary>노드별 덮어쓰기 <span data-v3-selectable-content="true">{Object.keys(overrides).join(", ") || "없음"}</span></summary>
+            <summary>{t("mcp.nodeOverrides")} <span data-v3-selectable-content="true">{Object.keys(overrides).join(", ") || t("mcp.none")}</span></summary>
             <div className="space-y-3 pt-3">
               {scope.map((node) => (
                 <div key={node} className="space-y-2">
@@ -370,7 +372,7 @@ export function McpServerEditor({
                         });
                       }}
                     />
-                    {node} · 이 노드는 다른 정의
+                    {t("mcp.differentNodeDefinition", { node })}
                   </label>
                   {overrides[node] ? (
                     <DefinitionEditor
@@ -391,7 +393,7 @@ export function McpServerEditor({
               ))}
             </div>
           </details>
-          {server ? <details className="config-advanced"><summary>사용 프로필 <span>{users.length}개</span></summary><p data-v3-selectable-content="true" className="break-keep text-sm text-muted-foreground">{users.length ? users.map((p) => p.name || p.id).join(", ") : "없음"}</p></details> : null}
+          {server ? <details className="config-advanced"><summary>{t("mcp.usingProfiles")} <span>{t("mcp.itemCount", { count: users.length })}</span></summary><p data-v3-selectable-content="true" className="break-keep text-sm text-muted-foreground">{users.length ? users.map((p) => p.name || p.id).join(", ") : t("mcp.none")}</p></details> : null}
           {formError ? (
             <SettingsAlert scrollIntoView>{formError}</SettingsAlert>
           ) : null}
@@ -405,13 +407,14 @@ export function McpServerEditor({
                   secrets,
                 );
                 const issue = !id.trim()
-                  ? "서버 ID를 입력해 주세요."
+                  ? t("mcp.serverIdRequired")
                   : !server && config.servers.some((item) => item.id === id)
-                    ? "이미 사용 중인 서버 ID입니다."
+                    ? t("mcp.serverIdTaken")
                     : validateUnits(
                         [draft, ...Object.values(overrides)],
                         secretNames,
                         pending,
+                        t,
                       );
                 if (issue) {
                   setFormError(issue);
@@ -436,7 +439,7 @@ export function McpServerEditor({
                 );
               }}
             >
-              저장
+              {t("mcp.save")}
             </Button>
           </div>
         </div>

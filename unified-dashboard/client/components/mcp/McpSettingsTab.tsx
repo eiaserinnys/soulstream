@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 // 기존 설정 탭의 목록·상세와 이동 상태를 함께 유지해 500줄을 넘는다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, FrameLoading } from "@seosoyoung/soul-ui";
@@ -19,7 +20,7 @@ import { McpIconTile, McpServerIcons } from "./McpIcons";
 import { McpServerEditor } from "./McpServerEditor";
 import { McpProfileEditor } from "./McpProfileEditor";
 import { McpSecretEditor } from "./McpSecretEditor";
-import { errorText, PartialProfileSaveError } from "./McpErrors";
+import { errorText, mcpErrorAction, PartialProfileSaveError } from "./McpErrors";
 import { McpDialogs, type DeleteTarget, type History } from "./McpDialogs";
 
 type Tab = "server" | "profile" | "secret";
@@ -29,12 +30,19 @@ export function SuccessMessage({ children }: { children: string }) {
   return <p ref={ref} role="status" data-v3-selectable-content="true" className="text-sm text-success-foreground" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>{children}</p>;
 }
 export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { request?: typeof fetch; initialProfileId?: string; onOpenAgent?: (agentId: string, nodeId: string) => void }) {
+  const { t } = useTranslation();
   const api = useMemo(() => createMcpApi(request), [request]);
   const [config, setConfig] = useState<McpConfig | null>(null);
   const [liveRevision, setLiveRevision] = useState<number | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [failure, setFailure] = useState<{
+    cause: unknown;
+    target: DeleteTarget | null;
+    action: "save" | "delete" | "rollback";
+  } | null>(null);
+  const error = failure ? errorText(t, failure.cause, config, failure.target, failure.action) : "";
+  const errorAction = mcpErrorAction(failure?.cause);
   const [success, setSuccess] = useState("");
   const [messagePlace, setMessagePlace] = useState<"header" | "footer">("footer");
   const [tab, setTab] = useState<Tab>(initialProfileId ? "profile" : "server");
@@ -54,7 +62,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
       return next;
     } catch {
       setLoadError(true);
-      throw new Error("설정을 불러오지 못했습니다.");
+      throw new Error();
     }
   }, [api]);
   useEffect(() => {
@@ -105,7 +113,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
     actionKind: "save" | "delete" | "rollback" = "save",
   ): Promise<boolean> => {
     setBusy(true);
-    setError("");
+    setFailure(null);
     setSuccess("");
     setMessagePlace(place);
     try {
@@ -113,7 +121,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
       setSuccess(successMessage);
       return true;
     } catch (caught) {
-      setError(errorText(caught, config, target, actionKind));
+      setFailure({ cause: caught, target, action: actionKind });
       return false;
     } finally {
       setBusy(false);
@@ -124,7 +132,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
     setSelected(null);
     setCreating(false);
     setJustCreated(false);
-    setError("");
+    setFailure(null);
     setSuccess("");
   };
   if (!config)
@@ -139,13 +147,13 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
         <div className="mcp-tabs">
           <DetailTabs
             id="mcp-tabs"
-            label="MCP 설정"
+            label={t("mcp.settings")}
             panelId="mcp-panel"
             tabs={
               [
-                ["server", "서버"],
-                ["profile", "프로필"],
-                ["secret", "비밀값"],
+                ["server", t("mcp.server")],
+                ["profile", t("mcp.profile")],
+                ["secret", t("mcp.secret")],
               ] as const
             }
             value="server"
@@ -157,22 +165,22 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
           testId="mcp-loading"
           list={
             <>
-              <SettingsListHeader title="서버" description="" actions={null} />
+              <SettingsListHeader title={t("mcp.server")} description="" actions={null} />
             </>
           }
         >
           {loadError ? (
             <>
-              <SettingsAlert>설정을 불러오지 못했습니다.</SettingsAlert>
+              <SettingsAlert>{t("mcp.loadFailed")}</SettingsAlert>
               <Button
                 type="button"
                 onClick={() => void refresh().catch(() => undefined)}
               >
-                다시 시도
+                {t("mcp.retry")}
               </Button>
             </>
           ) : (
-            <FrameLoading inline label="MCP 설정을 불러오는 중…" />
+            <FrameLoading inline label={t("mcp.loading")} />
           )}
         </SettingsListDetailFrame>
       </div>
@@ -194,7 +202,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
       setHistory({ target, id, revisions: result.revisions });
     }, null, "", "header");
   const openDelete = (target: DeleteTarget) => {
-    setError("");
+    setFailure(null);
     setSuccess("");
     setDeleting(target);
   };
@@ -217,7 +225,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
     <>
       <SettingsListHeader
         title={
-          tab === "server" ? "서버" : tab === "profile" ? "프로필" : "비밀값"
+          tab === "server" ? t("mcp.server") : tab === "profile" ? t("mcp.profile") : t("mcp.secret")
         }
         description=""
         actions={
@@ -229,11 +237,11 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
                 setCreating(true);
                 setSelected(null);
                 setJustCreated(false);
-                setError("");
+                setFailure(null);
                 setSuccess("");
               }}
             >
-              + 새 {tab === "server" ? "서버" : "프로필"}
+              {tab === "server" ? t("mcp.addServer") : t("mcp.addProfile")}
             </Button>
           ) : null
         }
@@ -246,22 +254,22 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
               ? !profiles.length
               : !secrets.length
         }
-        emptyText="항목이 없습니다."
+        emptyText={t("mcp.emptyList")}
       >
         {tab === "server"
           ? servers.map((server) => (
               <SettingsListRow
                 key={server.id}
                 title={server.name || server.id}
-                meta={server.node_scope.length ? `${server.type} / ${server.node_scope.length}노드` : server.type}
-                badge={server.node_scope.length ? undefined : <Badge variant="warning" size="sm" data-testid="mcp-no-nodes">적용 노드 없음</Badge>}
+                meta={server.node_scope.length ? t("mcp.serverNodeCount", { transport: server.type, count: server.node_scope.length }) : server.type}
+                badge={server.node_scope.length ? undefined : <Badge variant="warning" size="sm" data-testid="mcp-no-nodes">{t("mcp.noTargetNodes")}</Badge>}
                 portrait={<McpIconTile id={server.id} icon={server.icon} />}
                 selected={!creating && currentServer?.id === server.id}
                 onSelect={() => {
                   setSelected(server.id);
                   setCreating(false);
                   setJustCreated(false);
-                  setError("");
+                  setFailure(null);
                   setSuccess("");
                 }}
               />
@@ -283,7 +291,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
                   onSelect={() => {
                     setSelected(profile.id);
                     setCreating(false);
-                    setError("");
+                    setFailure(null);
                     setSuccess("");
                   }}
                 />
@@ -293,12 +301,12 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
                   key={secret.name}
                   title={secret.name}
                   meta={
-                    secret.servers.length ? secret.servers.join(", ") : secret.profiles.length ? secret.profiles.join(", ") : "사용처 없음"
+                    secret.servers.length ? secret.servers.join(", ") : secret.profiles.length ? secret.profiles.join(", ") : t("mcp.unused")
                   }
                   selected={currentSecret?.name === secret.name}
                   onSelect={() => {
                     setSelected(secret.name);
-                    setError("");
+                    setFailure(null);
                     setSuccess("");
                   }}
                 />
@@ -309,7 +317,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 rounded-floor border border-border bg-muted/20 p-3 text-sm">
-        <strong>DB 저장 판 {liveRevision ?? config.current_revision}</strong>
+        <strong>{t("mcp.storedRevision", { revision: liveRevision ?? config.current_revision })}</strong>
         {config.managed_nodes.map((node) => {
           const revision = node.ack?.revision ?? node.applied_revision;
           const stale = revision < (liveRevision ?? config.current_revision);
@@ -324,8 +332,8 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
               />
               {node.node_id}{" "}
               {node.connected
-                ? `판 ${revision}${stale ? " · 적용 대기" : ""}`
-                : "오프라인"}
+                ? stale ? t("mcp.pendingRevision", { revision }) : t("mcp.revision", { revision })
+                : t("mcp.offline")}
             </span>
           );
         })}
@@ -333,13 +341,13 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
       <div className="mcp-tabs">
         <DetailTabs
           id="mcp-tabs"
-          label="MCP 설정"
+          label={t("mcp.settings")}
           panelId="mcp-panel"
           tabs={
             [
-              ["server", "서버"],
-              ["profile", "프로필"],
-              ["secret", "비밀값"],
+              ["server", t("mcp.server")],
+              ["profile", t("mcp.profile")],
+              ["secret", t("mcp.secret")],
             ] as const
           }
           value={tab}
@@ -348,13 +356,13 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
       </div>
       {loadError ? (
         <SettingsAlert>
-          갱신하지 못했습니다.{" "}
+          {t("mcp.refreshFailed")}{" "}
           <Button
             type="button"
             variant="outline"
             onClick={() => void refresh().catch(() => undefined)}
           >
-            다시 시도
+            {t("mcp.retry")}
           </Button>
         </SettingsAlert>
       ) : null}
@@ -397,7 +405,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
                   setSelected(id);
                   setCreating(false);
                   setJustCreated(version === undefined);
-                }, null, version === undefined ? "" : "저장했습니다.")
+                }, null, version === undefined ? "" : t("mcp.saved"))
               }
               addToProfiles={async (id, chosen) =>
                 mutate(async () => {
@@ -422,7 +430,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
                   }
                   await refresh();
                   setJustCreated(false);
-                }, null, "프로필에 추가했습니다.")
+                }, null, t("mcp.addedToProfiles"))
               }
             />
           ) : null}
@@ -447,7 +455,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
                   await refresh();
                   setSelected(id);
                   setCreating(false);
-                }, null, "저장했습니다.")
+                }, null, t("mcp.saved"))
               }
             /></div>
           ) : null}
@@ -463,12 +471,12 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
                 mutate(async () => {
                   await api.putSecret(name, value, config.current_revision);
                   await refresh();
-                }, null, "값을 교체했습니다.")
+                }, null, t("mcp.secretReplaced"))
               }
             />
           ) : null}
           {messagePlace === "footer" && !deleting && !history && error ? (
-            <SettingsAlert scrollIntoView>{error}{" "}{error.includes("다시 읽은") ? <Button type="button" variant="outline" onClick={() => void refresh().then(() => setError("")).catch(() => undefined)}>다시 읽기</Button> : null}</SettingsAlert>
+            <SettingsAlert scrollIntoView>{error}{" "}{errorAction === "reload" ? <Button type="button" variant="outline" onClick={() => void refresh().then(() => setFailure(null)).catch(() => undefined)}>{t("mcp.reload")}</Button> : null}</SettingsAlert>
           ) : null}
           {messagePlace === "footer" && success ? <SuccessMessage>{success}</SuccessMessage> : null}
         </SettingsListDetailFrame>
@@ -479,19 +487,20 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
         nodes={currentProfile?.node_scope ?? []}
         busy={busy}
         error={error}
+        errorAction={errorAction}
         profiles={deleting?.kind === "server" ? profiles.filter((p) => p.mcp_servers.includes(deleting.id)).map((p) => p.name || p.id) : []}
         reload={() => void refresh().then((next) => {
           if (deleting) {
             const item = deleting.kind === "server" ? next.servers.find((candidate) => candidate.id === deleting.id)
               : deleting.kind === "profile" ? next.profiles.find((candidate) => candidate.id === deleting.id)
               : next.secrets.find((candidate) => candidate.name === deleting.id);
-            if (!item) { setDeleting(null); setMessagePlace("header"); setSuccess(`“${deleting.id}” 항목은 이미 삭제되었습니다.`); }
+            if (!item) { setDeleting(null); setMessagePlace("header"); setSuccess(t("mcp.alreadyDeleted", { id: deleting.id })); }
             else if ("version" in item) setDeleting({ ...deleting, version: item.version });
           }
-          setError("");
+          setFailure(null);
         }).catch(() => undefined)}
-        closeDelete={() => { setError(""); setDeleting(null); }}
-        closeHistory={() => { setError(""); setHistory(null); }}
+        closeDelete={() => { setFailure(null); setDeleting(null); }}
+        closeHistory={() => { setFailure(null); setHistory(null); }}
         remove={(target) => {
           void mutate(async () => {
             if (target.kind === "server")
@@ -501,13 +510,13 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
             else await api.deleteSecret(target.id, config.current_revision);
             await refresh();
             setSelected(null);
-          }, target, `“${target.id}” 항목을 삭제했습니다.`, "header", "delete").then((ok) => { if (ok) setDeleting(null); });
+          }, target, t("mcp.deleted", { id: target.id }), "header", "delete").then((ok) => { if (ok) setDeleting(null); });
         }}
         rollback={(id) => {
           void mutate(async () => {
             await api.rollback(id, config.current_revision);
             await refresh();
-          }, null, "되돌렸습니다.", "header", "rollback").then((ok) => { if (ok) setHistory(null); });
+          }, null, t("mcp.reverted"), "header", "rollback").then((ok) => { if (ok) setHistory(null); });
         }}
       />
     </div>
