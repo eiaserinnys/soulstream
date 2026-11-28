@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Button, Input } from "@seosoyoung/soul-ui";
 import type { McpSecret } from "../../lib/mcp-api";
@@ -20,6 +21,7 @@ export function McpSecretEditor({
   replace(name: string, value: string): Promise<boolean>;
   remove(secret: McpSecret): void;
 }) {
+  const { t, i18n } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
   const replaceButton = useRef<HTMLButtonElement>(null);
@@ -41,7 +43,7 @@ export function McpSecretEditor({
     >
       <SettingsDetailHeader
         title={secret.name}
-        subtitle="DB에 저장됨"
+        subtitle={t("mcp.storedInDb")}
         selectableTitle
         actions={
           <Button
@@ -49,25 +51,22 @@ export function McpSecretEditor({
             variant="destructive-outline"
             onClick={() => remove(secret)}
           >
-            삭제
+            {t("mcp.delete")}
           </Button>
         }
       />
-      <SettingsGroupBox title="사용처">
+      <SettingsGroupBox title={t("mcp.usage")}>
         <div className="space-y-2 text-sm">
           <p data-v3-selectable-content="true">
-            갱신:{" "}
-            {secret.updated_at
-              ? new Date(secret.updated_at).toLocaleString("ko-KR")
-              : "알 수 없음"}
+            {t("mcp.updatedAt", { date: secret.updated_at ? new Date(secret.updated_at).toLocaleString(i18n.resolvedLanguage === "ko" ? "ko-KR" : "en-US") : t("mcp.unknown") })}
           </p>
           {secret.servers.length || secret.profiles.length ? (
             <>
-              <p data-v3-selectable-content="true">서버: {secret.servers.join(", ") || "없음"}</p>
-              <p data-v3-selectable-content="true">프로필: {secret.profiles.join(", ") || "없음"}</p>
+              <p data-v3-selectable-content="true">{t("mcp.usageServers", { servers: secret.servers.join(", ") || t("mcp.none") })}</p>
+              <p data-v3-selectable-content="true">{t("mcp.usageProfiles", { profiles: secret.profiles.join(", ") || t("mcp.none") })}</p>
             </>
           ) : (
-            <p>사용처 없음</p>
+            <p>{t("mcp.unused")}</p>
           )}
         </div>
       </SettingsGroupBox>
@@ -81,12 +80,12 @@ export function McpSecretEditor({
           setValue("");
         }}
       >
-        값 교체
+        {t("mcp.replaceValue")}
       </Button>
       {editing ? (
-        <SettingsGroupBox title="값 교체">
+        <SettingsGroupBox title={t("mcp.replaceValue")}>
           <div className="space-y-2">
-            <SettingsField label="새 값">
+            <SettingsField label={t("mcp.newValue")}>
               <Input
                 type="password"
                 autoFocus
@@ -105,7 +104,7 @@ export function McpSecretEditor({
                   replaceButton.current?.focus();
                 }}
               >
-                취소
+                {t("mcp.cancel")}
               </Button>
               <Button
                 type="button"
@@ -120,7 +119,7 @@ export function McpSecretEditor({
                   })
                 }
               >
-                저장
+                {t("mcp.save")}
               </Button>
             </div>
           </div>

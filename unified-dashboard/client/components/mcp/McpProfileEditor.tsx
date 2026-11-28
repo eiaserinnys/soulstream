@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import { Button, Checkbox, Input } from "@seosoyoung/soul-ui";
 import type { McpConfig, McpProfile } from "../../lib/mcp-api";
@@ -38,6 +39,7 @@ export function McpProfileEditor({
   rollback(profile: McpProfile): void;
   onOpenAgent?: (agentId: string, nodeId: string) => void;
 }) {
+  const { t } = useTranslation();
   const [id, setId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -56,8 +58,8 @@ export function McpProfileEditor({
   return (
     <div className="space-y-4">
       <SettingsDetailHeader
-        title={profile?.name || profile?.id || "새 프로필"}
-        subtitle={profile ? `판 ${profile.version}` : undefined}
+        title={profile?.name || profile?.id || t("mcp.newProfile")}
+        subtitle={profile ? t("mcp.revision", { revision: profile.version }) : undefined}
         actions={
           profile ? (
             <>
@@ -66,35 +68,35 @@ export function McpProfileEditor({
                 variant="outline"
                 onClick={() => rollback(profile)}
               >
-                되돌리기
+                {t("mcp.rollback")}
               </Button>
               <Button
                 type="button"
                 variant="destructive-outline"
                 onClick={() => remove(profile)}
               >
-                삭제
+                {t("mcp.delete")}
               </Button>
             </>
           ) : null
         }
       />
-      <SettingsGroupBox title="프로필">
+      <SettingsGroupBox title={t("mcp.profile")}>
         <div className="space-y-3">
-          <SettingsField label="프로필 ID">
+          <SettingsField label={t("mcp.profileId")}>
             <Input
               value={id}
               disabled={Boolean(profile)}
               onChange={(event) => { setId(event.target.value); onEdit(); }}
             />
           </SettingsField>
-          <SettingsField label="이름">
+          <SettingsField label={t("mcp.name")}>
             <Input
               value={name}
               onChange={(event) => { setName(event.target.value); onEdit(); }}
             />
           </SettingsField>
-          <SettingsField label="설명">
+          <SettingsField label={t("mcp.description")}>
             <Input
               value={description}
               onChange={(event) => { setDescription(event.target.value); onEdit(); }}
@@ -107,7 +109,7 @@ export function McpProfileEditor({
           />
         </div>
       </SettingsGroupBox>
-      <SettingsGroupBox title="서버">
+      <SettingsGroupBox title={t("mcp.server")}>
         <div className="grid gap-2 sm:grid-cols-2">
           {config.servers.map((server) => (
             <label key={server.id} className="flex min-w-0 items-center gap-2">
@@ -129,16 +131,13 @@ export function McpProfileEditor({
         </div>
       </SettingsGroupBox>
       {profile ? (
-        <SettingsGroupBox title="소속과 연결">
+        <SettingsGroupBox title={t("mcp.membership")}>
           <div className="space-y-2 text-sm">
             <p data-v3-selectable-content="true">
-              소속 노드:{" "}
-              {profile.node_scope.length
-                ? profile.node_scope.join(", ")
-                : "소속 노드 없음"}
+              {t("mcp.memberNodesValue", { nodes: profile.node_scope.length ? profile.node_scope.join(", ") : t("mcp.noMemberNodes") })}
             </p>
-            <div className="flex flex-wrap items-center gap-2"><span data-v3-selectable-content="true">연결된 에이전트:</span>
-              {bindings.length ? bindings.map(binding => <Button key={`${binding.agent_id}:${binding.node_id}`} type="button" variant="outline" onClick={() => onOpenAgent?.(binding.agent_id, binding.node_id)}>{binding.agent_id} ({binding.node_id})</Button>) : "없음"}
+            <div className="flex flex-wrap items-center gap-2"><span data-v3-selectable-content="true">{t("mcp.boundAgents")}</span>
+              {bindings.length ? bindings.map(binding => <Button key={`${binding.agent_id}:${binding.node_id}`} type="button" variant="outline" onClick={() => onOpenAgent?.(binding.agent_id, binding.node_id)}>{binding.agent_id} ({binding.node_id})</Button>) : t("mcp.none")}
             </div>
           </div>
         </SettingsGroupBox>
@@ -150,11 +149,11 @@ export function McpProfileEditor({
           disabled={busy}
           onClick={() => {
             if (!id.trim()) {
-              setError("프로필 ID를 입력해 주세요.");
+              setError(t("mcp.profileIdRequired"));
               return;
             }
             if (!profile && config.profiles.some((item) => item.id === id)) {
-              setError("이미 사용 중인 프로필 ID입니다.");
+              setError(t("mcp.profileIdTaken"));
               return;
             }
             setError("");
@@ -169,7 +168,7 @@ export function McpProfileEditor({
             });
           }}
         >
-          저장
+          {t("mcp.save")}
         </Button>
       </div>
     </div>
