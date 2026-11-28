@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button, Checkbox, DashboardIconCap, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, Input, Switch } from '@seosoyoung/soul-ui';
 import { Check, ChevronRight, Copy, RotateCw } from 'lucide-react';
 import type { PersistentSession } from '../lib/persistent-sessions';
@@ -12,6 +13,9 @@ import {
   lastErrorText,
   outboundDisabledDetail,
   outboundDisabledText,
+  sessionName,
+  sessionShortName,
+  type WebhookTranslate,
   WebhooksError,
   type DeliveryState,
   type OutboundEventType,
@@ -28,30 +32,17 @@ import './config/access-links.css';
 
 const manual = 'manual';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const events: { value: OutboundEventType; label: string; description?: string }[] = [
-  { value: 'session.reply', label: '답변' },
-  { value: 'session.question', label: '질문', description: '선택지로 묻는 질문' },
-  { value: 'session.failed', label: '세션 실패', description: '오류나 한도로 끝남' },
-  { value: 'session.ended', label: '세션 끝남', description: '정상으로 끝나거나 사람이 멈춤' },
-];
-const filters: { value: '' | DeliveryState; label: string }[] = [
-  { value: '', label: '전체' },
-  { value: 'dead', label: '실패' },
-  { value: 'pending', label: '대기' },
-];
-const sessionName = (session: PersistentSession) => session.display_name || `${session.agent_name || '에이전트'} 세션`;
-const targetName = (names: Map<string, string>, id: string) => names.get(id) ?? `세션 ${id.slice(0, 8)}`;
 function hostOf(url: string) {
   try { return new URL(url).host; } catch { return url; }
 }
 function validUrl(value: string) {
   try { return new URL(value).protocol === 'https:'; } catch { return false; }
 }
-function createErrorText(cause: unknown) {
+function createErrorText(cause: unknown, t: WebhookTranslate) {
   const status = cause instanceof WebhooksError ? cause.status : 0;
-  if (status === 401) return '로그인이 끝났습니다. 다시 로그인하세요.';
-  if (status === 422) return '입력을 다시 확인하세요.';
-  return '지금은 등록할 수 없습니다. 잠시 뒤 다시 시도하세요.';
+  if (status === 401) return t('webhooks.common.relogin');
+  if (status === 422) return t('webhooks.common.checkInput');
+  return t('webhooks.outbound.createError');
 }
 
 export function OutboundWebhooksSection({ api, items, error, reload, names, sessions, sessionsState }: {
@@ -63,6 +54,19 @@ export function OutboundWebhooksSection({ api, items, error, reload, names, sess
   sessions: PersistentSession[];
   sessionsState: 'loading' | 'ready' | 'error';
 }) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language;
+  const events: { value: OutboundEventType; label: string; description?: string }[] = [
+    { value: 'session.reply', label: eventTypeLabel('session.reply', t) },
+    { value: 'session.question', label: eventTypeLabel('session.question', t), description: t('webhooks.outbound.questionHelp') },
+    { value: 'session.failed', label: eventTypeLabel('session.failed', t), description: t('webhooks.outbound.sessionFailedHelp') },
+    { value: 'session.ended', label: eventTypeLabel('session.ended', t), description: t('webhooks.outbound.sessionEndedHelp') },
+  ];
+  const filters: { value: '' | DeliveryState; label: string }[] = [
+    { value: '', label: t('webhooks.outbound.all') },
+    { value: 'dead', label: t('webhooks.outbound.failed') },
+    { value: 'pending', label: t('webhooks.outbound.pending') },
+  ];
   const alive = useRef(false);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
@@ -166,8 +170,8 @@ export function OutboundWebhooksSection({ api, items, error, reload, names, sess
         const status = cause instanceof WebhooksError ? cause.status : 0;
         const code = cause instanceof WebhooksError ? cause.code : undefined;
         if (status === 404 || status === 403) setTargetError(true);
-        else if (status === 422 && code === 'challenge_failed') setChallengeError(challengeReasonText(cause instanceof WebhooksError ? cause.reason : undefined));
-        else setFormError(createErrorText(cause));
+        else if (status === 422 && code === 'challenge_failed') setChallengeError(challengeReasonText(cause instanceof WebhooksError ? cause.reason : undefined, t));
+        else setFormError(createErrorText(cause, t));
       }
     } finally { inFlight.current = false; if (alive.current) setBusy(false); }
   }
@@ -203,8 +207,8 @@ export function OutboundWebhooksSection({ api, items, error, reload, names, sess
     try {
       const outcome = await api.redeliver(detail.id, item.id);
       if (!alive.current) { pendingFocus.current = null; return; }
-      if (outcome === 'dead') setRedeliverNotice({ id: item.id, text: '다시 보냈지만 실패했습니다.' });
-      else if (outcome === 'skipped') setRedeliverNotice({ id: item.id, text: '지금은 다시 보내지 못했습니다. 다시 시도하세요.' });
+      if (outcome === 'dead') setRedeliverNotice({ id: item.id, text: t('webhooks.outbound.redeliveryFailed') });
+      else if (outcome === 'skipped') setRedeliverNotice({ id: item.id, text: t('webhooks.outbound.redeliveryError') });
       await loadDeliveries(detail.id, filter, true);
       if (outcome === 'delivered') void reload();
     } catch (cause) {
@@ -212,9 +216,9 @@ export function OutboundWebhooksSection({ api, items, error, reload, names, sess
       const status = cause instanceof WebhooksError ? cause.status : 0;
       if (status === 409) {
         setDetail(current => current === null ? current : { ...current, active: false });
-        setRedeliverNotice({ id: item.id, text: '꺼진 상태에서는 다시 보낼 수 없습니다.' });
+        setRedeliverNotice({ id: item.id, text: t('webhooks.outbound.redeliveryDisabled') });
         await loadDeliveries(detail.id, filter, true); void reload();
-      } else { pendingFocus.current = null; setRedeliverNotice({ id: item.id, text: '지금은 다시 보내지 못했습니다. 다시 시도하세요.' }); }
+      } else { pendingFocus.current = null; setRedeliverNotice({ id: item.id, text: t('webhooks.outbound.redeliveryError') }); }
     } finally { inFlight.current = false; if (alive.current) setRedeliverBusy(null); }
   }
 
@@ -236,7 +240,7 @@ export function OutboundWebhooksSection({ api, items, error, reload, names, sess
   }
 
   const row = (item: OutboundSubscription) => {
-    const disabled = outboundDisabledText(item);
+    const disabled = outboundDisabledText(item, t);
     return <div className={`owned-agents-block access-links-row${item.active ? '' : ' is-past'}`} key={item.id}>
       <button
         type="button"
@@ -248,10 +252,10 @@ export function OutboundWebhooksSection({ api, items, error, reload, names, sess
           <span className="access-links-label" title={item.label} data-v3-selectable-content="true">{item.label}</span>
           <span className="owned-agents-meta access-links-meta" data-v3-selectable-content="true">
             {disabled && <span className={disabled.danger ? 'webhooks-danger' : undefined}>{disabled.text}</span>}
-            <span>{targetName(names, item.target_session_id)}</span>
-            <span>{eventTypesLabel(item.event_types)}</span>
+            <span>{names.get(item.target_session_id) ?? sessionShortName(item.target_session_id, t)}</span>
+            <span>{eventTypesLabel(item.event_types, t)}</span>
             <span>{hostOf(item.url)}</span>
-            {item.active && (item.recent_failures ?? 0) > 0 && <span className="webhooks-danger">24시간 실패 {item.recent_failures}건</span>}
+            {item.active && (item.recent_failures ?? 0) > 0 && <span className="webhooks-danger">{t('webhooks.outbound.failures24h', { count: item.recent_failures })}</span>}
           </span>
         </span>
         <ChevronRight className="size-4 webhooks-chevron" aria-hidden="true"/>
@@ -260,23 +264,23 @@ export function OutboundWebhooksSection({ api, items, error, reload, names, sess
   };
 
   const deliveryList = () => deliveriesError ? <div className="space-y-2">
-    <SettingsAlert><span data-v3-selectable-content="true">전달 기록을 불러오지 못했습니다.</span></SettingsAlert>
-    {detail && <Button variant="outline" onClick={() => void loadDeliveries(detail.id, filter)}>다시 시도</Button>}
+    <SettingsAlert><span data-v3-selectable-content="true">{t('webhooks.outbound.deliveriesError')}</span></SettingsAlert>
+    {detail && <Button variant="outline" onClick={() => void loadDeliveries(detail.id, filter)}>{t('webhooks.common.retry')}</Button>}
   </div> : deliveries === null
-    ? <div role="status" aria-label="불러오는 중">{[0, 1].map(index => <div className="owned-agents-block" key={index}><div className="v3-run-skeleton v3-run-skeleton--title"/><div className="v3-run-skeleton v3-run-skeleton--preview"/></div>)}</div>
+    ? <div role="status" aria-label={t('webhooks.common.loading')}>{[0, 1].map(index => <div className="owned-agents-block" key={index}><div className="v3-run-skeleton v3-run-skeleton--title"/><div className="v3-run-skeleton v3-run-skeleton--preview"/></div>)}</div>
     : deliveries.length === 0
-      ? <p className="access-links-empty">{filter === 'dead' ? '실패한 전달이 없습니다.' : filter === 'pending' ? '기다리는 전달이 없습니다.' : '아직 보낸 소식이 없습니다.'}</p>
+      ? <p className="access-links-empty">{filter === 'dead' ? t('webhooks.outbound.noFailed') : filter === 'pending' ? t('webhooks.outbound.noPending') : t('webhooks.outbound.noDeliveries')}</p>
       : <>{deliveries.map(item => {
-        const attempt = deliveryAttemptText(item.attempt_count);
+        const attempt = deliveryAttemptText(item.attempt_count, t);
         return <div className="owned-agents-block" key={item.id}>
           <div className="owned-agents-key-row">
             <div className="access-links-copy">
-              <p className="webhooks-record-title">{eventTypeLabel(item.event_type)}<span className={item.state === 'dead' ? 'webhooks-danger' : undefined}>{deliveryStateLabel(item.state)}</span></p>
+              <p className="webhooks-record-title">{eventTypeLabel(item.event_type, t)}<span className={item.state === 'dead' ? 'webhooks-danger' : undefined}>{deliveryStateLabel(item.state, t)}</span></p>
               <p className="owned-agents-meta access-links-meta" data-v3-selectable-content="true">
-                <span>{formatClock(item.created_at)}</span>
+                <span>{formatClock(item.created_at, locale)}</span>
                 {attempt !== null && <span>{attempt}</span>}
-                {item.last_status !== null ? <span>응답 {item.last_status}</span> : item.last_error !== null ? <span>{lastErrorText(item.last_error)}</span> : null}
-                {item.state === 'pending' && <span>다음 시도 {formatClock(item.next_attempt_at)}</span>}
+                {item.last_status !== null ? <span>{t('webhooks.outbound.response', { status: item.last_status })}</span> : item.last_error !== null ? <span>{lastErrorText(item.last_error, t)}</span> : null}
+                {item.state === 'pending' && <span>{t('webhooks.outbound.nextAttempt', { time: formatClock(item.next_attempt_at, locale) })}</span>}
               </p>
               {redeliverNotice?.id === item.id && <p className="webhooks-danger">{redeliverNotice.text}</p>}
             </div>
@@ -286,82 +290,83 @@ export function OutboundWebhooksSection({ api, items, error, reload, names, sess
               className={redeliverBusy === item.id ? busyButtonClassName : undefined}
               aria-disabled={redeliverBusy !== null || undefined}
               onClick={() => void redeliver(item)}
-            >{redeliverBusy === item.id ? '보내는 중…' : '다시 보내기'}</Button>}
+            >{redeliverBusy === item.id ? t('webhooks.outbound.sending') : t('webhooks.outbound.resend')}</Button>}
           </div>
         </div>;
       })}</>;
 
-  return <section className="webhooks-section" aria-label="나가는 웹훅">
-    <div className="owned-agents-row"><h3>나가는 웹훅</h3><Button ref={createButton} variant="outline" onClick={openCreate}>주소 등록</Button></div>
+  const disabledDetail = detail && !detail.active ? outboundDisabledDetail(detail.disabled_reason, t) : null;
+  return <section className="webhooks-section" aria-label={t('webhooks.outbound.title')}>
+    <div className="owned-agents-row"><h3>{t('webhooks.outbound.title')}</h3><Button ref={createButton} variant="outline" onClick={openCreate}>{t('webhooks.outbound.create')}</Button></div>
     {error ? <div className="space-y-2">
-      <SettingsAlert><span data-v3-selectable-content="true">등록한 주소를 불러오지 못했습니다.</span></SettingsAlert>
-      <Button variant="outline" onClick={() => void reload()}>다시 시도</Button>
+      <SettingsAlert><span data-v3-selectable-content="true">{t('webhooks.outbound.loadError')}</span></SettingsAlert>
+      <Button variant="outline" onClick={() => void reload()}>{t('webhooks.common.retry')}</Button>
     </div> : items === null
-      ? <div role="status" aria-label="불러오는 중">{[0, 1].map(index => <div className="owned-agents-block" key={index}><div className="v3-run-skeleton v3-run-skeleton--title"/><div className="v3-run-skeleton v3-run-skeleton--preview"/></div>)}</div>
+      ? <div role="status" aria-label={t('webhooks.common.loading')}>{[0, 1].map(index => <div className="owned-agents-block" key={index}><div className="v3-run-skeleton v3-run-skeleton--title"/><div className="v3-run-skeleton v3-run-skeleton--preview"/></div>)}</div>
       : items.length === 0
-        ? <p className="access-links-empty">아직 등록한 주소가 없습니다.</p>
+        ? <p className="access-links-empty">{t('webhooks.outbound.empty')}</p>
         : <>{items.map(row)}</>}
 
     <Dialog open={creating} onOpenChange={open => { if (!open && !busy) closeCreate(); }} onOpenChangeComplete={open => { if (!open) { setCreated(null); setCopied(null); setCopyError(false); createButton.current?.focus(); } }}>
       <DialogPopup className="approved-dialog webhooks-dialog" closeProps={{ disabled: busy }} initialFocus={targetButton}>
         <DialogHeader>
-          <DialogTitle>{created ? '주소를 등록했습니다' : '나가는 웹훅 등록'}</DialogTitle>
-          <DialogDescription>{created ? '서명 비밀은 지금 한 번만 보입니다. 닫기 전에 복사하세요.' : '등록한 주소는 대상 세션의 답변 전체를 받습니다.'}</DialogDescription>
+          <DialogTitle>{created ? t('webhooks.outbound.created') : t('webhooks.outbound.createTitle')}</DialogTitle>
+          <DialogDescription>{created ? t('webhooks.common.signingSecretOnce') : t('webhooks.outbound.createHelp')}</DialogDescription>
         </DialogHeader>
         {created ? <DialogPanel>
           <div className="webhooks-values">
             <div className="webhooks-value">
-              <p className="owned-agents-meta">서명 비밀 (Standard Webhooks)</p>
+              <p className="owned-agents-meta">{t('webhooks.common.signingSecret')}</p>
               <div className="owned-agents-key-row">
                 <div><p className="owned-agents-token" data-v3-selectable-content="true">{created.signing_secret}</p></div>
-                <DashboardIconCap ref={secretCopy} size="small" label={copied === 'secret' ? '복사됨' : '서명 비밀 복사'} onClick={() => copy('secret', created.signing_secret)}>
+                <DashboardIconCap ref={secretCopy} size="small" label={copied === 'secret' ? t('webhooks.common.copied') : t('webhooks.common.copySigningSecret')} onClick={() => copy('secret', created.signing_secret)}>
                   {copied === 'secret' ? <Check className="size-4"/> : <Copy className="size-4"/>}
                 </DashboardIconCap>
               </div>
             </div>
           </div>
-          {copyError && <SettingsAlert><span data-v3-selectable-content="true">복사하지 못했습니다. 값을 직접 골라 복사하세요.</span></SettingsAlert>}
+          {copyError && <SettingsAlert><span data-v3-selectable-content="true">{t('webhooks.common.copyValueError')}</span></SettingsAlert>}
         </DialogPanel> : <DialogPanel className="access-links-form">
           <div>
-            <CatalogSelectionField className="access-links-field" label="대상 세션" ariaLabel="대상 세션" triggerRef={targetButton} triggerClassName={!target ? 'text-muted-foreground' : undefined} value={target} selectedLabel={sessionsState === 'loading' ? '불러오는 중…' : target === manual ? '세션 ID 직접 입력' : names.get(target) ?? '세션을 고르세요'} disabled={busy || sessionsState === 'loading'} invalid={targetError} options={[...sessions.map(session => ({ value: session.session_id, label: sessionName(session) })), { value: manual, label: '세션 ID 직접 입력', separatorBefore: sessions.length > 0 }]} onValueChange={value => { setTarget(value); setTargetError(false); focusManual.current = value === manual; }} onOpenChangeComplete={open => { if (!open && focusManual.current) { focusManual.current = false; manualInput.current?.focus(); } }} message={targetError ? '이 세션을 찾지 못했거나 열 수 없습니다.' : sessionsState === 'error' ? '영구 세션 목록을 불러오지 못했습니다.' : undefined}/>
-            {target === manual && <div className="access-links-manual"><Input ref={manualInput} aria-label="세션 ID" aria-invalid={targetError || (idTouched && !uuid.test(manualId.trim())) || undefined} value={manualId} disabled={busy} onChange={event => { setManualId(event.target.value); setTargetError(false); }} onBlur={() => setIdTouched(true)}/>{targetError ? <small role="alert">이 세션을 찾지 못했거나 열 수 없습니다.</small> : idTouched && !uuid.test(manualId.trim()) && <small role="alert">세션 ID 형식이 아닙니다.</small>}</div>}
+            <CatalogSelectionField className="access-links-field" label={t('webhooks.common.targetSession')} ariaLabel={t('webhooks.common.targetSession')} triggerRef={targetButton} triggerClassName={!target ? 'text-muted-foreground' : undefined} value={target} selectedLabel={sessionsState === 'loading' ? t('webhooks.common.loadingProgress') : target === manual ? t('webhooks.common.manualSessionId') : names.get(target) ?? t('webhooks.common.selectSession')} disabled={busy || sessionsState === 'loading'} invalid={targetError} options={[...sessions.map(session => ({ value: session.session_id, label: sessionName(session, t) })), { value: manual, label: t('webhooks.common.manualSessionId'), separatorBefore: sessions.length > 0 }]} onValueChange={value => { setTarget(value); setTargetError(false); focusManual.current = value === manual; }} onOpenChangeComplete={open => { if (!open && focusManual.current) { focusManual.current = false; manualInput.current?.focus(); } }} message={targetError ? t('webhooks.common.sessionUnavailable') : sessionsState === 'error' ? t('webhooks.common.sessionsLoadError') : undefined}/>
+            {target === manual && <div className="access-links-manual"><Input ref={manualInput} aria-label={t('webhooks.common.sessionId')} aria-invalid={targetError || (idTouched && !uuid.test(manualId.trim())) || undefined} value={manualId} disabled={busy} onChange={event => { setManualId(event.target.value); setTargetError(false); }} onBlur={() => setIdTouched(true)}/>{targetError ? <small role="alert">{t('webhooks.common.sessionUnavailable')}</small> : idTouched && !uuid.test(manualId.trim()) && <small role="alert">{t('webhooks.common.invalidSessionId')}</small>}</div>}
           </div>
-          <SettingsField label="이름"><Input aria-label="이름" maxLength={200} value={name} disabled={busy} onChange={event => setName(event.target.value)}/></SettingsField>
+          <SettingsField label={t('webhooks.outbound.name')}><Input aria-label={t('webhooks.outbound.name')} maxLength={200} value={name} disabled={busy} onChange={event => setName(event.target.value)}/></SettingsField>
           <div className="access-links-field">
-            <SettingsField label="받을 주소"><Input aria-label="받을 주소" type="url" inputMode="url" spellCheck={false} maxLength={2048} value={url} disabled={busy} aria-invalid={challengeError !== null || (urlTouched && !validUrl(url.trim())) || undefined} onChange={event => { setUrl(event.target.value); setChallengeError(null); }} onBlur={() => setUrlTouched(true)}/></SettingsField>
-            {challengeError !== null ? <small role="alert">{challengeError}</small> : urlTouched && !validUrl(url.trim()) && <small role="alert">https 주소를 넣으세요.</small>}
-            <p className="access-links-hint">등록할 때 확인 요청을 보냅니다. 본문의 challenge를 JSON으로 그대로 돌려줘야 합니다.</p>
+            <SettingsField label={t('webhooks.outbound.callback')}><Input aria-label={t('webhooks.outbound.callback')} type="url" inputMode="url" spellCheck={false} maxLength={2048} value={url} disabled={busy} aria-invalid={challengeError !== null || (urlTouched && !validUrl(url.trim())) || undefined} onChange={event => { setUrl(event.target.value); setChallengeError(null); }} onBlur={() => setUrlTouched(true)}/></SettingsField>
+            {challengeError !== null ? <small role="alert">{challengeError}</small> : urlTouched && !validUrl(url.trim()) && <small role="alert">{t('webhooks.outbound.httpsRequired')}</small>}
+            <p className="access-links-hint">{t('webhooks.outbound.challengeHelp')}</p>
           </div>
-          <fieldset><legend className="text-sm text-muted-foreground">보낼 소식</legend><div className="-mx-2">{events.map(item => <label key={item.value} className="flex items-start gap-2 rounded-floor px-2 py-1.5 text-sm hover:bg-muted/40"><Checkbox className="mt-0.5" checked={selectedEvents.includes(item.value)} disabled={busy} onCheckedChange={checked => setSelectedEvents(current => checked ? [...current, item.value] : current.filter(value => value !== item.value))}/><span className="access-links-permission">{item.label}{item.description && <small>{item.description}</small>}</span></label>)}</div>{!selectedEvents.length && <small role="alert">하나 이상 고르세요.</small>}</fieldset>
+          <fieldset><legend className="text-sm text-muted-foreground">{t('webhooks.outbound.events')}</legend><div className="-mx-2">{events.map(item => <label key={item.value} className="flex items-start gap-2 rounded-floor px-2 py-1.5 text-sm hover:bg-muted/40"><Checkbox className="mt-0.5" checked={selectedEvents.includes(item.value)} disabled={busy} onCheckedChange={checked => setSelectedEvents(current => checked ? [...current, item.value] : current.filter(value => value !== item.value))}/><span className="access-links-permission">{item.label}{item.description && <small>{item.description}</small>}</span></label>)}</div>{!selectedEvents.length && <small role="alert">{t('webhooks.common.selectAtLeastOne')}</small>}</fieldset>
           {formError && <SettingsAlert scrollIntoView><span data-v3-selectable-content="true">{formError}</span></SettingsAlert>}
         </DialogPanel>}
         <DialogFooter>{created
-          ? <Button variant="outline" onClick={closeCreate}>닫기</Button>
-          : <><Button variant="outline" disabled={busy} onClick={closeCreate}>취소</Button><Button disabled={!busy && !canCreate} className={busyButtonClassName} aria-disabled={busy || undefined} onClick={() => void create()}>{busy ? '확인하는 중…' : '등록'}</Button></>}</DialogFooter>
+          ? <Button variant="outline" onClick={closeCreate}>{t('webhooks.common.close')}</Button>
+          : <><Button variant="outline" disabled={busy} onClick={closeCreate}>{t('webhooks.common.cancel')}</Button><Button disabled={!busy && !canCreate} className={busyButtonClassName} aria-disabled={busy || undefined} onClick={() => void create()}>{busy ? t('webhooks.outbound.verifying') : t('webhooks.outbound.submit')}</Button></>}</DialogFooter>
       </DialogPopup>
     </Dialog>
 
     <Dialog open={detail !== null} onOpenChange={open => { if (!open && !busy) closeDetail(); }} onOpenChangeComplete={open => { if (!open) (rowButtons.current.get(returnFocus.current) ?? createButton.current)?.focus(); }}>
       <DialogPopup className="approved-dialog webhooks-dialog" closeProps={{ disabled: busy }} initialFocus={selectedFilter}>
         {confirming ? <>
-          <DialogHeader><DialogTitle>나가는 웹훅 삭제</DialogTitle><DialogDescription className="access-links-revoke-description">“{detail?.label}”로 더는 보내지 않고 전달 기록도 지웁니다.</DialogDescription></DialogHeader>
-          {deleteError && <DialogPanel><SettingsAlert><span data-v3-selectable-content="true">지금은 삭제하지 못했습니다. 다시 시도하세요.</span></SettingsAlert></DialogPanel>}
-          <DialogFooter><Button ref={cancelButton} variant="outline" disabled={busy} onClick={() => { setDeleteError(false); setConfirming(false); requestAnimationFrame(() => deleteButton.current?.focus()); }}>취소</Button><Button variant="destructive" className={busyButtonClassName} aria-disabled={busy || undefined} onClick={() => void remove()}>{busy ? '삭제 중…' : '삭제'}</Button></DialogFooter>
+          <DialogHeader><DialogTitle>{t('webhooks.outbound.deleteTitle')}</DialogTitle><DialogDescription className="access-links-revoke-description">{t('webhooks.outbound.deleteHelp', { label: detail?.label ?? '' })}</DialogDescription></DialogHeader>
+          {deleteError && <DialogPanel><SettingsAlert><span data-v3-selectable-content="true">{t('webhooks.outbound.deleteError')}</span></SettingsAlert></DialogPanel>}
+          <DialogFooter><Button ref={cancelButton} variant="outline" disabled={busy} onClick={() => { setDeleteError(false); setConfirming(false); requestAnimationFrame(() => deleteButton.current?.focus()); }}>{t('webhooks.common.cancel')}</Button><Button variant="destructive" className={busyButtonClassName} aria-disabled={busy || undefined} onClick={() => void remove()}>{busy ? t('webhooks.outbound.deleting') : t('webhooks.outbound.delete')}</Button></DialogFooter>
         </> : detail !== null ? <>
           <DialogHeader><DialogTitle className="access-links-revoke-description">{detail.label}</DialogTitle><DialogDescription className="access-links-revoke-description" data-v3-selectable-content="true">{detail.url}</DialogDescription></DialogHeader>
           <DialogPanel>
             <div className="webhooks-switch">
               <div className="owned-agents-row">
-                <p className="webhooks-switch-name">소식 보내기</p>
-                <Switch aria-label="소식 보내기" checked={detail.active} aria-disabled={switchBusy || busy || undefined} onCheckedChange={next => void toggle(next)}/>
+                <p className="webhooks-switch-name">{t('webhooks.outbound.sendEvents')}</p>
+                <Switch aria-label={t('webhooks.outbound.sendEvents')} checked={detail.active} aria-disabled={switchBusy || busy || undefined} onCheckedChange={next => void toggle(next)}/>
               </div>
-              {!detail.active && outboundDisabledDetail(detail.disabled_reason) !== null && <p className="webhooks-danger">{outboundDisabledDetail(detail.disabled_reason)}</p>}
-              {!detail.active && <p className="access-links-hint">다시 켜면 꺼져 있던 동안의 소식은 보내지 않습니다. 남아 있던 대기 건은 실패로 닫힙니다.</p>}
-              {switchError && <SettingsAlert><span data-v3-selectable-content="true">지금은 바꾸지 못했습니다. 다시 시도하세요.</span></SettingsAlert>}
+              {disabledDetail !== null && <p className="webhooks-danger">{disabledDetail}</p>}
+              {!detail.active && <p className="access-links-hint">{t('webhooks.outbound.reenableHelp')}</p>}
+              {switchError && <SettingsAlert><span data-v3-selectable-content="true">{t('webhooks.outbound.toggleError')}</span></SettingsAlert>}
             </div>
             <div className="webhooks-records">
               <div className="webhooks-filter-row">
-                <div className="v3-completed-periods" role="group" aria-label="전달 기록 거르기">
+                <div className="v3-completed-periods" role="group" aria-label={t('webhooks.outbound.filterDeliveries')}>
                   {filters.map(option => <Button
                     key={option.value || 'all'}
                     ref={element => { if (element) { filterButtons.current.set(option.value, element); if (filter === option.value) selectedFilter.current = element; } }}
@@ -371,12 +376,12 @@ export function OutboundWebhooksSection({ api, items, error, reload, names, sess
                     onClick={() => setFilter(option.value)}
                   >{option.label}</Button>)}
                 </div>
-                <DashboardIconCap ref={refreshButton} size="small" label="새로 고침" disabled={refreshing} onClick={() => void loadDeliveries(detail.id, filter, true)}><RotateCw className="size-4"/></DashboardIconCap>
+                <DashboardIconCap ref={refreshButton} size="small" label={t('webhooks.common.refresh')} disabled={refreshing} onClick={() => void loadDeliveries(detail.id, filter, true)}><RotateCw className="size-4"/></DashboardIconCap>
               </div>
               {deliveryList()}
             </div>
           </DialogPanel>
-          <DialogFooter><Button ref={deleteButton} variant="destructive-outline" className="sm:mr-auto" disabled={busy} onClick={() => { setDeleteError(false); setConfirming(true); }}>삭제</Button><Button variant="outline" onClick={closeDetail}>닫기</Button></DialogFooter>
+          <DialogFooter><Button ref={deleteButton} variant="destructive-outline" className="sm:mr-auto" disabled={busy} onClick={() => { setDeleteError(false); setConfirming(true); }}>{t('webhooks.outbound.delete')}</Button><Button variant="outline" onClick={closeDetail}>{t('webhooks.common.close')}</Button></DialogFooter>
         </> : null}
       </DialogPopup>
     </Dialog>

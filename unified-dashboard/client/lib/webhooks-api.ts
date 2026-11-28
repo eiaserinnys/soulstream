@@ -1,14 +1,7 @@
-/**
- * 설정 창 「웹훅」 탭의 서버 호출과 화면 문구 대응.
- *
- * 칸 이름과 응답 모양은 main 의 orch-server-ts/src/webhooks/*.ts,
- * external_access/external_input_service.ts 를 그대로 따른다. 서버의 영문
- * detail 은 화면에 내지 않고 상태 코드와 error, reason, last_error 코드로
- * 이 파일의 표를 거쳐 우리말 문구가 된다.
- *
- * 비밀(secret, signing_secret, key_url)은 반환값으로만 넘기고 로그, 전역
- * 상태, localStorage, 쿼리 캐시에 남기지 않는다.
- */
+import type { useTranslation } from 'react-i18next';
+import type { PersistentSession } from './persistent-sessions';
+
+export type WebhookTranslate = ReturnType<typeof useTranslation>['t'];
 
 export type WebhookAuthMode = 'key' | 'signature';
 export type InboundWebhookState = 'active' | 'expired' | 'revoked';
@@ -166,126 +159,116 @@ export function createWebhooksApi(request: typeof fetch = fetch) {
 
 export type WebhooksApi = ReturnType<typeof createWebhooksApi>;
 
-const inboundCodes: Record<string, string> = {
-  accepted: '접수됨',
-  completed: '완료',
-  failed: '전달 실패',
-};
-
-/** 처리 중인 요청은 세션이 도는 중일 때만 「처리 중」이다. 멈춘 세션은 마감 없이 멈춤. */
-export function inboundRequestStatusLabel(request: Pick<InboundRequest, 'status' | 'session'>): string {
-  if (request.status === 'processing') {
-    return request.session.state === 'running' ? '처리 중' : '마감 없이 멈춤';
-  }
-  return inboundCodes[request.status] ?? request.status;
+export function sessionName(session: Pick<PersistentSession, 'display_name' | 'agent_name'>, t: WebhookTranslate): string {
+  return session.display_name || t('webhooks.common.sessionName', { agent: session.agent_name || t('webhooks.common.agent') });
 }
 
-export function deliveryStateLabel(state: DeliveryState): string {
-  return state === 'delivered' ? '전달됨' : state === 'pending' ? '대기' : '실패';
+export function sessionShortName(id: string, t: WebhookTranslate): string {
+  return t('webhooks.common.sessionIdShort', { id: id.slice(0, 8) });
+}
+
+export function inboundRequestStatusLabel(request: Pick<InboundRequest, 'status' | 'session'>, t: WebhookTranslate): string {
+  switch (request.status) {
+    case 'accepted': return t('webhooks.inbound.accepted');
+    case 'completed': return t('webhooks.inbound.completed');
+    case 'failed': return t('webhooks.inbound.failed');
+    case 'processing': return t(request.session.state === 'running' ? 'webhooks.inbound.processing' : 'webhooks.inbound.stalled');
+    default: return request.status;
+  }
+}
+
+export function deliveryStateLabel(state: DeliveryState, t: WebhookTranslate): string {
+  if (state === 'delivered') return t('webhooks.outbound.delivered');
+  return t(state === 'pending' ? 'webhooks.outbound.pending' : 'webhooks.outbound.failed');
 }
 
 /** attempt_count 는 일시 실패에서만 오른다. 첫 시도 4xx 로 죽은 건은 0이라 싣지 않는다. */
-export function deliveryAttemptText(attemptCount: number): string | null {
-  return attemptCount >= 1 ? `실패 ${attemptCount}번` : null;
+export function deliveryAttemptText(attemptCount: number, t: WebhookTranslate): string | null {
+  return attemptCount >= 1 ? t('webhooks.outbound.attempts', { count: attemptCount }) : null;
 }
 
-const challengeReasons: Record<string, string> = {
-  verification_failed: '주소가 challenge를 돌려주지 않았습니다.',
-  timeout: '주소가 10초 안에 답하지 않았습니다.',
-  dns_failed: '주소의 호스트를 찾지 못했습니다.',
-  network_error: '주소에 연결하지 못했습니다.',
-  unsafe_callback: '공개된 https 주소만 등록할 수 있습니다.',
-  redirect_forbidden: '주소가 다른 곳으로 넘겼습니다. 최종 주소를 넣으세요.',
-  response_too_large: '주소의 응답이 너무 큽니다.',
-};
+const challengeReasons = new Set([
+  'verification_failed', 'timeout', 'dns_failed', 'network_error', 'unsafe_callback', 'redirect_forbidden', 'response_too_large',
+]);
 
-export function challengeReasonText(reason: string | undefined): string {
-  return (reason !== undefined ? challengeReasons[reason] : undefined) ?? '주소를 확인하지 못했습니다.';
+export function challengeReasonText(reason: string | undefined, t: WebhookTranslate): string {
+  return t(`webhooks.outbound.challenge.${reason !== undefined && challengeReasons.has(reason) ? reason : 'unknown'}`);
 }
 
-const lastErrors: Record<string, string> = {
-  timeout: '응답 시간 초과',
-  dns_failed: '주소를 찾지 못함',
-  network_error: '연결 실패',
-  unsafe_callback: '허용되지 않는 주소',
-  redirect_forbidden: '다른 곳으로 넘김',
-  response_too_large: '응답이 너무 큼',
-  target_missing: '대상 세션 없음',
-  access_revoked: '세션 접근 권한 없음',
-  disabled_while_pending: '꺼져 있던 동안 대기',
-};
+const lastErrors = new Set([
+  'timeout', 'dns_failed', 'network_error', 'unsafe_callback', 'redirect_forbidden', 'response_too_large',
+  'target_missing', 'access_revoked', 'disabled_while_pending',
+]);
 
-/** 표에 없는 코드는 코드 낱말을 그대로 보인다. 알 수 없는 실패를 덮으면 단서가 사라진다. */
-export function lastErrorText(code: string): string {
+export function lastErrorText(code: string, t: WebhookTranslate): string {
   const http = /^http_(\d{3})$/.exec(code);
-  if (http !== null) return `응답 ${http[1]}`;
-  return lastErrors[code] ?? code;
+  if (http !== null) return t('webhooks.outbound.response', { status: http[1] });
+  return lastErrors.has(code) ? t(`webhooks.outbound.deliveryError.${code}`) : code;
 }
 
-export function lastReceivedLabel(value: string | null, now = Date.now()): string {
-  if (!value) return '아직 받지 않음';
+export function lastReceivedLabel(value: string | null, locale: string, t: WebhookTranslate, now = Date.now()): string {
+  if (!value) return t('webhooks.inbound.neverReceived');
   const minutes = Math.max(0, Math.floor((now - Date.parse(value)) / 60000));
-  if (minutes < 60) return `마지막 수신 ${minutes}분 전`;
-  if (minutes < 1440) return `마지막 수신 ${Math.floor(minutes / 60)}시간 전`;
-  if (minutes < 2880) return '마지막 수신 어제';
-  if (minutes < 10080) return `마지막 수신 ${Math.floor(minutes / 1440)}일 전`;
-  return `마지막 수신 ${new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric' }).format(new Date(value))}`;
+  if (minutes < 60) return t('webhooks.inbound.receivedMinutes', { count: minutes });
+  if (minutes < 1440) return t('webhooks.inbound.receivedHours', { count: Math.floor(minutes / 60) });
+  if (minutes < 2880) return t('webhooks.inbound.receivedYesterday');
+  if (minutes < 10080) return t('webhooks.inbound.receivedDays', { count: Math.floor(minutes / 1440) });
+  const date = new Intl.DateTimeFormat(locale, { month: 'long', day: 'numeric' }).format(new Date(value));
+  return t('webhooks.inbound.receivedDate', { date });
 }
 
-const eventTypeLabels: Record<OutboundEventType, string> = {
-  'session.reply': '답변',
-  'session.question': '질문',
-  'session.failed': '세션 실패',
-  'session.ended': '세션 끝남',
-};
+const eventTypeKeys = {
+  'session.reply': 'webhooks.outbound.reply',
+  'session.question': 'webhooks.outbound.question',
+  'session.failed': 'webhooks.outbound.sessionFailed',
+  'session.ended': 'webhooks.outbound.sessionEnded',
+} satisfies Record<OutboundEventType, string>;
 
-const eventTypeOrder: OutboundEventType[] = ['session.reply', 'session.question', 'session.failed', 'session.ended'];
-
-export function eventTypeLabel(type: OutboundEventType): string {
-  return eventTypeLabels[type] ?? type;
+export function eventTypeLabel(type: OutboundEventType, t: WebhookTranslate): string {
+  return Object.hasOwn(eventTypeKeys, type) ? t(eventTypeKeys[type]) : type;
 }
 
-export function eventTypesLabel(types: readonly OutboundEventType[]): string {
-  return eventTypeOrder.filter(type => types.includes(type)).map(eventTypeLabel).join(', ');
+export function eventTypesLabel(types: readonly OutboundEventType[], t: WebhookTranslate): string {
+  const order = Object.keys(eventTypeKeys) as OutboundEventType[];
+  return order.filter(type => types.includes(type)).map(type => eventTypeLabel(type, t)).join(', ');
 }
 
-/** 꺼진 구독의 행 메타. 켜져 있으면 null. */
 export function outboundDisabledText(
   subscription: Pick<OutboundSubscription, 'active' | 'disabled_reason'>,
+  t: WebhookTranslate,
 ): { text: string; danger: boolean } | null {
   if (subscription.active) return null;
-  if (subscription.disabled_reason === 'consecutive_failures') return { text: '연속 실패로 꺼짐', danger: true };
-  if (subscription.disabled_reason === 'gone') return { text: '주소가 거절해 꺼짐', danger: true };
-  return { text: '꺼짐', danger: false };
+  if (subscription.disabled_reason === 'consecutive_failures') return { text: t('webhooks.outbound.offForFailures'), danger: true };
+  if (subscription.disabled_reason === 'gone') return { text: t('webhooks.outbound.offForGone'), danger: true };
+  return { text: t('webhooks.outbound.off'), danger: false };
 }
 
-/** 상세 창의 꺼진 사유 문장. user_disabled 와 그 밖은 사유 줄이 없다. */
-export function outboundDisabledDetail(reason: string | null): string | null {
-  if (reason === 'consecutive_failures') return '연속으로 20번 실패해 꺼졌습니다.';
-  if (reason === 'gone') return '주소가 410으로 거절해 꺼졌습니다.';
+export function outboundDisabledDetail(reason: string | null, t: WebhookTranslate): string | null {
+  if (reason === 'consecutive_failures') return t('webhooks.outbound.offForFailuresDetail');
+  if (reason === 'gone') return t('webhooks.outbound.offForGoneDetail');
   return null;
 }
 
 /** 「12월 18일 오후 2:10」 꼴. 올해가 아니면 연도를 붙인다. */
-export function formatStamp(value: string, withTime = false, now = Date.now()): string {
+export function formatStamp(value: string, locale: string, withTime = false, now = Date.now()): string {
   const date = new Date(value);
   const sameYear = date.getFullYear() === new Date(now).getFullYear();
-  return new Intl.DateTimeFormat('ko-KR', {
+  return new Intl.DateTimeFormat(locale, {
     ...(sameYear ? {} : { year: 'numeric' as const }),
-    month: 'long',
+    month: 'short',
     day: 'numeric',
     ...(withTime ? { hour: 'numeric', minute: '2-digit' } : {}),
   }).format(date);
 }
 
 /** 기록 시각. 오늘이면 「오후 3:14」, 아니면 날짜와 시각, 올해가 아니면 연도까지. */
-export function formatClock(value: string, now = Date.now()): string {
+export function formatClock(value: string, locale: string, now = Date.now()): string {
   const date = new Date(value);
   const today = new Date(now);
   const sameDay = date.getFullYear() === today.getFullYear()
     && date.getMonth() === today.getMonth()
     && date.getDate() === today.getDate();
-  return new Intl.DateTimeFormat('ko-KR', {
+  return new Intl.DateTimeFormat(locale, {
     ...(sameDay ? {} : { ...(date.getFullYear() === today.getFullYear() ? {} : { year: 'numeric' as const }), month: 'long', day: 'numeric' }),
     hour: 'numeric',
     minute: '2-digit',
