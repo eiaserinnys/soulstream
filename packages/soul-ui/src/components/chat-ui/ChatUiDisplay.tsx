@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { renderDisplayValue, renderDisplayValueParts, type ChatUiState, type DisplayValue, type Node, type NormalizedChatUiDocumentV1, type Tone } from '@soulstream/chat-ui';
+import { renderDisplayValue, renderDisplayValueParts, type ChatUiState, type Node, type NormalizedChatUiDocumentV1, type Tone } from '@soulstream/chat-ui';
 import { useInternalLinkClick } from '../InternalLinkProvider';
 import { StatusChip } from '../ui/status-chip';
 import { ChatUiLine, ChartHeading } from './ChatUiDiagrams';
