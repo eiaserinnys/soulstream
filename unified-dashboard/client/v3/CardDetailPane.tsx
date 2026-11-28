@@ -181,10 +181,12 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   changeColor:async(latest,color:CardColor)=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,color,version:latest.version+1}}));else await useCardStore.getState().mutate(cardId,"",{color,expectedVersion:latest.version},"PATCH",t);},
  };
  const dockStyle={"--v3-card-dock-height":`${dockHeight}px`} as CSSProperties;
+ const tabLabel=(short:string, full:string)=>short===full?full:
+  <><span aria-hidden="true">{short}</span><span className="sr-only">{full}</span></>;
  const tabs=[
-  ["items",<span className="v3-card-tab-label">{t("cards.checkItems")}{itemSummary.toReviewCount>0?<span className="v3-card-tab-count">{itemSummary.toReviewCount}</span>:null}</span>],
-  ["comments",<span className="v3-card-tab-label">{t("cards.comment")}{unreadComments?<span className="v3-card-tab-dot" aria-label={t("cards.newComment")}/>:null}</span>],
-  ["sessions",<span className="v3-card-tab-label">{t("cards.session")}{detail?.sessions.length?<span className="v3-card-tab-total">{detail.sessions.length}</span>:null}</span>],
+  ["items",<span className="v3-card-tab-label">{tabLabel(t("cards.checkItemsTab"),t("cards.checkItems"))}{itemSummary.toReviewCount>0?<span className="v3-card-tab-count">{itemSummary.toReviewCount}</span>:null}</span>],
+  ["comments",<span className="v3-card-tab-label">{tabLabel(t("cards.commentTab"),t("cards.comment"))}{unreadComments?<span className="v3-card-tab-dot" aria-label={t("cards.newComment")}/>:null}</span>],
+  ["sessions",<span className="v3-card-tab-label">{tabLabel(t("cards.sessionTab"),t("cards.session"))}{detail?.sessions.length?<span className="v3-card-tab-total">{detail.sessions.length}</span>:null}</span>],
   ["notes",<span className="v3-card-tab-label">{t("cards.notes")}{detail?.notes?.length?<span className="v3-card-tab-total">{detail.notes.length}</span>:null}</span>],
  ] as const;
  return <article ref={surface} className="v3-detail-pane v3-card-detail border border-glass-border glass-strong glass-chrome lg-rim" data-liquid-glass-webgl={webglActive?"true":undefined} data-testid="card-detail">

@@ -272,5 +272,9 @@
   "dependencyCancelled": "선행 취소됨 {{name}}",
   "dependencyArchived": "선행 보관됨 {{name}}",
   "moreDependencies": "{{name}} 외 {{count, number}}건",
-  "waitingForDependencies": "선행 대기 {{names}}"
+  "waitingForDependencies": "선행 대기 {{names}}",
+  "noModelShort": "모델 미지정",
+  "checkItemsTab": "확인 항목",
+  "commentTab": "커멘트",
+  "sessionTab": "세션"
 }

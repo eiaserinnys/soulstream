@@ -119,6 +119,38 @@ def select_tab(detail, name):
     expect(tab).to_have_attribute("aria-selected", "true")
 
 
+def detail_geometry(detail):
+    return detail.evaluate("""detail => {
+      const values = detail.querySelector('.v3-task-default-values');
+      const summary = values.parentElement;
+      const layout = getComputedStyle(summary);
+      const available = summary.clientWidth - parseFloat(layout.paddingLeft) - parseFloat(layout.paddingRight)
+        - [...summary.children].filter(child => child !== values).reduce((sum, child) => {
+          const style = getComputedStyle(child);
+          return sum + child.getBoundingClientRect().width + parseFloat(style.marginLeft) + parseFloat(style.marginRight);
+        }, 0) - parseFloat(layout.columnGap) * (summary.children.length - 1);
+      const natural = values.cloneNode(true);
+      Object.assign(natural.style, {position: 'fixed', width: 'max-content', visibility: 'hidden'});
+      summary.append(natural);
+      const metaWidth = natural.getBoundingClientRect().width;
+      natural.remove();
+      const metaLines = [...values.children].map(child => {
+        const label = child.querySelector('[aria-hidden="true"]') ?? child;
+        const range = document.createRange();
+        range.selectNodeContents(label);
+        return new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size;
+      });
+      const tabs = detail.querySelector('.v3-card-detail-tabs');
+      const buttons = [...tabs.querySelectorAll('[role="tab"]')];
+      return {
+        meta: {width: metaWidth, available, lines: metaLines},
+        tabs: {width: buttons.reduce((sum, button) => sum + button.getBoundingClientRect().width, 0)
+          + parseFloat(getComputedStyle(tabs).columnGap) * (buttons.length - 1),
+          available: tabs.clientWidth, rows: new Set(buttons.map(button => button.offsetTop)).size},
+      };
+    }""")
+
+
 def board_and_detail(page, out, locale, width, copy):
     board = page.locator(".v3-card-board")
     expect(board.locator('[data-board-column="review"]')).to_have_attribute("aria-label", copy["status"]["review"])
@@ -148,6 +180,12 @@ def board_and_detail(page, out, locale, width, copy):
         "12:24" if locale == "ko" else "12:24 PM")
     expect(detail.get_by_test_id("card-check-items").get_by_text("Confirm the release window")).to_be_visible()
     detail_sizes = sizes(page)
+    page.evaluate("() => document.fonts.ready")
+    for label in ("checkItems", "comment", "session", "notes"):
+        expect(detail.get_by_role("tab", name=copy[label], exact=False)).to_be_visible()
+    if locale == "en":
+        expect(detail.get_by_text(copy["noModelShort"], exact=True)).to_be_visible()
+    geometry = detail_geometry(detail)
     first = active(page)
     capture(page, out, f"{locale}-detail-{width}.png")
     if width == 1440:
@@ -160,7 +198,7 @@ def board_and_detail(page, out, locale, width, copy):
         capture(page, out, f"{locale}-detail-notes-{width}.png")
     page.keyboard.press("Escape")
     expect(detail).to_have_count(0)
-    return {"width": width, "board": board_sizes, "detail": detail_sizes, "open_focus": first, "close_focus": active(page), **board_focus}
+    return {"width": width, "board": board_sizes, "detail": detail_sizes, "geometry": geometry, "open_focus": first, "close_focus": active(page), **board_focus}
 
 
 def dialog_and_inbox(page, out, locale, copy):
@@ -237,8 +275,10 @@ def error_and_recovery(browser, base, out, copy):
     expect(home.get_by_label(copy["loadingCards"])).to_be_visible()
     capture(page, out, "en-loading-1440.png")
     fake.hold_list = False
-    fake.held.fulfill(status=503, json={"message": "The card service is temporarily unavailable."})
+    fake.held.fulfill(status=503, json={})
     expect(home.get_by_role("alert")).to_contain_text(copy["loadCardsError"])
+    home.get_by_text("Technical details", exact=True).click()
+    expect(home.get_by_text(copy["requestError"].replace("{{status}}", "503"), exact=True)).to_be_visible()
     capture(page, out, "en-error-1440.png")
     home.get_by_role("button", name=copy["reload"]).click()
     expect(home.locator(".v3-card-board")).to_be_visible()
@@ -251,6 +291,8 @@ def error_and_recovery(browser, base, out, copy):
 def operations(out, wide, narrow, recovered):
     en = wide["en"]
     mobile = narrow
+    meta = en["geometry"]["meta"]
+    tabs = mobile["geometry"]["tabs"]
     text = f"""# 웹 카드 한영 전환 조작 결과
 
 실제 대시보드 경로에서 Chromium으로 조작했다. 카드와 인증 응답은 로컬 fixture다.
@@ -269,6 +311,15 @@ def operations(out, wide, narrow, recovered):
 | 카드 상세 | 판에서 카드 누름 | {en['open_focus']} | 미실측 · 상세에 기본 제출 동작이 없다 | 닫힘 | {en['close_focus']} |
 | 새 카드 | 드래프트 열의 New card 누름 | {en['create_first']} | 제목 입력에서 누른 뒤 창 열림 {en['create_enter']} | 닫힘 | {en['create_close']} |
 | 실행 설정 선택기 | Choose execution settings 누름 | {en['picker_first']} | 모델 선택 후 Confirm에서 누름. 닫힘 {en['picker_enter_closed']} | 닫힘 | Esc `{en['picker_escape']}`, Enter `{en['picker_enter']}` |
+
+## 영어 카드 상세 폭
+
+| 화면 | 내용 폭 | 가용 폭 | 줄 수 |
+| --- | ---: | ---: | --- |
+| 1440px 실행 메타 | {meta['width']:.1f}px | {meta['available']:.1f}px | 폴더·노드·에이전트·모델 각각 {', '.join(map(str, meta['lines']))}줄 |
+| 360px 카드 탭 | {tabs['width']:.1f}px | {tabs['available']:.1f}px | {tabs['rows']}줄 |
+
+실행 메타 내용 폭은 줄바꿈 전 너비다. 카드 탭 내용 폭은 단추 및 단추 사이 간격을 합한 값이다.
 
 새 카드 폴더 선택기, 상태·색상 메뉴, 파일 뷰어는 미실측. 표에 있는 화면을 열고 닫는 경로를 측정했다.
 """

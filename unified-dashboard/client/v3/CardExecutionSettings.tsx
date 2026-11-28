@@ -26,7 +26,8 @@ export function CardExecutionSettings({card,folders,onSave,assignment}:{card:Car
  if(card.assigneeSessionId)return null;
  return <><div className="v3-task-default-assignment"><div className="v3-task-default-summary">
   <span className="v3-emoji" aria-hidden="true">👤</span><span className="v3-task-default-values">
-   <span>{folders.find(f=>f.id===card.folderId)?.name??card.folderId}</span><span>{card.nodeId??t("cards.noNode")}</span><span>{card.assigneeAgentId??t("cards.noAgent")}</span><span>{card.modelPreset??t("cards.noModel")}</span>
+   <span>{folders.find(f=>f.id===card.folderId)?.name??card.folderId}</span><span>{card.nodeId??t("cards.noNode")}</span><span>{card.assigneeAgentId??t("cards.noAgent")}</span><span>{card.modelPreset??(t("cards.noModelShort")===t("cards.noModel")?t("cards.noModel"):
+    <><span aria-hidden="true">{t("cards.noModelShort")}</span><span className="sr-only">{t("cards.noModel")}</span></>)}</span>
   </span><DashboardIconCap className="v3-task-default-edit" label={t("cards.editExecutionSettings")} aria-expanded={editing} onClick={()=>setEditing(true)}><Pencil className="h-4 w-4"/></DashboardIconCap>
  </div></div>{editing?<CardExecutionSettingsDialog card={card} folders={folders} onClose={()=>setEditing(false)} onSave={onSave} assignment={assignment}/>:null}</>;
 }

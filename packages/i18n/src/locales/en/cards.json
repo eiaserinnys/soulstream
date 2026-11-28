@@ -272,5 +272,9 @@
   "dependencyCancelled": "Prerequisite cancelled: {{name}}",
   "dependencyArchived": "Prerequisite archived: {{name}}",
   "moreDependencies": "{{name}} and {{count, number}} more",
-  "waitingForDependencies": "Waiting for {{names}}"
+  "waitingForDependencies": "Waiting for {{names}}",
+  "noModelShort": "No model",
+  "checkItemsTab": "Items",
+  "commentTab": "Feed",
+  "sessionTab": "Runs"
 }
