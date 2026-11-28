@@ -95,7 +95,7 @@
     "available": "{{value}}/{{value1}} available",
     "removed": "Account deleted",
     "deferredRemoval": "Deletes after active sessions end",
-    "addAccount": "Add account",
+    "addAccount": "Add",
     "collapseAccounts": "Hide accounts",
     "expandAccounts": "Show accounts",
     "usage": "Claude usage",
@@ -113,9 +113,10 @@
     "centralPool": "Central pool"
   },
   "quota": {
-    "unknownReset": "Reset time unknown",
+    "unknownReset": "at an unknown time",
     "modelReset": "Fable resets {{value}}",
     "resets": "Resets {{value}}",
+    "resetAt": "At {{time}}",
     "short": "5 hr",
     "weekly": "7 days",
     "monthly": "Monthly",
@@ -147,7 +148,7 @@
     "selected": "Selected model",
     "loadError": "Could not load models",
     "unavailable": "This model is unavailable on this node. Choose another model.",
-    "none": "No models available. Check this node’s sign-in under Coding agents in Settings."
+    "none": "No models available. Check this node under Coding agent logins in Settings."
   },
   "nodes": {
     "empty": "No connected nodes",

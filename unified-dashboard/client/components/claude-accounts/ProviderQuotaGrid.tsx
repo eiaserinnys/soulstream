@@ -6,7 +6,11 @@ export type QuotaWindow = Omit<ProviderQuotaSlot, "label">;
 const SEVEN_DAYS_MS = 7 * 86_400_000;
 
 function clockText(date: Date, locale: string | undefined): string {
-  return new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", ...(locale === "ko" ? { hour12: false } : {}) }).format(date);
+  return new Intl.DateTimeFormat(locale, {
+    hour: locale === "ko" ? "2-digit" : "numeric",
+    minute: "2-digit",
+    ...(locale === "ko" ? { hour12: false } : {}),
+  }).format(date);
 }
 
 export function accountClockLabel(value: string | null, locale: string | undefined): string | null {
@@ -30,7 +34,7 @@ export function formatQuotaResetLabel(
   const isMonthlyOrLong = kind === "monthly" || diffMs >= SEVEN_DAYS_MS;
   const dateLabel = new Intl.DateTimeFormat(locale, { month: "numeric", day: "numeric" }).format(reset);
   if (roundedUsed >= 100) {
-    return t("accounts.quota.resets", { value: isMonthlyOrLong ? dateLabel : clockText(reset, locale) });
+    return t("accounts.quota.resetAt", { time: isMonthlyOrLong ? dateLabel : clockText(reset, locale) });
   }
   const minutes = Math.max(0, Math.ceil(diffMs / 60_000));
   const number = new Intl.NumberFormat(locale);

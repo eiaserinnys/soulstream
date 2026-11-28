@@ -116,6 +116,7 @@
     "unknownReset": "해제 시각 미정",
     "modelReset": "Fable {{value}} 해제",
     "resets": "{{value}} 해제",
+    "resetAt": "{{time}} 해제",
     "short": "5시간",
     "weekly": "7일",
     "monthly": "월간",
