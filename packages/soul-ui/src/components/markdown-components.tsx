@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Children, cloneElement, createContext, isValidElement, useContext, useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import type { Components } from "react-markdown";
@@ -244,6 +245,7 @@ function CopyableCodeBlock({
   compact: boolean;
   codeBlockLayout: "bounded" | "document";
 }) {
+  const { t } = useTranslation();
   const contentRef = useRef<HTMLPreElement>(null);
   const resetTimerRef = useRef<number | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle");
@@ -267,9 +269,9 @@ function CopyableCodeBlock({
   };
 
   const feedback = copyState === "success"
-    ? "코드를 복사했습니다"
+    ? t("ui.markdown.codeCopied")
     : copyState === "error"
-      ? "코드를 복사하지 못했습니다"
+      ? t("ui.markdown.codeCopyFailed")
       : "";
   const copied = copyState === "success";
   const handleCopy = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -280,7 +282,7 @@ function CopyableCodeBlock({
   const copyButton = (
     <>
       <DashboardIconCap
-        label="코드 복사"
+        label={t("ui.markdown.copyCode")}
         size="small"
         appearance="bare"
         data-slot="codeblock-copy-button"
@@ -358,6 +360,7 @@ function CopyableBlockquote({
   children: React.ReactNode;
   compact: boolean;
 }) {
+  const { t } = useTranslation();
   const depth = useContext(BlockquoteDepthContext);
   const contentRef = useRef<HTMLQuoteElement>(null);
   const resetTimerRef = useRef<number | null>(null);
@@ -394,9 +397,9 @@ function CopyableBlockquote({
   };
 
   const feedback = copyState === "success"
-    ? "인용문을 복사했습니다"
+    ? t("ui.markdown.quoteCopied")
     : copyState === "error"
-      ? "인용문을 복사하지 못했습니다"
+      ? t("ui.markdown.quoteCopyFailed")
       : "";
 
   return (
@@ -412,7 +415,7 @@ function CopyableBlockquote({
         </blockquote>
         <button
           type="button"
-          aria-label="인용문 복사"
+          aria-label={t("ui.markdown.copyQuote")}
           data-copy-state={copyState}
           onClick={() => void copyQuote()}
           className="absolute right-1 top-1 inline-flex size-7 items-center justify-center rounded-full text-muted-foreground/75 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"

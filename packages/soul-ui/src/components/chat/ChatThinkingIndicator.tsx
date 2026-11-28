@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { memo, useRef } from "react";
 import { ThinkingOrb } from "thinking-orbs";
 import { useChatStore } from "../../stores/chat-store-scope";
@@ -5,6 +6,7 @@ import { ProfileAvatar } from "../ProfileAvatar";
 import { useGlassSurface } from "../LiquidGlassProvider";
 
 export const ChatThinkingIndicator = memo(function ChatThinkingIndicator({ presentation = "default" }: { presentation?: "default" | "manuscript" }) {
+  const { t } = useTranslation();
   const bubbleRef = useRef<HTMLDivElement>(null);
   const webglActive = useGlassSurface(bubbleRef, { enabled: presentation !== "manuscript" });
   const activeSession = useChatStore((state) => state.activeSessionSummary);
@@ -16,10 +18,10 @@ export const ChatThinkingIndicator = memo(function ChatThinkingIndicator({ prese
           state="working"
           size={20}
           theme="auto"
-          aria-label="생각 중입니다"
+          aria-label={t("ui.chat.thinking")}
           data-thinking-orb-state="working"
         />
-        <span aria-hidden="true" className="text-xs leading-none text-muted-foreground">생각 중입니다…</span>
+        <span aria-hidden="true" className="text-xs leading-none text-muted-foreground">{t("ui.chat.thinkingProgress")}</span>
       </div>
     );
   }
@@ -45,14 +47,14 @@ export const ChatThinkingIndicator = memo(function ChatThinkingIndicator({ prese
           state="working"
           size={20}
           theme="auto"
-          aria-label="생각 중입니다"
+          aria-label={t("ui.chat.thinking")}
           data-thinking-orb-state="working"
         />
         <span
           aria-hidden="true"
           className="text-xs leading-none text-muted-foreground"
         >
-          생각 중입니다…
+          {t("ui.chat.thinkingProgress")}
         </span>
       </div>
     </div>

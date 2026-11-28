@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { memo, useId, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Clock, Wrench, X } from "lucide-react";
 import type { ChatMessage } from "../../lib/flatten-tree";
@@ -163,6 +164,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const activityBodyId = useId();
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = controlledExpanded ?? internalExpanded;
@@ -177,7 +179,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
   const allDone = messages.length > 0 && messages.every(
     (m) => m.toolResult !== undefined || m.toolDurationMs !== undefined,
   );
-  const statusLabel = hasError ? "실패" : allDone ? "완료" : "실행 중";
+  const statusLabel = hasError ? t("ui.chat.failed") : allDone ? t("ui.chat.done") : t("ui.chat.running");
   const statusClassName = hasError
     ? "chat-tone-danger-text"
     : allDone
@@ -197,9 +199,9 @@ export const ToolCallGroup = memo(function ToolCallGroup({
             title={
               <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
                 <Wrench className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 truncate font-medium">도구 {toolMessages.length}회</span>
-                {hasRunningTool && <span className="shrink-0">실행 중</span>}
-                {failureCount > 0 && <span className="shrink-0 chat-tone-danger-text">실패 {failureCount}</span>}
+                <span className="min-w-0 truncate font-medium">{t("ui.chat.toolCount", { total: toolMessages.length })}</span>
+                {hasRunningTool && <span className="shrink-0">{t("ui.chat.running")}</span>}
+                {failureCount > 0 && <span className="shrink-0 chat-tone-danger-text">{t("ui.chat.toolFailureCount", { total: failureCount })}</span>}
               </span>
             }
             align="end"
@@ -236,7 +238,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
             : <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />}
           <Wrench className="size-3.5 shrink-0" aria-hidden="true" />
           <span className="truncate font-medium">
-            도구 호출 {messages.length} · <span className={statusClassName}>{statusLabel}</span>
+            {t("ui.chat.toolCalls")} {messages.length} · <span className={statusClassName}>{statusLabel}</span>
           </span>
         </button>
         {expanded && (

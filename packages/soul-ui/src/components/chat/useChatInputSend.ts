@@ -4,6 +4,7 @@
  * 일반 세션 메시지는 dashboard store의 세션별 pending 칸으로 상태를 관리한다.
  */
 
+import { useTranslation } from "react-i18next";
 import { useCallback, useState } from "react";
 import type { PendingChatSend, PendingChatSendAttachment } from "../../stores/dashboard-store-types";
 import { appendAttachmentPathNotes } from "@soulstream/wire-schema/attachment-path-notes";
@@ -47,16 +48,15 @@ export interface UseChatInputSendResult {
   ) => Promise<void>;
 }
 
-const UNKNOWN_DELIVERY_REASON = "전달을 확인하지 못했습니다";
-
-function getFailureReason(error: unknown): string {
+function getFailureReason(error: unknown, t: ReturnType<typeof useTranslation>["t"]): string {
   if (error instanceof SubmitInterventionHttpError) {
-    return `전송하지 못했습니다: ${error.message}`;
+    return t("ui.chat.sendFailed", { detail: error.detail ?? t("ui.chat.unknownError") });
   }
-  return UNKNOWN_DELIVERY_REASON;
+  return t("ui.chat.deliveryUnconfirmed");
 }
 
 export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendResult {
+  const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
 
   const activePending = args.activeSessionKey
@@ -83,7 +83,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
           args.setPendingChatSend(sessionId, {
             ...current,
             status: "failed",
-            reason: UNKNOWN_DELIVERY_REASON,
+            reason: t("ui.chat.deliveryUnconfirmed"),
           });
         }
         args.onSendFailure?.();
@@ -102,12 +102,12 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
         args.setPendingChatSend(sessionId, {
           ...current,
           status: "failed",
-          reason: getFailureReason(requestError),
+          reason: getFailureReason(requestError, t),
         });
       }
       args.onSendFailure?.();
     }
-  }, [args]);
+  }, [args, t]);
 
   const send = useCallback(
     async (rawText: string) => {
@@ -117,7 +117,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
 
       const trimmed = rawText.trim();
       if (trimmed.length > MAX_MESSAGE_LENGTH) {
-        setError(`메시지가 너무 깁니다 (${trimmed.length}/${MAX_MESSAGE_LENGTH})`);
+        setError(t("ui.chat.messageTooLong", { length: trimmed.length, limit: MAX_MESSAGE_LENGTH }));
         return;
       }
 
@@ -140,7 +140,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
       args.onBeforeSend?.(messageText);
       await submitPending(sessionId, pending);
     },
-    [args, submitPending],
+    [args, submitPending, t],
   );
 
   const retry = useCallback(async (sessionId: string, pending: PendingChatSend) => {
@@ -154,7 +154,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
     args.setPendingChatSend(sessionId, retrying);
     args.onRetry?.(sessionId, retrying);
     await submitPending(sessionId, retrying);
-  }, [args, submitPending]);
+  }, [args, submitPending, t]);
 
   /**
    * 전달 장부에서 실패로 닫힌 말풍선의 다시 보내기 (카드 #1524).
@@ -172,7 +172,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
     const attachmentPaths = [...message.attachmentPaths];
     if (!text && attachmentPaths.length === 0) return;
     if (text.length > MAX_MESSAGE_LENGTH) {
-      setError(`메시지가 너무 깁니다 (${text.length}/${MAX_MESSAGE_LENGTH})`);
+      setError(t("ui.chat.messageTooLong", { length: text.length, limit: MAX_MESSAGE_LENGTH }));
       return;
     }
     const pending: PendingChatSend = {
@@ -188,7 +188,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
     setError(null);
     args.setPendingChatSend(sessionId, pending);
     await submitPending(sessionId, pending);
-  }, [args, submitPending]);
+  }, [args, submitPending, t]);
 
   const reset = useCallback(() => {
     setError(null);

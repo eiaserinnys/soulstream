@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/cn";
 import { memo, type ReactNode, type HTMLAttributes } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
@@ -18,6 +19,7 @@ import {
 } from "./userAvatarSelectors";
 
 export const UserMessage = memo(function UserMessage({ msg, llmContext, header, children, attachments, representedAttachments, readContext, portraitUrl, bubbleProps, presentation = "default", deliveryFailure }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; attachments?: ReactNode; representedAttachments?: readonly ChatAttachmentItem[]; readContext?: AttachmentReadContext; portraitUrl?: string | null; bubbleProps?: HTMLAttributes<HTMLDivElement>; presentation?: "default" | "manuscript"; deliveryFailure?: DeliveryFailureActions }) {
+  const { t } = useTranslation();
   // caller_info v1 (atom ed3a216d): 세션-수준 발신자 신원 avatar_url —
   // 메시지 단위 caller_info(msg.callerInfo) 부재 시 fallback. 4 source(browser/slack/agent/soul-app) 동일 entry.
   const callerAvatarUrl = useChatStore((s) =>
@@ -26,12 +28,12 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
   const sessionNodeId = useChatStore((s) => s.activeSessionSummary?.nodeId);
 
   const isLlm = llmContext?.isLlm ?? false;
-  const external = externalSenderDisplay(msg.callerInfo);
+  const external = externalSenderDisplay(msg.callerInfo, t);
   const isAgent = !!msg.agentInfo && !external;
 
   // 에이전트 발신: agentInfo에서 이름 추출
   const agentDisplayName = isAgent
-    ? msg.agentInfo!.agent_name ?? msg.agentInfo!.agent_id ?? "에이전트"
+    ? msg.agentInfo!.agent_name ?? msg.agentInfo!.agent_id ?? t("ui.chat.agent")
     : null;
   const agentDisplayId = isAgent
     ? `${agentDisplayName}@${msg.agentInfo!.agent_node}`
@@ -44,12 +46,12 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
   // user 분기 displayName: 메시지 단위 caller_info.display_name 우선 (멀티-소스 세션 정확도 향상).
   const msgCallerDisplayName = msg.callerInfo?.display_name;
   const displayName = isAgent
-    ? agentDisplayName ?? "에이전트"
+    ? agentDisplayName ?? t("ui.chat.agent")
     : isLlm
-      ? "사용자"
+      ? t("ui.chat.user")
       : (typeof msgCallerDisplayName === "string" && msgCallerDisplayName.length > 0)
         ? msgCallerDisplayName
-        : "사용자";
+        : t("ui.chat.user");
   const displayId = isAgent ? agentDisplayId : null;
   // user 발신 portrait: 메시지 caller_info → 세션 caller_info.
   // 첫 history fetch 시점에도 메시지 단위 caller_info가 함께 도착하므로

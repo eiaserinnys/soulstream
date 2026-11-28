@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { memo, useRef, useState } from "react";
 import type { InputRequestQuestion } from "@shared/types";
 import type { ChatMessage } from "../../lib/flatten-tree";
@@ -21,6 +22,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
   sessionId: string;
   presentation?: "default" | "manuscript";
 }) {
+  const { t } = useTranslation();
   const { remainingSec, isExpired } = useInputRequestTimer(msg.receivedAt, msg.timeoutSec ?? 300);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [customAnswer, setCustomAnswer] = useState("");
@@ -65,16 +67,16 @@ export const ChatInputRequest = memo(function ChatInputRequest({
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          질문
+          {t("ui.chat.question")}
         </div>
         {question.header && (
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{question.header}</div>
         )}
         <div className="text-sm font-semibold leading-[1.5] text-foreground">{question.question}</div>
         {isTimedOut ? (
-          <div className="text-xs text-muted-foreground">⏱️ 시간 초과</div>
+          <div className="text-xs text-muted-foreground">{t("ui.chat.timedOut")}</div>
         ) : isDone ? (
-          <div className="text-xs chat-tone-success-text">✅ {selectedAnswer || '응답 완료'}</div>
+          <div className="text-xs chat-tone-success-text">✅ {selectedAnswer || t("ui.chat.answered")}</div>
         ) : (
           <>
             <div className="flex flex-col gap-2">

@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
 import {
   useCallback,
   useEffect,
@@ -91,6 +92,7 @@ export function useAttachmentViewerImage(input: {
   mimeType?: string | null;
   label: string;
 }): AttachmentImageViewer {
+  const { t } = useTranslation();
   const { popupRef, mediaRef, src, mimeType, label } = input;
   const [state, setState] = useState<AttachmentImageState>(src ? "loading" : "ready");
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
@@ -260,8 +262,8 @@ export function useAttachmentViewerImage(input: {
     "--attachment-natural-height": `${natural.height}px`,
   } as CSSProperties;
   const toggleLabel = fit === "read"
-    ? "전체 보기"
-    : reading?.axis === "x" ? "높이에 맞춤" : "폭에 맞춤";
+    ? t("ui.attachment.fitImage")
+    : reading?.axis === "x" ? t("ui.attachment.fitHeight") : t("ui.attachment.fitWidth");
   const toggleIcon = fit === "read"
     ? "shrink"
     : reading?.axis === "x" ? "vertical" : "horizontal";
@@ -336,14 +338,15 @@ export function AttachmentViewerImageStatus({
   retryable: boolean;
   onRetry(): void;
 }) {
+  const { t } = useTranslation();
   if (state === "loading") {
-    return <div className="attachment-viewer-state chat-image-status" role="status">이미지 불러오는 중…</div>;
+    return <div className="attachment-viewer-state chat-image-status" role="status">{t("ui.attachment.imageLoading")}</div>;
   }
   if (state !== "failed") return null;
   return (
     <div className="attachment-viewer-state chat-image-status" role="status">
       {message ? <span data-slot="dialog-error-message">{message}</span> : null}
-      {retryable && <Button variant="outline" size="sm" onClick={onRetry}>다시 시도</Button>}
+      {retryable && <Button variant="outline" size="sm" onClick={onRetry}>{t("ui.common.retry")}</Button>}
     </div>
   );
 }

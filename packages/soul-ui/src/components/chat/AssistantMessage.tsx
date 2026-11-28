@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/cn";
 import { memo, useEffect, useRef, type ReactNode, type HTMLAttributes } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
@@ -47,6 +48,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   narration?: boolean;
   contentLayout?: "text" | "structured";
 }) {
+  const { t, i18n } = useTranslation();
   const bubbleRef = useRef<HTMLDivElement>(null);
   const manuscript = presentation === "manuscript";
 
@@ -66,8 +68,8 @@ export const AssistantMessage = memo(function AssistantMessage({
   // LLM 세션: assistant_message에 model 정보가 있으면 표시, 없으면 llmContext에서 가져옴
   const modelLabel = msg.model ?? llmContext?.llmModel;
   const displayName = isLlm
-    ? modelLabel ? `어시스턴트 (${modelLabel})` : "어시스턴트"
-    : agentName ?? "어시스턴트";
+    ? modelLabel ? t("ui.chat.assistantModel", { model: modelLabel }) : t("ui.chat.assistant")
+    : agentName ?? t("ui.chat.assistant");
   const displayId = isLlm ? null : activeSession?.agentId ?? null;
   const hasPortrait = isLlm ? false : !!agentPortraitUrl;
   const bubbleClassName = manuscript
@@ -79,7 +81,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 
   // 토큰 사용량 (assistant_message 노드에 usage가 있을 때 인라인 표시)
   const tokenInfo = msg.usage
-    ? `토큰 ${(msg.usage.input_tokens + msg.usage.output_tokens).toLocaleString()}`
+    ? t("ui.chat.tokens", { total: (msg.usage.input_tokens + msg.usage.output_tokens).toLocaleString(i18n.resolvedLanguage) })
     : null;
   const displayContent = stripEventTruncationSuffix(msg.content, msg.truncation);
 

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { FormEventHandler } from "react";
 
 import { cn } from "../lib/cn";
@@ -20,13 +21,14 @@ export function InputRequestAnswerForm({
   submitDisabled,
   inputTextClassName,
 }: InputRequestAnswerFormProps) {
+  const { t } = useTranslation();
   return (
     <form className="flex gap-2" onSubmit={onSubmit}>
       <input
         value={value}
         onChange={(event) => onValueChange(event.target.value)}
         disabled={inputDisabled}
-        placeholder="직접 입력"
+        placeholder={t("ui.attention.customAnswer")}
         className={cn(
           "min-w-0 flex-1 rounded-floor border border-[var(--lg-line)] bg-muted/40 px-3 py-2 outline-none transition-colors focus:border-accent-blue/55",
           inputTextClassName,
@@ -38,7 +40,7 @@ export function InputRequestAnswerForm({
         disabled={submitDisabled}
         className="h-auto self-stretch rounded-full px-3 text-xs font-semibold sm:h-auto"
       >
-        전송
+        {t("ui.attention.sendAnswer")}
       </Button>
     </form>
   );

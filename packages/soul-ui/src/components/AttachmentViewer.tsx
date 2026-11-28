@@ -1,5 +1,7 @@
 "use client";
 
+import type { dictionaries } from "@soulstream/i18n";
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { Button } from "./ui/button";
@@ -41,40 +43,42 @@ function withEscapeRelay(html: string): string {
   return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${ESCAPE_RELAY}</body>`) : `${html}${ESCAPE_RELAY}`;
 }
 
+type AttachmentMessageKey = `ui.attachment.${keyof typeof dictionaries.ko.ui.attachment}`;
+
 type TextState =
   | { key: string; state: "loading" }
   | { key: string; state: "ready"; result: AttachmentTextPreview }
-  | { key: string; state: "error"; message: string; retryable: boolean };
+  | { key: string; state: "error"; messageKey: AttachmentMessageKey; retryable: boolean };
 
 function canRetryError(error: unknown): boolean {
   return error instanceof TypeError || (error instanceof AttachmentTextPreviewError
     && error.status !== null && error.status >= 500);
 }
 
-function textErrorMessage(error: unknown): string {
+function textErrorKey(error: unknown): AttachmentMessageKey {
   if (error instanceof AttachmentTextPreviewError) {
-    if (error.code === "TEXT_PREVIEW_UNSUPPORTED_ENCODING") return "이 문자 인코딩은 미리볼 수 없습니다.";
-    if (error.status === 401 || error.status === 403) return "첨부를 읽을 수 없습니다.";
-    if (error.status === 404) return "첨부를 찾을 수 없습니다.";
-    if (error.status !== null && error.status >= 500) return "첨부를 불러오지 못했습니다.";
+    if (error.code === "TEXT_PREVIEW_UNSUPPORTED_ENCODING") return "ui.attachment.unsupportedEncoding";
+    if (error.status === 401 || error.status === 403) return "ui.attachment.unreadable";
+    if (error.status === 404) return "ui.attachment.notFound";
+    if (error.status !== null && error.status >= 500) return "ui.attachment.fetchFailed";
   }
-  return "미리보기를 불러오지 못했습니다.";
+  return "ui.attachment.previewFailed";
 }
 
-function mediaError(status: number): { message: string; retryable: boolean } {
+function mediaError(status: number): { messageKey: AttachmentMessageKey; retryable: boolean } {
   if (status === 401 || status === 403) {
-    return { message: "첨부를 읽을 수 없습니다.", retryable: false };
+    return { messageKey: "ui.attachment.unreadable", retryable: false };
   }
-  if (status === 404) return { message: "첨부를 찾을 수 없습니다.", retryable: false };
-  if (status >= 500) return { message: "첨부를 불러오지 못했습니다.", retryable: true };
-  return { message: "미리보기를 불러오지 못했습니다.", retryable: false };
+  if (status === 404) return { messageKey: "ui.attachment.notFound", retryable: false };
+  if (status >= 500) return { messageKey: "ui.attachment.fetchFailed", retryable: true };
+  return { messageKey: "ui.attachment.previewFailed", retryable: false };
 }
 
-function saveErrorMessage(error: unknown): string {
+function saveErrorKey(error: unknown): AttachmentMessageKey {
   if (error instanceof AttachmentDownloadError && (error.status === 401 || error.status === 403)) {
-    return "첨부를 저장할 수 없습니다.";
+    return "ui.attachment.cannotSave";
   }
-  return "원본 파일을 저장할 수 없습니다.";
+  return "ui.attachment.cannotSaveOriginal";
 }
 
 export function AttachmentViewer({
@@ -92,6 +96,7 @@ export function AttachmentViewer({
   returnFocus?: HTMLElement | null;
   panelContent?: ReactNode;
 }): ReactNode {
+  const { t } = useTranslation();
   const item = index === null ? undefined : items[index];
   const localFile = item?.source.kind === "local" ? item.source.file : undefined;
   const mediaFormat = item ? attachmentMediaFormat(item) : null;
@@ -103,12 +108,12 @@ export function AttachmentViewer({
   const [retryCount, setRetryCount] = useState(0);
   const [textState, setTextState] = useState<TextState | null>(null);
   const [mediaFailureKey, setMediaFailureKey] = useState<string | null>(null);
-  const [mediaFailureMessage, setMediaFailureMessage] = useState<string | null>(null);
+  const [mediaErrorMessageKey, setMediaErrorMessageKey] = useState<AttachmentMessageKey | null>(null);
   const [mediaRetryKey, setMediaRetryKey] = useState<string | null>(null);
   const [mediaAttempt, setMediaAttempt] = useState(0);
   const [localPreview, setLocalPreview] = useState<{ key: string; url: string } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saveFailure, setSaveFailure] = useState<{ key: string; message: string } | null>(null);
+  const [saveFailure, setSaveFailure] = useState<{ key: string; messageKey: AttachmentMessageKey } | null>(null);
 
   useEffect(() => {
     if (!item || item.previewKind !== "text") return;
@@ -127,12 +132,12 @@ export function AttachmentViewer({
       if (!controller.signal.aborted) setTextState({ key: previewKey, state: "ready", result });
     }).catch(error => {
       if (!controller.signal.aborted) {
-        const message = item.availability === "missing"
-          ? "첨부를 찾을 수 없습니다."
+        const messageKey = item.availability === "missing"
+          ? "ui.attachment.notFound"
           : item.availability === "unavailable"
-            ? "첨부를 사용할 수 없습니다."
-            : textErrorMessage(error);
-        setTextState({ key: previewKey, state: "error", message, retryable: canRetryError(error) });
+            ? "ui.attachment.unavailable"
+            : textErrorKey(error);
+        setTextState({ key: previewKey, state: "error", messageKey, retryable: canRetryError(error) });
       }
     });
 
@@ -165,7 +170,7 @@ export function AttachmentViewer({
     mediaRef: imageMediaRef,
     src: item?.previewKind === "image" ? imageSource : undefined,
     mimeType: item?.mimeType,
-    label: item?.name ?? "첨부 이미지",
+    label: item?.name ?? t("ui.attachment.image"),
   });
 
   // Esc inside the sandboxed HTML preview cannot reach the dialog, so the relay
@@ -189,14 +194,14 @@ export function AttachmentViewer({
       .then(async response => {
         if (!controller.signal.aborted) {
           const failure = mediaError(response.status);
-          setMediaFailureMessage(failure.message);
+          setMediaErrorMessageKey(failure.messageKey);
           setMediaRetryKey(failure.retryable ? previewKey : null);
         }
         await response.body?.cancel();
       }).catch(error => {
         if (!controller.signal.aborted) {
           const retryable = error instanceof TypeError;
-          setMediaFailureMessage(retryable ? "첨부를 불러오지 못했습니다." : "미리보기를 불러오지 못했습니다.");
+          setMediaErrorMessageKey(retryable ? "ui.attachment.fetchFailed" : "ui.attachment.previewFailed");
           setMediaRetryKey(retryable ? previewKey : null);
         }
       });
@@ -205,7 +210,7 @@ export function AttachmentViewer({
 
   useEffect(() => {
     setMediaFailureKey(null);
-    setMediaFailureMessage(null);
+    setMediaErrorMessageKey(null);
     setMediaRetryKey(null);
     setMediaAttempt(0);
     setSaveFailure(null);
@@ -220,11 +225,11 @@ export function AttachmentViewer({
   const canSave = canPreview && (localFile !== undefined || item.originalUrl !== null);
   const multiItem = items.length > 1;
   const imageGallery = items.every(attachment => attachment.source.kind === "markdown-image");
-  const saveMessage = saveFailure?.key === previewKey ? saveFailure.message : null;
+  const saveMessage = saveFailure?.key === previewKey ? t(saveFailure.messageKey) : null;
   const textFormat = item.previewKind === "text" ? attachmentTextFormat(item) : null;
   const mediaFailure = mediaFailureKey === previewKey
     ? {
-      message: mediaFailureMessage ?? "미리보기를 불러오지 못했습니다.",
+      message: t(mediaErrorMessageKey ?? "ui.attachment.previewFailed"),
       retryable: mediaRetryKey === previewKey,
     }
     : null;
@@ -303,7 +308,7 @@ export function AttachmentViewer({
       else if (item.originalUrl && item.name) await downloadAttachmentOriginal({ url: item.originalUrl, filename: item.name });
       else throw new Error("Original attachment is unavailable");
     } catch (error) {
-      setSaveFailure({ key: previewKey, message: saveErrorMessage(error) });
+      setSaveFailure({ key: previewKey, messageKey: saveErrorKey(error) });
     } finally {
       setSaving(false);
     }
@@ -323,7 +328,7 @@ export function AttachmentViewer({
         onKeyDown={handleKeyDown}
       >
         <DialogHeader className="chat-image-viewer-header">
-          <DialogTitle data-slot="attachment-name" className="chat-image-viewer-title">{item.name ?? "첨부 파일"}</DialogTitle>
+          <DialogTitle data-slot="attachment-name" className="chat-image-viewer-title">{item.name ?? t("ui.attachment.file")}</DialogTitle>
           {metadata && <p className="chat-image-viewer-metadata">{metadata}</p>}
         </DialogHeader>
         <DialogPanel
@@ -333,13 +338,13 @@ export function AttachmentViewer({
           className="chat-image-viewer-panel focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
         >
           {panelContent ?? (item.availability === "missing" ? (
-            <div className="chat-attachment-state chat-image-status" role="status" data-slot="dialog-error-message">첨부를 찾을 수 없습니다.</div>
+            <div className="chat-attachment-state chat-image-status" role="status" data-slot="dialog-error-message">{t("ui.attachment.notFound")}</div>
           ) : item.availability === "unavailable" ? (
-            <div className="chat-attachment-state chat-image-status" role="status" data-slot="dialog-error-message">첨부를 사용할 수 없습니다.</div>
+            <div className="chat-attachment-state chat-image-status" role="status" data-slot="dialog-error-message">{t("ui.attachment.unavailable")}</div>
           ) : item.previewKind === "image" ? (
             !imageSource ? (
               <div className="chat-attachment-state chat-image-status" role="status">
-                <span data-slot="dialog-error-message">이미지 미리보기를 사용할 수 없습니다.</span>
+                <span data-slot="dialog-error-message">{t("ui.attachment.imagePreviewUnavailable")}</span>
               </div>
             ) : (
               <div className="attachment-viewer-image-body" data-image-state={imageViewer.state}>
@@ -354,7 +359,7 @@ export function AttachmentViewer({
                       <MarkdownImage
                         key={`${previewKey}:${imageViewer.attempt}`}
                         src={imageSource}
-                        alt={item.source.kind === "markdown-image" ? item.source.alt : item.name ?? "첨부 이미지"}
+                        alt={item.source.kind === "markdown-image" ? item.source.alt : item.name ?? t("ui.attachment.image")}
                         mimeType={item.mimeType}
                         variant="chatRefined"
                         loading="eager"
@@ -369,7 +374,7 @@ export function AttachmentViewer({
                     <MarkdownImage
                       key={`${previewKey}:${imageViewer.attempt}`}
                       src={imageSource}
-                      alt={item.source.kind === "markdown-image" ? item.source.alt : item.name ?? "첨부 이미지"}
+                      alt={item.source.kind === "markdown-image" ? item.source.alt : item.name ?? t("ui.attachment.image")}
                       mimeType={item.mimeType}
                       variant="chatRefined"
                       loading="eager"
@@ -381,7 +386,7 @@ export function AttachmentViewer({
                 ))}
                 <AttachmentViewerImageStatus
                   state={imageViewer.state}
-                  message="이미지를 불러오지 못했습니다."
+                  message={t("ui.attachment.imageFailed")}
                   retryable={imageViewer.retryable}
                   onRetry={imageViewer.retry}
                 />
@@ -389,14 +394,14 @@ export function AttachmentViewer({
             )
           ) : item.previewKind === "text" ? (
             !canPreview ? null : text?.state === "loading" || text === null ? (
-              <div className="chat-attachment-state chat-image-status" role="status">미리보기를 불러오는 중…</div>
+              <div className="chat-attachment-state chat-image-status" role="status">{t("ui.attachment.previewLoading")}</div>
             ) : text.state === "error" ? (
               <div className="chat-attachment-state chat-image-status" role="status">
-                <span data-slot="dialog-error-message">{text.message}</span>
-                {text.retryable && <Button variant="outline" size="sm" onClick={() => setRetryCount(value => value + 1)}>다시 시도</Button>}
+                <span data-slot="dialog-error-message">{t(text.messageKey)}</span>
+                {text.retryable && <Button variant="outline" size="sm" onClick={() => setRetryCount(value => value + 1)}>{t("ui.common.retry")}</Button>}
               </div>
             ) : text.result.text.length === 0 ? (
-              <div className="chat-attachment-state chat-image-status" role="status">빈 파일</div>
+              <div className="chat-attachment-state chat-image-status" role="status">{t("ui.attachment.emptyFile")}</div>
             ) : (
               <>
                 {textFormat === "markdown" ? (
@@ -406,30 +411,30 @@ export function AttachmentViewer({
                 ) : textFormat === "html" ? (
                   <CustomViewIframe
                     html={withEscapeRelay(text.result.text)}
-                    title={item.name ?? "HTML 첨부"}
+                    title={item.name ?? t("ui.attachment.html")}
                     className="chat-attachment-html-frame"
                   />
                 ) : (
                   <pre className="whitespace-pre-wrap break-words" data-slot="attachment-preview-body">{text.result.text}</pre>
                 )}
-                {text.result.truncated && <p className="chat-image-status" role="status">파일이 커서 앞부분만 표시합니다.</p>}
+                {text.result.truncated && <p className="chat-image-status" role="status">{t("ui.attachment.partialPreview")}</p>}
               </>
             )
           ) : mediaFormat !== null ? (
             emptyMedia ? (
-              <div className="chat-attachment-state chat-image-status" role="status">빈 파일</div>
+              <div className="chat-attachment-state chat-image-status" role="status">{t("ui.attachment.emptyFile")}</div>
             ) : mediaFailure ? (
               <div className="chat-attachment-state chat-image-status" role="status">
                 <span data-slot="dialog-error-message">{mediaFailure.message}</span>
                 {mediaFailure.retryable && <Button variant="outline" size="sm" onClick={() => {
                   setMediaFailureKey(null);
-                  setMediaFailureMessage(null);
+                  setMediaErrorMessageKey(null);
                   setMediaRetryKey(null);
                   setMediaAttempt(value => value + 1);
-                }}>다시 시도</Button>}
+                }}>{t("ui.common.retry")}</Button>}
               </div>
             ) : mediaSource === undefined && !localFile ? (
-              <div className="chat-attachment-state chat-image-status" role="status" data-slot="dialog-error-message">미리보기를 불러오지 못했습니다.</div>
+              <div className="chat-attachment-state chat-image-status" role="status" data-slot="dialog-error-message">{t("ui.attachment.previewFailed")}</div>
             ) : (
               <div className="chat-attachment-media-frame">
                 {mediaFormat === "video" ? (
@@ -439,15 +444,15 @@ export function AttachmentViewer({
                     playsInline
                     preload="metadata"
                     src={mediaSource}
-                    aria-label={item.name ?? "첨부 동영상"}
+                    aria-label={item.name ?? t("ui.attachment.video")}
                     className="chat-attachment-video-player"
                     onLoadedData={() => {
                       setMediaFailureKey(null);
-                      setMediaFailureMessage(null);
+                      setMediaErrorMessageKey(null);
                       setMediaRetryKey(null);
                     }}
                     onError={() => {
-                      setMediaFailureMessage("미리보기를 불러오지 못했습니다.");
+                      setMediaErrorMessageKey("ui.attachment.previewFailed");
                       setMediaRetryKey(null);
                       setMediaFailureKey(previewKey);
                     }}
@@ -458,15 +463,15 @@ export function AttachmentViewer({
                     controls
                     preload="metadata"
                     src={mediaSource}
-                    aria-label={item.name ?? "첨부 오디오"}
+                    aria-label={item.name ?? t("ui.attachment.audio")}
                     className="chat-attachment-audio-player"
                     onLoadedData={() => {
                       setMediaFailureKey(null);
-                      setMediaFailureMessage(null);
+                      setMediaErrorMessageKey(null);
                       setMediaRetryKey(null);
                     }}
                     onError={() => {
-                      setMediaFailureMessage("미리보기를 불러오지 못했습니다.");
+                      setMediaErrorMessageKey("ui.attachment.previewFailed");
                       setMediaRetryKey(null);
                       setMediaFailureKey(previewKey);
                     }}
@@ -481,7 +486,7 @@ export function AttachmentViewer({
             {multiItem && (
               <div className="chat-image-viewer-navigation">
                 <Button
-                  aria-label={imageGallery ? "이전 이미지" : "이전 첨부"}
+                  aria-label={imageGallery ? t("ui.attachment.previousImage") : t("ui.attachment.previous")}
                   variant="ghost"
                   size="icon"
                   className="aria-disabled:opacity-64"
@@ -490,7 +495,7 @@ export function AttachmentViewer({
                 ><ChevronLeft aria-hidden="true" /></Button>
                 <span className="chat-image-viewer-count" style={{ width: `${String(items.length).length * 2 + 1}ch` }} aria-live="polite">{index + 1}/{items.length}</span>
                 <Button
-                  aria-label={imageGallery ? "다음 이미지" : "다음 첨부"}
+                  aria-label={imageGallery ? t("ui.attachment.nextImage") : t("ui.attachment.next")}
                   variant="ghost"
                   size="icon"
                   className="aria-disabled:opacity-64"
@@ -500,9 +505,9 @@ export function AttachmentViewer({
               </div>
             )}
             {canSave && (
-              <Button variant="outline" size="sm" className="chat-image-viewer-save max-sm:size-9 max-sm:px-0" aria-label={saving ? "저장 중…" : "원본 저장"} disabled={saving} onClick={() => void saveOriginal()}>
+              <Button variant="outline" size="sm" className="chat-image-viewer-save max-sm:size-9 max-sm:px-0" aria-label={saving ? t("ui.attachment.saving") : t("ui.attachment.saveOriginal")} disabled={saving} onClick={() => void saveOriginal()}>
                 <Download aria-hidden="true" />
-                <span className="max-sm:sr-only">{saving ? "저장 중…" : "원본 저장"}</span>
+                <span className="max-sm:sr-only">{saving ? t("ui.attachment.saving") : t("ui.attachment.saveOriginal")}</span>
               </Button>
             )}
             {saveMessage && <span className="chat-image-status chat-image-viewer-save-error" role="status" data-slot="dialog-error-message">{saveMessage}</span>}

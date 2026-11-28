@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 
 import { cn } from "../lib/cn";
@@ -12,6 +13,7 @@ export function SessionModelPresetBadge({
   className?: string;
   session: Pick<SessionSummary, "modelPreset" | "nodeId"> | null | undefined;
 }) {
+  const { t } = useTranslation();
   const nodeId = session?.nodeId?.trim() ?? "";
   const presetId = session?.modelPreset?.trim() ?? "";
   const [label, setLabel] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export function SessionModelPresetBadge({
       size="sm"
       className={cn("max-w-32 text-muted-foreground", className)}
       title={label}
-      aria-label={`선택한 모델: ${label}`}
+      aria-label={t("ui.session.selectedModel", { label })}
     >
       <span className="truncate">{label}</span>
     </Badge>

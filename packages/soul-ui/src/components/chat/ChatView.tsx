@@ -17,6 +17,7 @@
  * Tool grouping: 연속된 tool 메시지를 접기/펼치기 그룹으로 묶어 표시.
  */
 
+import { useTranslation } from "react-i18next";
 import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect, type ReactNode, type RefObject } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { ArrowDown, ArrowDownToLine } from "lucide-react";
@@ -159,6 +160,7 @@ function ChatViewContent({
   registerGeneratedTextActions: registerExternalGeneratedActions,
   registerChatUiOperations,
 }: Omit<ChatViewProps, "storeScope"> = {}) {
+  const { t } = useTranslation();
   const tree = useChatStore((s) => s.tree);
   const treeVersion = useChatStore((s) => s.treeVersion);
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
@@ -918,7 +920,7 @@ function ChatViewContent({
   if (!activeSessionKey) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        세션을 선택하세요
+        {t("ui.chat.selectSession")}
       </div>
     );
   }
@@ -952,14 +954,14 @@ function ChatViewContent({
         ) && (
           <div role="alert" className="shrink-0 px-3 pb-2 text-center text-sm text-accent-red">
             {history.reachedTop
-              ? "검색 결과 이벤트를 대화에서 찾을 수 없습니다."
-              : `최근 ${MAX_SEARCH_FOCUS_HISTORY_PAGES}페이지에서 검색 결과를 찾지 못했습니다. 이전 대화를 더 불러오면 이동할 수 있습니다.`}
+              ? t("ui.chat.searchMissing")
+              : t("ui.chat.searchMore", { pages: MAX_SEARCH_FOCUS_HISTORY_PAGES })}
           </div>
         )}
       {timelineItems.length === 0 && (history.loading ? (
         // 보이는 행이 0개인 첫 로딩은 머리 자리 한 줄이 아니라 대화 목록 영역을 채우는 부품으로 기다린다.
         <div data-slot="chat-transcript-fill" className="flex min-h-0 flex-1 flex-col">
-          <FrameLoading label="대화를 불러오는 중" />
+          <FrameLoading label={t("ui.chat.loading")} />
         </div>
       ) : (
         <>
@@ -970,7 +972,7 @@ function ChatViewContent({
           />
           {history.blockedReason === null && (
             <div className="p-5 text-center text-muted-foreground text-sm">
-              {chatStatus === "error" ? "세션이 오류로 끝나 남은 대화가 없습니다." : "대화를 기다리는 중"}
+              {chatStatus === "error" ? t("ui.chat.emptyAfterError") : t("ui.chat.waiting")}
             </div>
           )}
         </>
@@ -1096,7 +1098,7 @@ function ChatViewContent({
               presentation === "manuscript" ? (
                 <DashboardIconCap
                   appearance="bare"
-                  label="새 메시지로 이동"
+                  label={t("ui.chat.jumpToNewMessages")}
                   onClick={scrollToBottom}
                   className="pointer-events-auto col-start-2 text-muted-foreground v3-pas-floating-cap"
                 >
@@ -1107,7 +1109,7 @@ function ChatViewContent({
                   onClick={scrollToBottom}
                   className="pointer-events-auto col-start-2 justify-self-center rounded-full border border-glass-border glass glass-shadow-xs px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  {"\u2193"} 새 메시지
+                  {"\u2193"} {t("ui.chat.newMessages")}
                 </button>
               )
             )}
@@ -1115,8 +1117,8 @@ function ChatViewContent({
               <DashboardIconCap
                 size="small"
                 data-slot="chat-follow-toggle"
-                label="자동 스크롤"
-                tooltip={isFollowing ? "자동 스크롤 켜짐" : "자동 스크롤 꺼짐"}
+                label={t("ui.chat.autoScroll")}
+                tooltip={isFollowing ? t("ui.chat.autoScrollOn") : t("ui.chat.autoScrollOff")}
                 aria-pressed={isFollowing}
                 onClick={toggleFollow}
                 className="pointer-events-auto col-start-3 justify-self-end"

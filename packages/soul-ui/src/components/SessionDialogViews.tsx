@@ -1,7 +1,10 @@
+import { useTranslation } from "react-i18next";
 import { Trash2 } from "lucide-react";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel, DialogFooter } from "./ui/dialog";
 import { Button } from "./ui/button";
 export function SessionContinueErrorDialog({ error, onClose }: { error: string | null; onClose(): void }) {
+  const { t } = useTranslation();
+  const showDetails = Boolean(error?.trim() && error !== "세션을 이어서 시작하지 못했습니다."); // i18n-ignore: 서버 오류 원문과 비교해 중복 상세 표시를 막음
   return (
     <Dialog
       open={error !== null}
@@ -11,18 +14,18 @@ export function SessionContinueErrorDialog({ error, onClose }: { error: string |
     >
       <DialogPopup className="approved-dialog max-w-sm">
         <DialogHeader>
-          <DialogTitle>세션 이어서 시작 실패</DialogTitle>
+          <DialogTitle>{t("ui.session.continueErrorTitle")}</DialogTitle>
         </DialogHeader>
         <DialogPanel>
           <div className="dialog-error-notice" role="alert">
-            <p data-slot="dialog-error-message">세션을 이어서 시작하지 못했습니다.</p>
-            <p>노드 연결 상태와 실행 환경을 확인한 뒤 다시 시도하세요.</p>
-            {error?.trim() && error !== "세션을 이어서 시작하지 못했습니다." ? <details><summary>기술 상세</summary><pre data-slot="dialog-error-detail">{error}</pre></details> : null}
+            <p data-slot="dialog-error-message">{t("ui.session.continueError")}</p>
+            <p>{t("ui.session.continueErrorHelp")}</p>
+            {showDetails ? <details><summary>{t("ui.common.technicalDetails")}</summary><pre data-slot="dialog-error-detail">{error}</pre></details> : null}
           </div>
         </DialogPanel>
         <DialogFooter variant="bare">
           <Button type="button" onClick={onClose}>
-            확인
+            {t("ui.common.confirm")}
           </Button>
         </DialogFooter>
       </DialogPopup>
@@ -40,22 +43,23 @@ export function SessionDeleteDialog({
   onOpenChange(open: boolean): void;
   onConfirm(): void;
 }) {
+  const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="approved-dialog max-w-sm">
         <DialogHeader>
           <div className="dialog-confirm-icon"><Trash2 className="size-5" aria-hidden="true"/></div>
-          <DialogTitle>세션을 삭제할까요?</DialogTitle>
+          <DialogTitle>{t("ui.session.deleteTitle")}</DialogTitle>
         </DialogHeader>
         <DialogPanel>
-          <div className="dialog-confirm-summary"><strong>선택한 세션 {count}개</strong><span>세션과 대화 기록이 삭제됩니다. 되돌릴 수 없습니다.</span></div>
+          <div className="dialog-confirm-summary"><strong>{t("ui.session.selectedCount", { total: count })}</strong><span>{t("ui.session.deleteWarning")}</span></div>
         </DialogPanel>
         <DialogFooter variant="bare">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            취소
+            {t("ui.common.cancel")}
           </Button>
           <Button type="button" variant="destructive" onClick={onConfirm}>
-            세션 삭제
+            {t("ui.session.delete")}
           </Button>
         </DialogFooter>
       </DialogPopup>

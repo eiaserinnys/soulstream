@@ -8,6 +8,7 @@
  * X 버튼으로 개별 취소
  */
 
+import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import {Dialog,DialogPopup,DialogTitle} from "./ui/dialog";
 import type { ChatAttachmentItem } from "../lib/chat-attachment-model";
@@ -109,6 +110,7 @@ export function FileTypeIcon({ label }: { label: string }) {
 }
 
 export function FileAttachmentPreview(props: FileAttachmentPreviewProps) {
+  const { t } = useTranslation();
   if (props.variant === "row") {
     return <RemoteAttachmentRow {...props} />;
   }
@@ -195,7 +197,7 @@ export function FileAttachmentPreview(props: FileAttachmentPreviewProps) {
         type="button"
         onClick={onRemove}
         className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-background/80 border border-border flex items-center justify-center hover:bg-background transition-colors"
-        aria-label="첨부 제거"
+        aria-label={t("ui.attachment.remove")}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -221,7 +223,8 @@ function LocalAttachmentChip({ file, status, onOpen, onRemove }: LocalFileAttach
   variant: "chip";
   onOpen: (file: File, trigger: HTMLButtonElement) => void;
 }) {
-  const statusText = status === "uploading" ? "업로드 중" : status === "error" ? "업로드 실패" : null;
+  const { t } = useTranslation();
+  const statusText = status === "uploading" ? t("ui.attachment.uploading") : status === "error" ? t("ui.attachment.uploadFailed") : null;
   const metadata = [formatFileSize(file.size), statusText].filter(Boolean).join(" · ");
   const isImage = file.type.startsWith("image/");
   const generatedImageName = isImage && file.name.startsWith("clipboard-");
@@ -240,7 +243,7 @@ function LocalAttachmentChip({ file, status, onOpen, onRemove }: LocalFileAttach
         data-chat-attachment-chip-view
         onClick={event => onOpen(file, event.currentTarget)}
         title={file.name}
-        aria-label={generatedImageName ? "첨부 이미지 보기" : file.name}
+        aria-label={generatedImageName ? t("ui.attachment.viewImage") : file.name}
         className="flex min-w-0 flex-1 items-center gap-2 text-left text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {isImage && <img src={objectUrl} alt="" className="size-8 shrink-0 rounded-floor object-cover" />}
@@ -251,7 +254,7 @@ function LocalAttachmentChip({ file, status, onOpen, onRemove }: LocalFileAttach
         type="button"
         onClick={onRemove}
         className="shrink-0 rounded-full border border-border bg-background/80 p-1 outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring transition-colors"
-        aria-label="첨부 제거"
+        aria-label={t("ui.attachment.remove")}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -274,13 +277,14 @@ function LocalAttachmentChip({ file, status, onOpen, onRemove }: LocalFileAttach
 }
 
 function RemoteAttachmentRow({ item, index, onOpen }: Extract<FileAttachmentPreviewProps, { variant: "row" }>) {
-  const name = item.name ?? "첨부 파일";
+  const { t } = useTranslation();
+  const name = item.name ?? t("ui.attachment.file");
   const availabilityText = item.availability === "missing"
-    ? "찾을 수 없음"
+    ? t("ui.attachment.missing")
     : item.availability === "unavailable"
-      ? "사용 불가"
+      ? t("ui.attachment.notAvailable")
       : item.availability === "unresolved"
-        ? "확인 불가"
+        ? t("ui.attachment.unverified")
         : null;
   const metadata = availabilityText ?? (item.byteSize === null ? null : formatFileSize(item.byteSize));
 

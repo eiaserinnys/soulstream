@@ -1,3 +1,4 @@
+import { getI18n } from "react-i18next";
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -18,11 +19,11 @@ const cases = [
 
 describe('external sender', () => {
   it.each(cases)('uses the shared display rule %#', (caller, name, icon, title) => {
-    expect(externalSenderDisplay(caller)).toEqual({ prefix: '외부 연동', name, icon, title });
+    expect(externalSenderDisplay(caller, getI18n().t)).toEqual({ prefix: '외부 연동', name, icon, title });
     expect(pickMessageAvatarUrl({ ...caller, avatar_url: '/director.png' }, '/director.png')).toBeNull();
   });
   it.each(['browser', 'agent'] as const)('leaves %s callers unchanged', source => {
-    expect(externalSenderDisplay({ source })).toBeNull();
+    expect(externalSenderDisplay({ source }, getI18n().t)).toBeNull();
   });
   it.each(['browser', 'agent'] as const)('does not add a manuscript caption for %s', source => {
     const msg = { id: '2', treeNodeId: '2', treeNodeType: 'user_message', role: 'user', content: '본문', callerInfo: { source } } as ChatMessage;
@@ -38,7 +39,7 @@ describe('external sender', () => {
   });
   it.each(['user', 'intervention'] as const)('renders %s in both presentations without issuer', role => {
     const msg = { id: '1', treeNodeId: '1', treeNodeType: role, role, content: '본문', callerInfo: { source: 'external', transport: 'webhook', display_name: '알림', issued_by: 'owner@example.com' } } as ChatMessage;
-    if (role === 'intervention') expect(computeInterventionDisplay(msg, '/director.png').portraitUrl).toBeNull();
+    if (role === 'intervention') expect(computeInterventionDisplay(getI18n().t, msg, '/director.png').portraitUrl).toBeNull();
     for (const presentation of ['default', 'manuscript'] as const) {
       const Component = role === 'user' ? UserMessage : InterventionMessage;
       const html = renderToStaticMarkup(createElement(Component, { msg, presentation }));

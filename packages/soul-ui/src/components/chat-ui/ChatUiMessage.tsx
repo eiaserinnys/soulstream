@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useMemo, type ComponentPropsWithoutRef } from 'react';
 import { renderText, validateChatUiDocument } from '@soulstream/chat-ui';
 import { isRecord } from '@soulstream/wire-schema/json-record';
@@ -38,17 +39,19 @@ export function ChatUiFallback({ content, notice }: { content: string; notice: s
 }
 
 function ValidMessage({ value, presentation }: { value: Extract<ReturnType<typeof readEnvelope>, { type: 'rich' }>; presentation: Presentation }) {
+  const { t } = useTranslation();
   const controller = useChatUiController(value.uiId, value.hash, value.doc);
-  return <ChatUiErrorBoundary key={controller.key} fallback={<ChatUiFallback content={value.fallbackText} notice="화면을 표시하지 못했어. 기본값 글로 보여줄게." />}>
+  return <ChatUiErrorBoundary key={controller.key} fallback={<ChatUiFallback content={value.fallbackText} notice={t("ui.chatUi.defaultTextOnError")} />}>
     <ChatUiRenderer doc={value.doc} state={controller.state} onSet={controller.set} onAction={controller.act} presentation={presentation} />
   </ChatUiErrorBoundary>;
 }
 
 /** Envelope validation stays at the message boundary; the renderer receives only normalized v1. */
 export function ChatUiMessage({ ui, content, presentation = 'default' }: { ui?: unknown; content: string; presentation?: Presentation }) {
+  const { t } = useTranslation();
   const value = useMemo(() => ui === undefined ? null : readEnvelope(ui), [ui]);
   if (!value) return <MarkdownContent content={content} enableBlockquoteCopy chatImages={presentation === 'manuscript' ? { role: 'assistant' } : undefined} />;
-  if (value.type === 'saved') return <ChatUiFallback content={content} notice="화면을 표시하지 못했어. 저장된 글로 보여줄게." />;
-  if (value.type === 'unsupported') return <ChatUiFallback content={value.fallbackText} notice="이 버전에서는 기본값 글로 보여줄게." />;
+  if (value.type === 'saved') return <ChatUiFallback content={content} notice={t("ui.chatUi.savedTextOnError")} />;
+  if (value.type === 'unsupported') return <ChatUiFallback content={value.fallbackText} notice={t("ui.chatUi.defaultTextOnVersion")} />;
   return <ValidMessage value={value} presentation={presentation} />;
 }

@@ -5,6 +5,7 @@
  * useLazyLoadContent: truncate된 콘텐츠의 전체 로드 상태 관리.
  */
 
+import { useTranslation } from "react-i18next";
 import { useMemo, useState, useRef, useCallback } from "react";
 import { useChatStore } from "../../stores/chat-store-scope";
 import type { ChatMessage } from "../../lib/flatten-tree";
@@ -41,6 +42,7 @@ export function useLazyLoadContent(
   error: string | null;
   loadFullContent: () => void;
 } {
+  const { t } = useTranslation();
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const [fullContent, setFullContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,12 +69,12 @@ export function useLazyLoadContent(
         : event.thinking ?? event.text ?? "";
       setFullContent(content);
     } catch {
-      setError("로드 실패. 다시 시도해주세요.");
+      setError(t("ui.chat.contentLoadFailed"));
     } finally {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [activeSessionKey, msg.fullContentEventId]);
+  }, [activeSessionKey, msg.fullContentEventId, t]);
 
   // tool 메시지의 경우 toolResult, thinking의 경우 content
   const baseContent =
@@ -150,6 +152,7 @@ export function useLazyLoadToolTrace(
   error: string | null;
   loadTrace: () => void;
 } {
+  const { t } = useTranslation();
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const [trace, setTrace] = useState<ToolTraceResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -168,12 +171,12 @@ export function useLazyLoadToolTrace(
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setTrace((await res.json()) as ToolTraceResponse);
     } catch {
-      setError("상세 로드 실패. 다시 시도해주세요.");
+      setError(t("ui.chat.traceLoadFailed"));
     } finally {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [activeSessionKey, msg.toolTraceId, trace]);
+  }, [activeSessionKey, msg.toolTraceId, trace, t]);
 
   return {
     inputContent: stringifyTraceValue(trace?.input ?? msg.toolInput),

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { memo } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { useLazyLoadContent } from "./hooks";
@@ -17,6 +18,7 @@ export const ThinkingMessage = memo(function ThinkingMessage({
   presentation?: "default" | "manuscript";
   sessionId?: string;
 }) {
+  const { t } = useTranslation();
   const { displayContent, isTruncated, loading, error, loadFullContent } = useLazyLoadContent(msg);
   const body = stripEventTruncationSuffix(displayContent ?? msg.content, msg.truncation);
 
@@ -40,7 +42,7 @@ export const ThinkingMessage = memo(function ThinkingMessage({
     <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
       <span className="w-8 shrink-0" />
       <div className="flex-1 min-w-0">
-        <CollapsibleContent content={body} label={"\u{1F4AD} 생각"} />
+        <CollapsibleContent content={body} label={t("ui.chat.thought")} />
         {isTruncated && !msg.truncation && (
           <ShowFullContentButton loading={loading} error={error} onClick={loadFullContent} />
         )}

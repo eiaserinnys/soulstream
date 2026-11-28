@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
 import type { CSSProperties } from "react";
@@ -74,6 +75,7 @@ function DialogPopup({
   bottomStickOnMobile?: boolean;
   closeProps?: DialogPrimitive.Close.Props;
 }) {
+  const { t } = useTranslation();
   const enhanced = supportsLiquidGlassEnhancement();
   const popupStyle = liquidGlassStyle("root", style as CSSProperties | undefined);
 
@@ -123,7 +125,7 @@ function DialogPopup({
           {children}
           {showCloseButton && (
             <DialogPrimitive.Close
-              aria-label="닫기"
+              aria-label={t("ui.common.close")}
               className="absolute end-2 top-2"
               render={<Button size="icon" variant="ghost" />}
               {...closeProps}

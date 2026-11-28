@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
 import { useEffect, useId, useState } from "react";
 import {
   CollapsibleCaptionBody,
@@ -31,6 +32,7 @@ export function TurnEndCaptions({
   summaryCaption?: TurnSummaryCaption;
   persistentInstructionCaption?: PersistentInstructionRecordedData;
 }) {
+  const { t } = useTranslation();
   const [usageExpanded, setUsageExpanded] = useState(usageCaption?.expandedByDefault ?? false);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [instructionExpanded, setInstructionExpanded] = useState(false);
@@ -62,7 +64,7 @@ export function TurnEndCaptions({
           {summaryCaption && <CollapsibleCaptionHeader
             id={summaryBodyId}
             expanded={summaryExpanded}
-            title="요약"
+            title={t("ui.chat.summary")}
             align="end"
             alignmentInset="content"
             onToggle={() => setSummaryExpanded(value => !value)}
