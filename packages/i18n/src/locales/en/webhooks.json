@@ -165,5 +165,34 @@
       "access_revoked": "No session access",
       "disabled_while_pending": "Pending while disabled"
     }
+  },
+  "access": {
+    "send": "Send messages",
+    "readOwn": "Read replies",
+    "readOwnHelp": "Read replies to your own requests",
+    "readHistory": "Read full history",
+    "readHistoryHelp": "Share the entire session history",
+    "control": "Stop the session",
+    "neverUsed": "Unused",
+    "usedMinutes": "Last used: {{count, number}} min ago",
+    "usedHours": "Last used: {{count, number}} hr ago",
+    "usedDays": "Last used: {{count, number}} days ago",
+    "usedYesterday": "Last used: yesterday",
+    "usedDate": "Last used: {{date}}",
+    "createError": "Could not create the link. Try again shortly.",
+    "create": "New link",
+    "loadError": "Could not load access links.",
+    "empty": "No access links yet.",
+    "noActive": "No active links.",
+    "past": "Past links",
+    "created": "Link created",
+    "createTitle": "New access link",
+    "urlOnce": "Copy the URL now. It only appears once.",
+    "createHelp": "Anyone with the link can use the target session’s tools. After you revoke the link, work already received continues.",
+    "shareHelp": "Give the URL to the external agent. Opening it shows how to use it.",
+    "copyError": "Could not copy. Select and copy the URL manually.",
+    "permissions": "Permissions",
+    "revokeTitle": "Revoke link",
+    "revokeHelp": "Block new requests to “{{label}}” immediately. Work already received continues."
   }
 }

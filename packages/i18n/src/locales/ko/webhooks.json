@@ -165,5 +165,34 @@
       "access_revoked": "세션 접근 권한 없음",
       "disabled_while_pending": "꺼져 있던 동안 대기"
     }
+  },
+  "access": {
+    "send": "메시지 보내기",
+    "readOwn": "답 읽기",
+    "readOwnHelp": "자기가 보낸 요청의 답만 봅니다",
+    "readHistory": "대화 전체 읽기",
+    "readHistoryHelp": "세션 대화 전체를 외부에 보여 줍니다",
+    "control": "세션 멈추기",
+    "neverUsed": "아직 쓰지 않음",
+    "usedMinutes": "마지막 사용 {{count, number}}분 전",
+    "usedHours": "마지막 사용 {{count, number}}시간 전",
+    "usedDays": "마지막 사용 {{count, number}}일 전",
+    "usedYesterday": "마지막 사용 어제",
+    "usedDate": "마지막 사용 {{date}}",
+    "createError": "지금은 링크를 만들 수 없습니다. 잠시 뒤 다시 시도하세요.",
+    "create": "링크 만들기",
+    "loadError": "링크 목록을 불러오지 못했습니다.",
+    "empty": "아직 만든 링크가 없습니다.",
+    "noActive": "쓸 수 있는 링크가 없습니다.",
+    "past": "지난 링크",
+    "created": "링크를 만들었습니다",
+    "createTitle": "새 접속 링크",
+    "urlOnce": "주소는 지금 한 번만 보입니다. 닫기 전에 복사하세요.",
+    "createHelp": "링크를 가진 쪽은 대상 세션이 가진 도구로 일을 시킬 수 있습니다. 폐기해도 이미 받은 요청의 작업은 이어집니다.",
+    "shareHelp": "외부 에이전트에게 이 주소만 주면 됩니다. 주소를 열면 쓰는 법이 나옵니다.",
+    "copyError": "복사하지 못했습니다. 주소를 직접 골라 복사하세요.",
+    "permissions": "권한",
+    "revokeTitle": "링크 폐기",
+    "revokeHelp": "“{{label}}”의 새 요청을 바로 막습니다. 이미 받은 요청의 작업은 이어집니다."
   }
 }
