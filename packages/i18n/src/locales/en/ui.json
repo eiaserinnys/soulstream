@@ -81,7 +81,11 @@
   },
   "common": {
     "retry": "Retry",
-    "loading": "Loading"
+    "loading": "Loading",
+    "technicalDetails": "Technical details",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirm": "OK"
   },
   "chatUi": {
     "appendUnavailable": "Can’t add this to the input right now.",
@@ -92,5 +96,64 @@
     "savedTextOnError": "Couldn’t display the UI. Showing the saved text.",
     "defaultTextOnVersion": "This version shows the default text.",
     "assumptions": "Assumptions:"
+  },
+  "folder": {
+    "new": "New folder",
+    "enterName": "Enter a folder name.",
+    "name": "Folder name",
+    "createFailed": "Couldn’t create the folder. Check the name and connection, then retry.",
+    "creating": "Creating…",
+    "create": "Create",
+    "archiveTitle": "Archive folder",
+    "archive": "Archive",
+    "label": "Folder",
+    "select": "Select folder",
+    "archiveDescription": "Archive ‘{{name}}’? Its contents and sessions will be kept."
+  },
+  "session": {
+    "renameTitle": "Rename session",
+    "renamePlaceholder": "Session name (leave blank to reset)",
+    "renameSubmit": "Rename",
+    "resumeCanceled": "Scheduled resume canceled.",
+    "resumeAlreadyStarted": "The session has started resuming and can’t be canceled.",
+    "checkingSchedule": "Checking if scheduling is available…",
+    "limitResetsAt": "Limit resets at {{time}}",
+    "resumeAfterLimit": "Resume after limit resets",
+    "cancelResume": "Cancel scheduled resume",
+    "noScheduledResume": "No scheduled resume to cancel.",
+    "continueUnsupported": "Continuing this session is unavailable.",
+    "moveUnsupported": "Moving this session is unavailable.",
+    "copyId": "Copy session ID",
+    "continue": "Continue from this session",
+    "rename": "Rename",
+    "renameUnsupported": "Renaming this session is unavailable.",
+    "move": "Move to another folder",
+    "deleteUnsupported": "Deleting this session is unavailable.",
+    "continueErrorTitle": "Couldn’t continue session",
+    "continueError": "Couldn’t continue the session.",
+    "continueErrorHelp": "Check the node connection and runtime, then retry.",
+    "deleteTitle": "Delete sessions?",
+    "deleteWarning": "This permanently deletes the sessions and their conversation history.",
+    "delete": "Delete sessions",
+    "selectedModel": "Selected model: {{label}}",
+    "storyLoadFailed": "Couldn’t load the story.",
+    "story": "Story",
+    "sessionStory": "Session story",
+    "storyLoadFailedHelp": "Couldn’t load the story. Reopen the panel to retry.",
+    "storyLoading": "Loading story",
+    "noStory": "No story yet.",
+    "highlights": "Highlights",
+    "plot": "Plot",
+    "selectedCount": "Selected sessions: {{total}}",
+    "resumeScheduled": "Resume scheduled for {{time}}",
+    "scheduledResume": "Scheduled resume",
+    "status": {
+      "running": "Running",
+      "completed": "Completed",
+      "error": "Error",
+      "interrupted": "Interrupted",
+      "unknown": "Waiting",
+      "turnEnded": "Turn ended"
+    }
   }
 }

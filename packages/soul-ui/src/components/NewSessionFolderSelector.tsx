@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useMemo } from "react";
 
 import { cn } from "../lib/cn";
@@ -17,9 +18,10 @@ export function NewSessionFolderSelector({
   folders,
   selectedFolderId,
   onFolderChange,
-  label = "폴더",
-  placeholder = "폴더 선택",
+  label,
+  placeholder,
 }: NewSessionFolderSelectorProps) {
+  const { t } = useTranslation();
   const options = useMemo(() => buildFolderTreeOptions(folders), [folders]);
   const selectedFolder = selectedFolderId
     ? folders.find((folder) => folder.id === selectedFolderId)
@@ -27,14 +29,14 @@ export function NewSessionFolderSelector({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-medium text-muted-foreground">{label}</label>
+      <label className="text-xs font-medium text-muted-foreground">{label ?? t("ui.folder.label")}</label>
       <Select
         value={selectedFolderId ?? ""}
         onValueChange={(value) => onFolderChange(value || null)}
       >
         <SelectTrigger>
           <span className={cn("flex-1 truncate", !selectedFolder && "text-muted-foreground/72")}>
-            {selectedFolder?.name ?? placeholder}
+            {selectedFolder?.name ?? placeholder ?? t("ui.folder.select")}
           </span>
         </SelectTrigger>
         <SelectPopup>

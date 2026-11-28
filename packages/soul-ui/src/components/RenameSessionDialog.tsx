@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -22,11 +23,12 @@ export function RenameSessionDialog({
   onInputChange(value: string): void;
   onSubmit(): void;
 }) {
+  const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>세션 이름 변경</DialogTitle>
+          <DialogTitle>{t("ui.session.renameTitle")}</DialogTitle>
         </DialogHeader>
         <form
           onSubmit={(event) => {
@@ -37,16 +39,16 @@ export function RenameSessionDialog({
           <DialogPanel>
             <Input
               autoFocus
-              placeholder="세션 이름 (비워두면 기본 이름으로 초기화)"
+              placeholder={t("ui.session.renamePlaceholder")}
               value={input}
               onChange={(event) => onInputChange(event.target.value)}
             />
           </DialogPanel>
           <DialogFooter variant="bare">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              취소
+              {t("ui.common.cancel")}
             </Button>
-            <Button type="submit">변경</Button>
+            <Button type="submit">{t("ui.session.renameSubmit")}</Button>
           </DialogFooter>
         </form>
       </DialogPopup>

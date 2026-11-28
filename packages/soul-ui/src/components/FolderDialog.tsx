@@ -6,6 +6,7 @@
  * mode="archive": 보관 확인 메시지 → 보관
  */
 
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -73,6 +74,7 @@ function CreateFolderDialog({
   onOpenChange: (open: boolean) => void;
   onConfirm: (name: string) => Promise<void> | void;
 }) {
+  const { t } = useTranslation();
   const inFlight = useRef(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,26 +107,27 @@ function CreateFolderDialog({
       setPending(false);
     }
   };
+  const showDetails = Boolean(error?.trim() && error !== "폴더를 만들지 못했습니다. 이름과 연결 상태를 확인한 뒤 다시 시도하세요."); // i18n-ignore: 서버 오류 원문과 비교해 중복 상세 표시를 막음
   const changeOpen = (next: boolean) => { if (!inFlight.current) onOpenChange(next); };
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogPopup className="approved-dialog max-w-sm" closeProps={{ disabled: pending }}>
         <DialogHeader>
-          <DialogTitle>새 폴더</DialogTitle>
-          <DialogDescription>폴더 이름을 입력하세요.</DialogDescription>
+          <DialogTitle>{t("ui.folder.new")}</DialogTitle>
+          <DialogDescription>{t("ui.folder.enterName")}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogPanel>
             <Input
               autoFocus
               disabled={pending}
-              placeholder="폴더 이름"
+              placeholder={t("ui.folder.name")}
               {...register("name")}
             />
             {error !== null && <div className="dialog-error-notice" role="alert">
-              <p data-slot="dialog-error-message">폴더를 만들지 못했습니다. 이름과 연결 상태를 확인한 뒤 다시 시도하세요.</p>
-              {error.trim() && error !== "폴더를 만들지 못했습니다. 이름과 연결 상태를 확인한 뒤 다시 시도하세요." ? <details><summary>기술 상세</summary><pre data-slot="dialog-error-detail">{error}</pre></details> : null}
+              <p data-slot="dialog-error-message">{t("ui.folder.createFailed")}</p>
+              {showDetails ? <details><summary>{t("ui.common.technicalDetails")}</summary><pre data-slot="dialog-error-detail">{error}</pre></details> : null}
             </div>}
           </DialogPanel>
           <DialogFooter variant="bare">
@@ -134,10 +137,10 @@ function CreateFolderDialog({
               disabled={pending}
               onClick={() => changeOpen(false)}
             >
-              취소
+              {t("ui.common.cancel")}
             </Button>
             <Button type="submit" disabled={!isValid || pending}>
-              {pending ? "만드는 중…" : "만들기"}
+              {pending ? t("ui.folder.creating") : t("ui.folder.create")}
             </Button>
           </DialogFooter>
         </form>
@@ -157,21 +160,22 @@ function ArchiveFolderDialog({
   onConfirm: () => void;
   folderName: string;
 }) {
+  const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="approved-dialog max-w-sm">
         <DialogHeader>
-          <DialogTitle>폴더 보관</DialogTitle>
+          <DialogTitle>{t("ui.folder.archiveTitle")}</DialogTitle>
           <DialogDescription>
-            &lsquo;{folderName}&rsquo; 폴더를 보관하시겠습니까? 내용과 세션은 보존됩니다.
+            {t("ui.folder.archiveDescription", { name: folderName })}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter variant="bare">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            취소
+            {t("ui.common.cancel")}
           </Button>
           <Button variant="destructive" onClick={onConfirm}>
-            보관
+            {t("ui.folder.archive")}
           </Button>
         </DialogFooter>
       </DialogPopup>

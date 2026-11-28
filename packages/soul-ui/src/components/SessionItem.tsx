@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import { dictionaries } from "@soulstream/i18n";
 /**
  * SessionItem - 폴더 내 세션 목록에서 개별 세션 행을 렌더링하는 컴포넌트.
  *
@@ -29,19 +31,22 @@ export interface StatusConfig {
 }
 
 export const STATUS_CONFIG: Record<SessionStatus, StatusConfig> = {
-  running:      { dotClass: "bg-success",          animate: true,  label: "실행 중", chipClass: "bg-success/13 text-success" },
-  completed:    { dotClass: "bg-muted-foreground",  animate: false, label: "완료", chipClass: "bg-muted text-muted-foreground" },
-  error:        { dotClass: "bg-accent-red",        animate: false, label: "오류", chipClass: "bg-accent-red/10 text-accent-red" },
-  interrupted:  { dotClass: "bg-accent-amber",      animate: false, label: "중단", chipClass: "bg-accent-amber/14 text-accent-amber" },
-  unknown:      { dotClass: "bg-muted-foreground",  animate: false, label: "대기", chipClass: "bg-accent-amber/14 text-accent-amber" },
+  running:      { dotClass: "bg-success",          animate: true,  label: dictionaries.ko.ui.session.status.running, chipClass: "bg-success/13 text-success" },
+  completed:    { dotClass: "bg-muted-foreground",  animate: false, label: dictionaries.ko.ui.session.status.completed, chipClass: "bg-muted text-muted-foreground" },
+  error:        { dotClass: "bg-accent-red",        animate: false, label: dictionaries.ko.ui.session.status.error, chipClass: "bg-accent-red/10 text-accent-red" },
+  interrupted:  { dotClass: "bg-accent-amber",      animate: false, label: dictionaries.ko.ui.session.status.interrupted, chipClass: "bg-accent-amber/14 text-accent-amber" },
+  unknown:      { dotClass: "bg-muted-foreground",  animate: false, label: dictionaries.ko.ui.session.status.unknown, chipClass: "bg-accent-amber/14 text-accent-amber" },
 };
 
 export function getSessionStatusLabel(
   status: SessionStatus,
   sessionType: SessionSummary["sessionType"],
+  t?: ReturnType<typeof useTranslation>["t"],
 ): string {
-  const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
-  return status === "completed" && sessionType !== "llm" ? "턴 종료" : config.label;
+  const key = status === "completed" && sessionType !== "llm"
+    ? "turnEnded"
+    : STATUS_CONFIG[status] ? status : "unknown";
+  return t ? t(`ui.session.status.${key}`) : dictionaries.ko.ui.session.status[key];
 }
 
 // === Portrait ===
@@ -104,6 +109,7 @@ export const SessionItem = memo(function SessionItem({
   onEditSubmit,
   onEditCancel,
 }: SessionItemProps) {
+  const { t, i18n } = useTranslation();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: session.agentSessionId,
     data: { type: "session", sessionIds: dragSessionIds },
@@ -127,7 +133,7 @@ export const SessionItem = memo(function SessionItem({
 
   const displayTime = getSessionActivityTimestamp(session);
   const timeStr = displayTime
-    ? new Date(displayTime).toLocaleString("ko-KR", {
+    ? new Date(displayTime).toLocaleString(i18n.resolvedLanguage, {
         month: "2-digit",
         day: "2-digit",
         hour: "2-digit",
@@ -193,7 +199,7 @@ export const SessionItem = memo(function SessionItem({
                 config.animate && "animate-[lg-pulse_1.6s_infinite]",
               )}
             />
-            {getSessionStatusLabel(session.status, session.sessionType)}
+            {getSessionStatusLabel(session.status, session.sessionType, t)}
           </span>
           <span className="font-mono text-xs text-muted-foreground/70">{timeStr}</span>
         </div>
