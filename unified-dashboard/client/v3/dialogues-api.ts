@@ -255,7 +255,14 @@ export function createDialoguesApi() {
   };
   let configValue = "기본값";
   const page = reviewFolder("검수 프로젝트", dialoguesFolders[0]!.id).page;
-  let blocks: Array<Record<string, unknown>> = [];
+  const contextBlock = (id: string, block_type: string, text: string, properties: Record<string, unknown>) => ({
+    id, page_id: page.id, parent_id: null, position_key: id, block_type, text, properties, collapsed: false,
+  });
+  let blocks: Array<Record<string, unknown>> = [
+    contextBlock("sample-guidance", "guidance", "결정은 실제 근거와 함께 기록하고, 구현 뒤 다크와 라이트 화면을 모두 검증한다.", { enabled: true, scope: "project" }),
+    contextBlock("sample-atom-block", "atom_ref", "", { instance: "atom", nodeId: "sample-atom", nodeTitle: "검수 지식", depth: 2, titlesOnly: true, limit: 10, mode: "index" }),
+    contextBlock("sample-defaults", "session_defaults", "", { nodeId: "sample-node", agentId: "roselin", modelPreset: "sample-sol", scope: "session" }),
+  ];
   let users = [
     {
       email: "sample@example.invalid",

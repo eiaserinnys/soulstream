@@ -1,7 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { useTextareaAutoHeight } from "@seosoyoung/soul-ui/components/chat/useTextareaAutoHeight";
 import { appendAttachmentPathNotes } from "../../../packages/wire-schema/src/attachment_path_notes";
-import { ProjectAtomFields, isProjectAtomValid, type ProjectAtomFieldValue } from "./ProjectContextFormFields";
+import { NEW_REFERENCE, ReferencePicker, ReferenceRows, type ReferenceDraft } from "./FolderContextParts";
+import { ArrowUpRight, Plus } from "lucide-react";
 import {CreationDisclosure} from "./CreationDisclosure";
 import {SessionAttachmentFields} from "./SessionAttachmentFields";
 import { handleClipboardFiles } from "@seosoyoung/soul-ui/lib/clipboard-files";
@@ -15,6 +16,7 @@ import {
   DialogPanel,
   DialogPopup,
   DialogTitle,
+  Switch,
   useFileUpload,
   useDashboardStore,
   type AgentInfo,
@@ -42,6 +44,7 @@ import { useReasoningEffortSelection } from "../hooks/useReasoningEffortSelectio
 
 export interface SuccessionContextItem {
   id: string;
+  kind?: "guidance" | "atom" | "page";
   icon: string;
   label: string;
 }
@@ -107,8 +110,7 @@ export function SessionSuccessionModal({
   const [inheritSummary, setInheritSummary] = useState(Boolean(predecessorId));
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(() => new Set());
   const [pendingSessionId] = useState(() => crypto.randomUUID());
-  const [atomValue, setAtomValue] = useState<ProjectAtomFieldValue>({instance: "atom", nodeId: "", nodeTitle: "", depth: 3, titlesOnly: false});
-  const {nodeId: atomNodeId, nodeTitle: atomNodeTitle} = atomValue;
+  const [references, setReferences] = useState<ReferenceDraft[]>([]);
   const [initialInstruction, setInitialInstruction] = useState("");
   const textarea = useRef<HTMLTextAreaElement>(null);
   const effortTrigger = useRef<HTMLButtonElement>(null);
@@ -140,11 +142,30 @@ export function SessionSuccessionModal({
   const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createFolderPageAnchor>> | null>(null);
   const submitting = useRef(false);
   const completed = useRef(false);
-  const atomTrigger = useRef<HTMLButtonElement>(null);
-  const [atomDraft, setAtomDraft] = useState<ProjectAtomFieldValue | null>(null);
+  const atomTrigger = useRef<HTMLElement | null>(null);
+  const [atomDraft, setAtomDraft] = useState<{ index: number | null; value: ReferenceDraft } | null>(null);
   const [atomOpen, setAtomOpen] = useState(false);
   const [atomStatus, setAtomStatus] = useState<"loading" | "ready" | "error">("ready");
+  const openAtom = (index: number | null, element: HTMLElement) => {
+    atomTrigger.current = element;
+    setAtomStatus(index === null ? "loading" : "ready");
+    setAtomOpen(index === null);
+    setAtomDraft({ index, value: index === null ? NEW_REFERENCE : references[index] });
+  };
   const closeAtom = () => { setAtomDraft(null); queueMicrotask(() => atomTrigger.current?.focus()); };
+  const closeNodeList = () => {
+    setAtomOpen(false);
+    queueMicrotask(() => document.querySelector<HTMLElement>('[data-slot="dialog-popup"] [data-slot="atom-node-selector-trigger"]')?.focus());
+  };
+  const confirmAtom = () => {
+    if (!atomDraft) return;
+    const duplicate = references.findIndex((item) => item.instance === atomDraft.value.instance && item.nodeId === atomDraft.value.nodeId);
+    const next = references.filter((_, index) => index !== atomDraft.index || duplicate === atomDraft.index);
+    const target = duplicate >= 0 ? next.indexOf(references[duplicate]) : atomDraft.index === null ? -1 : next.indexOf(references[atomDraft.index]);
+    if (target >= 0) next[target] = atomDraft.value; else next.push(atomDraft.value);
+    setReferences(next);
+    closeAtom();
+  };
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const uploadUrl = selectedNodeId
@@ -167,9 +188,9 @@ export function SessionSuccessionModal({
     documentPageIds: documentOptions
       .filter((document) => selectedDocumentIds.has(document.pageId))
       .map((document) => document.pageId),
-    atomNode: atomNodeId ? { nodeId: atomNodeId, title: atomNodeTitle, depth: atomValue.depth, titlesOnly: atomValue.titlesOnly, mode: atomValue.mode } : null,
+    atomNodes: references.map((reference) => ({ nodeId: reference.nodeId, title: reference.nodeTitle, depth: reference.depth, titlesOnly: reference.titlesOnly, mode: reference.mode })),
     guidance: "",
-  }), [atomValue, atomNodeId, atomNodeTitle, documentOptions, inheritCard, selectedDocumentIds, folderPageId]);
+  }), [references, documentOptions, inheritCard, selectedDocumentIds, folderPageId]);
   const handleAssignmentError = useCallback((message: string) => {
     console.error("[v3/session-succession] 실행 대상 조회 실패", message); // i18n-ignore: diagnostic log
     setError(message);
@@ -257,7 +278,6 @@ export function SessionSuccessionModal({
 
   const close = async () => {
     if (submitting.current) return;
-    if (atomDraft) { closeAtom(); return; }
     if (uploadUrl) await cancel();
     else resetLocal();
     onClose();
@@ -282,17 +302,42 @@ export function SessionSuccessionModal({
     value: String(index), label: `${option.label ?? t("sessions.untitledSession")}${option.runNumber === null ? "" : ` · ${t("sessions.sessionNumber", { number: formatNumber(option.runNumber) })}`}`,
   }));
 
+  const environmentSummary = [
+    selectedAgent?.name ?? (selectedAgentId || t("sessions.selectAgent")),
+    selectedNodeId || t("sessions.selectNode"),
+    selectedModelPresetInfo?.label ?? (selectedModelPreset || t("sessions.defaultModel")),
+  ].join(" · ");
+  const contextKinds = contextItems.map((item) => item.kind);
+  const referenceCount = contextKinds.filter((kind) => kind === "atom").length;
+  const documentCount = contextKinds.filter((kind) => kind === "page").length;
+  const folderContextMeta = [
+    contextKinds.includes("guidance") ? t("sessions.contextGuidance") : null,
+    referenceCount ? t("sessions.referenceCount", { count: referenceCount }) : null,
+    documentCount ? t("sessions.documentCount", { count: documentCount }) : null,
+    pageDefaults ? t("sessions.contextDefaults") : null,
+  ].filter(Boolean).join(" · ") || t("sessions.noLinkedContext");
+  const materialsSummary = [
+    inheritCard ? t("sessions.folderContext") : null,
+    inheritSummary && predecessorId ? t("sessions.previousSession") : null,
+    selectedDocumentIds.size ? t("sessions.documentCount", { count: selectedDocumentIds.size }) : null,
+    references.length ? t("sessions.referenceCount", { count: references.length }) : null,
+  ].filter(Boolean).join(" · ") || t("sessions.materialsNone");
+
   return (
-    <Dialog open onOpenChange={(open) => { if (!open && !pending) void close(); }}>
+    <Dialog open onOpenChange={(open, details) => {
+      if (open || pending) return;
+      if (!atomDraft) { void close(); return; }
+      details.cancel();
+      if (details.reason === "escape-key" && atomOpen) closeNodeList(); else closeAtom();
+    }}>
       <DialogPopup
         className="v3-surface v3-succession-modal max-w-[640px]"
         {...(returnFocusRef ? { finalFocus: () => completed.current ? true : returnFocusRef.current } : {})}
         closeProps={{ "aria-label": t("sessions.closeSuccession"), disabled: pending }}
-        onKeyDown={event => { if(event.key === "Escape" && atomDraft) { event.preventDefault(); event.stopPropagation(); if(atomOpen) setAtomOpen(false); else closeAtom(); } }}
       >
         <DialogHeader className="v3-succession-head">
-          <span aria-hidden="true">↗</span>
-          <DialogTitle>{atomDraft ? t("sessions.referenceMaterial") : t("sessions.newSession")}</DialogTitle>
+          <span aria-hidden="true">{atomDraft ? <Plus /> : <ArrowUpRight />}</span>
+          <DialogTitle>{atomDraft ? atomDraft.index === null ? t("folders.settings.addReference") : t("folders.settings.editReference") : t("sessions.newSession")}</DialogTitle>
         </DialogHeader>
         <DialogPanel className="v3-succession-body" scrollFade={false}>
           {(error || files.find(file => file.status === "error")?.errorMessage) ? (
@@ -302,34 +347,34 @@ export function SessionSuccessionModal({
               detail={error || files.find(file => file.status === "error")?.errorMessage}
             />
           ) : null}
-          {atomDraft ? <div className="v3-succession-context-editor">
-            <ProjectAtomFields request={atomRequest} value={atomDraft} disabled={pending} supportsLimit={false}
-              selectorOpen={atomOpen} onSelectorOpenChange={setAtomOpen} onSelectorStatusChange={setAtomStatus} onChange={setAtomDraft} />
-          </div> : null}
+          {atomDraft ? <ReferencePicker request={atomRequest} value={atomDraft.value} disabled={pending}
+            selectorOpen={atomOpen} onSelectorOpenChange={setAtomOpen} onSelectorStatusChange={setAtomStatus}
+            onChange={(value) => setAtomDraft({ ...atomDraft, value })} /> : null}
           <div hidden={atomDraft !== null}>
           <fieldset disabled={pending} className="v3-succession-context-editor">
             <div className="v3-form-context"><span>{t("sessions.targetFolder")}</span><strong>{folderTitle}</strong></div>
-            <label className="v3-creation-text-field">
-              <strong>{t("sessions.startPrompt")}</strong>
-              <textarea
-                ref={textarea}
-                className="v3-creation-request max-h-[120px]"
-                aria-label={t("sessions.initialInstruction")}
-                autoFocus
-                value={initialInstruction}
-                disabled={pending}
-                rows={1}
-                placeholder={t("sessions.initialInstructionPlaceholder")}
-                onChange={(event) => setInitialInstruction(event.target.value)}
-                onPaste={event => { if (uploadUrl && !pending) handleClipboardFiles(event, addFiles); }}
-              />
-            </label>
-            <SessionAttachmentFields files={files} pending={pending} nodeId={selectedNodeId} isUploading={isUploading} addFiles={addFiles} removeFile={removeFile}/>
+            <section className="v3-session-request">
+              <label className="v3-session-request-field">
+                <strong>{t("sessions.startPrompt")}</strong>
+                <textarea
+                  ref={textarea}
+                  className="v3-creation-request max-h-[120px]"
+                  aria-label={t("sessions.initialInstruction")}
+                  autoFocus
+                  value={initialInstruction}
+                  disabled={pending}
+                  rows={1}
+                  placeholder={t("sessions.initialInstructionPlaceholder")}
+                  onChange={(event) => setInitialInstruction(event.target.value)}
+                  onPaste={event => { if (uploadUrl && !pending) handleClipboardFiles(event, addFiles); }}
+                />
+              </label>
+              <SessionAttachmentFields files={files} pending={pending} nodeId={selectedNodeId} isUploading={isUploading} addFiles={addFiles} removeFile={removeFile}/>
+            </section>
 
-            <CreationDisclosure title={t("sessions.environment")} invalid={!modelPresetValid || effort.unsupported || !selectedNodeId || !selectedAgentId} summary={`${selectedNodeId || t("sessions.selectNode")} / ${selectedAgent?.name ?? t("sessions.selectAgent")} / ${selectedModelPreset || t("sessions.defaultModel")}`}>
-              <section className="v3-succession-assignment">
+            <CreationDisclosure title={t("sessions.environment")} invalid={!modelPresetValid || effort.unsupported || !selectedNodeId || !selectedAgentId} summary={environmentSummary}>
+              <section className="v3-succession-environment">
               <AgentNodeAssignmentFields data={assignment}
-                presentation="session"
                 disabled={pending}
                 agentId={selectedAgentId}
                 nodeId={selectedNodeId}
@@ -346,7 +391,7 @@ export function SessionSuccessionModal({
                 onError={handleAssignmentError}
               />
               {effort.options.length > 0 ? (
-                <div role="group" aria-label={t("sessions.reasoningEffort")} aria-describedby={effortNotice ? effortNoticeId : undefined}>
+                <div className="v3-succession-assignment" role="group" aria-label={t("sessions.reasoningEffort")} aria-describedby={effortNotice ? effortNoticeId : undefined}>
                 <CatalogSelectionField className="v3-assignment-field" label={t("sessions.reasoningEffort")} ariaLabel={t("sessions.selectReasoningEffort")}
                   triggerRef={effortTrigger}
                   value={effort.effective ?? ""} options={effortOptions}
@@ -357,88 +402,52 @@ export function SessionSuccessionModal({
               {effortNotice ? <small id={effortNoticeId} className="v3-succession-effort-notice" role="alert">{effortNotice}</small> : null}
               </section>
             </CreationDisclosure>
-            <CreationDisclosure title={t("sessions.sharedMaterials")} summary={<span>{inheritCard ? t("sessions.folderInfo") : t("sessions.excludeFolderInfo")}{inheritSummary ? t("sessions.includePrevious") : ""}{selectedDocumentIds.size ? t("sessions.includedDocuments", { count: formatNumber(selectedDocumentIds.size) }) : ""}{atomNodeId ? t("sessions.includeReferences") : ""}</span>}>
-              <section>
-              <ol>
-                <li>
-                  <label>
-                    <input
-                      type="checkbox"
-                      aria-label={t("sessions.includeCardContext")}
-                      checked={inheritCard}
-                      disabled={!folderPageId}
-                      onChange={(event) => setInheritCard(event.target.checked)}
-                    />
-                    <span>
-                      <strong>{t("sessions.folderInfo")}</strong>
-                      <span className="v3-succession-context-chips">
-                        {contextItems.map((context) => (
-                          <span key={context.id}>
-                            <span aria-hidden="true">{context.icon}</span>
-                            <span className="v3-succession-context-label">{context.label}</span>
-                          </span>
-                        ))}
-                        {contextItems.length === 0 ? <small>{t("sessions.noLinkedContext")}</small> : null}
-                      </span>
-                    </span>
+            <CreationDisclosure title={t("sessions.sharedMaterials")} summary={materialsSummary}>
+              <div className="v3-session-materials">
+                <label className="v3-material-toggle">
+                  <span><strong>{t("sessions.folderContext")}</strong><small>{folderContextMeta}</small></span>
+                  <Switch aria-label={t("sessions.includeCardContext")} checked={inheritCard} disabled={!folderPageId} onCheckedChange={setInheritCard} />
+                </label>
+                <div className="v3-material">
+                  <label className="v3-material-toggle">
+                    <span><strong>{t("sessions.previousSession")}</strong><small>{predecessorId ? t("sessions.successionDescription") : t("sessions.noPreviousSession")}</small></span>
+                    <Switch aria-label={t("sessions.continuePrevious")} checked={inheritSummary && Boolean(predecessorId)} disabled={!predecessorId} onCheckedChange={setInheritSummary} />
                   </label>
-                </li>
-                <li>
-                  <div className="v3-succession-previous">
-                    <label>
-                      <input
-                        type="checkbox"
-                        aria-label={t("sessions.continuePrevious")}
-                        checked={inheritSummary}
-                        disabled={!predecessorId}
-                        onChange={(event) => setInheritSummary(event.target.checked)}
-                      />
-                      <span>
-                        <strong>{t("sessions.previousSession")}</strong>
-                        {predecessorId ? <small>{t("sessions.successionDescription")}</small> : null}
-                      </span>
-                    </label>
-                    <div className="v3-succession-previous-field">
-                      <CatalogSelectionField className="v3-assignment-field" label={t("sessions.previousSession")} ariaLabel={t("sessions.choosePrevious")}
-                        value={selectedPredecessorIndex < 0 ? "" : String(selectedPredecessorIndex)}
-                        disabled={!inheritSummary || predecessorOptions.length === 0}
-                        selectedLabel={predecessorChoices[selectedPredecessorIndex]?.label ?? t("sessions.noPreviousSession")}
-                        options={predecessorChoices.length ? predecessorChoices : [{ value: "", label: t("sessions.noPreviousSession") }]}
-                        onValueChange={(value) => {
-                          const option = predecessorOptions[Number(value)];
-                          setSelectedPredecessorId(option?.sessionId ?? null);
-                        }} />
-                    </div>
-                  </div>
-                </li>
-              </ol>
-              <strong>{t("sessions.boardDocuments")}</strong>
-              <div className="v3-succession-document-options">
-                {documentOptions.map((document) => (
-                  <label key={document.pageId}>
-                    <input
-                      type="checkbox"
-                      checked={selectedDocumentIds.has(document.pageId)}
-                      onChange={() => setSelectedDocumentIds((current) => {
+                  {inheritSummary && predecessorOptions.length > 0 ? <CatalogSelectionField className="v3-assignment-field" label={t("sessions.previousSession")} labelClassName="sr-only" ariaLabel={t("sessions.choosePrevious")}
+                    value={selectedPredecessorIndex < 0 ? "" : String(selectedPredecessorIndex)}
+                    selectedLabel={predecessorChoices[selectedPredecessorIndex]?.label ?? t("sessions.noPreviousSession")}
+                    options={predecessorChoices}
+                    onValueChange={(value) => {
+                      const option = predecessorOptions[Number(value)];
+                      setSelectedPredecessorId(option?.sessionId ?? null);
+                    }} /> : null}
+                </div>
+                {documentOptions.length > 0 ? <div className="v3-material">
+                  <strong>{t("sessions.boardDocuments")}</strong>
+                  {documentOptions.map((document) => (
+                    <label key={document.pageId} className="v3-material-toggle">
+                      <span><span>{document.title}</span></span>
+                      <Switch aria-label={document.title} checked={selectedDocumentIds.has(document.pageId)} onCheckedChange={() => setSelectedDocumentIds((current) => {
                         const next = new Set(current);
                         if (next.has(document.pageId)) next.delete(document.pageId);
                         else next.add(document.pageId);
                         return next;
-                      })}
-                    />
-                    <span>{document.title}</span>
-                  </label>
-                ))}
-                {documentOptions.length === 0 ? <small>{t("sessions.noMountedDocuments")}</small> : null}
+                      })} />
+                    </label>
+                  ))}
+                </div> : null}
+                <div className="v3-material">
+                  <div className="v3-context-section-head">
+                    <strong>{t("sessions.references")}</strong>
+                    <Button type="button" size="sm" variant="outline" disabled={pending} onClick={(event) => openAtom(null, event.currentTarget)}>
+                      <Plus aria-hidden="true" />{t("sessions.addReference")}
+                    </Button>
+                  </div>
+                  <ReferenceRows own={references.map((reference) => ({ ...reference, blockId: null }))} disabled={pending}
+                    onEdit={(index, element) => openAtom(index, element)}
+                    onRemove={(index) => setReferences(references.filter((_, i) => i !== index))} />
+                </div>
               </div>
-              <label className="flex min-w-0 flex-col gap-2">
-                <strong>{t("sessions.referenceMaterial")}</strong>
-                <Button ref={atomTrigger} variant="outline" disabled={pending} onClick={() => {
-                  setAtomDraft({ ...atomValue }); setAtomStatus("loading"); setAtomOpen(true);
-                }}>{atomNodeTitle || t("sessions.addFromAtom")}</Button>
-                {atomNodeId ? <Button variant="ghost" disabled={pending} onClick={() => { setAtomValue({instance: "atom", nodeId: "", nodeTitle: "", depth: 3, titlesOnly: false}); }}>{t("sessions.remove")}</Button> : null}
-              </label>
-              </section>
             </CreationDisclosure>
           </fieldset>
           </div>
@@ -446,11 +455,10 @@ export function SessionSuccessionModal({
         <DialogFooter className="v3-succession-footer">
           {atomDraft ? <>
             <Button variant="ghost" onClick={closeAtom}>{t("sessions.cancel")}</Button>
-            <Button disabled={!isProjectAtomValid(atomDraft) || atomOpen || atomStatus !== "ready"} onClick={() => {
-              setAtomValue(atomDraft); closeAtom();
-            }}>{t("sessions.addReferences")}</Button>
+            <Button disabled={!atomDraft.value.nodeId.trim() || atomOpen || atomStatus !== "ready"} onClick={confirmAtom}>
+              {atomDraft.index === null ? t("folders.settings.add") : t("folders.common.confirm")}
+            </Button>
           </> : <>
-          <p className="v3-form-submit-note">{t("sessions.startNote")}</p>
           <Button variant="ghost" disabled={pending} onClick={() => { void close(); }}>{t("sessions.cancel")}</Button>
           <Button
             disabled={

@@ -9,6 +9,7 @@
 
 import { useTranslation } from "react-i18next";
 import { useState, useEffect, useRef } from "react";
+import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
 
 import { FrameLoading } from "./FrameLoading";
 import { Button } from "./ui/button";
@@ -161,19 +162,20 @@ export function AtomNodeSelector({
   const triggerClass = "w-full rounded-floor border border-input bg-background dark:bg-input/32 px-3 py-1.5 text-sm text-left flex items-center justify-between gap-2 disabled:opacity-50 disabled:pointer-events-none";
   const triggerContent = <>
     <span className={`${value ? "" : "text-muted-foreground"} ${presentation === "inline" ? "min-w-0 truncate" : ""}`}>{displayLabel}</span>
-    <span className="text-muted-foreground text-xs flex-shrink-0">▼</span>
+    <ChevronDown className="size-4 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
   </>;
   const panel = <>
         {/* 브레드크럼 + 뒤로가기 버튼 */}
-        <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border text-xs">
+        <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border text-sm">
           {breadcrumbs.length > 1 && (
             <button
               type="button"
               onClick={() => navigateToBreadcrumb(breadcrumbs.length - 2)}
-              className={`flex-shrink-0 text-muted-foreground hover:text-foreground px-1 ${panelButtonFocus}`}
+              className={`flex-shrink-0 rounded-full p-1 text-muted-foreground hover:text-foreground ${panelButtonFocus}`}
               title={t("ui.node.back")}
+              aria-label={t("ui.node.back")}
             >
-              ←
+              <ArrowLeft className="size-4" aria-hidden="true" />
             </button>
           )}
           <div className={`flex items-center gap-0.5 min-w-0 ${presentation === "inline" ? "overflow-hidden" : "flex-wrap"}`}>
@@ -198,7 +200,7 @@ export function AtomNodeSelector({
         <div ref={listRef} className={presentation === "popup" ? "max-h-48 overflow-y-auto" : undefined}>
           {loading && <FrameLoading inline label={t("ui.common.loading")} />}
           {error && (
-            <div className="px-3 py-2 text-xs text-destructive" data-slot="dialog-error-message">
+            <div className="px-3 py-2 text-sm text-destructive" data-slot="dialog-error-message">
               <div>{t("ui.node.loadFailed")}</div>
               <Button ref={retryButtonRef} variant="outline" size="sm" className="mt-1.5"
                 onClick={() => { void retryLoad(); }}>
@@ -207,7 +209,7 @@ export function AtomNodeSelector({
             </div>
           )}
           {!loading && !error && nodes.length === 0 && (
-            <div className="px-3 py-2 text-xs text-muted-foreground">
+            <div className="px-3 py-2 text-sm text-muted-foreground">
               {t("ui.node.noChildren")}
             </div>
           )}
@@ -229,10 +231,11 @@ export function AtomNodeSelector({
                 <button
                   type="button"
                   onClick={() => navigateInto(node)}
-                  className={`flex-shrink-0 text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 ${panelButtonFocus}`}
+                  className={`flex-shrink-0 text-muted-foreground hover:text-foreground px-2 py-1.5 ${panelButtonFocus}`}
                   title={t("ui.node.viewChildren")}
+                  aria-label={t("ui.node.viewChildren")}
                 >
-                  ▶
+                  <ChevronRight className="size-4" aria-hidden="true" />
                 </button>
               </div>
             ))}
@@ -244,7 +247,7 @@ export function AtomNodeSelector({
             <button
               type="button"
               onClick={clearSelection}
-              className={`text-xs text-muted-foreground hover:text-foreground ${panelButtonFocus}`}
+              className={`text-sm text-muted-foreground hover:text-foreground ${panelButtonFocus}`}
             >
               {t("ui.node.clearSelection")}
             </button>

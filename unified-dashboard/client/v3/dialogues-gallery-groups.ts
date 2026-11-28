@@ -2,12 +2,12 @@ import type { DialogueId } from "./dialogues-inventory";
 
 /** Shape groups, preserving each live variant once. */
 export const webDialogueGroups: { id: string; title: string; ids: DialogueId[] }[] = [
-  { id: "create", title: "생성", ids: ["project-create", "folder-create", "card-create", "new-session", "succession", "user-create"] },
+  { id: "create", title: "생성", ids: ["project-create", "project-create-child", "folder-create", "card-create", "new-session", "succession", "user-create"] },
   { id: "rename", title: "이름 변경", ids: ["session-rename"] },
   { id: "move", title: "이동과 선택", ids: ["parent-move", "session-move", "document-move", "search"] },
   { id: "delete", title: "삭제와 확인", ids: ["archive-nav", "archive-detail", "archive-board", "session-delete", "sessions-delete", "document-delete", "continue-error"] },
-  { id: "edit", title: "설정과 편집", ids: ["project-edit", "settings", "user-edit", "connection-planned", "connection-disconnected", "connection-checking", "connection-recovering", "connection-new-version", "persistent-settings-window", "persistent-settings-window-saving", "persistent-settings-window-failure"] },
-  { id: "context", title: "컨텍스트", ids: ["atom-add", "atom-edit", "defaults-add", "defaults-edit"] },
+  { id: "edit", title: "설정과 편집", ids: ["project-edit", "project-edit-child", "settings", "user-edit", "connection-planned", "connection-disconnected", "connection-checking", "connection-recovering", "connection-new-version", "persistent-settings-window", "persistent-settings-window-saving", "persistent-settings-window-failure"] },
+  { id: "context", title: "컨텍스트", ids: ["reference-add", "reference-edit"] },
   { id: "expand", title: "확대", ids: ["card-image", "card-image-screen", "file-image", "card-detail", "card-board", "document-reader", "chat-attachments", "card-attachments"] },
   { id: "mobile", title: "모바일 메뉴", ids: ["v3-sheet", "session-sheet"] },
   { id: "native", title: "기본 확인창", ids: ["confirm-user", "confirm-recurring", "confirm-persistent-session-release"] },

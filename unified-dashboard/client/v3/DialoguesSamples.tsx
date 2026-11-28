@@ -60,14 +60,17 @@ export function DialoguesSamples({
     initialPersistentSessionId="sample-pas-1"
     onOpenChange={openChange}
   />;
-  if (id === "project-create" || id === "project-edit")
+  if (id === "project-create" || id === "project-create-child" || id === "project-edit" || id === "project-edit-child")
     return (
       <ProjectDialog
         target={
           id === "project-create"
             ? { mode: "create", parentFolderId: null, parentName: null }
-            : { mode: "edit", folder }
+            : id === "project-create-child"
+              ? { mode: "create", parentFolderId: folder.id, parentName: folder.name }
+              : { mode: "edit", folder: id === "project-edit-child" ? dialoguesFolders[2]! : folder }
         }
+        folders={dialoguesFolders}
         request={api.request}
         assignment={dialoguesAssignment}
         onClose={onClose}
@@ -178,7 +181,7 @@ export function DialoguesSamples({
         folderTitle={folder.name}
         folderPageId={folder.id}
         folderId={folder.id}
-        contextItems={[{ id: "sample", icon: "📄", label: "검수 컨텍스트" }]}
+        contextItems={[{ id: "sample-guidance", kind: "guidance", icon: "✦", label: "검수 지침" }, { id: "sample-atom", kind: "atom", icon: "⚛", label: "검수 지식" }]}
         documentOptions={[{ pageId: "sample-document", title: "검수 문서" }]}
         contextPending={false}
         predecessorOptions={

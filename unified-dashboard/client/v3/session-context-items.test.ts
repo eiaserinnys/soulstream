@@ -8,7 +8,7 @@ describe("session context item selection", () => {
       inheritCard: true,
       folderPageId: "task-page",
       documentPageIds: ["doc-a", "task-page", "doc-b"],
-      atomNode: null,
+      atomNodes: [],
       guidance: "",
     })).toEqual({
       needsPageAnchor: true,
@@ -29,7 +29,7 @@ describe("session context item selection", () => {
       inheritCard: false,
       folderPageId: "task-page",
       documentPageIds: ["doc-a"],
-      atomNode: { nodeId: "atom-node", title: "소울스트림" },
+      atomNodes: [{ nodeId: "atom-node", title: "소울스트림" }],
       guidance: "  결과부터 간결하게 보고한다.  ",
     })).toEqual({
       needsPageAnchor: true,
@@ -60,7 +60,7 @@ describe("session context item selection", () => {
       inheritCard: true,
       folderPageId: "task-page",
       documentPageIds: [],
-      atomNode: null,
+      atomNodes: [],
       guidance: "",
     })).toEqual({
       needsPageAnchor: true,
@@ -77,7 +77,7 @@ describe("session context item selection", () => {
       inheritCard: false,
       folderPageId: "task-page",
       documentPageIds: [],
-      atomNode: null,
+      atomNodes: [],
       guidance: "   ",
     })).toEqual({ needsPageAnchor: false, contextItems: [] });
   });
@@ -87,7 +87,7 @@ describe("session context item selection", () => {
       inheritCard: false,
       folderPageId: "task-page",
       documentPageIds: [],
-      atomNode: { nodeId: "atom-node", title: "소울스트림" },
+      atomNodes: [{ nodeId: "atom-node", title: "소울스트림" }],
       guidance: "검증한다.",
     });
 
@@ -101,6 +101,6 @@ describe("session context item selection", () => {
 
 it("forwards the single confirmed atom range using only supported session options", () => {
   const result = buildSessionContextSelection({ inheritCard: false, folderPageId: "", documentPageIds: [], guidance: "",
-    atomNode: { nodeId: "n", title: "자료", depth: 5, titlesOnly: true, mode: "index" } });
+    atomNodes: [{ nodeId: "n", title: "자료", depth: 5, titlesOnly: true, mode: "index" }] });
   expect(result.contextItems[0].content).toEqual({ nodes: [{node_id: "n", depth: 5, titles_only: true, mode: "index"}] });
 });

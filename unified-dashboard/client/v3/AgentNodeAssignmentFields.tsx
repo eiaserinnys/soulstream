@@ -18,8 +18,6 @@ export function AgentNodeAssignmentFields({
   modelPreset,
   preferredAgentId,
   preferredNodeId,
-  presentation = "execution-defaults",
-  layout = "default",
   fallbackToAvailable = false,
   disabled = false,
   onAgentIdChange,
@@ -37,8 +35,6 @@ export function AgentNodeAssignmentFields({
   modelPreset: string;
   preferredAgentId?: string | null;
   preferredNodeId?: string | null;
-  presentation?: "execution-defaults" | "session";
-  layout?: "default" | "compact-row";
   fallbackToAvailable?: boolean;
   disabled?: boolean;
   onAgentIdChange(value: string): void;
@@ -122,14 +118,14 @@ export function AgentNodeAssignmentFields({
     : agents;
 
   const agentField = <AgentSelectionField agents={agentOptions} value={agentId}
-    presentation={presentation} disabled={disabled || !nodeId} onChange={value => {
+    presentation="session" disabled={disabled || !nodeId} onChange={value => {
       onAgentIdChange(value);
       onAgentInfoChange?.(agentOptions.find(agent => agent.id === value) ?? null);
     }} />;
   const nodeField = (
     <CatalogSelectionField className="v3-assignment-field" value={nodeId} disabled={disabled}
-      label={presentation === "session" ? t("agents.assignment.node") : t("agents.assignment.executionNode")}
-      ariaLabel={presentation === "session" ? t("agents.assignment.chooseNode") : t("agents.assignment.defaultNode")}
+      label={t("agents.assignment.node")}
+      ariaLabel={t("agents.assignment.chooseNode")}
       selectedLabel={nodeId || t("agents.unassigned")}
       options={[{ value: "", label: t("agents.unassigned") }, ...nodeOptions.map(node => ({ value: node.nodeId, label: node.nodeId }))]}
       onValueChange={onNodeIdChange} />
@@ -139,7 +135,7 @@ export function AgentNodeAssignmentFields({
       className="v3-model-preset-field"
       nodeId={nodeId}
       value={modelPreset}
-      label={presentation === "session" ? t("agents.assignment.model") : t("agents.assignment.executionModel")}
+      label={t("agents.assignment.model")}
       disabled={disabled}
       triggerClassName="v3-model-preset-trigger"
       modelPresetCatalog={modelPresetCatalog}
@@ -153,11 +149,9 @@ export function AgentNodeAssignmentFields({
 
   return (
     <div
-      className={`v3-succession-assignment${layout === "compact-row" ? " v3-succession-assignment--compact-row" : ""}`}
+      className="v3-succession-assignment"
     >
-      {presentation === "session"
-        ? <>{nodeField}{agentField}{modelField}</>
-        : <>{agentField}{nodeField}{modelField}</>}
+      {nodeField}{agentField}{modelField}
     </div>
   );
 }

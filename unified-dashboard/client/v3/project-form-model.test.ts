@@ -10,12 +10,13 @@ describe("project form model", () => {
   it("uses one canonical form shape for create and settings", () => {
     expect(emptyProjectFormValue("새 프로젝트")).toEqual({
       title: "새 프로젝트",
-      guidance: [],
+      description: "",
+      guidance: { source: "inherit", text: "" },
       atomReferences: [],
-      sessionDefaults: null,
+      sessionDefaults: { source: "inherit", nodeId: "", agentId: "", modelPreset: "" },
     });
 
-    expect(projectFormValueFromDetails("기존 프로젝트", {
+    expect(projectFormValueFromDetails("기존 프로젝트", "설명", {
       guidance: [{ blockId: "g-1", text: "지침", scope: "project" }],
       atomReferences: [{
         blockId: "a-1",
@@ -36,13 +37,10 @@ describe("project form model", () => {
       }],
     })).toMatchObject({
       title: "기존 프로젝트",
-      guidance: [{ blockId: "g-1", text: "지침" }],
+      description: "설명",
+      guidance: { source: "own", text: "지침" },
       atomReferences: [{ blockId: "a-1", nodeId: "node-1", mode: "index", limit: 3 }],
-      sessionDefaults: {
-        blockId: "d-1",
-        agentId: "roselin_codex",
-        modelPreset: "preset-a",
-      },
+      sessionDefaults: { source: "own", agentId: "roselin_codex", nodeId: "eiaserinnys", modelPreset: "preset-a" },
     });
   });
 

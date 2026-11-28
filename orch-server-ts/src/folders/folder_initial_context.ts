@@ -54,7 +54,7 @@ export function initialFolderContextOperations({
     ...(context.guidance.trim() ? [{
       blockType: "guidance" as const,
       text: context.guidance.trim(),
-      properties: { enabled: true, scope: "folder" },
+      properties: { enabled: true, scope: "project" },
     }] : []),
     ...context.atomReferences.map((reference) => ({
       blockType: "atom_ref" as const,
@@ -65,6 +65,7 @@ export function initialFolderContextOperations({
         nodeTitle: reference.nodeTitle,
         depth: reference.depth,
         titlesOnly: reference.titlesOnly,
+        ...(reference.mode !== undefined ? { mode: reference.mode } : {}),
         ...(reference.limit !== undefined ? { limit: reference.limit } : {}),
       },
     })),

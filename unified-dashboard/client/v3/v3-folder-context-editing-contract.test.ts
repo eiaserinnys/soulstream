@@ -5,33 +5,26 @@ import { describe, expect, it } from "vitest";
 
 const read = (name: string) => readFileSync(fileURLToPath(new URL(name, import.meta.url)), "utf8");
 
-describe("PR-CJ task context editing contract", () => {
-  it("creates folders with the canonical project context form", () => {
+describe("folder context editing contract", () => {
+  it("creates and edits folders with one settings form", () => {
     const dialog = read("./ProjectDialog.tsx");
-    const contextForm = read("./ProjectContextFormFields.tsx");
 
     expect(dialog).toContain("onCreateIdentity(value.title.trim()");
-    expect(dialog).toContain("ProjectFormFields");
-    expect(contextForm).toContain("ProjectAtomFields");
-    expect(contextForm).toContain("ProjectSessionDefaultsFields");
-    expect(contextForm).toContain("ProjectAtomFields");
+    expect(dialog).toContain("<FolderSettingsForm");
+    expect(dialog).toContain("<ReferencePicker");
+    expect(dialog).toContain("<ReferenceRows");
   });
 
-  it("edits folder atom references through one context editor", () => {
+  it("keeps the folder page read-only and routes editing to the settings dialog", () => {
     const detail = read("./FolderDetailPane.tsx");
     const sections = read("./FolderWorkspaceSections.tsx");
-    const editor = read("./ProjectContextEditor.tsx");
+    const summary = read("./FolderContextSummary.tsx");
+    const layout = read("./V3DashboardLayout.tsx");
 
     expect(detail).toContain("buildFolderSessionContextItems(effectiveContext, contextBlocks, task.page.id, t)");
-    expect(sections).toContain("<ProjectContextEditor");
-    expect(editor).toContain("saveProjectAtomReference");
-    expect(editor).toContain("deleteProjectContextBlock");
+    expect(sections).toContain("<FolderContextSummary");
+    expect(summary).not.toMatch(/Popover|saveProject|deleteProject/);
+    expect(layout).toContain('onOpenSettings={() => setChildFolderDialog({ mode: "edit", folder: selectedFolder })}');
     expect(detail).not.toContain("savePageAtomReference");
-  });
-
-  it("keeps atom deletion in the canonical editor", () => {
-    const editor = read("./ProjectContextEditor.tsx");
-
-    expect(editor).toContain("onDelete={() => removeAtom(reference.blockId)}");
   });
 });

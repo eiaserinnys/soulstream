@@ -14,10 +14,12 @@ export function useProjectContextInheritance({
   folderId,
   folders,
   invalidationKey = 0,
+  request,
 }: {
   folderId: string;
   folders: readonly CatalogFolder[];
   invalidationKey?: number;
+  request?: typeof fetch;
 }): ProjectContextPreviewState {
   const resolution = useMemo(
     () => folderProjectContextSources(folderId, folders),
@@ -37,7 +39,7 @@ export function useProjectContextInheritance({
     let active = true;
     void Promise.all(resolution.sources.map(async (source) => ({
       source,
-      details: await fetchProjectPageDetails(source.pageId),
+      details: await fetchProjectPageDetails(source.pageId, request),
     }))).then((pages) => {
       if (!active) return;
       const next: Extract<ProjectContextPreviewState, { status: "ready" }> = {
@@ -59,7 +61,7 @@ export function useProjectContextInheritance({
           });
     });
     return () => { active = false; };
-  }, [folderId, invalidationKey, resolution]);
+  }, [folderId, invalidationKey, request, resolution]);
 
   return state;
 }

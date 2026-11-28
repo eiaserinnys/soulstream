@@ -9,26 +9,15 @@ describe("PR-CD task default and context contract", () => {
   it("keeps one context editor in information and removes the duplicate session label", () => {
     const detail = read("./FolderDetailPane.tsx");
     const sections = read("./FolderWorkspaceSections.tsx");
-    const editor = read("./ProjectContextEditor.tsx");
     const information = detail.indexOf('data-task-section="information"');
     const cards = detail.indexOf('data-task-section="cards"');
 
-    expect(sections).toContain("<ProjectContextEditor");
-    expect(editor).toContain("ProjectSessionDefaultsFields");
+    expect(sections).toContain("<FolderContextSummary");
     expect(detail).not.toContain("effectiveSessionDefaults?.agentId || effectiveSessionDefaults?.nodeId ?");
     expect(detail).not.toContain("기본값:");
     expect(information).toBeGreaterThan(-1);
     expect(detail.indexOf("{folderSections}")).toBeGreaterThan(information);
     expect(detail.indexOf("{folderSections}")).toBeLessThan(cards);
-  });
-
-  it("uses concise preview copy and right-aligns inheritance sources", () => {
-    const form = read("./ProjectDialog.tsx");
-    const css = read("./v3-planner-surfaces.css");
-
-    expect(form).toContain("ProjectFormFields");
-    expect(css).toMatch(/\.v3-project-guidance\s*>\s*small[^}]*text-align:\s*right/s);
-    expect(css).toMatch(/\.v3-project-context-sourced\s*>\s*small[^}]*margin-left:\s*auto/s);
   });
 
   it("projects returned task blocks without reloading the daily or project planner", () => {

@@ -1,194 +1,24 @@
-import { describe, expect, it, vi } from "vitest";
-import type { PageDto } from "../../../packages/page-model/src/types";
-import type { PageApiClient, PageMutationResponse } from "@seosoyoung/soul-ui/page";
+import { describe, expect, it } from "vitest";
 
-import {
-  deleteProjectContextBlock,
-  saveProjectAtomReference,
-  saveProjectGuidance,
-  saveProjectSessionDefaults,
-} from "./project-context-actions";
+import { projectAtomProperties } from "./project-context-actions";
 
-describe("project context page mutations", () => {
-  it("updates guidance text with fresh version, state vector, and tool:caller:request idempotency", async () => {
-    const api = pageApi([block("guidance", "기존", { enabled: true, scope: "project" })]);
+const block = { id: "atom", page_id: "p", parent_id: null, position_key: "a", block_type: "atom_ref", text: "", collapsed: false,
+  properties: { instance: "atom", nodeId: "old", nodeTitle: "기존", depth: 3, titlesOnly: false, limit: 8, extra: "kept" } };
 
-    await saveProjectGuidance(api, "project", {
-      blockId: "guidance",
-      text: "새 지침",
-    }, () => "request-1");
-
-    expect(api.applyOperations).toHaveBeenCalledWith("project", {
-      expectedVersion: 7,
-      expectedStateVector: new Uint8Array([1]),
-      idempotencyKey: "v3-project-context:browser:request-1",
-      reason: "v3 project guidance save",
-      operations: [{ op: "update_block_text", block_id: "guidance", text: "새 지침" }],
-    });
+describe("atom reference properties", () => {
+  it("replaces the edited fields and keeps the rest of the block's properties", () => {
+    expect(projectAtomProperties({ blockId: "atom", nodeId: "new", nodeTitle: "새 노드", depth: 5, titlesOnly: true, mode: "titles", limit: 3 }, [block as never]))
+      .toEqual({ instance: "atom", nodeId: "new", nodeTitle: "새 노드", depth: 5, titlesOnly: true, mode: "titles", limit: 3, extra: "kept" });
   });
 
-  it("creates guidance after the last root block when none exists", async () => {
-    const api = pageApi([block("paragraph", "본문", {})]);
-
-    await saveProjectGuidance(api, "project", { blockId: null, text: "추가 지침" }, () => "request-2");
-
-    expect(api.applyOperations).toHaveBeenCalledWith("project", expect.objectContaining({
-      operations: [expect.objectContaining({
-        op: "create_block",
-        after_block_id: "paragraph",
-        block_type: "guidance",
-        text: "추가 지침",
-        properties: { enabled: true, scope: "project" },
-      })],
-    }));
+  it("drops limit and mode when the reference no longer carries them", () => {
+    const properties = projectAtomProperties({ blockId: "atom", nodeId: "new", nodeTitle: "새 노드", depth: 5, titlesOnly: true, limit: null }, [block as never]);
+    expect(properties).not.toHaveProperty("limit");
+    expect(properties).not.toHaveProperty("mode");
   });
 
-  it("updates atom properties, validates depth 1..5, and supports deletion", async () => {
-    const api = pageApi([block("atom", "", {
-      instance: "atom",
-      nodeId: "old",
-      nodeTitle: "기존",
-      depth: 3,
-      titlesOnly: false,
-      limit: 8,
-    }, "atom_ref")]);
-
-    await saveProjectAtomReference(api, "project", {
-      blockId: "atom",
-      nodeId: "new-node",
-      nodeTitle: "새 노드",
-      depth: 5,
-      titlesOnly: true,
-      mode: "titles",
-      limit: 3,
-    }, () => "request-3");
-    expect(api.applyOperations).toHaveBeenLastCalledWith("project", expect.objectContaining({
-      operations: [{
-        op: "update_block_type_and_properties",
-        block_id: "atom",
-        block_type: "atom_ref",
-        properties: {
-          instance: "atom",
-          nodeId: "new-node",
-          nodeTitle: "새 노드",
-          depth: 5,
-          titlesOnly: true,
-          mode: "titles",
-          limit: 3,
-        },
-      }],
-    }));
-
-    await expect(saveProjectAtomReference(api, "project", {
-      blockId: "atom",
-      nodeId: "node",
-      nodeTitle: "노드",
-      depth: 6,
-      titlesOnly: false,
-      limit: null,
-    }, () => "invalid")).rejects.toThrow("1~5");
-
-    await saveProjectAtomReference(api, "project", {
-      blockId: "atom",
-      nodeId: "new-node",
-      nodeTitle: "새 노드",
-      depth: 5,
-      titlesOnly: true,
-      limit: null,
-    }, () => "clear-limit");
-    const clearedProperties = (api.applyOperations as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1]
-      .operations[0].properties;
-    expect(clearedProperties).not.toHaveProperty("limit");
-    expect(clearedProperties).not.toHaveProperty("mode");
-
-    await deleteProjectContextBlock(api, "project", "atom", () => "request-4");
-    expect(api.applyOperations).toHaveBeenLastCalledWith("project", expect.objectContaining({
-      operations: [{ op: "delete_block_subtree", block_id: "atom" }],
-    }));
-  });
-
-  it("creates project-scoped session defaults through the same CAS path", async () => {
-    const api = pageApi([]);
-
-    await saveProjectSessionDefaults(api, "project", {
-      blockId: null,
-      agentId: "roselin_codex",
-      nodeId: "eiaserinnys",
-      modelPreset: "preset-a",
-    }, () => "request-5");
-
-    expect(api.applyOperations).toHaveBeenCalledWith("project", expect.objectContaining({
-      operations: [expect.objectContaining({
-        op: "create_block",
-        block_type: "session_defaults",
-        properties: {
-          agentId: "roselin_codex",
-          nodeId: "eiaserinnys",
-          modelPreset: "preset-a",
-          scope: "project",
-        },
-      })],
-    }));
-  });
-
-  it("omits an untouched model preset from project block properties", async () => {
-    const api = pageApi([]);
-
-    await saveProjectSessionDefaults(api, "project", {
-      blockId: null,
-      agentId: "roselin_codex",
-      nodeId: "eiaserinnys",
-      modelPreset: null,
-    }, () => "request-6");
-
-    const properties = (
-      api.applyOperations as ReturnType<typeof vi.fn>
-    ).mock.calls[0]?.[1]?.operations?.[0]?.properties;
-    expect(properties).toEqual({
-      agentId: "roselin_codex",
-      nodeId: "eiaserinnys",
-      scope: "project",
-    });
-    expect(properties).not.toHaveProperty("modelPreset");
+  it("rejects depth outside 1 to 5 and an empty node", () => {
+    expect(() => projectAtomProperties({ blockId: null, nodeId: "n", nodeTitle: "", depth: 6, titlesOnly: false }, [])).toThrow();
+    expect(() => projectAtomProperties({ blockId: null, nodeId: " ", nodeTitle: "", depth: 2, titlesOnly: false }, [])).toThrow();
   });
 });
-
-function pageApi(blocks: ReturnType<typeof block>[]): PageApiClient {
-  const current = page();
-  const response: PageMutationResponse = {
-    page: { ...current, version: 8 },
-    blocks,
-    operation: { id: "op" },
-    temp_id_mapping: {},
-  };
-  return {
-    getPage: vi.fn(async () => ({ page: current, blocks, state_vector: "AQ==" })),
-    applyOperations: vi.fn(async () => response),
-  } as unknown as PageApiClient;
-}
-
-function page(): PageDto {
-  return {
-    id: "project",
-    title: "프로젝트",
-    daily_date: null,
-    version: 7,
-    archived: false,
-    metadata: {},
-    created_at: "2026-07-15T00:00:00Z",
-    updated_at: "2026-07-15T00:00:00Z",
-  };
-}
-
-function block(id: string, text: string, properties: Record<string, unknown>, blockType = id) {
-  return {
-    id,
-    page_id: "project",
-    parent_id: null,
-    position_key: id,
-    block_type: blockType,
-    text,
-    properties,
-    collapsed: false,
-  };
-}

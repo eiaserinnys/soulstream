@@ -1,6 +1,6 @@
 import { folderErrorText } from "./folder-messages";
 import { useTranslation } from "react-i18next";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DashboardIconCap,
   FrameLoading,
@@ -13,7 +13,8 @@ import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { ChevronsDown, FolderPlus } from "lucide-react";
 
 import { PlannerFolderCard } from "./PlannerFolderCard";
-import { ProjectContextEditor } from "./ProjectContextEditor";
+import { FolderContextSummary } from "./FolderContextSummary";
+import { useProjectContextInheritance } from "./use-project-context-inheritance";
 import { fetchProjectPageDetails, type ProjectPageSnapshot } from "./project-page-details";
 import { loadConfirmedResult } from "./planner-query-state";
 import type { PlannerFolder } from "./planner-data";
@@ -24,6 +25,7 @@ import { plannerEntryForFolder } from "./folder-workspace-model";
 export function FolderWorkspaceSections({
   folder,
   parentFolder,
+  folders,
   children,
   hasMoreChildren,
   childrenLoadingMore,
@@ -32,8 +34,10 @@ export function FolderWorkspaceSections({
   sessions,
   nodeConnectivity,
   invalidationKey,
+  contextSavedKey,
   onOpenFolder,
   onCreateSubfolder,
+  onOpenSettings,
   onRenameChild,
   onArchiveChild,
   onCompleteFolder,
@@ -42,6 +46,7 @@ export function FolderWorkspaceSections({
 }: {
   folder: CatalogFolder;
   parentFolder: CatalogFolder | null;
+  folders: readonly CatalogFolder[];
   children: readonly CatalogFolder[];
   hasMoreChildren: boolean;
   childrenLoadingMore: boolean;
@@ -50,8 +55,10 @@ export function FolderWorkspaceSections({
   sessions: readonly SessionSummary[];
   nodeConnectivity: SessionNodeConnectivity;
   invalidationKey: number;
+  contextSavedKey: number;
   onOpenFolder(folder: CatalogFolder): void;
   onCreateSubfolder(): void;
+  onOpenSettings(): void;
   onRenameChild(folder: CatalogFolder): void;
   onArchiveChild(folder: CatalogFolder): void;
   onCompleteFolder(task: PlannerFolder): Promise<void>;
@@ -68,6 +75,7 @@ export function FolderWorkspaceSections({
   }>({ status: "loading", data: null, error: null });
   const [cardPages, setCardPages] = useState<Record<string, PageDto>>({});
   const pageId = folder.projectPageId;
+  const inherited = useProjectContextInheritance({ folderId: parentFolder?.id ?? "", folders, invalidationKey });
 
   const refreshDetails = async () => {
     if (!pageId) return;
@@ -79,6 +87,13 @@ export function FolderWorkspaceSections({
     setDetails((current) => retainEqualValue(current, { status: "ready", data: loaded, error: null }));
     onBlocksChanged(loaded.blocks);
   };
+
+  const handledSave = useRef(contextSavedKey);
+  useEffect(() => {
+    if (handledSave.current === contextSavedKey) return;
+    handledSave.current = contextSavedKey;
+    void refreshDetails().catch((error: unknown) => setDetails({ status: "error", data: null, error }));
+  });
 
   useEffect(() => {
     if (!pageId) return;
@@ -122,7 +137,7 @@ export function FolderWorkspaceSections({
   return (
     <>
       {details.status === "ready" && details.data && pageId ? (
-        <ProjectContextEditor pageId={pageId} snapshot={details.data} onChanged={refreshDetails} />
+        <FolderContextSummary details={details.data} inherited={inherited.status === "ready" ? inherited.data : null} onOpenSettings={onOpenSettings} />
       ) : details.status === "loading" ? (
         <section className="v3-project-context" aria-busy="true"><FrameLoading inline label={t("folders.context.loading")} /></section>
       ) : details.status === "error" ? (

@@ -295,6 +295,7 @@ export function V3Navigation({
       />
       <ProjectDialog
         target={projectDialog}
+        folders={folders}
         onClose={() => setProjectDialog(null)}
         onCreateIdentity={onCreateProject}
         onRename={onRenameProject}

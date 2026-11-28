@@ -105,16 +105,13 @@ describe("v3 modal shell contract", () => {
     expect(executionEnvironment).toBeLessThan(materials);
     expect(source).toMatch(/<CreationDisclosure title=\{t\("sessions\.environment"\)\}[\s\S]*?<AgentNodeAssignmentFields/);
     expect(source).toMatch(/<CreationDisclosure title=\{t\("sessions\.sharedMaterials"\)\}[\s\S]*?<strong>\{t\("sessions\.boardDocuments"\)\}<\/strong>/);
-    expect(source).toContain("<ProjectAtomFields request={atomRequest} value={atomDraft}");
-    expect(source).toMatch(/<strong>\{t\("sessions\.referenceMaterial"\)\}<\/strong>[\s\S]*?setAtomDraft\(\{ \.\.\.atomValue \}\)/);
+    expect(source).toContain("<ReferencePicker request={atomRequest} value={atomDraft.value}");
+    expect(source).toMatch(/<strong>\{t\("sessions\.references"\)\}<\/strong>[\s\S]*?openAtom\(null, event\.currentTarget\)/);
     expect(source).not.toContain("추가 지침");
     expect(source).not.toContain("기본 지침");
     expect(source).not.toContain("실행 에이전트");
     expect(source).toContain("initialInstruction,");
     expect(source).not.toContain("buildSessionInitiationPrompt");
     expect(source).not.toContain("./session-initiation-prompt");
-    expect(read("./v3-context-succession.css")).toMatch(
-      /\.v3-succession-document-options\s*\{[^}]*max-height:[^}]*overflow-y:\s*auto/s,
-    );
   });
 });

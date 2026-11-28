@@ -526,28 +526,26 @@ it("blocks concurrent session starts and closing, then preserves the draft on an
 });
 
 it("toggles inheritance from the previous-session title and guidance without opening the picker", async () => {
+  vi.stubGlobal("PointerEvent", MouseEvent);
   stubFetch([OPUS]);
   mountWithSession(null, "claude-opus", {
     predecessorOptions: [{ sessionId: "prev-1", label: "이전 작업", runNumber: 1 }],
   });
   await settle();
-  const row = document.body.querySelector(".v3-succession-previous")!;
-  const checkbox = row.querySelector<HTMLInputElement>('input[aria-label="이전 세션 이어받기"]')!;
-  const title = [...row.querySelectorAll("strong, label")].find(element => element.textContent === "이전 세션")!;
-  const guidance = row.querySelector("small")!;
-  const trigger = row.querySelector<HTMLButtonElement>('button[aria-label="이어받을 이전 세션"]')!;
-  expect(checkbox.checked).toBe(true);
+  const toggle = document.body.querySelector<HTMLElement>('[role="switch"][aria-label="이전 세션 이어받기"]')!;
+  const label = toggle.closest("label")!;
+  const title = [...label.querySelectorAll("strong")].find(element => element.textContent === "이전 세션")!;
+  const guidance = label.querySelector("small")!;
+  const picker = () => document.body.querySelector<HTMLButtonElement>('button[aria-label="이어받을 이전 세션"]');
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
   for (const target of [title, title, guidance, guidance]) {
-    const before = checkbox.checked;
+    const before = toggle.getAttribute("aria-checked") === "true";
     flushSync(() => (target as HTMLElement).click());
     await settle();
-    expect(checkbox.checked).toBe(!before);
-    expect(trigger.disabled).toBe(before);
+    expect(toggle.getAttribute("aria-checked")).toBe(String(!before));
+    expect(Boolean(picker())).toBe(!before);
     expect(document.body.querySelector('[data-slot="select-popup"]')).toBeNull();
   }
-  const label = checkbox.closest("label")!;
-  expect(label.contains(title)).toBe(true);
-  expect(label.contains(guidance)).toBe(true);
-  expect(label.querySelector("label, button")).toBeNull();
-  expect(label.contains(trigger)).toBe(false);
+  expect(label.querySelector("label, button:not([role=switch])")).toBeNull();
+  expect(label.contains(picker())).toBe(false);
 });
