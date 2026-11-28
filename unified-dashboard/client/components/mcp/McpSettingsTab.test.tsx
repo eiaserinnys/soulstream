@@ -57,7 +57,7 @@ it("저장된 서버와 편집 중인 초안을 각각 선택 노드에서 시�
 
 it.each([
   ["ko", "연결 시험", "관리자만 볼 수 있습니다."],
-  ["en", "Test connection", "Admins only."],
+  ["en", "Test", "Admins only."],
 ] as const)("shows the connection test permission error in %s", async (language, testLabel, permissionError) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const request = vi.fn(async (url: RequestInfo | URL) => String(url) === "/api/mcp/config"
