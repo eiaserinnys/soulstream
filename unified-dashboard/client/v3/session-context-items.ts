@@ -39,15 +39,15 @@ export function buildSessionContextSelection({
     contextItems.push({
       key: PAGE_CONTEXT_SOURCES_KEY,
       label: inheritCard
-        ? hasAdditionalDocument ? "카드와 선택한 보드 문서" : "카드 본문"
-        : "선택한 보드 문서",
+        ? hasAdditionalDocument ? "카드와 선택한 보드 문서" : "카드 본문" // i18n-ignore: context label sent to the session
+        : "선택한 보드 문서", // i18n-ignore: context label sent to the session
       content: { pages: pageIds.map((pageId) => ({ page_id: pageId })) },
     });
   }
   if (atomNode?.nodeId.trim()) {
     contextItems.push({
       key: ATOM_CONTEXT_SOURCES_KEY,
-      label: "선택한 atom 노드",
+      label: "선택한 atom 노드", // i18n-ignore: context label sent to the session
       content: {
         nodes: [{ node_id: atomNode.nodeId.trim(), depth: atomNode.depth ?? 3, titles_only: atomNode.titlesOnly ?? false, ...(atomNode.mode ? { mode: atomNode.mode } : {}) }],
       },
@@ -57,7 +57,7 @@ export function buildSessionContextSelection({
   if (trimmedGuidance) {
     contextItems.push({
       key: "session_guidance",
-      label: "추가 지침",
+      label: "추가 지침", // i18n-ignore: context label sent to the session
       content: trimmedGuidance,
     });
   }

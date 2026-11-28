@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { CardRow } from "./CardRow";
 import { useShallow } from "zustand/react/shallow";
@@ -49,6 +50,7 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
   onOpenSession,
   onAcknowledged,
 }, forwardedRef) {
+  const { t } = useTranslation();
   const reviewCardIds = useCardStore(useShallow(s=>Object.values(s.byId).filter(card=>card.status==="review"&&!card.archived).map(card=>card.id)));
   const cardTitles = useCardStore(useShallow(s=>sessions.map(session=>session.cardId ? s.byId[session.cardId]?.title : undefined)));
   const surfaceRef = useRef<HTMLElement>(null);
@@ -79,12 +81,12 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
     try {
       onAcknowledged(await acknowledgeSessionReview(session.agentSessionId));
     } catch (caught) {
-      setError(reviewErrorMessage(caught));
+      setError(reviewErrorMessage(caught, t));
     } finally {
       pendingRef.current = false;
       setPendingId(null);
     }
-  }, [onAcknowledged]);
+  }, [t, onAcknowledged]);
 
   return (
     <aside
@@ -92,14 +94,14 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
       className="v3-session-panel border border-glass-border glass-strong glass-chrome lg-rim"
       data-liquid-glass-webgl={webglActive ? "true" : undefined}
       data-testid="v3-session-panel"
-      aria-label="세션"
+      aria-label={t("sessions.session")}
       tabIndex={-1}
     >
       <div className="v3-session-panel-scroll">
         <SessionGroup
-          title="실행 중"
+          title={t("sessions.running")}
           testId="v3-session-group-running"
-          emptyText="실행 중인 세션이 없습니다."
+          emptyText={t("sessions.noRunning")}
           sessions={groups.running}
           affiliations={affiliations}
           activeSessionId={activeSessionId}
@@ -110,7 +112,7 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
         />
         {groups.offline.length > 0 ? (
           <SessionGroup
-            title="노드 오프라인"
+            title={t("sessions.nodeOffline")}
             testId="v3-session-group-offline"
             emptyText=""
             sessions={groups.offline}
@@ -124,9 +126,9 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
           />
         ) : null}
         <SessionGroup
-          title="검수 대기"
+          title={t("sessions.needsReview")}
           testId="v3-session-group-review"
-          emptyText="검수 대기 세션이 없습니다."
+          emptyText={t("sessions.noReview")}
           sessions={groups.review}
           affiliations={affiliations}
           activeSessionId={activeSessionId}
@@ -179,9 +181,11 @@ function SessionGroup({
   nodeOffline?: boolean;
   children?: ReactNode; extraCount?: number;
 }) {
+  const { i18n } = useTranslation();
+  const count = new Intl.NumberFormat(i18n.resolvedLanguage ?? i18n.language).format(sessions.length + extraCount);
   return (
     <section className="v3-session-group" data-testid={testId}>
-      <header><h2>{title}</h2><span>{sessions.length+extraCount}</span></header>
+      <header><h2>{title}</h2><span>{count}</span></header>
       <div className="v3-session-list">
         {sessions.map((session) => (
           <SessionPanelRow
@@ -225,6 +229,7 @@ const SessionPanelRow = memo(function SessionPanelRow({
   onContextMenu(session: SessionSummary, event: MouseEvent<HTMLElement>): void;
   onAcknowledge(session: SessionSummary): Promise<void>;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       className={`v3-session-row${active ? " is-active" : ""}`}
@@ -237,7 +242,7 @@ const SessionPanelRow = memo(function SessionPanelRow({
         nodeOffline={nodeOffline}
         onOpen={onOpenSession}
         onContextMenu={onContextMenu}
-        actions={review ? [{kind:"acknowledge",label:`${sessionPanelTitle(session)} 확인 처리`,pending,onAction:()=>{void onAcknowledge(session);}}] : undefined}
+        actions={review ? [{kind:"acknowledge",label:t("sessions.acknowledgeSession", { title: sessionPanelTitle(session, t) }),pending,onAction:()=>{void onAcknowledge(session);}}] : undefined}
       />
     </div>
   );

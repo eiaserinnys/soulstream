@@ -1,3 +1,4 @@
+import { createI18n } from "@soulstream/i18n";
 import { describe, expect, it } from "vitest";
 import type { CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 
@@ -8,6 +9,8 @@ import {
   sessionWorkspaceTarget,
 } from "./v3-session-panel-model";
 import { EXECUTE_INSTRUCTION_PROMPT, PERSISTENT_INITIAL_INSTRUCTION } from "../../../packages/wire-schema/src/conversation_visibility";
+
+const t = createI18n("ko").t;
 
 describe("v3 session panel model", () => {
   it("separates running and completed review sessions without cloning rows", () => {
@@ -79,21 +82,21 @@ describe("v3 session panel model", () => {
       ...session("secret-uuid", "running", "not_required", "2026-07-16T01:00:00Z"),
       displayName: "  이름 있는 세션  ",
       lastMessage: { type: "assistant_message", preview: "fallback", timestamp: "2026-07-16T01:00:00Z" },
-    })).toBe("이름 있는 세션");
+    }, t)).toBe("이름 있는 세션");
     expect(sessionPanelTitle({
       ...session("secret-uuid", "running", "not_required", "2026-07-16T01:00:00Z"),
       lastMessage: { type: "assistant_message", preview: "  마지막\n메시지  ", timestamp: "2026-07-16T01:00:00Z" },
-    })).toBe("마지막 메시지");
-    expect(sessionPanelTitle(session("secret-uuid", "running", "not_required", "2026-07-16T01:00:00Z")))
+    }, t)).toBe("마지막 메시지");
+    expect(sessionPanelTitle(session("secret-uuid", "running", "not_required", "2026-07-16T01:00:00Z"), t))
       .toBe("제목 없는 세션");
   });
 
   it("skips a stored [SILENT] or first-instruction preview when picking the title", () => {
     const base = session("secret-uuid", "running", "not_required", "2026-07-16T01:00:00Z");
     const stored = (preview: string) => ({ type: "assistant_message" as const, preview, timestamp: "2026-07-16T01:00:00Z" });
-    expect(sessionPanelTitle({ ...base, lastMessage: stored(" [SILENT] ") })).toBe("제목 없는 세션");
-    expect(sessionPanelTitle({ ...base, lastMessage: stored(`${EXECUTE_INSTRUCTION_PROMPT}\n${PERSISTENT_INITIAL_INSTRUCTION}`) })).toBe("제목 없는 세션");
-    expect(sessionPanelTitle({ ...base, displayName: "이름", lastMessage: stored("[SILENT]") })).toBe("이름");
+    expect(sessionPanelTitle({ ...base, lastMessage: stored(" [SILENT] ") }, t)).toBe("제목 없는 세션");
+    expect(sessionPanelTitle({ ...base, lastMessage: stored(`${EXECUTE_INSTRUCTION_PROMPT}\n${PERSISTENT_INITIAL_INSTRUCTION}`) }, t)).toBe("제목 없는 세션");
+    expect(sessionPanelTitle({ ...base, displayName: "이름", lastMessage: stored("[SILENT]") }, t)).toBe("이름");
   });
 
   it("opens the session folder straight from the session summary", () => {

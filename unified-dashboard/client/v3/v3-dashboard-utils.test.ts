@@ -1,12 +1,14 @@
+import { createI18n } from "@soulstream/i18n";
 import { describe, expect, it } from "vitest";
 import type { CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 import {
-  AUTH_EXPIRED_MESSAGE,
   buildMobileFolderOptions,
   errorText,
   reportV3WriteFailure,
   writeFailureText,
 } from "./v3-dashboard-utils";
+
+const t = createI18n("ko").t;
 
 describe("v3 dashboard utilities", () => {
   it("builds mobile options from every visible folder and includes descendant runs", () => {
@@ -33,23 +35,23 @@ describe("v3 dashboard utilities", () => {
     let authRefreshes = 0;
     const error = Object.assign(new Error("Dashboard user is required"), { status: 401 });
 
-    expect(writeFailureText("새 폴더 생성", error)).toBe(AUTH_EXPIRED_MESSAGE);
-    expect(reportV3WriteFailure({
+    expect(writeFailureText("새 폴더 생성", error, t)).toBe(t("sessions.authExpired"));
+    expect(reportV3WriteFailure({ t,
       action: "새 폴더 생성",
       error,
       notify: (message) => messages.push(message),
       refreshAuthStatus: () => { authRefreshes += 1; },
-    })).toBe(AUTH_EXPIRED_MESSAGE);
+    })).toBe(t("sessions.authExpired"));
 
-    expect(messages).toEqual([AUTH_EXPIRED_MESSAGE]);
+    expect(messages).toEqual([t("sessions.authExpired")]);
     expect(authRefreshes).toBe(1);
-    expect(writeFailureText("폴더 저장", new Error("충돌"))).toBe("폴더 저장 실패 · 충돌");
-    expect(writeFailureText("세션 삭제", new Error("Failed to delete session: 401")))
-      .toBe(AUTH_EXPIRED_MESSAGE);
+    expect(writeFailureText("폴더 저장", new Error("충돌"), t)).toBe("폴더 저장 실패 · 충돌");
+    expect(writeFailureText("세션 삭제", new Error("Failed to delete session: 401"), t))
+      .toBe(t("sessions.authExpired"));
     expect(writeFailureText(
       "새 폴더 생성",
-      Object.assign(new Error("폴더 생성 실패"), { cause: error }),
-    )).toBe(AUTH_EXPIRED_MESSAGE);
+      Object.assign(new Error("폴더 생성 실패"), { cause: error }), t,
+    )).toBe(t("sessions.authExpired"));
   });
 });
 

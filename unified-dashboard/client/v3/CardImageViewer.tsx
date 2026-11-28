@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Dialog, DialogPopup, DialogTitle } from "@seosoyoung/soul-ui";
 import { ScrollArea } from "@seosoyoung/soul-ui/components/ui/scroll-area";
 import { AttachmentViewer } from "@seosoyoung/soul-ui/components/AttachmentViewer";
@@ -11,20 +11,23 @@ import {
 } from "@seosoyoung/soul-ui/components/AttachmentViewerImage";
 import { useHeicImageSource } from "@seosoyoung/soul-ui/lib/image-source";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
-import { registerDashboardReader } from "../pwa/dashboard-reload";
+import { registerDashboardReader, updateDashboardReaderPlacement } from "../pwa/dashboard-reload";
 
 export interface CardImageSelection { src: string; alt: string; attachment?: ChatAttachmentItem }
 export interface CardAttachmentStatus { message: string; onRetry?(): void }
 
 /** Shared dialog surface for card timeline and check item evidence images. */
 export function CardImageViewer({ image, attachments, attachmentStatus, returnFocus, onClose }: { image: CardImageSelection | null; attachments?: readonly ChatAttachmentItem[]; attachmentStatus?: Readonly<Record<string, CardAttachmentStatus>>; returnFocus?: HTMLElement | null; onClose(): void }) {
- const {t}=useTranslation();
+  const { t } = useTranslation();
   const [attachmentCursor, setAttachmentCursor] = useState<{ key: string; index: number } | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+  const setPopupRef = useCallback((popup: HTMLDivElement | null) => {
+    popupRef.current = popup;
+    updateDashboardReaderPlacement();
+  }, []);
   const mediaRef = useRef<HTMLDivElement>(null);
   const plainImage = image && !image.attachment ? image : null;
   const isOpen = image !== null;
-  useEffect(() => isOpen ? registerDashboardReader() : undefined, [isOpen]);
   const imageViewer = useAttachmentViewerImage({
     popupRef,
     mediaRef,
@@ -45,6 +48,8 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
       ? Math.min(attachmentCursor.index, attachmentItems.length - 1)
       : Math.max(0, selectedAttachmentIndex)
     : 0;
+
+  useEffect(() => isOpen ? registerDashboardReader(() => ({ popup: popupRef.current })) : undefined, [isOpen, Boolean(image?.attachment), attachmentIndex]);
 
   useEffect(() => {
     if (!image) setAttachmentCursor(null);
@@ -70,6 +75,8 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
       onIndexChange={index => setAttachmentCursor({ key: image.attachment!.key, index })}
       onClose={onClose}
       returnFocus={returnFocus}
+      popupRef={popupRef}
+      onPopupChange={updateDashboardReaderPlacement}
       panelContent={status?<div className="chat-attachment-state chat-image-status" role="status"><span data-v3-selectable-content="true">{status.message}</span>{status.onRetry?<Button variant="outline" size="sm" onClick={status.onRetry}>{t("cards.retry")}</Button>:null}</div>:undefined}
     />;
   }
@@ -95,7 +102,7 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
 
   return <Dialog open={Boolean(image)} onOpenChange={open => { if (!open) onClose(); }}>
     <DialogPopup
-      ref={popupRef}
+      ref={setPopupRef}
       initialFocus={popupRef}
       className="v3-surface image-viewer-popup"
       {...imageViewer.popupAttributes}

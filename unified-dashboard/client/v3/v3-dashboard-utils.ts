@@ -1,17 +1,18 @@
+import type { useTranslation } from "react-i18next";
 import type { CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 
 import type { MobilePlannerFolderOption } from "./mobile-planner-state";
 import { buildRunTree, type RunTreeNode } from "./folder-workspace-run-model";
+
+type Translate = ReturnType<typeof useTranslation>["t"];
 export function errorText(error: unknown): string {
   return error instanceof Error && error.message ? error.message : String(error);
 }
 
-export const AUTH_EXPIRED_MESSAGE = "로그인이 만료되었습니다. 다시 로그인해 주세요";
-
-export function writeFailureText(action: string, error: unknown): string {
+export function writeFailureText(action: string, error: unknown, t: Translate): string {
   return errorStatus(error) === 401
-    ? AUTH_EXPIRED_MESSAGE
-    : `${action} 실패 · ${errorText(error)}`;
+    ? t("sessions.authExpired")
+    : t("sessions.writeFailure", { action, detail: errorText(error) });
 }
 
 export function reportV3WriteFailure({
@@ -19,13 +20,15 @@ export function reportV3WriteFailure({
   error,
   notify,
   refreshAuthStatus,
+  t,
 }: {
   action: string;
   error: unknown;
   notify(message: string): void;
   refreshAuthStatus(): void;
+  t: Translate;
 }): string {
-  const message = writeFailureText(action, error);
+  const message = writeFailureText(action, error, t);
   notify(message);
   if (errorStatus(error) === 401) refreshAuthStatus();
   return message;
@@ -67,4 +70,15 @@ function errorStatus(error: unknown, seen = new Set<object>()): number | null {
   }
   const match = /\b([45]\d{2})\b/.exec(errorText(error));
   return match ? Number(match[1]) : null;
+}
+
+export function formatWorkspaceTime(value: string | null | undefined, language: string): string {
+  const timestamp = Date.parse(value ?? "");
+  if (!Number.isFinite(timestamp)) return "...";
+  return new Intl.DateTimeFormat(language, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(timestamp);
 }

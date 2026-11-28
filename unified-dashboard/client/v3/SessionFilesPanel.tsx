@@ -1,10 +1,12 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Button, DashboardIconCap, DisclosureActionIcon, FrameLoading, formatWorkspaceTime, type ChatSessionStoreScope } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, DisclosureActionIcon, FrameLoading, type ChatSessionStoreScope } from "@seosoyoung/soul-ui";
 import { AttachmentViewer } from "@seosoyoung/soul-ui/components/AttachmentViewer";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import type { SessionWorkspaceResponse } from "../../../packages/wire-schema/src/session_workspace";
 import { Eye, File, GitBranch, GitCommitHorizontal, PencilLine, RefreshCw, SquareTerminal, WifiOff, X } from "lucide-react";
 import { useSessionFilesTurn } from "./use-session-files-turn";
+import { formatWorkspaceTime } from "./v3-dashboard-utils";
 import { SessionFileDiff } from "./SessionFileDiff";
 import "./session-files.css";
 import "./v3-persistent-task-list.css";
@@ -76,11 +78,14 @@ function diffable(file: Entry, notGit: boolean, noWorkspace: boolean): file is C
 
 /** PAS 작업 목록의 접는 묶음 머리(v3-persistent-task-group-toggle)를 그대로 쓴다. */
 function Section({ title, count, open, onToggle, badge, children }: { title: string; count: number; open: boolean; onToggle(): void; badge?: ReactNode; children: ReactNode }) {
+  const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage ?? i18n.language;
+  const formatNumber = new Intl.NumberFormat(language).format;
   return <section className="v3-session-files-section" aria-label={title}>
     <div className="v3-detail-section-head"><h3>
       <button type="button" className="v3-persistent-task-group-toggle outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-expanded={open} onClick={onToggle}>
         <span className="v3-persistent-task-group-name">{title}</span>
-        <span className="v3-persistent-task-group-count">{count}개</span>
+        <span className="v3-persistent-task-group-count">{t("sessions.fileCount", { count: formatNumber(count) })}</span>
         {badge}
         <DisclosureActionIcon expanded={open} className="h-4 w-4"/>
       </button>
@@ -92,6 +97,9 @@ function Section({ title, count, open, onToggle, badge, children }: { title: str
 export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, onClose, focusOnMount = false, scrollTop = 0, onScroll, initiallyExpanded = false, onExpandedChange, initiallySessionOpen = true, initiallyOtherOpen = false, onSectionChange }: {
   sessionId: string; data: SessionWorkspaceResponse | null; loading: boolean; error: boolean; onRefresh(): void; onClose(): void; focusOnMount?: boolean; scrollTop?: number; onScroll?(position: number): void; initiallyExpanded?: boolean; onExpandedChange?(value: boolean): void; initiallySessionOpen?: boolean; initiallyOtherOpen?: boolean; onSectionChange?(section: "session" | "other", value: boolean): void;
 }) {
+  const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage ?? i18n.language;
+  const formatNumber = new Intl.NumberFormat(language).format;
   const [showSession, setShowSession] = useState(initiallySessionOpen);
   const [showRead, setShowRead] = useState(initiallyExpanded);
   const [showOther, setShowOther] = useState(initiallyOtherOpen);
@@ -122,7 +130,7 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
   const row = (file: Entry) => {
     const kind = activity(file); const Icon = kind === "write" ? PencilLine : kind === "commit" ? GitCommitHorizontal : kind === "read" ? Eye : File;
     const git = "git_status" in file ? file : null;
-    const label = { read: "읽음", write: "이 세션이 고침", commit: "이 세션이 커밋함", none: "세션 기록 밖에서 바뀜" }[kind];
+    const label = { read: t("sessions.fileRead"), write: t("sessions.fileWritten"), commit: t("sessions.fileCommitted"), none: t("sessions.fileExternal") }[kind];
     const canDiff = diffable(file, notGit, noWorkspace);
     const live = !!git && !noWorkspace && !notGit && git.git_status !== null && !IMAGE.test(file.path);
     const history = !!git?.wrote && !IMAGE.test(file.path);
@@ -135,9 +143,9 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
         onClick={event => canDiff ? setOpenDiff(open ? null : file.path) : view(file, event.currentTarget)}>
         <span className="v3-session-files-mark" data-activity={kind}><Icon className="h-4 w-4" aria-label={label}/></span>
         <span className="v3-session-files-name">{file.path.split("/").at(-1)}</span>
-        {git && (git.git_status === "added" || git.git_status === "untracked") && <span className="v3-session-files-new">새</span>}
-        {git && (git.added !== null || git.deleted !== null) ? <span className="v3-session-files-diff">{git.added !== null && git.added > 0 && <span className="is-add">+{git.added}</span>}{git.deleted !== null && git.deleted > 0 && <span className="is-del">−{git.deleted}</span>}</span>
-          : git && (git.session_added !== null || git.session_deleted !== null) && <span className="v3-session-files-diff" title="세션 기록 기준">{git.session_added !== null && git.session_added > 0 && <span className="is-add">+{git.session_added}</span>}{git.session_deleted !== null && git.session_deleted > 0 && <span className="is-del">−{git.session_deleted}</span>}</span>}
+        {git && (git.git_status === "added" || git.git_status === "untracked") && <span className="v3-session-files-new">{t("sessions.newFileBadge")}</span>}
+        {git && (git.added !== null || git.deleted !== null) ? <span className="v3-session-files-diff">{git.added !== null && git.added > 0 && <span className="is-add">+{formatNumber(git.added)}</span>}{git.deleted !== null && git.deleted > 0 && <span className="is-del">−{formatNumber(git.deleted)}</span>}</span>
+          : git && (git.session_added !== null || git.session_deleted !== null) && <span className="v3-session-files-diff" title={t("sessions.basedOnHistory")}>{git.session_added !== null && git.session_added > 0 && <span className="is-add">+{formatNumber(git.session_added)}</span>}{git.session_deleted !== null && git.session_deleted > 0 && <span className="is-del">−{formatNumber(git.session_deleted)}</span>}</span>}
       </button>}
       {open && <SessionFileDiff key={file.path} id={rowDiffId} sessionId={sessionId} file={file} observedAt={data?.snapshot?.observed_at ?? null} live={live} history={history} noWorkspace={noWorkspace} onOpenFull={button => view(file, button)}/>}
     </div>;
@@ -150,29 +158,29 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
   return <>
     <header className="v3-panel-header v3-chat-header">
       <div className="v3-chat-title-row"><div className="v3-chat-session-title v3-session-files-title">
-        {initial && !error ? <span className="v3-session-files-skeleton" aria-label="브랜치 확인 중"/> : <>{data?.snapshot?.branch && <GitBranch className="h-4 w-4" aria-hidden="true"/>}<strong title={data?.snapshot?.branch ?? undefined}>{data?.snapshot?.branch ?? rootName ?? "파일"}</strong>{Boolean(data?.snapshot?.ahead) && <span>↑{data?.snapshot?.ahead}</span>}{Boolean(data?.snapshot?.behind) && <span>↓{data?.snapshot?.behind}</span>}</>}
+        {initial && !error ? <span className="v3-session-files-skeleton" aria-label={t("sessions.loadingBranch")}/> : <>{data?.snapshot?.branch && <GitBranch className="h-4 w-4" aria-hidden="true"/>}<strong title={data?.snapshot?.branch ?? undefined}>{data?.snapshot?.branch ?? rootName ?? t("sessions.files")}</strong>{Boolean(data?.snapshot?.ahead) && <span>↑{formatNumber(data?.snapshot?.ahead ?? 0)}</span>}{Boolean(data?.snapshot?.behind) && <span>↓{formatNumber(data?.snapshot?.behind ?? 0)}</span>}</>}
       </div>
-      <DashboardIconCap ref={refreshRef} size="small" label="다시 읽기" onClick={onRefresh}><RefreshCw className={`h-4 w-4${busy ? " animate-spin" : ""}`} aria-hidden="true"/></DashboardIconCap>
-      <DashboardIconCap size="small" label="파일 닫기" onClick={onClose}><X className="h-4 w-4" aria-hidden="true"/></DashboardIconCap></div>
+      <DashboardIconCap ref={refreshRef} size="small" label={t("sessions.refreshFiles")} onClick={onRefresh}><RefreshCw className={`h-4 w-4${busy ? " animate-spin" : ""}`} aria-hidden="true"/></DashboardIconCap>
+      <DashboardIconCap size="small" label={t("sessions.closeFiles")} onClick={onClose}><X className="h-4 w-4" aria-hidden="true"/></DashboardIconCap></div>
     </header>
     <div ref={scrollRef} onScroll={event => onScroll?.(event.currentTarget.scrollTop)} className="v3-session-panel-scroll v3-session-files-body">
-      {data?.node.status === "offline" && <div className="v3-session-files-notice" role="status"><WifiOff className="h-4 w-4" aria-hidden="true"/>노드 끊김{data.snapshot?.observed_at && ` · ${formatWorkspaceTime(data.snapshot.observed_at)} 기준`}</div>}
-      {error || data?.node.status === "error" ? <div className="v3-session-files-notice" role="alert"><span data-slot="dialog-error-message">파일을 불러오지 못했습니다.</span> <Button size="sm" variant="outline" onClick={onRefresh}>다시 시도</Button></div>
-        : data?.node.status === "unsupported" ? <div className="v3-nav-list v3-session-files-list"><p>이 노드는 파일 보기를 지원하지 않습니다.</p></div>
-        : noWorkspace && !files.length && !(data?.read_only.length) ? <div className="v3-nav-list v3-session-files-list"><p>작업 폴더가 없습니다.</p></div>
-        : initial && data?.node.status !== "offline" ? <FrameLoading label="파일 상태를 읽는 중"/>
+      {data?.node.status === "offline" && <div className="v3-session-files-notice" role="status"><WifiOff className="h-4 w-4" aria-hidden="true"/>{t("sessions.nodeDisconnected")}{data.snapshot?.observed_at && t("sessions.snapshotTime", { time: formatWorkspaceTime(data.snapshot.observed_at, language) })}</div>}
+      {error || data?.node.status === "error" ? <div className="v3-session-files-notice" role="alert"><span data-slot="dialog-error-message">{t("sessions.filesLoadFailed")}</span> <Button size="sm" variant="outline" onClick={onRefresh}>{t("sessions.retry")}</Button></div>
+        : data?.node.status === "unsupported" ? <div className="v3-nav-list v3-session-files-list"><p>{t("sessions.filesUnsupported")}</p></div>
+        : noWorkspace && !files.length && !(data?.read_only.length) ? <div className="v3-nav-list v3-session-files-list"><p>{t("sessions.noWorkspace")}</p></div>
+        : initial && data?.node.status !== "offline" ? <FrameLoading label={t("sessions.loadingFiles")}/>
         : <>
-          {noWorkspace && <div className="v3-session-files-notice">작업 폴더가 지워져 이 세션이 고친 내용만 볼 수 있습니다</div>}
-          {notGit && <div className="v3-session-files-notice">Git 작업 폴더가 아닙니다</div>}
-          <nav className="v3-session-files-sections" aria-label="세션 파일">
-            {wrote.length === 0 && reads.length === 0 && others.length === 0 && !notGit && <div className="v3-nav-list v3-session-files-list"><p>바뀐 파일 없음</p></div>}
-            {(wrote.length > 0 || reads.length > 0) && <Section title="이번 세션" count={wrote.length} open={showSession} onToggle={() => { const next = !showSession; setShowSession(next); onSectionChange?.("session", next); }}
-              badge={data?.attribution === "partial" && <span className="v3-session-files-new" title="이 엔진은 활동 기록을 일부만 남깁니다">일부</span>}>
+          {noWorkspace && <div className="v3-session-files-notice">{t("sessions.workspaceDeleted")}</div>}
+          {notGit && <div className="v3-session-files-notice">{t("sessions.notGit")}</div>}
+          <nav className="v3-session-files-sections" aria-label={t("sessions.sessionFiles")}>
+            {wrote.length === 0 && reads.length === 0 && others.length === 0 && !notGit && <div className="v3-nav-list v3-session-files-list"><p>{t("sessions.noChangedFiles")}</p></div>}
+            {(wrote.length > 0 || reads.length > 0) && <Section title={t("sessions.thisSession")} count={wrote.length} open={showSession} onToggle={() => { const next = !showSession; setShowSession(next); onSectionChange?.("session", next); }}
+              badge={data?.attribution === "partial" && <span className="v3-session-files-new" title={t("sessions.partialActivity")}>{t("sessions.partial")}</span>}>
               {tree(wrote)}
-              {reads.length > 0 && <div className="v3-session-files-group"><button type="button" className="v3-session-files-row" aria-expanded={showRead} onClick={() => { const next = !showRead; setShowRead(next); onExpandedChange?.(next); }}><span className="v3-session-files-mark" data-activity="read"><Eye className="h-4 w-4" aria-hidden="true"/></span><span className="v3-session-files-name">읽기만 한 파일</span><span className="v3-session-files-count">{reads.length}개</span><DisclosureActionIcon expanded={showRead} className="h-4 w-4"/></button>{showRead && tree(reads)}</div>}
+              {reads.length > 0 && <div className="v3-session-files-group"><button type="button" className="v3-session-files-row" aria-expanded={showRead} onClick={() => { const next = !showRead; setShowRead(next); onExpandedChange?.(next); }}><span className="v3-session-files-mark" data-activity="read"><Eye className="h-4 w-4" aria-hidden="true"/></span><span className="v3-session-files-name">{t("sessions.readOnlyFiles")}</span><span className="v3-session-files-count">{t("sessions.fileCount", { count: formatNumber(reads.length) })}</span><DisclosureActionIcon expanded={showRead} className="h-4 w-4"/></button>{showRead && tree(reads)}</div>}
             </Section>}
-            {others.length > 0 && <Section title="다른 변경" count={others.length} open={showOther} onToggle={() => { const next = !showOther; setShowOther(next); onSectionChange?.("other", next); }}>
-              <div className="v3-session-files-notice v3-session-files-hint"><SquareTerminal className="h-4 w-4" aria-hidden="true"/>셸로 고친 파일은 여기 나옵니다</div>
+            {others.length > 0 && <Section title={t("sessions.otherChanges")} count={others.length} open={showOther} onToggle={() => { const next = !showOther; setShowOther(next); onSectionChange?.("other", next); }}>
+              <div className="v3-session-files-notice v3-session-files-hint"><SquareTerminal className="h-4 w-4" aria-hidden="true"/>{t("sessions.shellChanges")}</div>
               {tree(others)}
             </Section>}
           </nav>
@@ -183,7 +191,8 @@ export function SessionFilesPanel({ sessionId, data, loading, error, onRefresh, 
 }
 
 export function SessionFilesPane({ sessionId, storeScope, onClose, scrollTop, onScroll, initiallyExpanded, onExpandedChange, initiallySessionOpen, initiallyOtherOpen, onSectionChange }: { sessionId: string; storeScope?: ChatSessionStoreScope; onClose(): void; scrollTop?: number; onScroll?(position: number): void; initiallyExpanded?: boolean; onExpandedChange?(value: boolean): void; initiallySessionOpen?: boolean; initiallyOtherOpen?: boolean; onSectionChange?(section: "session" | "other", value: boolean): void }) {
+  const { t } = useTranslation();
   const turnKey = useSessionFilesTurn(sessionId, storeScope);
   const state = useSessionFiles(sessionId, turnKey);
-  return <section onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="v3-detail-pane v3-session-files-pane border border-glass-border glass-strong glass-chrome lg-rim" aria-label="세션 파일"><SessionFilesPanel sessionId={sessionId} {...state} onRefresh={state.refresh} onClose={onClose} scrollTop={scrollTop} onScroll={onScroll} initiallyExpanded={initiallyExpanded} onExpandedChange={onExpandedChange} initiallySessionOpen={initiallySessionOpen} initiallyOtherOpen={initiallyOtherOpen} onSectionChange={onSectionChange} focusOnMount/></section>;
+  return <section onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="v3-detail-pane v3-session-files-pane border border-glass-border glass-strong glass-chrome lg-rim" aria-label={t("sessions.sessionFiles")}><SessionFilesPanel sessionId={sessionId} {...state} onRefresh={state.refresh} onClose={onClose} scrollTop={scrollTop} onScroll={onScroll} initiallyExpanded={initiallyExpanded} onExpandedChange={onExpandedChange} initiallySessionOpen={initiallySessionOpen} initiallyOtherOpen={initiallyOtherOpen} onSectionChange={onSectionChange} focusOnMount/></section>;
 }

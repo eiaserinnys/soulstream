@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { DocumentReaderDialog } from "./DocumentReaderDialog";
 import { CardImageViewer } from "./CardImageViewer";
-import { createDashboardReloadCoordinator } from "../pwa/dashboard-reload";
+import { createDashboardReloadCoordinator, registerDashboardReader } from "../pwa/dashboard-reload";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement;
@@ -26,6 +26,34 @@ it("registers an open document and releases it when closed", async () => {
   document.querySelector('[data-sw-update-banner]')?.remove();
   expect(await createDashboardReloadCoordinator(env).request()).toBe(true);
   expect(reload).toHaveBeenCalledOnce();
+});
+it("provides popup clearance when a banner appears over the document", async () => {
+  const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 600, right: 1000, top: 700, bottom: 752, height: 52 } as DOMRect);
+  const request = vi.fn(async () => Response.json({ id: "doc-1", title: "문서", body: "본문", version: 1 }));
+  await mount(request);
+  const popup = document.querySelector<HTMLElement>('[data-testid="internal-document-dialog"]')!;
+  const owner = createDashboardReloadCoordinator({ document, reload: vi.fn(), hasPendingEdits: () => false, flushPendingEdits: async () => true });
+  try {
+    expect(await owner.request()).toBe(false);
+    expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe("84px");
+    await act(async () => root.render(<DocumentReaderDialog documentId={null} request={request} onClose={() => {}}/>));
+    expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe("");
+  } finally { bounds.mockRestore(); document.querySelector('[data-sw-update-banner]')?.remove(); }
+});
+it("adds and removes popup clearance when a document opens after the banner", async () => {
+  const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 600, right: 1000, top: 700, bottom: 752, height: 52 } as DOMRect);
+  const unregister = registerDashboardReader();
+  const owner = createDashboardReloadCoordinator({ document, reload: vi.fn(), hasPendingEdits: () => false, flushPendingEdits: async () => true });
+  expect(await owner.request()).toBe(false);
+  unregister();
+  const request = vi.fn(async () => Response.json({ id: "doc-1", title: "문서", body: "긴 본문", version: 1 }));
+  try {
+    await mount(request);
+    const popup = document.querySelector<HTMLElement>('[data-testid="internal-document-dialog"]')!;
+    expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe("84px");
+    await act(async () => root.render(<DocumentReaderDialog documentId={null} request={request} onClose={() => {}}/>));
+    expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe("");
+  } finally { bounds.mockRestore(); document.querySelector('[data-sw-update-banner]')?.remove(); }
 });
 it("keeps reload deferred until the last open reader unmounts", async () => {
   const request = vi.fn(async () => Response.json({ id: "doc-1", title: "문서", body: "본문", version: 1 }));

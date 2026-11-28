@@ -27,7 +27,7 @@ describe("v3 icon action cap contract", () => {
     const theme = read("../../../packages/soul-ui/src/components/ThemeToggle.tsx");
     const config = read("../components/ConfigButton.tsx");
     const minimal = toolbar.match(/if \(variant === 'minimal'\)[\s\S]*?<div className="dashboard-toolbar-actions">([\s\S]*?)<\/div>/)?.[1] ?? "";
-    expect(minimal).toContain('<DashboardIconCap label="홈" appearance={appearance}');
+    expect(minimal).toContain('<DashboardIconCap label={t("sessions.home")} appearance={appearance}');
     expect(minimal).toContain('<House className="size-5" strokeWidth={1.4} absoluteStrokeWidth');
     expect(theme).toContain('<Moon className="size-5" strokeWidth={1.4} absoluteStrokeWidth');
     expect(theme).toContain('<Sun className="size-5" strokeWidth={1.4} absoluteStrokeWidth');
@@ -49,8 +49,8 @@ describe("v3 icon action cap contract", () => {
     ["./FolderSessionHistory.tsx", ["folders.session.new"]],
     ["./FolderWorkspace.tsx", ["folders.workspace.close"]],
     ["./FolderWorkspaceSections.tsx", ["folders.workspace.moreSubfolders"]],
-    ["./V3Navigation.tsx", ["별표 폴더 더 보기", "새 폴더"]],
-    ["./V3SessionReviewBanner.tsx", ["검수 확인"]],
+    ["./V3Navigation.tsx", ['label={t("sessions.moreStarredFolders")}', 'label={t("sessions.newFolder")}']],
+    ["./V3SessionReviewBanner.tsx", ['label={t("sessions.acknowledgeReview")}']],
   ] as const)("%s uses the shared icon cap for its chrome actions", (path, labels) => {
     const source = read(path);
     expect(source).toContain("DashboardIconCap");
@@ -74,7 +74,7 @@ describe("v3 icon action cap contract", () => {
     const loader = read("./RunHistoryAutoLoader.tsx");
 
     expect(history).toMatch(/<RunHistoryAutoLoader hasMore=\{runHistoryHasMore\} loading=\{runHistoryLoading\}[\s\S]*?failed=\{runHistoryFailed\} onLoadMore=\{onLoadMoreRuns\}/);
-    expect(loader).toContain('<DashboardIconCap label="다시 시도" onClick={() => { void onLoadMore(); }}>');
+    expect(loader).toContain('<DashboardIconCap label={t("sessions.retry")} onClick={() => { void onLoadMore(); }}>');
   });
 
   it("keeps chat close on the shared session header only when its owner passes onClose", () => {
@@ -84,7 +84,7 @@ describe("v3 icon action cap contract", () => {
     expect(workspace).toMatch(/<SessionPanelHeader session=\{activeSession\}[\s\S]*?onClose=\{onCloseWorkspace\}\/>/);
     expect(workspace.match(/<SessionPanelHeader\b/g)).toHaveLength(2);
     expect(workspace.match(/<SessionPanelHeader\b[^>]*onClose=/g)).toHaveLength(1);
-    expect(headers).toContain('{onClose ? <DashboardIconCap label="채팅 닫기" onClick={onClose}');
+    expect(headers).toContain('{onClose ? <DashboardIconCap label={t("sessions.closeChat")} onClick={onClose}');
   });
 
   it("forwards review acknowledgement through the shared row action owner", () => {
@@ -93,7 +93,7 @@ describe("v3 icon action cap contract", () => {
     const rowFrame = read("./RunRowFrame.tsx");
     const reviewRow = panel.match(/<RichSessionRow\b[\s\S]*?\/>/)?.[0] ?? "";
 
-    expect(reviewRow).toContain('actions={review ? [{kind:"acknowledge",label:`${sessionPanelTitle(session)} 확인 처리`,pending,onAction:()=>{void onAcknowledge(session);}}] : undefined}');
+    expect(reviewRow).toContain('actions={review ? [{kind:"acknowledge",label:t("sessions.acknowledgeSession", { title: sessionPanelTitle(session, t) }),pending,onAction:()=>{void onAcknowledge(session);}}] : undefined}');
     expect(richRow).toMatch(/<RunRowFrame[\s\S]*?actions=\{actions\}/);
     expect(rowFrame).toMatch(/actions!\.map\(action=><DashboardIconCap[\s\S]*?label=\{action\.label\}[\s\S]*?disabled=\{disabled\|\|action\.disabled\|\|action\.pending\}[\s\S]*?onClick=\{event=>\{event\.stopPropagation\(\);action\.onAction\(event\);\}\}/);
   });

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { MouseEvent } from "react";
 import {
   getSessionActivityTimestamp,
@@ -11,6 +12,8 @@ import { RunRowFrame, type RunRowAction } from "./RunRowFrame";
 import { singleLinePreview, visibleSessionPreview } from "./session-preview";
 import { sessionPanelTitle } from "./v3-session-panel-model";
 import "./v3-run-history.css";
+
+type Translate = ReturnType<typeof useTranslation>["t"];
 
 export function RichSessionRow({
   session,
@@ -37,22 +40,25 @@ export function RichSessionRow({
   onOpen(session: SessionSummary): void;
   onContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
-  const title = failed ? runNumberLabel(runNumber) : sessionPanelTitle(session);
+  const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage ?? i18n.language;
+  const formatNumber = new Intl.NumberFormat(language).format;
+  const title = failed ? runNumberLabel(runNumber, t, formatNumber) : sessionPanelTitle(session, t);
   const status = failed
-    ? "조회 실패"
+    ? t("sessions.lookupFailed")
     : nodeOffline
-      ? "노드 오프라인"
-      : getSessionStatusLabel(session.status, session.sessionType);
+      ? t("sessions.nodeOffline")
+      : getSessionStatusLabel(session.status, session.sessionType, t);
   const presentationStatus = failed ? "failed" : nodeOffline ? "offline" : session.status;
   const modelLabel = failed ? null : sessionModelLabel(session);
   const resolvePortrait = useAgentPortraitUrlResolver();
   const portraitUrl = failed ? null : sessionPortraitUrl(session, resolvePortrait);
   const visiblePreview = failed
-    ? "세션 정보를 불러오지 못했습니다."
+    ? t("sessions.sessionLoadFailed")
     : preview ?? singleLinePreview(
       visibleSessionPreview(session),
       120,
-    ) ?? "아직 표시할 메시지가 없습니다.";
+    ) ?? t("sessions.noMessages");
 
   return <RunRowFrame
     size={size}
@@ -61,12 +67,12 @@ export function RichSessionRow({
     onContextMenu={failed || !onContextMenu ? undefined : event=>onContextMenu(session,event)}
     disabled={failed} onOpen={()=>onOpen(session)}
     avatar={<ProfileAvatar role="assistant" hasPortrait={Boolean(portraitUrl)} portraitUrl={portraitUrl} fallbackEmoji="🤖"/>}
-    title={<><strong>{title}</strong>{!failed && runNumber!==null ? <span className="v3-run-number">세션 #{runNumber}</span>:null}</>}
-    agentLine={<><span>{failed ? "세션 상세 없음":session.agentName??session.agentId??"에이전트 미상"}</span>{size==="small"&&!failed?<span>{session.nodeId??"노드 미상"}</span>:null}{modelLabel?<span title={modelLabel}>{modelLabel}</span>:null}{size!=="small"&&!failed?<span>{session.nodeId??"노드 미상"}</span>:null}</>}
+    title={<><strong>{title}</strong>{!failed && runNumber!==null ? <span className="v3-run-number">{runNumberLabel(runNumber, t, formatNumber)}</span>:null}</>}
+    agentLine={<><span>{failed ? t("sessions.noSessionDetails"):session.agentName??session.agentId??t("sessions.unknownAgent")}</span>{size==="small"&&!failed?<span>{session.nodeId??t("sessions.unknownNode")}</span>:null}{modelLabel?<span title={modelLabel}>{modelLabel}</span>:null}{size!=="small"&&!failed?<span>{session.nodeId??t("sessions.unknownNode")}</span>:null}</>}
     affiliation={affiliation?<span className="v3-run-affiliation" title={affiliation}>{affiliation}</span>:null}
     preview={visiblePreview}
-    status={{label:`세션 ${status}`,tone:presentationStatus}}
-    timestamp={failed?undefined:{display:formatRelativeSessionTime(session),raw:getSessionActivityTimestamp(session)??undefined}}
+    status={{label:t("sessions.sessionStatus", { status }),tone:presentationStatus}}
+    timestamp={failed?undefined:{display:formatRelativeSessionTime(session, t, language),raw:getSessionActivityTimestamp(session)??undefined}}
     actions={actions}
   />;
 }
@@ -93,20 +99,21 @@ function sessionPortraitUrl(
   return resolvePortrait(session.agentId) || null;
 }
 
-function runNumberLabel(runNumber: number | null): string {
-  return runNumber === null ? "세션" : `세션 #${runNumber}`;
+function runNumberLabel(runNumber: number | null, t: Translate, formatNumber: (value: number) => string): string {
+  return runNumber === null ? t("sessions.session") : t("sessions.sessionNumber", { number: formatNumber(runNumber) });
 }
 
-function formatRelativeSessionTime(session: SessionSummary): string {
+function formatRelativeSessionTime(session: SessionSummary, t: Translate, language: string): string {
   const value = getSessionActivityTimestamp(session);
-  if (!value) return "시각 미상";
+  if (!value) return t("sessions.unknownTime");
   const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return "시각 미상";
+  if (!Number.isFinite(timestamp)) return t("sessions.unknownTime");
   const elapsed = Math.max(0, Date.now() - timestamp);
-  if (elapsed < 60_000) return "방금 전";
+  if (elapsed < 60_000) return t("sessions.justNow");
   const minutes = Math.round(elapsed / 60_000);
-  if (minutes < 60) return `${minutes}분 전`;
+  const relativeTime = new Intl.RelativeTimeFormat(language);
+  if (minutes < 60) return relativeTime.format(-minutes, "minute");
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}시간 전`;
-  return `${Math.round(hours / 24)}일 전`;
+  if (hours < 24) return relativeTime.format(-hours, "hour");
+  return relativeTime.format(-Math.round(hours / 24), "day");
 }

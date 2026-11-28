@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   createContext,
   useEffect,
@@ -49,6 +50,7 @@ interface DashboardInternalLinksValue {
 const DashboardInternalLinksContext = createContext<DashboardInternalLinksValue | null>(null);
 
 export function DashboardInternalLinks({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const { refreshAuthStatus } = useAuth();
   const { toast, notify } = useV3Notifications(refreshAuthStatus);
   const registrations = useRef(new Map<symbol, DashboardLinkOpeners>());
@@ -78,11 +80,11 @@ export function DashboardInternalLinks({ children }: { children: ReactNode }) {
       resolve(true);
     };
     image.onerror = () => {
-      notify("이미지를 불러오지 못했습니다.");
+      notify(t("sessions.imageLoadFailed"));
       resolve(false);
     };
     image.src = href;
-  }), [notify]);
+  }), [t, notify]);
 
   const closeDocument = useCallback(() => {
     setSelectedDocumentId(null);
@@ -108,7 +110,7 @@ export function DashboardInternalLinks({ children }: { children: ReactNode }) {
     const src = attachmentContentUrl(target.attachmentId, context);
     setSelectedAttachment({
       image: { src, alt: reference.label, attachment: placeholder },
-      status: { message: "미리보기를 불러오는 중…" },
+      status: { message: t("sessions.loadingPreview") },
     });
 
     const load = async (request: AbortController): Promise<void> => {
@@ -124,7 +126,7 @@ export function DashboardInternalLinks({ children }: { children: ReactNode }) {
                 const retry = new AbortController();
                 attachmentRequest.current = retry;
                 setSelectedAttachment(current => current
-                  ? { ...current, status: { message: "미리보기를 불러오는 중…" } }
+                  ? { ...current, status: { message: t("sessions.loadingPreview") } }
                   : current);
                 void load(retry);
               },
@@ -146,7 +148,7 @@ export function DashboardInternalLinks({ children }: { children: ReactNode }) {
 
     void load(controller);
     return true;
-  }, []);
+  }, [t]);
 
   const closeAttachment = useCallback(() => {
     attachmentRequest.current?.abort();

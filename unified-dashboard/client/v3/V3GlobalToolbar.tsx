@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
   ThemeToggle,
@@ -35,6 +36,7 @@ export function V3GlobalToolbar({
   /** 검수 창이 두 상태를 한 화면에 나란히 보일 때만 넣는다. 없으면 서버가 알려 준 atom 주소를 쓴다. */
   atomUrl?: string | null;
 }) {
+  const { t } = useTranslation();
   const publicAtomUrl = useAtomPublicUrl();
   const atomHref = atomUrl === undefined ? publicAtomUrl : atomUrl;
   const brandCapsuleRef = useRef<HTMLDivElement>(null);
@@ -56,18 +58,18 @@ export function V3GlobalToolbar({
 
   if (variant === 'minimal') return <header ref={headerRef} className="persistent-session-header" data-testid="v3-global-toolbar">
     <div className="persistent-session-brand" data-agent-only={agentOnly}>
-      <span>소울스트림</span><strong>{agentName}</strong>
+      <span>{t("sessions.productName")}</span><strong>{agentName}</strong>
     </div>
     <div className="dashboard-toolbar-actions">
       {sessionSwitch}
-      {showHome ? <DashboardIconCap label="홈" appearance={appearance} onClick={onOpenHome}>
+      {showHome ? <DashboardIconCap label={t("sessions.home")} appearance={appearance} onClick={onOpenHome}>
         {appearance === "bare"
           ? <House className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
           : <span aria-hidden="true" className="text-base leading-none">⌂</span>}
       </DashboardIconCap> : null}
       {sessionAction}
       <ThemeToggle variant="chrome" appearance={appearance}/>
-      {onToggleUsage && showWeeklyUsage !== undefined ? <DashboardIconCap appearance={appearance} label="주간 사용량"
+      {onToggleUsage && showWeeklyUsage !== undefined ? <DashboardIconCap appearance={appearance} label={t("sessions.weeklyUsage")}
         aria-pressed={showWeeklyUsage} className={`persistent-session-weekly-usage-toggle${showWeeklyUsage ? " persistent-session-weekly-usage-toggle--selected" : ""}`}
         onClick={onToggleUsage}>
         <Gauge className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
@@ -93,10 +95,10 @@ export function V3GlobalToolbar({
         className="dashboard-toolbar-cap dashboard-toolbar-search border border-glass-border glass-strong glass-chrome lg-rim"
         data-liquid-glass-webgl={searchWebglActive ? "true" : undefined}
         onClick={onOpenSearch}
-        aria-label="세션 검색 열기"
+        aria-label={t("sessions.openSessionSearch")}
       >
         <Search className="h-4 w-4 shrink-0" />
-        <span className="truncate">세션 검색</span>
+        <span className="truncate">{t("sessions.sessionSearch")}</span>
         <kbd>⌘K</kbd>
       </button>
       <div className="dashboard-toolbar-actions">
