@@ -26,7 +26,18 @@ const timelineLabels = {
  report:"report",
  comment:"comment",
 } as const;
-type TimelineKind = keyof typeof timelineLabels;
+type TimelineEntry = {
+ id:string;
+ at:string;
+ shownAt?:string;
+ revised?:boolean;
+ kind:keyof typeof timelineLabels;
+ role:"user"|"assistant";
+ spoken?:boolean;
+ withdrawn?:boolean;
+ collapsible?:boolean;
+ body:ReactNode;
+};
 type MarkdownSourceLink = NonNullable<ComponentProps<typeof MarkdownContent>["sourceLinkComponent"]>;
 
 export type CardQuestionHandlers={onAskBack(question:CardQuestion):void;onAnswerFreely(question:CardQuestion):void};
@@ -137,9 +148,9 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
  const requestAttachmentReferences=(card.attachments??[]).map((attachment,index)=>occurrenceReference(legacyAttachmentReference(card.id,attachment,t),`request:${index}`));
  const requestReferences=[...markdownAttachmentReferences(renderedRequestMarkdown,card.id,origin,t),...requestAttachmentReferences];
  const requestLink=sourceLinkComponent(card.id,origin,requestReferences,openReference,internalLinkClick,t,true);
- const entries:{id:string;at:string;shownAt?:string;revised?:boolean;kind:TimelineKind;role:"user"|"assistant";spoken?:boolean;withdrawn?:boolean;collapsible?:boolean;body:ReactNode}[]=[
+ const entries:TimelineEntry[]=[
   {id:"request",at:card.createdAt,kind:"request",role:"user",collapsible:true,body:<RequestPreview markdown={renderedRequestMarkdown} attachments={requestAttachmentReferences} expanded={expanded.has("request")} linkComponent={requestLink} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,requestReferences,trigger)} onOpenAttachment={(reference,trigger)=>void openReference(reference,requestReferences,trigger)}/>},
-  ...(detail?.questions??[]).flatMap(q=>{
+  ...(detail?.questions??[]).flatMap<TimelineEntry>(q=>{
    const questionMarkdown=contextualizeMarkdownAttachmentUrls(q.text,card.id,origin);
    const questionReferences=markdownAttachmentReferences(questionMarkdown,card.id,origin,t);
    const questionLink=sourceLinkComponent(card.id,origin,questionReferences,openReference,internalLinkClick,t);
