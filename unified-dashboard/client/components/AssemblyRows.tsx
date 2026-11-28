@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 // 구성 보기의 소스 줄과 그 밑에 붙어 펼쳐지는 실린 문서 트리.
 import { useLayoutEffect, useState, type MutableRefObject, type ReactNode } from "react";
 import { ChevronRight, ExternalLink, FileText } from "lucide-react";
@@ -37,10 +38,11 @@ export function useCompact(): [(element: HTMLElement | null) => void, boolean] {
 
 /** 줄 머리에 붙는 상태 배지. 정상(들어감)은 적지 않고 빠짐, 실패, 중복, 비어 있음만 보인다. */
 function StatusBadge({ status }: { status: RowStatus }) {
-  if (status === "error") return <Badge variant="error">실패</Badge>;
-  if (status === "filtered") return <Badge variant="secondary">빠짐</Badge>;
-  if (status === "empty") return <Badge variant="outline">비어 있음</Badge>;
-  if (status === "duplicate") return <Badge variant="outline">중복</Badge>;
+  const { t } = useTranslation();
+  if (status === "error") return <Badge variant="error">{t("agents.assembly.failed")}</Badge>;
+  if (status === "filtered") return <Badge variant="secondary">{t("agents.assembly.excluded")}</Badge>;
+  if (status === "empty") return <Badge variant="outline">{t("agents.assembly.empty")}</Badge>;
+  if (status === "duplicate") return <Badge variant="outline">{t("agents.assembly.duplicate")}</Badge>;
   return null;
 }
 
@@ -111,14 +113,15 @@ export function SourceItem({ row, title, compact, loading, inactive, ready, expa
   onToggle(): void;
   onOpenBody(): void;
 }) {
+  const { t } = useTranslation();
   const expandable = row.documents !== null;
   const open = ready && expandable && expanded;
   const name = rowTitle(row);
   const moved = compact && expandable;
   const actions = ready ? (
     <>
-      {expandable && <DashboardIconCap size="small" label={`${name} 본문 보기`} onClick={onOpenBody}><FileText className="size-4" aria-hidden="true" /></DashboardIconCap>}
-      {atomBaseUrl && row.nodeId && <DashboardIconCap size="small" label={`${name} atom에서 열기`} onClick={() => window.open(`${atomBaseUrl}/#${row.nodeId}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap>}
+      {expandable && <DashboardIconCap size="small" label={t("agents.assembly.openSource", { name })} onClick={onOpenBody}><FileText className="size-4" aria-hidden="true" /></DashboardIconCap>}
+      {atomBaseUrl && row.nodeId && <DashboardIconCap size="small" label={t("agents.assembly.openSourceInAtom", { name })} onClick={() => window.open(`${atomBaseUrl}/#${row.nodeId}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap>}
     </>
   ) : null;
   return (
@@ -128,7 +131,7 @@ export function SourceItem({ row, title, compact, loading, inactive, ready, expa
         refs={refs}
         title={title}
         titlePrefix={ready ? row.parentTitle : null}
-        meta={rowMeta(row)}
+        meta={rowMeta(row, t)}
         status={row.status}
         size={row.status === "ok" && row.chars !== null ? formatChars(row.chars) : null}
         compact={compact}
@@ -152,14 +155,15 @@ export function commonLoadedHow(hows: ReadonlyArray<LoadedHow | null>): LoadedHo
 }
 
 function DocumentTree({ row, skillsByEntryCard, actions }: { row: Row; skillsByEntryCard: ReadonlyMap<string, SkillGuide>; actions: ReactNode }) {
+  const { t } = useTranslation();
   const documents = row.documents ?? [];
   if (documents.length === 0) {
     return (
       <div className={TREE_BOX}>
         {actions && <div className="flex justify-end gap-2 pb-1">{actions}</div>}
-        <p className="text-xs text-muted-foreground">{row.status === "filtered" ? `이 조건에서는 빠집니다. ${conditionSummary(row.context.applies_when)}`
-          : row.status === "duplicate" ? "앞에서 같은 소스가 이미 들어갑니다."
-            : row.status === "error" ? "atom에서 읽지 못했습니다." : "실린 문서가 없습니다."}</p>
+        <p className="text-xs text-muted-foreground">{row.status === "filtered" ? t("agents.assembly.filteredDetail", { condition: conditionSummary(row.context.applies_when) })
+          : row.status === "duplicate" ? t("agents.assembly.duplicateDetail")
+            : row.status === "error" ? t("agents.assembly.atomError") : t("agents.assembly.noDocuments")}</p>
       </div>
     );
   }
@@ -176,7 +180,7 @@ function DocumentTree({ row, skillsByEntryCard, actions }: { row: Row; skillsByE
           {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </div>
       )}
-      <ul aria-label={`${rowTitle(row)}에 실린 문서`} data-testid="agent-context-documents">
+      <ul aria-label={t("agents.assembly.includedDocuments", { source: rowTitle(row) })} data-testid="agent-context-documents">
         {documents.map((document, index) => {
           const how = hows[index]!;
           return (
