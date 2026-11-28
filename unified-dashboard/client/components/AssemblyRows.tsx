@@ -82,7 +82,7 @@ export function AssemblyRow({ rowKey, refs, title, titlePrefix = null, meta, sta
         <span className="flex min-w-0 items-center gap-2">
           {loading && !title ? <span className="flex h-5 flex-1 items-center"><span className="v3-run-skeleton v3-run-skeleton--title" /></span> : (
             // 두 줄까지 감싸고 넘치면 말줄임한다. 전체 이름은 툴팁으로 본다.
-            <span className={`line-clamp-2 min-w-0 ${strong ? "font-semibold" : "font-medium"}`} style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }} title={full} data-assembly-title="true">
+            <span className={`break-keep line-clamp-2 min-w-0 ${strong ? "font-semibold" : "font-medium"}`} style={{ overflowWrap: "anywhere" }} title={full} data-assembly-title="true">
               {titlePrefix && <span className="font-normal text-muted-foreground">{titlePrefix} / </span>}{title}
             </span>
           )}

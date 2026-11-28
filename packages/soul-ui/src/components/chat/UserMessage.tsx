@@ -79,7 +79,7 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
             </span>
           )}
         </div>)}
-        <div data-slot="chat-body" className={cn("chat-message-selectable text-base", manuscript ? "text-muted-foreground [line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "break-words leading-snug text-white [&_code]:bg-white/15 [&_code]:text-white")}>
+        <div data-slot="chat-body" className={cn("chat-message-selectable text-base", manuscript ? "text-muted-foreground [line-height:1.6] [word-break:var(--locale-word-break,keep-all)] [overflow-wrap:anywhere]" : "break-words leading-snug text-white [&_code]:bg-white/15 [&_code]:text-white")}>
           {children ?? (
             <MarkdownContent
               content={msg.content}

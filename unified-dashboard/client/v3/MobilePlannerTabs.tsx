@@ -11,6 +11,10 @@ const TABS: ReadonlyArray<{ id: MobilePlannerTab; icon: string; label: string }>
   { id: "task", icon: "📋", label: "folders.common.folder" },
   { id: "chat", icon: "💬", label: "folders.mobile.chat" },
 ];
+const folderTabLabels: Readonly<Record<string, { projects: string; task: string }>> = {
+  ja: { projects: "フォルダ", task: "詳細" },
+  "zh-Hans": { projects: "文件夹", task: "详情" },
+};
 
 export function MobilePlannerTabs({
   activeTab,
@@ -19,7 +23,8 @@ export function MobilePlannerTabs({
   activeTab: MobilePlannerTab;
   onSelect(tab: MobilePlannerTab): void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const shortLabels = folderTabLabels[i18n.resolvedLanguage ?? ""];
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
 
@@ -31,19 +36,24 @@ export function MobilePlannerTabs({
       aria-label={t("folders.mobile.tabs")}
       role="tablist"
     >
-      {TABS.map((tab) => (
+      {TABS.map((tab) => {
+        const label = t(tab.label);
+        const shortLabel = tab.id === "projects" || tab.id === "task" ? shortLabels?.[tab.id] : undefined;
+        return (
         <button
           key={tab.id}
           type="button"
           className={`v3-mobile-tab${activeTab === tab.id ? " is-active" : ""}`}
           role="tab"
+          aria-label={shortLabel ? label : undefined}
           aria-selected={activeTab === tab.id}
           data-testid={`v3-mobile-tab-${tab.id}`}
           onClick={() => onSelect(tab.id)}
         >
-          <span className="v3-emoji" aria-hidden="true">{tab.icon}</span> {t(tab.label)}
+          <span className="v3-emoji" aria-hidden="true">{tab.icon}</span> {shortLabel ?? label}
         </button>
-      ))}
+        );
+      })}
     </nav>
   );
 }

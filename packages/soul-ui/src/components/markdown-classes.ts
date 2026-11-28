@@ -42,11 +42,11 @@ export const markdownCodeBlockClass = "text-xs text-muted-foreground bg-input ro
 
 // 스트리밍 본문 감싸개. 완료 본문과 같은 클래스로 그려 완료 순간 자리가 바뀌지 않는다.
 export const markdownBodyClass = "text-base text-foreground";
-export const markdownManuscriptBodyClass = "[line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]";
+export const markdownManuscriptBodyClass = "[line-height:1.6] [word-break:var(--locale-word-break,keep-all)] [overflow-wrap:anywhere]";
 export const markdownPlainBodyClass = "break-words leading-snug";
 
 // words 모듈을 받기 전에만 쓰는 평문 스트리밍 모양(지금 동작 그대로).
 export const markdownStreamingFallbackBodyClass = "text-base text-foreground whitespace-pre-wrap";
-export const markdownStreamingFallbackManuscriptTextClass = "[line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]";
-export const markdownStreamingFallbackTextClass = "leading-snug [word-break:keep-all] [overflow-wrap:anywhere]";
+export const markdownStreamingFallbackManuscriptTextClass = "[line-height:1.6] [word-break:var(--locale-word-break,keep-all)] [overflow-wrap:anywhere]";
+export const markdownStreamingFallbackTextClass = "leading-snug [word-break:var(--locale-word-break,keep-all)] [overflow-wrap:anywhere]";
 export const markdownStreamingCursorClass = "inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 align-text-bottom animate-caret-blink";

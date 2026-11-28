@@ -1,3 +1,4 @@
+import { intlLocale, resolveLanguage } from "@soulstream/i18n";
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Button, Input } from "@seosoyoung/soul-ui";
@@ -58,7 +59,7 @@ export function McpSecretEditor({
       <SettingsGroupBox title={t("mcp.usage")}>
         <div className="space-y-2 text-sm">
           <p data-v3-selectable-content="true">
-            {t("mcp.updatedAt", { date: secret.updated_at ? new Date(secret.updated_at).toLocaleString(i18n.resolvedLanguage === "ko" ? "ko-KR" : "en-US") : t("mcp.unknown") })}
+            {t("mcp.updatedAt", { date: secret.updated_at ? new Date(secret.updated_at).toLocaleString(intlLocale(resolveLanguage(i18n.resolvedLanguage, []))) : t("mcp.unknown") })}
           </p>
           {secret.servers.length || secret.profiles.length ? (
             <>

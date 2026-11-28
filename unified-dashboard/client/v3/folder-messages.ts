@@ -1,14 +1,12 @@
-import { createI18n } from "@soulstream/i18n";
+import { adminTranslation } from "../components/config/admin-translation";
 
 type MessageOptions = Record<string, string | number>;
 
 export type FolderTranslate = (key: string, options?: MessageOptions) => string;
 
-let fallback: FolderTranslate | undefined;
 
 export function translateFolderFallback(key: string, options?: MessageOptions): string {
-  fallback ??= createI18n("ko").t;
-  return fallback(key, options);
+  return adminTranslation()(key, options);
 }
 
 export class FolderMessageError extends Error {

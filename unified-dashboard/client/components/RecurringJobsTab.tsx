@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { createI18n } from "@soulstream/i18n";
+import { adminTranslation } from "./config/admin-translation";
 import {
   Button,
   FrameLoading,
@@ -426,6 +426,6 @@ function message(value: unknown, t: Translate): string {
 }
 function isVersionConflict(value: unknown): value is HttpResponseError { return value instanceof HttpResponseError && value.status === 409; }
 
-export function confirmRecurringArchive(name: string, t: Translate = createI18n("ko").t) {
+export function confirmRecurringArchive(name: string, t: Translate = adminTranslation()) {
   return window.confirm(t("jobs.recurring.confirmArchive", { name }));
 }

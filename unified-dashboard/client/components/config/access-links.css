@@ -1,7 +1,7 @@
 .access-links-copy { min-width:0; }
 .access-links-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
 .access-links-row.is-past .access-links-label { color:var(--v3-text-secondary); }
-.access-links-meta { display:flex; flex-wrap:wrap; row-gap:0; column-gap:var(--v3-space-3); word-break:keep-all; overflow-wrap:anywhere; }
+.access-links-meta { display:flex; flex-wrap:wrap; row-gap:0; column-gap:var(--v3-space-3); word-break:var(--locale-word-break, keep-all); overflow-wrap:anywhere; }
 .access-links-empty { color:var(--muted-foreground); }
 .access-links-form { display:flex; flex-direction:column; gap:var(--v3-space-4); }
 .access-links-form fieldset { min-width:0; margin:0; padding:0; border:0; }

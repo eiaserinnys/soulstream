@@ -24,7 +24,7 @@ const GLASS_NUMERIC_LIMITS = {
 } as const;
 
 export type NormalizedUserPreferences = {
-  language?: "ko" | "en";
+  language?: "ko" | "en" | "ja" | "zh-Hans";
   appearance: "system" | "light" | "dark";
   chatFontSize: 14 | 15 | 16 | 17 | 18;
   wallpaper: {
@@ -193,7 +193,8 @@ export function normalizeUserPreferences(value: unknown): NormalizedUserPreferen
   }
 
   return {
-    ...(source.language === "ko" || source.language === "en" ? { language: source.language } : {}),
+    ...(source.language === "ko" || source.language === "en" || source.language === "ja" || source.language === "zh-Hans"
+      ? { language: source.language } : {}),
     appearance,
     chatFontSize: normalizeChatFontSize(source.chatFontSize),
     wallpaper,

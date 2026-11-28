@@ -1,3 +1,4 @@
+import { intlLocale, resolveLanguage } from "@soulstream/i18n";
 import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { sevenDayElapsedFraction, type ProviderQuotaSlot } from "@seosoyoung/soul-ui";
@@ -6,10 +7,11 @@ export type QuotaWindow = Omit<ProviderQuotaSlot, "label">;
 const SEVEN_DAYS_MS = 7 * 86_400_000;
 
 function clockText(date: Date, locale: string | undefined): string {
-  return new Intl.DateTimeFormat(locale, {
-    hour: locale === "ko" ? "2-digit" : "numeric",
+  const language = resolveLanguage(locale, []);
+  return new Intl.DateTimeFormat(intlLocale(language), {
+    hour: language === "en" ? "numeric" : "2-digit",
     minute: "2-digit",
-    ...(locale === "ko" ? { hour12: false } : {}),
+    ...(language === "en" ? {} : { hour12: false }),
   }).format(date);
 }
 
@@ -32,17 +34,17 @@ export function formatQuotaResetLabel(
   const roundedUsed = Math.round(usedPercent);
   const diffMs = reset.getTime() - Date.now();
   const isMonthlyOrLong = kind === "monthly" || diffMs >= SEVEN_DAYS_MS;
-  const dateLabel = new Intl.DateTimeFormat(locale, { month: "numeric", day: "numeric" }).format(reset);
+  const dateLabel = new Intl.DateTimeFormat(intlLocale(resolveLanguage(locale, [])), { month: "numeric", day: "numeric" }).format(reset);
   if (roundedUsed >= 100) {
     return t("accounts.quota.resetAt", { time: isMonthlyOrLong ? dateLabel : clockText(reset, locale) });
   }
   const minutes = Math.max(0, Math.ceil(diffMs / 60_000));
-  const number = new Intl.NumberFormat(locale);
+  const number = new Intl.NumberFormat(intlLocale(resolveLanguage(locale, [])));
   if (minutes < 60) return t("accounts.quota.inMinutes", { number: number.format(minutes) });
   if (minutes < 12 * 60) return t("accounts.quota.inHours", { number: number.format(Math.ceil(minutes / 60)) });
   if (isMonthlyOrLong) return dateLabel;
-  const weekday = new Intl.DateTimeFormat(locale, { weekday: "short" }).format(reset);
-  const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(reset);
+  const weekday = new Intl.DateTimeFormat(intlLocale(resolveLanguage(locale, [])), { weekday: "short" }).format(reset);
+  const time = new Intl.DateTimeFormat(intlLocale(resolveLanguage(locale, [])), { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(reset);
   return t("accounts.quota.weekdayTime", { weekday, time });
 }
 
@@ -55,7 +57,7 @@ export function quotaColor(usedPercent: number): string {
 function ProviderQuotaCell({ slot }: { slot: QuotaWindow }) {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage;
-  const percent = new Intl.NumberFormat(locale, { style: "percent" });
+  const percent = new Intl.NumberFormat(intlLocale(resolveLanguage(locale, [])), { style: "percent" });
   const used = Math.min(100, Math.max(0, slot.usedPercent));
   // 커서는 데이터가 새로 그려질 때 함께 다시 잰다. 따로 도는 타이머는 두지 않는다.
   const elapsed = slot.sevenDay ? sevenDayElapsedFraction(slot.resetAt, Date.now()) : null;
@@ -85,7 +87,7 @@ export function ProviderQuotaSkeleton() {
       {/* 값이 들어올 때와 같은 줄 높이를 차지해 막대가 튀지 않게 한다. */}
       <div className="c724-quota-label-row c724-quota-skeleton-label">
         <span className="c724-quota-name">{t("accounts.quota.short")}</span>
-        <span className="c724-quota-pct">{new Intl.NumberFormat(i18n.resolvedLanguage, { style: "percent" }).format(0)}</span>
+        <span className="c724-quota-pct">{new Intl.NumberFormat(intlLocale(resolveLanguage(i18n.resolvedLanguage, [])), { style: "percent" }).format(0)}</span>
         <span className="c724-quota-reset">{t("accounts.quota.inHours", { number: 0 })}</span>
       </div>
       <div className="c724-quota-track animate-pulse" />

@@ -31,6 +31,6 @@ describe("V3ErrorNotice", () => {
   it("keeps Korean words whole while still allowing long tokens to wrap", () => {
     const css = readFileSync(new URL("./v3-content-boundary.css", import.meta.url), "utf8");
 
-    expect(css).toMatch(/\.v3-error-notice\s*\{[^}]*word-break:\s*keep-all;[^}]*overflow-wrap:\s*anywhere;/s);
+    expect(css).toMatch(/\.v3-error-notice\s*\{[^}]*word-break:\s*var\(--locale-word-break,\s*keep-all\);[^}]*overflow-wrap:\s*anywhere;/s);
   });
 });

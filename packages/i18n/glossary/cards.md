@@ -14,7 +14,8 @@
 | 검수 대기 | Awaiting review |
 | 보류 | On hold |
 | 완료 | Done (status), Complete (action) |
-| 취소 | Cancelled (status), Cancel (action) |
+| 취소 | Canceled (status), Cancel (action) |
+| 했어 | I did it |
 | 확인 항목 | Check items |
 | 커멘트 | Comment |
 | 선행 카드 | Prerequisite cards |

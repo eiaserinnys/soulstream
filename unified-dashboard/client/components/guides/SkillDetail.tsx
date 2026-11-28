@@ -168,7 +168,7 @@ function FindingList({ findings }: { findings: readonly GuideFinding[] }) {
       {findings.map((finding, index) => (
         <li key={index} className="flex min-w-0 items-start gap-2 rounded-floor border border-border px-3 py-2 text-sm">
           <FindingCodeBadge finding={finding} />
-          <p className="min-w-0" data-v3-selectable-content="true" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>{finding.message}</p>
+          <p className="break-keep min-w-0" data-v3-selectable-content="true" style={{ overflowWrap: "anywhere" }}>{finding.message}</p>
         </li>
       ))}
     </ul>
@@ -191,7 +191,7 @@ export function CatalogDetail({ catalog, reportExists, onSelect }: { catalog: Ca
   const group = (title: string, lines: string[]) => (
     <SettingsGroupBox title={title}>
       {lines.length === 0 ? <p className="text-xs text-muted-foreground">{t("agents.none")}</p> : (
-        <ul className="space-y-1">{lines.map(line => <li key={line} className="text-sm" data-v3-selectable-content="true" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>{line}</li>)}</ul>
+        <ul className="space-y-1">{lines.map(line => <li key={line} className="break-keep text-sm" data-v3-selectable-content="true" style={{ overflowWrap: "anywhere" }}>{line}</li>)}</ul>
       )}
     </SettingsGroupBox>
   );

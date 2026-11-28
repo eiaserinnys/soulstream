@@ -20,7 +20,7 @@
 .agy-consent-label {
   margin: 0;
   font: var(--v3-type-body) var(--v3-font-family);
-  word-break: keep-all;
+  word-break: var(--locale-word-break, keep-all);
   overflow-wrap: anywhere;
 }
 

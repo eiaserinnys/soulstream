@@ -1,16 +1,12 @@
-function parseTimeMs(value: string | undefined | null): number {
-  if (!value) return 0;
-  const ms = Date.parse(value);
-  return Number.isFinite(ms) ? ms : 0;
-}
+import { intlLocale, type Language } from "@soulstream/i18n";
 
-export function formatWorkspaceTime(value: string | undefined | null): string {
-  const ms = parseTimeMs(value);
-  if (!ms) return "...";
-  return new Date(ms).toLocaleString("ko-KR", {
+export function formatWorkspaceTime(value: string | undefined | null, language: Language = "ko"): string {
+  const timestamp = Date.parse(value ?? "");
+  if (!Number.isFinite(timestamp)) return "...";
+  return new Intl.DateTimeFormat(intlLocale(language), {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  });
+  }).format(timestamp);
 }

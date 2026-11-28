@@ -1,4 +1,4 @@
-import { createI18n } from "@soulstream/i18n";
+import { adminTranslation, type AdminTranslate } from "../components/config/admin-translation";
 import type { PersistentTurnUsageMode } from "../../../packages/wire-schema/src/persistent_session_settings";
 import type { PersistentReportEntry } from "../../../packages/wire-schema/src/persistent_report";
 import type { AgentInfo } from "@seosoyoung/soul-ui";
@@ -105,7 +105,7 @@ export class PersistentSessionError extends HttpResponseError {
   }
 }
 
-type Translate = ReturnType<typeof createI18n>["t"];
+type Translate = AdminTranslate;
 
 export function createPersistentSessionsApi(request: typeof fetch = fetch, translate?: Translate) {
   const root = "/api/persistent-sessions";
@@ -116,7 +116,7 @@ export function createPersistentSessionsApi(request: typeof fetch = fetch, trans
       headers: body === undefined ? { Accept: "application/json" } : { Accept: "application/json", "Content-Type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    if (!response.ok) throw await failure(response, translate ?? createI18n("ko").t);
+    if (!response.ok) throw await failure(response, translate ?? adminTranslation());
     return await response.json() as T;
   }
   return {
@@ -128,7 +128,7 @@ export function createPersistentSessionsApi(request: typeof fetch = fetch, trans
         credentials: "same-origin",
         headers: { Accept: "application/json" },
       });
-      if (!response.ok) throw new Error((translate ?? createI18n("ko").t)("jobs.persistent.agentsLoadError", { status: response.status }));
+      if (!response.ok) throw new Error((translate ?? adminTranslation())("jobs.persistent.agentsLoadError", { status: response.status }));
       return ((await response.json()) as { agents?: AgentInfo[] }).agents ?? [];
     },
     update: (sessionId: string, input: PersistentSessionWrite) =>

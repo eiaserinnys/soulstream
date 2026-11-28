@@ -1,3 +1,4 @@
+import { intlLocale, resolveLanguage } from "@soulstream/i18n";
 /**
  * ChatView - SSE 이벤트를 시간순 채팅 로그로 표시
  * 500줄 초과: 기존 채팅 렌더·follow·검색·입력의 소유 경계를 유지하는 국소 이력 로드 수리입니다.
@@ -160,7 +161,8 @@ function ChatViewContent({
   registerGeneratedTextActions: registerExternalGeneratedActions,
   registerChatUiOperations,
 }: Omit<ChatViewProps, "storeScope"> = {}) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = intlLocale(resolveLanguage(i18n.resolvedLanguage, []));
   const tree = useChatStore((s) => s.tree);
   const treeVersion = useChatStore((s) => s.treeVersion);
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
@@ -237,10 +239,8 @@ function ChatViewContent({
     ? persistentSessionDisplaySettings.showWorkDetails
     : true;
   const flattenedMessages = useMemo(
-    () => isManuscript
-      ? flattenMessages(tree, { includePersistentTurnUsage: true })
-      : flattenMessages(tree),
-    [flattenMessages, isManuscript, tree, treeVersion],
+    () => flattenMessages(tree, { includePersistentTurnUsage: isManuscript, locale }),
+    [flattenMessages, isManuscript, locale, tree, treeVersion],
   );
   const messages = useMemo(
     () => projectChatOutputAttachments(flattenedMessages),
@@ -259,9 +259,10 @@ function ChatViewContent({
       return projectPersistentTurnUsage(
         projectPersistentWorkDetails(silentResponsesFiltered, showWorkDetails),
         turnUsageMode,
+        locale,
       );
     },
-    [isManuscript, hiddenInputProjection, showWorkDetails, turnUsageMode],
+    [isManuscript, hiddenInputProjection, locale, showWorkDetails, turnUsageMode],
   );
   const visibleMessages = useMemo(
     () => {

@@ -48,7 +48,7 @@ export const InterventionMessage = memo(function InterventionMessage({ msg, pres
             </span>
           )}
         </div>)}
-        <div data-slot="chat-body" className={manuscript ? "whitespace-pre-wrap text-base text-muted-foreground [line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "whitespace-pre-wrap break-words text-base leading-snug text-white"}>{msg.content}</div>
+        <div data-slot="chat-body" className={manuscript ? "whitespace-pre-wrap text-base text-muted-foreground [line-height:1.6] [word-break:var(--locale-word-break,keep-all)] [overflow-wrap:anywhere]" : "whitespace-pre-wrap break-words text-base leading-snug text-white"}>{msg.content}</div>
         {attachments}
         {/* Phase A context 정본 (Y-9, atom d7a1ad86 차단): UserMessage.tsx:82-84와 대칭으로
             wire의 context_items를 ContextBlock으로 표시 — 첫 턴/auto-resume/running intervention

@@ -31,6 +31,7 @@ function mergePersistentInstructionRecordedCaptions(messages: ChatMessage[]): Ch
 export function projectPersistentTurnUsage(
   messages: ChatMessage[],
   turnUsageMode: PersistentTurnUsageMode,
+  locale?: string,
 ): ChatMessage[] {
   const captionedMessages = mergePersistentInstructionRecordedCaptions(messages);
   const sourceMessages = captionedMessages.filter((message) => (
@@ -57,20 +58,20 @@ export function projectPersistentTurnUsage(
       const contextMessage = pair.contextUsage;
       const context = contextMessage?.contextUsageData;
       const complete = pair.complete;
-      const contextText = context ? formatContextUsageText(context) : undefined;
+      const contextText = context ? formatContextUsageText(context, locale) : undefined;
       const stats = complete ? formatTurnCompleteStats({
         usage: complete.usage,
         turnCostUsd: complete.turnCostUsd,
         sessionCostUsd: complete.sessionCostUsd,
         sessionCostPartial: complete.sessionCostPartial,
-      }) : undefined;
+      }, locale) : undefined;
       const completeText = stats ? `${TURN_COMPLETE_LABEL}${TURN_USAGE_SEPARATOR}${stats}` : undefined;
       const title = formatTurnUsageCaptionTitle({
         percent: context?.percent,
         estimated: context?.estimated,
         usage: complete?.usage,
         turnCostUsd: complete?.turnCostUsd,
-      }) ?? contextText;
+      }, locale) ?? contextText;
 
       if (complete && title && (contextText || completeText)) {
         captions.set(String(pair.terminalId), {
@@ -83,11 +84,11 @@ export function projectPersistentTurnUsage(
     } else if (pair.terminalType === "error" && turnUsageMode !== "hidden") {
       const context = pair.contextUsage?.contextUsageData;
       if (!context) continue;
-      const contextText = formatContextUsageText(context);
+      const contextText = formatContextUsageText(context, locale);
       const title = formatTurnUsageCaptionTitle({
         percent: context.percent,
         estimated: context.estimated,
-      }) ?? contextText;
+      }, locale) ?? contextText;
       if (title && contextText) {
         captions.set(String(pair.terminalId), { title, contextText, expandedByDefault: turnUsageMode === "expanded" });
       }

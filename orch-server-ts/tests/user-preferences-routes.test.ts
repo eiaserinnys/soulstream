@@ -134,6 +134,23 @@ describe("user preferences route harness", () => {
     await app.close();
   });
 
+  it.each(["ja", "zh-Hans"])("saves and reads %s account preferences", async (language) => {
+    const stored = { email: "user@example.com", prefs: {}, hasBackground: false, updatedAt: null };
+    const { app, calls } = createHarness({ getRow: stored });
+    try {
+      const put = await app.inject({ method: "PUT", url: "/api/user/preferences", payload: { language } });
+      expect(put.statusCode).toBe(200);
+      expect(calls[1]).toMatchObject(["put", stored.email, { language }, { clearBackground: false }]);
+      expect(put.json().preferences.language).toBe(language);
+      stored.prefs = put.json().preferences;
+      const get = await app.inject({ method: "GET", url: "/api/user/preferences" });
+      expect(get.statusCode).toBe(200);
+      expect(get.json().preferences.language).toBe(language);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("serializes stored photo wallpaper background URLs with updated timestamp", async () => {
     const { app } = createHarness({
       getRow: {

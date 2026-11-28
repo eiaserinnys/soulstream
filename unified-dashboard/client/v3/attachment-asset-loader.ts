@@ -1,4 +1,4 @@
-import { createI18n } from "@soulstream/i18n";
+import { adminTranslation } from "../components/config/admin-translation";
 import type { useTranslation } from "react-i18next";
 type Translate = ReturnType<typeof useTranslation>["t"];
 import type { CardItemEvidence } from "@seosoyoung/soul-ui/cards/card-types";
@@ -25,14 +25,13 @@ export type AttachmentLoadResult = {
   status?: { message: string; retryable?: boolean };
 };
 
-const legacyT = createI18n("ko").t;
 
 type AttachmentDescriptor = NonNullable<CardItemEvidence["descriptor"]>;
 
 export async function loadAttachmentAsset(
   reference: AttachmentAssetLoadInput,
   signal: AbortSignal,
-  t: Translate = legacyT,
+  t: Translate = adminTranslation(),
 ): Promise<AttachmentLoadResult> {
   const metadataUrl = `/api/attachments/${encodeURIComponent(reference.attachmentId)}?${attachmentContextQuery(reference.context)}`;
   let response: Response;
@@ -77,7 +76,7 @@ export function failedReference(
   reference: AttachmentPlaceholderReference,
   status?: number,
   previewKind: "image" | "info" = "info",
-  t: Translate = legacyT,
+  t: Translate = adminTranslation(),
 ): AttachmentLoadResult {
   const retryable = status === undefined || (status >= 500 && status < 600);
   return {
