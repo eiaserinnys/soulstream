@@ -144,7 +144,7 @@
   "unified-dashboard/client/lib/skill-guides.ts": 3,
   "unified-dashboard/client/lib/usage-summary.ts": 2,
   "unified-dashboard/client/lib/webhooks-api.ts": 46,
-  "unified-dashboard/client/pwa/dashboard-reload.ts": 5,
+  "unified-dashboard/client/pwa/dashboard-reload.ts": 6,
   "unified-dashboard/client/v3/access-links-fixture.ts": 13,
   "unified-dashboard/client/v3/agent-profile-assembly-fixture.ts": 18,
   "unified-dashboard/client/v3/AgentNodeAssignmentFields.tsx": 9,
