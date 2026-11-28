@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { copyInstallerText } from './support/catalog.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -30,6 +31,7 @@ function run(responses, rejectPresets = false) {
   try {
     const root = join(dir, 'root'), tmp = join(dir, 'tmp');
     mkdirSync(root); mkdirSync(tmp);
+    copyInstallerText(root);
     writeFileSync(join(root, '.env.orch'), `AUTH_BEARER_TOKEN=${bearer}\n`);
     writeFileSync(join(root, '.admin-password'), 'password\n');
     responses.forEach((value, i) => writeFileSync(join(dir, `response-${i + 1}`), value));

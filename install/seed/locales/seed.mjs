@@ -36,7 +36,7 @@ export function validateOverlay(document, lang, chunk, inventory, seen) {
     if (typeof patch.title !== 'string' || !patch.title.trim() || [...patch.title].length > 50) {
       throw new Error(`${at}: title must contain 1 to 50 code points.`);
     }
-    if ((original.parent === 'common.skills' || fixedTitle(original.title)) && patch.title !== original.title) {
+    if (fixedTitle(original) && patch.title !== original.title) {
       throw new Error(`${at}: title must stay "${original.title}".`);
     }
     if (typeof patch.content !== 'string') throw new Error(`${at}: content must be a string.`);

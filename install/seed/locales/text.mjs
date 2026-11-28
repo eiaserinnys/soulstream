@@ -28,6 +28,6 @@ export function forbiddenSeedText(text) {
   return forbidden.find(([, pattern]) => pattern.test(text))?.[0];
 }
 
-export function fixedTitle(title) {
-  return /\.md$/i.test(title) || /^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(title);
+export function fixedTitle(entry) {
+  return entry.parent === 'common.skills' || /\.md$/i.test(entry.title) || /^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(entry.title);
 }

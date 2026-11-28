@@ -16,7 +16,7 @@ function showWorklist(lang, chunk, entries, overlays) {
   for (const entry of entries) {
     if (entry.entry_kind !== 'card') continue;
     const status = lang === 'ko' || overlays.has(entry.key) ? 'done' : 'todo';
-    const fixed = entry.parent === 'common.skills' || fixedTitle(entry.title);
+    const fixed = fixedTitle(entry);
     console.log(
       `\n## [${status}] ${entry.key}\nTitle${fixed ? ' (keep)' : ''}: ${entry.title}\n\n${entry.content ?? ''}`,
     );

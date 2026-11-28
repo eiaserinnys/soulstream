@@ -332,6 +332,19 @@ Fix the cause, then run the same command again.
 `), t.fd3());
 }
 
+test('an unavailable install language stops the update before stopping services', async () => {
+  const t = setup();
+  try {
+    installed(t);
+    const result = await t.run(FLOW.replace('\nparse_args\n', '\nparse_args --lang en\n'));
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /아직 준비되지 않았습니다.*ko/);
+    assert.equal(t.systemctl(), false);
+  } finally {
+    t.cleanup();
+  }
+});
+
 test('an update stops the services before changing anything and ends completed', async () => {
   const t = setup();
   try {

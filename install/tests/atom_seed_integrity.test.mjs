@@ -18,6 +18,10 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildCreatePayload, placeholderKeys, validateSeed } from '../seed/load_atom_seed.mjs';
 
+import { completeLanguages } from '../seed/locales/languages.mjs';
+import { readLocalizedSeed } from '../seed/locales/seed.mjs';
+import { forbiddenSeedText } from '../seed/locales/text.mjs';
+
 const SEED_PATH = fileURLToPath(new URL('../seed/atom-seed.json', import.meta.url));
 const PORTRAIT_PATHS = {
   seosoyoung: fileURLToPath(new URL('../assets/portraits/seosoyoung.png', import.meta.url)),
@@ -238,32 +242,6 @@ test('link blocks follow the load_skill rules and contain only placeholder node 
 
 // --- forbidden patterns ----------------------------------------------------
 
-test('forbidden patterns: no UUID, email, non-loopback IPv4, private home path or .ts.net', () => {
-  const emailRe = /[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
-  const ipv4Re = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
-  const homeRe = /\/home\/([^/\s"'`)\]}]+)/g;
-  const tsNetRe = /\.ts\.net\b/g;
-  for (const [where, text] of seedTexts()) {
-    assert.equal(UUID_RE.test(text), false, `UUID at ${where}`);
-    UUID_RE.lastIndex = 0;
-    for (const match of text.matchAll(emailRe)) {
-      const domain = match[1].toLowerCase();
-      assert.ok(domain === 'example.com' || domain === 'example.org', `email at ${where}: ${match[0]}`);
-    }
-    for (const match of text.matchAll(ipv4Re)) {
-      const [a] = match[0].split('.').map(Number);
-      const loopback = a === 127;
-      assert.ok(loopback, `non-loopback IPv4 at ${where}: ${match[0]}`);
-    }
-    for (const match of text.matchAll(homeRe)) {
-      if (['soulstream', 'user', '...'].includes(match[1])) continue;
-      assert.fail(`private home path at ${where}: ${match[0]}`);
-    }
-    tsNetRe.lastIndex = 0;
-    assert.equal(tsNetRe.test(text), false, `.ts.net at ${where}`);
-  }
-});
-
 // Every string in the seed, wherever it sits: object keys and values at any depth (entry key, title,
 // content, tags, parent, symlink target, exported keys and the rest). Locations name the entry key and
 // the field path only.
@@ -287,27 +265,10 @@ function seedStringFields() {
   return rows;
 }
 
-test('forbidden patterns: no card, PR or issue numbers, date tags, private names or internal names', () => {
-  // The messages carry only the location and the pattern label, never the matched text.
-  const forbidden = [
-    ['card, PR or issue number', /(?:카드|PR|이슈|card|issue)\s*#\s*\d+/i],
-    ['number sign followed by three or more digits', /#\d{3,}/],
-    ['dated operating-standard tag', /\d{6}\s*운영\s*기준/i],
-    ['operating-standard tag', /운영\s*기준/i],
-    ['dated case tag', /사례\s*\d{6}/i],
-    ['private node, host or person name', /eiaserinnys|eias-linegames|linegames|silent-manari|netcup/i],
-    ['internal agent name', /utonium|roselin|bubbles|buttercup|blossom|astra/i],
-    ['internal agent name (carbon outside a model name such as gemini-4-carbon or Gemini Carbon)', /(?<!-)(?<!gemini )carbon/i],
-    ['internal deployment tool name', /haniel|하니엘/i],
-    ['private tool or project name', /\barbor\b|\/EB\/|E&B|kal 지침/i],
-    // Built from two pieces: the source guard bans the literal name in tracked files.
-    ['removed client name', new RegExp('kaleido' + 'scope', 'i')],
-    ['director address or quotation', /디렉터님|디렉터의 말|디렉터(?!리)/i],
-  ];
+test('all Korean seed strings follow the public seed text rules', () => {
   for (const [where, text] of seedStringFields()) {
-    for (const [label, pattern] of forbidden) {
-      assert.equal(pattern.test(text), false, `${where}: ${label}`);
-    }
+    const violation = forbiddenSeedText(text);
+    assert.equal(violation, undefined, `${where}: ${violation}`);
   }
 });
 
@@ -482,21 +443,30 @@ test('seed guidance names the settings tabs the way the dashboard does', () => {
   assert.deepEqual(stale, [], 'settings tabs must use the dashboard labels');
 });
 
-test('settings card lists every dashboard group and tab with the same admin marks', () => {
-  const source = fs.readFileSync(fileURLToPath(new URL('../../unified-dashboard/client/components/config/configTabs.ts', import.meta.url)), 'utf8');
-  const settingsDictionary = JSON.parse(fs.readFileSync(fileURLToPath(new URL('../../packages/i18n/src/locales/ko/settings.json', import.meta.url)), 'utf8'));
-  const tabs = [...source.matchAll(/\{ id: "(\w+)", label: "([^"]+)",[^\n]*?group: "(\w+)", adminOnly: (true|false)/g)]
-    .map(([, id, , group, admin]) => ({ id, label: settingsDictionary.tabs[id].label, group, adminOnly: admin === 'true' }));
-  const groups = [...source.matchAll(/\{ id: "(\w+)", label: "([^"]+)" \}/g)].map(([, id]) => ({ id, label: settingsDictionary.groups[id] }));
-  assert.equal(tabs.length, 20, 'expected 20 CONFIG_TABS labels');
-  assert.equal(groups.length, 4, 'expected 4 CONFIG_TAB_GROUPS labels');
-  const settings = contentOf('common.soulstream_guide.settings');
-  for (const group of groups) assert.ok(settings.includes(`## ${group.label}\n`), `settings is missing the group heading ${group.label}`);
-  for (const tab of tabs) {
-    const line = settings.split('\n').find((text) => text.startsWith(`- ${tab.label}:`) || text.startsWith(`- ${tab.label}(관리자):`));
-    assert.ok(line, `settings is missing a line for the tab ${tab.label}`);
-    assert.equal(line.startsWith(`- ${tab.label}(관리자):`), tab.adminOnly, `admin mark of ${tab.label} differs from configTabs.ts`);
-  }
-  const guide = contentOf('skill.soulstream_guide.body');
-  assert.ok(!guide.includes('세 묶음') && guide.includes('네 묶음'), 'the guide skill must say four groups');
-});
+const adminMark = { ko: '(관리자)', en: ' (Admin)', ja: '（管理者）', 'zh-Hans': '（管理员）' };
+
+for (const lang of completeLanguages) {
+  test(`${lang} settings card lists every dashboard group and tab with the same admin marks`, () => {
+    const source = fs.readFileSync(new URL('../../unified-dashboard/client/components/config/configTabs.ts', import.meta.url), 'utf8');
+    const file = new URL(`../../packages/i18n/src/locales/${lang}/settings.json`, import.meta.url);
+    const dictionary = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const tabs = [...source.matchAll(/\{ id: "(\w+)", label: "([^"]+)",[^\n]*?group: "(\w+)", adminOnly: (true|false)/g)]
+      .map(([, id, , group, admin]) => ({ label: dictionary.tabs[id].label, group, adminOnly: admin === 'true' }));
+    const groups = [...source.matchAll(/\{ id: "(\w+)", label: "([^"]+)" \}/g)].map(([, id]) => dictionary.groups[id]);
+    assert.equal(tabs.length, 20, 'expected 20 CONFIG_TABS labels');
+    assert.equal(groups.length, 4, 'expected 4 CONFIG_TAB_GROUPS labels');
+    const { seed } = readLocalizedSeed(SEED_PATH, lang);
+    const settings = seed.entries.find((entry) => entry.key === 'common.soulstream_guide.settings').content;
+    for (const group of groups) assert.ok(settings.includes(`## ${group}\n`), `settings is missing the group heading ${group}`);
+    for (const tab of tabs) {
+      const marked = `- ${tab.label}${adminMark[lang]}:`;
+      const line = settings.split('\n').find((text) => text.startsWith(`- ${tab.label}:`) || text.startsWith(marked));
+      assert.ok(line, `settings is missing a line for the tab ${tab.label}`);
+      assert.equal(line.startsWith(marked), tab.adminOnly, `admin mark of ${tab.label} differs from configTabs.ts`);
+    }
+    if (lang === 'ko') {
+      const guide = contentOf('skill.soulstream_guide.body');
+      assert.ok(!guide.includes('세 묶음') && guide.includes('네 묶음'), 'the guide skill must say four groups');
+    }
+  });
+}
