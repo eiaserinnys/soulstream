@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useId, useRef, useState, type ReactNode } from 'react';
 import { isNodeVisible, renderParts, unreferencedSourceKeys, type Action, type ChatUiState, type FieldValue, type Node, type NormalizedChatUiDocumentV1 } from '@soulstream/chat-ui';
 import { Button } from '../ui/button';
@@ -15,6 +16,7 @@ export function ChatUiRenderer({ doc, state, onSet, onAction, presentation = 'de
   onAction: (action: Exclude<Action, { type: 'open_source' }>, nodeId: string) => void;
   presentation?: 'default' | 'manuscript';
 }) {
+  const { t } = useTranslation();
   const prefix = useId();
   const variant = BUTTON_VARIANTS[presentation];
   const [openEntities, setOpenEntities] = useState<Record<string, boolean>>({});
@@ -76,7 +78,7 @@ export function ChatUiRenderer({ doc, state, onSet, onAction, presentation = 'de
   return <div className="chat-ui" data-slot="chat-ui">
     {doc.title && <h2>{doc.title}</h2>}
     {nodes(doc.body)}
-    {doc.assumptions.length > 0 && <p className="chat-ui-meta">가정: {doc.assumptions.join('; ')}</p>}
+    {doc.assumptions.length > 0 && <p className="chat-ui-meta">{t("ui.chatUi.assumptions")} {doc.assumptions.join('; ')}</p>}
     {bottomSources.length > 0 && <div className="chat-ui-field chat-ui-meta">{bottomSources.map(key => <ChatUiSource key={key} source={doc.sources[key]} />)}</div>}
   </div>;
 }

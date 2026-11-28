@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type PropsWithChildren } from 'react';
 import { composeText, initialState, reduce, renderText, type Action, type ChatUiState, type FieldValue, type NormalizedChatUiDocumentV1 } from '@soulstream/chat-ui';
 import type { ChatUiComposerHandle, RegisterGeneratedTextActions, RegisterChatUiOperations } from './chat-ui-composer';
@@ -20,6 +21,7 @@ const FeedbackLifecycleContext = createContext<(() => void) | null>(null);
 /** The scope owns memory; virtualized message rows only borrow their entries. */
 type ScopeProps = PropsWithChildren<{ sessionId: string; appendGeneratedText?: ChatUiComposerHandle['appendGeneratedText'] }>;
 function ControllerScope({ sessionId, appendGeneratedText, children }: ScopeProps) {
+  const { t } = useTranslation();
   const [scope, setScope] = useState(() => ({ sessionId, states: new Map<string, ChatUiState>() }));
   const currentScope = useRef(scope);
   currentScope.current = scope;
@@ -53,13 +55,13 @@ function ControllerScope({ sessionId, appendGeneratedText, children }: ScopeProp
     if (!text) return { ok: true };
     try {
       const result = (appendGeneratedText ? appendGeneratedText(sessionId, text) : composer.current?.appendGeneratedText(sessionId, text)) ?? { ok: false, reason: 'unavailable' };
-      notify(result.ok ? '' : '지금은 입력창에 더할 수 없어.');
+      notify(result.ok ? '' : t("ui.chatUi.appendUnavailable"));
       return result;
     } catch {
-      notify('지금은 입력창에 더할 수 없어.');
+      notify(t("ui.chatUi.appendUnavailable"));
       return { ok: false, reason: 'unavailable' };
     }
-  }, [appendGeneratedText, sessionId, notify]);
+  }, [appendGeneratedText, sessionId, notify, t]);
   return <FeedbackLifecycleContext.Provider value={closeFeedback}>
     <Context.Provider value={{ sessionId, states, update, feedback, feedbackOpen, closeFeedback, notify, clearFeedback, registerComposer, append }}>{children}</Context.Provider>
   </FeedbackLifecycleContext.Provider>;
@@ -88,15 +90,16 @@ function useControllerContext() {
 
 /** Registers the same scoped operations used by UI messages for a PAS report sibling. */
 export function ChatUiOperationsBridge({ register }: { register?: RegisterChatUiOperations }) {
+  const { t } = useTranslation();
   const { sessionId, append, notify, clearFeedback } = useControllerContext();
   useEffect(() => {
     register?.({ notify, clearFeedback, appendGeneratedText: (target, text) => {
       if (target === sessionId) return append(text);
-      notify('지금은 입력창에 더할 수 없어.');
+      notify(t("ui.chatUi.appendUnavailable"));
       return { ok: false, reason: 'unavailable' };
     } });
     return () => register?.(null);
-  }, [append, notify, clearFeedback, register, sessionId]);
+  }, [append, notify, clearFeedback, register, sessionId, t]);
   return null;
 }
 
@@ -107,6 +110,7 @@ export function useChatUiHost() {
 }
 
 export function useChatUiController(uiId: string, hash: string, doc: NormalizedChatUiDocumentV1) {
+  const { t } = useTranslation();
   const { sessionId, states, update, notify, append } = useControllerContext();
   const key = JSON.stringify([sessionId, uiId, hash]);
   if (!states.has(key)) states.set(key, initialState(doc));
@@ -119,11 +123,11 @@ export function useChatUiController(uiId: string, hash: string, doc: NormalizedC
   const act = async (action: Exclude<Action, { type: 'open_source' }>, nodeId: string) => {
     switch (action.type) {
       case 'set': set(action.field, action.value); break;
-      case 'reset': update(key, reduce(doc, current(), action)); notify('기본값으로 돌아갔어'); break;
+      case 'reset': update(key, reduce(doc, current(), action)); notify(t("ui.chatUi.defaultsRestored")); break;
       case 'compose': append(composeText(doc, current(), nodeId)); break;
       case 'copy':
-        try { await navigator.clipboard.writeText(renderText(doc, current())); notify('현재 값 복사됨'); }
-        catch { notify('복사하지 못했어.'); }
+        try { await navigator.clipboard.writeText(renderText(doc, current())); notify(t("ui.chatUi.valuesCopied")); }
+        catch { notify(t("ui.chatUi.copyFailed")); }
         break;
     }
   };

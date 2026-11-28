@@ -82,5 +82,15 @@
   "common": {
     "retry": "다시 시도",
     "loading": "불러오는 중"
+  },
+  "chatUi": {
+    "appendUnavailable": "지금은 입력창에 더할 수 없어.",
+    "defaultsRestored": "기본값으로 돌아갔어",
+    "valuesCopied": "현재 값 복사됨",
+    "copyFailed": "복사하지 못했어.",
+    "defaultTextOnError": "화면을 표시하지 못했어. 기본값 글로 보여줄게.",
+    "savedTextOnError": "화면을 표시하지 못했어. 저장된 글로 보여줄게.",
+    "defaultTextOnVersion": "이 버전에서는 기본값 글로 보여줄게.",
+    "assumptions": "가정:"
   }
 }

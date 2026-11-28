@@ -82,5 +82,15 @@
   "common": {
     "retry": "Retry",
     "loading": "Loading"
+  },
+  "chatUi": {
+    "appendUnavailable": "Can’t add this to the input right now.",
+    "defaultsRestored": "Defaults restored",
+    "valuesCopied": "Values copied",
+    "copyFailed": "Couldn’t copy.",
+    "defaultTextOnError": "Couldn’t display the UI. Showing the default text.",
+    "savedTextOnError": "Couldn’t display the UI. Showing the saved text.",
+    "defaultTextOnVersion": "This version shows the default text.",
+    "assumptions": "Assumptions:"
   }
 }
