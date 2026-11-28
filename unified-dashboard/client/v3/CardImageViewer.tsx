@@ -10,7 +10,7 @@ import {
 } from "@seosoyoung/soul-ui/components/AttachmentViewerImage";
 import { useHeicImageSource } from "@seosoyoung/soul-ui/lib/image-source";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
-import { registerDashboardReader } from "../pwa/dashboard-reload";
+import { registerDashboardReader, updateDashboardReaderPlacement } from "../pwa/dashboard-reload";
 
 export interface CardImageSelection { src: string; alt: string; attachment?: ChatAttachmentItem }
 export interface CardAttachmentStatus { message: string; onRetry?(): void }
@@ -76,6 +76,7 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
       onClose={onClose}
       returnFocus={returnFocus}
       popupRef={popupRef}
+      onPopupChange={updateDashboardReaderPlacement}
       panelContent={status?<div className="chat-attachment-state chat-image-status" role="status"><span data-v3-selectable-content="true">{status.message}</span>{status.onRetry?<Button variant="outline" size="sm" onClick={status.onRetry}>다시 시도</Button>:null}</div>:undefined}
     />;
   }

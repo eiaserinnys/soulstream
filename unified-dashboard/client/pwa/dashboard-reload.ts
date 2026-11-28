@@ -8,14 +8,14 @@ import {
 type ReaderElements = { footer?: HTMLElement | null; content?: HTMLElement | null };
 const openReaders = new Set<() => ReaderElements>();
 const bannerUpdates = new Set<() => void>();
-function updateBanners() {
+export function updateDashboardReaderPlacement() {
   for (const update of bannerUpdates) update();
 }
 export function registerDashboardReader(getElements: () => ReaderElements = () => ({})): () => void {
   const reader = () => getElements();
   openReaders.add(reader);
-  updateBanners();
-  return () => { openReaders.delete(reader); updateBanners(); };
+  updateDashboardReaderPlacement();
+  return () => { openReaders.delete(reader); updateDashboardReaderPlacement(); };
 }
 
 export interface ReloadEnvironment {
@@ -36,7 +36,7 @@ export function createDashboardReloadCoordinator(
     if (issued) return;
     issued = true;
     environment.document.querySelector("[data-sw-update-banner]")?.remove();
-    updateBanners();
+    updateDashboardReaderPlacement();
     pendingAction?.();
   };
   const approve = async (deferForOpenReaders: boolean) => {
