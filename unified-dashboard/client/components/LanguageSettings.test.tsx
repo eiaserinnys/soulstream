@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { I18nextProvider } from "react-i18next";
 import { createI18n } from "@soulstream/i18n";
@@ -23,9 +22,9 @@ describe("language settings", () => {
     const english = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent === "English");
     expect(english).toBeDefined();
     await act(async () => {
-      const enter = new MouseEvent("pointerover", { bubbles: true });
-      Object.defineProperty(enter, "pointerType", { value: "touch" });
-      english!.dispatchEvent(enter);
+      const down = new MouseEvent("pointerdown", { bubbles: true });
+      Object.defineProperty(down, "pointerType", { value: "touch" });
+      english!.dispatchEvent(down);
       english!.click();
     });
     await act(async () => { await new Promise(r => setTimeout(r, 400)); });

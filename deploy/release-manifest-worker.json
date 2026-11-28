@@ -26,7 +26,8 @@
     "orch-server-ts/[!p]*",
     "soul-desktop/[!p]*",
     "chrome-extension/[!p]*",
-    "packages/soul-ui/[!p]*"
+    "packages/soul-ui/[!p]*",
+    "packages/i18n/[!p]*"
   ],
   "post_start_verify": [
     {

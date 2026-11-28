@@ -22,6 +22,8 @@ import {
 
 export function useUserPreferencesSync(email: string | null | undefined): void {
   const { i18n } = useTranslation();
+  const i18nRef = useRef(i18n);
+  i18nRef.current = i18n;
   const language = i18n.resolvedLanguage === "ko" ? "ko" : "en";
   const accountKey = useMemo(() => normalizeEmail(email), [email]);
   const [appearance] = useAppearancePreference();
@@ -44,7 +46,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     let cancelled = false;
     const cached = readCachedUserPreferences(accountKey);
     if (cached) {
-      applySnapshot(cached, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef, i18n);
+      applySnapshot(cached, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef, i18nRef.current);
       hydratedAccountRef.current = accountKey;
     }
 
@@ -52,7 +54,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
       .then((response) => {
         if (cancelled) return;
         setUploadedBackgroundUrl(response.backgroundUrl);
-        applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef, i18n);
+        applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef, i18nRef.current);
         writeCachedUserPreferences(accountKey, response.preferences);
         hydratedAccountRef.current = accountKey;
       })
@@ -65,7 +67,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     return () => {
       cancelled = true;
     };
-  }, [accountKey, i18n, setChatFontSize, setLiquidGlass, setUploadedBackgroundUrl, setWallpaper]);
+  }, [accountKey, setChatFontSize, setLiquidGlass, setUploadedBackgroundUrl, setWallpaper]);
 
   useEffect(() => {
     if (!accountKey || hydratedAccountRef.current !== accountKey) return;
@@ -88,7 +90,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
         .then((response) => {
           if (saveSeqRef.current !== saveSeq) return;
           setUploadedBackgroundUrl(response.backgroundUrl);
-          applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef, i18n);
+          applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef, i18nRef.current);
           writeCachedUserPreferences(accountKey, response.preferences);
         })
         .catch(() => {

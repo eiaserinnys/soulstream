@@ -70,6 +70,6 @@ export const CONFIG_TABS: readonly ConfigTabDefinition[] = [
 
 export const DEFAULT_CONFIG_TAB_ID = "appearance";
 
-export function visibleConfigTabs(isAdmin: boolean, translate: (key: string) => string = key => key): ConfigTabDefinition[] {
+export function visibleConfigTabs(isAdmin: boolean, translate: (key: string) => string): ConfigTabDefinition[] {
   return CONFIG_TABS.filter(tab => isAdmin || !tab.adminOnly).map(tab => ({ ...tab, label: translate(tab.label), description: translate(tab.description) }));
 }

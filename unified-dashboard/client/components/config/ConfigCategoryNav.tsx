@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@seosoyoung/soul-ui";
 import { ChevronRight, SlidersHorizontal } from "lucide-react";
 import { CONFIG_TAB_GROUPS, type ConfigTabDefinition } from "./configTabs";
@@ -22,6 +23,7 @@ export function ConfigCategoryNav({ categories, tabs, activeCategory, onSelect, 
   activeCategory: string; onSelect(name: string): void;
   showGroupLabels?: boolean;
 }) {
+  const { t } = useTranslation();
   const navRef = useRef<HTMLElement>(null);
   const clickedRef = useRef<string | null>(null);
   useLayoutEffect(() => {
@@ -30,13 +32,13 @@ export function ConfigCategoryNav({ categories, tabs, activeCategory, onSelect, 
   }, [activeCategory]);
   const lastGroup = CONFIG_TAB_GROUPS[CONFIG_TAB_GROUPS.length - 1].id;
   const groups = CONFIG_TAB_GROUPS.map(group => ({
-    label: group.label,
+    label: t(group.label),
     items: [
       ...tabs.filter(tab => tab.group === group.id).map(tab => ({ name: tab.id, label: tab.label, Icon: tab.icon })),
       ...(group.id === lastGroup ? categories.map(category => ({ name: category.name, label: category.label, Icon: SlidersHorizontal })) : []),
     ],
   }));
-  return <nav ref={navRef} aria-label="설정 카테고리" data-testid="config-category-nav" className="config-category-nav">
+  return <nav ref={navRef} aria-label={t("settings.category")} data-testid="config-category-nav" className="config-category-nav">
     {groups.filter(group => group.items.length).map(group => <section key={group.label}>
       {showGroupLabels ? <h3>{group.label}</h3> : null}
       {group.items.map(({ name, label, Icon }) => <button key={name} type="button"

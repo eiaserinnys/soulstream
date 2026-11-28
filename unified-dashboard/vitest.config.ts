@@ -28,6 +28,7 @@ export default defineConfig({
     alias: soulUiAliases,
   },
   test: {
+    setupFiles: [`${PROJECT_ROOT}/packages/soul-ui/test-i18n-setup.ts`],
     include: ["client/**/*.test.ts", "client/**/*.test.tsx"],
     environment: "node",
     alias: soulUiAliases,

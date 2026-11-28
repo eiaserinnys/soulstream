@@ -11,6 +11,7 @@ import { createI18n, resolveLanguage } from "@soulstream/i18n";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
+import { PreferenceLanguageGate } from "./components/PreferenceLanguageGate";
 import { ToastProvider } from "@seosoyoung/soul-ui";
 import { AuthProvider } from "@seosoyoung/soul-ui/providers";
 import { AuthGate } from "@seosoyoung/soul-ui/components/auth";
@@ -51,11 +52,13 @@ createRoot(root).render(
       <ConnectionBoundary>
       <AuthProvider>
         <AuthGate loginTitle="Soul Dashboard">
+          <PreferenceLanguageGate i18n={i18n}>
           <ToastProvider>
             <UiEventsRuntime>
               <App />
             </UiEventsRuntime>
           </ToastProvider>
+          </PreferenceLanguageGate>
         </AuthGate>
       </AuthProvider>
       </ConnectionBoundary>
