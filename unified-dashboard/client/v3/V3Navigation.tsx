@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   DashboardDndProvider,
@@ -82,6 +83,7 @@ export function V3Navigation({
   onReorderProjects(items: CatalogFolderReorderItem[]): Promise<void>;
   projectHasContents(folderId: string): Promise<boolean>;
 }) {
+  const { t } = useTranslation();
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
   const api = useMemo(() => createPageApiClient(), []);
@@ -135,21 +137,21 @@ export function V3Navigation({
     try {
       await onReorderProjects(items);
     } catch (cause) {
-      setError(`폴더 이동 실패 · ${errorText(cause)}`);
+      setError(t("sessions.moveFolderError", { detail: errorText(cause) }));
     }
-  }, [folders, onReorderProjects, setProjectExpanded]);
+  }, [t, folders, onReorderProjects, setProjectExpanded]);
 
   const requestDeleteProject = useCallback(async (folder: CatalogFolder) => {
     let hasContents: boolean;
     try {
       hasContents = await projectHasContents(folder.id);
     } catch (cause) {
-      setError(`폴더 내용 확인 실패 · ${errorText(cause)}`);
+      setError(t("sessions.checkFolderError", { detail: errorText(cause) }));
       return;
     }
     if (hasContents) setDeleteTarget(folder);
-    else void onDeleteProject(folder).catch((cause) => setError(`폴더 보관 실패 · ${errorText(cause)}`));
-  }, [onDeleteProject, projectHasContents]);
+    else void onDeleteProject(folder).catch((cause) => setError(t("sessions.archiveFolderError", { detail: errorText(cause) })));
+  }, [t, onDeleteProject, projectHasContents]);
 
   const clearFolderStar = async (task: StarredPlannerFolder) => {
     const page = starredFolderPage(task);
@@ -164,7 +166,7 @@ export function V3Navigation({
       await setFolderStarred(api, page.id, false);
     } catch (cause) {
       clearFolderStarChange(page.id, mutationId);
-      setError(`별표 변경 실패 · ${errorText(cause)}`);
+      setError(t("sessions.starFolderError", { detail: errorText(cause) }));
     } finally {
       setPendingFolderId(null);
     }
@@ -181,7 +183,7 @@ export function V3Navigation({
       try { await setFolderStarred(api, page.id, !starred); }
       catch (cause) { clearFolderStarChange(page.id, mutationId); throw cause; }
     } catch (cause) {
-      setError(`별표 변경 실패 · ${errorText(cause)}`);
+      setError(t("sessions.starFolderError", { detail: errorText(cause) }));
     } finally {
       setPendingFolderId(null);
     }
@@ -195,11 +197,11 @@ export function V3Navigation({
       ref={surfaceRef}
       className="v3-navigation border border-glass-border glass-strong glass-chrome lg-rim"
       data-liquid-glass-webgl={webglActive ? "true" : undefined}
-      aria-label="플래너 내비게이션"
+      aria-label={t("sessions.plannerNavigation")}
     >
       <div className="v3-navigation-scroll" data-testid="v3-navigation-scroll">
-      {onSelectHome?<><h2>카드</h2><div className="v3-nav-list"><button type="button" className={homeSelected?"is-active":""} onClick={onSelectHome}><span className="v3-emoji" aria-hidden="true">▦</span><span>전체 카드</span></button></div></>:null}
-      <h2>중요 작업</h2>
+      {onSelectHome?<><h2>{t("sessions.cards")}</h2><div className="v3-nav-list"><button type="button" className={homeSelected?"is-active":""} onClick={onSelectHome}><span className="v3-emoji" aria-hidden="true">▦</span><span>{t("sessions.allCards")}</span></button></div></>:null}
+      <h2>{t("sessions.importantWork")}</h2>
       <DashboardDndProvider
         collisionDetection={pointerFirstCollisionDetection}
         onReorderStarredFolders={(movedPageId, orderedPageIds) => {
@@ -226,10 +228,10 @@ export function V3Navigation({
               );
             })}
           </FolderSortableContext>
-          {starredFolders.length === 0 ? (starredFoldersLoading ? <FrameLoading inline label="폴더를 불러오는 중…" /> : <p>별표 폴더가 없습니다.</p>) : null}
+          {starredFolders.length === 0 ? (starredFoldersLoading ? <FrameLoading inline label={t("sessions.loadingFolders")} /> : <p>{t("sessions.noStarredFolders")}</p>) : null}
           {starredFoldersHasMore ? (
             <DashboardIconCap
-              label="별표 폴더 더 보기"
+              label={t("sessions.moreStarredFolders")}
               data-testid="v3-load-more-starred-tasks"
               disabled={starredFoldersLoading}
               onClick={onLoadMoreStarredFolders}
@@ -240,7 +242,7 @@ export function V3Navigation({
         </div>
       </DashboardDndProvider>
 
-      <h2>전체 폴더</h2>
+      <h2>{t("sessions.allFolders")}</h2>
       <div className="v3-nav-list" data-testid="v3-all-projects">
         <ProjectNavigationTree
           folders={visibleFolders}
@@ -255,9 +257,9 @@ export function V3Navigation({
           onReorder={reorderProjects}
         />
         {catalogLoadError ? <p className="v3-project-star-error" role="alert">{catalogLoadError}</p> : null}
-        {!catalogLoadError && visibleFolders.length === 0 ? <p>폴더가 없습니다.</p> : null}
+        {!catalogLoadError && visibleFolders.length === 0 ? <p>{t("sessions.noFolders")}</p> : null}
         <DashboardIconCap
-          label="새 폴더"
+          label={t("sessions.newFolder")}
           className="v3-new-project-trigger"
           aria-expanded={projectDialog?.mode === "create" && projectDialog.parentFolderId === null}
           onClick={() => { setProjectDialog({ mode: "create", parentFolderId: null, parentName: null }); setError(null); }}
@@ -280,14 +282,14 @@ export function V3Navigation({
           toggleStar: () => clearFolderStar(contextMenu.task),
           moveToParent: () => onMoveFolderToParent(contextMenu.task),
           complete: () => onCompleteFolder(contextMenu.task),
-        }) : contextMenu?.kind === "folder" ? buildProjectContextMenuActions({
+        }, t) : contextMenu?.kind === "folder" ? buildProjectContextMenuActions({
           open: () => onSelectFolder(contextMenu.folder),
           copyId: () => navigator.clipboard.writeText(contextMenu.folder.id),
           createFolder: () => setProjectDialog({ mode: "create", parentFolderId: contextMenu.folder.id, parentName: contextMenu.folder.name }),
           edit: () => setProjectDialog({ mode: "edit", folder: contextMenu.folder }),
           remove: () => { void requestDeleteProject(contextMenu.folder); },
-        }).concat(contextMenu.folder.projectPageId && !isSystemFolderId(contextMenu.folder.id) ? [
-          { label: starredFolderIds.includes(contextMenu.folder.projectPageId) ? "별표 해제" : "별표 추가",
+        }, t).concat(contextMenu.folder.projectPageId && !isSystemFolderId(contextMenu.folder.id) ? [
+          { label: starredFolderIds.includes(contextMenu.folder.projectPageId) ? t("sessions.unstar") : t("sessions.star"),
             onSelect: () => toggleFolderStar(contextMenu.folder) },
         ] : []) : []}
       />
@@ -303,10 +305,10 @@ export function V3Navigation({
       />
       <FolderArchiveDialog folder={deleteTarget} onClose={() => setDeleteTarget(null)} onArchive={(folder) => {
         setDeleteTarget(null);
-        void onDeleteProject(folder).catch((cause) => setError(`폴더 보관 실패 · ${errorText(cause)}`));
+        void onDeleteProject(folder).catch((cause) => setError(t("sessions.archiveFolderError", { detail: errorText(cause) })));
       }} />
       <div className="v3-nav-foot">
-        <div><kbd>C</kbd> 새 폴더 · <kbd>Esc</kbd> 닫기</div>
+        <div><kbd>C</kbd> {t("sessions.newFolder")} · <kbd>Esc</kbd> {t("sessions.close")}</div>
       </div>
     </nav>
   );
@@ -327,6 +329,9 @@ function StarredFolderNavigationRow({
   onSelect(): void;
   onContextMenu(event: MouseEvent<HTMLButtonElement>): void;
 }) {
+  const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage ?? i18n.language;
+  const formatNumber = new Intl.NumberFormat(language).format;
   const page = starredFolderPage(task);
   const drag = useStarredFolderDragSurface({ id: page.id, pageIds, disabled });
   const [keyboardAnnouncement, setKeyboardAnnouncement] = useState("");
@@ -350,9 +355,9 @@ function StarredFolderNavigationRow({
         type="button"
         className="v3-starred-task-drag-handle"
         ref={drag.setActivatorNodeRef}
-        aria-label={`중요 작업 ${page.title} 순서 변경`}
+        aria-label={t("sessions.reorderImportantWork", { title: page.title })}
         aria-keyshortcuts="ArrowUp ArrowDown"
-        title="위·아래 화살표 키로 순서를 바꿉니다"
+        title={t("sessions.reorderHint")}
         disabled={disabled}
         onKeyDownCapture={(event) => {
           if (event.altKey || event.ctrlKey || event.metaKey) return;
@@ -365,7 +370,7 @@ function StarredFolderNavigationRow({
           event.stopPropagation();
           const orderedPageIds = reorderStarredFolderIds(pageIds, page.id, targetPageId);
           if (!orderedPageIds) return;
-          setKeyboardAnnouncement(`${page.title}, ${orderedPageIds.indexOf(page.id) + 1}번째로 이동합니다.`);
+          setKeyboardAnnouncement(t("sessions.reorderAnnouncement", { title: page.title, position: formatNumber(orderedPageIds.indexOf(page.id) + 1) }));
           void onReorderByKeyboard(page.id, orderedPageIds);
         }}
         {...drag.attributes}

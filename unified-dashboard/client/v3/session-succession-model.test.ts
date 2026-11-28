@@ -118,7 +118,7 @@ describe("succession predecessor options", () => {
     expect(options.map((option) => option.label)).toEqual([
       "배포 검수 정리",
       "다음 단계는 다크·라이트 캡처를 확인해 주세요.",
-      "제목 없는 세션",
+      null,
     ]);
     expect(options.map((option) => option.runNumber)).toEqual([3, 2, 1]);
     expect(options.map((option) => option.label).join(" ")).not.toContain("550e8400");
@@ -130,7 +130,7 @@ describe("succession predecessor options", () => {
       runNode({ agentSessionId: "silent-session", lastMessage: stored("[SILENT]") }, 2),
       runNode({ agentSessionId: "first-session", lastMessage: stored(`${EXECUTE_INSTRUCTION_PROMPT}\n${PERSISTENT_INITIAL_INSTRUCTION}`) }, 1),
     ]);
-    expect(options.map((option) => option.label)).toEqual(["제목 없는 세션", "제목 없는 세션"]);
+    expect(options.map((option) => option.label)).toEqual([null, null]);
   });
 
   it("clamps fallback previews by Unicode code point and excludes unresolved rows", () => {
@@ -150,9 +150,10 @@ describe("succession predecessor options", () => {
     const options = buildSuccessionSessionOptions(tree);
 
     expect(options).toHaveLength(1);
-    expect(options[0].label).toMatch(/^🧭+…$/u);
-    expect(Array.from(options[0].label).length).toBeLessThanOrEqual(81);
-    expect(options[0].label).not.toContain("�");
+    const label = options[0].label ?? "";
+    expect(label).toMatch(/^🧭+…$/u);
+    expect(Array.from(label).length).toBeLessThanOrEqual(81);
+    expect(label).not.toContain("�");
   });
 });
 

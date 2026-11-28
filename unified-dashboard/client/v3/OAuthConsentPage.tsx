@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { AuthSurface, Button, Spinner } from "@seosoyoung/soul-ui";
 
@@ -13,15 +14,16 @@ type OAuthConsentPageProps = {
 };
 
 export function OAuthConsentPage({ request = fetch }: OAuthConsentPageProps) {
+  const { t } = useTranslation();
   const interaction = new URLSearchParams(window.location.search).get("interaction");
   const [view, setView] = useState<OAuthConsentView | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   const [submitting, setSubmitting] = useState<string | null>(null);
   const actionInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!interaction) {
-      setError("동의를 불러오지 못했습니다.");
+      setFailed(true);
       return;
     }
     let active = true;
@@ -29,12 +31,12 @@ export function OAuthConsentPage({ request = fetch }: OAuthConsentPageProps) {
       headers: { Accept: "application/json" },
       credentials: "same-origin",
     }).then(async (response) => {
-      if (!response.ok) throw new Error("동의를 불러오지 못했습니다.");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json() as OAuthConsentView;
     }).then((consent) => {
       if (active) setView(consent);
     }).catch(() => {
-      if (active) setError("동의를 불러오지 못했습니다.");
+      if (active) setFailed(true);
     });
     return () => { active = false; };
   }, [interaction, request]);
@@ -47,7 +49,7 @@ export function OAuthConsentPage({ request = fetch }: OAuthConsentPageProps) {
             <h1 className="text-xl font-bold text-foreground">{view.clientName}</h1>
             <p className="text-sm text-muted-foreground">{view.email}</p>
             <p className="text-sm text-foreground">{view.permissions}</p>
-            <p className="text-sm text-muted-foreground">30일 안에 쓰면 계속 이어짐</p>
+            <p className="text-sm text-muted-foreground">{t("sessions.consentLifetime")}</p>
             <form
               action={`/api/oauth/interaction/${encodeURIComponent(interaction ?? "")}`}
               method="post"
@@ -64,17 +66,17 @@ export function OAuthConsentPage({ request = fetch }: OAuthConsentPageProps) {
               <input type="hidden" name="csrf" value={view.csrf} />
               <input ref={actionInput} type="hidden" name="action" />
               <Button className="flex-1" type="submit" value="allow" disabled={submitting !== null}>
-                {submitting === "allow" && <Spinner aria-label="처리 중" />}허용
+                {submitting === "allow" && <Spinner aria-label={t("sessions.processing")} />}{t("sessions.allow")}
               </Button>
               <Button className="flex-1" type="submit" value="cancel" variant="outline" disabled={submitting !== null}>
-                {submitting === "cancel" && <Spinner aria-label="처리 중" />}취소
+                {submitting === "cancel" && <Spinner aria-label={t("sessions.processing")} />}{t("sessions.cancel")}
               </Button>
             </form>
           </>
-        ) : error ? (
+        ) : failed ? (
           <div role="alert" className="flex flex-col gap-1 text-sm">
-            <p className="text-accent-red">{error}</p>
-            <p className="text-muted-foreground">로그인을 시작한 앱에서 다시 시도해 주세요.</p>
+            <p className="text-accent-red">{t("sessions.consentLoadFailed")}</p>
+            <p className="text-muted-foreground">{t("sessions.retrySignIn")}</p>
           </div>
         ) : null}
       </AuthSurface>

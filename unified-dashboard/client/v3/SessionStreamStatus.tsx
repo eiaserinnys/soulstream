@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { SessionProviderConnectionStatus } from "@seosoyoung/soul-ui";
 
 export function SessionStreamStatus({
@@ -9,8 +10,9 @@ export function SessionStreamStatus({
   status: SessionProviderConnectionStatus;
   reconnect(): void;
 }) {
+  const { t } = useTranslation();
   if (!active || status !== "error") return null;
-  const message = "연결 오류 · 다시 연결";
+  const message = t("sessions.reconnect");
   return (
     <button
       type="button"

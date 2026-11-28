@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { MouseEvent } from "react";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 import type { RunTreeNode } from "./folder-workspace-run-model";
@@ -32,11 +33,12 @@ function RunNode({
   onOpenSession(session: SessionSummary): void;
   onContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
+  const { t } = useTranslation();
   const { session } = node;
   if (node.loadState === "loading") {
     return (
       <div className={depth > 0 ? "v3-run-children" : undefined}>
-        <div className="v3-run-row v3-run-row--loading" data-depth={depth} aria-label="세션 정보 불러오는 중" aria-busy="true">
+        <div className="v3-run-row v3-run-row--loading" data-depth={depth} aria-label={t("sessions.loadingSession")} aria-busy="true">
           <span className="v3-run-skeleton v3-run-skeleton--avatar" />
           <span className="v3-run-skeleton-copy">
             <span className="v3-run-skeleton v3-run-skeleton--title" />

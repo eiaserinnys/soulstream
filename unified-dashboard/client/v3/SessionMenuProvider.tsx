@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { SessionContextMenu, SessionMenuOwnerProvider, useDashboardStore, useSessionListProvider,
   type SessionContextMenuState, type SessionSummary } from "@seosoyoung/soul-ui";
@@ -17,6 +18,7 @@ export function SessionMenuProvider({children,sessions,onRename,onDelete,onMove,
   onMove(sessionId:string,target:FolderMoveTarget):Promise<void>;
   onCreated(session:SessionSummary):void;
 }) {
+  const { t } = useTranslation();
   const [menu,setMenu] = useState<SessionContextMenuState|null>(null);
   const [moveId,setMoveId] = useState<string|null>(null);
   const [succession,setSuccession] = useState<Awaited<ReturnType<typeof prepareSessionMenuSuccession>>|null>(null);
@@ -47,8 +49,8 @@ export function SessionMenuProvider({children,sessions,onRename,onDelete,onMove,
       onRequestMoveSession={setMoveId}
       onContinueSession={async id=>{
         const session=lookup.get(id);
-        if (!session) throw new Error("세션 정보를 찾을 수 없습니다.");
-        setSuccession(await prepareSessionMenuSuccession(session,findFolderId(id),catalog));
+        if (!session) throw new Error(t("sessions.sessionDetailsMissing"));
+        setSuccession(await prepareSessionMenuSuccession(session,findFolderId(id),catalog,t));
       }}
       getContinueSessionDisabledReason={id=>resolveContinueSessionTarget({session:lookup.get(id),catalog}).disabledReason}
     />
