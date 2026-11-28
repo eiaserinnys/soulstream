@@ -70,7 +70,7 @@ describe("AntigravityEngineAdapter", () => {
   it("marks a lost resume and uses the replacement on the next turn", async () => {
     const { engine } = fixture();
     try {
-      const first = await collect(engine, { ...input, resumeSessionId: "missing-conversation" });
+      const first = await collect(engine, { ...input, resumeSessionId: "missing-conversation", antigravityDefaultConversationId: "missing-conversation" });
       const session = first.find(event => event.type === "session");
       expect(session).toMatchObject({ session_id: "replacement-conversation", resume_lost_from: "missing-conversation" });
       const next = await collect(engine, { ...input, resumeSessionId: String(session?.session_id) });
@@ -112,7 +112,7 @@ describe("AntigravityEngineAdapter", () => {
     };
     const { engine, directory } = fixture(processEnv);
     try {
-      const events = await collect(engine, { ...input, model: "environment", resumeSessionId });
+      const events = await collect(engine, { ...input, model: "environment", resumeSessionId, antigravityDefaultConversationId: resumeSessionId });
       const complete = events.find(event => event.type === "complete");
       expect(complete).toBeDefined();
       if (complete?.type !== "complete") throw new Error("Fixture did not complete");
@@ -235,7 +235,7 @@ describe("AntigravityEngineAdapter", () => {
   it("does not repeat a historical quota after a successful resume, but preserves a new quota", async () => {
     const { engine } = fixture();
     try {
-      const resumed = { ...input, resumeSessionId: "fixture-conversation" };
+      const resumed = { ...input, resumeSessionId: "fixture-conversation", antigravityDefaultConversationId: "fixture-conversation" };
       const recovered = await collect(engine, { ...resumed, model: "stale-quota" });
       expect(recovered.filter(event => event.type === "error")).toEqual([]);
       expect(recovered.filter(event => event.type === "complete")).toHaveLength(1);

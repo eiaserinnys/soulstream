@@ -7,13 +7,14 @@ import {
   type EventPersistence,
 } from "../db/event_persistence.js";
 import { isUsageLimitStopErrorCode } from "../engine/usage_limit_stop.js";
-import type { SSEEventPayload } from "../engine/protocol.js";
+import type { BackendId, SSEEventPayload } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
 
 import { applyClaudeRuntimeEvent } from "./claude_runtime_state.js";
 import type { Task } from "./task_models.js";
 import { buildSessionCostMetadataEntry } from "./task_metadata.js";
+import { ANTIGRAVITY_DEFAULT_CONVERSATION, antigravityDefaultConversation } from "./antigravity_default_conversation.js";
 import { recordTerminationHint } from "./task_termination.js";
 import { TransientEventLogAggregator } from "./transient_event_log_aggregator.js";
 
@@ -41,7 +42,7 @@ export class TaskEngineEventPublisher {
   async publishEngineEvent(
     task: Task,
     event: SSEEventPayload,
-    options: { alreadyPersisted?: boolean } & EventSideEffectOptions = {},
+    options: { alreadyPersisted?: boolean; backend?: BackendId } & EventSideEffectOptions = {},
   ): Promise<void> {
     const eventType = (event as { type: string }).type;
 
@@ -55,6 +56,7 @@ export class TaskEngineEventPublisher {
       ? true
       : await this.enqueuePersistentEventIfNeeded(task, event, sessionEffect);
     if (options.alreadyPersisted) clearEventPersistenceInternals(event);
+    await this.captureAntigravityConversation(task, event, options.backend);
     await this.captureSessionCost(task, event, eventType);
     if (!persistent) {
       await this.broadcastTransientEvent(task, event, eventType);
@@ -69,6 +71,17 @@ export class TaskEngineEventPublisher {
 
   private captureClaudeRuntimeState(task: Task, event: SSEEventPayload): void {
     applyClaudeRuntimeEvent(task, event);
+  }
+
+  private async captureAntigravityConversation(task: Task, event: SSEEventPayload, backend?: BackendId): Promise<void> {
+    if ((backend ?? task.modelPresetBackend ?? task.recordedModelBackend) !== "antigravity" || event.type !== "session"
+      || event.session_id !== task.codexThreadId || antigravityDefaultConversation(task) === event.session_id) return;
+    const entry = { type: ANTIGRAVITY_DEFAULT_CONVERSATION, value: event.session_id };
+    await this.deps.persistence.enqueueMetadataEffect(task.agentSessionId, entry, {
+      replaceExistingType: ANTIGRAVITY_DEFAULT_CONVERSATION, waitForAck: true,
+      ...(task.executionRegistration ? { registrationId: task.executionRegistration.registrationId } : {}),
+    });
+    task.metadata = [...(task.metadata ?? []).filter(item => item.type !== ANTIGRAVITY_DEFAULT_CONVERSATION), entry];
   }
 
   private async captureSessionCost(

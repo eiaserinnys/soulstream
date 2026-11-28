@@ -1,5 +1,7 @@
 import { homedir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { runnerProcessPaths } from "./runner_process_paths.js";
 
 import type { Logger } from "pino";
 
@@ -287,6 +289,14 @@ export function createRunnerProcessRuntimeFactory(
     ), config.isolation);
   };
   factory.isolationSupported = options.isolationHost !== undefined; // host가 주입됐을 때만
+  factory.antigravityWorkspace = sessionId => {
+    const directory = runnerProcessPaths(stateDirectory, sessionId).sessionDirectory;
+    let conversationId: string | undefined;
+    try { conversationId = readFileSync(join(directory, "antigravity-default-conversation"), "utf8"); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    return { conversationId, instructionsPresent: existsSync(join(directory, "antigravity-workspace", "instructions", "chunk-000000.txt")) };
+  };
   return factory;
 }
 

@@ -145,6 +145,7 @@ export interface EngineExecuteParams {
   /** Codex SDK `UserInput[]`로 전달할 로컬 이미지 첨부 경로. */
   imageAttachmentPaths?: string[];
   resumeSessionId?: string;
+  antigravityDefaultConversationId?: string;
   /** One-shot Claude recovery: start fresh and atomically replace this durable predecessor. */
   backendSessionRolloverFrom?: string;
   /**
