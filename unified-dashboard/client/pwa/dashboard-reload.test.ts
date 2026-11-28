@@ -12,15 +12,29 @@ describe("one reload decision", () => {
       expect(reload).not.toHaveBeenCalled();
       expect(document.querySelector('[data-sw-update-banner]')).not.toBeNull();
       document.querySelector<HTMLButtonElement>('[data-sw-update-action]')!.click();
-      await vi.waitFor(() => expect(document.querySelector<HTMLButtonElement>('[data-sw-update-action]')!.disabled).toBe(false));
-      expect(reload).not.toHaveBeenCalled();
-      unregister();
-      document.querySelector<HTMLButtonElement>('[data-sw-update-action]')!.click();
       await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
     } finally { unregister(); document.body.replaceChildren(); }
     reload.mockClear();
     expect(await createDashboardReloadCoordinator(env).request()).toBe(true);
     expect(reload).toHaveBeenCalledOnce();
+  });
+  it("defers an automatic reload if a document opens while edits are flushing", async () => {
+    const reload = vi.fn();
+    let finishFlush!: (flushed: boolean) => void;
+    const owner = createDashboardReloadCoordinator({
+      document,
+      reload,
+      hasPendingEdits: () => true,
+      flushPendingEdits: () => new Promise<boolean>((resolve) => { finishFlush = resolve; }),
+    });
+    const request = owner.request();
+    const unregister = registerDashboardReader();
+    try {
+      finishFlush(true);
+      expect(await request).toBe(false);
+      expect(reload).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-sw-update-banner]')).not.toBeNull();
+    } finally { unregister(); document.body.replaceChildren(); }
   });
   it("flushes edits before reload and coalesces competing SW/build decisions", async () => {
     const reload = vi.fn(),

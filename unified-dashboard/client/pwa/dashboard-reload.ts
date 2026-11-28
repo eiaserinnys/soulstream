@@ -30,10 +30,11 @@ export function createDashboardReloadCoordinator(
     environment.document.querySelector("[data-sw-update-banner]")?.remove();
     pendingAction?.();
   };
-  const approve = async () => {
-    if (environment.hasAttachments?.() || openReaders.size) return false;
+  const approve = async (deferForOpenReaders: boolean) => {
+    if (environment.hasAttachments?.() || (deferForOpenReaders && openReaders.size))
+      return false;
     if (!(await environment.flushPendingEdits())) return false;
-    if (openReaders.size) return false;
+    if (deferForOpenReaders && openReaders.size) return false;
     execute();
     return true;
   };
@@ -46,7 +47,7 @@ export function createDashboardReloadCoordinator(
       if (inFlight) return inFlight;
       pendingAction ??= action;
       const defer = () => {
-        showUpdateBanner(environment.document, approve);
+        showUpdateBanner(environment.document, () => approve(false));
         return false;
       };
       if (openReaders.size) return Promise.resolve(defer());
@@ -56,7 +57,7 @@ export function createDashboardReloadCoordinator(
       }
       if (!automatic || environment.hasAttachments?.())
         return Promise.resolve(defer());
-      inFlight = approve()
+      inFlight = approve(true)
         .then((approved) => approved || defer())
         .finally(() => {
           inFlight = null;
