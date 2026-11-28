@@ -1,18 +1,14 @@
-import { dictionaries } from "@soulstream/i18n";
-import type { useTranslation } from "react-i18next";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
 import { singleLinePreview, visibleLastMessagePreview } from "./session-preview";
 import type { RunTreeNode } from "./folder-workspace-run-model";
 import type { PageSessionDefaults } from "./folder-workspace-page-api";
 
-type Translate = ReturnType<typeof useTranslation>["t"];
-
 const SUCCESSION_SESSION_LABEL_LENGTH = 80;
 
 export interface SuccessionSessionOption {
   sessionId: string;
-  label: string;
+  label: string | null;
   runNumber: number | null;
 }
 
@@ -80,7 +76,6 @@ export function latestFolderRun(
 
 export function buildSuccessionSessionOptions(
   tree: readonly RunTreeNode[],
-  t?: Translate,
 ): SuccessionSessionOption[] {
   const options: SuccessionSessionOption[] = [];
   const visit = (node: RunTreeNode) => {
@@ -93,7 +88,7 @@ export function buildSuccessionSessionOptions(
         ) ?? singleLinePreview(
           visibleLastMessagePreview(node.session),
           SUCCESSION_SESSION_LABEL_LENGTH,
-        ) ?? (t?.("sessions.untitledSession") ?? dictionaries.ko.sessions.untitledSession),
+        ),
         runNumber: node.runNumber,
       });
     }

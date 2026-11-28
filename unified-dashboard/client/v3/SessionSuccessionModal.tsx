@@ -279,7 +279,7 @@ export function SessionSuccessionModal({
     ...effort.options.map((option) => ({ value: option, label: reasoningEffortLabel(option) })),
   ];
   const predecessorChoices = predecessorOptions.map((option, index) => ({
-    value: String(index), label: `${option.label}${option.runNumber === null ? "" : ` · ${t("sessions.sessionNumber", { number: formatNumber(option.runNumber) })}`}`,
+    value: String(index), label: `${option.label ?? t("sessions.untitledSession")}${option.runNumber === null ? "" : ` · ${t("sessions.sessionNumber", { number: formatNumber(option.runNumber) })}`}`,
   }));
 
   return (

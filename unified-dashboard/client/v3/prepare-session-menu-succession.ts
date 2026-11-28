@@ -23,7 +23,7 @@ export async function prepareSessionMenuSuccession(session:SessionSummary,folder
   const defaults = merged.sessionDefaults.at(-1);
   return {
     folderTitle:folder?.name ?? t("sessions.session"),folderId,folderPageId:pageId,currentSession:session,
-    predecessorOptions:[{sessionId:session.agentSessionId,label:session.displayName ?? t("sessions.untitledSession"),runNumber:null}],
+    predecessorOptions:[{sessionId:session.agentSessionId,label:session.displayName ?? null,runNumber:null}],
     contextItems:buildFolderSessionContextItems(merged,blocks,pageId),
     documentOptions: folderId
       ? boardMarkdownDocuments(await fetchFolderBoardItems(folderId))
