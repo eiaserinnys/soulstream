@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import nodeProcess from "node:process";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { Logger } from "pino";
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
 import type { ModelCatalogConfig } from "@soulstream/model-catalog";
@@ -153,6 +153,7 @@ export class AntigravityEngineAdapter implements EnginePort {
           resolvedMcpServers: this.options.resolvedMcpServers, internalMcpUrl: this.options.internalMcpUrl,
           useMcp: params.useMcp, mcpGatewayLaunch: resolveAntigravityMcpGatewayLaunch(import.meta.url, nodeProcess.execPath),
           allowedTools: restrictedAllowedTools, disallowedTools: params.disallowedTools ?? this.options.disallowedTools,
+          parentConversationFile: resolve(markerPath),
           profileWorkspaceDir: this.options.profileWorkspaceDir ?? this.options.workspaceDir, logger: this.logger,
         });
       } else if (restrictedAllowedTools) {

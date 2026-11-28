@@ -12,6 +12,7 @@ interface WorkspaceOptions extends DefinitionOptions {
   profileWorkspaceDir: string;
   allowedTools?: readonly string[];
   disallowedTools?: readonly string[];
+  parentConversationFile: string;
   fresh: boolean;
 }
 
@@ -94,7 +95,9 @@ export async function writeAntigravityDefaultWorkspace(options: WorkspaceOptions
   if (policy) {
     const policyPath = join(directory, "policy.json");
     const gatePath = join(directory, "tool-gate.cjs");
-    await privateFile(policyPath, JSON.stringify({ ...policy.gate, allowedTools: policy.definitionTools, subagents: listings.map(entry => entry.invokeName) }, null, 2));
+    await privateFile(policyPath, JSON.stringify({ ...policy.gate, allowedTools: policy.definitionTools,
+      subagents: listings.map(entry => entry.invokeName), parentConversationFile: options.parentConversationFile,
+      subagentTools: [...new Set(subagents.flatMap(agent => antigravitySubagentTools(agent.tools)))] }, null, 2));
     await privateFile(gatePath, ANTIGRAVITY_TOOL_GATE_SOURCE);
     hooks.PreToolUse = [{ matcher: "*", hooks: [{ type: "command", command: command(process.execPath, gatePath, policyPath), timeout: 10 }] }];
   }

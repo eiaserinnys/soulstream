@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import pino from "pino";
 import { parse } from "yaml";
@@ -24,7 +24,7 @@ function fixture(restricted = false) {
   const workspace = join(dir, "profile");
   const agents = join(workspace, ".claude", "agents");
   mkdirSync(agents, { recursive: true });
-  for (const agent of ["eye", "Explore"]) writeFileSync(join(agents, `${agent}.md`), `---\nname: ${agent}\ndescription: agent\ntools: Read\n---\n본문\n`);
+  for (const agent of ["eye", "Explore"]) writeFileSync(join(agents, `${agent}.md`), `---\nname: ${agent}\ndescription: agent\ntools: Read, Bash\n---\n본문\n`);
   const executable = join(dir, "agy.mjs");
   writeFileSync(executable, `#!/usr/bin/env node
 import { existsSync, readdirSync, writeFileSync } from 'node:fs';
@@ -105,13 +105,38 @@ describe("Antigravity default workspace", () => {
     expect(decide("invoke_subagent", { TypeName: "other" })).toBe("deny");
     await f.engine.close();
   });
+  it("applies subagent tools only to calls from a child conversation", async () => {
+    const f = fixture(true); await run(f.engine);
+    const hooks = config(f.overlay, "hooks.json");
+    const hook = Object.values(hooks).flatMap((entry: any) => entry.PreToolUse ?? [])[0] as any;
+    const decide = (conversationId: string, tool: string, args: object) =>
+      runHook(hook.hooks[0].command, { conversationId, ...hookInput(tool, args) }).decision;
+    const marker = join(f.state, "antigravity-default-conversation");
+    const policy = JSON.parse(readFileSync(join(f.overlay, "policy.json"), "utf8"));
+    expect(policy.parentConversationFile).toBe(marker);
+    expect(policy.subagentTools).toEqual(["view_file", "run_command", "send_message", "finish"]);
+    writeFileSync(marker, "conv");
+    expect(decide("conv", "run_command", { CommandLine: "ls" })).toBe("deny");
+    expect(decide("child", "run_command", { CommandLine: "ls" })).toBe("allow");
+    expect(decide("child", "read_file", { Path: "/etc/hosts" })).toBe("allow");
+    expect(decide("child", "write_file", { Path: "/etc/hosts" })).toBe("deny");
+    expect(decide("child", "swarm", {})).toBe("deny");
+    expect(decide("child", "invoke_subagent", { TypeName: `${name}-eye` })).toBe("deny");
+    expect(decide("child", "call_mcp_tool", { ServerName: "soulstream", ToolName: "get_card" })).toBe("allow");
+    expect(runHook(hook.hooks[0].command, hookInput("run_command", { CommandLine: "ls" })).decision).toBe("deny");
+    writeFileSync(marker, "  ");
+    expect(decide("child", "run_command", { CommandLine: "ls" })).toBe("deny");
+    unlinkSync(marker);
+    expect(decide("child", "run_command", { CommandLine: "ls" })).toBe("deny");
+    await f.engine.close();
+  });
   it("creates only permitted subagents for the utonium Agent(kind) policy", async () => {
     const f = fixture(true); await run(f.engine);
     const agents = readdirSync(join(f.overlay, ".agents", "agents"));
     expect(agents).toContain(`${name}-eye.md`);
     expect(agents).not.toContain(`${name}-Explore.md`);
     const definition = readFileSync(join(f.overlay, ".agents", "agents", `${name}-eye.md`), "utf8");
-    expect(parse(definition.split("---\n")[1]!)).toMatchObject({ name: `${name}-eye`, subagent: true, mainAgent: false, model: "inherit", tools: ["view_file", "send_message", "finish"] });
+    expect(parse(definition.split("---\n")[1]!)).toMatchObject({ name: `${name}-eye`, subagent: true, mainAgent: false, model: "inherit", tools: ["view_file", "run_command", "send_message", "finish"] });
     expect(definition).toContain("본문");
     await f.engine.close();
   });
