@@ -1,0 +1,142 @@
+{
+  "language": "言語",
+  "languageHelp": "画面の表示言語をアカウントに保存します。",
+  "tabs": {
+    "appearance": {
+      "label": "画面と文字",
+      "description": "背景とチャットの文字サイズを選べます。"
+    },
+    "owned_agents": {
+      "label": "外部エージェント",
+      "description": "外部エージェントの名前、稼働状態、接続キーを管理します。"
+    },
+    "access_links": {
+      "label": "接続リンク",
+      "description": "外部エージェントが自分のセッションに作業を依頼するためのリンクを管理します。"
+    },
+    "webhooks": {
+      "label": "Webhook",
+      "description": "自分のセッションと外部サービスが送受信するWebhookを管理します。"
+    },
+    "persistent": {
+      "label": "常駐エージェントセッション",
+      "description": "常駐セッションの指示、表示、記録を管理します。"
+    },
+    "persistent_defaults": {
+      "label": "常駐セッションの既定モデル",
+      "description": "新しい常駐セッションの既定モデルと代替モデルの順番を設定します。既存のセッションには影響しません。"
+    },
+    "summaries": {
+      "label": "要約",
+      "description": "ターンとセッションの要約を有効にするか、モデルをどの順番で使うかを設定します。"
+    },
+    "card_dispatch": {
+      "label": "カード実行",
+      "description": "カードの実行方式と同時実行数を調整します。"
+    },
+    "recurring_jobs": {
+      "label": "繰り返し作業",
+      "description": "繰り返す作業と次の実行時刻を管理します。"
+    },
+    "agents": {
+      "label": "エージェントプロフィール",
+      "description": "エージェントプロフィールと既定の実行環境を管理します。"
+    },
+    "mcp": {
+      "label": "MCP",
+      "description": "中央MCPサーバー、プロフィール、認証キーを管理します。"
+    },
+    "skills": {
+      "label": "スキルとカタログ",
+      "description": "スキルとカタログのつながり、利用箇所、検証結果を表示します。"
+    },
+    "coding_agents": {
+      "label": "コーディングエージェントの接続",
+      "description": "ノードごとにコーディングエージェントにログインして接続します。"
+    },
+    "git_repos": {
+      "label": "Gitとリポジトリ",
+      "description": "ノードごとにGitユーザー、SSHキー、リポジトリを設定します。"
+    },
+    "nodes": {
+      "label": "ノード",
+      "description": "作業を実行する端末と接続状態を確認できます。"
+    },
+    "usage_stats": {
+      "label": "セッション統計",
+      "description": "期間ごとのトークン数と定価換算額を表示します。"
+    },
+    "usage_log": {
+      "label": "利用ログ",
+      "description": "利用履歴の表示範囲を絞って確認できます。"
+    },
+    "session_review": {
+      "label": "リクエストレビュー",
+      "description": "実行前にレビューが必要なリクエストを設定します。"
+    },
+    "users": {
+      "label": "ユーザー",
+      "description": "サーバーを利用するユーザーとアクセス範囲を管理します。"
+    },
+    "file_storage": {
+      "label": "ファイルストレージ",
+      "description": "添付ファイルを保存するストレージに接続します。"
+    }
+  },
+  "groups": {
+    "personal": "個人設定",
+    "sessions": "セッションと作業",
+    "agents": "エージェントとノード",
+    "records": "記録と管理"
+  },
+  "title": "設定",
+  "category": "設定カテゴリ",
+  "allSettings": "すべての設定",
+  "defaultCategoryDescription": "サーバーに適用する値を変更し、保存してください。",
+  "loading": "設定を読み込み中…",
+  "unsavedTitle": "保存していない変更があります。",
+  "unsavedDetail": "ウィンドウを閉じると、サーバー設定の変更が失われます。",
+  "continueEditing": "編集を続ける",
+  "discard": "変更を破棄",
+  "changedCount_one": "{{count}}件の未保存の変更",
+  "changedCount_other": "{{count}}件の未保存の変更",
+  "applied": "変更を即時適用",
+  "applyIndividually": "各項目のボタンで変更を適用します。",
+  "restartNotice": "再起動が必要な項目にはその旨を表示します。",
+  "cancel": "キャンセル",
+  "done": "完了",
+  "saving": "保存中…",
+  "save": "変更を保存",
+  "openPersistent": "起動時に常駐セッションを開く",
+  "glassDetails": "ガラス効果の詳細設定",
+  "advanced": "詳細設定",
+  "background": "背景",
+  "uploading": "処理中…",
+  "upload": "写真をアップロード",
+  "myPhoto": "自分の写真",
+  "invalidImage": "画像ファイルを選択してください。",
+  "imageError": "背景画像を読み込めませんでした。別の画像ファイルを選択してください。",
+  "bokeh": "ボケ",
+  "metal": "メタル",
+  "plain": "単色",
+  "fontSize": "チャットの文字サイズ",
+  "fontHelp": "本文と入力欄の文字サイズをアカウントに保存します。",
+  "default": "既定",
+  "glass": "リキッドグラス",
+  "reset": "既定値",
+  "refraction": "屈折",
+  "blur": "ぼかし",
+  "chromatic": "色収差",
+  "specular": "鏡面反射",
+  "tint": "色合い",
+  "wallpaper": {
+    "dawn-ridge": "夜明けの稜線",
+    "aurora": "オーロラ",
+    "silk-curves": "絹の曲線",
+    "lake-horizon": "湖の水平線",
+    "desert-dunes": "砂丘",
+    "misty-forest": "霧の森",
+    "moonlit-sea": "月夜の海",
+    "milky-way": "天の川"
+  }
+}
