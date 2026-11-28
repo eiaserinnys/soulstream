@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Locator } from "@playwright/test";
+import { test, expect, type Page, type Locator } from "./test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { reviewSession } from "../client/v3/components-review-fixtures";

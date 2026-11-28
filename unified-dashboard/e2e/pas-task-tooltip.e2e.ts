@@ -1,6 +1,7 @@
+import { koreanLocale } from "./korean-locale.mjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { expect, test, devices, type Page } from "@playwright/test";
+import { expect, test, devices, type Page } from "./test";
 import type { CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { reviewCard } from "../client/v3/components-review-fixtures";
 import { reportReviewEntries } from "../client/v3/persistent-report-review-data";
@@ -247,7 +248,7 @@ async function readTooltipGeometry(page: Page, cardId: string) {
 
 test("PAS task tooltip stays absent in a touch device context", async ({ browser }) => {
   mkdirSync(output, { recursive: true });
-  const context = await browser.newContext({ ...devices["iPhone 13"], viewport: { width: 390, height: 844 } });
+  const context = await browser.newContext({ ...devices["iPhone 13"], viewport: { width: 390, height: 844 }, locale: koreanLocale });
   const page = await context.newPage();
   try {
     const { unmocked, taskIds: ids } = await installPasTooltip(page, "light", { width: 390, height: 844 });

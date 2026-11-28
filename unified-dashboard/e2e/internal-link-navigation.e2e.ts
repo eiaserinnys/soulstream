@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import { reviewCard } from "../client/v3/components-review-fixtures";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 

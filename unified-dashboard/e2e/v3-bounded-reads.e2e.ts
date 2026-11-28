@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Request } from "@playwright/test";
+import { expect, test, type Page, type Request } from "./test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 

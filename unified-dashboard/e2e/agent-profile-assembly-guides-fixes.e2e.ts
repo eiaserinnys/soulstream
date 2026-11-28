@@ -1,5 +1,5 @@
 // 세라피엘 화면 검수(카드 #1854)의 지적 완료 조건 측정. 긴 측정이라 다른 파일로 두어 두 번째 worker가 맡게 한다.
-import { test } from "@playwright/test";
+import { test } from "./test";
 import { LONGEST_SKILL_NAME } from "../client/v3/guides-fixture";
 import { measureFixes } from "./agent-profile-assembly-guides-fixcheck";
 import { writeFixes } from "./agent-profile-assembly-guides-helpers";

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { koreanLocale } from "./korean-locale.mjs";
+import { expect, test, type Page } from "./test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
@@ -83,8 +84,8 @@ for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"]] 
     const dir = path.join(output, `${width}-${theme}`);
     mkdirSync(dir, { recursive: true });
     const realLog: string[] = [], mockLog: string[] = [];
-    const real = await (await browser.newContext()).newPage();
-    const mock = await (await browser.newContext()).newPage();
+    const real = await (await browser.newContext({ locale: koreanLocale })).newPage();
+    const mock = await (await browser.newContext({ locale: koreanLocale })).newPage();
     await openReal(real, width, theme, realLog);
     await openMock(mock, width, theme, mockLog);
     await settle(real); await settle(mock);
@@ -339,7 +340,7 @@ for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"], 
     if (width === 1440 && theme === "light") {
       const currentTitle = "실제 컴포넌트로 만든 시안 확인";
       const longTitle = "긴 제목 테스트 ".repeat(12).slice(0, 98);
-      const context = await browser.newContext();
+      const context = await browser.newContext({ locale: koreanLocale });
       const longPage = await context.newPage();
       await longPage.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
       await longPage.goto(`${HOST}?theme=light&w=fit&glass=css`);

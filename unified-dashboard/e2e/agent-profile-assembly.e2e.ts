@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { openBody } from "./agent-profile-assembly-guides-helpers";

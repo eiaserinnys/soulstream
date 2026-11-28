@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 import {
   HarnessAlreadyRunningError,
   listBrowserDescendants,
@@ -10,7 +11,7 @@ await runPlaywrightLifecycle({
   lockName: "lifecycle-demo-normal",
   timeoutMs: 20_000,
 }, async ({ browser }) => {
-  const page = await browser.newPage();
+  const page = await browser.newPage({ locale: koreanLocale });
   await page.setContent("<main>normal lifecycle demo</main>");
   results.push({ case: "normal", status: "passed" });
 });
@@ -21,7 +22,7 @@ try {
     lockName: "lifecycle-demo-failure",
     timeoutMs: 20_000,
   }, async ({ browser }) => {
-    const page = await browser.newPage();
+    const page = await browser.newPage({ locale: koreanLocale });
     await page.setContent("<main>failure lifecycle demo</main>");
     throw new Error("expected demo failure");
   });

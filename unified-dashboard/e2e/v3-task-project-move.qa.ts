@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 import type { Browser, Locator, Page, Route } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -26,6 +27,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     colorScheme: theme,
     reducedMotion: "reduce",
     viewport: { width: 1440, height: 1000 },
+    locale: koreanLocale,
   });
   const page = await context.newPage();
   const browserErrors: string[] = [];

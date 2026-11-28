@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -202,6 +203,7 @@ async function openDashboard(
     colorScheme: "dark",
     reducedMotion: "reduce",
     viewport: { width, height },
+    locale: koreanLocale,
   });
   const page = await context.newPage();
   const pageErrors: string[] = [];
