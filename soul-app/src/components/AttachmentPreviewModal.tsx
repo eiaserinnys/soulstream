@@ -105,7 +105,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
   const [retryKey, setRetryKey] = useState(0);
   const latestItem = useRef(item);
   latestItem.current = item;
-  const pdfIdentity = JSON.stringify([item.key, item.readContext, item.source.kind === 'ready' ? [item.source.attachmentId, item.source.originalUrl, item.source.previewUrl] : item.source.availability, item.byteSize, item.pdfCache, item.revision]);
+  const previewIdentity = JSON.stringify([item.key, item.name, item.mimeType, item.previewKind, item.readContext, item.source.kind === 'ready' ? [item.source.attachmentId, item.source.originalUrl, item.source.previewUrl] : item.source.availability, item.byteSize, item.pdfCache, item.revision]);
   useEffect(() => {
     const item = latestItem.current;
     if (textContent) {
@@ -237,7 +237,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
         if (!controller.signal.aborted) setState(readFailureState(error));
       });
     return () => controller.abort();
-  }, [pdf ? pdfIdentity : item, retryKey, textContent, html, mediaKind, pdf]);
+  }, [previewIdentity, retryKey, textContent, html, markdown, mediaKind, pdf]);
 
   const htmlDocument = useMemo(
     () => state.kind === 'html' ? renderDocumentHtml(state.text, CUSTOM_VIEW_BINDINGS) : null,

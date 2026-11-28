@@ -70,19 +70,21 @@ export function CardCheckItemRow({
     () => (serverUrl ? createApiClient(serverUrl, { authToken: jwt }) : null),
     [serverUrl, jwt],
   );
-  const images = item.evidence.filter(evidence => evidence.type === 'image');
-  const links = item.evidence.filter(evidence => evidence.type === 'link');
-  const ordered = [...images, ...links];
-  const entries = ordered.map(evidence => {
-    if (!('attachment_id' in evidence)) return attachmentLinkView({ href: evidence.url, label: evidence.label },
-      { serverUrl, jwt, api, readContext: { type: 'card', id: cardId } });
-    const view = toCardAttachmentView(evidence);
-    return evidence.read_context.id === cardId ? view : {
-      ...view, readContext: { type: 'card' as const, id: cardId },
-      source: { kind: 'unavailable' as const, availability: 'unavailable' as const },
-    };
-  });
-  const attachmentItems = entries.filter((view): view is AttachmentView => view !== null);
+  const { images, links, ordered, entries, attachmentItems } = useMemo(() => {
+    const images = item.evidence.filter(evidence => evidence.type === 'image');
+    const links = item.evidence.filter(evidence => evidence.type === 'link');
+    const ordered = [...images, ...links];
+    const entries = ordered.map(evidence => {
+      if (!('attachment_id' in evidence)) return attachmentLinkView({ href: evidence.url, label: evidence.label },
+        { serverUrl, jwt, api, readContext: { type: 'card', id: cardId } });
+      const view = toCardAttachmentView(evidence);
+      return evidence.read_context.id === cardId ? view : {
+        ...view, readContext: { type: 'card' as const, id: cardId },
+        source: { kind: 'unavailable' as const, availability: 'unavailable' as const },
+      };
+    });
+    return { images, links, ordered, entries, attachmentItems: entries.filter((view): view is AttachmentView => view !== null) };
+  }, [item.evidence, serverUrl, jwt, api, cardId]);
   const [selected, setSelected] = useState<number | null>(null);
   const restoreFocus = useRef<(() => void) | undefined>(undefined);
   const fixRef = useRef<ComponentRef<typeof TouchableOpacity>>(null);

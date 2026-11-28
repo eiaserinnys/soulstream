@@ -3,6 +3,8 @@ import { act, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { DocumentReaderDialog } from "./DocumentReaderDialog";
+import { CardImageViewer } from "./CardImageViewer";
+import { createDashboardReloadCoordinator } from "../pwa/dashboard-reload";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement;
@@ -12,6 +14,34 @@ async function mount(request: typeof fetch) {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   await act(async () => root.render(<DocumentReaderDialog documentId="doc-1" request={request} onClose={() => {}}/>));
 }
+it("registers an open document and releases it when closed", async () => {
+  const request = vi.fn(async () => Response.json({ id: "doc-1", title: "문서", body: "본문", version: 1 }));
+  const reload = vi.fn();
+  const env = { document, reload, hasPendingEdits: () => false, flushPendingEdits: async () => true };
+  await mount(request);
+  expect(await createDashboardReloadCoordinator(env).request()).toBe(false);
+  expect(reload).not.toHaveBeenCalled();
+  expect(document.querySelector('[data-sw-update-banner]')).not.toBeNull();
+  await act(async () => root.render(<DocumentReaderDialog documentId={null} request={request} onClose={() => {}}/>));
+  document.querySelector('[data-sw-update-banner]')?.remove();
+  expect(await createDashboardReloadCoordinator(env).request()).toBe(true);
+  expect(reload).toHaveBeenCalledOnce();
+});
+it("keeps reload deferred until the last open reader unmounts", async () => {
+  const request = vi.fn(async () => Response.json({ id: "doc-1", title: "문서", body: "본문", version: 1 }));
+  const reload = vi.fn();
+  const env = { document, reload, hasPendingEdits: () => false, flushPendingEdits: async () => true };
+  await mount(request);
+  await act(async () => root.render(<><DocumentReaderDialog documentId="doc-1" request={request} onClose={() => {}}/>
+    <CardImageViewer image={{src:'https://example.test/image.png',alt:'이미지'}} onClose={() => {}}/></>));
+  await act(async () => root.render(<CardImageViewer image={{src:'https://example.test/image.png',alt:'이미지'}} onClose={() => {}}/>));
+  expect(await createDashboardReloadCoordinator(env).request()).toBe(false);
+  expect(reload).not.toHaveBeenCalled();
+  await act(async () => root.render(<CardImageViewer image={null} onClose={() => {}}/>));
+  document.querySelector('[data-sw-update-banner]')?.remove();
+  expect(await createDashboardReloadCoordinator(env).request()).toBe(true);
+  expect(reload).toHaveBeenCalledOnce();
+});
 it("shows the title and read-only body without a duplicate leading heading", async () => {
   await mount(vi.fn(async () => Response.json({ id: "doc-1", title: "문서 제목", body: "# 문서 제목\n\n읽는 본문", version: 1 })));
   expect(document.querySelector('[data-slot="dialog-title"]')?.textContent).toBe("문서 제목");

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel, FrameLoading, FrameNotice, MarkdownContent, type MarkdownDocument } from "@seosoyoung/soul-ui";
 import { removeOverlappingDocumentHeading } from "@seosoyoung/soul-ui/lib/markdown-document-heading";
+import { registerDashboardReader } from "../pwa/dashboard-reload";
 import "./v3-document-reader-dialog.css";
 
 export function DocumentReaderDialog({ documentId, onClose, request = globalThis.fetch }: {
@@ -15,6 +16,8 @@ export function DocumentReaderDialog({ documentId, onClose, request = globalThis
   const visibleDocumentId = documentId ?? lastDocumentId;
   const document = content?.documentId === visibleDocumentId ? content.document : null;
   const error = content?.documentId === visibleDocumentId ? content.error : null;
+  const isOpen = documentId !== null;
+  useEffect(() => isOpen ? registerDashboardReader() : undefined, [isOpen]);
   useEffect(() => {
     if (!documentId) return;
     setContent((previous) => previous?.documentId === documentId && previous.document ? previous : { documentId, document: null, error: null });
