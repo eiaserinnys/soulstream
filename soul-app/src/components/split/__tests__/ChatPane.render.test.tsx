@@ -1,4 +1,12 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+const mockOpenSessionMenu = jest.fn();
+jest.mock('../../../hooks/usePlannerContextMenus', () => ({
+  usePlannerContextMenus: () => ({
+    openSessionMenu: mockOpenSessionMenu,
+    sessionSuccession: null,
+    closeSessionSuccession: jest.fn(),
+  }),
+}));
 let mockSafeAreaInsets = { top: 24, bottom: 20, left: 0, right: 0 };
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => mockSafeAreaInsets,
@@ -117,4 +125,22 @@ test('패널이 전달한 하단 안전 영역 여백을 ChatBody에 그대로 �
   );
 
   expect(screen.getByTestId('chat-body').props.minimumBottomPadding).toBe(20);
+});
+
+test('iPad 채팅 머리의 세션 메뉴 단추는 그 칸의 세션으로 길게 누르기와 같은 세션 메뉴를 연다', () => {
+  mockOpenSessionMenu.mockClear();
+  useSessionStore.setState({ sessions: {
+    'pas-1': { agentSessionId: 'pas-1', displayName: 'PAS', status: 'running', createdAt: '', updatedAt: '' } as Session,
+    'assigned-1': { agentSessionId: 'assigned-1', displayName: '담당 세션', status: 'idle', createdAt: '', updatedAt: '' } as Session,
+  } });
+  useUIStore.setState({ activeSessionId: 'pas-1', focusEventId: null });
+
+  const screen = render(<ChatPane sessionId="assigned-1" active />);
+  const menu = screen.getByLabelText('세션 메뉴');
+  const files = screen.getByLabelText('세션 파일');
+
+  expect(menu.type).toBe(files.type);
+  fireEvent.press(menu);
+  expect(mockOpenSessionMenu).toHaveBeenCalledTimes(1);
+  expect(mockOpenSessionMenu).toHaveBeenCalledWith({ sessionId: 'assigned-1' });
 });

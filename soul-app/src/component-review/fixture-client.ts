@@ -114,9 +114,18 @@ const entryShellApi = {
     entryShellFeedRequests.push({ type: 'getSessionsByIds', sessionIds: [...sessionIds] });
     return feedFixtureSessionLookup(sessionIds);
   },
-  getStarredFolders: async () => ({ items: [], nextCursor: null }),
+  getStarredFolders: getEntryShellStarredFolders,
+  getResumeAfterLimit: async () => ({ eligible: false, reason: null, resets_at: null, schedule: null }),
   catalogStreamUrl: reviewFeedStreamUrl, nodeStreamUrl: () => '',
 };
+
+/** `starred=slow|ready|error` fills the entryShell starred list; slow holds the first response for capture. */
+async function getEntryShellStarredFolders() {
+  const state = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('starred');
+  if (state === 'slow') await new Promise((resolve) => setTimeout(resolve, 3000));
+  if (state === 'error') throw new Error('공개 예시: 중요 작업을 불러오지 못했습니다.');
+  return { items: state === 'slow' || state === 'ready' ? starredFolders : [], nextCursor: null };
+}
 
 export type ContentLinkDocumentState = 'ready' | 'loading' | 'slow' | 'error';
 export const contentLinkDocumentId = 'public-content-document';

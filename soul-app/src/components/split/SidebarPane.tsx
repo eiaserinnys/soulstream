@@ -17,6 +17,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createApiClient } from '../../api/client';
 import { StarredFolderList } from '../planner/StarredFolderList';
+import { FrameLoading } from '../FrameLoading';
 import { usePlannerStarred } from '../../hooks/usePlannerStarred';
 import { buildPlannerProjectTreeRows } from '../../lib/planner-project-tree';
 import { openStarredPageWorkspace } from '../../lib/planner-folder-workspace';
@@ -192,7 +193,9 @@ export function SidebarPane({
                 styles={styles}
                 t={t}
               />
-              <StarredFolderList
+              {starred.loading && starred.data.items.length === 0
+                ? <FrameLoading testID="sidebar-starred-loading" />
+                : <StarredFolderList
                 folders={starred.data.items}
                 loading={starred.loading}
                 error={starred.error}
@@ -213,7 +216,7 @@ export function SidebarPane({
                 onMove={moveStarredFolder}
                 onDragStateChange={setStarredDragging}
                 reordering={starred.reordering}
-              />
+              />}
             </View>
             <View style={styles.sectionHeader}>
               <SidebarSectionTitle
