@@ -135,6 +135,8 @@ test('iPad 채팅 머리의 세션 메뉴 단추는 그 칸의 세션으로 길�
   } });
   useUIStore.setState({ activeSessionId: 'pas-1', focusEventId: null });
 
+  const nodeHandle = jest.spyOn(require('react-native/Libraries/ReactNative/RendererProxy'), 'findNodeHandle')
+    .mockImplementation((node) => node ? 42 : null);
   const screen = render(<ChatPane sessionId="assigned-1" active />);
   const menu = screen.getByLabelText('세션 메뉴');
   const files = screen.getByLabelText('세션 파일');
@@ -142,5 +144,6 @@ test('iPad 채팅 머리의 세션 메뉴 단추는 그 칸의 세션으로 길�
   expect(menu.type).toBe(files.type);
   fireEvent.press(menu);
   expect(mockOpenSessionMenu).toHaveBeenCalledTimes(1);
-  expect(mockOpenSessionMenu).toHaveBeenCalledWith({ sessionId: 'assigned-1' });
+  expect(mockOpenSessionMenu).toHaveBeenCalledWith({ sessionId: 'assigned-1', anchor: 42 });
+  nodeHandle.mockRestore();
 });

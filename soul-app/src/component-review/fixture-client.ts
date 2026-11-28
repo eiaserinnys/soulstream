@@ -119,12 +119,19 @@ const entryShellApi = {
   catalogStreamUrl: reviewFeedStreamUrl, nodeStreamUrl: () => '',
 };
 
-/** `starred=slow|ready|error` fills the entryShell starred list; slow holds the first response for capture. */
+/**
+ * `starred=slow|ready|error|error-once` fills the entryShell starred list. error-once keeps failing until the
+ * capture sets `window.__soulAppStarredRecovered` just before its retry, because the sidebar may ask twice on mount.
+ */
 async function getEntryShellStarredFolders() {
   const state = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('starred');
+  const recovered = typeof window !== 'undefined'
+    && (window as Window & { __soulAppStarredRecovered?: boolean }).__soulAppStarredRecovered === true;
   if (state === 'slow') await new Promise((resolve) => setTimeout(resolve, 3000));
-  if (state === 'error') throw new Error('공개 예시: 중요 작업을 불러오지 못했습니다.');
-  return { items: state === 'slow' || state === 'ready' ? starredFolders : [], nextCursor: null };
+  if (state === 'error' || (state === 'error-once' && !recovered)) {
+    throw new Error('공개 예시: 중요 작업을 불러오지 못했습니다.');
+  }
+  return { items: state === 'slow' || state === 'ready' || state === 'error-once' ? starredFolders : [], nextCursor: null };
 }
 
 export type ContentLinkDocumentState = 'ready' | 'loading' | 'slow' | 'error';

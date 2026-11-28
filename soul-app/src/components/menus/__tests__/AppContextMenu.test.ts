@@ -35,6 +35,18 @@ describe('AppContextMenu native contracts', () => {
     expect(disabled).not.toHaveBeenCalled();
   });
 
+  test('iOS anchors the sheet to the given node and omits anchor otherwise', () => {
+    jest.replaceProperty(Platform, 'OS', 'ios');
+    const sheet = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => undefined);
+    const actions = [{ key: 'open', label: '열기', onSelect: jest.fn() }];
+
+    showAppContextMenu(actions, '세션', 42);
+    showAppContextMenu(actions, '세션');
+
+    expect(sheet.mock.calls[0][0].anchor).toBe(42);
+    expect(sheet.mock.calls[1][0]).not.toHaveProperty('anchor');
+  });
+
   test('non-iOS disabled action explains why without invoking it', () => {
     jest.replaceProperty(Platform, 'OS', 'android');
     const selected = jest.fn();

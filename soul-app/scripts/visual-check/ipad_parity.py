@@ -6,19 +6,23 @@
 `?section=entryShell&safeArea=fixture`를 390x844(폰), 834x1210(아이패드 세로),
 1210x834(아이패드 가로)로 그리고, 화면을 눌러 같은 영역으로 간 뒤 영역마다 세 폭을 찍는다.
 영역마다 세 장을 한 장에 나란히 붙인 비교 그림(`<phase>-<area>-compare.png`)도 만든다.
+`--pair <phase>`를 주면 그 phase의 같은 영역 비교 그림을 위에 붙인 전후 그림
+(`<pair>-vs-<phase>-<area>.png`)도 만든다.
 
-- start: 첫 화면, feed: 세션 목록, folder: 폴더 안, folder-board: 폴더 안 카드 보드(폰에는 없다),
-  chat: 채팅을 연 화면, session-menu: 채팅 머리에서 연 세션 메뉴, card-detail: 카드 상세,
-  pas: PAS 화면, settings: 설정 겉틀, starred-loading / starred-loaded / starred-error:
-  중요 작업 첫 로딩(응답을 3초 늦춤), 불러온 뒤, 실패.
+- 1회차 영역: start, feed, folder, folder-board(폰에는 없다), chat, session-menu, card-detail,
+  settings, starred-loading / starred-loaded / starred-error(응답을 3초 늦춤, 불러온 뒤, 실패)
+- 2회차 영역(`ipad_parity_round2.py`): pas(PAS 정상 화면), starred-retry-failed / starred-retry-loaded,
+  search-entry / search-open, board-title, sidebar-daily-row, folder-list(폰 중요 작업, 전체 폴더와
+  아이패드 서랍, 사이드바)
 
-단언 (고치기 전 번들에서는 chat-menu와 starred-loading 단언이 실패하는 것이 정상이다)
+단언 (고치기 전 번들에서 실패하는 것이 정상인 것이 있다)
 - 아이패드 채팅 머리에 「세션 메뉴」 단추가 있고 「세션 파일」 단추와 크기, 세로 가운데가 같으며,
   누르면 그 세션 이름을 제목으로 한 세션 메뉴가 열린다.
 - 아이패드 사이드바가 중요 작업 첫 로딩 동안 `sidebar-starred-loading`(progressbar)을 보이고,
   불러온 뒤에는 그것이 사라지고 목록 행이 보인다.
 - 616x900(아이패드 틀의 가장 좁은 폭)에서 세션 이름이 아주 길어도 채팅 머리 단추가 머리 안에 있고,
   제목이 단추와 겹치지 않으며 말줄임으로 끝난다.
+- 2회차 단언은 `ipad_parity_round2.py` 머리에 있다.
 - 조작 항목(초점, Tab, Esc, 창 크기 바꾸기)은 `operations`에 잰 값을 남긴다.
 
 실행 방법
@@ -29,7 +33,7 @@
 2. 사용자 site-packages의 Playwright와 Pillow로 실행한다:
        python3 -P soul-app/scripts/visual-check/ipad_parity.py \\
            --bundle unified-dashboard/dist/assets/ios-components \\
-           --out <캡처 폴더> --phase after
+           --out <캡처 폴더> --phase after [--pair before]
 
 번들만 로컬 HTTP 서버로 제공하고 `/api/auth/status`만 흉내 낸다(쿠키 review=fixture).
 긴 세션 이름 사례는 두 번째 서버가 번들 JS의 `공개 예시 세션 `을 긴 이름으로 바꿔 서빙한다.
@@ -38,26 +42,23 @@ from __future__ import annotations
 
 import argparse
 import json
-import mimetypes
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import sys
 from pathlib import Path
-from urllib.parse import urlsplit
 
-from PIL import Image, ImageDraw, ImageFont
-from playwright.sync_api import Browser, Page, sync_playwright
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-PREFIX = "/assets/ios-components/"
-FRAMES = (("phone", 390, 844), ("ipad-portrait", 834, 1210), ("ipad-landscape", 1210, 834))
-NARROW = ("ipad-narrow", 616, 900)
-TABLET_FRAMES = tuple(frame for frame in FRAMES if frame[0] != "phone")
+from playwright.sync_api import Page, sync_playwright  # noqa: E402
+
+import ipad_parity_round2  # noqa: E402
+from parity_harness import (  # noqa: E402
+    EDGE_TOLERANCE, FRAMES, NARROW, TABLET_FRAMES, BundleServer, Run, capture_area, compose,
+    ensure_sidebar, stack, visible,
+)
+
 SESSION_NAME = "공개 예시 세션 10"
 STARRED_ROW_TITLE = "공개 예시 프로젝트"
 LONG_SESSION_PREFIX = "아주 긴 세션 이름이 채팅 머리의 단추를 밀어내지 않고 한 줄 말줄임으로 끝나는지 보는 공개 예시 세션 "
 BUNDLE_SESSION_PREFIX = b"\\uacf5\\uac1c \\uc608\\uc2dc \\uc138\\uc158 "
-EDGE_TOLERANCE = 1
-FONT_PATHS = ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-              "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc")
 
 HEADER_JS = r"""
 () => {
@@ -94,121 +95,8 @@ ACTIVE_JS = """() => {
 }"""
 
 
-class BundleServer:
-    def __init__(self, bundle_root: Path, substitutions: dict[bytes, bytes] | None = None):
-        self.bundle_root = bundle_root.resolve()
-        self.substitutions = substitutions or {}
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
-
-    def _handler(self):
-        bundle_root = self.bundle_root
-        substitutions = self.substitutions
-
-        class Handler(BaseHTTPRequestHandler):
-            def log_message(self, *args):
-                return
-
-            def _send(self, status: int, body: bytes, content_type: str):
-                self.send_response(status)
-                self.send_header("Content-Type", content_type)
-                self.send_header("Content-Length", str(len(body)))
-                self.send_header("Cache-Control", "no-store")
-                self.end_headers()
-                self.wfile.write(body)
-
-            def do_GET(self):  # noqa: N802 - http.server contract
-                path = urlsplit(self.path).path
-                if path == "/api/auth/status":
-                    authenticated = "review=fixture" in (self.headers.get("Cookie") or "")
-                    self._send(200, json.dumps({"authenticated": authenticated}).encode(), "application/json")
-                    return
-                if not path.startswith(PREFIX):
-                    self._send(404, b"", "text/plain")
-                    return
-                file = (bundle_root / path[len(PREFIX):]).resolve()
-                if bundle_root not in file.parents or not file.is_file():
-                    self._send(404, b"", "text/plain")
-                    return
-                body = file.read_bytes()
-                if file.suffix == ".js":
-                    for old, new in substitutions.items():
-                        body = body.replace(old, new)
-                self._send(200, body, mimetypes.guess_type(str(file))[0] or "application/octet-stream")
-
-        return Handler
-
-    def __enter__(self):
-        self.thread.start()
-        return self
-
-    def __exit__(self, *exc):
-        self.httpd.shutdown()
-        self.httpd.server_close()
-
-    @property
-    def base(self) -> str:
-        host, port = self.httpd.server_address
-        return f"http://{host}:{port}"
 
 
-class Run:
-    def __init__(self, browser: Browser, base: str, out: Path, phase: str):
-        self.browser, self.base, self.out, self.phase = browser, base, out, phase
-        self.checks: list[dict] = []
-        self.notes: list[str] = []
-        self.shots: dict[str, dict[str, str]] = {}
-        self.operations: dict[str, object] = {}
-
-    def check(self, name: str, condition: bool, detail) -> None:
-        self.checks.append({"name": name, "passed": bool(condition), "detail": detail})
-
-    def open(self, frame: tuple[str, int, int], query: str = "", base: str | None = None) -> Page:
-        _, width, height = frame
-        base = base or self.base
-        context = self.browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=1)
-        context.add_cookies([{"name": "review", "value": "fixture", "url": base}])
-        page = context.new_page()
-        page.set_default_timeout(15000)
-        errors: list[str] = []
-        page.on("pageerror", lambda error: errors.append(str(error)))
-        page.route("**/*", lambda route: route.continue_()
-                   if route.request.url.startswith(base) else route.abort())
-        page.goto(f"{base}{PREFIX}index.html?section=entryShell&safeArea=fixture{query}", wait_until="load")
-        page.wait_for_timeout(2500)
-        page.evaluate("async () => { await document.fonts.ready; }")
-        page.errors = errors  # type: ignore[attr-defined]
-        return page
-
-    def shot(self, page: Page, area: str, frame: str) -> None:
-        page.wait_for_timeout(700)
-        path = self.out / f"{self.phase}-{area}-{frame}.png"
-        page.screenshot(path=str(path))
-        self.shots.setdefault(area, {})[frame] = str(path)
-        errors = getattr(page, "errors", [])
-        if errors:
-            self.notes.append(f"{area}/{frame} page errors: {errors[:2]}")
-
-    def missing(self, area: str, frame: str, reason: str) -> None:
-        self.shots.setdefault(area, {})[frame] = f"missing: {reason}"
-        self.notes.append(f"{area}/{frame}: {reason}")
-
-
-def visible(page: Page, locator) -> bool:
-    try:
-        return any(locator.nth(index).is_visible() for index in range(locator.count()))
-    except Exception:  # noqa: BLE001
-        return False
-
-
-def ensure_sidebar(page: Page, width: int) -> None:
-    """세로에서는 사이드바가 서랍 안에 있으므로 「메뉴」로 연다."""
-    if visible(page, page.get_by_test_id("sidebar-main-list")):
-        box = page.get_by_test_id("sidebar-main-list").bounding_box()
-        if box and box["x"] >= 0 and box["x"] + box["width"] <= width:
-            return
-    page.get_by_label("메뉴", exact=True).first.click()
-    page.wait_for_timeout(900)
 
 
 def go_feed(page: Page, frame: str) -> None:
@@ -244,27 +132,6 @@ def go_settings(page: Page, frame: str, width: int) -> None:
         ensure_sidebar(page, width)
         page.get_by_text("설정", exact=True).last.click()
     page.wait_for_timeout(1200)
-
-
-def go_pas(page: Page, frame: str) -> None:
-    if frame == "phone":
-        page.get_by_test_id("phone-tab-PersistentTab").click()
-    else:
-        page.get_by_label("영구 세션 열기", exact=True).first.click()
-    page.wait_for_timeout(1500)
-
-
-def capture_area(run: Run, area: str, frames, action, query: str = "") -> None:
-    for frame in frames:
-        frame_id, width, _ = frame
-        page = run.open(frame, query)
-        try:
-            action(page, frame_id, width)
-            run.shot(page, area, frame_id)
-        except Exception as error:  # noqa: BLE001 - 한 영역이 막혀도 다른 영역은 찍는다
-            run.missing(area, frame_id, f"navigation failed: {str(error).splitlines()[0]}")
-        finally:
-            page.context.close()
 
 
 def chat_header(page: Page) -> dict | None:
@@ -457,46 +324,35 @@ def capture_starred_error(run: Run) -> None:
             page.context.close()
 
 
-def font(size: int):
-    for path in FONT_PATHS:
-        if Path(path).is_file():
-            return ImageFont.truetype(path, size)
-    return ImageFont.load_default()
 
-
-def compose(run: Run, area: str, frames: dict[str, str]) -> str:
-    gap, label_h, height = 24, 40, 900
-    tiles = []
-    for frame_id, _, _ in FRAMES:
-        source = frames.get(frame_id, "missing: not captured")
-        if source.startswith("missing"):
-            tiles.append((frame_id, None, source))
-            continue
-        image = Image.open(source).convert("RGB")
-        scale = height / image.height
-        tiles.append((frame_id, image.resize((round(image.width * scale), height)), None))
-    widths = [tile[1].width if tile[1] else 390 for tile in tiles]
-    sheet = Image.new("RGB", (sum(widths) + gap * (len(tiles) + 1), height + label_h + gap), "white")
-    draw = ImageDraw.Draw(sheet)
-    x = gap
-    for (frame_id, image, reason), width in zip(tiles, widths):
-        draw.text((x, 8), f"{area} · {frame_id}", fill="black", font=font(20))
-        if image:
-            sheet.paste(image, (x, label_h))
-        else:
-            draw.rectangle((x, label_h, x + width, label_h + height), outline="#999999", fill="#f2f2f2")
-            draw.multiline_text((x + 16, label_h + 16), reason.replace(": ", ":\n", 1)[:120], fill="#555555", font=font(16))
-        x += width + gap
-    path = run.out / f"{run.phase}-{area}-compare.png"
-    sheet.save(path)
-    return str(path)
+def capture_round1(run: Run, long_base: str) -> None:
+    capture_area(run, "start", FRAMES, lambda page, frame, width: None)
+    capture_area(run, "feed", FRAMES, lambda page, frame, width: go_feed(page, frame))
+    capture_area(run, "folder", FRAMES, go_folder)
+    capture_area(run, "folder-board", TABLET_FRAMES, lambda page, frame, width: (
+        go_folder(page, frame, width),
+        page.get_by_test_id("settings-segment-tablet-card-view-board").click(),
+        page.wait_for_timeout(1200)))
+    run.missing("folder-board", "phone", "iPhone folder has no card board (iPad-only feature)")
+    capture_chat_and_menu(run)
+    capture_area(run, "card-detail", FRAMES, lambda page, frame, width: (
+        page.get_by_test_id("postit-open-public-review-1").first.click(),
+        page.wait_for_timeout(1500)))
+    capture_area(run, "settings", FRAMES, go_settings)
+    capture_starred(run)
+    capture_starred_error(run)
+    capture_resize_chat(run)
+    capture_narrow_long(run, long_base)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bundle", required=True, help="ios-components 번들 디렉토리")
     parser.add_argument("--out", required=True, help="캡처와 JSON을 저장할 디렉토리")
-    parser.add_argument("--phase", choices=("before", "after"), required=True, help="파일 이름 앞머리")
+    parser.add_argument("--phase", required=True, help="파일 이름 앞머리(before, after 등)")
+    parser.add_argument("--pair", help="이 phase의 같은 영역 비교 그림을 위에 붙여 전후 그림을 만든다")
+    parser.add_argument("--part", choices=("all", "round1", "round2"), default="all",
+                        help="한 번에 다 돌면 오래 걸리므로 1회차, 2회차 장면을 나눠 돌린다")
     args = parser.parse_args()
 
     bundle = Path(args.bundle).resolve()
@@ -512,38 +368,32 @@ def main() -> int:
         browser = playwright.chromium.launch(headless=True)
         run = Run(browser, server.base, out, args.phase)
         try:
-            capture_area(run, "start", FRAMES, lambda page, frame, width: None)
-            capture_area(run, "feed", FRAMES, lambda page, frame, width: go_feed(page, frame))
-            capture_area(run, "folder", FRAMES, go_folder)
-            capture_area(run, "folder-board", TABLET_FRAMES, lambda page, frame, width: (
-                go_folder(page, frame, width),
-                page.get_by_test_id("settings-segment-tablet-card-view-board").click(),
-                page.wait_for_timeout(1200)))
-            run.missing("folder-board", "phone", "iPhone folder has no card board (iPad-only feature)")
-            capture_chat_and_menu(run)
-            capture_area(run, "card-detail", FRAMES, lambda page, frame, width: (
-                page.get_by_test_id("postit-open-public-review-1").first.click(),
-                page.wait_for_timeout(1500)))
-            capture_area(run, "pas", FRAMES, lambda page, frame, width: go_pas(page, frame))
-            capture_area(run, "settings", FRAMES, go_settings)
-            capture_starred(run)
-            capture_starred_error(run)
-            capture_resize_chat(run)
-            capture_narrow_long(run, long_server.base)
+            if args.part in ("all", "round1"):
+                capture_round1(run, long_server.base)
+            if args.part in ("all", "round2"):
+                ipad_parity_round2.capture_all(run)
         finally:
             browser.close()
 
     compares = {area: compose(run, area, frames) for area, frames in run.shots.items()
                 if area != "chat-long-title"}
+    compares.update(run.custom_compares)
+    pairs = {}
+    for area, path in compares.items():
+        earlier = out / f"{args.pair}-{area}-compare.png" if args.pair else None
+        if earlier and earlier.is_file():
+            pairs[area] = stack(earlier, Path(path), out / f"{args.pair}-vs-{args.phase}-{area}.png",
+                                (f"{args.pair} · {area}", f"{args.phase} · {area}"))
     passed = all(entry["passed"] for entry in run.checks)
     result = {"phase": args.phase, "passed": passed, "checks": run.checks, "shots": run.shots,
-              "compare": compares, "operations": run.operations, "notes": run.notes}
-    (out / f"{args.phase}-result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2))
+              "compare": compares, "pairs": pairs, "operations": run.operations, "notes": run.notes}
+    result_name = f"{args.phase}-result.json" if args.part == "all" else f"{args.phase}-{args.part}-result.json"
+    (out / result_name).write_text(json.dumps(result, ensure_ascii=False, indent=2))
     for entry in run.checks:
         print(("PASS " if entry["passed"] else "FAIL ") + entry["name"])
     for note in run.notes:
         print("NOTE " + note)
-    print(out / f"{args.phase}-result.json")
+    print(out / result_name)
     return 0 if passed else 1
 
 

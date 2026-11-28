@@ -198,6 +198,13 @@ test('검증 대기 카드의 상세 제목 상태 글은 「검증 대기」다
   expect(screen.getByText('검증 대기')).toBeTruthy();
 });
 
+test('카드 상세 제목은 첨부 안내 글처럼 한글 낱말 단위로 줄을 넘긴다', async () => {
+  const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue(detail) } as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByTestId('card-detail-title')).toBeTruthy());
+
+  expect(screen.getByTestId('card-detail-title').props.lineBreakStrategyIOS).toBe('hangul-word');
+});
+
 test('제목과 양 끝 단추가 내용 끝선에 맞는 스타일을 쓴다', async () => {
   const api = { getCard: jest.fn().mockResolvedValue(detail) };
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);

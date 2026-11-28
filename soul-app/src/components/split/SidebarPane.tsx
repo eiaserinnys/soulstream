@@ -7,6 +7,7 @@ import {
 } from 'react';
 import {
   FlatList,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -72,6 +73,13 @@ export function SidebarPane({
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   const starred = usePlannerStarred(api, active);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const handlePullRefresh = useCallback(async () => {
+    if (pullRefreshing) return;
+    setPullRefreshing(true);
+    try { await starred.refresh(); }
+    finally { setPullRefreshing(false); }
+  }, [pullRefreshing, starred.refresh]);
   const today = useUIStore((state) => state.todayDate);
   const actions = usePlannerActions(api);
   const menus = usePlannerContextMenus(api);
@@ -148,6 +156,7 @@ export function SidebarPane({
         contentContainerStyle={{ paddingBottom: 0 }}
         style={styles.list}
         scrollEnabled={!starredDragging && !starred.reordering}
+        refreshControl={<RefreshControl refreshing={pullRefreshing} onRefresh={handlePullRefresh} />}
         data={treeRows.length > 0 ? ['project-tree'] : []}
         keyExtractor={(item) => item}
         renderItem={() => (
@@ -184,8 +193,10 @@ export function SidebarPane({
         )}
         ListHeaderComponent={
           <View style={styles.headerContent}>
-            <SidebarRow label="카드" icon="grid-outline" active={activeSection.kind === 'daily'}
-              onPress={() => select({ kind: 'daily', date: today })} styles={styles} t={t} />
+            <View testID="sidebar-daily-row" style={styles.dailyRow}>
+              <SidebarRow label="카드" icon="grid-outline" active={activeSection.kind === 'daily'}
+                onPress={() => select({ kind: 'daily', date: today })} styles={styles} t={t} />
+            </View>
             <View testID="sidebar-starred-section" style={styles.starred}>
               <SidebarSectionTitle
                 testID="sidebar-section-starred"
@@ -193,7 +204,7 @@ export function SidebarPane({
                 styles={styles}
                 t={t}
               />
-              {starred.loading && starred.data.items.length === 0
+              {starred.loading && starred.data.items.length === 0 && !pullRefreshing
                 ? <FrameLoading testID="sidebar-starred-loading" />
                 : <StarredFolderList
                 folders={starred.data.items}
@@ -325,6 +336,7 @@ function makeStyles(t: DesignTokens) {
       paddingBottom: t.spacing.sm,
     },
     headerContent: { gap: planner.sidebar.sectionGap },
+    dailyRow: { paddingHorizontal: planner.sidebar.contentInset },
     dateList: {
       paddingHorizontal: planner.sidebar.contentInset,
       gap: t.cardLayout.gap,

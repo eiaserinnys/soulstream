@@ -166,6 +166,7 @@ export function usePlannerContextMenus(api: ApiClient | null) {
   const openSessionMenu = useCallback((input: {
     sessionId: string;
     currentFolder?: PlannerFolder;
+    anchor?: number;
   }) => {
     if (resumeAfterLimitInFlight.current.has(input.sessionId)) return;
     resumeAfterLimitInFlight.current.add(input.sessionId);
@@ -222,7 +223,7 @@ export function usePlannerContextMenus(api: ApiClient | null) {
             () => report(actions.deleteFolderSession(input.sessionId)),
           ),
         },
-      }), session?.displayName ?? input.sessionId);
+      }), session?.displayName ?? input.sessionId, input.anchor);
     };
 
     void (async () => {

@@ -18,9 +18,10 @@ import { useDuoBandOwnsPanelActions } from '../../navigation/duoSideBand';
  * 태블릿 portrait·landscape가 공유하는 session feed chrome 구현.
  * 새 화면이 아니라 기존 두 adaptive surface의 header와 feed 진입 경계를 한 곳에서 소유한다.
  */
-export function TabletSessionFeedPane({ width, onOpenSession }: {
+export function TabletSessionFeedPane({ width, onOpenSession, searchEntry = false }: {
   width?: number;
   onOpenSession?: (sessionId: string) => void;
+  searchEntry?: boolean;
 } = {}) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -50,14 +51,26 @@ export function TabletSessionFeedPane({ width, onOpenSession }: {
               size={t.iconSize.standard}
             />
           </LiquidGlassButton>
+        ) : searchEntry ? (
+          <LiquidGlassButton
+            iconOnly
+            accessibilityLabel="세션 검색"
+            onPress={useSearchStore.getState().openTabletSearch}
+          >
+            <Ionicons
+              name="search-outline"
+              color={t.colors.textPrimary}
+              size={t.iconSize.standard}
+            />
+          </LiquidGlassButton>
         ) : null}
       </TabletPaneHeader> : null}
       <View style={styles.body}>
         {searchActive ? (
           <SearchScreen
             tablet
-            showInput={duo}
-            autoFocus={duo}
+            showInput={duo || searchEntry}
+            autoFocus={duo || searchEntry}
             onOpenSession={(sessionId, eventId, storyOpenRequestId) =>
               openPlannerSessionWorkspace(
                 sessionId,

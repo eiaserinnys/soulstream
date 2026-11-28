@@ -17,7 +17,7 @@ import type { Session } from '../api/types';
 import { SessionCardById } from '../components/SessionCardById';
 
 /** 이 폭 미만이면 카드가 시간을 identity 행으로 옮기고 상태 열을 접는다. */
-export const NARROW_FEED_MAX_WIDTH = 400;
+export const NARROW_FEED_MAX_WIDTH = 320;
 import { classifySessionFeed } from '../lib/session-feed-groups';
 import { useSessionStore } from '../store/sessionStore';
 import { useNodeConnectivityStore } from '../store/nodeConnectivityStore';
