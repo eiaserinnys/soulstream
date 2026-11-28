@@ -69,6 +69,7 @@ class WorkerChangeIgnorePathsTest(unittest.TestCase):
             "soul-app/src/x.ts", "soul-app/package.json",
             "soul-app/modules/soul-app-search-commands/package.json",
             "docs/x.md", ".github/workflows/soul-app.yml",
+            "packages/i18n/src/index.ts", "packages/i18n/GLOSSARY.md",
             "scripts/visual-check/settings_toolbar.py", "scripts/visual-check/sub/x.py",
         )
         for path in ignored:
@@ -78,6 +79,7 @@ class WorkerChangeIgnorePathsTest(unittest.TestCase):
         self.assertTrue(paths_all_ignored(list(PR_2370_CHANGED_FILES), self.patterns))
         for path in (
             "soul-server-ts/src/x.ts",
+            "packages/i18n/package.json",
             "packages/wire-schema/src/x.ts",
             "packages/db-schema/migration-manifest.json",
             "plugins/chatgpt-card-renderer/src/widget-html.ts",

@@ -14,6 +14,7 @@ const PROJECT_ROOT = path.resolve(__dirname, "../..");
 export default defineConfig({
   test: {
     globals: true,
+    setupFiles: [`${PROJECT_ROOT}/packages/soul-ui/test-i18n-setup.ts`],
     environment: "node",
     include: [
       `${PROJECT_ROOT}/packages/soul-ui/src/**/*.test.ts`,

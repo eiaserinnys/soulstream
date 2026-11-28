@@ -19,6 +19,7 @@ import { SummarySettingsForm } from "./SummarySettingsForm";
  */
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogPopup,
@@ -54,6 +55,7 @@ import {
 } from "../lib/persistent-session-device-preferences";
 import { LiquidGlassTab } from "./LiquidGlassTab";
 import { ChatTypographyTab } from "./ChatTypographyTab";
+import { LanguageSettings } from "./LanguageSettings";
 import { SessionReviewPolicyTab } from "./SessionReviewPolicyTab";
 import { UsageLogTab } from "./UsageLogTab";
 import { RecurringJobsTab } from "./RecurringJobsTab";
@@ -83,6 +85,7 @@ interface ConfigModalProps {
 }
 
 export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, initialPersistentSessionId, onPersistentSessionSaved }: ConfigModalProps) {
+  const { t } = useTranslation();
   const { user } = useAuth();
 
   const {
@@ -107,7 +110,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
   const [pasDevicePreferences, setPasDevicePreferences] = useState(() => userEmail
     ? readPersistentSessionDevicePreferences(userEmail)
     : { openOnStart: false, lastSessionId: null });
-  const [mobileIndex, setMobileIndex] = useState(!initialTab);
+  const [mobileIndex, setMobileIndex] = useState(() => !initialTab && narrowSettingsViewport());
   const [discardPrompt, setDiscardPrompt] = useState(false);
   const saveInFlight = useRef(false);
   const saveChanges = async () => {
@@ -116,7 +119,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
     try { await save(); } finally { saveInFlight.current = false; }
   };
   const isAdmin = Boolean(api || user?.isAdmin);
-  const tabs = useMemo(() => visibleConfigTabs(isAdmin), [isAdmin]);
+  const tabs = useMemo(() => visibleConfigTabs(isAdmin, t), [isAdmin, t]);
 
   // 카테고리 로드 시 첫 탭 선택. 모달을 닫으면 다음 오픈 시 재선택되도록 리셋.
   useEffect(() => {
@@ -126,7 +129,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
     }
   }, [categories, tabs, selectedTab]);
   useEffect(() => {
-    if (!open) { setSelectedTab(initialTab ?? DEFAULT_CONFIG_TAB_ID); setMobileIndex(!initialTab); setDiscardPrompt(false); resetGuideSession(); }
+    if (!open) { setSelectedTab(initialTab ?? DEFAULT_CONFIG_TAB_ID); setMobileIndex(!initialTab && narrowSettingsViewport()); setDiscardPrompt(false); resetGuideSession(); }
   }, [open]);
   useEffect(() => {
     if (open && userEmail) setPasDevicePreferences(readPersistentSessionDevicePreferences(userEmail));
@@ -137,17 +140,17 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
   const isUsageStatsTab = selectedTab === "usage_stats";
   const hasTabs = categories.length > 0 || tabs.length > 0;
 
-  const activeLabel = selectedDefinition?.label ?? activeCategory?.label ?? "설정";
+  const activeLabel = selectedDefinition?.label ?? activeCategory?.label ?? t("settings.title");
   const close = () => { if (saving || saveInFlight.current) return; if (hasChanges) setDiscardPrompt(true); else onOpenChange(false); };
   return (
     <Dialog open={open} onOpenChange={next => { if (!next) close(); }}>
       <DialogPopup className="approved-dialog config-dialog max-w-5xl" closeProps={{ disabled: saving, onClick: event => { event.preventDefault(); close(); } }} style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px` } as CSSProperties}>
         <DialogHeader>
-          <DialogTitle>설정</DialogTitle>
+          <DialogTitle>{t("settings.title")}</DialogTitle>
         </DialogHeader>
 
         <DialogPanel className="config-dialog-panel" scrollable={false} scrollFade={false}>
-          {loading && <FrameLoading label="설정을 불러오는 중..." />}
+          {loading && <FrameLoading label={t("settings.loading")} />}
           {error && !loading && (
             <div className="text-destructive-foreground text-sm py-4 text-center" data-v3-selectable-content="true">
               ❌ {error}
@@ -162,21 +165,22 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
                 onSelect={name => { setSelectedTab(name); setMobileIndex(false); setMcpProfileTarget(undefined); setAgentMcpTarget(undefined); }}
               />
               <section className="config-detail" aria-label={activeLabel}>
-              <button type="button" className="config-back" onClick={() => setMobileIndex(true)}><ArrowLeft className="size-4" aria-hidden="true"/>모든 설정</button>
-              <header className="config-detail-heading"><h2>{activeLabel}</h2><p>{selectedDefinition?.description ?? "서버에 적용할 값을 변경한 뒤 저장하세요."}</p></header>
+              <button type="button" className="config-back" onClick={() => setMobileIndex(true)}><ArrowLeft className="size-4" aria-hidden="true"/>{t("settings.allSettings")}</button>
+              <header className="config-detail-heading"><h2>{activeLabel}</h2><p>{selectedDefinition?.description ?? t("settings.defaultCategoryDescription")}</p></header>
               {selectedDefinition?.id === "appearance" ? <div className="config-appearance">
                 <WallpaperPicker local={Boolean(api)} />
+                <LanguageSettings />
                 <ChatTypographyTab preference={api ? {value:localChat,set:setLocalChat} : undefined}/>
                 {userEmail ? <SettingFieldWidget
                   className="config-pas-open-on-start"
-                  field={{ key: "pas_open_on_start", field_name: "pas_open_on_start", label: "시작할 때 영구 세션으로 열기", description: "", value: pasDevicePreferences.openOnStart, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false }}
+                  field={{ key: "pas_open_on_start", field_name: "pas_open_on_start", label: t("settings.openPersistent"), description: "", value: pasDevicePreferences.openOnStart, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false }}
                   value={String(pasDevicePreferences.openOnStart)}
                   onChange={(value) => {
                     const next = setPersistentSessionOpenOnStart(userEmail, value === "true");
                     setPasDevicePreferences(next);
                   }}
                 /> : null}
-                <details className="config-advanced"><summary>유리 효과 세부 조정<span>고급</span></summary><LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined}/></details>
+                <details className="config-advanced"><summary>{t("settings.glassDetails")}<span>{t("settings.advanced")}</span></summary><LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined}/></details>
               </div> : selectedDefinition?.id === "nodes" ? (
                 // 구역 틀 테두리는 두지 않는다. 노드 카드와 사용량 행이 이미 테두리를 가진다.
                 <div>
@@ -238,14 +242,14 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
         <DialogFooter className="config-footer">
           <ConfigResultMessage result={result}/>
           {discardPrompt ? <div className="config-discard" role="alert">
-            <div><strong>저장하지 않은 변경이 있습니다</strong><p>창을 닫으면 서버 설정 변경이 사라집니다.</p></div>
-            <Button variant="outline" onClick={() => setDiscardPrompt(false)}>계속 편집</Button>
-            <Button variant="destructive" onClick={() => onOpenChange(false)}>변경 버리기</Button>
+            <div><strong>{t("settings.unsavedTitle")}</strong><p>{t("settings.unsavedDetail")}</p></div>
+            <Button variant="outline" onClick={() => setDiscardPrompt(false)}>{t("settings.continueEditing")}</Button>
+            <Button variant="destructive" onClick={() => onOpenChange(false)}>{t("settings.discard")}</Button>
           </div> : <div className="config-footer-row">
-            <p className="config-save-state">{isUsageStatsTab ? null : hasChanges ? `${changedKeys.length}개 변경, 아직 저장되지 않음` : selectedDefinition?.id === "appearance" ? <><Check className="size-4" aria-hidden="true"/> 변경 즉시 적용</> : selectedDefinition ? "각 항목의 버튼으로 변경을 적용합니다" : "재시작이 필요한 항목은 별도로 표시됩니다"}</p>
-            <Button variant="outline" disabled={saving} onClick={close}>{!isUsageStatsTab && hasChanges ? "취소" : "완료"}</Button>
+            <p className="config-save-state">{isUsageStatsTab ? null : hasChanges ? t("settings.changedCount", { count: changedKeys.length }) : selectedDefinition?.id === "appearance" ? <><Check className="size-4" aria-hidden="true"/> {t("settings.applied")}</> : selectedDefinition ? t("settings.applyIndividually") : t("settings.restartNotice")}</p>
+            <Button variant="outline" disabled={saving} onClick={close}>{!isUsageStatsTab && hasChanges ? t("settings.cancel") : t("settings.done")}</Button>
             {!isUsageStatsTab && (hasChanges || !selectedDefinition) ? <Button data-testid="config-save-button" disabled={!hasChanges || saving} onClick={() => void saveChanges()}>
-              {saving ? "저장 중…" : "변경 저장"}
+              {saving ? t("settings.saving") : t("settings.save")}
             </Button> : null}
           </div>}
         </DialogFooter>
@@ -254,10 +258,14 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor, i
   );
 }
 
+function narrowSettingsViewport(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 40rem)").matches;
+}
+
 const WALLPAPER_STYLES: Array<{ mode: Exclude<WallpaperMode, "photo">; label: string }> = [
-  { mode: "bokeh", label: "보케" },
-  { mode: "metal", label: "메탈" },
-  { mode: "plain", label: "단색" },
+  { mode: "bokeh", label: "settings.bokeh" },
+  { mode: "metal", label: "settings.metal" },
+  { mode: "plain", label: "settings.plain" },
 ];
 
 interface WallpaperTile {
@@ -269,6 +277,7 @@ interface WallpaperTile {
 }
 
 function WallpaperPicker({ local = false }: {local?: boolean}) {
+  const { t } = useTranslation();
   const storedWallpaper = useDashboardStore((s) => s.wallpaper);
   const storedUploadedUrl = useDashboardStore((s) => s.uploadedBackgroundUrl);
   const storedSetWallpaper = useDashboardStore((s) => s.setWallpaper);
@@ -290,14 +299,14 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file || uploadInFlight.current) return;
-    if (!file.type.startsWith("image/")) { setError("이미지 파일을 선택하세요."); return; }
+    if (!file.type.startsWith("image/")) { setError(t("settings.invalidImage")); return; }
     uploadInFlight.current = true;
     setError(null);
     setUploading(true);
     try {
       await setWallpaperCustomImage(file);
     } catch (err) {
-      setError("배경 이미지를 읽지 못했습니다. 다른 이미지 파일을 선택하세요.");
+      setError(t("settings.imageError"));
     } finally {
       uploadInFlight.current = false;
       setUploading(false);
@@ -307,20 +316,20 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
   const tiles: WallpaperTile[] = [
     ...WALLPAPER_STYLES.map((style) => ({
       key: style.mode,
-      label: style.label,
+      label: t(style.label),
       selected: wallpaper.mode === style.mode,
       apply: () => setWallpaperMode(style.mode),
     })),
     ...WALLPAPER_PRESETS.map((preset) => ({
       key: preset.id,
-      label: preset.name,
+      label: t(`settings.wallpaper.${preset.id}`),
       thumbUrl: preset.thumbUrl,
       selected: wallpaper.mode === "photo" && (wallpaper.customImage ?? DEFAULT_WALLPAPER_PHOTO_URL) === preset.url,
       apply: () => setWallpaper({ mode: "photo", customImage: preset.url }),
     })),
     ...(uploadedUrl ? [{
       key: "uploaded",
-      label: "내 사진",
+      label: t("settings.myPhoto"),
       thumbUrl: uploadedUrl,
       selected: wallpaper.mode === "photo" && wallpaper.customImage === uploadedUrl,
       apply: () => setWallpaper({ mode: "photo", customImage: uploadedUrl }),
@@ -332,7 +341,7 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
           <div className="mt-0.5 text-sm font-semibold text-foreground">
-            배경
+            {t("settings.background")}
           </div>
         </div>
         <Button
@@ -343,7 +352,7 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
           disabled={uploading}
           onClick={() => { if (!uploadInFlight.current) fileInputRef.current?.click(); }}
         >
-          {uploading ? "처리 중..." : "사진 업로드"}
+          {uploading ? t("settings.uploading") : t("settings.upload")}
         </Button>
       </div>
       <div className="config-wallpaper-options">

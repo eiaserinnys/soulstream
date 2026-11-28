@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ConfigCategoryNav } from "./ConfigCategoryNav";
 import { visibleConfigTabs } from "./configTabs";
+import { createI18n } from "@soulstream/i18n";
 
 const ROW_HEIGHT = 44;
 const NAV_HEIGHT = 100;
@@ -33,7 +34,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const tabs = visibleConfigTabs(true);
+const tabs = visibleConfigTabs(true, createI18n("ko").t);
 const render = (activeCategory: string, onSelect = vi.fn()) => act(async () => root.render(<ConfigCategoryNav categories={[]} tabs={tabs} activeCategory={activeCategory} onSelect={onSelect} />));
 const nav = () => container.querySelector("nav")!;
 const row = (name: string) => [...nav().querySelectorAll("button")][tabs.findIndex(tab => tab.id === name)];

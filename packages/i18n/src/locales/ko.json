@@ -1,0 +1,160 @@
+{
+  "auth": {
+    "continue": "계속하려면 로그인하세요",
+    "authFailed": "인증에 실패했습니다.",
+    "accountNotAllowed": "허용되지 않은 계정입니다.",
+    "authError": "인증 중 오류가 발생했습니다.",
+    "enterPassword": "비밀번호를 입력해주세요.",
+    "loginFailed": "로그인에 실패했습니다.",
+    "enterEmail": "이메일을 입력해주세요.",
+    "tailscale": "Tailscale에 허용된 계정으로 로그인한 기기에서 이 서버의 Serve 주소로 접속하세요.",
+    "password": "비밀번호",
+    "signingIn": "로그인 중...",
+    "signIn": "로그인",
+    "email": "이메일",
+    "nameOptional": "이름 (선택)",
+    "devLogin": "로그인 (Dev)"
+  },
+  "settings": {
+    "language": "언어",
+    "languageHelp": "화면 문구의 언어를 계정에 저장합니다.",
+    "tabs": {
+      "appearance": {
+        "label": "화면과 읽기",
+        "description": "나에게 편안한 배경과 대화 글자 크기를 고릅니다."
+      },
+      "owned_agents": {
+        "label": "외부 에이전트",
+        "description": "외부 에이전트의 이름과 활성 상태, 연결 키를 관리합니다."
+      },
+      "access_links": {
+        "label": "접속 링크",
+        "description": "외부 에이전트가 내 세션에 일을 맡길 수 있는 링크를 관리합니다."
+      },
+      "webhooks": {
+        "label": "웹훅",
+        "description": "내 세션과 외부 서비스가 주고받는 웹훅을 관리합니다."
+      },
+      "persistent": {
+        "label": "영구 에이전트 세션",
+        "description": "영구 세션의 지시와 표시, 기록을 관리합니다."
+      },
+      "persistent_defaults": {
+        "label": "영구 세션 기본 모델",
+        "description": "새 영구 세션이 쓸 기본 모델과 대체 순서를 정합니다. 이미 있는 세션은 바뀌지 않습니다."
+      },
+      "summaries": {
+        "label": "요약",
+        "description": "턴 요약과 세션 요약을 켤지, 어떤 모델 순서로 쓸지 정합니다."
+      },
+      "card_dispatch": {
+        "label": "카드 실행",
+        "description": "카드의 실행 방식과 동시 실행 수를 조정합니다."
+      },
+      "recurring_jobs": {
+        "label": "반복 작업",
+        "description": "반복할 작업과 다음 실행 시점을 관리합니다."
+      },
+      "agents": {
+        "label": "에이전트 프로필",
+        "description": "에이전트 프로필과 기본 실행 환경을 관리합니다."
+      },
+      "mcp": {
+        "label": "MCP",
+        "description": "중앙 MCP 서버와 프로필, 인증 키를 관리합니다."
+      },
+      "skills": {
+        "label": "스킬과 카탈로그",
+        "description": "스킬과 카탈로그의 연결, 쓰이는 곳, 검증 결과를 봅니다."
+      },
+      "coding_agents": {
+        "label": "코딩 에이전트 연결",
+        "description": "노드마다 코딩 에이전트 로그인을 연결합니다."
+      },
+      "git_repos": {
+        "label": "Git과 저장소",
+        "description": "노드마다 Git 사용자, SSH 키, 저장소를 설정합니다."
+      },
+      "nodes": {
+        "label": "노드",
+        "description": "작업을 실행할 기기와 연결 상태를 확인합니다."
+      },
+      "usage_stats": {
+        "label": "세션 통계",
+        "description": "기간별 토큰과 정가 환산을 봅니다."
+      },
+      "usage_log": {
+        "label": "사용 로그",
+        "description": "사용 기록을 확인하고 필요한 범위로 좁힙니다."
+      },
+      "session_review": {
+        "label": "요청 검수",
+        "description": "실행 전 검수가 필요한 요청을 정합니다."
+      },
+      "users": {
+        "label": "사용자",
+        "description": "서버를 사용할 사람과 접근 범위를 관리합니다."
+      },
+      "file_storage": {
+        "label": "파일 저장소",
+        "description": "첨부 파일을 보관할 저장소를 연결합니다."
+      }
+    },
+    "groups": {
+      "personal": "개인 환경",
+      "sessions": "세션과 작업",
+      "agents": "에이전트와 노드",
+      "records": "기록과 관리"
+    },
+    "title": "설정",
+    "category": "설정 카테고리",
+    "allSettings": "모든 설정",
+    "defaultCategoryDescription": "서버에 적용할 값을 변경한 뒤 저장하세요.",
+    "loading": "설정을 불러오는 중...",
+    "unsavedTitle": "저장하지 않은 변경이 있습니다",
+    "unsavedDetail": "창을 닫으면 서버 설정 변경이 사라집니다.",
+    "continueEditing": "계속 편집",
+    "discard": "변경 버리기",
+    "changedCount_one": "{{count}}개 변경, 아직 저장되지 않음",
+    "changedCount_other": "{{count}}개 변경, 아직 저장되지 않음",
+    "applied": "변경 즉시 적용",
+    "applyIndividually": "각 항목의 버튼으로 변경을 적용합니다",
+    "restartNotice": "재시작이 필요한 항목은 별도로 표시됩니다",
+    "cancel": "취소",
+    "done": "완료",
+    "saving": "저장 중…",
+    "save": "변경 저장",
+    "openPersistent": "시작할 때 영구 세션으로 열기",
+    "glassDetails": "유리 효과 세부 조정",
+    "advanced": "고급",
+    "background": "배경",
+    "uploading": "처리 중...",
+    "upload": "사진 업로드",
+    "myPhoto": "내 사진",
+    "invalidImage": "이미지 파일을 선택하세요.",
+    "imageError": "배경 이미지를 읽지 못했습니다. 다른 이미지 파일을 선택하세요.",
+    "bokeh": "보케",
+    "metal": "메탈",
+    "plain": "단색",
+    "fontSize": "채팅 글자 크기",
+    "fontHelp": "본문과 입력창의 크기를 계정에 저장합니다.",
+    "default": "기본",
+    "glass": "리퀴드 글래스",
+    "reset": "기본값",
+    "refraction": "굴절",
+    "blur": "블러",
+    "chromatic": "색수차",
+    "specular": "스페큘러",
+    "tint": "틴트",
+    "wallpaper": {
+      "dawn-ridge": "새벽 능선",
+      "aurora": "오로라",
+      "silk-curves": "비단 곡선",
+      "lake-horizon": "호수 수평선",
+      "desert-dunes": "사막 언덕",
+      "misty-forest": "안개 숲",
+      "moonlit-sea": "달빛 바다",
+      "milky-way": "은하수"
+    }
+  }
+}

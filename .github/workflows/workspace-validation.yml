@@ -16,6 +16,10 @@ on:
       - 'chrome-extension/**'
       - 'scripts/tests/**'
       - 'scripts/verify-*.mjs'
+      - 'scripts/check-i18n-literals.mjs'
+      - 'scripts/check-i18n-literals.test.mjs'
+      - 'scripts/i18n-literal-check.config.json'
+      - 'scripts/i18n-literal-baseline.json'
       - 'scripts/check-ui-css.mjs'
       - 'scripts/check-ui-css.test.mjs'
       - 'scripts/ui-css-check.config.json'
@@ -46,6 +50,10 @@ on:
       - 'chrome-extension/**'
       - 'scripts/tests/**'
       - 'scripts/verify-*.mjs'
+      - 'scripts/check-i18n-literals.mjs'
+      - 'scripts/check-i18n-literals.test.mjs'
+      - 'scripts/i18n-literal-check.config.json'
+      - 'scripts/i18n-literal-baseline.json'
       - 'scripts/check-ui-css.mjs'
       - 'scripts/check-ui-css.test.mjs'
       - 'scripts/ui-css-check.config.json'
@@ -181,7 +189,7 @@ jobs:
           elif [[ "${{ matrix.package }}" == "packages/search-contract" ]]; then
             corepack pnpm --dir packages/search-contract test
           elif [[ "${{ matrix.package }}" == "scripts" ]]; then
-            node --test scripts/tests/verify_bundle_load.test.mjs scripts/verify-workspace-bundle.test.mjs scripts/check-ui-css.test.mjs scripts/check-source-guards.test.mjs scripts/check-ts-guards.test.mjs scripts/test-affected.test.mjs
+            node --test scripts/tests/verify_bundle_load.test.mjs scripts/verify-workspace-bundle.test.mjs scripts/check-ui-css.test.mjs scripts/check-i18n-literals.test.mjs scripts/check-source-guards.test.mjs scripts/check-ts-guards.test.mjs scripts/test-affected.test.mjs
           elif [[ "${{ matrix.kind }}" == "python" ]]; then
             python -m pytest deploy/haniel/test_build_core_darwin.py -q --timeout=60
           elif [[ "${{ matrix.package }}" == "packages/chat-ui" ]]; then
@@ -213,6 +221,9 @@ jobs:
 
       - name: Typecheck active TypeScript packages
         run: corepack pnpm --filter '*' --recursive --if-present typecheck
+
+      - name: Check i18n literal baseline
+        run: node scripts/check-i18n-literals.mjs
 
       - name: Check UI CSS baseline
         run: node scripts/check-ui-css.mjs
