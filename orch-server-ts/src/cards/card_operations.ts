@@ -76,7 +76,7 @@ export const cardOperationSchemas={
   update_card_now:append.extend({ now:z.string(),turn:z.enum(["agent","user","outside"]),ask:z.string().optional() }),
   set_card_depends_on:append.extend({ dependsOn:z.array(id).max(10) }),
   add_card_note:append.extend({ text:z.string() }),
-  request_card_review:append.extend({ ask:z.string().optional(),report:z.string().refine(value=>value.trim().length>0 && [...value.trim()].length<=2000) }),
+  request_card_review:append.extend({ ask:z.string().optional(),report:z.string().refine(value=>value.trim().length>0 && [...value.trim()].length<=2000).optional() }),
 } as const;
 export type CardOperation=keyof typeof cardOperationSchemas;
 /** 답 operation은 mode가 있으면 그 꼴의 엄격 schema로, 없으면 옛 꼴 그대로 읽는다. */
@@ -107,7 +107,10 @@ export async function executeCardOperation(service:CardControlPlaneService,opera
   const userPatch=userFields && operation === "update_card";
   if (userPatch && typeof body === "object" && body !== null && Object.hasOwn(body,"snoozedUntil"))
     body={ ...body,snoozedUntil:parseSnoozedUntil((body as Record<string,unknown>).snoozedUntil) };
-  const parsed=operation === "answer_card_question" ? parseCardQuestionAnswer(body) : (userPatch ? updateCardUserSchema : cardOperationSchemas[operation]).strict().parse(body);
+  const schema = operation === "request_card_review" && actor.actorKind === "agent"
+    ? cardOperationSchemas.request_card_review.extend({ report:cardOperationSchemas.request_card_review.shape.report.unwrap() })
+    : userPatch ? updateCardUserSchema : cardOperationSchemas[operation];
+  const parsed=operation === "answer_card_question" ? parseCardQuestionAnswer(body) : schema.strict().parse(body);
   if (operation === "add_card_comment") {
     const common={ ...actor,cardId:id.parse(cardId) };
     const comment=await service.addComment({ ...common,...cardOperationSchemas.add_card_comment.parse(parsed) });

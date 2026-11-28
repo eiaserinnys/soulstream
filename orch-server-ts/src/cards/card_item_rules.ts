@@ -22,7 +22,7 @@ export type CardItem = {
 };
 export type CardNowTurn = "agent" | "user" | "outside";
 export type CardNow = {
-  text: string | null;
+  text: string;
   turn: CardNowTurn;
   ask: string | null;
   updatedAt: string;
@@ -232,7 +232,7 @@ export function checkCardReviewAsk(ask:string|undefined):string|undefined {
 export function reviewCardNowFromCheckedAsk(_current:CardNow|null,checkedAsk:string|undefined,at:string,sessionId:string|null):CardNow|null {
   if (checkedAsk === undefined) return null;
   return {
-    text: null,
+    text: "",
     turn: "user",
     ask: checkedAsk,
     updatedAt: at,

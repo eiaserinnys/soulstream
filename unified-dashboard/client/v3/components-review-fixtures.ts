@@ -67,7 +67,7 @@ export const reviewNowHistory: CardNowHistoryEntry[] = [
   { text: "초기 확인 항목을 정리하고 있습니다.", turn: "agent", ask: "결과를 작성하고 있습니다.", at: "2026-10-05T06:30:00Z" },
   { text: "사용자가 마지막으로 요청한 것을 확인하고 있습니다.", turn: "user", ask: "확인이 끝나면 완료를 알려 주세요.", at: "2026-10-05T07:00:00Z" },
   { text: "상황판 이력의 마지막 저장 글입니다.", turn: "outside", ask: null, at: "2026-10-05T07:30:00Z" },
-  { text: reviewNow.text!, turn: reviewNow.turn, ask: reviewNow.ask, at: reviewNow.updatedAt },
+  { text: reviewNow.text, turn: reviewNow.turn, ask: reviewNow.ask, at: reviewNow.updatedAt },
 ];
 
 export const reviewNotes: CardComment[] = Array.from({ length: 6 }, (_, index) => ({

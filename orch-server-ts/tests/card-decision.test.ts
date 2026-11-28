@@ -93,7 +93,7 @@ it('decodes final status, completion and reservation writes together',()=>{
 });
 
 const previousNow = { text: '작업 중', ask: null, turn: 'agent' as const, updatedAt: '2026-01-01', sessionId: 'owner' };
-it.each([{ ask: '결과 확인', expected: { text: null, ask: '결과 확인', turn: 'user' } }, { ask: undefined, expected: null }])(
+it.each([{ ask: '결과 확인', expected: { text: '', ask: '결과 확인', turn: 'user' } }, { ask: undefined, expected: null }])(
   'replaces the current now on review with ask $ask', ({ ask, expected }) => {
     const card = { ...row, now: previousNow }, actor = { kind: 'agent', sessionId: 'owner' };
     const command = { type: 'REQUEST_REVIEW' as const, ...(ask === undefined ? {} : { ask }) };

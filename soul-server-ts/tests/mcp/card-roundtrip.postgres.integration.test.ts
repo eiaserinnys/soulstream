@@ -179,7 +179,7 @@ describe("card orchestrator MCP roundtrip", () => {
     const detail=await call("get_card",{card_id:"card-1",include:["comments","reports","notes","now_history"]},context);
     expect(detail.isError).not.toBe(true);
     expect(detail.structuredContent).toMatchObject({
-      card:{items:[{id:1,display:"reported"},{id:2,display:"todo",fixOpen:0}],now:{text:null,turn:"user"}},
+      card:{items:[{id:1,display:"reported"},{id:2,display:"todo",fixOpen:0}],now:{text:"",turn:"user"}},
       sections:{
         comments:{items:expect.arrayContaining([
           expect.objectContaining({id:"seed-comment"}),expect.objectContaining({itemId:2,body:"안내 문구를 확인했습니다"}),

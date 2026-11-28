@@ -2032,7 +2032,6 @@ export function buildProductionRouteOptions(
         const cards=await cardServiceProvider();
         if (isDirectHumanSessionInput(callerInfo) && text) {
           await recordDirectHumanSessionInput(cards, targetSessionId, text, callerInfo);
-          return;
         }
         const assigned=await cards.getAssignedCardContext(targetSessionId);
         for (const summary of assigned.cards) {

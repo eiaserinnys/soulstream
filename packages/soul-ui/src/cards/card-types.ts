@@ -23,7 +23,7 @@ export interface CardCheckItem {
   fixOpen: number; reopened: string | null; from: { commentId: string; kind: "comment" | "spoken"; at: string } | null;
   createdAt: string; reportedAt: string | null; display: CardItemDisplay;
 }
-export interface CardNow { text: string | null; turn: "agent" | "user" | "outside"; ask: string | null; updatedAt: string; sessionId: string | null }
+export interface CardNow { text: string; turn: "agent" | "user" | "outside"; ask: string | null; updatedAt: string; sessionId: string | null }
 export interface CardNowHistoryEntry { text: string; turn: CardNow["turn"]; ask: string | null; at: string }
 /** 카드 상세가 싣는 상태 전환 이력(최신 20개). 서버 단위가 더하기 전 응답에는 없다. */
 export interface CardStatusHistoryEntry { status: CardStatus; at: string; actorKind: string | null; sessionId: string | null }

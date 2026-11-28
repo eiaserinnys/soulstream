@@ -22,7 +22,7 @@ import { normalizeAttachmentLegacyPath, attachmentScopeFromRegistrationScope } f
 import { createCardAttachmentPreparer, type CardAttachmentReusableAsset, type CardAttachmentSourceStoreDeps } from "../attachments/card_attachment_source_import.js";
 import { mergeCardSourceAttachmentRefs, resolveCardLegacySourceRefsTx, type CardLegacyLocation } from "./card_attachment_legacy_refs.js";
 import { applyCardMoveTx } from "./control_plane/card_move.js";
-import { readAssignedCardContext } from "./assigned_card_context.js";
+import { findDirectInputCardId, readAssignedCardContext } from "./assigned_card_context.js";
 import { readSupervisedCardContext } from "./supervised_card_context.js";
 import {
   parseCardReference,
@@ -124,6 +124,7 @@ export class CardControlPlaneService {
     });
   }
   getAssignedCardContext(sessionId: string) { return readAssignedCardContext(this.repoSql,sessionId); }
+  getDirectInputCardId(sessionId: string) { return findDirectInputCardId(this.repoSql,sessionId); }
   getSupervisedCardContext(params: { sessionId: string; folderIds: string[] | null; cardLimit: number; questionLimit: number }): Promise<SupervisedCardSnapshot> {
     return readSupervisedCardContext(this.repoSql, params);
   }

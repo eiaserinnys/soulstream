@@ -146,7 +146,7 @@ function createProductionProviders(
  * body caller_info.email, so a service-token completion notification carrying
  * an unregistered email would be denied without the service-bearer bypass.
  */
-function createEmailAclApp() {
+function createEmailAclApp(cardServiceProvider?: () => Promise<unknown>) {
   const policy = {
     resolveAccess: async (request: FastifyRequest | ServiceCaller) => {
       if (isServiceCaller(request)) return { restricted: false, allowedFolderIds: [] };
@@ -202,7 +202,7 @@ function createEmailAclApp() {
     undefined,
     undefined,
     undefined,
-    undefined,
+    cardServiceProvider as never,
     undefined,
     undefined,
     undefined,
@@ -223,7 +223,7 @@ function createEmailAclApp() {
     sessionBackgroundScheduleRoutes: options.sessionBackgroundScheduleRoutes,
     sessionCommandRoutes: options.sessionCommandRoutes,
   });
-  return { app, routeExistingSessionPendingCommand, respond };
+  return { app, routeExistingSessionPendingCommand, respond, options };
 }
 
 function callerInfoEmail(request: FastifyRequest): string | null {
@@ -236,6 +236,23 @@ function callerInfoEmail(request: FastifyRequest): string | null {
 }
 
 describe("session folder ACL on session action, background, and respond routes", () => {
+  it("resumes another blocked assigned card after recording a direct message", async () => {
+    const current = { id: "current", version: 2, archived: false, status: "running", assignee_kind: "session", assignee_session_id: "owner" };
+    const blocked = { id: "blocked", version: 7, archived: false, status: "blocked", blocked_kind: "question", assignee_kind: "session", assignee_session_id: "owner" };
+    const cards = {
+      getDirectInputCardId: vi.fn(async () => "current"),
+      getAssignedCardContext: vi.fn(async () => ({ cards: [{ id: "current", status: "running" }, { id: "blocked", status: "blocked" }] })),
+      getCard: vi.fn(async (id: string) => ({ card: id === "current" ? current : blocked })),
+      addComment: vi.fn(async () => ({})),
+      resumeBlockedCardOnHumanInput: vi.fn(async () => ({})),
+    };
+    const { app, options } = createEmailAclApp(async () => cards);
+    await options.sessionActionCommandRoutes!.onHumanSessionInput!("owner", "계속", { source: "browser", user_id: "a@b" });
+    expect(cards.addComment).toHaveBeenCalledOnce();
+    expect(cards.resumeBlockedCardOnHumanInput).toHaveBeenCalledWith({ cardId: "blocked", expectedVersion: 7 });
+    await app.close();
+  });
+
   it("denies a restricted account outside its folders on every guarded route", async () => {
     const { app, routeExistingSessionPendingCommand, respond } = createAclApp();
 

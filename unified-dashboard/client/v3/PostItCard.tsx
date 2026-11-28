@@ -63,7 +63,7 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
   const displayTitle = card.number == null ? card.title : `#${card.number} ${card.title}`;
   const itemSummary=summarizeCardItems(card.items,pendingConfirmations);
   const hasItems=Boolean(card.items?.length);
-  const nowText=card.now?.text??undefined;
+  const nowText=card.now?.text;
   const turnText=card.now?.turn==="user"?card.now.ask??undefined:undefined;
   const dependency=cardDependencyDisplay(card.status,card.dependsOn);
   const statusActions=statusControl?cardStatusChoices.map(status=>({

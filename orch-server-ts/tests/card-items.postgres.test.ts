@@ -176,7 +176,7 @@ describe("card check-item locked mutations", () => {
     const review = await cards.requestCardReview({ ...assignee, cardId: newCardId, ask: "로그인 화면에서 확인해 주세요", report: "결과 보고" });
     expect(review.operation.operation_type).toBe("set_card_status");
     let current = (await cards.getCard(newCardId))!.card;
-    expect(current).toMatchObject({ status: "review", now: { text: null, turn: "user", ask: "로그인 화면에서 확인해 주세요", sessionId: "owner" } });
+    expect(current).toMatchObject({ status: "review", now: { text: "", turn: "user", ask: "로그인 화면에서 확인해 주세요", sessionId: "owner" } });
 
     const question = "가".repeat(61);
     await cards.askQuestion({ ...assignee, cardId: newCardId, text: question, options: ['진행'] });

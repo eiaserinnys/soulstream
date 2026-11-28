@@ -290,7 +290,7 @@ describe("external MCP card writes", () => {
     ["create_card", { folder_id: "a", title: "외부 카드", request: "원문" }, "create_card"],
     ["update_card_brief", { card_id: "card", brief: "닷 경과" }, "update_card"],
     ["add_card_report", { card_id: "card", title: "보고", format: "markdown", body: "증거" }, "add_card_report"],
-    ["request_card_review", { card_id: "card", report: "결과 보고" }, "set_card_status"],
+    ["request_card_review", { card_id: "card" }, "set_card_status"],
     ["move_card", { card_id: "card", folder_id: "b" }, "move_card"],
   ])("executes %s as llm without a caller session", async (tool, args, operation) => {
     const result = await call(tool as string, { ...(args as object), caller_session_id: "forged-argument" });
@@ -338,6 +338,15 @@ describe("external MCP card writes", () => {
     expect(messages).toHaveBeenCalledWith("owner", expect.stringContaining("닷 사용자 지시"), undefined,
       expect.objectContaining({ actorKind: "llm", actorSessionId: null }));
     expect(warnings).not.toHaveBeenCalled();
+  });
+  it("rejects an external review report while allowing a report-less review", async () => {
+    const withReport = await call("request_card_review", { card_id: "card", report: "외부 보고" });
+    expect(withReport.isError).toBe(true);
+    expect(JSON.stringify(withReport.content)).toContain("결과 보고는 카드 담당 세션만 남깁니다");
+    expect((await cards.getCard("card"))!.card.status).toBe("todo");
+    const withoutReport = await call("request_card_review", { card_id: "card" });
+    expect(withoutReport.isError).not.toBe(true);
+    expect((await cards.getCard("card"))!.card.status).toBe("review");
   });
   it.each(["spoken", "reply"])("rejects explicit external comment mode %s", async mode => {
     const result = await call("add_card_comment", { card_id: "card", text: "지시", mode });

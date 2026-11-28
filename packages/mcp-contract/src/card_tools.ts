@@ -88,6 +88,10 @@ export const START_CARD_WORK_EXECUTION_REQUIRED =
   "이 세션에는 카드 실행 신원이 없어 start_card_work를 쓸 수 없습니다. 카드 실행으로 뜬 담당 세션만 부를 수 있으니, 상태만 바꾸려면 set_card_status(running)를 쓰세요.";
 const itemId = z.number().int().positive();
 const itemEvidence = cardEvidenceSchema;
+const reviewReport = z.string().refine(value => value.trim().length > 0 && [...value.trim()].length <= 2000)
+  .describe("일을 마친 결과 보고. 카드 커멘트로 남는다. 2000자까지");
+const reviewInput = { ...scope, ask:z.string().describe("사용자가 볼 것 한 줄. 60자까지, 식별자 없이").optional(), report:reviewReport };
+
 export const cardTools = {
   ...cardMaintenanceTools,
   create_card: { name: "create_card", timeoutMs: 60000, config: {
@@ -150,9 +154,8 @@ export const cardTools = {
     inputSchema: {...scope,expected_version:z.number().int().positive(),idempotency_key:id,reason:id.optional()},
   }, audience: "internal" },
   request_card_review: { name: "request_card_review", config: {
-    description: "담당 카드의 검수를 요청합니다. 확인 항목이 있으면 ask에 사용자가 볼 것을 한 줄로 적으세요. ask는 60자까지이며 식별자를 넣지 않습니다. report에 일을 마친 결과 보고를 필수로 적습니다. 카드 커멘트로 남습니다(2000자까지). 사용자가 대화창을 열지 않고 카드에서 읽는 글이니 첫 세 줄에 요점을 쓰세요. 보고나 미답 질문은 상태 변경을 막지 않습니다.", inputSchema: { ...scope,ask:z.string().describe("사용자가 볼 것 한 줄. 60자까지, 식별자 없이").optional(),
-      report:z.string().refine(value => value.trim().length > 0 && [...value.trim()].length <= 2000).describe("일을 마친 결과 보고. 카드 커멘트로 남는다. 2000자까지") },
-  }, audience: "all" },
+    description: "담당 카드의 검수를 요청합니다. 확인 항목이 있으면 ask에 사용자가 볼 것을 한 줄로 적으세요. ask는 60자까지이며 식별자를 넣지 않습니다. 담당 세션은 report에 일을 마친 결과 보고를 반드시 적습니다. 카드 커멘트로 남습니다(2000자까지). 사용자가 대화창을 열지 않고 카드에서 읽는 글이니 첫 세 줄에 요점을 쓰세요. 보고나 미답 질문은 상태 변경을 막지 않습니다.", inputSchema: reviewInput,
+  }, externalInputSchema: { ...reviewInput, report: reviewReport.optional() }, audience: "all" },
   ask_card_question: { name: "ask_card_question", config: {
     description: "AskUserQuestion 대신 카드에 결정 하나를 묻고 이 턴을 끝내 답을 기다린다. title에 정할 것 한 줄(40자까지), text에 배경(무슨 일인지, 왜 지금 정하는지, 급한 정도를 일상어로 400자 안팎, 1200자까지)을 쓴다. options에는 선택지 1~3개를 {label(12자까지), description(고르면 벌어지는 일 한 줄, 80자까지), recommended(권하는 안 하나에 true)}로 둔다. 시안 그림이나 링크는 attachments(4개까지, 확인 항목 증거와 같은 꼴)로 붙인다. 사용자가 손수 할 일은 kind=request로 묻고 options는 보내지 않는다. 사용자는 선택지 밖의 글로도 답할 수 있으니 「다른 안」 같은 선택지를 넣지 않는다. 열린 질문을 고치려면 question_id와 함께 전체 내용을 다시 보낸다. 고쳐도 알림은 다시 가지 않는다. 다른 세션이 담당인 카드에는 담당 세션만 쓴다.",
     inputSchema: {

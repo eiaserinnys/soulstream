@@ -67214,7 +67214,7 @@
         "items": [],
         "now": {
           "ask": "결과를 확인해 주세요",
-          "text": null,
+          "text": "",
           "turn": "user",
           "sessionId": "owner",
           "updatedAt": "2026-11-11T14:16:59.331Z"
@@ -67292,7 +67292,7 @@
                 "items": [],
                 "now": {
                   "ask": "결과를 확인해 주세요",
-                  "text": null,
+                  "text": "",
                   "turn": "user",
                   "sessionId": "owner",
                   "updatedAt": "2026-11-11T14:16:59.331Z"

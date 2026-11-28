@@ -490,6 +490,13 @@ describe("card MCP execution", () => {
     expect(h.service.createCard.mock.calls[0]![0]).not.toHaveProperty("run");
     expect(result.structuredContent).toMatchObject({ card: { id: "card-1" }, execution: { state: "started" } });
   });
+  it("allows an external caller to request review without a report", async () => {
+    const h = cardHarness();
+    const result = await call(h.options, "request_card_review", { card_id: "card-1" },
+      { ...context, principal: "external", callerSessionId: null });
+    expect(result.isError).not.toBe(true);
+    expect(h.service.requestCardReview).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "llm" }));
+  });
   it("rejects review without report and spoken comment at the input boundary", async () => {
     const h = cardHarness();
     expect((await call(h.options, "request_card_review", { card_id: "card-1" })).isError).toBe(true);

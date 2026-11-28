@@ -23,7 +23,7 @@ export function persistentTaskTooltipContent(card: CardRow, titleTruncated: bool
   const dependency=cardDependencyDisplay(card.status,card.dependsOn);
   if(dependency) content.dependency=dependency.text;
   if (titleTruncated) content.title = card.title;
-  if (card.now?.text?.trim()) content.now = card.now.text;
+  if (card.now?.text.trim()) content.now = card.now.text;
   if (question?.text.trim()) content.ask = question.text;
   else if (!question && card.now?.turn === "user" && card.now.ask?.trim()) content.ask = card.now.ask;
   return Object.keys(content).length ? content : null;

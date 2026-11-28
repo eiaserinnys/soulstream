@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
-import { cardOperationSchemas } from "../src/cards/card_operations.js";
+import { cardOperationSchemas, executeCardOperation } from "../src/cards/card_operations.js";
 
 // 완료 결과 보고를 카드 커멘트로 남기는 경로. 확인 항목이 있는 카드에서 사용자 글 없이도
 // 담당이 request_card_review/set_card_status(done)의 report로 보고를 남길 수 있어야 한다.
@@ -60,7 +60,7 @@ describe("card completion reports as comments", () => {
   it("records the done report and rejects a report-less tool operation", async () => {
     await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running') ON CONFLICT (session_id) DO NOTHING`;
     const plain = await makeAssignedCard("보고 없는 완료");
-    expect(cardOperationSchemas.request_card_review.safeParse({ cardId: plain, ask: "확인해 주세요", idempotencyKey: key() }).success).toBe(false);
+    await expect(executeCardOperation(cards, "request_card_review", { ask: "확인해 주세요", idempotencyKey: key() }, plain, owner)).rejects.toThrow();
     expect(await agentComments(plain)).toHaveLength(0);
 
     const cardId = await makeAssignedCard("완료 보고");
