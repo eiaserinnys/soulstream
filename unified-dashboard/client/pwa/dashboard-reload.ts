@@ -5,7 +5,7 @@ import {
   waitForDashboardMutationsToFlush,
 } from "@seosoyoung/soul-ui/pending-mutation-registry";
 
-type ReaderElements = { footer?: HTMLElement | null; content?: HTMLElement | null };
+type ReaderElements = { popup?: HTMLElement | null };
 const openReaders = new Set<() => ReaderElements>();
 const bannerUpdates = new Set<() => void>();
 export function updateDashboardReaderPlacement() {
@@ -117,7 +117,7 @@ function showUpdateBanner(
   });
   const message = document.createElement("span");
   message.textContent = reading
-    ? "새 버전이 나왔습니다. 문서를 읽는 동안은 저절로 새로 고치지 않습니다"
+    ? "새 버전이 나왔습니다"
     : t("admin.pwa.reviewDraft");
   const action = document.createElement("button");
   action.type = "button";
@@ -152,43 +152,36 @@ function showUpdateBanner(
 
 function positionBanner(document: Document, banner: HTMLElement): void {
   const view = document.defaultView!;
-  let content: HTMLElement | null = null;
-  let originalPadding = "";
-  let basePadding = "";
-  let observedFooter: HTMLElement | null = null;
+  const popups = new Set<HTMLElement>();
   const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => update());
-  const restoreContent = () => {
-    if (content) content.style.paddingBottom = originalPadding;
-    content = null;
+  const clearPopup = (popup: HTMLElement) => {
+    popup.style.removeProperty("--viewer-bottom-clearance");
+    observer?.unobserve(popup);
+    popups.delete(popup);
   };
   const cleanup = () => {
-    restoreContent();
+    for (const popup of popups) clearPopup(popup);
     observer?.disconnect();
     view.removeEventListener("resize", update);
     bannerUpdates.delete(update);
   };
   const update = () => {
     if (!banner.isConnected) { cleanup(); return; }
-    const reader = Array.from(openReaders).at(-1)?.();
-    const footer = reader?.footer ?? null;
-    if (footer !== observedFooter) {
-      if (observedFooter) observer?.unobserve(observedFooter);
-      if (observedFooter?.parentElement) observer?.unobserve(observedFooter.parentElement);
-      if (footer) observer?.observe(footer);
-      if (footer?.parentElement) observer?.observe(footer.parentElement);
-      observedFooter = footer;
-    }
-    banner.style.bottom = footer ? `${Math.max(16, view.innerHeight - footer.getBoundingClientRect().top + 16)}px` : "16px";
-    const nextContent = reader?.content ?? null;
-    if (content !== nextContent) {
-      restoreContent();
-      content = nextContent;
-      if (content) {
-        originalPadding = content.style.paddingBottom;
-        basePadding = view.getComputedStyle(content).paddingBottom || "0px";
+    const nextPopups = new Set(Array.from(openReaders, reader => reader().popup).filter((popup): popup is HTMLElement => !!popup));
+    for (const popup of popups) if (!nextPopups.has(popup)) clearPopup(popup);
+    for (const popup of nextPopups) {
+      if (!popups.has(popup)) {
+        popups.add(popup);
+        observer?.observe(popup);
+      }
+      popup.style.removeProperty("--viewer-bottom-clearance");
+      const readerRect = popup.getBoundingClientRect();
+      const bannerRect = banner.getBoundingClientRect();
+      if (readerRect.left < bannerRect.right && readerRect.right > bannerRect.left &&
+          readerRect.top < bannerRect.bottom && readerRect.bottom > bannerRect.top) {
+        popup.style.setProperty("--viewer-bottom-clearance", `${bannerRect.height + 32}px`);
       }
     }
-    if (content) content.style.paddingBottom = `calc(${basePadding} + ${banner.getBoundingClientRect().height + 16}px)`;
   };
   bannerUpdates.add(update);
   view.addEventListener("resize", update);

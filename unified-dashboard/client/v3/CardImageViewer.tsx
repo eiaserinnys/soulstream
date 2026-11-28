@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Dialog, DialogPopup, DialogTitle } from "@seosoyoung/soul-ui";
 import { ScrollArea } from "@seosoyoung/soul-ui/components/ui/scroll-area";
 import { AttachmentViewer } from "@seosoyoung/soul-ui/components/AttachmentViewer";
@@ -19,6 +19,10 @@ export interface CardAttachmentStatus { message: string; onRetry?(): void }
 export function CardImageViewer({ image, attachments, attachmentStatus, returnFocus, onClose }: { image: CardImageSelection | null; attachments?: readonly ChatAttachmentItem[]; attachmentStatus?: Readonly<Record<string, CardAttachmentStatus>>; returnFocus?: HTMLElement | null; onClose(): void }) {
   const [attachmentCursor, setAttachmentCursor] = useState<{ key: string; index: number } | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+  const setPopupRef = useCallback((popup: HTMLDivElement | null) => {
+    popupRef.current = popup;
+    updateDashboardReaderPlacement();
+  }, []);
   const mediaRef = useRef<HTMLDivElement>(null);
   const plainImage = image && !image.attachment ? image : null;
   const isOpen = image !== null;
@@ -43,13 +47,7 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
       : Math.max(0, selectedAttachmentIndex)
     : 0;
 
-  useEffect(() => isOpen ? registerDashboardReader(() => {
-    const popup = popupRef.current;
-    return {
-      footer: popup?.querySelector<HTMLElement>('[data-slot="dialog-footer"]'),
-      content: popup?.dataset.attachmentKind === "document" ? popup.querySelector<HTMLElement>('[data-slot="dialog-panel"]') : null,
-    };
-  }) : undefined, [isOpen, Boolean(image?.attachment), attachmentIndex]);
+  useEffect(() => isOpen ? registerDashboardReader(() => ({ popup: popupRef.current })) : undefined, [isOpen, Boolean(image?.attachment), attachmentIndex]);
 
   useEffect(() => {
     if (!image) setAttachmentCursor(null);
@@ -102,7 +100,7 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
 
   return <Dialog open={Boolean(image)} onOpenChange={open => { if (!open) onClose(); }}>
     <DialogPopup
-      ref={popupRef}
+      ref={setPopupRef}
       initialFocus={popupRef}
       className="v3-surface image-viewer-popup"
       {...imageViewer.popupAttributes}

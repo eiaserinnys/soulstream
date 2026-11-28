@@ -7,7 +7,9 @@ describe("one reload decision", () => {
     try {
       const owner = createDashboardReloadCoordinator({ document, reload: vi.fn(), hasPendingEdits: () => false, flushPendingEdits: async () => true });
       expect(await owner.request()).toBe(false);
-      expect(document.querySelector('[data-sw-update-banner]')?.textContent).toContain("새 버전이 나왔습니다. 문서를 읽는 동안은 저절로 새로 고치지 않습니다");
+      const banner = document.querySelector<HTMLElement>('[data-sw-update-banner]')!;
+      expect(banner.querySelector("span")?.textContent).toBe("새 버전이 나왔습니다");
+      expect([banner.style.right, banner.style.bottom, banner.style.background, banner.style.padding]).toEqual(["16px", "16px", "rgb(23, 23, 23)", "12px 14px"]);
     } finally { unregister(); document.body.replaceChildren(); }
   });
   it("keeps the existing appearance and copy for a pending attachment without a reader", async () => {
@@ -19,21 +21,38 @@ describe("one reload decision", () => {
       expect([banner.style.right, banner.style.bottom, banner.style.background, banner.style.padding]).toEqual(["16px", "16px", "rgb(23, 23, 23)", "12px 14px"]);
     } finally { document.body.replaceChildren(); }
   });
-  it("moves above a registered footer and restores its position when the reader closes", async () => {
-    const footer = document.createElement("div");
-    vi.spyOn(footer, "getBoundingClientRect").mockReturnValue({ top: 600 } as DOMRect);
-    const unregister = registerDashboardReader(() => ({ footer }));
+  it("reserves space on an overlapping popup and clears it when the reader closes", async () => {
+    const popup = document.createElement("div");
+    document.body.append(popup);
+    vi.spyOn(popup, "getBoundingClientRect").mockReturnValue({ left: 600, right: 1000, top: 200, bottom: 740 } as DOMRect);
+    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 800, right: 1008, top: 700, bottom: 752, height: 52 } as DOMRect);
+    const unregister = registerDashboardReader(() => ({ popup }));
     try {
       const owner = createDashboardReloadCoordinator({ document, reload: vi.fn(), hasPendingEdits: () => false, flushPendingEdits: async () => true });
       expect(await owner.request()).toBe(false);
       const banner = document.querySelector<HTMLElement>('[data-sw-update-banner]')!;
-      expect(banner.style.bottom).toBe(`${window.innerHeight - 600 + 16}px`);
-      vi.mocked(footer.getBoundingClientRect).mockReturnValue({ top: 500 } as DOMRect);
-      window.dispatchEvent(new Event("resize"));
-      expect(banner.style.bottom).toBe(`${window.innerHeight - 500 + 16}px`);
-      unregister();
       expect(banner.style.bottom).toBe("16px");
-    } finally { unregister(); document.body.replaceChildren(); }
+      expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe("84px");
+      unregister();
+      expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe("");
+    } finally { unregister(); bounds.mockRestore(); document.body.replaceChildren(); }
+  });
+  it("leaves a nonoverlapping popup unchanged and clears clearance when the banner disappears", async () => {
+    const popup = document.createElement("div");
+    document.body.append(popup);
+    const popupBounds = vi.spyOn(popup, "getBoundingClientRect").mockReturnValue({ left: 100, right: 400, top: 200, bottom: 600 } as DOMRect);
+    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 800, right: 1008, top: 700, bottom: 752, height: 52 } as DOMRect);
+    const unregister = registerDashboardReader(() => ({ popup }));
+    const owner = createDashboardReloadCoordinator({ document, reload: vi.fn(), hasPendingEdits: () => false, flushPendingEdits: async () => true });
+    try {
+      expect(await owner.request()).toBe(false);
+      expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe("");
+      popupBounds.mockReturnValue({ left: 600, right: 1000, top: 200, bottom: 740 } as DOMRect);
+      window.dispatchEvent(new Event("resize"));
+      expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe("84px");
+      document.querySelector<HTMLButtonElement>('[data-sw-update-action]')!.click();
+      await vi.waitFor(() => expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe(""));
+    } finally { unregister(); bounds.mockRestore(); document.body.replaceChildren(); }
   });
   it("keeps the upload and service worker messages when a reader is open", async () => {
     const unregister = registerDashboardReader();
@@ -46,17 +65,20 @@ describe("one reload decision", () => {
       expect(document.querySelector('[data-sw-update-banner]')?.textContent).toContain("작성 중인 내용을 확인한 뒤 새로고침합니다");
     } finally { unregister(); document.body.replaceChildren(); }
   });
-  it("moves an existing banner when a reader opens", async () => {
+  it("reserves space when a reader opens after the banner", async () => {
     const owner = createDashboardReloadCoordinator({ document, reload: vi.fn(), hasPendingEdits: () => true, hasAttachments: () => true, flushPendingEdits: async () => false });
-    const footer = document.createElement("div");
-    vi.spyOn(footer, "getBoundingClientRect").mockReturnValue({ top: 600 } as DOMRect);
+    const popup = document.createElement("div");
+    document.body.append(popup);
+    vi.spyOn(popup, "getBoundingClientRect").mockReturnValue({ left: 600, right: 1000, top: 200, bottom: 740 } as DOMRect);
+    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 800, right: 1008, top: 700, bottom: 752, height: 52 } as DOMRect);
     expect(await owner.request()).toBe(false);
     const banner = document.querySelector<HTMLElement>('[data-sw-update-banner]')!;
-    const unregister = registerDashboardReader(() => ({ footer }));
+    const unregister = registerDashboardReader(() => ({ popup }));
     try {
-      expect(banner.style.bottom).toBe(`${window.innerHeight - 600 + 16}px`);
+      expect(banner.style.bottom).toBe("16px");
+      expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe("84px");
       expect(banner.textContent).toContain("작성 중인 내용을 확인한 뒤 새로고침합니다");
-    } finally { unregister(); document.body.replaceChildren(); }
+    } finally { unregister(); bounds.mockRestore(); document.body.replaceChildren(); }
   });
   it("defers reload while a document is registered and reloads directly when none is open", async () => {
     const reload = vi.fn();

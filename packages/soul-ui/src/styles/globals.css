@@ -1584,7 +1584,8 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
   width: fit-content;
   min-width: min(var(--container-xs), calc(100dvw - 2rem));
   max-width: calc(100dvw - 2rem);
-  max-height: calc(100dvh - 2 * var(--image-viewer-block-margin));
+  max-height: calc(100dvh - 2 * var(--image-viewer-block-margin) - var(--viewer-bottom-clearance, 0px));
+  margin-bottom: var(--viewer-bottom-clearance, 0px);
 }
 @media (max-width: 40rem) {
   .image-viewer-popup[data-slot="dialog-popup"] {
@@ -1609,7 +1610,7 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
   min-width: 0;
   min-height: 0;
   max-width: calc(100dvw - 2rem - 2 * var(--image-viewer-rim) - var(--image-viewer-inline-reserve));
-  max-height: calc(100dvh - 2 * var(--image-viewer-block-margin) - 2 * var(--image-viewer-rim) - var(--image-viewer-block-reserve));
+  max-height: calc(100dvh - 2 * var(--image-viewer-block-margin) - 2 * var(--image-viewer-rim) - var(--image-viewer-block-reserve) - var(--viewer-bottom-clearance, 0px));
   margin: auto;
   align-self: center;
   object-fit: contain;
@@ -1671,7 +1672,7 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
    the frame does not move between steps or while a preview loads. */
 .chat-image-viewer-popup[data-slot="dialog-popup"]:is([data-attachment-bundle="mixed"], :has(.chat-attachment-html-frame), [data-attachment-kind="html"], :has(.chat-attachment-media-frame):not([data-attachment-kind="video"])) {
   width: calc(100dvw - 2rem);
-  height: calc(100dvh - 2 * var(--image-viewer-block-margin));
+  height: calc(100dvh - 2 * var(--image-viewer-block-margin) - var(--viewer-bottom-clearance, 0px));
   --image-viewer-block-reserve: calc(var(--spacing) * 37 + var(--font-size-xl--line-height) + var(--font-size-sm--line-height) + var(--chat-attachment-filename-gap) + var(--image-viewer-rim));
 }
 .chat-image-viewer-popup:is([data-attachment-bundle="mixed"], :has(.chat-attachment-html-frame), [data-attachment-kind="html"], :has(.chat-attachment-media-frame):not([data-attachment-kind="video"])) > [data-slot="dialog-panel-scroll"],
@@ -1701,8 +1702,8 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
     calc(100dvw - 2rem),
     calc(var(--attachment-natural-width) + var(--image-viewer-inline-reserve) + 2 * var(--image-viewer-rim))
   );
-  height: calc(100dvh - 2 * var(--image-viewer-block-margin));
-  max-height: calc(100dvh - 2 * var(--image-viewer-block-margin));
+  height: calc(100dvh - 2 * var(--image-viewer-block-margin) - var(--viewer-bottom-clearance, 0px));
+  max-height: calc(100dvh - 2 * var(--image-viewer-block-margin) - var(--viewer-bottom-clearance, 0px));
 }
 .image-viewer-popup[data-slot="dialog-popup"][data-image-frame="full"][data-image-fit]:not([data-attachment-bundle]) {
   width: min(
@@ -1844,7 +1845,7 @@ img[data-image-format="svg"],
 .attachment-viewer-probe {
   display: block;
   inline-size: calc(100dvw - 2rem - 2 * var(--image-viewer-rim) - var(--image-viewer-inline-reserve));
-  block-size: calc(100dvh - 2 * var(--image-viewer-block-margin) - 2 * var(--image-viewer-rim) - var(--image-viewer-block-reserve));
+  block-size: calc(100dvh - 2 * var(--image-viewer-block-margin) - 2 * var(--image-viewer-rim) - var(--image-viewer-block-reserve) - var(--viewer-bottom-clearance, 0px));
 }
 .attachment-viewer-probe-reference {
   inline-size: calc(min(var(--container-md), 100dvw - 2rem) - 2 * var(--image-viewer-rim) - var(--image-viewer-inline-reserve));
@@ -1852,7 +1853,7 @@ img[data-image-format="svg"],
 /* 문서만 든 넘기기 창은 문서 창 크기로 고정해 단계 사이에 틀이 움직이지 않게 한다. */
 .chat-image-viewer-popup[data-slot="dialog-popup"][data-attachment-bundle="documents"] {
   width: min(var(--container-3xl), calc(100dvw - 2rem));
-  height: calc(100dvh - 2 * var(--image-viewer-block-margin));
+  height: calc(100dvh - 2 * var(--image-viewer-block-margin) - var(--viewer-bottom-clearance, 0px));
 }
 .chat-image-viewer-popup[data-attachment-bundle="documents"] > [data-slot="dialog-panel-scroll"],
 .chat-image-viewer-popup[data-attachment-bundle="documents"] > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel {
@@ -1896,7 +1897,7 @@ img[data-image-format="svg"],
   width: auto;
   height: auto;
   max-width: calc(100dvw - 2rem - 2 * var(--image-viewer-rim) - var(--image-viewer-inline-reserve));
-  max-height: calc(100dvh - 2 * var(--image-viewer-block-margin) - 2 * var(--image-viewer-rim) - var(--image-viewer-block-reserve));
+  max-height: calc(100dvh - 2 * var(--image-viewer-block-margin) - 2 * var(--image-viewer-rim) - var(--image-viewer-block-reserve) - var(--viewer-bottom-clearance, 0px));
 }
 .chat-attachment-audio-player {
   display: block;

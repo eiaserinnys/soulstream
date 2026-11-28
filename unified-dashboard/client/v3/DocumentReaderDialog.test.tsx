@@ -27,19 +27,21 @@ it("registers an open document and releases it when closed", async () => {
   expect(await createDashboardReloadCoordinator(env).request()).toBe(true);
   expect(reload).toHaveBeenCalledOnce();
 });
-it("provides its document body for banner clearance while open", async () => {
+it("provides popup clearance when a banner appears over the document", async () => {
+  const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 600, right: 1000, top: 700, bottom: 752, height: 52 } as DOMRect);
   const request = vi.fn(async () => Response.json({ id: "doc-1", title: "문서", body: "본문", version: 1 }));
   await mount(request);
-  const panel = document.querySelector<HTMLElement>('[role="region"][aria-label="문서 본문"]')!;
+  const popup = document.querySelector<HTMLElement>('[data-testid="internal-document-dialog"]')!;
   const owner = createDashboardReloadCoordinator({ document, reload: vi.fn(), hasPendingEdits: () => false, flushPendingEdits: async () => true });
   try {
     expect(await owner.request()).toBe(false);
-    expect(panel.style.paddingBottom).not.toBe("");
+    expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe("84px");
     await act(async () => root.render(<DocumentReaderDialog documentId={null} request={request} onClose={() => {}}/>));
-    expect(panel.style.paddingBottom).toBe("");
-  } finally { document.querySelector('[data-sw-update-banner]')?.remove(); }
+    expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe("");
+  } finally { bounds.mockRestore(); document.querySelector('[data-sw-update-banner]')?.remove(); }
 });
-it("adds and removes body clearance when a document opens after the banner", async () => {
+it("adds and removes popup clearance when a document opens after the banner", async () => {
+  const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 600, right: 1000, top: 700, bottom: 752, height: 52 } as DOMRect);
   const unregister = registerDashboardReader();
   const owner = createDashboardReloadCoordinator({ document, reload: vi.fn(), hasPendingEdits: () => false, flushPendingEdits: async () => true });
   expect(await owner.request()).toBe(false);
@@ -47,11 +49,11 @@ it("adds and removes body clearance when a document opens after the banner", asy
   const request = vi.fn(async () => Response.json({ id: "doc-1", title: "문서", body: "긴 본문", version: 1 }));
   try {
     await mount(request);
-    const panel = document.querySelector<HTMLElement>('[role="region"][aria-label="문서 본문"]')!;
-    expect(panel.style.paddingBottom).not.toBe("");
+    const popup = document.querySelector<HTMLElement>('[data-testid="internal-document-dialog"]')!;
+    expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe("84px");
     await act(async () => root.render(<DocumentReaderDialog documentId={null} request={request} onClose={() => {}}/>));
-    expect(panel.style.paddingBottom).toBe("");
-  } finally { document.querySelector('[data-sw-update-banner]')?.remove(); }
+    expect(popup.style.getPropertyValue("--viewer-bottom-clearance")).toBe("");
+  } finally { bounds.mockRestore(); document.querySelector('[data-sw-update-banner]')?.remove(); }
 });
 it("keeps reload deferred until the last open reader unmounts", async () => {
   const request = vi.fn(async () => Response.json({ id: "doc-1", title: "문서", body: "본문", version: 1 }));
