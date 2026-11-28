@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { cn } from "@seosoyoung/soul-ui";
 
@@ -41,6 +42,7 @@ export function NodeCardHeader({
   onClick(): void;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   return <div
     data-testid={testId}
     aria-expanded={expanded}
@@ -51,7 +53,7 @@ export function NodeCardHeader({
     <button
       type="button"
       aria-expanded={expanded}
-      aria-label={expanded ? "접기" : "펼치기"}
+      aria-label={expanded ? t("accounts.nodes.collapse") : t("accounts.nodes.expand")}
       className="shrink-0 inline-flex items-center rounded-full text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
       onClick={(event) => {
         event.stopPropagation();

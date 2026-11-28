@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { OrchestratorNode } from "../store/orchestrator-store";
 import { NodeGitPanel } from "./git-repos/NodeGitPanel";
 import { SettingsDetailHeader, SettingsListDetailFrame } from "./config/SettingsListDetail";
@@ -11,8 +12,9 @@ export function GitReposTab({ request, sampleNodes }: {
   request?: typeof fetch;
   sampleNodes?: Map<string, OrchestratorNode>;
 }) {
+  const { t } = useTranslation();
   const { nodeList, selectedId, selected, select } = useSettingsNodeSelection(sampleNodes);
-  return <SettingsListDetailFrame testId="git-repos-tab" list={<SettingsNodeList description="Git을 설정할 노드" nodeList={nodeList} selectedId={selectedId} onSelect={select} />}>
+  return <SettingsListDetailFrame testId="git-repos-tab" list={<SettingsNodeList description={t("accounts.git.selectNode")} nodeList={nodeList} selectedId={selectedId} onSelect={select} />}>
     {selected ? <>
       <SettingsDetailHeader title={selected.nodeId} />
       <NodeGitPanel key={selected.nodeId} node={selected} request={request ?? fetch} />

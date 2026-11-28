@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
+import { createI18n } from "@soulstream/i18n";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProviderQuotaSlot, ProviderQuotaSlots } from "@seosoyoung/soul-ui";
-import { ProviderQuotaGrid, ProviderQuotaSkeleton, formatQuotaResetLabel } from "./ProviderQuotaGrid";
+import { ProviderQuotaGrid, ProviderQuotaSkeleton, formatQuotaResetLabel as quotaResetLabel } from "./ProviderQuotaGrid";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -18,12 +19,13 @@ const releaseTime = (epochSeconds: number) => new Intl.DateTimeFormat("ko-KR", {
   hour12: false,
 }).format(new Date(epochSeconds * 1000));
 
+const formatQuotaResetLabel = (epoch: number | null, used: number, kind?: ProviderQuotaSlot["kind"]) =>
+  quotaResetLabel(epoch, used, kind, createI18n("ko").t, "ko");
+
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
-const dateLabel = (epochSeconds: number) => {
-  const date = new Date(epochSeconds * 1000);
-  return `${date.getMonth() + 1}/${date.getDate()}`;
-};
+const dateLabel = (epochSeconds: number) =>
+  new Intl.DateTimeFormat("ko", { month: "numeric", day: "numeric" }).format(new Date(epochSeconds * 1000));
 
 describe("ProviderQuotaGrid", () => {
   let host: HTMLDivElement;

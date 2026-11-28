@@ -4,8 +4,11 @@
  * 서버가 준 오류 문장, 인증 주소, 일회용 코드는 화면 문구에 섞거나 기록하지 않는다.
  */
 
+import type { useTranslation } from "react-i18next";
 import type { AgentLoginFlow } from "../../../packages/wire-schema/generated/typescript/index";
 import { ClaudeAuthRequestError, requestClaudeAuthData } from "./claude-auth-api";
+
+type Translate = ReturnType<typeof useTranslation>["t"];
 
 export type AgentLoginProvider = AgentLoginFlow["provider"];
 export type AgentLoginState = AgentLoginFlow["state"];
@@ -55,39 +58,39 @@ export function safeAuthUrl(value: string | null): string | null {
 }
 
 /** failed 상태의 error.code별 안내. 서버 문장은 쓰지 않는다. */
-export function agentLoginFailureMessage(provider: AgentLoginProvider, code: string | null | undefined): string {
+export function agentLoginFailureMessage(provider: AgentLoginProvider, code: string | null | undefined, t: Translate): string {
   const label = AGENT_LOGIN_PROVIDER_LABEL[provider];
   switch (code) {
     case "device_code_disabled":
-      return "ChatGPT 설정의 보안 항목에서 Codex 기기 코드 인증을 켠 뒤 다시 시도해 주세요.";
+      return t("accounts.login.deviceCodeDisabled");
     case "invalid_code":
-      return "인증 코드가 맞지 않습니다. 다시 시도하면 새 주소가 열립니다.";
+      return t("accounts.login.invalidCode");
     case "timeout":
-      return "제한 시간 안에 인증이 끝나지 않았습니다. 다시 시도해 주세요.";
+      return t("accounts.login.timeout");
     case "cli_exited":
-      return `${label} CLI가 로그인 도중 종료되었습니다. 다시 시도해 주세요.`;
+      return t("accounts.login.cliExited", { value: label });
     case "verify_failed":
-      return `로그인은 끝났지만 ${label} 사용량 확인을 통과하지 못했습니다. 계정과 구독 상태를 확인한 뒤 다시 시도해 주세요.`;
+      return t("accounts.login.verifyFailed", { value: label });
     case "cancelled_by_new_login":
-      return "새 로그인 요청이 시작되어 이 로그인은 취소되었습니다.";
+      return t("accounts.login.replaced");
     default:
-      return "로그인을 완료하지 못했습니다. 다시 시도해 주세요.";
+      return t("accounts.login.failed");
   }
 }
 
 /** 요청 자체가 실패한 경우의 안내. HTTP 상태와 오류 code만 본다. */
-export function agentLoginRequestErrorMessage(provider: AgentLoginProvider, error: unknown): string {
+export function agentLoginRequestErrorMessage(provider: AgentLoginProvider, error: unknown, t: Translate): string {
   const label = AGENT_LOGIN_PROVIDER_LABEL[provider];
   if (error instanceof ClaudeAuthRequestError) {
     const code = error.apiError?.code ?? null;
-    if (code === "cli_not_installed" || code === "agent_login_unsupported") return `이 노드에 ${label} CLI가 없습니다.`;
-    if (code === "node_not_connected") return "노드가 연결되어 있지 않습니다. 연결을 확인한 뒤 다시 시도해 주세요.";
-    if (code === "login_not_found") return "이 로그인 요청을 찾을 수 없습니다. 다시 시도해 주세요.";
-    if (code === "login_not_ready") return "아직 코드를 받을 수 있는 단계가 아닙니다.";
-    if (code === "code_not_expected") return "이 로그인은 코드를 붙여 넣지 않고 브라우저에서 승인합니다.";
-    if (error.status === 403) return "관리자만 코딩 에이전트를 연결할 수 있습니다.";
-    if (error.status === 502) return "노드의 워커가 요청을 처리하지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
-    return `요청에 실패했습니다 (HTTP ${error.status}).`;
+    if (code === "cli_not_installed" || code === "agent_login_unsupported") return t("accounts.login.cliMissing", { value: label });
+    if (code === "node_not_connected") return t("accounts.login.offline");
+    if (code === "login_not_found") return t("accounts.login.notFound");
+    if (code === "login_not_ready") return t("accounts.login.notReady");
+    if (code === "code_not_expected") return t("accounts.login.approveInBrowser");
+    if (error.status === 403) return t("accounts.login.adminOnly");
+    if (error.status === 502) return t("accounts.login.workerFailed");
+    return t("accounts.login.httpError", { value: error.status });
   }
-  return "요청을 보내지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.";
+  return t("accounts.login.networkError");
 }

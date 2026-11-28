@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findUsageSummaryNode, useAuth } from "@seosoyoung/soul-ui";
 import type { OrchestratorNode } from "../store/orchestrator-store";
@@ -26,6 +27,7 @@ export function CodingAgentsTab({ request, sampleNodes }: {
   request?: typeof fetch;
   sampleNodes?: Map<string, OrchestratorNode>;
 }) {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const { nodeList, selectedId, selected, select } = useSettingsNodeSelection(sampleNodes);
   const send = request ?? fetch;
@@ -59,12 +61,12 @@ export function CodingAgentsTab({ request, sampleNodes }: {
 
   return <div className="space-y-4">
   <AntigravityBackendRow request={send} onSaved={(enabled) => void onAgySaved(enabled)} />
-  <SettingsListDetailFrame testId="coding-agents-tab" list={<SettingsNodeList description="코딩 에이전트를 연결할 노드" nodeList={nodeList} selectedId={selectedId} onSelect={select} />}>
+  <SettingsListDetailFrame testId="coding-agents-tab" list={<SettingsNodeList description={t("accounts.agents.selectNode")} nodeList={nodeList} selectedId={selectedId} onSelect={select} />}>
     {selected ? <>
       <SettingsDetailHeader title={selected.nodeId} />
       {selected.status === "connected"
         ? <NodeProvidersPanel nodeId={selected.nodeId} request={send} node={summaryNode} loading={usage.loading && summaryNode === null} onUsageChanged={usage.retry} />
-        : <SettingsAlert><span data-v3-selectable-content="true">노드가 연결되어 있지 않아 로그인할 수 없습니다.</span></SettingsAlert>}
+        : <SettingsAlert><span data-v3-selectable-content="true">{t("accounts.agents.offline")}</span></SettingsAlert>}
     </> : null}
   </SettingsListDetailFrame>
   </div>;

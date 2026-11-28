@@ -1,20 +1,21 @@
+import { useTranslation } from "react-i18next";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { isTauri } from "../utils/isTauri";
 
 const errorMessages: Record<string, string> = {
-  missing_code: "코드를 입력해주세요.",
+  missing_code: "accounts.login.missingCode",
   invalid_code_format:
-    "코드 형식이 올바르지 않습니다. (#이 포함된 코드를 붙여넣으세요)",
-  invalid_state: "인증 요청이 만료되었습니다. 다시 시도해주세요.",
+    "accounts.login.invalidCodeFormat",
+  invalid_state: "accounts.login.expiredRequest",
 };
 
-const parseErrorDetail = (detail: string): string => {
-  if (errorMessages[detail]) return errorMessages[detail];
+const parseErrorDetail = (detail: string, t: ReturnType<typeof useTranslation>["t"]): string => {
+  if (errorMessages[detail]) return t(errorMessages[detail]);
   if (detail.startsWith("token_exchange_failed"))
-    return "토큰 교환 중 오류가 발생했습니다.";
+    return t("accounts.login.tokenExchangeFailed");
   if (detail.includes("not connected"))
-    return "노드가 연결되지 않았습니다. 연결 상태를 확인해주세요.";
-  return detail || "오류가 발생했습니다.";
+    return t("accounts.login.nodeUnavailable");
+  return detail || t("accounts.common.genericError");
 };
 
 export interface ClaudeAuthFlowParams {
@@ -74,6 +75,7 @@ export interface ClaudeAuthFlowState<U> {
 export function useClaudeAuthFlow<U = unknown>(
   params: ClaudeAuthFlowParams,
 ): ClaudeAuthFlowState<U> {
+  const { t } = useTranslation();
   const { request = fetch, basePath, statusPath = "/token", onAuthenticated, onTokenDeleted } =
     params;
 
@@ -135,12 +137,12 @@ export function useClaudeAuthFlow<U = unknown>(
           const data = await res.json().catch(() => null);
           throw new Error(
             data?.detail
-              ? parseErrorDetail(data.detail)
-              : "인증 URL을 가져오는 중 오류가 발생했습니다.",
+              ? parseErrorDetail(data.detail, t)
+              : t("accounts.login.linkFailed"),
           );
         }
         const data = await res.json();
-        if (!data.authUrl) throw new Error("authUrl 없음");
+        if (!data.authUrl) throw new Error(t("accounts.login.linkMissing"));
         window.open(data.authUrl, "_blank");
         setShowCodeInput(true);
       } catch (e) {
@@ -161,15 +163,15 @@ export function useClaudeAuthFlow<U = unknown>(
         const data = await res.json().catch(() => null);
         throw new Error(
           data?.detail
-            ? parseErrorDetail(data.detail)
-            : "인증 URL을 가져오는 중 오류가 발생했습니다.",
+            ? parseErrorDetail(data.detail, t)
+            : t("accounts.login.linkFailed"),
         );
       }
       const data = await res.json();
       if (!data.authUrl) {
         popupRef.current?.close();
         popupRef.current = null;
-        throw new Error("authUrl 없음");
+        throw new Error(t("accounts.login.linkMissing"));
       }
       if (popupRef.current && !popupRef.current.closed) {
         popupRef.current.location.href = data.authUrl; // 팝업이 열렸으면 직접 navigate
@@ -182,7 +184,7 @@ export function useClaudeAuthFlow<U = unknown>(
       popupRef.current = null;
       setError(String(e instanceof Error ? e.message : e));
     }
-  }, [basePath]);
+  }, [basePath, request, t]);
 
   const handleSubmitCode = useCallback(async () => {
     const trimmed = codeValue.trim();
@@ -197,7 +199,7 @@ export function useClaudeAuthFlow<U = unknown>(
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        setError(parseErrorDetail(data?.detail ?? ""));
+        setError(parseErrorDetail(data?.detail ?? "", t));
         return;
       }
       setShowCodeInput(false);
@@ -208,7 +210,7 @@ export function useClaudeAuthFlow<U = unknown>(
     } finally {
       setSubmitting(false);
     }
-  }, [basePath, codeValue, fetchStatus]);
+  }, [basePath, codeValue, fetchStatus, request, t]);
 
   const handleCancelCode = useCallback(() => {
     popupRef.current?.close();

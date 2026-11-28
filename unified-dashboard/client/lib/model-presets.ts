@@ -1,39 +1,45 @@
+import { createI18n } from "@soulstream/i18n";
+import type { useTranslation } from "react-i18next";
 import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
 
-export const MODEL_PRESET_FETCH_ERROR = "모델 목록을 불러오지 못했습니다";
+type Translate = ReturnType<typeof useTranslation>["t"];
+const legacyT = createI18n("ko").t;
 
-const UNAVAILABLE_SELECTION_MESSAGE =
-  "선택한 모델을 이 노드에서 사용할 수 없습니다. 모델을 다시 선택해 주세요.";
-
-export const NO_AVAILABLE_MODEL_MESSAGE =
-  "쓸 수 있는 모델이 없습니다. 설정의 「코딩 에이전트 연결」에서 이 노드의 로그인을 확인하세요.";
+export const MODEL_PRESET_FETCH_ERROR = legacyT("accounts.models.loadError");
+export const NO_AVAILABLE_MODEL_MESSAGE = legacyT("accounts.models.none");
 
 export function modelPresetOptionLabel(
   preset: ModelPresetAvailability,
-  formatResetTime: (value: string) => string | null = localResetTime,
+  formatResetTime?: (value: string) => string | null,
   includeUsageWarning = true,
+  t: Translate = legacyT,
+  locale?: string,
 ): string {
+  const resetTime = preset.resets_at
+    ? (formatResetTime ?? ((value) => localResetTime(value, locale)))(preset.resets_at)
+    : null;
+  const reset = resetTime ? t("accounts.quota.resets", { value: resetTime }) : null;
   if (preset.available) {
-    const warning = preset.usage_warning && includeUsageWarning ? " (사용량 확인 지연)" : "";
+    const warning = preset.usage_warning && includeUsageWarning ? ` (${t("accounts.quota.delayed")})` : "";
     if (preset.reason === "quota_exhausted" && preset.reason_label) {
-      const resetTime = preset.resets_at ? formatResetTime(preset.resets_at) : null;
-      return `${preset.label} (${preset.reason_label}${resetTime ? `, ${resetTime} 해제` : ""})${warning}`;
+      return `${preset.label} (${preset.reason_label}${reset ? `, ${reset}` : ""})${warning}`;
     }
     return `${preset.label}${warning}`;
   }
   const reason = preset.reason_label ? ` (${preset.reason_label})` : "";
-  const resetTime = preset.resets_at ? formatResetTime(preset.resets_at) : null;
-  return `${preset.label}${reason}${resetTime ? ` · ${resetTime} 해제` : ""}`;
+  return `${preset.label}${reason}${reset ? ` · ${reset}` : ""}`;
 }
 
 /** Reason column text for a row that is blocked or has used up its included quota. */
 export function modelPresetReasonText(
   preset: ModelPresetAvailability,
+  t: Translate = legacyT,
+  locale?: string,
 ): string | null {
   if (!preset.reason_label) return null;
   if (preset.available && preset.reason !== "quota_exhausted") return null;
-  const resetTime = preset.resets_at ? localResetTime(preset.resets_at) : null;
-  return `${preset.reason_label}${resetTime ? ` · ${resetTime} 해제` : ""}`;
+  const resetTime = preset.resets_at ? localResetTime(preset.resets_at, locale) : null;
+  return `${preset.reason_label}${resetTime ? ` · ${t("accounts.quota.resets", { value: resetTime })}` : ""}`;
 }
 
 export function hasNoAvailableModelPreset(
@@ -58,6 +64,7 @@ export function modelPresetSelectionState(
   selectedId: string,
   presets: readonly ModelPresetAvailability[],
   loaded: boolean,
+  t: Translate = legacyT,
 ): {
   preset: ModelPresetAvailability | null;
   valid: boolean;
@@ -67,10 +74,10 @@ export function modelPresetSelectionState(
   if (!loaded) return { preset: null, valid: true, warning: null };
   const preset = presets.find((candidate) => candidate.id === selectedId) ?? null;
   if (!preset) {
-    return { preset: null, valid: false, warning: UNAVAILABLE_SELECTION_MESSAGE };
+    return { preset: null, valid: false, warning: t("accounts.models.unavailable") };
   }
   if (!preset.available) {
-    return { preset, valid: false, warning: UNAVAILABLE_SELECTION_MESSAGE };
+    return { preset, valid: false, warning: t("accounts.models.unavailable") };
   }
   return { preset, valid: true, warning: null };
 }
@@ -79,31 +86,35 @@ export function modelPresetDisplayLabel({
   selectedId,
   preset,
   status,
-  missingLabel = "선택한 모델",
+  missingLabel,
 }: {
   selectedId: string;
   preset: ModelPresetAvailability | null;
   status: "idle" | "loading" | "ready" | "error";
   missingLabel?: string;
-}): string {
-  if (status === "error") return MODEL_PRESET_FETCH_ERROR;
-  if (preset) return modelPresetOptionLabel(preset, undefined, false);
+}, t: Translate = legacyT, locale?: string): string {
+  if (status === "error") return t("accounts.models.loadError");
+  if (preset) return modelPresetOptionLabel(preset, undefined, false, t, locale);
   if (status === "loading") {
-    return selectedId ? "선택한 모델 확인 중…" : "불러오는 중…";
+    return selectedId ? t("accounts.models.checkingSelected") : t("accounts.common.loading");
   }
-  return selectedId ? missingLabel : "미지정";
+  return selectedId ? missingLabel ?? t("accounts.models.selected") : t("accounts.models.unspecified");
 }
 
-function localResetTime(value: string, now: Date = new Date()): string | null {
+function localResetTime(value: string, locale?: string): string | null {
+  const now = new Date();
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
-  const time = new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(date);
+
   const isToday = date.getFullYear() === now.getFullYear()
     && date.getMonth() === now.getMonth()
     && date.getDate() === now.getDate();
-  return isToday ? time : `${date.getMonth() + 1}/${date.getDate()} ${time}`;
+  const time = new Intl.DateTimeFormat(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(!locale || locale === "ko" ? { hourCycle: "h23" } : {}),
+  }).format(date);
+  if (isToday) return time;
+  const day = new Intl.DateTimeFormat(locale ?? "en", { month: "numeric", day: "numeric" }).format(date);
+  return `${day} ${time}`;
 }

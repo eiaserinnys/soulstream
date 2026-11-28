@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Switch, type ClaudeCentralSettings } from "@seosoyoung/soul-ui";
@@ -18,6 +19,7 @@ export const CLAUDE_CENTRAL_SETTINGS_KEY = ["claude-central-settings"] as const;
  * 없을 때만 스위치 자리가 실패 안내와 「다시 시도」로 바뀐다.
  */
 export function ClaudeCentralReceiveRow({ nodeId, request }: { nodeId: string; request: typeof fetch }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const settings = useQuery({
     queryKey: CLAUDE_CENTRAL_SETTINGS_KEY,
@@ -40,7 +42,7 @@ export function ClaudeCentralReceiveRow({ nodeId, request }: { nodeId: string; r
       // 노드가 새 설정을 이미 받았으므로 그 노드의 계정 목록도 다시 읽어 중앙 계정을 맞춘다.
       void queryClient.invalidateQueries({ queryKey: ["claude-auth-accounts", nodeId] });
     } catch (caught) {
-      setError(requestErrorMessage(caught));
+      setError(requestErrorMessage(caught, t));
     } finally {
       setSaving(null);
     }
@@ -52,19 +54,19 @@ export function ClaudeCentralReceiveRow({ nodeId, request }: { nodeId: string; r
   return <div data-testid="claude-central-receive" data-receive={switchValue ? "on" : "off"}>
     <div className="c724-account-top">
       <div className="c724-account-identity">
-        <span className="c724-account-email">중앙 풀 받기</span>
+        <span className="c724-account-email">{t("accounts.claude.receivePool")}</span>
         {settings.isError
-          ? <p className="c724-pool-error" role="alert" data-v3-selectable-content="true">{requestErrorMessage(settings.error)}</p>
+          ? <p className="c724-pool-error" role="alert" data-v3-selectable-content="true">{requestErrorMessage(settings.error, t)}</p>
           : null}
       </div>
       <div className="c724-account-actions">
         {settings.isError
-          ? <Button variant="outline" size="sm" disabled={settings.isFetching} onClick={() => void settings.refetch()}>다시 시도</Button>
+          ? <Button variant="outline" size="sm" disabled={settings.isFetching} onClick={() => void settings.refetch()}>{t("accounts.common.retry")}</Button>
           : <span className="c724-switch-wrap">
             <Switch
               checked={switchValue}
               disabled={busy}
-              aria-label="중앙 풀 받기"
+              aria-label={t("accounts.claude.receivePool")}
               data-testid="claude-central-receive-switch"
               onCheckedChange={(checked) => { if (!busy) void save(checked); }}
             />

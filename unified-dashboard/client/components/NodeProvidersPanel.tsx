@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 /**
  * NodeProvidersPanel — 노드를 펼쳤을 때 나오는 공급자 중립 사용량 패널.
  *
@@ -51,6 +52,7 @@ function ProviderRow({ spec, provider, nodeId, request, onUsageChanged }: {
   request: typeof fetch;
   onUsageChanged?: () => void;
 }) {
+  const { t } = useTranslation();
   const slots = providerQuotaSlots(provider);
   const login = useAgentLoginRowAction({
     nodeId,
@@ -71,13 +73,13 @@ function ProviderRow({ spec, provider, nodeId, request, onUsageChanged }: {
         <span className="c724-status-dot" style={{ backgroundColor: dotColor }} />
         <span className="c724-account-email">{spec.label}</span>
       </div>
-      {provider.status === "not_configured" ? <span className="c724-meta-inline">미설정</span> : null}
-      {provider.status === "error" ? <span className="c724-badge c724-badge-danger">조회 오류</span> : null}
+      {provider.status === "not_configured" ? <span className="c724-meta-inline">{t("accounts.common.unconfigured")}</span> : null}
+      {provider.status === "error" ? <span className="c724-badge c724-badge-danger">{t("accounts.providers.loadError")}</span> : null}
       {login.action ? <div className="c724-account-actions">{login.action}</div> : null}
     </div>
     {login.panel}
     {provider.status === "auto" && hasAnySlot(slots)
-      ? <ProviderQuotaGrid slots={slots} label={`${spec.label} 사용량`} />
+      ? <ProviderQuotaGrid slots={slots} label={t("accounts.quota.usage", { value: spec.label })} />
       : null}
   </div>;
 }
@@ -94,6 +96,7 @@ function LegacyClaudeRow({ nodeId, request, slots, loading }: {
   slots: ProviderQuotaSlots;
   loading: boolean;
 }) {
+  const { t } = useTranslation();
   const basePath = `/api/nodes/${nodeId}/claude-auth`;
   const [profile, setProfile] = useState<AccountProfile | null>(null);
 
@@ -133,18 +136,18 @@ function LegacyClaudeRow({ nodeId, request, slots, loading }: {
         <span className="c724-account-email">Claude</span>
         {profile ? <span className="c724-meta-inline" title={profile.email} data-v3-selectable-content="true">{profile.email}</span> : null}
         {profile?.has_claude_max ? <span className="c724-badge c724-badge-neutral">Max</span> : null}
-        {flow.tokenStatus && !authenticated ? <span className="c724-badge c724-badge-neutral">미인증</span> : null}
+        {flow.tokenStatus && !authenticated ? <span className="c724-badge c724-badge-neutral">{t("accounts.providers.unauthenticated")}</span> : null}
       </div>
       <div className="c724-account-actions">
         {authenticated ? <>
-          <DashboardIconCap size="small" label="재로그인" onClick={flow.handleLogin}>
+          <DashboardIconCap size="small" label={t("accounts.common.relogin")} onClick={flow.handleLogin}>
             <RotateCcw className="size-4" aria-hidden="true" />
           </DashboardIconCap>
-          <DashboardIconCap size="small" label="토큰 삭제" onClick={() => void flow.handleDeleteToken()}>
+          <DashboardIconCap size="small" label={t("accounts.providers.deleteToken")} onClick={() => void flow.handleDeleteToken()}>
             <Trash2 className="size-4" aria-hidden="true" />
           </DashboardIconCap>
         </> : <Button size="sm" disabled={flow.loadingStatus} onClick={flow.handleLogin}>
-          {flow.loadingStatus ? "확인 중" : "로그인"}
+          {flow.loadingStatus ? t("accounts.common.checking") : t("accounts.providers.login")}
         </Button>}
       </div>
     </div>
@@ -156,29 +159,29 @@ function LegacyClaudeRow({ nodeId, request, slots, loading }: {
         rel="noopener noreferrer"
         className="c724-login-open-link inline-flex items-center gap-1 text-xs text-primary underline"
       >
-        Anthropic 인증 페이지 열기 →
+        {t("accounts.providers.openAnthropic")}
       </a> : null}
-      <div className="c724-auth-hint">Anthropic 페이지에 표시된 코드를 붙여넣으세요.</div>
+      <div className="c724-auth-hint">{t("accounts.providers.pasteAnthropicCode")}</div>
       <textarea
         className="w-full text-xs font-mono p-1.5 border border-border rounded-floor resize-none bg-background"
         rows={2}
-        aria-label="Claude 인증 코드"
+        aria-label={t("accounts.claude.verificationCode")}
         placeholder="YSrAXqZq...#7RVDts..."
         value={flow.codeValue}
         onChange={(event) => flow.setCodeValue(event.target.value)}
       />
       <div className="c724-confirm-actions">
         <Button size="sm" onClick={flow.handleSubmitCode} disabled={flow.submitting}>
-          {flow.submitting ? "..." : "확인"}
+          {flow.submitting ? "..." : t("accounts.common.check")}
         </Button>
-        <Button size="sm" variant="outline" onClick={flow.handleCancelCode}>취소</Button>
+        <Button size="sm" variant="outline" onClick={flow.handleCancelCode}>{t("accounts.common.cancel")}</Button>
       </div>
     </div> : null}
 
     {flow.error ? <p className="c724-pool-error" role="alert" data-v3-selectable-content="true">{flow.error}</p> : null}
 
     {loading ? <ProviderQuotaSkeleton /> : hasAnySlot(slots)
-      ? <ProviderQuotaGrid slots={slots} label="Claude 사용량" />
+      ? <ProviderQuotaGrid slots={slots} label={t("accounts.claude.usage")} />
       : null}
   </div>;
 }
