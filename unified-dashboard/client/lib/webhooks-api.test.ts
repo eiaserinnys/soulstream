@@ -1,3 +1,4 @@
+import { createI18n } from '@soulstream/i18n';
 import { describe, expect, it, vi } from 'vitest';
 import {
   challengeReasonText,
@@ -97,9 +98,10 @@ describe('webhooks API', () => {
 });
 
 describe('webhook text mapping', () => {
+  const { t } = createI18n('ko');
   it('maps the five inbound request states', () => {
     const state = (status: 'accepted' | 'processing' | 'completed' | 'failed', session: 'running' | 'idle' | 'error' | 'stopped') =>
-      inboundRequestStatusLabel({ status, session: { state: session } });
+      inboundRequestStatusLabel({ status, session: { state: session } }, t);
     expect(state('accepted', 'idle')).toBe('접수됨');
     expect(state('processing', 'running')).toBe('처리 중');
     expect(state('processing', 'idle')).toBe('마감 없이 멈춤');
@@ -109,55 +111,55 @@ describe('webhook text mapping', () => {
     expect(state('failed', 'idle')).toBe('전달 실패');
   });
   it('maps delivery states and omits the failure count at zero', () => {
-    expect(deliveryStateLabel('delivered')).toBe('전달됨');
-    expect(deliveryStateLabel('pending')).toBe('대기');
-    expect(deliveryStateLabel('dead')).toBe('실패');
-    expect(deliveryAttemptText(0)).toBeNull();
-    expect(deliveryAttemptText(3)).toBe('실패 3번');
+    expect(deliveryStateLabel('delivered', t)).toBe('전달됨');
+    expect(deliveryStateLabel('pending', t)).toBe('대기');
+    expect(deliveryStateLabel('dead', t)).toBe('실패');
+    expect(deliveryAttemptText(0, t)).toBeNull();
+    expect(deliveryAttemptText(3, t)).toBe('실패 3번');
   });
   it('maps challenge reasons and falls back for the rest', () => {
-    expect(challengeReasonText('timeout')).toBe('주소가 10초 안에 답하지 않았습니다.');
-    expect(challengeReasonText('redirect_forbidden')).toBe('주소가 다른 곳으로 넘겼습니다. 최종 주소를 넣으세요.');
-    expect(challengeReasonText('something_else')).toBe('주소를 확인하지 못했습니다.');
-    expect(challengeReasonText(undefined)).toBe('주소를 확인하지 못했습니다.');
+    expect(challengeReasonText('timeout', t)).toBe('주소가 10초 안에 답하지 않았습니다.');
+    expect(challengeReasonText('redirect_forbidden', t)).toBe('주소가 다른 곳으로 넘겼습니다. 최종 주소를 넣으세요.');
+    expect(challengeReasonText('something_else', t)).toBe('주소를 확인하지 못했습니다.');
+    expect(challengeReasonText(undefined, t)).toBe('주소를 확인하지 못했습니다.');
   });
   it('maps last_error codes and keeps unknown codes as words', () => {
-    expect(lastErrorText('disabled_while_pending')).toBe('꺼져 있던 동안 대기');
-    expect(lastErrorText('access_revoked')).toBe('세션 접근 권한 없음');
-    expect(lastErrorText('http_503')).toBe('응답 503');
-    expect(lastErrorText('mystery_code')).toBe('mystery_code');
+    expect(lastErrorText('disabled_while_pending', t)).toBe('꺼져 있던 동안 대기');
+    expect(lastErrorText('access_revoked', t)).toBe('세션 접근 권한 없음');
+    expect(lastErrorText('http_503', t)).toBe('응답 503');
+    expect(lastErrorText('mystery_code', t)).toBe('mystery_code');
   });
   it('walks the last-received ladder', () => {
     const now = Date.parse('2026-11-18T12:00:00Z');
     const ago = (minutes: number) => new Date(now - minutes * 60000).toISOString();
-    expect(lastReceivedLabel(null, now)).toBe('아직 받지 않음');
-    expect(lastReceivedLabel(ago(3), now)).toBe('마지막 수신 3분 전');
-    expect(lastReceivedLabel(ago(125), now)).toBe('마지막 수신 2시간 전');
-    expect(lastReceivedLabel(ago(1500), now)).toBe('마지막 수신 어제');
-    expect(lastReceivedLabel(ago(3 * 1440), now)).toBe('마지막 수신 3일 전');
-    expect(lastReceivedLabel(ago(10 * 1440), now)).toBe('마지막 수신 11월 8일');
+    expect(lastReceivedLabel(null, 'ko', t, now)).toBe('아직 받지 않음');
+    expect(lastReceivedLabel(ago(3), 'ko', t, now)).toBe('마지막 수신 3분 전');
+    expect(lastReceivedLabel(ago(125), 'ko', t, now)).toBe('마지막 수신 2시간 전');
+    expect(lastReceivedLabel(ago(1500), 'ko', t, now)).toBe('마지막 수신 어제');
+    expect(lastReceivedLabel(ago(3 * 1440), 'ko', t, now)).toBe('마지막 수신 3일 전');
+    expect(lastReceivedLabel(ago(10 * 1440), 'ko', t, now)).toBe('마지막 수신 11월 8일');
   });
   it('orders event labels and explains disabled subscriptions', () => {
-    expect(eventTypesLabel(['session.ended', 'session.reply', 'session.question'])).toBe('답변, 질문, 세션 끝남');
-    expect(eventTypesLabel([])).toBe('');
-    expect(outboundDisabledText({ active: true, disabled_reason: null })).toBeNull();
-    expect(outboundDisabledText({ active: false, disabled_reason: 'consecutive_failures' })).toEqual({ text: '연속 실패로 꺼짐', danger: true });
-    expect(outboundDisabledText({ active: false, disabled_reason: 'gone' })).toEqual({ text: '주소가 거절해 꺼짐', danger: true });
-    expect(outboundDisabledText({ active: false, disabled_reason: 'user_disabled' })).toEqual({ text: '꺼짐', danger: false });
-    expect(outboundDisabledDetail('consecutive_failures')).toBe('연속으로 20번 실패해 꺼졌습니다.');
-    expect(outboundDisabledDetail('gone')).toBe('주소가 410으로 거절해 꺼졌습니다.');
-    expect(outboundDisabledDetail('user_disabled')).toBeNull();
+    expect(eventTypesLabel(['session.ended', 'session.reply', 'session.question'], t)).toBe('답변, 질문, 세션 끝남');
+    expect(eventTypesLabel([], t)).toBe('');
+    expect(outboundDisabledText({ active: true, disabled_reason: null }, t)).toBeNull();
+    expect(outboundDisabledText({ active: false, disabled_reason: 'consecutive_failures' }, t)).toEqual({ text: '연속 실패로 꺼짐', danger: true });
+    expect(outboundDisabledText({ active: false, disabled_reason: 'gone' }, t)).toEqual({ text: '주소가 거절해 꺼짐', danger: true });
+    expect(outboundDisabledText({ active: false, disabled_reason: 'user_disabled' }, t)).toEqual({ text: '꺼짐', danger: false });
+    expect(outboundDisabledDetail('consecutive_failures', t)).toBe('연속으로 20번 실패해 꺼졌습니다.');
+    expect(outboundDisabledDetail('gone', t)).toBe('주소가 410으로 거절해 꺼졌습니다.');
+    expect(outboundDisabledDetail('user_disabled', t)).toBeNull();
   });
   it('formats stamps with and without a year and clock values', () => {
     // 시각 꼴은 브라우저 시간대를 따르므로, 기대값도 같은 시간대의 지역 시각으로 만든다.
     const now = new Date(2026, 10, 18, 21, 0, 0).getTime();
     const sameYear = new Date(2026, 11, 18, 14, 10, 0).toISOString();
-    expect(formatStamp(sameYear, true, now)).toContain('12월 18일');
-    expect(formatStamp(sameYear, true, now)).not.toContain('2026');
-    expect(formatStamp(new Date(2027, 0, 2, 14, 10, 0).toISOString(), false, now)).toContain('2027');
+    expect(formatStamp(sameYear, 'ko', true, now)).toContain('12월 18일');
+    expect(formatStamp(sameYear, 'ko', true, now)).not.toContain('2026');
+    expect(formatStamp(new Date(2027, 0, 2, 14, 10, 0).toISOString(), 'ko', false, now)).toContain('2027');
     const afternoon = new Date(2026, 10, 18, 15, 14, 0).toISOString();
-    expect(formatClock(afternoon, now)).toContain('오후');
-    expect(formatClock(afternoon, now)).not.toContain('11월');
-    expect(formatClock(new Date(2026, 10, 17, 21, 30, 0).toISOString(), now)).toContain('11월 17일');
+    expect(formatClock(afternoon, 'ko', now)).toContain('오후');
+    expect(formatClock(afternoon, 'ko', now)).not.toContain('11월');
+    expect(formatClock(new Date(2026, 10, 17, 21, 30, 0).toISOString(), 'ko', now)).toContain('11월 17일');
   });
 });
