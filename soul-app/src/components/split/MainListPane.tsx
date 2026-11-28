@@ -23,7 +23,7 @@ import { GroupedGlassRow, GroupedGlassSheet } from '../planner/GroupedGlassSheet
 import { useDuoBandOwnsPanelActions } from '../../navigation/duoSideBand';
 
 /** 이 폭 미만이면 보드 헤더 액션을 오버플로 메뉴로 접는다. */
-export const MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH = 380;
+export const MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH = 440;
 
 export type MainListPaneHandle = { openCreate(): void; openExpanded(): void };
 

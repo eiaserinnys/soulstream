@@ -76,11 +76,20 @@ test('데일리·중요 작업·설정 표면은 같은 20pt 좌우 인셋을 �
   const screen = render(<SidebarPane active={false} />);
   const starred = StyleSheet.flatten(screen.getByTestId('sidebar-starred-section').props.style);
   const settings = StyleSheet.flatten(screen.getByTestId('sidebar-settings-footer').props.style);
-  const list = StyleSheet.flatten(screen.getByTestId('sidebar-main-list').props.style);
 
   expect(starred.paddingHorizontal).toBe(20);
   expect(settings.paddingHorizontal).toBe(20);
-  expect(list.marginTop).toBeLessThan(0);
+});
+
+test('첫 줄 끌어올림은 목록을 감싼 칸에만 든다(RN 웹은 RefreshControl 목록의 style을 바깥과 스크롤 칸에 두 번 준다)', () => {
+  useSessionStore.setState({ catalog: { folders: [], sessions: {} } });
+  const screen = render(<SidebarPane active={false} />);
+  const frame = StyleSheet.flatten(screen.getByTestId('sidebar-main-list-frame').props.style);
+  const list = StyleSheet.flatten(screen.getByTestId('sidebar-main-list').props.style);
+
+  expect(frame.marginTop).toBeLessThan(0);
+  expect(list.marginTop ?? 0).toBe(0);
+  expect(list.flex).toBe(1);
 });
 
 test('사이드바 중요 작업도 공통 순서 변경·오류 안내와 drag scroll lock을 받는다', async () => {

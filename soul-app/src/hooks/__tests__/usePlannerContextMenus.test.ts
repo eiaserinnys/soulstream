@@ -282,3 +282,12 @@ test('프로젝트 메뉴 항목을 만들 때 시트를 띄우지 않고 기존
   act(() => items.find((item: any) => item.key === 'create-task').onSelect());
   expect(input.onCreateFolder).toHaveBeenCalledTimes(1);
 });
+
+test('세션 메뉴는 받은 anchor를 메뉴 표시에 그대로 넘긴다', async () => {
+  const { result } = renderHook(() => usePlannerContextMenus(api));
+
+  act(() => result.current.openSessionMenu({ sessionId: 'session-1', anchor: 42 }));
+  await waitFor(() => expect(showAppContextMenu).toHaveBeenCalledTimes(1));
+
+  expect((showAppContextMenu as jest.Mock).mock.calls[0][2]).toBe(42);
+});

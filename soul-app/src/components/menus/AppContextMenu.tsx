@@ -4,6 +4,7 @@ import type { PlannerContextMenuAction } from '../../lib/planner-context-menu-mo
 export function showAppContextMenu(
   actions: readonly PlannerContextMenuAction[],
   title?: string,
+  anchor?: number,
 ) {
   if (Platform.OS === 'ios') {
     const options = [
@@ -15,6 +16,7 @@ export function showAppContextMenu(
     const cancelButtonIndex = options.length - 1;
     ActionSheetIOS.showActionSheetWithOptions({
       title,
+      ...(anchor === undefined ? {} : { anchor }),
       options,
       cancelButtonIndex,
       destructiveButtonIndex: actions

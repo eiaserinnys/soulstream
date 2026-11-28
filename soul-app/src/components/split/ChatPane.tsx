@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useMemo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { createContext, useContext, useMemo, useRef, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, findNodeHandle } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUIStore } from '../../store/uiStore';
@@ -15,6 +15,11 @@ import { useDuoSideBand } from '../../navigation/duoSideBand';
 import { useRegisterDuoRailOverride } from '../../navigation/phoneRailActions';
 import { SessionFilesContent, FilesTitle, RefreshButton } from '../../screens/SessionFilesScreen';
 import { LiquidGlassButton } from '../LiquidGlassButton';
+import { createApiClient } from '../../api/client';
+import { useSettingsStore } from '../../store/settingsStore';
+import { usePlannerContextMenus } from '../../hooks/usePlannerContextMenus';
+import { SessionSuccessionHost } from '../planner/SessionSuccessionHost';
+import { openPlannerSessionWorkspace } from '../../lib/planner-folder-workspace';
 
 /** A containing card panel may provide the bottom clearance it actually reserves. */
 export const ChatPaneMinimumBottomPaddingContext = createContext<number | undefined>(undefined);
@@ -33,6 +38,10 @@ export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose,
   const [filesHeader, setFilesHeader] = useState<React.ComponentProps<typeof FilesTitle>['header']>(null);
   const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
+  const serverUrl = useSettingsStore((state) => state.serverUrl);
+  const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
+  const menus = usePlannerContextMenus(api);
+  const sessionMenuAnchor = useRef<View>(null);
   const panelMinimumBottomPadding = useContext(ChatPaneMinimumBottomPaddingContext);
   const minimumBottomPadding = resolveChatPaneMinimumBottomPadding(
     panelMinimumBottomPadding,
@@ -77,6 +86,12 @@ export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose,
             </Text>
             <View style={styles.spacer} />
             <LiquidGlassButton iconOnly variant="plain" accessibilityLabel="세션 파일" onPress={() => setFilesOpen(true)}><Ionicons name="folder-open-outline" color={t.colors.accent} size={t.iconSize.navigation} /></LiquidGlassButton>
+            <View ref={sessionMenuAnchor} collapsable={false}>
+              <LiquidGlassButton iconOnly variant="plain" accessibilityLabel="세션 메뉴" onPress={() => menus.openSessionMenu({
+                sessionId,
+                anchor: Platform.OS === 'ios' ? findNodeHandle(sessionMenuAnchor.current) ?? undefined : undefined,
+              })}><Ionicons name="ellipsis-horizontal" color={t.colors.accent} size={t.iconSize.navigation} /></LiquidGlassButton>
+            </View>
             {/* 챗 닫기 — 우측 패널을 빈 상태로 되돌리고 싶을 때 사용. */}
             {!duo ? <TouchableOpacity
               testID="tablet-chat-close"
@@ -116,6 +131,12 @@ export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose,
           onStoryOpenRequestHandled={clearStoryOpenRequestId}
         />
       </View>}
+      <SessionSuccessionHost
+        api={api}
+        request={menus.sessionSuccession}
+        onClose={menus.closeSessionSuccession}
+        onCreated={(createdSessionId) => { void openPlannerSessionWorkspace(createdSessionId); }}
+      />
     </View>
   );
 }

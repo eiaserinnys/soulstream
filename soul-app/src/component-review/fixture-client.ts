@@ -114,9 +114,25 @@ const entryShellApi = {
     entryShellFeedRequests.push({ type: 'getSessionsByIds', sessionIds: [...sessionIds] });
     return feedFixtureSessionLookup(sessionIds);
   },
-  getStarredFolders: async () => ({ items: [], nextCursor: null }),
+  getStarredFolders: getEntryShellStarredFolders,
+  getResumeAfterLimit: async () => ({ eligible: false, reason: null, resets_at: null, schedule: null }),
   catalogStreamUrl: reviewFeedStreamUrl, nodeStreamUrl: () => '',
 };
+
+/**
+ * `starred=slow|ready|error|error-once` fills the entryShell starred list. error-once keeps failing until the
+ * capture sets `window.__soulAppStarredRecovered` just before its retry, because the sidebar may ask twice on mount.
+ */
+async function getEntryShellStarredFolders() {
+  const state = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('starred');
+  const recovered = typeof window !== 'undefined'
+    && (window as Window & { __soulAppStarredRecovered?: boolean }).__soulAppStarredRecovered === true;
+  if (state === 'slow') await new Promise((resolve) => setTimeout(resolve, 3000));
+  if (state === 'error' || (state === 'error-once' && !recovered)) {
+    throw new Error('공개 예시: 중요 작업을 불러오지 못했습니다.');
+  }
+  return { items: state === 'slow' || state === 'ready' || state === 'error-once' ? starredFolders : [], nextCursor: null };
+}
 
 export type ContentLinkDocumentState = 'ready' | 'loading' | 'slow' | 'error';
 export const contentLinkDocumentId = 'public-content-document';

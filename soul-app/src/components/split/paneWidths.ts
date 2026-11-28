@@ -2,7 +2,7 @@
  * 2·3단 split의 기준 폭. 화면 폭과 무관한 설계 값의 정본이다.
  *  - card: 가운데 카드 pane (min 280은 피드 300과 공존하는 하한)
  *  - folder: 3단 왼쪽 폴더 pane
- *  - feed: 오른쪽 세션 피드. 400 이상이면 카드 한 줄이 넓은 배치를 쓴다.
+ *  - feed: 오른쪽 세션 피드. 320 이상이면 카드 한 줄이 넓은 배치를 쓴다.
  */
 export const PANE_SPECS = {
   folder: { default: 240 },

@@ -293,7 +293,7 @@ export function TwoPaneWithDrawer() {
                 }))}
               />
               <SplitPanelSurface testID="split-panel-session" style={[styles.pane, { flex: 1 }]}>
-                <TabletSessionFeedPane />
+                <TabletSessionFeedPane searchEntry={activeSection.kind === 'daily'} />
               </SplitPanelSurface>
             </>
           ) : null}

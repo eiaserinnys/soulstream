@@ -212,3 +212,13 @@ test('세로 목록 칸 보드 머리는 폴더 이름과 보드 단추 셋을 �
   expect(screen.getByTestId('card-board-expanded')).toBeTruthy();
   await settleTimers();
 });
+
+test('아이패드 세로 목록 칸(417) 카드 보드는 보드 단추를 넘침 메뉴로 접어 머리 제목을 남긴다', async () => {
+  useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' } });
+  const screen = render(<MainListPane onMenuPress={jest.fn()} paneWidth={417} />);
+  await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
+
+  expect(screen.getByTestId('board-header-overflow-button')).toBeTruthy();
+  expect(screen.queryByLabelText('보드 확대')).toBeNull();
+  await settleTimers();
+});

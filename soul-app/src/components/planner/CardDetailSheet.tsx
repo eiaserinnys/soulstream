@@ -315,7 +315,8 @@ export function CardDetailContent(props: CardDetailContentProps) {
           </GlassButton> : null}
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="상태 변경" disabled={locked || !api || !card}
             onPress={() => setStatusMenuOpen(true)} frameStyle={styles.titleHitFrame} surfaceStyle={styles.titleHitSurface} surfaceTestID="card-detail-title-surface">
-            <Text testID="card-detail-title" style={styles.title} numberOfLines={3}>
+            <Text testID="card-detail-title" lineBreakStrategyIOS="hangul-word" numberOfLines={3}
+              style={{ ...styles.title, ...(Platform.OS === 'web' ? { wordBreak: 'keep-all' as const } : {}) }}>
               {card ? <><CardStatusChip card={card} detail />{' '}{card.title}</> : '카드'}
             </Text>
           </CompactTouchTarget>
