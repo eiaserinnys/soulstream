@@ -81,7 +81,7 @@ describe("PR-CL v3 visual system contract", () => {
     expect(css).toContain('--v3-type-body: 450 14px/22px');
     expect(css).toContain('--v3-type-meta: 500 12px/18px');
     expect(css).toContain('--v3-type-badge: 600 11px/16px');
-    expect(css).toContain('font-family: "Pretendard Variable", Pretendard');
+    expect(css).toContain('--v3-font-family: var(--locale-font-prefix,) "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;');
   });
 
   it("uses the registered shared card row, section rhythm, and semantic progress roles", () => {

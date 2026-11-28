@@ -243,7 +243,7 @@ export function PersistentSessionAvailability({
   </SettingsGroupBox>;
 }
 
-export function persistentSessionQuotaRows(resource: PersistentSession, presets: readonly ModelPresetAvailability[], t: Translate = adminTranslation(), language = dashboardLanguage()) {
+export function persistentSessionQuotaRows(resource: PersistentSession, presets: readonly ModelPresetAvailability[], t: Translate = adminTranslation(), language = dashboardLanguage() ?? "ko") {
   const locale = intlLocale(language);
   const percentFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
   const groups = new Map<string, {

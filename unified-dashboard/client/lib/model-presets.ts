@@ -110,7 +110,7 @@ function localResetTime(value: string, locale?: string): string | null {
     && date.getMonth() === now.getMonth()
     && date.getDate() === now.getDate();
   const language = locale ? resolveLanguage(locale, []) : dashboardLanguage();
-  const formatLocale = intlLocale(language);
+  const formatLocale = intlLocale(language ?? "en");
   const time = new Intl.DateTimeFormat(formatLocale, {
     hour: "2-digit",
     minute: "2-digit",
