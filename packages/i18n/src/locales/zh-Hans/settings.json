@@ -1,0 +1,142 @@
+{
+  "language": "语言",
+  "languageHelp": "界面语言将保存到账户。",
+  "tabs": {
+    "appearance": {
+      "label": "外观与阅读",
+      "description": "选择适合阅读的背景和聊天字号。"
+    },
+    "owned_agents": {
+      "label": "外部智能体",
+      "description": "管理外部智能体的名称、启用状态和连接密钥。"
+    },
+    "access_links": {
+      "label": "访问链接",
+      "description": "管理允许外部智能体向我的会话委派任务的链接。"
+    },
+    "webhooks": {
+      "label": "Webhook",
+      "description": "管理我的会话与外部服务之间的 Webhook。"
+    },
+    "persistent": {
+      "label": "常驻会话",
+      "description": "管理常驻会话的指令、显示和记录。"
+    },
+    "persistent_defaults": {
+      "label": "常驻会话默认模型",
+      "description": "设置新常驻会话使用的默认模型和备用顺序。现有会话保持原设置。"
+    },
+    "summaries": {
+      "label": "摘要",
+      "description": "设置是否生成轮次摘要和会话摘要，以及模型使用顺序。"
+    },
+    "card_dispatch": {
+      "label": "卡片执行",
+      "description": "调整卡片的执行方式和并发数量。"
+    },
+    "recurring_jobs": {
+      "label": "重复任务",
+      "description": "管理重复任务及其下次执行时间。"
+    },
+    "agents": {
+      "label": "智能体配置",
+      "description": "管理智能体配置和默认执行环境。"
+    },
+    "mcp": {
+      "label": "MCP",
+      "description": "管理中央 MCP 服务器、配置和认证密钥。"
+    },
+    "skills": {
+      "label": "技能与目录",
+      "description": "查看技能与目录的关联、使用位置和验证结果。"
+    },
+    "coding_agents": {
+      "label": "连接编程智能体",
+      "description": "管理各节点的编程智能体登录。"
+    },
+    "git_repos": {
+      "label": "Git 与仓库",
+      "description": "为各节点设置 Git 用户、SSH 密钥和仓库。"
+    },
+    "nodes": {
+      "label": "节点",
+      "description": "查看运行任务的设备及连接状态。"
+    },
+    "usage_stats": {
+      "label": "会话统计",
+      "description": "按时段查看令牌用量和按标价估算的费用。"
+    },
+    "usage_log": {
+      "label": "使用日志",
+      "description": "查看使用记录并筛选所需范围。"
+    },
+    "session_review": {
+      "label": "请求审核",
+      "description": "指定哪些请求需要在执行前审核。"
+    },
+    "users": {
+      "label": "用户",
+      "description": "管理服务器用户及其访问权限。"
+    },
+    "file_storage": {
+      "label": "文件存储",
+      "description": "连接用于保存附件的存储服务。"
+    }
+  },
+  "groups": {
+    "personal": "个人设置",
+    "sessions": "会话与任务",
+    "agents": "智能体与节点",
+    "records": "记录与管理"
+  },
+  "title": "设置",
+  "category": "设置分类",
+  "allSettings": "全部设置",
+  "defaultCategoryDescription": "修改服务器配置后，请保存更改。",
+  "loading": "正在加载设置…",
+  "unsavedTitle": "有未保存的更改",
+  "unsavedDetail": "关闭窗口会丢失对服务器设置的更改。",
+  "continueEditing": "继续编辑",
+  "discard": "放弃更改",
+  "changedCount_one": "{{count}} 项更改尚未保存",
+  "changedCount_other": "{{count}} 项更改尚未保存",
+  "applied": "更改即时生效",
+  "applyIndividually": "通过各项的按钮应用更改。",
+  "restartNotice": "需要重启的项目会单独标记。",
+  "cancel": "取消",
+  "done": "完成",
+  "saving": "保存中…",
+  "save": "保存更改",
+  "openPersistent": "启动时打开常驻会话",
+  "glassDetails": "玻璃效果微调",
+  "advanced": "高级",
+  "background": "背景",
+  "uploading": "处理中…",
+  "upload": "上传照片",
+  "myPhoto": "我的照片",
+  "invalidImage": "请选择图片文件。",
+  "imageError": "无法读取背景图片。请选择其他图片文件。",
+  "bokeh": "散景",
+  "metal": "金属",
+  "plain": "纯色",
+  "fontSize": "聊天字号",
+  "fontHelp": "将正文和输入框的字号保存到账户。",
+  "default": "默认",
+  "glass": "液态玻璃",
+  "reset": "恢复默认",
+  "refraction": "折射",
+  "blur": "模糊",
+  "chromatic": "色差",
+  "specular": "高光",
+  "tint": "色调",
+  "wallpaper": {
+    "dawn-ridge": "晨曦山脊",
+    "aurora": "极光",
+    "silk-curves": "丝绸曲线",
+    "lake-horizon": "湖面天际线",
+    "desert-dunes": "沙丘",
+    "misty-forest": "雾林",
+    "moonlit-sea": "月光下的海",
+    "milky-way": "银河"
+  }
+}
