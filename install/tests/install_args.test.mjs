@@ -39,6 +39,13 @@ test('sourcing has no side effects', () => {
   const dir = mkdtempSync(join(tmpdir(), 'install-source-'));
   try { const result = spawnSync('bash', ['-c', 'source "$1"', 'bash', script], { cwd: dir, encoding: 'utf8' }); assert.equal(result.status, 0); assert.equal(result.stdout + result.stderr, ''); assert.deepEqual(readdirSync(dir), []); } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+test('--lang reaches the installer and a missing value is rejected', () => {
+  const result = spawnSync('bash', ['-ec', 'source "$1"; shift; parse_args "$@"; printf "%s" "$REQUESTED_LANG"', 'bash', script, '--lang', 'ko'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, 'ko');
+  assert.equal(parse('--lang').status, 2);
+  assert.match(parse('--help').stdout, /--lang[^\n]+ko\|en\|ja\|zh-Hans/);
+});
 test('installation commands start in a directory accessible to service users', () => {
   const dir = mkdtempSync(join(tmpdir(), 'install-cwd-'));
   try {

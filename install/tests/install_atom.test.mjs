@@ -395,7 +395,7 @@ test('the seed loader runs with the installer paths and its warnings reach the f
       writeFileSync(join(t.root, 'install', 'seed', 'load_atom_seed.mjs'),
         "process.stdout.write('atom seed: preserved\\nWARNING: existing atom tree kept; seed not loaded\\n');\nprocess.exitCode = Number(process.env.FAKE_LOADER_EXIT);\n");
       const result = await t.run("parse_args --backends codex\nATOM_URL=http://127.0.0.1:9\nrun_step 'Loading atom instructions' load_atom_instructions \"$ROOT\"\nfinish_message \"$ROOT\"\n", { FAKE_LOADER_EXIT: exit });
-      assert.match(t.fake.argv(), new RegExp(`== node\n${t.root}/install/seed/load_atom_seed\\.mjs\n--atom-url\nhttp://127\\.0\\.0\\.1:9\n--password-file\n${t.root}/\\.admin-password\n--state-dir\n${t.root}/config\n`));
+      assert.match(t.fake.argv(), new RegExp(`== node\n${t.root}/install/seed/load_atom_seed\\.mjs\n--atom-url\nhttp://127\\.0\\.0\\.1:9\n--password-file\n${t.root}/\\.admin-password\n--state-dir\n${t.root}/config\n--lang\nko\n`));
       assert.match(t.log(), /^atom seed: preserved$/m);
       if (exit === '0') {
         assert.equal(result.status, 0, result.stderr);

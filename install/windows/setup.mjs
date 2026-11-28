@@ -8,7 +8,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readInstallerText } from '../seed/locales/installer-text.mjs';
 import { buildAtom, initAtom, issueAtomApiKey, loadAtomInstructions, withTemporaryAtom } from './atom.mjs';
-import { requireClis } from './cli.mjs';
+import { installationLanguage, requireClis } from './cli.mjs';
 import { prepareSecrets, setupDatabases, setupSchema } from './database.mjs';
 import { orchUrl, refreshModelPresets, waitAndCreateWorkspace } from './finish.mjs';
 import { renderHanielConfig } from './haniel_config.mjs';
@@ -45,6 +45,7 @@ function buildContext(options, env = process.env) {
 const step = (name) => log(`\n  ${name}`);
 
 async function prepare(ctx, options) {
+  ctx.lang = await installationLanguage(ctx, options);
   mkdirSync(ctx.logsDir, { recursive: true });
   mkdirSync(join(ctx.soulDir, 'config'), { recursive: true });
   for (const dir of ['.claude', '.claude-accounts', '.codex']) mkdirSync(join(ctx.agentHome, dir), { recursive: true });
@@ -66,7 +67,7 @@ async function prepare(ctx, options) {
   step('Writing configuration');
   const rendered = renderConfig({
     platform: ctx.platform, home: ctx.home, root: ctx.soulDir, workspace: ctx.workspace, agentHome: ctx.agentHome, backends: ctx.backends, ports: ctx.ports, secrets,
-    atomDashboard: atom.dashboard, publicUrl: ctx.publicUrl, atomPublicUrl: ctx.atomPublicUrl,
+    atomDashboard: atom.dashboard, publicUrl: ctx.publicUrl, atomPublicUrl: ctx.atomPublicUrl, lang: ctx.lang,
   });
   step('Building Soulstream');
   const pnpm = (args, env) => run('pnpm', args, { cwd: ctx.soulDir, env });
@@ -76,22 +77,23 @@ async function prepare(ctx, options) {
   pnpm(['--dir', join(ctx.soulDir, 'unified-dashboard'), 'run', 'build']);
   step('Initializing schema');
   setupSchema(ctx, secrets);
-  writeFileSync(join(ctx.soulDir, '.local', 'install-notes.json'), `${JSON.stringify({ atomDashboard: atom.dashboard, warnings: [...atom.notes, ...rendered.warnings, ...rendered.seedWarnings, ...seedWarnings] })}\n`);
+  writeFileSync(join(ctx.soulDir, '.local', 'install-notes.json'), `${JSON.stringify({ lang: ctx.lang, atomDashboard: atom.dashboard, warnings: [...atom.notes, ...rendered.warnings, ...rendered.seedWarnings, ...seedWarnings] })}\n`);
 }
 
 async function finish(ctx) {
+  const { lang, atomDashboard, warnings: notes } = JSON.parse(readFileSync(join(ctx.soulDir, '.local', 'install-notes.json'), 'utf8'));
+  ctx.lang = lang ?? 'ko';
   step('Checking services and workspace');
   await waitAndCreateWorkspace(ctx);
   step('Checking model presets');
   const confirmed = await refreshModelPresets(ctx);
-  const { atomDashboard, warnings: notes } = JSON.parse(readFileSync(join(ctx.soulDir, '.local', 'install-notes.json'), 'utf8'));
   const head = run('git', ['-C', ctx.soulDir, 'rev-parse', '--short=12', 'HEAD'], { capture: true }).trim();
   log(`\nInstalled ${head}; backends: ${ctx.backends.join(', ')}`);
   const envOrch = join(ctx.soulDir, '.env.orch');
   log(`Soulstream: ${readEnvValue(envOrch, 'SOULSTREAM_PUBLIC_URL') || orchUrl(ctx)}`);
   log(`Atom: ${readEnvValue(envOrch, 'ATOM_PUBLIC_URL') || `http://127.0.0.1:${ctx.ports.atom}`}${atomDashboard ? '' : ' (API only; its dashboard did not build)'}`);
   log(`Password for both: ${readEnvValue(join(ctx.soulDir, '.env.orch'), 'DASHBOARD_ADMIN_PASSWORD')} (saved in ${join(ctx.soulDir, '.admin-password')})`);
-  const pasName = readInstallerText(ctx.lang ?? 'ko').profiles['seosoyoung-pas'];
+  const pasName = readInstallerText(ctx.lang).profiles['seosoyoung-pas'];
   log(`PAS: once you connect a coding agent, the dashboard creates a default ${pasName} persistent session.`);
   if (notes.length > 0) log(`Notes:\n${notes.map((n) => `  ${n}`).join('\n')}`);
   log('Login: connect Claude and Codex in the dashboard under Settings → 코딩 에이전트 연결.');

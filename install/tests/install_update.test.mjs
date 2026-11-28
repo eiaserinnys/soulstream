@@ -44,7 +44,13 @@ const GIT_ENV = {
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...GIT_ENV } }).trim();
 // The fake installer is what the soulstream origin carries as install/install.sh; setup() writes the same bytes as the running installer.
 const FAKE_INSTALLER = '#!/usr/bin/env bash\n# installer under test\n';
-const SEED = { 'install/seed/load_atom_seed.mjs': '// atom seed loader\n', 'install/install.sh': FAKE_INSTALLER };
+const localeFiles = ['installer-language.mjs', 'languages.mjs', 'languages.json', 'ko/installer.json']
+  .map((name) => `install/seed/locales/${name}`);
+const SEED = {
+  'install/seed/load_atom_seed.mjs': '// atom seed loader\n',
+  'install/install.sh': FAKE_INSTALLER,
+  ...Object.fromEntries(localeFiles.map((file) => [file, readFileSync(file)])),
+};
 const UNITS = ['soulstream-worker.service', 'soulstream-orch.service', 'soulstream-atom.service'];
 
 // A bare origin and a working copy that pushes to it. A commit on main moves the default channel (beta) with it,
