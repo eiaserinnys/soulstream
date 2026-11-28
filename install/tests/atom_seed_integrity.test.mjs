@@ -484,10 +484,10 @@ test('seed guidance names the settings tabs the way the dashboard does', () => {
 
 test('settings card lists every dashboard group and tab with the same admin marks', () => {
   const source = fs.readFileSync(fileURLToPath(new URL('../../unified-dashboard/client/components/config/configTabs.ts', import.meta.url)), 'utf8');
-  const dictionary = JSON.parse(fs.readFileSync(fileURLToPath(new URL('../../packages/i18n/src/locales/ko.json', import.meta.url)), 'utf8'));
+  const settingsDictionary = JSON.parse(fs.readFileSync(fileURLToPath(new URL('../../packages/i18n/src/locales/ko/settings.json', import.meta.url)), 'utf8'));
   const tabs = [...source.matchAll(/\{ id: "(\w+)", label: "([^"]+)",[^\n]*?group: "(\w+)", adminOnly: (true|false)/g)]
-    .map(([, id, , group, admin]) => ({ id, label: dictionary.settings.tabs[id].label, group, adminOnly: admin === 'true' }));
-  const groups = [...source.matchAll(/\{ id: "(\w+)", label: "([^"]+)" \}/g)].map(([, id]) => ({ id, label: dictionary.settings.groups[id] }));
+    .map(([, id, , group, admin]) => ({ id, label: settingsDictionary.tabs[id].label, group, adminOnly: admin === 'true' }));
+  const groups = [...source.matchAll(/\{ id: "(\w+)", label: "([^"]+)" \}/g)].map(([, id]) => ({ id, label: settingsDictionary.groups[id] }));
   assert.equal(tabs.length, 20, 'expected 20 CONFIG_TABS labels');
   assert.equal(groups.length, 4, 'expected 4 CONFIG_TAB_GROUPS labels');
   const settings = contentOf('common.soulstream_guide.settings');
