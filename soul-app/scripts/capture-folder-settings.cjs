@@ -49,8 +49,18 @@ async function openPage(context, base, query, name, readyTestID = 'component-rev
   return page;
 }
 
+/** The new folder sample opens the top-level, settings and picker variants through `folderSheet`. */
+const VARIANTS = { 'folder-create-root': 'root', 'folder-settings': 'settings', 'reference-picker': 'picker' };
+
 async function openSample(page, sample) {
-  await page.getByTestId('settings-segment-review-dialogue-' + sample).click();
+  const variant = VARIANTS[sample] ?? null;
+  const url = new URL(page.url());
+  if (url.searchParams.get('folderSheet') !== variant) {
+    if (variant) url.searchParams.set('folderSheet', variant); else url.searchParams.delete('folderSheet');
+    await page.goto(url.toString());
+    await page.getByTestId('component-review').waitFor();
+  }
+  await page.getByTestId('settings-segment-review-dialogue-' + (variant ? 'folder-create' : sample)).click();
   await page.getByLabel('선택한 다이얼로그 열기', { exact: true }).click();
   await page.getByTestId('app-modal-viewport').waitFor();
   await settle(page);
@@ -178,11 +188,7 @@ async function measureOperations(browser, base) {
   const operations = { dialogs: [] };
 
   for (const [sample, firstField] of [['folder-create', 'folder-settings-title'], ['folder-settings', null], ['reference-picker', null], ['session-create', null]]) {
-    await page.getByTestId('settings-segment-review-dialogue-' + sample).click();
-    const opener = page.getByLabel('선택한 다이얼로그 열기', { exact: true });
-    await opener.click();
-    await page.getByTestId('app-modal-viewport').waitFor();
-    await settle(page);
+    await openSample(page, sample);
     const openedFocus = await focusLabel(page);
     const tabs = [];
     for (let index = 0; index < 6; index += 1) { await page.keyboard.press('Tab'); tabs.push(await focusLabel(page)); }
@@ -194,8 +200,7 @@ async function measureOperations(browser, base) {
     if (firstField) check(`${sample} 첫 초점이 이름 칸`, openedFocus === firstField, openedFocus);
   }
 
-  await page.getByTestId('settings-segment-review-dialogue-folder-settings').click();
-  await page.getByLabel('선택한 다이얼로그 열기', { exact: true }).click();
+  await openSample(page, 'folder-settings');
   await page.getByTestId('folder-settings-guidance').waitFor();
   await page.getByTestId('folder-settings-guidance').fill('넓은 폭에서 쓰던 지침');
   await page.setViewportSize({ width: 390, height: 844 });

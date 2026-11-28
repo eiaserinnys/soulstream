@@ -28,6 +28,8 @@ import { ReviewPersistentEntry } from './ReviewPersistentEntry';
 
 const assignment = { folderId: 'public-project', nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-model' as string | null };
 const exhaustedSample = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('exhausted');
+// The 「새 폴더」 sample also opens the same sheet as a top-level folder, as folder settings, or its reference picker.
+const folderSheetVariant = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('folderSheet');
 const exhaustedAssignments: Record<string, typeof assignment> = {
   direct: { ...assignment, modelPreset: 'public-exhausted-model' },
   auto: { ...assignment, agentId: 'public-exhausted-agent', modelPreset: null },
@@ -50,12 +52,12 @@ export function ReviewDialogueSurface({ opened, onClose, onResult, preview = fal
       {opened === 'assignment' ? <CardAssignmentSheet api={api} value={reviewAssignment} mode="edit" onClose={close} onSave={async value => saved('메모리 담당: ' + value.agentId)} /> : null}
       {opened === 'folder-picker' ? <FolderSelectionSheet api={api} onClose={close} onSelect={id => saved('선택: ' + id)} /> : null}
       {opened === 'execution-picker' ? <ExecutionSelectionSheet api={api} value={reviewAssignment} onClose={close} onSave={value => saved('메모리 실행: ' + value.agentId)} /> : null}
-      {opened === 'folder-create' || opened === 'folder-create-root' ? <NewFolderSheet visible api={api} folders={dialogueFolders}
-        target={{ kind: 'create', parentProjectPageId: opened === 'folder-create' ? 'public-page' : null }} onClose={close}
+      {opened === 'folder-create' && (folderSheetVariant === null || folderSheetVariant === 'root') ? <NewFolderSheet visible api={api} folders={dialogueFolders}
+        target={{ kind: 'create', parentProjectPageId: folderSheetVariant === 'root' ? null : 'public-page' }} onClose={close}
         onSubmit={async input => { const response = await createPlannerMutationPort(api).createFolder(input); setResult('메모리 폴더: ' + response.folder.name); return response; }} /> : null}
-      {opened === 'folder-settings' ? <NewFolderSheet visible api={api} folders={dialogueFolders} target={{ kind: 'edit', folder: dialogueChildFolder }}
+      {opened === 'folder-create' && folderSheetVariant === 'settings' ? <NewFolderSheet visible api={api} folders={dialogueFolders} target={{ kind: 'edit', folder: dialogueChildFolder }}
         onClose={close} onSave={async input => saved('메모리 폴더 설정: ' + input.draft.title)} /> : null}
-      {opened === 'reference-picker' ? <AppModalSurface visible variant="expanded" modalId="modal_new_task" presentationStyle="pageSheet"
+      {opened === 'folder-create' && folderSheetVariant === 'picker' ? <AppModalSurface visible variant="expanded" modalId="modal_new_task" presentationStyle="pageSheet"
         onRequestClose={close} safeAreaTestID="reference-picker-safe-area">
         <PlannerAtomContextPicker visible api={api} onClose={close} onPicked={picked => setResult('메모리 참고 자료: ' + picked.nodeTitle)} />
       </AppModalSurface> : null}
