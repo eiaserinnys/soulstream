@@ -175,7 +175,7 @@
     "running": "Running",
     "openFolder": "Open {{name}} folder",
     "cardStatus": "Cards · {{status}}",
-    "folderStatus": "{{status}}",
+    "folderStatus": "Folder: {{status}}",
     "sessionRun": "Session #{{number, number}} {{status}}",
     "manageFolder": "Manage {{name}}",
     "starFolder": "Star {{name}}",
