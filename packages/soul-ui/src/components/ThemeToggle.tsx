@@ -5,6 +5,7 @@
  * 같은 훅을 사용하는 다른 컴포넌트도 즉시 반응합니다.
  */
 
+import { useTranslation } from "react-i18next";
 import { useCallback } from "react";
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
@@ -16,6 +17,7 @@ export function ThemeToggle({
   variant = "default",
   appearance = "default",
 }: { variant?: "default" | "chrome"; appearance?: "default" | "bare" }) {
+  const { t } = useTranslation();
   const [theme, setTheme] = useTheme();
 
   const toggle = useCallback(() => {
@@ -36,7 +38,7 @@ export function ThemeToggle({
         "border border-border text-muted-foreground hover:bg-input",
         "transition-colors cursor-pointer",
       )}
-      title={isDark ? "라이트 모드로 전환" : "다크 모드로 전환"}
+      title={isDark ? t("ui.theme.switchToLight") : t("ui.theme.switchToDark")}
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
     >
       <span className="text-xs">{isDark ? "☀️" : "🌙"}</span>
@@ -50,9 +52,10 @@ function ChromeThemeToggle({
   onToggle,
   appearance,
 }: { isDark: boolean; onToggle: () => void; appearance: "default" | "bare" }) {
+  const { t } = useTranslation();
   return (
     <DashboardIconCap
-      label={isDark ? "라이트 모드로 전환" : "다크 모드로 전환"}
+      label={isDark ? t("ui.theme.switchToLight") : t("ui.theme.switchToDark")}
       appearance={appearance}
       onClick={onToggle}
     >

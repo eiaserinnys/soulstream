@@ -3,14 +3,13 @@ import { memo, useMemo, useState } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import {
   estimatePromptTokens,
-  formatPromptTokenCount,
   systemPromptTokenScope,
 } from "../../lib/prompt-token-metrics";
 import { useChatStore } from "../../stores/chat-store-scope";
 
 /** system_message 노드: 시스템 프롬프트 접기/펼치기 */
 export const SystemPromptMessage = memo(function SystemPromptMessage({ msg }: { msg: ChatMessage }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const backend = useChatStore((s) => s.activeSessionSummary?.backend);
   const tokens = useMemo(() => estimatePromptTokens(msg.content), [msg.content]);
@@ -27,7 +26,7 @@ export const SystemPromptMessage = memo(function SystemPromptMessage({ msg }: { 
           <span>{"\u2699\uFE0F"}</span>
           <span className="font-medium">{t("ui.chat.systemPrompt")}</span>
           <span className="text-xs leading-4 rounded-full bg-input px-1.5 text-muted-foreground">
-            {tokenScope === "system" ? t("ui.chat.system") : t("ui.chat.prompt")} {formatPromptTokenCount(tokens)}
+            {t(tokenScope === "system" ? "ui.chat.systemTokens" : "ui.chat.promptTokens", { total: tokens.toLocaleString(i18n.resolvedLanguage) })}
           </span>
         </button>
         {expanded && (

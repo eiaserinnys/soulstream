@@ -7,6 +7,7 @@
  * 포지셔닝/포털/바깥 클릭/포커스 복원은 Base UI Popover 래퍼(`./ui/popover`)에 위임한다.
  */
 
+import { useTranslation } from "react-i18next";
 import { useState, useEffect, useRef } from "react";
 
 import { FrameLoading } from "./FrameLoading";
@@ -51,15 +52,16 @@ export function AtomNodeSelector({
   presentation = "popup",
   open: controlledOpen, onOpenChange, onStatusChange,
 }: AtomNodeSelectorProps) {
+  const { t } = useTranslation();
   const [localOpen, setLocalOpen] = useState(false);
   const inlineTriggerRef = useRef<HTMLButtonElement>(null);
   const open = controlledOpen ?? localOpen;
   const setOpen = (next: boolean) => { setLocalOpen(next); onOpenChange?.(next); };
   const [nodes, setNodes] = useState<AtomNode[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbEntry[]>([
-    { nodeId: null, title: "루트" },
+    { nodeId: null, title: "" },
   ]);
   // 다시 시도 결과에 따라 초점을 옮길 곳. 목록이 그려진 뒤 효과에서 처리한다.
   const [pendingFocus, setPendingFocus] = useState<"first-node" | "retry" | null>(null);
@@ -69,7 +71,7 @@ export function AtomNodeSelector({
   const loadNodes = async (nodeId: string | null): Promise<boolean> => {
     setLoading(true);
     onStatusChange?.("loading");
-    setError(null);
+    setError(false);
     try {
       const url =
         nodeId === null
@@ -82,7 +84,7 @@ export function AtomNodeSelector({
       onStatusChange?.("ready");
       return true;
     } catch {
-      setError("노드를 불러오지 못했습니다");
+      setError(true);
       onStatusChange?.("error");
       setNodes([]);
       return false;
@@ -116,7 +118,7 @@ export function AtomNodeSelector({
   // 열릴 때 브레드크럼 초기화 및 루트 노드 로드
   useEffect(() => {
     if (open) {
-      setBreadcrumbs([{ nodeId: null, title: "루트" }]);
+      setBreadcrumbs([{ nodeId: null, title: "" }]);
       loadNodes(null);
     }
   }, [open]);
@@ -149,7 +151,7 @@ export function AtomNodeSelector({
 
   const displayLabel = value
     ? selectedTitle || value.slice(0, 8) + "…"
-    : "노드 선택...";
+    : t("ui.node.select");
 
   // 판 안의 맨 <button>도 soul-ui Button과 같은 초점 고리를 쓴다. popup 목록은
   // overflow-y-auto라 바깥 고리가 잘리고, inline은 행이 판 테두리에 붙어 있어
@@ -169,7 +171,7 @@ export function AtomNodeSelector({
               type="button"
               onClick={() => navigateToBreadcrumb(breadcrumbs.length - 2)}
               className={`flex-shrink-0 text-muted-foreground hover:text-foreground px-1 ${panelButtonFocus}`}
-              title="뒤로 가기"
+              title={t("ui.node.back")}
             >
               ←
             </button>
@@ -185,7 +187,7 @@ export function AtomNodeSelector({
                   onClick={() => navigateToBreadcrumb(i)}
                   className={`${panelButtonFocus} ${presentation === "inline" ? "truncate" : ""} ${i === breadcrumbs.length - 1 ? "font-medium" : "text-muted-foreground hover:text-foreground hover:underline"}`}
                 >
-                  {crumb.title}
+                  {crumb.nodeId === null ? t("ui.node.root") : crumb.title}
                 </button>
               </span>
             ))}
@@ -194,19 +196,19 @@ export function AtomNodeSelector({
 
         {/* 노드 목록 */}
         <div ref={listRef} className={presentation === "popup" ? "max-h-48 overflow-y-auto" : undefined}>
-          {loading && <FrameLoading inline label="불러오는 중" />}
+          {loading && <FrameLoading inline label={t("ui.common.loading")} />}
           {error && (
             <div className="px-3 py-2 text-xs text-destructive" data-slot="dialog-error-message">
-              <div>{error}</div>
+              <div>{t("ui.node.loadFailed")}</div>
               <Button ref={retryButtonRef} variant="outline" size="sm" className="mt-1.5"
                 onClick={() => { void retryLoad(); }}>
-                다시 시도
+                {t("ui.common.retry")}
               </Button>
             </div>
           )}
           {!loading && !error && nodes.length === 0 && (
             <div className="px-3 py-2 text-xs text-muted-foreground">
-              하위 노드 없음
+              {t("ui.node.noChildren")}
             </div>
           )}
           {!loading &&
@@ -228,7 +230,7 @@ export function AtomNodeSelector({
                   type="button"
                   onClick={() => navigateInto(node)}
                   className={`flex-shrink-0 text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 ${panelButtonFocus}`}
-                  title="자식 보기"
+                  title={t("ui.node.viewChildren")}
                 >
                   ▶
                 </button>
@@ -244,7 +246,7 @@ export function AtomNodeSelector({
               onClick={clearSelection}
               className={`text-xs text-muted-foreground hover:text-foreground ${panelButtonFocus}`}
             >
-              선택 해제
+              {t("ui.node.clearSelection")}
             </button>
           </div>
         )}

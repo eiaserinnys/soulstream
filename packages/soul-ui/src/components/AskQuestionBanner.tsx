@@ -6,6 +6,7 @@
  * 응답 또는 타임아웃 시 배너를 숨기고 트리 상태를 갱신합니다.
  */
 
+import { useTranslation } from "react-i18next";
 import { useEffect, useState } from 'react';
 import { useDashboardStore, type DashboardState, type DashboardActions } from '../stores/dashboard-store';
 import {
@@ -97,13 +98,14 @@ function AttentionDetailBanner({
   attention,
   onOpenDetail,
 }: { attention: PendingAttention; onOpenDetail?: () => void }) {
+  const { t } = useTranslation();
   const openDetail = useDashboardStore((state) => state.setActiveRightTab);
   return (
     <LiquidGlassCard
       data-testid="attention-detail-banner"
       className={PROMPT_BANNER_FRAME_CLASS}
     >
-      <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">확인 필요</div>
+      <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{t("ui.attention.required")}</div>
       <div className="font-medium text-foreground">{attention.title}</div>
       <div className="text-xs text-muted-foreground">{attention.body}</div>
       <div className="flex justify-end">
@@ -115,7 +117,7 @@ function AttentionDetailBanner({
             useDashboardStore.setState({ activeTab: "chat" });
           }}
         >
-          상세에서 확인
+          {t("ui.attention.openDetails")}
         </Button>
       </div>
     </LiquidGlassCard>
@@ -135,6 +137,7 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
 }
 
 function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; sessionId: string }) {
+  const { t } = useTranslation();
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [failureMessage, setFailureMessage] = useState<string | null>(null);
   const handleDecision = async (decision: "approved" | "rejected") => {
@@ -164,7 +167,7 @@ function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; se
       data-testid="tool-approval-banner"
       className={PROMPT_BANNER_FRAME_CLASS}
     >
-      <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">도구 승인</div>
+      <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{t("ui.chat.toolApproval")}</div>
       <div className="font-medium text-foreground">{node.toolName}</div>
       {node.agentName && (
         <div className="text-xs text-muted-foreground">{node.agentName}</div>
@@ -180,7 +183,7 @@ function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; se
           disabled={!!selectedAnswer}
           className="h-auto rounded-full px-3.5 py-1.5 text-xs font-normal disabled:cursor-default"
         >
-          거부
+          {t("ui.chat.deny")}
         </Button>
         <Button
           variant="success"
@@ -189,7 +192,7 @@ function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; se
           disabled={!!selectedAnswer}
           className="h-auto rounded-full px-3.5 py-1.5 text-xs font-semibold disabled:cursor-default"
         >
-          승인
+          {t("ui.chat.approve")}
         </Button>
       </div>
       {failureMessage && (
@@ -202,6 +205,7 @@ function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; se
 }
 
 function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; sessionId: string }) {
+  const { t } = useTranslation();
   const expireInputRequest = useDashboardStore((s: DashboardState & DashboardActions) => s.expireInputRequest);
   const { remainingSec, isExpired } = useInputRequestTimer(node.receivedAt, node.timeoutSec ?? 300);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -250,10 +254,10 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
       className={PROMPT_BANNER_FRAME_CLASS}
     >
       {isEffectivelyExpired ? (
-        <div className="text-center text-muted-foreground">시간 초과</div>
+        <div className="text-center text-muted-foreground">{t("ui.attention.timedOut")}</div>
       ) : (
         <>
-          <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">질문</div>
+          <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{t("ui.chat.question")}</div>
           {question.header && (
             <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {question.header}

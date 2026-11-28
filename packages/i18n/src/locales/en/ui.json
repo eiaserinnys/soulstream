@@ -27,7 +27,6 @@
     "autoScroll": "Auto-scroll",
     "autoScrollOn": "Auto-scroll on",
     "autoScrollOff": "Auto-scroll off",
-    "prompt": "Prompt",
     "resend": "Resend",
     "restoreInput": "Restore to input",
     "truncatedPrefix": "Truncated · Full size {{size}} · ",
@@ -44,7 +43,6 @@
     "newGeneration": "New generation",
     "jevCandidates": "Jev candidates ({{total}})",
     "systemPrompt": "System prompt",
-    "system": "System",
     "thought": "💭 Thought",
     "failed": "Failed",
     "done": "Done",
@@ -68,7 +66,12 @@
     "toolCount": "Tools: {{total}}",
     "toolFailureCount": "Failed: {{total}}",
     "deliveryUnconfirmed": "Couldn’t confirm delivery",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "undo": "Undo",
+    "stopSession": "Stop session",
+    "message": "Message",
+    "promptTokens": "Prompt tokens ~{{total}}",
+    "systemTokens": "System tokens ~{{total}}"
   },
   "attachment": {
     "openNamed": "Open attachment: {{filename}}",
@@ -122,7 +125,8 @@
     "delete": "Delete",
     "confirm": "OK",
     "refresh": "Refresh",
-    "error": "Error"
+    "error": "Error",
+    "close": "Close"
   },
   "chatUi": {
     "appendUnavailable": "Can’t add this to the input right now.",
@@ -230,5 +234,28 @@
     "task": "Task",
     "nextRunAt": "Next {{time}}",
     "worktreeModeOffAction": "Worktree mode off ({{action}})"
+  },
+  "attention": {
+    "required": "Needs attention",
+    "openDetails": "See details",
+    "timedOut": "Timed out",
+    "customAnswer": "Type an answer",
+    "sendAnswer": "Send"
+  },
+  "node": {
+    "root": "Root",
+    "loadFailed": "Couldn’t load nodes",
+    "select": "Select node…",
+    "back": "Go back",
+    "noChildren": "No child nodes",
+    "viewChildren": "View child nodes",
+    "clearSelection": "Clear selection"
+  },
+  "avatar": {
+    "externalIntegration": "External integration: {{title}}"
+  },
+  "theme": {
+    "switchToLight": "Switch to light mode",
+    "switchToDark": "Switch to dark mode"
   }
 }

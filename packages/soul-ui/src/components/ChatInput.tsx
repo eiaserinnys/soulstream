@@ -376,7 +376,7 @@ export function ChatInput({
     </div>
   ) : null;
   const accessories = <ChatInputAccessories attachments={pendingAttachments} action={canUndo ? (
-    <Button type="button" variant="outline" onClick={() => { report?.clearReply(); undo(); }} style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-line-height)" }}>되돌리기</Button>
+    <Button type="button" variant="outline" onClick={() => { report?.clearReply(); undo(); }} style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-line-height)" }}>{t("ui.chat.undo")}</Button>
   ) : null} />;
   const composer = (
     <ChatInputComposer presentation={presentation}>
@@ -385,7 +385,7 @@ export function ChatInput({
           <DashboardIconCap
             size="small"
             appearance="bare"
-            label="세션 중단"
+            label={t("ui.chat.stopSession")}
             disabled={interruptDisabled}
             onClick={() => void interruptSession()}
             className="shrink-0 self-end text-foreground disabled:text-muted-foreground"
@@ -402,8 +402,8 @@ export function ChatInput({
             size="icon"
             onClick={() => void interruptSession()}
             disabled={interruptDisabled}
-            title="세션 중단"
-            aria-label="세션 중단"
+            title={t("ui.chat.stopSession")}
+            aria-label={t("ui.chat.stopSession")}
             className="h-9 w-9 shrink-0 rounded-full sm:h-8 sm:w-8"
           >
             {interrupting ? (
@@ -420,7 +420,7 @@ export function ChatInput({
         text={text}
         onChangeText={changeText}
         onSend={sendMessage}
-        inputLabel={presentation === "manuscript" ? "메시지" : undefined}
+        inputLabel={presentation === "manuscript" ? t("ui.chat.message") : undefined}
         placeholder={presentation === "manuscript" ? "" : mode.placeholder}
         buttonLabel={mode.buttonLabel}
         modeIcon={presentation === "manuscript" ? "" : mode.modeIcon}

@@ -4,7 +4,6 @@ import { Paperclip } from "lucide-react";
 import type { ContextItem } from "@soulstream/wire-schema";
 import {
   buildContextPromptTokenMetrics,
-  formatPromptTokenCount,
 } from "../../lib/prompt-token-metrics";
 import { ContextContentRenderer } from "../ContextContentRenderer";
 import { CollapsibleCaptionHeader } from "./CollapsibleCaption";
@@ -17,7 +16,7 @@ export const ContextBlock = memo(function ContextBlock({
   items: ContextItem[];
   variant?: "default" | "caption";
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
   const metrics = useMemo(() => buildContextPromptTokenMetrics(items), [items]);
@@ -28,7 +27,7 @@ export const ContextBlock = memo(function ContextBlock({
           <div className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5 flex items-center gap-1.5 flex-wrap">
             <span>{item.label}</span>
             <span className="normal-case tracking-normal rounded-full bg-input px-1.5 leading-4">
-              {t("ui.chat.prompt")} {formatPromptTokenCount(metrics.items[index]?.tokens ?? 0)}
+              {t("ui.chat.promptTokens", { total: (metrics.items[index]?.tokens ?? 0).toLocaleString(i18n.resolvedLanguage) })}
             </span>
           </div>
           <ContextContentRenderer content={item.content} />
@@ -74,7 +73,7 @@ export const ContextBlock = memo(function ContextBlock({
         <span>{"\u{1F4CB}"}</span>
         <span className="font-medium">{t("ui.chat.contextCountParenthesized", { total: items.length })}</span>
         <span className="text-xs leading-4 rounded-full bg-input px-1.5 text-muted-foreground">
-          {t("ui.chat.prompt")} {formatPromptTokenCount(metrics.totalTokens)}
+          {t("ui.chat.promptTokens", { total: metrics.totalTokens.toLocaleString(i18n.resolvedLanguage) })}
         </span>
       </button>
       {expanded && itemList}
