@@ -78,15 +78,7 @@ for (const [englishComplete, expected] of [[true, 'en'], [false, 'ko']]) {
 test('language choice uses the locale or saved state and prompts only for interactive new installs', async () => {
   const root = mkdtempSync(join(tmpdir(), 'install-language-'));
   try {
-    assert.equal(await selectInstallLanguage(root, undefined, { env: { LANG: 'ja-JP' }, interactive: false }), 'ja');
-    const locales = join(root, 'locales');
-    cpSync(new URL('../seed/locales/', import.meta.url), locales, { recursive: true });
-    const manifest = join(locales, 'languages.json');
-    const registry = JSON.parse(readFileSync(manifest, 'utf8'));
-    for (const language of Object.values(registry)) language.complete = true;
-    writeFileSync(manifest, JSON.stringify(registry));
-    const { selectInstallLanguage: selectFromFixture } = await import(pathToFileURL(join(locales, 'installer-language.mjs')));
-    const select = (env) => selectFromFixture(root, undefined, { env, interactive: false });
+    const select = (env) => selectInstallLanguage(root, undefined, { env, interactive: false });
     for (const [expected, locales] of [
       ['en', ['', 'C', 'C.UTF-8', 'POSIX', 'fr-FR', 'zh-TW', 'zh-HK', 'zh-MO', 'zh-Hant', 'zh-Hant-HK', 'zh_TW.UTF-8', 'ZH_HANT_MO']],
       ['ko', ['ko', 'ko-KR', 'ko_KR.UTF-8']],
@@ -97,14 +89,16 @@ test('language choice uses the locale or saved state and prompts only for intera
     }
     assert.equal(await select({ LC_ALL: 'ja_JP.UTF-8', LC_MESSAGES: 'zh-CN', LANG: 'ko_KR.UTF-8' }), 'ja');
     assert.equal(await select({ LC_ALL: '', LC_MESSAGES: 'zh-CN', LANG: 'ko_KR.UTF-8' }), 'zh-Hans');
-    assert.equal(await selectFromFixture(root, undefined, { uiCulture: 'ko-KR', env: { LC_ALL: 'ja-JP', LANG: 'en-US' }, interactive: false }), 'ko');
+    assert.equal(await selectInstallLanguage(root, undefined, { uiCulture: 'zh-CN', env: { LC_ALL: 'ja-JP', LANG: 'en-US' }, interactive: false }), 'zh-Hans');
+    assert.equal(await selectInstallLanguage(root, undefined, { uiCulture: 'zh-TW', env: { LANG: 'zh-CN' }, interactive: false }), 'en');
+    assert.equal(await selectInstallLanguage(root, undefined, { uiCulture: 'ko-KR', env: { LC_ALL: 'ja-JP', LANG: 'en-US' }, interactive: false }), 'ko');
 
     const input = new PassThrough();
     const output = new PassThrough();
     input.isTTY = output.isTTY = true;
     let transcript = '';
     output.on('data', (data) => { transcript += data; });
-    const choice = selectFromFixture(root, undefined, { env: { LANG: 'ja_JP' }, input, output });
+    const choice = selectInstallLanguage(root, undefined, { env: { LANG: 'ja_JP' }, input, output });
     input.end('en\n');
     assert.equal(await choice, 'en');
     assert.match(transcript, /Installation language \(ko, en, ja, zh-Hans\) \[ja\]: /);

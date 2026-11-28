@@ -2,5 +2,5 @@
   "ko": { "complete": true },
   "en": { "complete": true },
   "ja": { "complete": true },
-  "zh-Hans": { "complete": false }
+  "zh-Hans": { "complete": true }
 }

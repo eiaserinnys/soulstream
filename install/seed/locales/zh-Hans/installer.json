@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "seosoyoung": "Seo Soyoung",
+    "seosoyoung-pas": "Seo Soyoung (PAS)",
+    "card-orchestrator": "卡片编排器"
+  },
+  "dailyReview": {
+    "name": "每日整理",
+    "prompt": "运行 daily-review 技能，整理过去一天的工作。"
+  },
+  "workspaceFolder": "工作区",
+  "codingAgentsPath": "设置 → 连接编程智能体"
+}

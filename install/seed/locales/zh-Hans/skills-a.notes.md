@@ -7,7 +7,7 @@
 | `skill.atom_tree_cleanup.body` | 受保护章节译为“工作记录”和“失误案例”。使用同一译名描述位置规则及拟议目录。 |
 | `skill.worktree_manager.body` | 设置导航使用中文界面字典。隔离示例保留 DeepSeek、Terra、Luna 和原始错误，附中文释义。 |
 | `skill.review_code.body` | 将韩文输入组字时的 Enter 检查推广至输入法组字（`event.isComposing`）。 |
-| `skill.card_work.body` | 按智能体配置 Seo Soyoung (PAS) 定位常驻会话，因为显示名由配置名称派生，见 `orch-server-ts/src/session/persistent_session_bootstrap.ts:46`。保留 `claude-opus`、`claude-haiku` 和“可用”条件。 |
+| `skill.card_work.body` | 按智能体配置名 Seo Soyoung (PAS) 定位常驻会话。全新安装时，默认会话标题为 Seo Soyoung，由 `bootstrapDisplayName` 去掉配置名末尾的 ` (PAS)` 得出。保留 `claude-opus`、`claude-haiku` 和“可用”条件。 |
 | `skill.card_work.body` | “[另案]”“未能发给 PAS 的另案”和用户发言摘要的开场白属于行文约定，译成中文。归属由 `mode: "spoken"` 决定。 |
 | `skill.ui_design.body`、`skill.ui_css_recipes.body` | 韩文保留 `word-break: keep-all`。中文和日文用默认换行，日文在支持时用 `auto-phrase`。所有语言保留 `overflow-wrap: anywhere`。CSS 的注释译为中文，声明和选择器保持原样。将等宽字体限制应用到可能含有中文或韩文的正文字体。 |
 | `skill.statechart.body` | 翻译图中的状态和动作标签，保留别名与语法。渲染器识别的 `(어긋남 N)` 标记保留，正文补中文释义。 |
@@ -53,13 +53,13 @@
 | 조회 | 查询 |
 | 서버와 화면이 지키는 원칙 | 服务器和界面的规则 |
 
-## 字典中没有同文的界面用语
+## 界面文案与运行时文本
 
 | 原文 | 简体中文及处理方式 |
 | :--- | :--- |
 | 확인 요청: 제목 | 保留服务端通知前缀 `확인 요청:`，释为“请求确认”，标题由 `title` 提供。 |
 | 부탁: 제목 | 保留服务端通知前缀 `부탁:`，释为“请求”，标题由 `title` 提供。 |
-| + 카드 | 依原文译为“+ 卡片”。保留输入框旁的简写样式，用语与字典中的“添加卡片”（`cards.addCard`）一致。 |
+| + 카드 | 使用输入框旁的按钮文案“添加卡片”（`cards.addCard`）。 |
 | {기다리는 것}, {시각}에 다시 확인 | 保留服务器格式的字面后缀 `에 다시 확인`，译出占位名称，并释为“在指定时间重新确认该事项”。 |
 | 담당이 바뀌어 자동 재개 예약을 해제했습니다 | 保留完整服务端值，释为“负责人变更，已取消自动恢复预约”。 |
 | 로딩 중 | 泛指裸露的加载提示，译为“加载中”。它并非某个页面的专属文案。 |
