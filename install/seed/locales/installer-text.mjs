@@ -1,10 +1,17 @@
 import { readFileSync } from 'node:fs';
-import { requireCompleteLanguage } from './languages.mjs';
+import { requireKnownLanguage } from './languages.mjs';
 
-export function readInstallerText(lang) {
-  requireCompleteLanguage(lang);
+export function readInstallerText(lang, { required = true } = {}) {
+  requireKnownLanguage(lang);
   const file = new URL(`${lang}/installer.json`, import.meta.url);
-  const text = JSON.parse(readFileSync(file, 'utf8'));
+  let raw;
+  try {
+    raw = readFileSync(file, 'utf8');
+  } catch (error) {
+    if (!required && error.code === 'ENOENT') return null;
+    throw error;
+  }
+  const text = JSON.parse(raw);
   const fields = [
     text?.profiles?.seosoyoung,
     text?.profiles?.['seosoyoung-pas'],
@@ -15,5 +22,5 @@ export function readInstallerText(lang) {
   if (fields.some((value) => typeof value !== 'string' || !value.trim())) {
     throw new Error(`${lang}/installer.json: expected three profile names, dailyReview.name and dailyReview.prompt.`);
   }
-  return text;
+  return { profiles: text.profiles, dailyReview: { name: text.dailyReview.name, prompt: text.dailyReview.prompt } };
 }

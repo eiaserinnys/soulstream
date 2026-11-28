@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { requireCompleteLanguage, requireKnownLanguage } from './languages.mjs';
 import { fixedTitle, forbiddenSeedText, placeholderKeys } from './text.mjs';
@@ -36,7 +36,7 @@ export function validateOverlay(document, lang, chunk, inventory, seen) {
     if (typeof patch.title !== 'string' || !patch.title.trim() || [...patch.title].length > 50) {
       throw new Error(`${at}: title must contain 1 to 50 code points.`);
     }
-    if (fixedTitle(original.title) && patch.title !== original.title) {
+    if ((original.parent === 'common.skills' || fixedTitle(original.title)) && patch.title !== original.title) {
       throw new Error(`${at}: title must stay "${original.title}".`);
     }
     if (typeof patch.content !== 'string') throw new Error(`${at}: content must be a string.`);
@@ -59,15 +59,30 @@ export function readOverlays(seed, lang, { localesDir = new URL('./', import.met
   if (chunk !== undefined && !inventory.has(chunk)) throw new Error(`Unknown chunk "${chunk}". Chunks: ${[...inventory.keys()].join(', ')}.`);
   const seen = new Map();
   if (lang === 'ko') return seen;
+  const directory = new URL(`${lang}/`, localesDir);
+  try {
+    const expected = new Set(['installer.json', ...[...inventory.keys()].map((name) => `${name}.json`)]);
+    for (const file of readdirSync(directory)) {
+      if (file.endsWith('.json') && !expected.has(file)) throw new Error(`${lang}/${file}: unknown overlay filename.`);
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
   for (const name of chunk === undefined ? inventory.keys() : [chunk]) {
     let raw;
     try {
-      raw = readFileSync(new URL(`${lang}/${name}.json`, localesDir), 'utf8');
+      raw = readFileSync(new URL(`${name}.json`, directory), 'utf8');
     } catch (error) {
       if (error.code === 'ENOENT') continue;
       throw error;
     }
-    validateOverlay(JSON.parse(raw), lang, name, inventory, seen);
+    let document;
+    try {
+      document = JSON.parse(raw);
+    } catch (error) {
+      throw new Error(`${lang}/${name}.json: ${error.message}`);
+    }
+    validateOverlay(document, lang, name, inventory, seen);
   }
   if (complete) {
     const missing = (chunk === undefined ? seed.entries : inventory.get(chunk))
