@@ -19,6 +19,7 @@ test('새 세션·새 카드 공통 입력과 새 세션 sheet 제품 마운트�
 
   expect(findProductFilesContaining(/<SessionSuccessionHost\b/)).toEqual([
     'components/planner/FolderWorkspace.tsx',
+    'components/split/ChatPane.tsx',
     'screens/ChatScreen.tsx',
     'screens/SessionFeedScreen.tsx',
   ]);
