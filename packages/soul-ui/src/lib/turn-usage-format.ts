@@ -1,4 +1,3 @@
-import { intlLocale, type Language } from "@soulstream/i18n";
 import { asRecord } from "../../../wire-schema/src/json_record";
 
 export const TURN_COMPLETE_LABEL = "턴 완료";
@@ -11,8 +10,7 @@ export function formatTurnCompleteStats(input: {
   turnCostUsd?: unknown;
   sessionCostUsd?: unknown;
   sessionCostPartial?: unknown;
-}, language: Language = "ko"): string | undefined {
-  const locale = intlLocale(language);
+}, locale = "en-US"): string | undefined {
   const parts: string[] = [];
   const usage = asRecord(input.usage);
   if (usage) {
@@ -50,12 +48,11 @@ export function formatContextUsageText(input: {
   maxTokens?: unknown;
   percent?: unknown;
   estimated?: unknown;
-}, language: Language = "ko"): string | undefined {
+}, locale = "en-US"): string | undefined {
   const usedTokens = asFiniteNumber(input.usedTokens);
   const maxTokens = asFiniteNumber(input.maxTokens);
   if (usedTokens === undefined || maxTokens === undefined) return undefined;
 
-  const locale = intlLocale(language);
   const qualifier = input.estimated === true ? "약 " : "";
   const usage = `컨텍스트 ${qualifier}${usedTokens.toLocaleString(locale)} / ${maxTokens.toLocaleString(locale)}`;
   const percent = asFiniteNumber(input.percent);
@@ -67,8 +64,7 @@ export function formatTurnUsageCaptionTitle(input: {
   estimated?: unknown;
   usage?: unknown;
   turnCostUsd?: unknown;
-}, language: Language = "ko"): string | undefined {
-  const locale = intlLocale(language);
+}, locale = "en-US"): string | undefined {
   const parts: string[] = [];
   const percent = asFiniteNumber(input.percent);
   if (percent !== undefined) {
@@ -82,7 +78,7 @@ export function formatTurnUsageCaptionTitle(input: {
   }
 
   if (parts.length > 0) return parts.join(TURN_USAGE_SEPARATOR);
-  return formatTurnCompleteStats({ usage: input.usage }, language);
+  return formatTurnCompleteStats({ usage: input.usage }, locale);
 }
 
 function formatPrice(value: number, locale: string): string {

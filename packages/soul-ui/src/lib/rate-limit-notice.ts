@@ -1,4 +1,3 @@
-import { intlLocale, type Language } from "@soulstream/i18n";
 const kstOptions = {
   timeZone: "Asia/Seoul",
   month: "numeric",
@@ -13,7 +12,7 @@ export function formatRateLimitNotice(
   rateLimitType?: string,
   resetsAt?: string,
   nowMs = Date.now(),
-  language: Language = "ko",
+  locale = "ko-KR",
 ): string {
   const details: string[] = [];
   const limitLabel = getLimitLabel(rateLimitType);
@@ -21,7 +20,7 @@ export function formatRateLimitNotice(
 
   const resetMs = resetsAt === undefined ? Number.NaN : Date.parse(resetsAt);
   if (Number.isFinite(resetMs)) {
-    details.push(`해제 시각 ${formatKst(resetMs, language)}`);
+    details.push(`해제 시각 ${formatKst(resetMs, locale)}`);
     const remaining = formatRemaining(resetMs - nowMs);
     details.push(remaining);
   }
@@ -39,9 +38,9 @@ function getLimitLabel(rateLimitType?: string): string | undefined {
   return undefined;
 }
 
-function formatKst(timestamp: number, language: Language): string {
-  const format = new Intl.DateTimeFormat(intlLocale(language), kstOptions);
-  if (language !== "ko") return `${format.format(timestamp)} KST`;
+function formatKst(timestamp: number, locale: string): string {
+  const format = new Intl.DateTimeFormat(locale, kstOptions);
+  if (locale !== "ko-KR") return `${format.format(timestamp)} KST`;
   const parts = Object.fromEntries(
     format.formatToParts(timestamp).map(({ type, value }) => [type, value]),
   );

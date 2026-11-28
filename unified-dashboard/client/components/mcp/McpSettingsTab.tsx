@@ -27,7 +27,7 @@ type Tab = "server" | "profile" | "secret";
 export function SuccessMessage({ children }: { children: string }) {
   const ref = useRef<HTMLParagraphElement>(null);
   useEffect(() => { ref.current?.scrollIntoView?.({ block: "nearest", behavior: "instant" }); }, [children]);
-  return <p ref={ref} role="status" data-v3-selectable-content="true" className="text-sm text-success-foreground" style={{ wordBreak: "var(--locale-word-break, keep-all)", overflowWrap: "anywhere" }}>{children}</p>;
+  return <p ref={ref} role="status" data-v3-selectable-content="true" className="break-keep text-sm text-success-foreground" style={{ overflowWrap: "anywhere" }}>{children}</p>;
 }
 export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { request?: typeof fetch; initialProfileId?: string; onOpenAgent?: (agentId: string, nodeId: string) => void }) {
   const { t } = useTranslation();

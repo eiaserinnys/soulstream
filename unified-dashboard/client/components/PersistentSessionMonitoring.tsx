@@ -1,4 +1,4 @@
-import { intlLocale, resolveLanguage, type Language } from "@soulstream/i18n";
+import { intlLocale, resolveLanguage } from "@soulstream/i18n";
 import { adminTranslation, dashboardLanguage } from "./config/admin-translation";
 import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -167,10 +167,9 @@ export function PersistentSessionMonitoringView({
   state: ReturnType<typeof usePersistentSessionMonitoring>;
 }) {
   const { t, i18n } = useTranslation();
-  const language = resolveLanguage(i18n.resolvedLanguage, []);
-  const locale = intlLocale(language);
+  const locale = intlLocale(resolveLanguage(i18n.resolvedLanguage, []));
   const { generationState, generation, generationError, history, latestDecision, decisionError, loadMore, retry } = state;
-  const usageByTerminalId = useMemo(() => turnUsageByTerminalId(history.events, t, language), [history.events, t, language]);
+  const usageByTerminalId = useMemo(() => turnUsageByTerminalId(history.events, t, locale), [history.events, t, locale]);
   const isLoading = generationState === "loading" || history.state === "loading";
   const error = generationError ?? history.error;
   const hasError = generationState === "error" || history.state === "error";
@@ -332,7 +331,7 @@ function latestPersistentDecision(events: readonly TimelineEvent[]): TimelineEve
     })[0] ?? null;
 }
 
-function turnUsageByTerminalId(events: readonly TimelineEvent[], t: Translate, language: Language): Map<string, string> {
+function turnUsageByTerminalId(events: readonly TimelineEvent[], t: Translate, locale: string): Map<string, string> {
   const chronological = [...events].sort((a, b) => compareEventIds(a.id, b.id)).map((event) => ({
     id: event.id,
     type: event.event_type,
@@ -347,7 +346,7 @@ function turnUsageByTerminalId(events: readonly TimelineEvent[], t: Translate, l
       estimated: context?.estimated,
       usage: terminal.usage,
       turnCostUsd: terminal.turn_cost_usd,
-    }, language);
+    }, locale);
     return [[String(pair.terminalId), detail ?? t("jobs.monitoring.turnComplete")]];
   }));
 }
