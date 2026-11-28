@@ -255,7 +255,7 @@ export function formatStamp(value: string, locale: string, withTime = false, now
   const sameYear = date.getFullYear() === new Date(now).getFullYear();
   return new Intl.DateTimeFormat(locale, {
     ...(sameYear ? {} : { year: 'numeric' as const }),
-    month: 'long',
+    month: 'short',
     day: 'numeric',
     ...(withTime ? { hour: 'numeric', minute: '2-digit' } : {}),
   }).format(date);

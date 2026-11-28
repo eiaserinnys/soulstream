@@ -31,7 +31,7 @@
     "revokeError": "Could not revoke. Try again.",
     "revokedAt": "Revoked {{date}}",
     "expiredAt": "Expired {{date}}",
-    "expiresAt": "Expires {{date}}",
+    "expiresAt": "Until {{date}}",
     "refresh": "Refresh",
     "selectAtLeastOne": "Select at least one.",
     "address": "URL",
