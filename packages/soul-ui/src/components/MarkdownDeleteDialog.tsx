@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogDescription,
@@ -26,7 +27,8 @@ export function MarkdownDeleteDialog({
   onOpenChange,
   onConfirm,
 }: MarkdownDeleteDialogProps) {
-  const visibleTitle = title.trim() || "제목 없는 문서";
+  const { t } = useTranslation();
+  const visibleTitle = title.trim() || t("ui.markdown.untitled");
   return (
     <Dialog
       open={open}
@@ -36,9 +38,9 @@ export function MarkdownDeleteDialog({
     >
       <DialogPopup className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>문서 삭제</DialogTitle>
+          <DialogTitle>{t("ui.markdown.deleteTitle")}</DialogTitle>
           <DialogDescription>
-            &lsquo;{visibleTitle}&rsquo; 문서를 삭제하시겠습니까? 삭제한 문서는 되돌릴 수 없습니다.
+            {t("ui.markdown.deleteDescription", { title: visibleTitle })}
           </DialogDescription>
         </DialogHeader>
         {error ? (
@@ -48,10 +50,10 @@ export function MarkdownDeleteDialog({
         ) : null}
         <DialogFooter variant="bare">
           <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>
-            취소
+            {t("ui.common.cancel")}
           </Button>
           <Button type="button" variant="destructive" disabled={pending} onClick={onConfirm}>
-            {pending ? "삭제 중…" : "삭제"}
+            {pending ? t("ui.markdown.deleting") : t("ui.common.delete")}
           </Button>
         </DialogFooter>
       </DialogPopup>
