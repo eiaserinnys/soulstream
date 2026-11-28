@@ -72,9 +72,50 @@
     "cardSnoozed": "#{{number}} snoozed"
   },
   "report": {
-    "title": "Report"
+    "title": "Report",
+    "openNumberedCard": "Open card #{{number}}",
+    "current": "Current reports",
+    "slides": "Report slides. Use the left and right arrow keys.",
+    "toReview": "For review",
+    "answered": "Answered",
+    "toAnswer": "Needs an answer",
+    "openWindow": "Open report",
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "receivedAnswer": "Answer",
+    "cancelSent": "Cancellation requested",
+    "requestCancel": "Request cancellation",
+    "previous": "Previous report",
+    "next": "Next report",
+    "dismissFailed": "Could not dismiss the report.",
+    "retainedFailure": "An unsent message is still in the chat. Retry it or move it to the input box.",
+    "unknownDelivery": "Could not confirm delivery",
+    "sendFailed": "Could not send. {{detail}}"
   },
   "close": "Close",
   "retry": "Retry",
-  "undo": "Undo"
+  "undo": "Undo",
+  "expansion": {
+    "itemTarget": "Item #{{number}} · {{title}}",
+    "item": "Checklist item",
+    "appendTo": "Add to answer “{{answer}}”",
+    "revisedAt": "Edited at {{time}}",
+    "cardStatus": "Card {{status}}",
+    "loading": "Loading card…",
+    "openCard": "Open card",
+    "clearCommentTarget": "Clear comment target",
+    "clear": "Clear",
+    "appendPlaceholder": "Add to your answer",
+    "cardRequest": "Card request",
+    "cardQuestion": "Card question"
+  },
+  "completion": {
+    "held": "Put on hold",
+    "done": "Completed",
+    "numbered": "#{{number}} {{label}}",
+    "changed": "The card status changed.",
+    "holdFailed": "Could not put the card on hold.",
+    "completeFailed": "Could not complete the card.",
+    "undoFailed": "Could not undo the change."
+  }
 }

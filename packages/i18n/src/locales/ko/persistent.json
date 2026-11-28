@@ -72,9 +72,50 @@
     "cardSnoozed": "#{{number}} 미뤄 둠"
   },
   "report": {
-    "title": "보고"
+    "title": "보고",
+    "openNumberedCard": "카드 {{number}}번 열기",
+    "current": "지금의 보고",
+    "slides": "보고 장. 좌우 화살표로 넘깁니다",
+    "toReview": "보실 것",
+    "answered": "답 받음",
+    "toAnswer": "답하실 것",
+    "openWindow": "보고 창 열기",
+    "collapse": "축소",
+    "expand": "확대",
+    "receivedAnswer": "받은 답",
+    "cancelSent": "취소 요청 보냄",
+    "requestCancel": "취소 요청",
+    "previous": "앞 장",
+    "next": "다음 장",
+    "dismissFailed": "보고를 내리지 못했어.",
+    "retainedFailure": "보내지 못한 글이 대화에 남아 있어. 다시 보내거나 입력창으로 옮겨 줘.",
+    "unknownDelivery": "전달을 확인하지 못했습니다",
+    "sendFailed": "전송하지 못했습니다: {{detail}}"
   },
   "close": "닫기",
   "retry": "다시 시도",
-  "undo": "되돌리기"
+  "undo": "되돌리기",
+  "expansion": {
+    "itemTarget": "대상: {{number}}번 {{title}}",
+    "item": "항목",
+    "appendTo": "덧붙이기: {{answer}}",
+    "revisedAt": "{{time}}에 고침",
+    "cardStatus": "카드 {{status}}",
+    "loading": "카드를 불러오는 중…",
+    "openCard": "카드 열기",
+    "clearCommentTarget": "커멘트 대상 해제",
+    "clear": "해제",
+    "appendPlaceholder": "덧붙일 말",
+    "cardRequest": "카드 부탁",
+    "cardQuestion": "카드 질문"
+  },
+  "completion": {
+    "held": "보류됨",
+    "done": "완료됨",
+    "numbered": "#{{number}} {{label}}",
+    "changed": "카드 상태가 바뀌었어.",
+    "holdFailed": "카드를 보류하지 못했어.",
+    "completeFailed": "카드를 완료하지 못했어.",
+    "undoFailed": "되돌리지 못했어."
+  }
 }

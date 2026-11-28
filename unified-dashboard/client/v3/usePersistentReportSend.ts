@@ -1,20 +1,20 @@
+import { useTranslation } from "react-i18next";
 import { usePersistentReport } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import { useDashboardStore } from '@seosoyoung/soul-ui';
 import type { PendingChatSend } from '@seosoyoung/soul-ui/stores/dashboard-store-types';
 import { submitIntervention, SubmitInterventionHttpError } from '@seosoyoung/soul-ui/components/chat/submitIntervention';
 
-const RETAINED_FAILURE = '보내지 못한 글이 대화에 남아 있어. 다시 보내거나 입력창으로 옮겨 줘.';
-const UNKNOWN_DELIVERY = '전달을 확인하지 못했습니다';
 /** Uses the existing per-session chat send slot without touching the composer. */
 export function usePersistentReportSend(sessionId: string, notify: (text: string) => void, transport = submitIntervention) {
+  const { t } = useTranslation();
   const pending = useDashboardStore(state => state.pendingChatSends[sessionId]);
   const report = usePersistentReport()!;
   const start = (entry: PersistentReportEntry, kind: 'reply' | 'cancel' | 'close', option?: string) => {
     const state = useDashboardStore.getState();
     const current = state.pendingChatSends[sessionId];
     if (current?.status === 'sending') return null;
-    const text = `${entry.title}: ${kind === 'reply' ? option! : kind === 'close' ? '확인했어' : '답을 취소합니다'}`;
+    const text = `${entry.title}: ${kind === 'reply' ? option! : kind === 'close' ? '확인했어' : '답을 취소합니다'}`; // i18n-ignore: 담당 세션으로 보내는 확인 및 취소 메시지 본문이다.
     const contextItems = kind === 'reply'
       ? [{ key: 'persistent_report_reply', content: { key: entry.key, option: option! } }]
       : kind === 'close'
@@ -27,7 +27,7 @@ export function usePersistentReportSend(sessionId: string, notify: (text: string
       && (kind === 'reply' ? current.contextItems?.some(item => item.key === 'persistent_report_reply' && item.content.option === option)
         : kind === 'close' ? current.contextItems?.length === 1 && current.contextItems[0].key === 'persistent_report_closed'
           && current.contextItems[0].content.key === entry.key && current.contextItems[0].content.title === entry.title : true);
-    if (current && !isSameFailure) { notify(RETAINED_FAILURE); return null; }
+    if (current && !isSameFailure) { notify(t("persistent.report.retainedFailure")); return null; }
     const next: PendingChatSend = isSameFailure ? { ...current!, status: 'sending', reason: undefined, ...(option !== undefined ? { persistentReportSource: entry } : {}) } : {
       persistentReportOperation: { key: entry.key, updatedAt: entry.updated_at, kind },
       id: crypto.randomUUID(), status: 'sending', text, messageText: text, attachments: [], attachmentPaths: [], mode: 'intervention',
@@ -40,7 +40,7 @@ export function usePersistentReportSend(sessionId: string, notify: (text: string
     const state = useDashboardStore.getState();
     try {
       const result = await transport({ sessionKey: sessionId, text: next.messageText, contextItems: next.contextItems });
-      if (result.delivered === null) throw new Error(UNKNOWN_DELIVERY);
+      if (result.delivered === null) throw new Error(t("persistent.report.unknownDelivery"));
       const current = useDashboardStore.getState().pendingChatSends[sessionId];
       if (current?.id === next.id) {
         if (result.reason === 'card_question_answered') {
@@ -53,7 +53,7 @@ export function usePersistentReportSend(sessionId: string, notify: (text: string
       return true;
     } catch (error) {
       const current = useDashboardStore.getState().pendingChatSends[sessionId];
-      if (current?.id === next.id) state.setPendingChatSend(sessionId, { ...current, status: 'failed', reason: error instanceof SubmitInterventionHttpError ? `전송하지 못했습니다: ${error.message}` : UNKNOWN_DELIVERY });
+      if (current?.id === next.id) state.setPendingChatSend(sessionId, { ...current, status: 'failed', reason: error instanceof SubmitInterventionHttpError ? t("persistent.report.sendFailed", { detail: error.message }) : t("persistent.report.unknownDelivery") });
       return false;
     }
   };
