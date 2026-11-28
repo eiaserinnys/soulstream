@@ -1,9 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { flushSync } from "react-dom";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { Button, DashboardIconCap, Dialog, DialogPopup, DialogTitle, useDashboardStore, useIsMobile } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, Dialog, DialogPopup, DialogTitle, StatusChip, useDashboardStore, useIsMobile } from "@seosoyoung/soul-ui";
 import { ExternalLink, PanelLeft, X } from "lucide-react";
-import { StatusChip } from "../StatusChip";
 import { PasCardPanelBoundary } from "./PasCardPanelBoundary";
 import { PasThreadDecideBox } from "./PasThreadDecideBox";
 import { PasThreadRail } from "./PasThreadRail";

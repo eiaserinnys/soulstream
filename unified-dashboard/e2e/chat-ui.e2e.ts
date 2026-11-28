@@ -172,10 +172,10 @@ test("live UI stays independent of streaming/final text, virtual rows, history a
   h.releaseLive();
   await expect(root.locator(".chat-ui")).toHaveCount(2);
   await expect(root.getByText("앞뒤", { exact: true })).toBeVisible();
-  await expect(root.locator(".animate-caret-blink")).toHaveCount(1);
+  await expect(root.locator('[data-slot="chat-body"] [data-markdown="caret"]')).toHaveCount(1);
   h.releaseFinal();
   await expect(root.getByText("앞뒤 최종 답", { exact: true })).toBeVisible();
-  await expect(root.locator(".animate-caret-blink")).toHaveCount(0);
+  await expect(root.locator('[data-slot="chat-body"] [data-markdown="caret"]')).toHaveCount(0);
   await expect(root.locator('[data-slot="chat-thinking-indicator"]')).toHaveCount(0);
   h.releaseDuplicate(); await expect(root.locator(".chat-ui")).toHaveCount(2);
   // Move by the real search result navigation, retaining the same browser document.

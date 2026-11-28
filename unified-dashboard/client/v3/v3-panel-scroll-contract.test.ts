@@ -8,7 +8,7 @@ const PLANNER_CSS_PATH = fileURLToPath(new URL("./v3-planner.css", import.meta.u
 const SESSION_PANEL_CSS_PATH = fileURLToPath(new URL("./v3-session-panel.css", import.meta.url));
 const RUN_HISTORY_CSS_PATH = fileURLToPath(new URL("./v3-run-history.css", import.meta.url));
 const WORKSPACE_CSS_PATH = fileURLToPath(new URL("./v3-folder-workspace.css", import.meta.url));
-const STATUS_CHIP_CSS_PATH = fileURLToPath(new URL("./v3-status-chip.css", import.meta.url));
+const STATUS_CHIP_CSS_PATH = fileURLToPath(new URL("../../../packages/soul-ui/src/components/ui/status-chip.css", import.meta.url));
 
 function source(name: string): string {
   return readFileSync(fileURLToPath(new URL(name, import.meta.url)), "utf8");
@@ -84,7 +84,7 @@ describe("v3 panel scroll contract", () => {
     const rowCss = readFileSync(RUN_HISTORY_CSS_PATH, "utf8");
     const statusChipCss = readFileSync(STATUS_CHIP_CSS_PATH, "utf8");
     const runRowFrame = source("./RunRowFrame.tsx");
-    const statusChip = source("./StatusChip.tsx");
+    const statusChip = source("../../../packages/soul-ui/src/components/ui/status-chip.tsx");
     const scroll = ruleBody(panelCss, ".v3-session-panel-scroll");
     const list = ruleBody(panelCss, ".v3-session-list");
     const row = ruleBody(rowCss, ".v3-run-row");
@@ -103,7 +103,7 @@ describe("v3 panel scroll contract", () => {
     expect(time).toMatch(/overflow:\s*hidden/);
     expect(time).toMatch(/text-overflow:\s*ellipsis/);
     expect(time).toMatch(/white-space:\s*nowrap/);
-    expect(runRowFrame).toContain('import { StatusChip } from "./StatusChip";');
+    expect(runRowFrame).toContain('import { DashboardIconCap, DisclosureActionIcon, StatusChip } from "@seosoyoung/soul-ui";');
     expect(runRowFrame).toMatch(/className="v3-run-trailing"/);
     expect(runRowFrame).toMatch(/<StatusChip label=\{status\.label\} tone=\{status\.tone\}\/>/);
     expect(runRowFrame).toMatch(/<time dateTime=\{timestamp\.raw\}>\{timestamp\.display\}<\/time>/);

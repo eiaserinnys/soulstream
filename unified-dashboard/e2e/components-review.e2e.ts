@@ -160,6 +160,25 @@ for (const width of [1440, 390]) {
         .map(node => `${node.tagName}.${node.className}`);
     });
     expect(overflowOutsideFixedCanvas).toEqual([]);
+    const reviewScroll = page.locator("main.v3-components-main");
+    const scrollBeforeBadges = await reviewScroll.evaluate(element => element.scrollTop);
+    const badgesSample = review.locator('[data-component="GuideParts 배지와 연결 칩"]');
+    const longBadge = badgesSample.locator('[data-slot="badge"][title^="include cobalt-reconcile"]');
+    await longBadge.scrollIntoViewIfNeeded();
+    await expect(longBadge).toBeVisible();
+    const bounds = await longBadge.evaluate(element => {
+      const badge = element.getBoundingClientRect();
+      const sample = element.closest('[data-component]')!.getBoundingClientRect();
+      return { badgeRight: badge.right, sampleRight: sample.right, badgeHeight: badge.height, lineHeight: parseFloat(getComputedStyle(element).lineHeight) };
+    });
+    expect(bounds.badgeRight).toBeLessThanOrEqual(bounds.sampleRight);
+    if (width === 390) expect(bounds.badgeHeight).toBeGreaterThan(bounds.lineHeight * 1.5);
+    const captures = path.resolve('../.local/artifacts/card1964-display');
+    mkdirSync(captures, { recursive: true });
+    writeFileSync(path.join(captures, `guide-badges-${width}-metrics.json`), JSON.stringify(bounds, null, 2));
+    await badgesSample.screenshot({ path: path.join(captures, `guide-badges-${width}-after.png`), animations: 'disabled' });
+    await page.screenshot({ path: path.join(captures, `guide-badges-${width}-page-after.png`), animations: 'disabled' });
+    await reviewScroll.evaluate((element, top) => { element.scrollTop = top; }, scrollBeforeBadges);
     if (width >= 760) expect(viewport.scrollWidth).toBe(viewport.clientWidth);
     await capture(page, `components-${width}-rows`);
     await sessionSample.locator(".v3-run-open").focus();
