@@ -5,7 +5,6 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import pino from "pino";
-import { parse } from "yaml";
 import { AntigravityEngineAdapter } from "../../src/engine/antigravity/adapter.js";
 import { resolveAntigravityCliPath } from "@soulstream/executable-path";
 import type { EngineExecuteParams, SSEEventPayload } from "../../src/engine/protocol.js";
@@ -36,9 +35,7 @@ await writeFile(join(workspace, ".claude", "agents", "eye.md"), [
 const agentSessionId = `agy-restricted-${Date.now()}`;
 const mainName = `soulstream-${createHash("sha256").update(agentSessionId).digest("hex").slice(0, 24)}`;
 const agentsDirectory = join(homedir(), ".gemini", "config", "agents");
-const bundleDirectory = join(state, "antigravity-tool-policy");
-const mainTools = ["view_file", "write_to_file", "run_command", "invoke_subagent",
-  "wait", "send_message", "find_by_name", "list_dir", "grep_search", "finish"];
+const overlay = join(state, "antigravity-workspace");
 const eyeTools = ["view_file", "find_by_name", "list_dir", "grep_search", "run_command", "send_message", "finish"];
 
 async function definitionNames() {
@@ -49,26 +46,17 @@ async function absent(path: string) {
   await assert.rejects(stat(path), (error: NodeJS.ErrnoException) => error.code === "ENOENT");
 }
 async function definitionEvidence(action: () => Promise<void>) {
-  const names = await definitionNames();
-  assert.deepEqual(names, [`${mainName}-eye.md`, `${mainName}.md`]);
-  const mainFile = join(agentsDirectory, `${mainName}.md`);
-  assert.equal((await stat(mainFile)).mode & 0o777, 0o600);
-  const mainBody = await readFile(mainFile, "utf8");
-  const main = parse(mainBody.split("---\n")[1]!);
-  assert.equal(main.name, mainName);
-  assert.equal(main.tools.length, mainTools.length);
-  assert.deepEqual([...main.tools].sort(), [...mainTools].sort());
-  assert.equal(main.hooks.length, 1);
-  assert.equal(main.hooks[0], join(bundleDirectory, "hooks.json"));
-  assert(mainBody.includes("## 하위 에이전트"));
-  assert(mainBody.includes(`${mainName}-eye`));
-  const eyeFile = join(agentsDirectory, `${mainName}-eye.md`);
+  assert.deepEqual(await definitionNames(), []);
+  await absent(join(overlay, ".agents", "agents"));
+  const rule = await readFile(join(overlay, ".agents", "rules", "session-instructions.md"), "utf8");
+  assert(rule.includes('TypeName "research"'));
+  assert(rule.includes("eye"));
+  const eyeFile = join(overlay, "subagent-instructions", "eye.txt");
   assert.equal((await stat(eyeFile)).mode & 0o777, 0o600);
-  const eye = parse((await readFile(eyeFile, "utf8")).split("---\n")[1]!);
-  assert.equal(eye.name, `${mainName}-eye`);
-  assert.equal(eye.subagent, true);
-  assert.equal(eye.model, "inherit");
-  assert.deepEqual([...eye.tools].sort(), [...eyeTools].sort());
+  assert((await readFile(eyeFile, "utf8")).includes("당신은 눈이다"));
+  const policy = JSON.parse(await readFile(join(overlay, "policy.json"), "utf8"));
+  assert.deepEqual(policy.subagents, ["eye"]);
+  assert.deepEqual([...policy.subagentTools].sort(), [...eyeTools].sort());
   await action();
 }
 
@@ -128,8 +116,8 @@ try {
   await absent(join(agentsDirectory, `${mainName}.md`));
   const first = await run({ ...base, systemPrompt, prompt: firstPrompt }, async () => {
     await definitionEvidence(async () => {
-      firstContents = Object.fromEntries(await Promise.all((await definitionNames()).map(async name =>
-        [name, await readFile(join(agentsDirectory, name), "utf8")] as const)));
+      firstContents = Object.fromEntries(await Promise.all(["policy.json", "subagent-instructions/eye.txt", ".agents/rules/session-instructions.md"].map(async name =>
+        [name, await readFile(join(overlay, name), "utf8")] as const)));
     });
   });
   assert((await readFile(join(unit, "inside.txt"), "utf8")).includes("INSIDE_OK"));
@@ -142,13 +130,10 @@ try {
   assert.deepEqual(await definitionNames(), []);
   console.log(JSON.stringify({ check: "restricted-first-turn", passed: true, tools: [...firstTools] }));
 
-  // Remove the definitions like a process restart would, then resume: the adapter must rewrite them.
   const resumed = await run({ ...base, systemPrompt: undefined, prompt: "write_file(또는 write_to_file)로 " + unit + "/resumed.txt에 RESUMED_OK를 쓰고, run_command로 python3 -c \"print('RESUME_OK')\"를 실행하라. 끝나면 한글로 답하라.", resumeSessionId: first.find(event => event.type === "session")?.session_id as string }, async () => {
     await definitionEvidence(async () => {
-      const names = await definitionNames();
-      assert.deepEqual(names, Object.keys(firstContents).sort());
-      for (const name of names) {
-        assert.equal(await readFile(join(agentsDirectory, name), "utf8"), firstContents[name]);
+      for (const [name, content] of Object.entries(firstContents)) {
+        assert.equal(await readFile(join(overlay, name), "utf8"), content);
       }
     });
   });
