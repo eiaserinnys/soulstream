@@ -242,6 +242,13 @@ test('link blocks follow the load_skill rules and contain only placeholder node 
 
 // --- forbidden patterns ----------------------------------------------------
 
+test('forbidden patterns: seed titles, content and exports contain only public text', () => {
+  for (const [where, text] of seedTexts()) {
+    const violation = forbiddenSeedText(text);
+    assert.equal(violation, undefined, `${where}: ${violation}`);
+  }
+});
+
 // Every string in the seed, wherever it sits: object keys and values at any depth (entry key, title,
 // content, tags, parent, symlink target, exported keys and the rest). Locations name the entry key and
 // the field path only.

@@ -4,7 +4,6 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { copyInstallerText } from './support/catalog.mjs';
 import { createFakeCommands } from './support/fake_commands.mjs';
 
 const script = resolve('install/install.sh');
@@ -57,7 +56,6 @@ test('installation commands start in a directory accessible to service users', (
 test('login guidance points to the dashboard and keeps the SSH alternative for Codex and Antigravity', () => {
   const dir = mkdtempSync(join(tmpdir(), 'install-finish-'));
   try {
-    copyInstallerText(dir);
     writeFileSync(join(dir, '.admin-password'), 'test-password\n');
     const message = (backends) => spawnSync('bash', ['-c', 'source "$1"; as_soul() { printf abc; }; BACKENDS="$3"; finish_message "$2"', 'bash', script, dir, backends], { encoding: 'utf8' });
     const result = message('claude,codex,antigravity');

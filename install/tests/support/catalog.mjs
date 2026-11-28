@@ -12,13 +12,6 @@ export function copyCatalog(root) {
 
 export function copyCommonFiles(root) {
   cpSync(resolve('install/common-files'), join(root, 'install/common-files'), { recursive: true });
-  copyInstallerText(root);
-}
-
-export function copyInstallerText(root) {
-  const target = join(root, 'install/seed/locales/ko/installer.json');
-  mkdirSync(dirname(target), { recursive: true });
-  copyFileSync(resolve('install/seed/locales/ko/installer.json'), target);
 }
 
 export function installDefaults() {

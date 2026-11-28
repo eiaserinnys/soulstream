@@ -12,6 +12,7 @@ ATOM_URL=http://127.0.0.1:4200
 ATOM_API_KEY_RE='^[A-Za-z0-9._~+/=-]+$'
 ATOM_SEED_WARNINGS=
 INSTALL_LANG=ko
+INSTALL_SOURCE=
 # Exported seed names that configuration reads from config/.atom-seed-map.json.
 ATOM_SEED_NAMES='skill_catalog domain_catalog common_rules common_rules_extra codex_rules claude_common_rules coding_common_rules coding_common_rules_extra seosoyoung_rules seosoyoung_general seosoyoung_skills seosoyoung_rules_pas seosoyoung_skills_pas seosoyoung_rules_extra_pas card_orchestrator_root'
 # Tests reassign these three after sourcing.
@@ -646,16 +647,18 @@ YAML
 }
 
 installer_text_path() {
-  printf '%s/install/seed/locales/%s/installer.json' "$1" "${INSTALL_LANG:-ko}"
+  local install_dir=$INSTALL_SOURCE
+  if [[ -z "$install_dir" ]]; then install_dir=$(dirname -- "${BASH_SOURCE[0]}") || return 1; fi
+  printf '%s/seed/locales/%s/installer.json' "$install_dir" "$INSTALL_LANG"
 }
 
 render_agents() {
   local home=$1 root=$2 first=${BACKENDS%%,*} backend name rules
   local profile_names
-  profile_names=$(jq -er --arg lang "${INSTALL_LANG:-ko}" '
+  profile_names=$(jq -er --arg lang "$INSTALL_LANG" '
     .profiles | [.seosoyoung, ."seosoyoung-pas", ."card-orchestrator"] |
     .[] | if $lang == "ko" then . else tojson end
-  ' "$(installer_text_path "$root")") || return 1
+  ' "$(installer_text_path)") || return 1
   local -a localized_names
   mapfile -t localized_names <<< "$profile_names"
   rules=$(backend_rules_context "$first")
@@ -1620,10 +1623,9 @@ UNIT
 # never overwrites what the user switched on or edited. A refusal (for example no signed-in backend yet) only warns:
 # the job can be created later from the recurring jobs tab.
 register_daily_review_job() {
-  local root=$1 folder_id body status
-  shift
+  local folder_id body status
   folder_id=$(curl -fsS "$@" http://127.0.0.1:5200/api/folders | jq -r '[.folders[] | select(.name=="작업실")][0].id') || return 1
-  body=$(jq --arg folder "$folder_id" '{idempotencyKey: "clean-install-daily-review", name: .dailyReview.name, prompt: .dailyReview.prompt, timezone: "UTC", scheduleExpressions: ["0 9 * * *"], nodeId: "local", agentId: "seosoyoung", modelPreset: null, folderId: $folder, enabled: false}' "$(installer_text_path "$root")") || return 1
+  body=$(jq --arg folder "$folder_id" '{idempotencyKey: "clean-install-daily-review", name: .dailyReview.name, prompt: .dailyReview.prompt, timezone: "UTC", scheduleExpressions: ["0 9 * * *"], nodeId: "local", agentId: "seosoyoung", modelPreset: null, folderId: $folder, enabled: false}' "$(installer_text_path)") || return 1
   status=$(curl -s -o /dev/null -w '%{http_code}' "$@" -X POST -H 'Content-Type: application/json' --data "$body" http://127.0.0.1:5200/api/recurring-jobs)
   if [[ "$status" != 200 && "$status" != 201 ]]; then
     printf 'Could not register the daily review recurring job (HTTP %s). Create it later in the recurring jobs settings tab.\n' "$status" >&2
@@ -1651,7 +1653,7 @@ wait_and_create_workspace() {
       curl -fsS -H "@$cookie" -X POST -H 'Content-Type: application/json' --data '{"name":"작업실","idempotencyKey":"clean-install-default-workspace"}' http://127.0.0.1:5200/api/folders >/dev/null
     fi
     curl -fsS -H "@$cookie" http://127.0.0.1:5200/api/folders | jq -e '[.folders[] | select(.name=="작업실")] | length == 1' >/dev/null
-    register_daily_review_job "$root" -H "@$cookie" || { rm -f "$header" "$cookie"; return 1; }
+    register_daily_review_job -H "@$cookie" || { rm -f "$header" "$cookie"; return 1; }
     status=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5200/api/folders)
     [[ "$status" == 401 ]]
     status=$(curl -s -o /dev/null -w '%{http_code}' -H "@$cookie" -H 'Tailscale-Funnel-Request: ?1' http://127.0.0.1:5200/api/folders)
@@ -1673,7 +1675,7 @@ wait_and_create_workspace() {
     curl -fsS -b "$cookie" -X POST -H 'Content-Type: application/json' --data '{"name":"작업실","idempotencyKey":"clean-install-default-workspace"}' http://127.0.0.1:5200/api/folders >/dev/null
   fi
   curl -fsS -b "$cookie" http://127.0.0.1:5200/api/folders | jq -e '[.folders[] | select(.name=="작업실")] | length == 1' >/dev/null
-  register_daily_review_job "$root" -b "$cookie" || { rm -f "$header" "$cookie"; return 1; }
+  register_daily_review_job -b "$cookie" || { rm -f "$header" "$cookie"; return 1; }
   status=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5200/api/folders)
   rm -f "$header" "$cookie"
   [[ "$status" == 401 ]]
@@ -1788,7 +1790,7 @@ finish_message() {
     exec 4>&-
   fi
   local pas_name
-  pas_name=$(jq -er '.profiles."seosoyoung-pas"' "$(installer_text_path "$root")") || return 1
+  pas_name=$(jq -er '.profiles."seosoyoung-pas"' "$(installer_text_path)") || return 1
   printf 'PAS: once you connect a coding agent, the dashboard creates a default %s persistent session.\n' "$pas_name"
   if [[ -n "${ATOM_SEED_WARNINGS:-}" ]]; then
     printf 'Atom instructions:\n'
@@ -1875,6 +1877,7 @@ run_install() {
   INSTALL_LANG=$(resolve_install_language "$root")
   run_step 'Stopping services' stop_services "$root"
   run_step 'Checking out revisions' checkout_revisions
+  INSTALL_SOURCE=$root/install
   run_step 'Preparing secrets' setup_secrets "$root" "$atom_root"
   run_step 'Preparing databases' setup_database
   run_step 'Building atom' build_atom "$atom_root"
