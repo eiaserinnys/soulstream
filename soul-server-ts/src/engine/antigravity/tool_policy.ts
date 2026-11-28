@@ -72,6 +72,8 @@ export interface AntigravityGatePolicy {
   edit: AntigravityGatePathPolicy;
   command: AntigravityGateCommandPolicy;
   mcp: AntigravityGateMcpPolicy;
+  allowedTools?: string[];
+  subagents?: string[];
 }
 
 export interface AntigravityToolPolicy {
@@ -132,6 +134,8 @@ export function computeAntigravityToolPolicy(input: AntigravityToolPolicyInput):
       mcp.deny.push(item);
       continue;
     }
+    const parsed = parseClaudeToolItem(item);
+    if (parsed?.name === "Agent" && parsed.parameter !== undefined) continue;
     const base = item.split("(")[0] ?? item;
     for (const name of DEFINITION_TOOLS_BY_CLAUDE_NAME[base] ?? []) denied.add(name);
   }
@@ -212,6 +216,13 @@ if (!toolCall || typeof toolCall !== "object" || typeof toolCall.name !== "strin
 }
 const name = toolCall.name;
 const args = toolCall.args && typeof toolCall.args === "object" ? toolCall.args : {};
+
+if (policy.allowedTools) {
+  const aliases = { read_file: "view_file", write_file: "write_to_file", edit_file: "replace_file_content" };
+  const canonical = aliases[name] || name;
+  if (name !== "call_mcp_tool" && policy.allowedTools.indexOf(canonical) < 0) deny("tool not allowed");
+  if (name === "invoke_subagent" && (!policy.subagents || policy.subagents.indexOf(args.TypeName) < 0)) deny("subagent not allowed");
+}
 
 const WRITE_TOOLS = ["write_file", "write_to_file"];
 const EDIT_TOOLS = ["edit_file", "replace_file_content", "multi_replace_file_content", "notebook_edit"];
