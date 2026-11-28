@@ -53,7 +53,17 @@ export function usePersistentReportSend(sessionId: string, notify: (text: string
       return true;
     } catch (error) {
       const current = useDashboardStore.getState().pendingChatSends[sessionId];
-      if (current?.id === next.id) state.setPendingChatSend(sessionId, { ...current, status: 'failed', reason: error instanceof SubmitInterventionHttpError ? t("persistent.report.sendFailed", { detail: error.message }) : t("persistent.report.unknownDelivery") });
+      if (current?.id === next.id) {
+        let reason = t("persistent.report.unknownDelivery");
+        if (error instanceof SubmitInterventionHttpError) {
+          const { message, status } = error;
+          const hasDetail = Boolean(message) && message !== "알 수 없는 오류" && message !== `HTTP ${status}`; // i18n-ignore: 공유 전송 함수가 상세 없이 만든 기본 오류값과 비교한다.
+          reason = hasDetail
+            ? t("persistent.report.sendFailed", { detail: message })
+            : t("persistent.report.sendFailedWithoutDetail");
+        }
+        state.setPendingChatSend(sessionId, { ...current, status: 'failed', reason });
+      }
       return false;
     }
   };

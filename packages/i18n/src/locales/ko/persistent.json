@@ -90,7 +90,8 @@
     "dismissFailed": "보고를 내리지 못했어.",
     "retainedFailure": "보내지 못한 글이 대화에 남아 있어. 다시 보내거나 입력창으로 옮겨 줘.",
     "unknownDelivery": "전달을 확인하지 못했습니다",
-    "sendFailed": "전송하지 못했습니다: {{detail}}"
+    "sendFailed": "전송하지 못했습니다: {{detail}}",
+    "sendFailedWithoutDetail": "전송하지 못했습니다."
   },
   "close": "닫기",
   "retry": "다시 시도",

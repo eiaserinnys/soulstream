@@ -90,7 +90,8 @@
     "dismissFailed": "Could not dismiss the report.",
     "retainedFailure": "An unsent message is still in the chat. Retry it or move it to the input box.",
     "unknownDelivery": "Could not confirm delivery",
-    "sendFailed": "Could not send. {{detail}}"
+    "sendFailed": "Could not send. {{detail}}",
+    "sendFailedWithoutDetail": "Could not send the message."
   },
   "close": "Close",
   "retry": "Retry",
