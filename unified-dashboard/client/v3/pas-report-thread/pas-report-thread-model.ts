@@ -85,7 +85,7 @@ type Translate = ReturnType<typeof useTranslation>["t"];
 export function formatThreadTime(at: number, withDate: boolean, locale: string): string {
   const options: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
   if (withDate) Object.assign(options, { month: "numeric", day: "numeric" });
-  return new Intl.DateTimeFormat(locale, options).format(at);
+  return new Date(at).toLocaleString(locale, options);
 }
 
 export function formatReturnTime(at: number, now: number, t: Translate, locale: string): string {

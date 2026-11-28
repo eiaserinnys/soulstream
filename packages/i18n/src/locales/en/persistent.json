@@ -117,5 +117,57 @@
     "holdFailed": "Could not put the card on hold.",
     "completeFailed": "Could not complete the card.",
     "undoFailed": "Could not undo the change."
+  },
+  "session": {
+    "title": "Persistent session",
+    "switch": "Switch persistent session",
+    "open": "Open persistent sessions",
+    "missing": "Could not find the persistent session.",
+    "chatError": "Could not load the session chat.",
+    "home": "Home",
+    "choose": "Choose session",
+    "files": "Session files",
+    "chatLoading": "Loading chat…",
+    "hideCharacter": "Hide character",
+    "showCharacter": "Show character"
+  },
+  "loading": "Loading…",
+  "tasks": {
+    "list": "Task list",
+    "title": "Tasks",
+    "back": "Back to tasks",
+    "close": "Close task list",
+    "count_one": "{{number}} card",
+    "count_other": "{{number}} cards",
+    "loadError": "Could not load tasks.",
+    "empty": "No cards.",
+    "answerError": "Could not send the answer"
+  },
+  "empty": {
+    "createFailed": "Could not create the default persistent session. {{detail}}",
+    "signIn": "Sign in to a coding agent<br />to create the default persistent session.",
+    "adminSignIn": "An admin must sign in to a coding agent<br />to create the default persistent session.",
+    "retrying": "Retrying session creation…",
+    "creating": "Creating the default persistent session…",
+    "chooseAgent": "Connect Claude or Codex in Settings",
+    "signInStep": "Follow the sign-in steps, then close Settings",
+    "connect": "Connect a coding agent",
+    "none": "No persistent sessions",
+    "create": "Create persistent session"
+  },
+  "usage": {
+    "stale": "Update delayed. {{detail}}",
+    "recovery": "Expected availability: {{time}}",
+    "resetIn": "Resets in {{time}}",
+    "provider": "{{provider}} weekly usage",
+    "switchNode": "Switch node. Current node: {{node}}",
+    "release": "{{time}} reset",
+    "lastUpdated": "Last updated {{time}}",
+    "waitingUpdate": "Waiting for update",
+    "error": "Could not load usage",
+    "noLimit": "No weekly limit data",
+    "waiting": "Waiting for data",
+    "title": "Weekly usage",
+    "retry": "Retry weekly usage"
   }
 }

@@ -8,7 +8,6 @@ import { PasCardPanelBoundary } from "./PasCardPanelBoundary";
 import { PasThreadDecideBox } from "./PasThreadDecideBox";
 import { PasThreadRail } from "./PasThreadRail";
 import { PasThreadBody } from "./PasThreadTimeline";
-import { AGENDA_KIND_LABEL } from "@seosoyoung/soul-ui/lib/pas-report-thread-core";
 import type { ReportEntry } from "./pas-report-thread-model";
 import { usePasReportThread, type PasReportThreadInput } from "./use-pas-report-thread";
 import "./v3-pas-report-thread.css";
@@ -176,7 +175,7 @@ function PasReportThreadBody({ drawerMode, onClose, ownSessionId, liveSessions, 
       <div className="pas-rt-heading">
         {active?.number != null ? <span className="pas-rt-number">#{active.number}</span> : null}
         <DialogTitle className="pas-rt-title">{active?.title || t("persistent.report.title")}</DialogTitle>
-        {active ? <StatusChip label={AGENDA_KIND_LABEL[active.kind]} tone={KIND_TONE[active.kind]} /> : null}
+        {active ? <StatusChip label={t(`persistent.thread.kind.${active.kind}`)} tone={KIND_TONE[active.kind]} /> : null}
       </div>
       <div className="pas-rt-tools">
         <DashboardIconCap size="small" appearance="bare" label={t("persistent.thread.openCardPanel")} data-testid="pas-rt-open-card-panel" disabled={!active}

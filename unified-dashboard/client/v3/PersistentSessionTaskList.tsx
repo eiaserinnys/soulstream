@@ -1,10 +1,10 @@
+import { useTranslation } from "react-i18next";
 import type { CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { Button, DisclosureActionIcon, FrameLoading } from "@seosoyoung/soul-ui";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { sortCardsInStatus } from "@seosoyoung/soul-ui/cards/card-order";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { useEffect, useState, type CSSProperties, type ReactElement, type RefObject } from "react";
-import { cardStatusLabel } from "./CardActions";
 import { CardRow as CardRowComponent } from "./CardRow";
 import { PersistentTaskTooltipPanel } from "./PersistentTaskTooltipPanel";
 import { useCardMembership } from "./use-card-membership";
@@ -139,11 +139,11 @@ function readCollapsedTaskGroups(): TaskStatus[] {
 }
 
 /** Applies the whole-board status order and position ordering to shared card membership. */
-export function groupPersistentSessionTasks(cards: readonly CardRow[]): PersistentSessionTaskGroup[] {
+export function groupPersistentSessionTasks(cards: readonly CardRow[], t: ReturnType<typeof useTranslation>["t"]): PersistentSessionTaskGroup[] {
   return TASK_STATUSES.flatMap(status => {
     const matching = sortCardsInStatus(cards.filter(card => card.status === status));
     if (matching.length === 0) return [];
-    return [{ status, label: cardStatusLabel({ ...matching[0], blockedKind: null }), cards: matching }];
+    return [{ status, label: t(`persistent.thread.status.${status}`), cards: matching }];
   });
 }
 
@@ -162,20 +162,22 @@ function ConnectedTaskList({onOpenCard}:{onOpenCard(cardId:string):void}) {
 function TaskListContent({cards,loading,error,retry,onOpenCard}: {
   cards: readonly CardRow[]; loading?: boolean; error?: string | null; retry?:()=>void; onOpenCard(cardId:string):void;
 }) {
+  const { t, i18n } = useTranslation();
   const [collapsedGroups,setCollapsedGroups]=useState(readCollapsedTaskGroups);
   const tooltipsEnabled = usePersistentTaskTooltips();
   useEffect(()=>{
     try { window.localStorage.setItem(TASK_GROUPS_STORAGE_KEY,JSON.stringify({collapsed:collapsedGroups})); }
     catch { /* Keep the task list usable when storage is unavailable. */ }
   },[collapsedGroups]);
-  const groups = groupPersistentSessionTasks(cards);
+  const groups = groupPersistentSessionTasks(cards, t);
+  const numbers = new Intl.NumberFormat(i18n.language);
   const numberedCards=groups.flatMap(group=>group.cards).filter(card=>card.number!==undefined&&card.number!==null);
   const widestNumber=numberedCards.reduce<number|null>((widest,card)=>widest===null||String(card.number).length>String(widest).length?card.number!:widest,null);
   const summaryNumberTemplate=widestNumber===null?undefined:`#${widestNumber}`;
   return <Tooltip.Provider delay={300}><div className="v3-persistent-task-list" data-testid="persistent-session-task-list" aria-busy={loading&&!error||undefined}>
-    {error?<div className="v3-persistent-task-list-error" role="alert"><span className="v3-card-error">작업 목록을 불러오지 못했습니다.</span>{retry?<Button size="sm" variant="outline" className="v3-persistent-task-paper-button" onClick={retry}>다시 시도</Button>:null}</div>:null}
-    {!error&&loading?<FrameLoading label="불러오는 중…"/>:null}
-    {!error&&!loading&&groups.length===0?<p className="v3-card-board-empty">카드가 없습니다.</p>:null}
+    {error?<div className="v3-persistent-task-list-error" role="alert"><span className="v3-card-error">{t("persistent.tasks.loadError")}</span>{retry?<Button size="sm" variant="outline" className="v3-persistent-task-paper-button" onClick={retry}>{t("persistent.retry")}</Button>:null}</div>:null}
+    {!error&&loading?<FrameLoading label={t("persistent.loading")}/>:null}
+    {!error&&!loading&&groups.length===0?<p className="v3-card-board-empty">{t("persistent.tasks.empty")}</p>:null}
     {!error?groups.map(group=>{
       const expanded=!collapsedGroups.includes(group.status);
       return <section key={group.status} data-task-status-group={group.status} aria-label={group.label}>
@@ -183,7 +185,7 @@ function TaskListContent({cards,loading,error,retry,onOpenCard}: {
           <button type="button" className="v3-persistent-task-group-toggle outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-expanded={expanded} onClick={()=>setCollapsedGroups(current=>expanded?[...current,group.status]:current.filter(status=>status!==group.status))}>
             <span className="v3-persistent-task-group-name">{group.label}</span>
-            <span className="v3-persistent-task-group-count">{group.cards.length}개</span>
+            <span className="v3-persistent-task-group-count">{t("persistent.tasks.count", { count: group.cards.length, number: numbers.format(group.cards.length) })}</span>
             <DisclosureActionIcon expanded={expanded} className="h-4 w-4"/>
           </button>
         </h3></div>
