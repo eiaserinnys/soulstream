@@ -30,6 +30,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { completeLanguages } from '../seed/locales/languages.mjs';
 import { createFakeCommands, runBash } from './support/fake_commands.mjs';
 import { copyCatalog, copyCommonFiles } from './support/catalog.mjs';
 
@@ -44,7 +45,7 @@ const GIT_ENV = {
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...GIT_ENV } }).trim();
 // The fake installer is what the soulstream origin carries as install/install.sh; setup() writes the same bytes as the running installer.
 const FAKE_INSTALLER = '#!/usr/bin/env bash\n# installer under test\n';
-const localeFiles = ['installer-language.mjs', 'languages.mjs', 'languages.json', 'ko/installer.json']
+const localeFiles = ['installer-language.mjs', 'languages.mjs', 'languages.json', ...completeLanguages.map((lang) => `${lang}/installer.json`)]
   .map((name) => `install/seed/locales/${name}`);
 const SEED = {
   'install/seed/load_atom_seed.mjs': '// atom seed loader\n',
