@@ -10,6 +10,7 @@ import {
   DialogPopup,
   DialogTitle,
 } from "@seosoyoung/soul-ui";
+import type { McpErrorAction } from "./McpErrors";
 import type { McpRevision } from "../../lib/mcp-api";
 import { SettingsAlert } from "../config/SettingsListDetail";
 
@@ -30,6 +31,7 @@ export function McpDialogs({
   nodes,
   busy,
   error,
+  errorAction,
   profiles,
   reload,
   closeDelete,
@@ -42,6 +44,7 @@ export function McpDialogs({
   nodes: string[];
   busy: boolean;
   error: string;
+  errorAction: McpErrorAction;
   profiles: string[];
   reload(): void;
   closeDelete(): void;
@@ -52,14 +55,14 @@ export function McpDialogs({
   const { t, i18n } = useTranslation();
   const cancelButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
-  const deleteSnapshot = useRef<{ target: DeleteTarget; error: string; nodes: string[]; profiles: string[] } | null>(null);
-  const historySnapshot = useRef<{ target: History; error: string } | null>(null);
+  const deleteSnapshot = useRef<{ target: DeleteTarget; error: string; errorAction: McpErrorAction; nodes: string[]; profiles: string[] } | null>(null);
+  const historySnapshot = useRef<{ target: History; error: string; errorAction: McpErrorAction } | null>(null);
   useLayoutEffect(() => {
-    if (deleting) deleteSnapshot.current = { target: deleting, error, nodes, profiles };
-    if (history) historySnapshot.current = { target: history, error };
-  }, [deleting, history, error, nodes, profiles]);
-  const deleteContent = deleting ? { target: deleting, error, nodes, profiles } : deleteSnapshot.current;
-  const historyContent = history ? { target: history, error } : historySnapshot.current;
+    if (deleting) deleteSnapshot.current = { target: deleting, error, errorAction, nodes, profiles };
+    if (history) historySnapshot.current = { target: history, error, errorAction };
+  }, [deleting, history, error, errorAction, nodes, profiles]);
+  const deleteContent = deleting ? { target: deleting, error, errorAction, nodes, profiles } : deleteSnapshot.current;
+  const historyContent = history ? { target: history, error, errorAction } : historySnapshot.current;
   return (
     <>
       <Dialog
@@ -83,12 +86,12 @@ export function McpDialogs({
             <DialogPanel>
               <SettingsAlert>
                 {deleteContent.error}
-                {deleteContent.error.includes("다시 읽은") ? (
+                {deleteContent.errorAction === "reload" ? (
                   <Button type="button" variant="outline" onClick={reload}>
                     {t("mcp.reload")}
                   </Button>
                 ) : null}
-                {deleteContent.profiles.length > 0 && deleteContent.error.includes("사용 중인 프로필") ? (
+                {deleteContent.profiles.length > 0 && deleteContent.errorAction === "showProfiles" ? (
                   <details className="config-advanced">
                     <summary>{t("mcp.allUsingProfiles")} <span>{t("mcp.itemCount", { count: deleteContent.profiles.length })}</span></summary>
                     <p>{deleteContent.profiles.join(", ")}</p>
@@ -137,7 +140,7 @@ export function McpDialogs({
             {historyContent?.error ? (
               <SettingsAlert>
                 {historyContent.error}
-                {historyContent.error.includes("다시 읽은") ? (
+                {historyContent.errorAction === "reload" ? (
                   <Button type="button" variant="outline" onClick={reload}>
                     {t("mcp.reload")}
                   </Button>

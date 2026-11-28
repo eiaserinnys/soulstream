@@ -20,7 +20,7 @@ import { McpIconTile, McpServerIcons } from "./McpIcons";
 import { McpServerEditor } from "./McpServerEditor";
 import { McpProfileEditor } from "./McpProfileEditor";
 import { McpSecretEditor } from "./McpSecretEditor";
-import { errorText, PartialProfileSaveError } from "./McpErrors";
+import { errorText, mcpErrorAction, PartialProfileSaveError } from "./McpErrors";
 import { McpDialogs, type DeleteTarget, type History } from "./McpDialogs";
 
 type Tab = "server" | "profile" | "secret";
@@ -36,7 +36,13 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
   const [liveRevision, setLiveRevision] = useState<number | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [failure, setFailure] = useState<{
+    cause: unknown;
+    target: DeleteTarget | null;
+    action: "save" | "delete" | "rollback";
+  } | null>(null);
+  const error = failure ? errorText(t, failure.cause, config, failure.target, failure.action) : "";
+  const errorAction = mcpErrorAction(failure?.cause);
   const [success, setSuccess] = useState("");
   const [messagePlace, setMessagePlace] = useState<"header" | "footer">("footer");
   const [tab, setTab] = useState<Tab>(initialProfileId ? "profile" : "server");
@@ -107,7 +113,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
     actionKind: "save" | "delete" | "rollback" = "save",
   ): Promise<boolean> => {
     setBusy(true);
-    setError("");
+    setFailure(null);
     setSuccess("");
     setMessagePlace(place);
     try {
@@ -115,7 +121,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
       setSuccess(successMessage);
       return true;
     } catch (caught) {
-      setError(errorText(caught, config, target, actionKind));
+      setFailure({ cause: caught, target, action: actionKind });
       return false;
     } finally {
       setBusy(false);
@@ -126,7 +132,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
     setSelected(null);
     setCreating(false);
     setJustCreated(false);
-    setError("");
+    setFailure(null);
     setSuccess("");
   };
   if (!config)
@@ -196,7 +202,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
       setHistory({ target, id, revisions: result.revisions });
     }, null, "", "header");
   const openDelete = (target: DeleteTarget) => {
-    setError("");
+    setFailure(null);
     setSuccess("");
     setDeleting(target);
   };
@@ -231,7 +237,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
                 setCreating(true);
                 setSelected(null);
                 setJustCreated(false);
-                setError("");
+                setFailure(null);
                 setSuccess("");
               }}
             >
@@ -263,7 +269,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
                   setSelected(server.id);
                   setCreating(false);
                   setJustCreated(false);
-                  setError("");
+                  setFailure(null);
                   setSuccess("");
                 }}
               />
@@ -285,7 +291,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
                   onSelect={() => {
                     setSelected(profile.id);
                     setCreating(false);
-                    setError("");
+                    setFailure(null);
                     setSuccess("");
                   }}
                 />
@@ -300,7 +306,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
                   selected={currentSecret?.name === secret.name}
                   onSelect={() => {
                     setSelected(secret.name);
-                    setError("");
+                    setFailure(null);
                     setSuccess("");
                   }}
                 />
@@ -470,7 +476,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
             />
           ) : null}
           {messagePlace === "footer" && !deleting && !history && error ? (
-            <SettingsAlert scrollIntoView>{error}{" "}{error.includes("다시 읽은") ? <Button type="button" variant="outline" onClick={() => void refresh().then(() => setError("")).catch(() => undefined)}>{t("mcp.reload")}</Button> : null}</SettingsAlert>
+            <SettingsAlert scrollIntoView>{error}{" "}{errorAction === "reload" ? <Button type="button" variant="outline" onClick={() => void refresh().then(() => setFailure(null)).catch(() => undefined)}>{t("mcp.reload")}</Button> : null}</SettingsAlert>
           ) : null}
           {messagePlace === "footer" && success ? <SuccessMessage>{success}</SuccessMessage> : null}
         </SettingsListDetailFrame>
@@ -481,6 +487,7 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
         nodes={currentProfile?.node_scope ?? []}
         busy={busy}
         error={error}
+        errorAction={errorAction}
         profiles={deleting?.kind === "server" ? profiles.filter((p) => p.mcp_servers.includes(deleting.id)).map((p) => p.name || p.id) : []}
         reload={() => void refresh().then((next) => {
           if (deleting) {
@@ -490,10 +497,10 @@ export function McpSettingsTab({ request, initialProfileId, onOpenAgent }: { req
             if (!item) { setDeleting(null); setMessagePlace("header"); setSuccess(t("mcp.alreadyDeleted", { id: deleting.id })); }
             else if ("version" in item) setDeleting({ ...deleting, version: item.version });
           }
-          setError("");
+          setFailure(null);
         }).catch(() => undefined)}
-        closeDelete={() => { setError(""); setDeleting(null); }}
-        closeHistory={() => { setError(""); setHistory(null); }}
+        closeDelete={() => { setFailure(null); setDeleting(null); }}
+        closeHistory={() => { setFailure(null); setHistory(null); }}
         remove={(target) => {
           void mutate(async () => {
             if (target.kind === "server")

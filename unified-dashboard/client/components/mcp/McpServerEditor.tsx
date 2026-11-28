@@ -168,7 +168,7 @@ export function McpServerEditor({
       });
       setTestResult(result.ok ? { ...result, tools: result.tools.map(clean), ...(result.server_info ? { server_info: { name: clean(result.server_info.name), version: clean(result.server_info.version) } } : {}) }
         : { ...result, error_message: clean(result.error_message) });
-    } catch (caught) { setTestError(clean(mcpRequestErrorText(caught))); }
+    } catch (caught) { setTestError(clean(mcpRequestErrorText(caught, t))); }
     finally { setTesting(false); }
   };
   return (

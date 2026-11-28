@@ -1,7 +1,10 @@
+import { createI18n } from "@soulstream/i18n";
 import { describe, expect, it, vi } from "vitest";
 import { createMcpApi, McpApiError, mcpRequestErrorText } from "./mcp-api";
 
 describe("MCP 관리 API", () => {
+  const ko = createI18n("ko").t;
+  const en = createI18n("en").t;
   it("오류 응답 본문이 null이어도 HTTP 오류를 보존한다", async () => {
     const request = vi.fn(async () => Response.json(null, { status: 503 }));
     await expect(createMcpApi(request).previewAgentMcp("agent", "node"))
@@ -16,7 +19,12 @@ describe("MCP 관리 API", () => {
     [503, "MCP_NODE_UNAVAILABLE", "MCP preview unavailable", "노드에 연결할 수 없거나 노드가 이 기능을 받지 않습니다."],
     [503, "MCP_NODE_UNAVAILABLE", "이 노드는 중앙 MCP 설정을 받지 않습니다.", "이 노드는 중앙 MCP 설정을 받지 않습니다."],
   ])("HTTP %s %s 오류를 한국어로 안내한다", (status, code, message, expected) => {
-    expect(mcpRequestErrorText(new McpApiError(status, code, message))).toBe(expected);
+    expect(mcpRequestErrorText(new McpApiError(status, code, message), ko)).toBe(expected);
+  });
+  it("maps the same server error code in English without changing the wire message", () => {
+    const error = new McpApiError(403, "MCP_SERVER_OUT_OF_SCOPE", "Server is out of scope");
+    expect(mcpRequestErrorText(error, en)).toBe("This server isn’t assigned to this node.");
+    expect(error.message).toBe("Server is out of scope");
   });
   it("관리자 거부의 detail을 읽는다", async () => {
     const request = vi.fn().mockImplementation(async () => Response.json({ detail: "Admin access required" }, { status: 403 }));

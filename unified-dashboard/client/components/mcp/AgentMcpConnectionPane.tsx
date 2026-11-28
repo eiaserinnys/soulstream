@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import type { createI18n } from "@soulstream/i18n";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Checkbox, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPopup, DialogTitle, FrameLoading } from "@seosoyoung/soul-ui";
-import { createMcpApi, McpApiError, mcpRequestErrorText, type McpConfig, type McpPreviewResult } from "../../lib/mcp-api";
+import { createMcpApi, isMcpVersionConflict, McpApiError, mcpRequestErrorText, type McpConfig, type McpPreviewResult } from "../../lib/mcp-api";
 import { DetailTabs } from "../../v3/DetailTabs";
 import { inputClassName } from "../AgentAtomContextFields";
 import { SettingsAlert, SettingsField, SettingsGroupBox } from "../config/SettingsListDetail";
@@ -11,8 +11,8 @@ import { SuccessMessage } from "./McpSettingsTab";
 
 function message(t: ReturnType<typeof createI18n>["t"], error: unknown, preview = false): string {
   if (error instanceof McpApiError) {
-    if (error.code.endsWith("_VERSION_CONFLICT") || error.code === "MCP_REVISION_CONFLICT") return t("mcp.saveConflict");
-    if (preview && [403, 404, 503].includes(error.status)) return mcpRequestErrorText(error);
+    if (isMcpVersionConflict(error)) return t("mcp.saveConflict");
+    if (preview && [403, 404, 503].includes(error.status)) return mcpRequestErrorText(error, t);
     if (error.status === 400) return t("mcp.checkConnectionInput");
     if (error.status === 409) return t("mcp.bindingConflict");
   }
@@ -112,7 +112,7 @@ export function AgentMcpConnectionPane({ agentId, nodeId, request = fetch, onEdi
         {profile ? <><span className="sm:hidden"><McpServerIcons ids={profile.mcp_servers} servers={config.servers} /></span><span className="hidden sm:block"><McpServerIcons ids={profile.mcp_servers} servers={config.servers} limit={profile.mcp_servers.length} /></span></> : null}
         <div><p className="mb-2 text-sm text-muted-foreground">{t("mcp.applyToNodes")}</p><div className="flex flex-wrap gap-3">{config.managed_nodes.map(node => <label key={node.node_id} className="flex items-center gap-2 text-sm"><Checkbox checked={node.node_id === nodeId || Boolean(profileId && nodes.includes(node.node_id))} disabled={node.node_id === nodeId || !profileId} onCheckedChange={checked => { setSuccess(""); setNodes(current => checked ? [...current, node.node_id] : current.filter(id => id !== node.node_id)); }} />{node.node_id}</label>)}</div></div>
         {profile ? <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="min-w-0" data-v3-selectable-content="true">{others.length ? <>{t("mcp.sameProfile")}{" "}{others.map((item, index) => <span key={`${item.agent_id}:${item.node_id}`}>{index ? " " : ""}<span className="inline-block max-w-full align-top whitespace-normal [overflow-wrap:anywhere]">{item.agent_id} ({item.node_id}){index < others.length - 1 ? "," : ""}</span></span>)}</> : t("mcp.onlyUsedByAgent")}</span>{others.length ? <Button type="button" variant="outline" onClick={() => { forkSaved.current = false; setForkOpen(true); }}>{t("mcp.forkForAgent")}</Button> : null}</div> : null}
-        {error ? <SettingsAlert><span className="inline-flex flex-wrap items-center gap-2"><span>{error}</span>{failure?.cause instanceof McpApiError && (failure.cause.code.endsWith("_VERSION_CONFLICT") || failure.cause.code === "MCP_REVISION_CONFLICT" || failure.cause.status === 409) ? <Button type="button" variant="outline" onClick={() => void load().catch(caught => setFailure({ cause: caught }))}>{t("mcp.reload")}</Button> : null}</span></SettingsAlert> : null}
+        {error ? <SettingsAlert><span className="inline-flex flex-wrap items-center gap-2"><span>{error}</span>{failure?.cause instanceof McpApiError && (isMcpVersionConflict(failure.cause) || failure.cause.status === 409) ? <Button type="button" variant="outline" onClick={() => void load().catch(caught => setFailure({ cause: caught }))}>{t("mcp.reload")}</Button> : null}</span></SettingsAlert> : null}
       </div>
     </SettingsGroupBox> : <p data-v3-selectable-content="true">{t("mcp.nodeNotManaged")}</p>}
     <SettingsGroupBox title={t("mcp.nodePreview", { node: nodeId })}>

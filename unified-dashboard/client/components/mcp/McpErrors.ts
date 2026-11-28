@@ -1,51 +1,61 @@
-import { McpApiError, type McpConfig } from "../../lib/mcp-api";
+import type { createI18n } from "@soulstream/i18n";
+import { isMcpVersionConflict, McpApiError, type McpConfig } from "../../lib/mcp-api";
 import type { DeleteTarget } from "./McpDialogs";
 
 export class PartialProfileSaveError extends Error {}
+
+export type McpErrorAction = "reload" | "showProfiles" | null;
+
+export function mcpErrorAction(error: unknown): McpErrorAction {
+  if (!(error instanceof McpApiError)) return null;
+  if (isMcpVersionConflict(error)) return "reload";
+  return error.code === "MCP_SERVER_INUSE" ? "showProfiles" : null;
+}
+
 export function errorText(
+  t: ReturnType<typeof createI18n>["t"],
   error: unknown,
   config: McpConfig | null,
   target: DeleteTarget | null,
   action: "save" | "delete" | "rollback" = "save",
 ): string {
   if (error instanceof PartialProfileSaveError)
-    return "일부 프로필에 추가됐습니다. 다시 읽은 뒤 나머지를 확인해 주세요.";
+    return t("mcp.partialProfileSave");
   if (!(error instanceof McpApiError))
-    return "요청에 실패했습니다. 다시 시도해 주세요.";
-  if (
-    error.code.endsWith("_VERSION_CONFLICT") ||
-    error.code === "MCP_REVISION_CONFLICT"
-  )
-    return `다른 곳에서 변경됐습니다. 다시 읽은 뒤 ${action === "delete" ? "다시 삭제해" : action === "rollback" ? "다시 되돌려" : "저장해"} 주세요.`;
+    return t("mcp.requestFailed");
+  if (isMcpVersionConflict(error)) {
+    if (action === "delete") return t("mcp.deleteConflict");
+    if (action === "rollback") return t("mcp.rollbackConflict");
+    return t("mcp.saveConflict");
+  }
   if (error.code === "MCP_SERVER_INUSE") {
     const profiles = config?.profiles
         .filter((p) => p.mcp_servers.includes(target?.id ?? ""))
         .map((p) => p.name || p.id) ?? [];
-    return `사용 중인 프로필: ${profiles.slice(0, 3).join(", ") || error.message}${profiles.length > 3 ? ` 외 ${profiles.length - 3}개` : ""}. 먼저 프로필에서 이 서버를 빼 주세요.`;
+    const names = profiles.slice(0, 3).join(", ") || error.message || t("mcp.requestFailedBrief");
+    const rest = profiles.length > 3 ? " " + t("mcp.remainingCount", { count: profiles.length - 3 }) : "";
+    return t("mcp.serverInUse", { profiles: names + rest });
   }
-  if (error.code === "MCP_PROFILE_INUSE")
-    return `연결된 에이전트: ${
-      config?.bindings
-        .filter((b) => b.mcp_profile_id === target?.id)
-        .map((b) => `${b.agent_id} (${b.node_id})`)
-        .join(", ") || error.message
-    }. 먼저 에이전트의 프로필 연결을 해제해 주세요.`;
+  if (error.code === "MCP_PROFILE_INUSE") {
+    const agents = config?.bindings
+      .filter((binding) => binding.mcp_profile_id === target?.id)
+      .map((binding) => `${binding.agent_id} (${binding.node_id})`)
+      .join(", ") || error.message || t("mcp.requestFailedBrief");
+    return t("mcp.profileInUse", { agents });
+  }
   if (error.code === "MCP_SECRET_INUSE") {
     const secret = config?.secrets.find((s) => s.name === target?.id);
-    return `사용 중인 서버: ${secret?.servers.join(", ") || "없음"} / 프로필: ${secret?.profiles.join(", ") || "없음"}. 먼저 서버 정의에서 이 비밀 참조를 제거해 주세요.`;
+    return t("mcp.secretInUse", {
+      servers: secret?.servers.join(", ") || t("mcp.none"),
+      profiles: secret?.profiles.join(", ") || t("mcp.none"),
+    });
   }
   const messages: Record<string, string> = {
-    MCP_DUPLICATE_SERVER_NAME:
-      "같은 노드에서 쓰는 전송 이름입니다. 이름을 바꿔 주세요.",
-    MCP_MIXED_SECRET_ENV_REF:
-      "하나의 값에 비밀 참조와 환경 변수 참조를 함께 쓸 수 없습니다.",
-    MCP_INVALID_ICON: "아이콘을 다시 선택해 주세요.",
-    MCP_INVALID_ICON_UPLOAD: "이미지 형식과 크기를 확인해 주세요.",
-    MCP_ROLLBACK_BROKEN_REFERENCE:
-      "참조 대상이 없어 이 판으로 되돌릴 수 없습니다.",
+    MCP_DUPLICATE_SERVER_NAME: t("mcp.duplicateTransportName"),
+    MCP_MIXED_SECRET_ENV_REF: t("mcp.mixedReferences"),
+    MCP_INVALID_ICON: t("mcp.invalidIcon"),
+    MCP_INVALID_ICON_UPLOAD: t("mcp.invalidIconUpload"),
+    MCP_ROLLBACK_BROKEN_REFERENCE: t("mcp.brokenRollbackReference"),
   };
-  return (
-    messages[error.code] ??
-    "요청에 실패했습니다. 입력과 연결 상태를 확인하고 다시 시도해 주세요."
-  );
+  return messages[error.code] ?? t("mcp.checkRequestAndRetry");
 }

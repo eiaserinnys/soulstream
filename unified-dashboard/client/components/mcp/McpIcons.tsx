@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   useEffect,
   useMemo,
@@ -252,6 +253,7 @@ export function McpIconPicker({
   onChange(icon: McpIcon | null): void;
   upload(file: File): Promise<McpIcon>;
 }) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<"brand" | "symbol" | "upload" | "initial">(
     value?.kind ?? "initial",
   );
@@ -273,7 +275,7 @@ export function McpIconPicker({
         if (active) setBrands(items);
       })
       .catch(() => {
-        if (active) setError("브랜드 목록을 불러오지 못했습니다.");
+        if (active) setError(t("mcp.brandLoadFailed"));
       });
     return () => {
       active = false;
@@ -308,10 +310,10 @@ export function McpIconPicker({
       <div className="grid grid-cols-2 gap-2">
         {(
           [
-            ["brand", "브랜드 검색"],
-            ["symbol", "기호 고르기"],
-            ["upload", "이미지 올리기"],
-            ["initial", "머리글자로 두기"],
+            ["brand", t("mcp.searchBrands")],
+            ["symbol", t("mcp.chooseSymbol")],
+            ["upload", t("mcp.uploadImage")],
+            ["initial", t("mcp.useInitial")],
           ] as const
         ).map(([key, label]) => (
           <Button
@@ -334,13 +336,13 @@ export function McpIconPicker({
         <div className="space-y-2">
           <Input
             autoFocus
-            aria-label="브랜드 이름 검색"
-            placeholder="브랜드 이름 검색"
+            aria-label={t("mcp.searchBrandNames")}
+            placeholder={t("mcp.searchBrandNames")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
           {!search && suggestions.length ? (
-            <p className="text-sm text-muted-foreground">자동 제안</p>
+            <p className="text-sm text-muted-foreground">{t("mcp.suggestions")}</p>
           ) : null}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {found.map((item) => (
@@ -415,12 +417,12 @@ export function McpIconPicker({
       ) : null}
       {mode === "upload" ? (
         <div className="space-y-2 text-sm">
-          <p>PNG, JPEG, WebP · 최대 256 KiB, 512 × 512</p>
-          <Button type="button" variant="outline" onClick={() => fileInput.current?.click()}>이미지 선택</Button>
+          <p>{t("mcp.imageLimits")}</p>
+          <Button type="button" variant="outline" onClick={() => fileInput.current?.click()}>{t("mcp.selectImage")}</Button>
           <input
             ref={fileInput}
             type="file"
-            aria-label="이미지 파일"
+            aria-label={t("mcp.imageFile")}
             className="hidden"
             accept="image/png,image/jpeg,image/webp"
             onChange={(event) => {
@@ -431,7 +433,7 @@ export function McpIconPicker({
                   .then(onChange)
                   .catch(() =>
                     setError(
-                      "이미지를 올리지 못했습니다. 크기와 형식을 확인하세요.",
+                      t("mcp.uploadFailed"),
                     ),
                   );
               }

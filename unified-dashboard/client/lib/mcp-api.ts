@@ -1,3 +1,4 @@
+import type { createI18n } from "@soulstream/i18n";
 import type { McpPreviewResult as WireMcpPreviewResult, McpPreviewVariant as WireMcpPreviewVariant } from "../../../packages/wire-schema/generated/typescript/index";
 
 export type McpIcon =
@@ -90,18 +91,25 @@ export class McpApiError extends Error {
     super(message);
   }
 }
-export function mcpRequestErrorText(error: unknown): string {
-  if (!(error instanceof McpApiError)) return "요청에 실패했습니다. 다시 시도해 주세요.";
+export function isMcpVersionConflict(error: McpApiError): boolean {
+  return error.code.endsWith("_VERSION_CONFLICT") || error.code === "MCP_REVISION_CONFLICT";
+}
+
+export function mcpRequestErrorText(error: unknown, t: ReturnType<typeof createI18n>["t"]): string {
+  if (!(error instanceof McpApiError)) return t("mcp.requestFailed");
   const codes: Record<string, string> = {
-    MCP_NODE_NOT_MANAGED: "이 노드는 중앙 MCP 관리 목록에 없습니다.",
-    MCP_SERVER_OUT_OF_SCOPE: "이 서버는 이 노드 범위에 없습니다.",
-    MCP_PORTABLE_NODE: "무설치 노드는 중앙 MCP 설정을 받지 않습니다.",
+    MCP_NODE_NOT_MANAGED: t("mcp.nodeNotManaged"),
+    MCP_SERVER_OUT_OF_SCOPE: t("mcp.serverOutOfScope"),
+    MCP_PORTABLE_NODE: t("mcp.portableNode"),
   };
   if (codes[error.code]) return codes[error.code];
-  if (error.status === 403) return "관리자만 볼 수 있습니다.";
-  if (error.status === 404) return "에이전트, 프로필이나 서버를 찾지 못했습니다. 다시 읽어 주세요.";
-  if (error.status === 503) return /[가-힣]/.test(error.message) ? error.message : "노드에 연결할 수 없거나 노드가 이 기능을 받지 않습니다.";
-  return "요청에 실패했습니다. 다시 시도해 주세요.";
+  if (error.status === 403) return t("mcp.adminOnly");
+  if (error.status === 404) return t("mcp.requestTargetNotFound");
+  if (error.status === 503) {
+    if (/[가-힣]/.test(error.message)) return error.message; // i18n-ignore: 서버가 이미 한국어로 보낸 오류인지 판별한다.
+    return t("mcp.nodeUnavailable");
+  }
+  return t("mcp.requestFailed");
 }
 export function createMcpApi(request: typeof fetch = fetch) {
   async function call<T>(
@@ -128,7 +136,7 @@ export function createMcpApi(request: typeof fetch = fetch) {
       throw new McpApiError(
         response.status,
         error.code ?? "",
-        error.message ?? error.detail ?? "요청에 실패했습니다.",
+        error.message ?? error.detail ?? "",
       );
     }
     return response.json() as Promise<T>;
