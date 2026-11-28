@@ -171,25 +171,13 @@ function subagentToolNames(tools: unknown): string[] {
 }
 
 export interface AntigravitySubagentListing {
-  originalName: string;
-  invokeName: string;
+  name: string;
   description: string;
 }
 
 export function antigravitySubagentSection(entries: readonly AntigravitySubagentListing[]): string {
   if (entries.length === 0) return "";
   const lines = entries.map(entry =>
-    `- ${entry.originalName} → ${entry.invokeName}: ${entry.description.replace(/\s+/g, " ").trim()}`);
-  return `\n## 하위 에이전트\n\n${lines.join("\n")}\n`;
-}
-
-export function antigravitySubagentDefinitionText(options: {
-  name: string;
-  description: string;
-  tools: readonly string[];
-  body: string;
-}): string {
-  const frontmatter = stringify({ name: options.name, description: options.description,
-    mainAgent: false, subagent: true, model: "inherit", tools: [...options.tools] });
-  return `---\n${frontmatter}---\n${options.body}`;
+    `- ${entry.name}: ${entry.description.replace(/\s+/g, " ").trim()}`);
+  return `\n## 하위 에이전트\n\ninvoke_subagent를 호출할 때 TypeName "research", Role에 아래 이름을 넣고 Prompt에는 작업만 쓴다. Workspace와 Model은 생략한다. 하위 에이전트 지침은 자동 주입된다.\n${lines.join("\n")}\n`;
 }
