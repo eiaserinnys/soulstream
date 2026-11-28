@@ -1,6 +1,7 @@
+import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import {
-  useSessionMenu, DashboardIconCap, SessionModelPresetBadge, SessionStoryDisclosure, SessionHeaderPill, STATUS_CONFIG, getSessionStatusLabel,
+  useSessionMenu, DashboardIconCap, SessionModelPresetBadge, SessionStoryDisclosure, SessionHeaderPill, getSessionStatusLabel,
   type SessionProviderConnectionStatus, type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { ArrowLeft, FolderOpen, X } from "lucide-react";
@@ -22,24 +23,25 @@ export function FolderPanelHeader({ title, onRename, backLabel, onBack, inline, 
   </header>;
 }
 
-export function SessionPanelHeader({ session, emptyTitle = "선택된 세션 없음", streamActive, connectionStatus, reconnect, onClose, filesOpen, onToggleFiles }: {
+export function SessionPanelHeader({ session, emptyTitle, streamActive, connectionStatus, reconnect, onClose, filesOpen, onToggleFiles }: {
   session: SessionSummary | undefined; emptyTitle?: string;
   streamActive: boolean; connectionStatus: SessionProviderConnectionStatus;
   reconnect(): void; onClose?(): void; filesOpen?: boolean; onToggleFiles?(): void;
 }) {
+  const { t } = useTranslation();
   const openMenu = useSessionMenu();
   return <header className="v3-panel-header v3-chat-header"
     onContextMenu={event=>{if(session)openMenu(session.agentSessionId,event);}}>
     <div className="v3-chat-title-row">
-      <div className="v3-chat-session-title"><strong>{session ? sessionPanelTitle(session) : emptyTitle}</strong></div>
-      {onClose ? <DashboardIconCap label="채팅 닫기" onClick={onClose}><X className="h-4 w-4" aria-hidden="true"/></DashboardIconCap> : null}
+      <div className="v3-chat-session-title"><strong>{session ? sessionPanelTitle(session, t) : emptyTitle ?? t("sessions.noSelectedSession")}</strong></div>
+      {onClose ? <DashboardIconCap label={t("sessions.closeChat")} onClick={onClose}><X className="h-4 w-4" aria-hidden="true"/></DashboardIconCap> : null}
     </div>
     <SessionModelPresetBadge session={session}/>
     <span className={`v3-chat-status v3-chat-status--${session?.status ?? "unknown"}`}>
-      {session ? getSessionStatusLabel(session.status, session.sessionType) : STATUS_CONFIG.unknown.label}
+      {getSessionStatusLabel(session?.status ?? "unknown", session?.sessionType, t)}
     </span>
     {session ? <SessionStreamStatus active={streamActive} status={connectionStatus} reconnect={reconnect}/> : null}
     {session ? <SessionStoryDisclosure sessionId={session.agentSessionId}/> : null}
-    {session && onToggleFiles ? <span className="relative inline-flex shrink-0"><SessionHeaderPill aria-pressed={filesOpen} onClick={onToggleFiles}><FolderOpen className="size-3.5" aria-hidden="true"/>파일</SessionHeaderPill></span> : null}
+    {session && onToggleFiles ? <span className="relative inline-flex shrink-0"><SessionHeaderPill aria-pressed={filesOpen} onClick={onToggleFiles}><FolderOpen className="size-3.5" aria-hidden="true"/>{t("sessions.files")}</SessionHeaderPill></span> : null}
   </header>;
 }

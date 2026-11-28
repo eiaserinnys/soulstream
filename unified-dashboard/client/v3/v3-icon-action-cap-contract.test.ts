@@ -93,7 +93,7 @@ describe("v3 icon action cap contract", () => {
     const rowFrame = read("./RunRowFrame.tsx");
     const reviewRow = panel.match(/<RichSessionRow\b[\s\S]*?\/>/)?.[0] ?? "";
 
-    expect(reviewRow).toContain('actions={review ? [{kind:"acknowledge",label:`${sessionPanelTitle(session)} 확인 처리`,pending,onAction:()=>{void onAcknowledge(session);}}] : undefined}');
+    expect(reviewRow).toContain('actions={review ? [{kind:"acknowledge",label:t("sessions.acknowledgeSession", { title: sessionPanelTitle(session, t) }),pending,onAction:()=>{void onAcknowledge(session);}}] : undefined}');
     expect(richRow).toMatch(/<RunRowFrame[\s\S]*?actions=\{actions\}/);
     expect(rowFrame).toMatch(/actions!\.map\(action=><DashboardIconCap[\s\S]*?label=\{action\.label\}[\s\S]*?disabled=\{disabled\|\|action\.disabled\|\|action\.pending\}[\s\S]*?onClick=\{event=>\{event\.stopPropagation\(\);action\.onAction\(event\);\}\}/);
   });

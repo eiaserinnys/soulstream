@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useRef, type KeyboardEventHandler, type AriaAttributes } from "react";
 import {
   DragHandle,
@@ -37,6 +38,7 @@ export function WorkspaceSessionColumn({
   cardSessionCount?: number;
   separatorAria?:Pick<AriaAttributes,"aria-valuenow"|"aria-valuemin"|"aria-valuemax"|"aria-valuetext">;
 }) {
+  const { t } = useTranslation();
   const chatSurfaceRef = useRef<HTMLElement>(null);
   const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: true });
   const resizeKey: KeyboardEventHandler<HTMLDivElement> = onResizeKeyDown ?? (event => {
@@ -47,19 +49,19 @@ export function WorkspaceSessionColumn({
   });
   return <>
     <div className={resizeClassName} data-testid={resizeTestId} role="separator"
-      aria-orientation="vertical" aria-label="채팅 패널 크기 조절" {...separatorAria} tabIndex={0} onKeyDown={resizeKey}>
+      aria-orientation="vertical" aria-label={t("sessions.resizeChat")} {...separatorAria} tabIndex={0} onKeyDown={resizeKey}>
       <DragHandle onDrag={onResize} widthPx={V3_PANEL_GAP_PX}/>
     </div>
     <section ref={chatSurfaceRef}
       className={`v3-chat-pane ${chatClassName} border border-glass-border glass-strong glass-chrome lg-rim`}
       data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
-      data-testid={chatTestId} aria-label="세션 채팅">
+      data-testid={chatTestId} aria-label={t("sessions.sessionChat")}>
       <SessionPanelHeader session={activeSession} streamActive={sessionStreamActive}
         connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} onClose={onClose} filesOpen={filesOpen} onToggleFiles={onToggleFiles}/>
       {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview}/> : null}
       <div className="v3-chat-content">
         {activeSession ? <PersistentSessionChatView sessionId={activeSession.agentSessionId} storeScope={storeScope} onSessionChange={onSessionChange} loadDisplaySettings={loadDisplaySettings} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}/> :
-          <div className="v3-chat-empty"><span className="v3-emoji" aria-hidden="true">💬</span><strong>{cardSessionCount===0?"아직 시작된 세션이 없습니다.":"위임 관계에서 세션을 선택하세요."}</strong><p>채팅은 보드와 문서 편집 중에도 이 자리에 유지됩니다.</p></div>}
+          <div className="v3-chat-empty"><span className="v3-emoji" aria-hidden="true">💬</span><strong>{cardSessionCount===0?t("sessions.noStartedSessions"):t("sessions.chooseDelegatedSession")}</strong><p>{t("sessions.chatPersistent")}</p></div>}
       </div>
     </section>
   </>;

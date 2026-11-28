@@ -1,3 +1,4 @@
+import type { useTranslation } from "react-i18next";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 import type { PlannerFolder } from "./planner-data";
 
@@ -5,6 +6,8 @@ import {
   sessionWorkspaceTarget,
   type SessionWorkspaceTarget,
 } from "./v3-session-panel-model";
+
+type Translate = ReturnType<typeof useTranslation>["t"];
 
 export interface ResolvedSessionWorkspace {
   target: SessionWorkspaceTarget;
@@ -49,10 +52,12 @@ export async function resolveSessionFolderWorkspace({
   session,
   currentFolderEntries,
   loadFolderById,
+  t,
 }: {
   session: SessionSummary;
   currentFolderEntries: readonly PlannerFolder[];
   loadFolderById(folderId: string): Promise<PlannerFolder>;
+  t: Translate;
 }): Promise<{ workspace: ResolvedSessionWorkspace; task: PlannerFolder | null }> {
   const workspace = await resolveSessionWorkspace({ session });
   if (workspace.target.kind === "standalone") return { workspace, task: null };
@@ -64,7 +69,7 @@ export async function resolveSessionFolderWorkspace({
   } catch (error) {
     throw new SessionWorkspaceResolutionError(
       "folder",
-      "소속 폴더를 불러오지 못했습니다.",
+      t("sessions.workspaceFolderLoadFailed"),
       { cause: error },
     );
   }

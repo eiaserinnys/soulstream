@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useTextareaAutoHeight } from "@seosoyoung/soul-ui/components/chat/useTextareaAutoHeight";
 import { appendAttachmentPathNotes } from "../../../packages/wire-schema/src/attachment_path_notes";
 import { ProjectAtomFields, isProjectAtomValid, type ProjectAtomFieldValue } from "./ProjectContextFormFields";
@@ -82,6 +83,9 @@ export function SessionSuccessionModal({
   onClose(): void;
   onCreated(session: SessionSummary): void;
 }) {
+  const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage ?? i18n.language;
+  const formatNumber = new Intl.NumberFormat(language).format;
   const api = useMemo(() => createPageApiClient(), []);
   const queryClient = useQueryClient();
   const resolvedDefaults = useMemo(() => resolveRunAssignmentDefaults({
@@ -167,7 +171,7 @@ export function SessionSuccessionModal({
     guidance: "",
   }), [atomValue, atomNodeId, atomNodeTitle, documentOptions, inheritCard, selectedDocumentIds, folderPageId]);
   const handleAssignmentError = useCallback((message: string) => {
-    console.error("[v3/session-succession] 실행 대상 조회 실패", message);
+    console.error("[v3/session-succession] 실행 대상 조회 실패", message); // i18n-ignore: diagnostic log
     setError(message);
   }, []);
   const handleAgentInfoChange = useCallback((agent: AgentInfo | null) => {
@@ -233,7 +237,7 @@ export function SessionSuccessionModal({
         eventCount: 0,
         createdAt: now,
         updatedAt: now,
-        displayName: `${folderTitle} 세션`,
+        displayName: `${folderTitle} 세션`, // i18n-ignore: persisted session name
         nodeId: result.nodeId ?? selectedNodeId,
         agentId: selectedAgentId,
         agentName: selectedAgent?.name ?? selectedAgentId,
@@ -243,7 +247,7 @@ export function SessionSuccessionModal({
       });
       onClose();
     } catch (caught) {
-      console.error("[v3/session-succession] 세션 시작 실패", caught);
+      console.error("[v3/session-succession] 세션 시작 실패", caught); // i18n-ignore: diagnostic log
       setError(errorText(caught));
     } finally {
       submitting.current = false;
@@ -262,20 +266,20 @@ export function SessionSuccessionModal({
   const effortNoticeId = useId();
   const effortNotice = effort.unsupported && selectedModelPresetInfo !== null ? <span data-testid="succession-effort-unsupported">
     <span data-v3-selectable-content="true">{effort.options.length > 0
-      ? `이어받은 추론 강도 “${reasoningEffortLabel(effort.selected ?? "")}”를 이 모델에서는 쓸 수 없습니다. 다른 강도를 고르거나 기본값으로 시작하세요.`
-      : `이 모델이 광고한 추론 강도 목록이 없어 “${reasoningEffortLabel(effort.selected ?? "")}”를 그대로 쓸 수 없습니다. 기본값으로 시작하세요.`}</span>{" "}
+      ? t("sessions.unsupportedEffort", { effort: reasoningEffortLabel(effort.selected ?? "") })
+      : t("sessions.unknownEffort", { effort: reasoningEffortLabel(effort.selected ?? "") })}</span>{" "}
     <Button type="button" variant="outline" size="xs" className="align-middle" data-testid="succession-effort-use-default" onClick={() => {
       (effortTrigger.current ?? textarea.current)?.focus();
       effort.setSelected(null);
-    }}>기본값 사용</Button>
+    }}>{t("sessions.useDefault")}</Button>
   </span> : null;
   const effortOptions = [
-    ...(effort.unsupported ? [{ value: effort.selected ?? "", label: `${reasoningEffortLabel(effort.selected ?? "")} (지원 안 함)` }] : []),
-    ...(effort.unsupported || !presetHasDefaultEffort ? [{ value: "", label: effort.unsupported ? "기본값 사용" : "기본값" }] : []),
+    ...(effort.unsupported ? [{ value: effort.selected ?? "", label: t("sessions.unsupportedEffortLabel", { effort: reasoningEffortLabel(effort.selected ?? "") }) }] : []),
+    ...(effort.unsupported || !presetHasDefaultEffort ? [{ value: "", label: effort.unsupported ? t("sessions.useDefault") : t("sessions.default") }] : []),
     ...effort.options.map((option) => ({ value: option, label: reasoningEffortLabel(option) })),
   ];
   const predecessorChoices = predecessorOptions.map((option, index) => ({
-    value: String(index), label: `${option.label}${option.runNumber === null ? "" : ` · 세션 #${option.runNumber}`}`,
+    value: String(index), label: `${option.label}${option.runNumber === null ? "" : ` · ${t("sessions.sessionNumber", { number: formatNumber(option.runNumber) })}`}`,
   }));
 
   return (
@@ -283,18 +287,18 @@ export function SessionSuccessionModal({
       <DialogPopup
         className="v3-surface v3-succession-modal max-w-[640px]"
         {...(returnFocusRef ? { finalFocus: () => completed.current ? true : returnFocusRef.current } : {})}
-        closeProps={{ "aria-label": "승계 닫기", disabled: pending }}
+        closeProps={{ "aria-label": t("sessions.closeSuccession"), disabled: pending }}
         onKeyDown={event => { if(event.key === "Escape" && atomDraft) { event.preventDefault(); event.stopPropagation(); if(atomOpen) setAtomOpen(false); else closeAtom(); } }}
       >
         <DialogHeader className="v3-succession-head">
           <span aria-hidden="true">↗</span>
-          <DialogTitle>{atomDraft ? "추가 참고 자료" : "새 세션"}</DialogTitle>
+          <DialogTitle>{atomDraft ? t("sessions.referenceMaterial") : t("sessions.newSession")}</DialogTitle>
         </DialogHeader>
         <DialogPanel className="v3-succession-body" scrollFade={false}>
           {(error || files.find(file => file.status === "error")?.errorMessage) ? (
             <V3ErrorNotice
               className="v3-succession-error"
-              message={error ? "새 세션을 시작하지 못했습니다." : "첨부를 업로드하지 못했습니다."}
+              message={error ? t("sessions.startFailed") : t("sessions.uploadFailed")}
               detail={error || files.find(file => file.status === "error")?.errorMessage}
             />
           ) : null}
@@ -304,25 +308,25 @@ export function SessionSuccessionModal({
           </div> : null}
           <div hidden={atomDraft !== null}>
           <fieldset disabled={pending} className="v3-succession-context-editor">
-            <div className="v3-form-context"><span>시작할 폴더</span><strong>{folderTitle}</strong></div>
+            <div className="v3-form-context"><span>{t("sessions.targetFolder")}</span><strong>{folderTitle}</strong></div>
             <label className="v3-creation-text-field">
-              <strong>무엇을 시작할까요?</strong>
+              <strong>{t("sessions.startPrompt")}</strong>
               <textarea
                 ref={textarea}
                 className="v3-creation-request max-h-[120px]"
-                aria-label="초기 지시"
+                aria-label={t("sessions.initialInstruction")}
                 autoFocus
                 value={initialInstruction}
                 disabled={pending}
                 rows={1}
-                placeholder="세션을 시작하자마자 수행할 지시…"
+                placeholder={t("sessions.initialInstructionPlaceholder")}
                 onChange={(event) => setInitialInstruction(event.target.value)}
                 onPaste={event => { if (uploadUrl && !pending) handleClipboardFiles(event, addFiles); }}
               />
             </label>
             <SessionAttachmentFields files={files} pending={pending} nodeId={selectedNodeId} isUploading={isUploading} addFiles={addFiles} removeFile={removeFile}/>
 
-            <CreationDisclosure title="실행 환경" invalid={!modelPresetValid || effort.unsupported || !selectedNodeId || !selectedAgentId} summary={`${selectedNodeId || "노드 선택"} / ${selectedAgent?.name ?? "에이전트 선택"} / ${selectedModelPreset || "기본 모델"}`}>
+            <CreationDisclosure title={t("sessions.environment")} invalid={!modelPresetValid || effort.unsupported || !selectedNodeId || !selectedAgentId} summary={`${selectedNodeId || t("sessions.selectNode")} / ${selectedAgent?.name ?? t("sessions.selectAgent")} / ${selectedModelPreset || t("sessions.defaultModel")}`}>
               <section className="v3-succession-assignment">
               <AgentNodeAssignmentFields data={assignment}
                 presentation="session"
@@ -342,8 +346,8 @@ export function SessionSuccessionModal({
                 onError={handleAssignmentError}
               />
               {effort.options.length > 0 ? (
-                <div role="group" aria-label="추론 강도" aria-describedby={effortNotice ? effortNoticeId : undefined}>
-                <CatalogSelectionField className="v3-assignment-field" label="추론 강도" ariaLabel="추론 강도 선택"
+                <div role="group" aria-label={t("sessions.reasoningEffort")} aria-describedby={effortNotice ? effortNoticeId : undefined}>
+                <CatalogSelectionField className="v3-assignment-field" label={t("sessions.reasoningEffort")} ariaLabel={t("sessions.selectReasoningEffort")}
                   triggerRef={effortTrigger}
                   value={effort.effective ?? ""} options={effortOptions}
                   selectedLabel={effortOptions.find((option) => option.value === (effort.effective ?? ""))?.label ?? ""}
@@ -353,20 +357,20 @@ export function SessionSuccessionModal({
               {effortNotice ? <small id={effortNoticeId} className="v3-succession-effort-notice" role="alert">{effortNotice}</small> : null}
               </section>
             </CreationDisclosure>
-            <CreationDisclosure title="함께 전달할 자료" summary={<span>{inheritCard ? "폴더 정보" : "폴더 정보 제외"}{inheritSummary ? " / 이전 세션 포함" : ""}{selectedDocumentIds.size ? ` / 문서 ${selectedDocumentIds.size}개` : ""}{atomNodeId ? " / 추가 참고 자료" : ""}</span>}>
+            <CreationDisclosure title={t("sessions.sharedMaterials")} summary={<span>{inheritCard ? t("sessions.folderInfo") : t("sessions.excludeFolderInfo")}{inheritSummary ? t("sessions.includePrevious") : ""}{selectedDocumentIds.size ? t("sessions.includedDocuments", { count: formatNumber(selectedDocumentIds.size) }) : ""}{atomNodeId ? t("sessions.includeReferences") : ""}</span>}>
               <section>
               <ol>
                 <li>
                   <label>
                     <input
                       type="checkbox"
-                      aria-label="카드 본문과 컨텍스트 포함"
+                      aria-label={t("sessions.includeCardContext")}
                       checked={inheritCard}
                       disabled={!folderPageId}
                       onChange={(event) => setInheritCard(event.target.checked)}
                     />
                     <span>
-                      <strong>폴더 정보</strong>
+                      <strong>{t("sessions.folderInfo")}</strong>
                       <span className="v3-succession-context-chips">
                         {contextItems.map((context) => (
                           <span key={context.id}>
@@ -374,7 +378,7 @@ export function SessionSuccessionModal({
                             <span className="v3-succession-context-label">{context.label}</span>
                           </span>
                         ))}
-                        {contextItems.length === 0 ? <small>연결된 컨텍스트 없음</small> : null}
+                        {contextItems.length === 0 ? <small>{t("sessions.noLinkedContext")}</small> : null}
                       </span>
                     </span>
                   </label>
@@ -384,22 +388,22 @@ export function SessionSuccessionModal({
                     <label>
                       <input
                         type="checkbox"
-                        aria-label="이전 세션 이어받기"
+                        aria-label={t("sessions.continuePrevious")}
                         checked={inheritSummary}
                         disabled={!predecessorId}
                         onChange={(event) => setInheritSummary(event.target.checked)}
                       />
                       <span>
-                        <strong>이전 세션</strong>
-                        {predecessorId ? <small>이전 세션을 이어 받을 경우 세션을 승계한 것으로 간주됩니다.</small> : null}
+                        <strong>{t("sessions.previousSession")}</strong>
+                        {predecessorId ? <small>{t("sessions.successionDescription")}</small> : null}
                       </span>
                     </label>
                     <div className="v3-succession-previous-field">
-                      <CatalogSelectionField className="v3-assignment-field" label="이전 세션" ariaLabel="이어받을 이전 세션"
+                      <CatalogSelectionField className="v3-assignment-field" label={t("sessions.previousSession")} ariaLabel={t("sessions.choosePrevious")}
                         value={selectedPredecessorIndex < 0 ? "" : String(selectedPredecessorIndex)}
                         disabled={!inheritSummary || predecessorOptions.length === 0}
-                        selectedLabel={predecessorChoices[selectedPredecessorIndex]?.label ?? "이전 세션 없음"}
-                        options={predecessorChoices.length ? predecessorChoices : [{ value: "", label: "이전 세션 없음" }]}
+                        selectedLabel={predecessorChoices[selectedPredecessorIndex]?.label ?? t("sessions.noPreviousSession")}
+                        options={predecessorChoices.length ? predecessorChoices : [{ value: "", label: t("sessions.noPreviousSession") }]}
                         onValueChange={(value) => {
                           const option = predecessorOptions[Number(value)];
                           setSelectedPredecessorId(option?.sessionId ?? null);
@@ -408,7 +412,7 @@ export function SessionSuccessionModal({
                   </div>
                 </li>
               </ol>
-              <strong>보드 문서</strong>
+              <strong>{t("sessions.boardDocuments")}</strong>
               <div className="v3-succession-document-options">
                 {documentOptions.map((document) => (
                   <label key={document.pageId}>
@@ -425,14 +429,14 @@ export function SessionSuccessionModal({
                     <span>{document.title}</span>
                   </label>
                 ))}
-                {documentOptions.length === 0 ? <small>폴더에 마운트된 보드 문서가 없습니다.</small> : null}
+                {documentOptions.length === 0 ? <small>{t("sessions.noMountedDocuments")}</small> : null}
               </div>
               <label className="flex min-w-0 flex-col gap-2">
-                <strong>추가 참고 자료</strong>
+                <strong>{t("sessions.referenceMaterial")}</strong>
                 <Button ref={atomTrigger} variant="outline" disabled={pending} onClick={() => {
                   setAtomDraft({ ...atomValue }); setAtomStatus("loading"); setAtomOpen(true);
-                }}>{atomNodeTitle || "atom에서 추가"}</Button>
-                {atomNodeId ? <Button variant="ghost" disabled={pending} onClick={() => { setAtomValue({instance: "atom", nodeId: "", nodeTitle: "", depth: 3, titlesOnly: false}); }}>제거</Button> : null}
+                }}>{atomNodeTitle || t("sessions.addFromAtom")}</Button>
+                {atomNodeId ? <Button variant="ghost" disabled={pending} onClick={() => { setAtomValue({instance: "atom", nodeId: "", nodeTitle: "", depth: 3, titlesOnly: false}); }}>{t("sessions.remove")}</Button> : null}
               </label>
               </section>
             </CreationDisclosure>
@@ -441,13 +445,13 @@ export function SessionSuccessionModal({
         </DialogPanel>
         <DialogFooter className="v3-succession-footer">
           {atomDraft ? <>
-            <Button variant="ghost" onClick={closeAtom}>취소</Button>
+            <Button variant="ghost" onClick={closeAtom}>{t("sessions.cancel")}</Button>
             <Button disabled={!isProjectAtomValid(atomDraft) || atomOpen || atomStatus !== "ready"} onClick={() => {
               setAtomValue(atomDraft); closeAtom();
-            }}>자료 추가</Button>
+            }}>{t("sessions.addReferences")}</Button>
           </> : <>
-          <p className="v3-form-submit-note">시작하면 선택한 환경에서 실행합니다</p>
-          <Button variant="ghost" disabled={pending} onClick={() => { void close(); }}>취소</Button>
+          <p className="v3-form-submit-note">{t("sessions.startNote")}</p>
+          <Button variant="ghost" disabled={pending} onClick={() => { void close(); }}>{t("sessions.cancel")}</Button>
           <Button
             disabled={
               pending
@@ -464,7 +468,7 @@ export function SessionSuccessionModal({
             }
             onClick={() => { void start(); }}
           >
-            {pending ? "시작 중…" : isUploading ? "첨부 중…" : contextPending ? "컨텍스트 확인 중…" : "세션 시작"}
+            {pending ? t("sessions.starting") : isUploading ? t("sessions.attaching") : contextPending ? t("sessions.checkingContext") : t("sessions.startSession")}
           </Button>
           </>}
         </DialogFooter>

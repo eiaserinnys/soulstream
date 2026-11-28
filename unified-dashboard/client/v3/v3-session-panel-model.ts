@@ -1,3 +1,4 @@
+import type { useTranslation } from "react-i18next";
 import type { SessionNodeConnectivity } from "@seosoyoung/soul-ui/lib/session-node-connectivity";
 import {
   getSessionActivityMs,
@@ -9,6 +10,8 @@ import { singleLinePreview, visibleLastMessagePreview } from "./session-preview"
 import {
   sessionPresentationStatus,
 } from "./session-node-connectivity";
+
+type Translate = ReturnType<typeof useTranslation>["t"];
 
 const SESSION_PANEL_TITLE_LENGTH = 80;
 
@@ -49,10 +52,10 @@ export function sessionPanelGroups(
   };
 }
 
-export function sessionPanelTitle(session: SessionSummary): string {
+export function sessionPanelTitle(session: SessionSummary, t: Translate): string {
   return singleLinePreview(session.displayName, SESSION_PANEL_TITLE_LENGTH)
     ?? singleLinePreview(visibleLastMessagePreview(session), SESSION_PANEL_TITLE_LENGTH)
-    ?? "제목 없는 세션";
+    ?? t("sessions.untitledSession");
 }
 
 export function sessionWorkspaceTarget(session: Pick<SessionSummary, "folderId">): SessionWorkspaceTarget {

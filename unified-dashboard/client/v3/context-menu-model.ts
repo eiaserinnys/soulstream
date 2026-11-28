@@ -1,3 +1,12 @@
+import { dictionaries } from "@soulstream/i18n";
+
+type SessionTextKey = keyof typeof dictionaries.ko.sessions;
+type Translate = (key: `sessions.${SessionTextKey}`) => string;
+
+function koreanSessionText(key: Parameters<Translate>[0]): string {
+  return dictionaries.ko.sessions[key.slice("sessions.".length) as SessionTextKey];
+}
+
 export interface V3ContextMenuAction {
   label: string;
   onSelect(): void | Promise<void>;
@@ -17,27 +26,28 @@ export function buildFolderContextMenuActions(
     rename?(): void | Promise<void>;
     archive?(): void | Promise<void>;
   },
+  t: Translate = koreanSessionText,
 ): V3ContextMenuAction[] {
   return [
-    { label: "폴더 열기", onSelect: actions.open },
-    { label: "폴더 ID 복사", onSelect: actions.copyId },
+    { label: t("sessions.openFolder"), onSelect: actions.open },
+    { label: t("sessions.copyFolderId"), onSelect: actions.copyId },
     {
-      label: state.starred ? "별표 해제" : "별표 추가",
+      label: state.starred ? t("sessions.unstar") : t("sessions.star"),
       onSelect: actions.toggleStar,
       separatorBefore: true,
     },
     {
-      label: "다른 폴더로 이동",
+      label: t("sessions.moveToFolder"),
       onSelect: actions.moveToParent,
     },
     {
-      label: "완료 처리",
+      label: t("sessions.markComplete"),
       onSelect: actions.complete,
       disabled: state.completed,
     },
     ...(actions.rename && actions.archive ? [
-      { label: "이름 변경", onSelect: actions.rename, separatorBefore: true },
-      { label: "폴더 보관", onSelect: actions.archive, destructive: true },
+      { label: t("sessions.rename"), onSelect: actions.rename, separatorBefore: true },
+      { label: t("sessions.archiveFolder"), onSelect: actions.archive, destructive: true },
     ] : []),
   ];
 }
@@ -48,14 +58,14 @@ export function buildProjectContextMenuActions(actions: {
   createFolder(): void | Promise<void>;
   edit(): void | Promise<void>;
   remove(): void | Promise<void>;
-}): V3ContextMenuAction[] {
+}, t: Translate = koreanSessionText): V3ContextMenuAction[] {
   return [
-    { label: "폴더 열기", onSelect: actions.open },
-    { label: "폴더 ID 복사", onSelect: actions.copyId },
-    { label: "새 폴더", onSelect: actions.createFolder, separatorBefore: true },
-    { label: "폴더 설정", onSelect: actions.edit },
+    { label: t("sessions.openFolder"), onSelect: actions.open },
+    { label: t("sessions.copyFolderId"), onSelect: actions.copyId },
+    { label: t("sessions.newFolder"), onSelect: actions.createFolder, separatorBefore: true },
+    { label: t("sessions.folderSettings"), onSelect: actions.edit },
     {
-      label: "폴더 보관",
+      label: t("sessions.archiveFolder"),
       onSelect: actions.remove,
       separatorBefore: true,
       destructive: true,
@@ -71,28 +81,28 @@ export function buildDocumentContextMenuActions(actions: {
   unmount?(): void | Promise<void>;
   promote?(): void | Promise<void>;
   canPromote?: boolean;
-}): V3ContextMenuAction[] {
+}, t: Translate = koreanSessionText): V3ContextMenuAction[] {
   const menu: V3ContextMenuAction[] = [
-    { label: "문서 열기", onSelect: actions.open },
-    { label: "페이지 ID 복사", onSelect: actions.copyId },
+    { label: t("sessions.openDocument"), onSelect: actions.open },
+    { label: t("sessions.copyPageId"), onSelect: actions.copyId },
   ];
   if (actions.moveToFolder) {
     menu.push({
-      label: "다른 폴더로 이동",
+      label: t("sessions.moveToFolder"),
       onSelect: actions.moveToFolder,
       separatorBefore: true,
     });
   }
   if (actions.remove) {
     menu.push({
-      label: "문서 삭제",
+      label: t("sessions.deleteDocument"),
       onSelect: actions.remove,
       destructive: true,
     });
   }
   if (actions.unmount) {
     menu.push({
-      label: "폴더에서 마운트 해제",
+      label: t("sessions.unmountDocument"),
       onSelect: actions.unmount,
       separatorBefore: true,
       destructive: true,
@@ -100,7 +110,7 @@ export function buildDocumentContextMenuActions(actions: {
   }
   if (actions.promote) {
     menu.push({
-      label: "프로젝트로 승격",
+      label: t("sessions.promoteProject"),
       onSelect: actions.promote,
       disabled: actions.canPromote === false,
     });
