@@ -55,6 +55,9 @@ write_install_state "$ROOT" completed "$STEP" >> "$LOG" 2>&1
 `;
 // Back to the 171 schema with user rows: the 173 tables gone, the 172 transcript store present.
 const AT_171 = `SET ROLE soulstream;
+        ALTER TABLE pages ADD COLUMN daily_date DATE;
+        CREATE UNIQUE INDEX uq_pages_daily_date ON pages(daily_date) WHERE daily_date IS NOT NULL;
+        ALTER TABLE session_page_bindings ADD COLUMN daily_date DATE NOT NULL;
 DELETE FROM schema_migrations
  WHERE ordinal >= (SELECT ordinal FROM schema_migrations WHERE migration_id = '172_drop_claude_transcript_store.sql');
 DROP TABLE mcp_agent_bindings, mcp_server_icons, mcp_config_revisions, mcp_profiles,

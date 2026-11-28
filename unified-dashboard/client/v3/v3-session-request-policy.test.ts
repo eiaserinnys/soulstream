@@ -27,7 +27,7 @@ describe("v3 session request policy", () => {
     expect(planeSource).toMatch(
       /event\.type === ["']stream_meta["'][\s\S]*reviewQueue\.refetch\(\)/,
     );
-    expect(layoutSource).toMatch(/reviewCount=\{reviewSessions\.length\}/);
+    expect(layoutSource).toMatch(/todayData\.data\?\.reviewSessionIds/);
   });
 
   it("passes the auth status recheck to the V3 catalog stream", () => {

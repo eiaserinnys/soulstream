@@ -312,6 +312,9 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
 
       // Back to the 171 schema: 173 objects gone, the 172 store present, user rows kept.
       await sql.unsafe(`
+        ALTER TABLE pages ADD COLUMN daily_date DATE;
+        CREATE UNIQUE INDEX uq_pages_daily_date ON pages(daily_date) WHERE daily_date IS NOT NULL;
+        ALTER TABLE session_page_bindings ADD COLUMN daily_date DATE NOT NULL;
         DELETE FROM schema_migrations
          WHERE ordinal >= (
            SELECT ordinal FROM schema_migrations WHERE migration_id = '${DROP_MIGRATION}'
@@ -339,7 +342,7 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
       ));
       await expect(upgrade.phase("preflight")).resolves.toMatchObject({
         operation: "upgrade",
-        pending_count: 5,
+        pending_count: 6,
         pending_additive_only: false,
         status: "preflight_complete",
       });

@@ -235,6 +235,13 @@ describe("database release executor", () => {
     await runDatabaseRelease("apply", { env: freshEnv });
     const sql = postgres(testDatabaseUrl, { max: 1 });
     try {
+      if (LAST_MANIFEST_MIGRATION_ID === "177_retire_daily_pages.sql") {
+        await sql.unsafe(`
+        ALTER TABLE pages ADD COLUMN daily_date DATE;
+        CREATE UNIQUE INDEX uq_pages_daily_date ON pages(daily_date) WHERE daily_date IS NOT NULL;
+        ALTER TABLE session_page_bindings ADD COLUMN daily_date DATE NOT NULL;
+        `);
+      }
       await sql`DELETE FROM schema_migrations WHERE migration_id = ${LAST_MANIFEST_MIGRATION_ID}`;
     } finally { await sql.end({ timeout: 5 }); }
     // Only a non-additive terminal migration needs quiescence evidence and a

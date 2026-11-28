@@ -227,12 +227,13 @@ class ProjectionDmlGuardTest(unittest.TestCase):
             [("UPDATE", "blocks")],
         )
 
-    def test_exception_inventory_is_frozen_to_the_historical_migration(self) -> None:
+    def test_exception_inventory_includes_retired_daily_pages(self) -> None:
         self.assertEqual(
             EXEMPT_SQL_PATHS,
             frozenset(
                 {
                     "packages/db-schema/sql/migrations/042_runbook_to_task.sql",
+                    "packages/db-schema/sql/migrations/177_retire_daily_pages.sql",
                 }
             ),
         )
