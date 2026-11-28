@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import nodeProcess from "node:process";
 import { join, resolve } from "node:path";
 import type { Logger } from "pino";
@@ -32,7 +33,7 @@ import { antigravityGatewayServerName } from "./mcp_gateway.js";
 import { antigravityArguments, antigravityUserMessage } from "./params.js";
 import { launchAntigravityProcess } from "./process.js";
 import { materializeAntigravityRestrictedBundle } from "./restricted_bundle.js";
-import { writeAntigravityDefaultWorkspace } from "./default_workspace.js";
+import { antigravityWorkspacePaths, prepareAntigravityWorkspaceLink, writeAntigravityDefaultWorkspace } from "./default_workspace.js";
 
 export interface AntigravityAdapterOptions {
   workspaceDir: string;
@@ -136,24 +137,29 @@ export class AntigravityEngineAdapter implements EnginePort {
       const restrictedAllowedTools = effectivePermissionMode === "dontAsk" && Array.isArray(effectiveAllowedTools)
         ? effectiveAllowedTools
         : undefined;
-      const workspaceDirectory = join(sessionDirectory, "antigravity-workspace");
       const markerPath = join(sessionDirectory, "antigravity-default-conversation");
       let markedConversation: string | undefined;
       try { markedConversation = await readFile(markerPath, "utf8"); } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
       const defaultWorkspace = !params.resumeSessionId || params.resumeSessionId === markedConversation;
+      let workspaceDirectory: string | undefined;
       if (defaultWorkspace) {
         if (!params.resumeSessionId && params.systemPrompt === undefined) throw new Error("이 세션은 첫 턴에서 대화를 만들지 못했습니다. 새 세션을 시작해 주십시오.");
         if (!params.resumeSessionId) await rm(markerPath, { force: true });
+        const paths = antigravityWorkspacePaths(await realpath(sessionDirectory), await realpath(this.workspaceDir), homedir());
+        await prepareAntigravityWorkspaceLink(paths);
+        workspaceDirectory = paths.addDir;
+        if (paths.fallback) this.logger.warn({ cwd: this.workspaceDir, workspaceDirectory }, "Antigravity workspace order fallback: ordered path is not suitable for the profile workspace");
         await writeAntigravityDefaultWorkspace({
-          directory: workspaceDirectory, fresh: !params.resumeSessionId,
+          directory: paths.physical, fresh: !params.resumeSessionId,
           agentId: this.options.agentId, agentSessionId: params.agentSessionId,
           systemPrompt: params.systemPrompt ?? "", gatewayConfigPath,
           resolvedMcpServers: this.options.resolvedMcpServers, internalMcpUrl: this.options.internalMcpUrl,
           useMcp: params.useMcp, mcpGatewayLaunch: resolveAntigravityMcpGatewayLaunch(import.meta.url, nodeProcess.execPath),
           allowedTools: restrictedAllowedTools, disallowedTools: params.disallowedTools ?? this.options.disallowedTools,
           parentConversationFile: resolve(markerPath),
+          protectedPaths: [resolve(sessionDirectory), paths.physical, paths.ordered],
           profileWorkspaceDir: this.options.profileWorkspaceDir ?? this.options.workspaceDir, logger: this.logger,
         });
       } else if (restrictedAllowedTools) {
@@ -162,7 +168,7 @@ export class AntigravityEngineAdapter implements EnginePort {
         removeDefinitions = materialized.remove;
       }
       process = launchAntigravityProcess({ executablePath: this.options.executablePath,
-        args: antigravityArguments(params, join(sessionDirectory, "antigravity.log"), undefined, defaultWorkspace ? workspaceDirectory : undefined),
+        args: antigravityArguments(params, join(sessionDirectory, "antigravity.log"), undefined, workspaceDirectory),
         cwd: this.workspaceDir,
         env: withScratchWorkspaceEnv(
           Object.fromEntries(Object.entries(this.options.processEnv).filter(
