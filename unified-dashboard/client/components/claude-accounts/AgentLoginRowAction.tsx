@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, type UsageSummaryProvider } from "@seosoyoung/soul-ui";
 import type { AgentLoginProvider } from "../../lib/agent-login-api";
@@ -19,6 +20,7 @@ export function useAgentLoginRowAction({ nodeId, provider, usage, request, onUsa
   /** 로그인이 끝나 그 노드의 사용량 요약을 다시 읽을 때. */
   onUsageChanged?: () => void;
 }): { action: ReactNode; panel: ReactNode } {
+  const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>("idle");
   const buttonRef = useRef<HTMLButtonElement>(null);
   const confirmCancelRef = useRef<HTMLButtonElement>(null);
@@ -48,7 +50,7 @@ export function useAgentLoginRowAction({ nodeId, provider, usage, request, onUsa
     aria-expanded={open}
     aria-disabled={open ? "true" : undefined}
     onClick={() => { if (phase === "idle") setPhase(connected ? "confirming" : "sheet"); }}
-  >{connected ? "다시 연결" : "연결"}</Button>;
+  >{connected ? t("accounts.common.reconnect") : t("accounts.common.connect")}</Button>;
 
   const panel = phase === "confirming"
     ? <div
@@ -61,10 +63,10 @@ export function useAgentLoginRowAction({ nodeId, provider, usage, request, onUsa
         close();
       }}
     >
-      <span className="c724-confirm-text">다시 연결할까요? 지금 로그인은 새 로그인으로 바뀝니다.</span>
+      <span className="c724-confirm-text">{t("accounts.login.reconnectPrompt")}</span>
       <div className="c724-confirm-actions">
-        <Button ref={confirmCancelRef} variant="outline" size="sm" onClick={close}>취소</Button>
-        <Button size="sm" onClick={() => setPhase("sheet")}>다시 연결</Button>
+        <Button ref={confirmCancelRef} variant="outline" size="sm" onClick={close}>{t("accounts.common.cancel")}</Button>
+        <Button size="sm" onClick={() => setPhase("sheet")}>{t("accounts.common.reconnect")}</Button>
       </div>
     </div>
     : phase === "sheet"

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Input } from "@seosoyoung/soul-ui";
 import { AlertCircle, ExternalLink, Loader2, RotateCcw } from "lucide-react";
@@ -31,12 +32,12 @@ function isTerminalLoginState(state: ClaudeAuthLoginFlow["state"]): boolean {
   return state === "done" || state === "failed" || state === "cancelled";
 }
 
-function stateLabel(state: ClaudeAuthLoginFlow["state"]): string {
-  if (state === "requested") return "인증 주소 준비 중";
-  if (state === "code_submitted" || state === "verifying") return "확인 중";
-  if (state === "done") return "연결 완료";
-  if (state === "failed") return "오류";
-  return "취소됨";
+function stateLabel(state: ClaudeAuthLoginFlow["state"], t: ReturnType<typeof useTranslation>["t"]): string {
+  if (state === "requested") return t("accounts.login.preparingLink");
+  if (state === "code_submitted" || state === "verifying") return t("accounts.common.checking");
+  if (state === "done") return t("accounts.login.connectionComplete");
+  if (state === "failed") return t("accounts.common.error");
+  return t("accounts.login.cancelledState");
 }
 
 export function ClaudeAuthLoginSheet({
@@ -50,6 +51,7 @@ export function ClaudeAuthLoginSheet({
   onExistingAccount,
   onRestart,
 }: Props) {
+  const { t } = useTranslation();
   const [flow, setFlow] = useState(initialFlow);
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -99,7 +101,7 @@ export function ClaudeAuthLoginSheet({
         })
         .catch((error: unknown) => {
           if (active) {
-            setActionError(requestErrorMessage(error));
+            setActionError(requestErrorMessage(error, t));
             setFlow((current) => ({ ...current }));
           }
         });
@@ -108,7 +110,7 @@ export function ClaudeAuthLoginSheet({
       active = false;
       globalThis.clearTimeout(timer);
     };
-  }, [flow, isAdditionalAccount, target, onComplete, onExistingAccount, request, updateFlow]);
+  }, [flow, isAdditionalAccount, target, onComplete, onExistingAccount, request, t, updateFlow]);
 
   async function submitCode() {
     if (inFlight.current || !code.trim()) return;
@@ -127,7 +129,7 @@ export function ClaudeAuthLoginSheet({
       if (next.error?.existing_account_id) onExistingAccount(next.error.existing_account_id);
       if (next.state === "done") await onComplete();
     } catch (error) {
-      setActionError(requestErrorMessage(error));
+      setActionError(requestErrorMessage(error, t));
       if (error instanceof Error && "apiError" in error) {
         const apiError = (error as { apiError?: { existing_account_id?: string } }).apiError;
         if (apiError?.existing_account_id) onExistingAccount(apiError.existing_account_id);
@@ -149,7 +151,7 @@ export function ClaudeAuthLoginSheet({
       onClose();
     } catch (error) {
       activeLogin.current.shouldCancel = !isTerminalLoginState(flow.state);
-      setActionError(requestErrorMessage(error));
+      setActionError(requestErrorMessage(error, t));
     } finally {
       inFlight.current = false;
       setSubmitting(false);
@@ -167,21 +169,21 @@ export function ClaudeAuthLoginSheet({
       updateFlow(next);
       if (next.state === "done") await onComplete();
     } catch (error) {
-      setActionError(requestErrorMessage(error));
+      setActionError(requestErrorMessage(error, t));
     } finally {
       inFlight.current = false;
       setSubmitting(false);
     }
   }
 
-  const visibleError = actionError ?? (flow.state === "failed" ? claudeAuthErrorMessage(flow.error) : null);
-  const title = account ? `계정 재로그인 (${account.email})` : "새 Claude 계정 연결";
+  const visibleError = actionError ?? (flow.state === "failed" ? claudeAuthErrorMessage(flow.error, t) : null);
+  const title = account ? t("accounts.claude.reloginTitle", { value: account.email }) : t("accounts.claude.newAccount");
   const hint = flow.state === "requested"
-    ? "인증 주소를 준비하고 있습니다."
+    ? t("accounts.login.preparingAddress")
     : flow.state === "code_submitted" || flow.state === "verifying"
-      ? "인증 코드를 확인하고 계정 정보를 가져오는 중입니다."
+      ? t("accounts.claude.verifyingAccount")
       : flow.state === "done"
-        ? "계정 목록에 반영했습니다."
+        ? t("accounts.claude.accountListUpdated")
         : null;
 
   return <section
@@ -198,19 +200,19 @@ export function ClaudeAuthLoginSheet({
   >
     <div className="c724-auth-sheet-header">
       <span className="c724-auth-sheet-title">{title}</span>
-      <Button variant="outline" size="sm" disabled={submitting} onClick={() => void cancel()}>취소</Button>
+      <Button variant="outline" size="sm" disabled={submitting} onClick={() => void cancel()}>{t("accounts.common.cancel")}</Button>
     </div>
     {flow.state === "url_ready"
-      ? isAdditionalAccount ? <p className="c724-auth-hint">다른 계정은 시크릿 창이나 별도 브라우저 프로필에서 열어야 구분됩니다.</p> : null
+      ? isAdditionalAccount ? <p className="c724-auth-hint">{t("accounts.claude.otherAccountBrowser")}</p> : null
       : <div className="c724-login-state-row">
         <span className={`c724-badge ${flow.state === "failed" ? "c724-badge-danger" : flow.state === "done" ? "c724-badge-accent" : "c724-badge-neutral"}`} role="status">
           {flow.state === "verifying" ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
-          {stateLabel(flow.state)}
+          {stateLabel(flow.state, t)}
         </span>
         {hint ? <p className="c724-auth-hint">{hint}</p> : null}
       </div>}
     {flow.state === "url_ready" && flow.auth_url ? <Button className="c724-login-open-link" variant="outline" size="sm" render={<a href={flow.auth_url} target="_blank" rel="noopener noreferrer" />}>
-      <ExternalLink className="size-4" aria-hidden="true" /> 인증 페이지 열기
+      <ExternalLink className="size-4" aria-hidden="true" />{" "}{t("accounts.login.openVerification")}
     </Button> : null}
     {visibleError ? <div className="c724-login-error" role="alert">
       <AlertCircle className="size-4" aria-hidden="true" />
@@ -219,25 +221,25 @@ export function ClaudeAuthLoginSheet({
     {flow.state === "url_ready" || flow.state === "failed" || flow.state === "code_submitted" || flow.state === "verifying" ? <div className="c724-auth-code-row">
       <Input
         ref={codeInputRef}
-        aria-label="Claude 인증 코드"
+        aria-label={t("accounts.claude.verificationCode")}
         autoComplete="off"
         className="flex-1"
         disabled={isChecking}
-        placeholder="인증 코드 붙여넣기 (code#state)"
+        placeholder={t("accounts.claude.verificationPlaceholder")}
         value={code}
         onChange={(event) => setCode(event.currentTarget.value)}
         onKeyDown={(event) => { if (event.key === "Enter") void submitCode(); }}
       />
       <Button variant="default" size="sm" disabled={isChecking || !code.trim()} onClick={() => void submitCode()}>
-        {isChecking ? <><Loader2 className="size-4 animate-spin" aria-hidden="true" /> 확인 중</> : flow.state === "failed" ? "다시 확인" : "확인"}
+        {isChecking ? <><Loader2 className="size-4 animate-spin" aria-hidden="true" />{" "}{t("accounts.common.checking")}</> : flow.state === "failed" ? t("accounts.common.checkAgain") : t("accounts.common.check")}
       </Button>
     </div> : null}
     {flow.state === "failed" ? <div className="c724-login-actions">
       <Button variant="outline" size="sm" disabled={submitting} onClick={() => void restart()}>
-        <RotateCcw className="size-4" aria-hidden="true" /> 새 인증 링크 받기
+        <RotateCcw className="size-4" aria-hidden="true" />{" "}{t("accounts.login.newLink")}
       </Button>
       {flow.auth_url ? <Button variant="outline" size="sm" render={<a href={flow.auth_url} target="_blank" rel="noopener noreferrer" />}>
-        <ExternalLink className="size-4" aria-hidden="true" /> 인증 페이지 열기
+        <ExternalLink className="size-4" aria-hidden="true" />{" "}{t("accounts.login.openVerification")}
       </Button> : null}
     </div> : null}
   </section>;
