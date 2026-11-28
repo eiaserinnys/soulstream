@@ -19,7 +19,7 @@ from settings_toolbar_fakes import SESSION_ID, open_settings
 NAMES = ("한국어", "English", "日本語", "简体中文")
 SAMPLES = {
     "ja": (
-        "公開前にダッシュボードを確認してください",
+        "公開前の画面確認",
         "設定を保存し、別のブラウザーでダッシュボードを開いて、同じアカウントに保存した表示言語が正しく選択されることを確認してください。",
     ),
     "zh-Hans": (
@@ -42,7 +42,7 @@ class CjkCards(CardsFake):
         self.detail["card"]["title"] = title
         self.detail["questions"] = [{
             **self.detail["questions"][0], "kind": "request",
-            "title": title, "text": sentence * 2, "options": ["했어"],
+            "title": title, "text": sentence, "options": ["했어"],
         }]
 
     def handle(self, route):
@@ -187,6 +187,8 @@ def pas(browser, base, out, notes, language):
         fake.fixture = page.evaluate(
             "(url) => import(url).then(module => module.buildPasThreadFixture())", FIXTURE_MODULE,
         )
+        title, sentence = SAMPLES[language]
+        fake.fixture["entries"][0].update(title=title, context=sentence)
         page.goto(f"{base}/persistent/{SESSION_ID}", wait_until="domcontentloaded")
         expect(page.locator("html")).to_have_attribute("lang", language)
         deck = page.get_by_test_id("report-deck")
@@ -220,6 +222,7 @@ def card_recovery(browser, base, out, notes, operations):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path, help="Directory for screenshots and operations.md")
+    parser.add_argument("--language", choices=tuple(SAMPLES), help="Run one language and write a separate operations file")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     notes, operations = [], []
@@ -228,19 +231,27 @@ def main():
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
-            for language in ("ja", "zh-Hans"):
+            languages = (args.language,) if args.language else tuple(SAMPLES)
+            for language in languages:
+                if language == "ko":
+                    dashboard(browser, base, args.output, notes, operations, language, 1440)
+                    continue
                 for width in (1440, 360):
                     dashboard(browser, base, args.output, notes, operations, language, width)
                 pas(browser, base, args.output, notes, language)
-            dashboard(browser, base, args.output, notes, operations, "ko", 1440)
-            card_recovery(browser, base, args.output, notes, operations)
+            if args.language in (None, "ja"):
+                card_recovery(browser, base, args.output, notes, operations)
     finally:
         if proc.poll() is None:
             proc.terminate()
         proc.wait(timeout=20)
-        (args.output / "operations.md").write_text("\n".join([
+        report = f"operations-{args.language}.md" if args.language else "operations.md"
+        command = f"python3 -P scripts/visual-check/lang_cjk.py --output {args.output}"
+        if args.language:
+            command += f" --language {args.language}"
+        (args.output / report).write_text("\n".join([
             "# 조작 결과", "",
-            f"`python3 -P scripts/visual-check/lang_cjk.py --output {args.output}`", "",
+            f"`{command}`", "",
             "Vite 개발 서버, Chromium, 개발 로그인과 브라우저 API 대역으로 확인했다.",
             "", "## 장면별 측정", "",
             "| 캡처 | 장면 좌우 / 문서 너비 | 버튼·탭의 스크롤 폭 초과 | 노출된 번역 키 |",

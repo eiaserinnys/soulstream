@@ -20,7 +20,7 @@ function savedSelection(): CardAssignment {
  catch { return {folderId:"",nodeId:"",agentId:"",modelPreset:""}; }
 }
 export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
- const {t}=useTranslation();
+ const {t,i18n}=useTranslation();
  const queryClient=useQueryClient();
  const [selection,setSelection] = useState(savedSelection);
  const request = useDashboardStore(s=>s.drafts[draftKey]??"");
@@ -67,11 +67,14 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
   } catch (e) {setError(errorText(e));} finally {setPending(false);}
  };
  const folder = folders.find(f=>f.id===selection.folderId);
+ const useCompactCopy = i18n.resolvedLanguage === "ja" || i18n.resolvedLanguage === "zh-Hans";
+ const unassigned = !selection.agentId && !selection.nodeId && !selection.modelPreset;
  return <CardHandoffView
   composer={{text:request,onChangeText:text=>setDraft(draftKey,text),onSend:()=>void submit(),placeholder:t("cards.startSessionPlaceholder"),inputLabel:t("cards.firstSessionMessage"),label:t("cards.startSession"),disabled:!canSubmit,pending,
    files,onAddFiles:fileUploadUrl?attachFiles:undefined,onRemoveFile:removeFile,onAttachUnavailable:()=>setError(t("cards.selectNodeToAttach"))}}
-  folderLabel={folder?`📁 ${folder.name}`:t("cards.selectFolder")}
-  executionLabel={<>{agent?.id===selection.agentId ? agent.name : selection.agentId||t("cards.agent")} · {selection.nodeId||t("cards.node")} · <span className={model?.id===selection.modelPreset && model.reason==="quota_exhausted" ? "text-destructive" : undefined}>{model?.id===selection.modelPreset ? model.label : selection.modelPreset||t("cards.model")}</span></>}
+  folderLabel={folder?`📁 ${folder.name}`:t(useCompactCopy ? "cards.folder" : "cards.selectFolder")}
+  folderButtonLabel={!folder && useCompactCopy ? t("cards.selectFolder") : undefined}
+  executionLabel={unassigned && useCompactCopy ? t("cards.executionSettings") : <>{agent?.id===selection.agentId ? agent.name : selection.agentId||t("cards.agent")} · {selection.nodeId||t("cards.node")} · <span className={model?.id===selection.modelPreset && model.reason==="quota_exhausted" ? "text-destructive" : undefined}>{model?.id===selection.modelPreset ? model.label : selection.modelPreset||t("cards.model")}</span></>}
   folderOpen={folderOpen} onFolderOpenChange={setFolderOpen} executionOpen={executionOpen} onExecutionOpenChange={setExecutionOpen} executionInvalid={Boolean(unavailableMessage)}
   error={error||files.find(f=>f.status==="error")?.errorMessage||unavailableMessage}
   folderPicker={<FolderPicker folders={folders} starredFolderIds={stars.folderIds} selectedFolderId={selection.folderId} disabledFolderIds={new Set(["claude","llm"])} pending={pending} onSelect={f=>void selectFolder(f)}/>}
