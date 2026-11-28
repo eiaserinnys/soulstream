@@ -100,7 +100,7 @@
     "item": "Checklist item",
     "appendTo": "Add to answer “{{answer}}”",
     "revisedAt": "Edited at {{time}}",
-    "cardStatus": "Card {{status}}",
+    "cardStatus": "{{status}}",
     "loading": "Loading card…",
     "openCard": "Open card",
     "clearCommentTarget": "Clear comment target",
