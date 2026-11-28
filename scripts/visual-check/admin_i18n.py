@@ -131,11 +131,18 @@ def geometry(surface):
         return {text: name(node), lines: range.getClientRects().length};
       });
       const picker = panel.querySelector('.usage-stats-chart-heading [role="combobox"]')?.getBoundingClientRect();
-      const buttons = [...panel.querySelectorAll('.usage-stats-chart-heading-controls button')].map(node => node.getBoundingClientRect());
+      const controls = panel.querySelector('.usage-stats-chart-heading-controls');
+      const buttons = [...(controls?.querySelectorAll('button') ?? [])].map(node => node.getBoundingClientRect());
       const overlap = picker ? buttons.some(box => box.left < picker.right && box.right > picker.left &&
         box.top < picker.bottom && box.bottom > picker.top) : false;
+      const row = controls ? {
+        content: controls.scrollWidth,
+        available: Math.round(controls.parentElement.getBoundingClientRect().right - controls.getBoundingClientRect().left),
+        right: Math.ceil(Math.max(...buttons.map(box => box.right))),
+        panelRight: Math.floor(bounds.right),
+      } : null;
       return {viewport: innerWidth, document: document.documentElement.scrollWidth, overlap,
-        panel: panel.clientWidth, scroll: panel.scrollWidth, outside, clipped, dateLines};
+        panel: panel.clientWidth, scroll: panel.scrollWidth, row, outside, clipped, dateLines};
     }""")
 
 
@@ -184,6 +191,10 @@ def run_view(browser, base, out, language, width, fixtures, observations):
                 expect(detail.get_by_role("textbox", name="Endpoint").first).to_have_value("https://example.test/r2")
                 expect(detail.get_by_role("button", name=copy["storage"]["check"], exact=True).first).to_be_visible()
             capture_surface(page, detail, out, f"{prefix}-{tab.replace('_', '-')}", observations)
+        chart = observations[f"{prefix}-usage-stats"]
+        if language == "en":
+            assert not chart["overlap"], chart
+            assert chart["row"]["content"] <= chart["row"]["available"], chart
 
         secret = detail.get_by_role("button", name=copy["config"]["show"], exact=True).first
         secret.click()
@@ -298,7 +309,7 @@ def main():
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
-            for language, width in (("ko", 1440), ("en", 1440), ("en", 360)):
+            for language, width in (("ko", 1440), ("en", 1440), ("ko", 360), ("en", 360)):
                 print(f"Capture {language} {width}", flush=True)
                 run_view(browser, base, args.output, language, width, fixtures, observations)
             browser.close()

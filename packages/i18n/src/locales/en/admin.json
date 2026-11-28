@@ -67,9 +67,9 @@
     "harness_internal": "Internal harness input",
     "summaryLoadError": "Couldn't load the usage summary ({{status}})",
     "summaryRefreshError": "Couldn't refresh usage ({{status}})",
-    "chartPrice": "Price",
-    "cacheOff": "No cache",
-    "cacheOn": "+ Cache"
+    "chartPrice": "Cost",
+    "cacheOff": "−Cache",
+    "cacheOn": "+"
   },
   "log": {
     "date": "Date",

@@ -71,7 +71,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{ detail?: string } | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
   const [form, setForm] = useState<UserFormState>(EMPTY_FORM);
@@ -92,7 +92,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
       setUsers(data.users ?? []);
       setFolders(data.folders ?? []);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : t("admin.users.loadDetail"));
+      setLoadError(err instanceof Error ? { detail: err.message } : {});
     } finally {
       setLoading(false);
     }
@@ -201,7 +201,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
         </div>
       )}
 
-      {loadError !== null ? <V3ErrorNotice message={t("admin.users.loadError")} detail={loadError} retryLabel={t("admin.users.retry")} onRetry={() => { void load(); }} /> : <div
+      {loadError !== null ? <V3ErrorNotice message={t("admin.users.loadError")} detail={loadError.detail ?? t("admin.users.loadDetail")} retryLabel={t("admin.users.retry")} onRetry={() => { void load(); }} /> : <div
         data-testid="user-management-table-scroll"
         className="overflow-x-auto rounded-floor border border-border"
       >

@@ -407,7 +407,7 @@ function InputMaterial({ detail }: { detail: UsageStatsDayDetail }) {
     <div className="usage-stats-share-list">
       {rows.map(row => <UsageShareRow
         key={row.category}
-        name={t(`admin.stats.${row.category}`)}
+        name={t(`admin.stats.${row.category}`, { defaultValue: row.category })}
         value={approximateTokens(row.approximate_tokens, row.category === "harness_internal", row.partial, t, locale)}
         share={row.share}
         color={row.category === "harness_internal" ? undefined : "var(--v3-accent)"}
