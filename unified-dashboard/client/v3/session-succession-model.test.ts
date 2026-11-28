@@ -150,9 +150,10 @@ describe("succession predecessor options", () => {
     const options = buildSuccessionSessionOptions(tree);
 
     expect(options).toHaveLength(1);
-    expect(options[0].label).toMatch(/^🧭+…$/u);
-    expect(Array.from(options[0].label).length).toBeLessThanOrEqual(81);
-    expect(options[0].label).not.toContain("�");
+    const label = options[0].label ?? "";
+    expect(label).toMatch(/^🧭+…$/u);
+    expect(Array.from(label).length).toBeLessThanOrEqual(81);
+    expect(label).not.toContain("�");
   });
 });
 
