@@ -247,6 +247,32 @@ function pathAllowed(family, value) {
   return false;
 }
 
+function canonicalPath(value) {
+  let current = path.resolve(value);
+  const suffix = [];
+  while (true) {
+    try { return path.resolve(fs.realpathSync(current), ...suffix); } catch (error) {
+      if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+      const parent = path.dirname(current);
+      if (parent === current) throw error;
+      suffix.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+function protectedPath(value) {
+  if (!policy.protectedPaths || typeof value !== "string" || value === "") return false;
+  const target = path.resolve(value);
+  const realTarget = canonicalPath(target);
+  return (policy.protectedPaths || []).some(root => {
+    const absolute = path.resolve(root);
+    const realRoot = canonicalPath(absolute);
+    return [target, realTarget].some(candidate => [absolute, realRoot].some(parent =>
+      candidate === parent || candidate.startsWith(parent + path.sep)));
+  });
+}
+
 function unsafeShell(command) {
   const characters = [";", "&", "|", "\\u0060", ">", "<", "\\n", "\\r"];
   for (const character of characters) {
@@ -274,7 +300,9 @@ if (WRITE_TOOLS.indexOf(name) >= 0 || EDIT_TOOLS.indexOf(name) >= 0) {
   const value = args.Path !== undefined
     ? args.Path
     : (args.TargetFile !== undefined ? args.TargetFile : args.AbsolutePath);
-  if (pathAllowed(family, value)) allow();
+  try {
+    if (!protectedPath(value) && pathAllowed(family, value)) allow();
+  } catch (error) {}
   deny("path not allowed");
 }
 

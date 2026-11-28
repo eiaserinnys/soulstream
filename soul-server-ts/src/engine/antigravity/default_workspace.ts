@@ -1,5 +1,6 @@
-import { chmod, mkdir, readdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { chmod, mkdir, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { stringify } from "yaml";
 import {
   antigravityDefinitionName, antigravityMcpServers, antigravitySubagentDefinitionText,
@@ -13,7 +14,38 @@ interface WorkspaceOptions extends DefinitionOptions {
   allowedTools?: readonly string[];
   disallowedTools?: readonly string[];
   parentConversationFile: string;
+  protectedPaths: string[];
   fresh: boolean;
+}
+
+function containsPath(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
+}
+
+export function antigravityWorkspacePaths(sessionDirectory: string, cwd: string, home: string) {
+  const session = resolve(sessionDirectory);
+  const workspace = resolve(cwd);
+  const physical = join(session, "antigravity-workspace");
+  const parent = dirname(session);
+  const key = createHash("sha256").update(parent).digest("hex");
+  const link = join(resolve(home), "~soulstream-agy", key);
+  const ordered = join(link, basename(session), "antigravity-workspace");
+  if (containsPath(workspace, physical)) {
+    throw new Error("Antigravity configuration workspace must be outside the profile workspace");
+  }
+  const fallback = containsPath(workspace, ordered) || Buffer.compare(Buffer.from(ordered), Buffer.from(workspace)) <= 0;
+  return { physical, ordered, link, parent, addDir: fallback ? physical : ordered, fallback };
+}
+
+export async function prepareAntigravityWorkspaceLink(paths: ReturnType<typeof antigravityWorkspacePaths>): Promise<void> {
+  if (paths.fallback) return;
+  await mkdir(dirname(paths.link), { recursive: true, mode: 0o700 });
+  try {
+    await symlink(paths.parent, paths.link, "junction");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST" || await readlink(paths.link) !== paths.parent) throw error;
+  }
 }
 
 const START_HOOK = `"use strict";
@@ -97,6 +129,7 @@ export async function writeAntigravityDefaultWorkspace(options: WorkspaceOptions
     const gatePath = join(directory, "tool-gate.cjs");
     await privateFile(policyPath, JSON.stringify({ ...policy.gate, allowedTools: policy.definitionTools,
       subagents: listings.map(entry => entry.invokeName), parentConversationFile: options.parentConversationFile,
+      protectedPaths: options.protectedPaths,
       subagentTools: [...new Set(subagents.flatMap(agent => antigravitySubagentTools(agent.tools)))] }, null, 2));
     await privateFile(gatePath, ANTIGRAVITY_TOOL_GATE_SOURCE);
     hooks.PreToolUse = [{ matcher: "*", hooks: [{ type: "command", command: command(process.execPath, gatePath, policyPath), timeout: 10 }] }];

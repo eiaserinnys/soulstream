@@ -50,7 +50,7 @@ if(model==='blocking'){
 }
 `);
   chmodSync(executable, 0o700);
-  const state = join(directory, "state");
+  const state = makeTempDirSync("agy-adapter-state-");
   const engine = new AntigravityEngineAdapter({ workspaceDir: directory, agentId: "test", sessionDirectory: state,
     executablePath: executable, processEnv, resolvedMcpServers }, pino({ level: "silent" }));
   return { directory, state, engine };
