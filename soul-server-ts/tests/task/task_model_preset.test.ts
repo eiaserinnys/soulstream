@@ -4,17 +4,19 @@ import {
   AgentRegistry,
 } from "../../src/agent_registry.js";
 import type { AgentProfile } from "@soulstream/agent-profile-contract";
-import { UnknownModelPresetError, type ModelPreset } from "@soulstream/model-catalog";
+import { UnknownModelPresetError, type ModelCatalogConfig, type ModelPreset } from "@soulstream/model-catalog";
 import {
   resolveExecutionSecurityDecision,
   type ExecutionSecurityPolicyPorts,
 } from "../../src/security/session_execution_policy.js";
 import {
   applyModelPresetRuntime,
+  assertTrustedExecutionPresets,
   effectiveTaskBackend,
   resolveEffectiveTurnPreset,
   resolveModelPresetSelection,
   resolveOpenCodeMcpToolAllowlist,
+  UntrustedExecutionPresetError,
 } from "../../src/task/task_model_preset.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -25,6 +27,55 @@ const agent: AgentProfile = {
   workspace_dir: "/tmp/roselin",
   default_preset: "codex-sol",
 };
+
+describe("trusted execution profile", () => {
+  const presets: ModelPreset[] = [
+    { id: "claude-sonnet", label: "Sonnet", backend: "claude", model: "sonnet" },
+    { id: "codex-6.2-sol", label: "Sol", backend: "codex", model: "sol", trusted_execution: true },
+    { id: "claude-opus", label: "Opus", backend: "claude", model: "opus", trusted_execution: true },
+  ];
+  const modelCatalog = {
+    resolve: (id: string) => {
+      const preset = presets.find((item) => item.id === id);
+      if (!preset) throw new UnknownModelPresetError(id);
+      return preset;
+    },
+    snapshot: () => ({ presets }) as ModelCatalogConfig,
+  };
+  const requiredAgent = { ...agent, requires_trusted_execution: true };
+  const input = {
+    agent: requiredAgent,
+    presetId: "claude-sonnet",
+    fallbackPresetIds: [],
+    platform: "linux" as const,
+    modelCatalog,
+  };
+
+  it("rejects an untrusted preset and lists trusted choices", () => {
+    expect(() => assertTrustedExecutionPresets(input)).toThrow(UntrustedExecutionPresetError);
+    expect(() => assertTrustedExecutionPresets(input)).toThrow(/claude-sonnet.*codex-6\.2-sol.*claude-opus/);
+  });
+
+  it("accepts a trusted preset and trusted fallback", () => {
+    expect(() => assertTrustedExecutionPresets({
+      ...input, presetId: "codex-6.2-sol", fallbackPresetIds: ["claude-opus"],
+    })).not.toThrow();
+  });
+
+  it("rejects an untrusted fallback", () => {
+    expect(() => assertTrustedExecutionPresets({
+      ...input, presetId: "codex-6.2-sol", fallbackPresetIds: ["claude-sonnet"],
+    })).toThrow(UntrustedExecutionPresetError);
+  });
+
+  it("allows an unflagged profile", () => {
+    expect(() => assertTrustedExecutionPresets({ ...input, agent })).not.toThrow();
+  });
+
+  it("allows an untrusted preset on Windows", () => {
+    expect(() => assertTrustedExecutionPresets({ ...input, platform: "win32" })).not.toThrow();
+  });
+});
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {

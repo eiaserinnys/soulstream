@@ -3233,6 +3233,16 @@
                 }
               ]
             },
+            "requires_trusted_execution": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "workspace_dir": {
               "anyOf": [
                 {

@@ -24,6 +24,17 @@ function withTempYaml<T>(content: string, fn: (p: string) => T): T {
 }
 
 describe("AgentProfileSchema", () => {
+  it("preserves the trusted execution requirement", () => {
+    const parsed = AgentProfileSchema.parse({
+      id: "bubbles",
+      name: "배달원",
+      backend: "claude",
+      workspace_dir: "/tmp/bubbles",
+      requires_trusted_execution: true,
+    });
+    expect(parsed.requires_trusted_execution).toBe(true);
+  });
+
   it("필수 키 모두 있으면 통과", () => {
     const parsed = AgentProfileSchema.parse({
       id: "codex-default",

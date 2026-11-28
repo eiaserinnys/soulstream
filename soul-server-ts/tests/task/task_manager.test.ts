@@ -185,6 +185,33 @@ function makeMocks() {
 }
 
 describe("TaskManager model preset defaults", () => {
+  it.skipIf(process.platform === "win32")("rejects a sandboxed preset before creating a session for a trusted profile", async () => {
+    const mocks = makeMocks();
+    const agentRegistry = {
+      get: vi.fn(() => ({
+        id: "bubbles", name: "배달원", backend: "claude", workspace_dir: "/tmp/bubbles",
+        requires_trusted_execution: true,
+      })),
+    } as unknown as AgentRegistry;
+    const modelCatalog = {
+      resolve: vi.fn(() => ({ id: "claude-sonnet", label: "Sonnet", backend: "claude" as const, model: "sonnet" })),
+      snapshot: () => ({ presets: [] }) as never,
+    };
+    const tm = new TaskManager(
+      "n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence,
+      undefined, agentRegistry, undefined, undefined, false, undefined, modelCatalog,
+    );
+
+    await expect(tm.createTask({
+      agentSessionId: "sess-trusted-profile",
+      prompt: "inspect",
+      profileId: "bubbles",
+      modelPreset: "claude-sonnet",
+    })).rejects.toThrow(/상자 밖 프리셋/);
+    expect(mocks.registerSession).not.toHaveBeenCalled();
+    expect(tm.getTask("sess-trusted-profile")).toBeUndefined();
+  });
+
   it("resolves a profile default before persisting a task created outside upstream commands", async () => {
     const mocks = makeMocks();
     const agentRegistry = {

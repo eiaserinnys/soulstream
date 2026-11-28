@@ -248,6 +248,8 @@ export const AgentProfileSchema = z.object({
   context_scope: z.enum(["full", "minimal"]).optional(),
   /** Claude 전용. false면 자동 기억(MEMORY.md)을 읽지도 쓰지도 않는다. 없으면 SDK 기본. */
   claude_auto_memory_enabled: z.boolean().optional(),
+  /** true면 Linux에서 상자 밖(trusted_execution) 프리셋으로만 세션을 만든다. 하니엘과 볼트 토큰을 읽어야 하는 프로필(배달원)용. */
+  requires_trusted_execution: z.boolean().optional(),
   env: z.record(z.string(), z.string()).optional(),
   mcp_profile: z.string().min(1).optional(),
   portrait_path: z.string().optional(),
