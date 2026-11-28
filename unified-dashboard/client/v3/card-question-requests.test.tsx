@@ -131,12 +131,12 @@ describe('card detail question actions', () => {
   it('sends a one-press choice and puts the append target row above the composer', async () => {
     await render([question]);
     await act(async () => { choice('파일로 옮기기').click(); await Promise.resolve(); });
-    expect(mutate).toHaveBeenCalledWith('inherit', '/questions/q/answer', { mode: 'choice', option: '파일로 옮기기' });
+    expect(mutate).toHaveBeenCalledWith('inherit', '/questions/q/answer', { mode: 'choice', option: '파일로 옮기기' },"POST",expect.any(Function));
     expect(container.querySelector('.v3-card-target-notice')?.textContent).toContain('덧붙이기: 파일로 옮기기');
     expect(textarea().getAttribute('placeholder')).toBe('덧붙일 말');
     await type('옮긴 뒤 알려 주세요');
     await send();
-    expect(addComment).toHaveBeenCalledWith('inherit', '옮긴 뒤 알려 주세요', expect.any(String), undefined, 'q');
+    expect(addComment).toHaveBeenCalledWith('inherit', '옮긴 뒤 알려 주세요', expect.any(String), undefined, 'q',expect.any(Function));
   });
 
   it('sends the open question composer as a text answer', async () => {
@@ -145,7 +145,7 @@ describe('card detail question actions', () => {
     expect(textarea().getAttribute('placeholder')).toBe('다르게 답하기');
     await type('파일로 옮기기만 빼고 진행');
     await send();
-    expect(mutate).toHaveBeenCalledWith('inherit', '/questions/q/answer', { mode: 'text', answer: '파일로 옮기기만 빼고 진행' });
+    expect(mutate).toHaveBeenCalledWith('inherit', '/questions/q/answer', { mode: 'text', answer: '파일로 옮기기만 빼고 진행' },"POST",expect.any(Function));
     expect(addComment).not.toHaveBeenCalled();
   });
 
@@ -157,14 +157,14 @@ describe('card detail question actions', () => {
     expect(document.activeElement).toBe(textarea());
     await type('이건 무슨 뜻인가요?');
     await send();
-    expect(addComment).toHaveBeenCalledWith('inherit', '이건 무슨 뜻인가요?', expect.any(String), undefined, 'q');
+    expect(addComment).toHaveBeenCalledWith('inherit', '이건 무슨 뜻인가요?', expect.any(String), undefined, 'q',expect.any(Function));
   });
 
   it('sends 했어 as a choice without an append target', async () => {
     await render([request]);
     expect(container.querySelector('.v3-card-question-choices')).toBeNull();
     await act(async () => { exact('했어').click(); await Promise.resolve(); });
-    expect(mutate).toHaveBeenCalledWith('inherit', '/questions/q-request/answer', { mode: 'choice', option: '했어' });
+    expect(mutate).toHaveBeenCalledWith('inherit', '/questions/q-request/answer', { mode: 'choice', option: '했어' },"POST",expect.any(Function));
     expect(container.textContent).not.toContain('덧붙이기');
   });
 

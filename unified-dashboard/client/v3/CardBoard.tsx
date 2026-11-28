@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Fragment,useLayoutEffect,useRef,useState,type ReactNode } from "react";
 import type { CardStatus } from "../../../packages/wire-schema/generated/typescript/index";
 import type { CompletedGridSnapshot } from "@seosoyoung/soul-ui/cards/CompletedVirtualGrid";
@@ -22,6 +23,7 @@ export function CardBoard({cards, renderCard, completion, draftAction,completed,
   cards: readonly CardRow[]; renderCard(card:CardRow):ReactNode; draftAction?:ReactNode; completion?:CardCompletionOption;completed?:CompletedBrowser;hideEmptyLanes?:boolean;
   completedGridSnapshot?:CompletedGridSnapshot|null;onCompletedGridSnapshotChange?:(snapshot:CompletedGridSnapshot)=>void;
 }) {
+ const {t}=useTranslation();
   const pan = useBoardPan();
   const root=useRef<HTMLDivElement>(null);
   const [doneWidth,setDoneWidth]=useState<number>();
@@ -38,14 +40,15 @@ export function CardBoard({cards, renderCard, completion, draftAction,completed,
   const columns=boardColumns.filter(({status})=>completion?.includeCompleted!==false||(status!=="done"&&status!=="cancelled")).map(column=>({
     ...column,cards:column.status==="done"&&completed?[...completed.cards]:visible.filter(card=>card.status===column.status),
   })).filter(column=>!hideEmptyLanes||column.cards.length>0||(column.status==="done"&&!!completed));
-  return <PostItGrid ref={root} {...pan} className="v3-card-board" variant="compact"><span className="v3-completed-measure" aria-hidden="true"/>{columns.length===0&&hideEmptyLanes?<p className="v3-card-board-empty">카드가 없습니다</p>:null}{columns.map(({status,label,cards:column})=>{
+  return <PostItGrid ref={root} {...pan} className="v3-card-board" variant="compact"><span className="v3-completed-measure" aria-hidden="true"/>{columns.length===0&&hideEmptyLanes?<p className="v3-card-board-empty">{t("cards.boardEmpty")}</p>:null}{columns.map(({status,label,cards:column})=>{
     const sorted=sortCardsInStatus(column);
-    return <section key={status} className="v3-card-board-column" data-board-column={status} aria-label={label} style={status==="done"?{width:doneWidth}:undefined}>
-      <div className="v3-detail-section-head"><h3>{label}</h3>{status!=="done"||!completed||completed.loaded?<span>{column.length}개{status==="done"?" 표시":""}</span>:null}{status==="todo"?draftAction:null}</div>
+    const statusLabel=status==="todo"?t("cards.draft"):t(`cards.status.${status}`,{defaultValue:label});
+    return <section key={status} className="v3-card-board-column" data-board-column={status} aria-label={statusLabel} style={status==="done"?{width:doneWidth}:undefined}>
+      <div className="v3-detail-section-head"><h3>{statusLabel}</h3>{status!=="done"||!completed||completed.loaded?<span>{status==="done"?t("cards.shownCount",{count:column.length}):t("cards.count",{count:column.length})}</span>:null}{status==="todo"?draftAction:null}</div>
       {status==="done"&&completed?<CompletedCardGrid browser={completed} renderCard={card=>renderCard(card)} showControls={!hideEmptyLanes}
         snapshot={completedGridSnapshot} onSnapshotChange={onCompletedGridSnapshotChange}/>:<div className="v3-card-board-lane">
         {sorted.length ? sorted.map(card=><Fragment key={card.id}>{renderCard(card)}</Fragment>)
-        : <p className="v3-card-board-empty">카드가 없습니다</p>}
+        : <p className="v3-card-board-empty">{t("cards.boardEmpty")}</p>}
       </div>}
     </section>;
   })}</PostItGrid>;

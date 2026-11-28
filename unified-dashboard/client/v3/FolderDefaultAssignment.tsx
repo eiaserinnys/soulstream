@@ -4,7 +4,7 @@ import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
 import { Pencil } from "lucide-react";
 
 import {
-  MODEL_PRESET_FETCH_ERROR,
+  modelPresetFetchError,
   modelPresetDisplayLabel,
   modelPresetSelectionState,
 } from "../lib/model-presets";
@@ -22,7 +22,7 @@ export function FolderDefaultAssignment({
   modelPreset: string | null;
   onSave(value: { agentId: string; nodeId: string; modelPreset: string }): Promise<void>;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draftAgentId, setDraftAgentId] = useState(agentId ?? "");
   const [draftNodeId, setDraftNodeId] = useState(nodeId ?? "");
@@ -44,6 +44,7 @@ export function FolderDefaultAssignment({
     modelPreset ?? "",
     catalogMatchesNode ? modelPresetCatalog.presets : [],
     modelCatalogStatus === "ready",
+    t,
   );
   const modelDisplayLabel = modelPreset
     ? modelPresetDisplayLabel({
@@ -51,7 +52,7 @@ export function FolderDefaultAssignment({
         preset: modelSelection.preset,
         status: modelCatalogStatus,
         missingLabel: t("folders.assignment.checkModel"),
-      })
+      }, t, i18n.language)
     : t("folders.assignment.noModel");
 
   useEffect(() => {
@@ -113,7 +114,7 @@ export function FolderDefaultAssignment({
           aria-expanded={editing}
           disabled={pending || editing}
           onClick={() => {
-            setError(modelPresetCatalog.status === "error" ? MODEL_PRESET_FETCH_ERROR : null);
+            setError(modelPresetCatalog.status === "error" ? modelPresetFetchError(t) : null);
             setEditing(true);
           }}
         >

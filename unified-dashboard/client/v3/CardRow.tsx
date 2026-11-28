@@ -1,8 +1,9 @@
+import { useTranslation } from "react-i18next";
 import { memo, type ReactElement, type ReactNode, type RefObject, useRef } from "react";
 import { ProfileAvatar, useAgentPortraitUrlResolver, useDashboardStore, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow as Card, CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
-import { useCardCompletion, cardStatusLabel } from "./CardActions";
+import { useCardCompletion, cardDependencyNotice, cardStatusLabel } from "./CardActions";
 import { RunRowFrame } from "./RunRowFrame";
 import { useCardNavigation } from "./card-navigation";
 import { TASK_TITLE_PREVIEW_LENGTH, singleLinePreview } from "./session-preview";
@@ -12,7 +13,6 @@ import { cardActivityPreview } from "@seosoyoung/soul-ui/cards/card-activity-pre
 import { summarizeCardItems } from "./card-item-summary";
 import { CardProgressSummary } from "./CardProgressSummary";
 import { cardAssignee } from "./card-assignee";
-import { cardDependencyDisplay } from "../../../packages/wire-schema/src/card_dependency_display";
 import { TriangleAlert } from "lucide-react";
 const NO_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
 type SummaryRowWrapper = (row: ReactElement, titleRef: RefObject<HTMLSpanElement | null>) => ReactNode;
@@ -35,17 +35,18 @@ export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,comp
  summaryRowWrapper?:SummaryRowWrapper;
  pendingConfirmations?:Readonly<Record<number,boolean>>;
 }) {
+ const {t}=useTranslation();
  const summaryTitleRef=useRef<HTMLSpanElement>(null);
  const nodeId=assignee?.nodeId??card.nodeId,agentId=assignee?.agentId??card.assigneeAgentId;
  const resolvePortrait=useAgentPortraitUrlResolver();
  const portrait=assignee?.agentPortraitUrl??(resolvePortrait(agentId)||null);
- const name=resolveCardAssigneeName(card,assignee)??"담당 미지정";
- const dependency=cardDependencyDisplay(card.status,card.dependsOn);
+ const name=resolveCardAssigneeName(card,assignee)??t("cards.unassigned");
+ const dependency=cardDependencyNotice(card,t);
  if(variant==="summary") {
   const hasNumber=card.number!==undefined&&card.number!==null;
   const hasAssignee=card.assigneeKind!==null&&Boolean(agentId||card.assigneeUserId);
   const row=<button type="button" className="v3-card-summary-row" data-card-id={card.id} data-has-number={hasNumber||undefined}
-   data-has-assignee={hasAssignee||undefined} aria-label={`카드 ${card.title} 열기`} onClick={onOpen}>
+   data-has-assignee={hasAssignee||undefined} aria-label={t("cards.openNamedCard",{title:card.title})} onClick={onOpen}>
    {hasNumber?<span className="v3-card-summary-number-slot"><span className="v3-card-summary-number-reserve" aria-hidden="true">{summaryNumberTemplate??`#${card.number}`}</span><span className="v3-card-summary-number">#{card.number}</span></span>:null}
    <span className="v3-card-summary-heading"><span ref={summaryTitleRef} className="v3-card-summary-title">{card.title}</span>{dependency?.tone==="error"?<TriangleAlert className="v3-card-summary-alert h-4 w-4 text-destructive" aria-label={dependency.text}/>:null}</span>
    {hasAssignee?<span className="v3-card-summary-avatar"><ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={card.assigneeKind==="human"?"👤":"🤖"}/></span>:null}
@@ -58,23 +59,23 @@ export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,comp
  const preview=singleLinePreview((card.now?.text??source).split(/\r?\n/)[0],TASK_TITLE_PREVIEW_LENGTH);
  const itemSummary=summarizeCardItems(card.items,pendingConfirmations);
  const hasItems=Boolean(card.items?.length);
- const cardTurn=card.now?.turn==="user"?[itemSummary.toReviewCount>0?`볼 것 ${itemSummary.toReviewCount}`:null,card.now.ask].filter(Boolean).join(", ")||undefined:undefined;
+ const cardTurn=card.now?.turn==="user"?[itemSummary.toReviewCount>0?t("cards.toReviewCount",{count:itemSummary.toReviewCount}):null,card.now.ask].filter(Boolean).join(", ")||undefined:undefined;
  return <RunRowFrame variant="card" cardId={card.id} blockedKind={card.blockedKind} handle={handle}
-  openLabel={`카드 ${card.title} 열기`} onOpen={onOpen}
+  openLabel={t("cards.openNamedCard",{title:card.title})} onOpen={onOpen}
   avatar={<ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={card.assigneeKind==="human"?"👤":"🤖"}/>}
   title={<strong title={card.title}>{card.title}</strong>}
-  agentLine={<>{folderLabel?<span>{folderLabel}</span>:null}<span>{name}</span><span>{nodeId??"노드 미상"}</span><span>{assignee?.modelLabel??card.modelPreset??"모델 미지정"}</span></>}
+  agentLine={<>{folderLabel?<span>{folderLabel}</span>:null}<span>{name}</span><span>{nodeId??t("cards.unknownNode")}</span><span>{assignee?.modelLabel??card.modelPreset??t("cards.noModel")}</span></>}
   preview={preview??""}
-  status={{label:`카드 ${cardStatusLabel(card)}`,tone:card.status==="blocked"&&card.blockedKind==="question"?"question":card.status}}
-  timestamp={{display:cardElapsed(card.updatedAt),raw:card.updatedAt}}
+  status={{label:t("cards.cardStatus",{status:cardStatusLabel(card,t)}),tone:card.status==="blocked"&&card.blockedKind==="question"?"question":card.status}}
+  timestamp={{display:cardElapsed(card.updatedAt,t),raw:card.updatedAt}}
   cardSummary={hasItems?<CardProgressSummary summary={itemSummary}/>:undefined} cardTurn={dependency?<span className={dependency.tone==="error"?"v3-card-error":undefined}>{dependency.text}</span>:cardTurn}
-  actions={card.status==="review" ? completion?[{kind:"complete",label:"완료",pending:completion.pending,onAction:completion.onComplete}]:undefined : [{kind:"open",label:"카드 열기",onAction:onOpen}]}
+  actions={card.status==="review" ? completion?[{kind:"complete",label:t("cards.complete"),pending:completion.pending,onAction:completion.onComplete}]:undefined : [{kind:"open",label:t("cards.openCard"),onAction:onOpen}]}
  />;
 }
 export function resolveCardAssigneeName(card:Pick<Card,"assigneeAgentId"|"assigneeUserId">,assignee?:{agentName?:string|null;agentId?:string|null}|null):string|undefined {
  return assignee?.agentName??assignee?.agentId??card.assigneeAgentId??card.assigneeUserId??undefined;
 }
-function cardElapsed(timestamp:string) {
+function cardElapsed(timestamp:string,t:ReturnType<typeof useTranslation>["t"]) {
  const minutes=Math.max(0,Math.floor((Date.now()-Date.parse(timestamp))/60000));
- return minutes<1?"방금 전":minutes<60?`${minutes}분 전`:minutes<1440?`${Math.floor(minutes/60)}시간 전`:`${Math.floor(minutes/1440)}일 전`;
+ return minutes<1?t("cards.justNow"):minutes<60?t("cards.minutesAgo",{count:minutes}):minutes<1440?t("cards.hoursAgo",{count:Math.floor(minutes/60)}):t("cards.daysAgo",{count:Math.floor(minutes/1440)});
 }

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { memo, useEffect, useRef, useState, type HTMLAttributes, type Ref } from "react";
 import { ProfileAvatar, useAgentPortraitUrlResolver, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
@@ -5,7 +6,7 @@ import type { CardStatus } from "../../../packages/wire-schema/generated/typescr
 import { cardActivityPreview } from "@seosoyoung/soul-ui/cards/card-activity-preview";
 import type { CardActivity, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import type { CardQueueStatusActivator } from "@seosoyoung/soul-ui/cards/CardQueue";
-import { cardStatusLabel } from "./CardActions";
+import { cardDependencyNotice, cardStatusLabel } from "./CardActions";
 import { StatusChip } from "./StatusChip";
 import { useCardNavigation } from "./card-navigation";
 import { CardStatusPicker, type CardStatusControl, type CardStatusHandle } from "./CardStatusPicker";
@@ -19,7 +20,6 @@ import {PostItCardView as Paper, PostItGrid as PaperGrid, type PostItVariant} fr
 import { summarizeCardItems } from "./card-item-summary";
 import { CardProgressSummary } from "./CardProgressSummary";
 import { cardAssignee } from "./card-assignee";
-import { cardDependencyDisplay } from "../../../packages/wire-schema/src/card_dependency_display";
 export {postItRotation} from "./PostItCardPresentation";
 export type {PostItVariant} from "./PostItCardPresentation";
 const NO_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
@@ -49,6 +49,7 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
   variant?: PostItVariant;
   pendingConfirmations?:Readonly<Record<number,boolean>>;
 }) {
+ const {t}=useTranslation();
   const statusHandle = useRef<CardStatusHandle>(null);
   const [contextTarget,setContextTarget]=useState<V3ContextMenuTarget|null>(null);
   const layer=useCardBoardLayer();
@@ -58,26 +59,26 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
   const agentId = assignee?.agentId ?? card.assigneeAgentId;
   const resolvePortrait = useAgentPortraitUrlResolver();
   const portrait = assigned ? assignee?.agentPortraitUrl ?? (resolvePortrait(agentId) || null) : null;
-  const name = assigned ? assignee?.agentName ?? agentId ?? card.assigneeUserId ?? "담당 세션" : "담당 없음";
+  const name = assigned ? assignee?.agentName ?? agentId ?? card.assigneeUserId ?? t("cards.assignedSession") : t("cards.noAssignee");
   const tone = card.status === "blocked" && card.blockedKind === "question" ? "question" : card.status;
   const displayTitle = card.number == null ? card.title : `#${card.number} ${card.title}`;
   const itemSummary=summarizeCardItems(card.items,pendingConfirmations);
   const hasItems=Boolean(card.items?.length);
   const nowText=card.now?.text;
   const turnText=card.now?.turn==="user"?card.now.ask??undefined:undefined;
-  const dependency=cardDependencyDisplay(card.status,card.dependsOn);
+  const dependency=cardDependencyNotice(card,t);
   const statusActions=statusControl?cardStatusChoices.map(status=>({
-    label:cardStatusLabel({...card,status,blockedKind:null,blockedDetail:null}),
+    label:cardStatusLabel({...card,status,blockedKind:null,blockedDetail:null},t),
     onSelect:()=>statusHandle.current?.request(status as CardStatus),
   })):[];
   return <>
-    <Paper id={card.id} title={displayTitle} status={card.status} color={card.color} fontSize={fontSize} variant={variant}
+    <Paper t={t} id={card.id} title={displayTitle} status={card.status} color={card.color} fontSize={fontSize} variant={variant}
       activity={activity?{kind:activity.kind,text:cardActivityPreview(activity)}:null}
-      summary={hasItems?<span className="v3-postit-summary"><CardProgressSummary summary={itemSummary} showReviewCount/></span>:undefined} nowText={nowText} turnText={dependency?.text??turnText} turnTone={dependency?.tone} turnLabel={!dependency&&card.now?.turn==="user"&&itemSummary.toReviewCount>0?`볼 것 ${itemSummary.toReviewCount}`:undefined}
+      summary={hasItems?<span className="v3-postit-summary"><CardProgressSummary summary={itemSummary} showReviewCount/></span>:undefined} nowText={nowText} turnText={dependency?.text??turnText} turnTone={dependency?.tone} turnLabel={!dependency&&card.now?.turn==="user"&&itemSummary.toReviewCount>0?t("cards.toReviewCount",{count:itemSummary.toReviewCount}):undefined}
       assigneeName={name} onOpen={onOpen} error={error}
       avatar={<ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait}
         fallbackEmoji={assigned ? card.assigneeKind === "human" ? "👤" : "🤖" : "·"}/>}
-      statusContent={statusControl?<CardStatusPicker ref={statusHandle} card={card} control={statusControl} onOpen={onOpen} activator={statusActivator}/>:<StatusChip label={cardStatusLabel(card)} tone={tone}/>}
+      statusContent={statusControl?<CardStatusPicker ref={statusHandle} card={card} control={statusControl} onOpen={onOpen} activator={statusActivator}/>:<StatusChip label={cardStatusLabel(card,t)} tone={tone}/>}
       onContextMenu={event=>{if(statusControl){event.preventDefault();event.stopPropagation();setContextTarget({x:event.clientX,y:event.clientY});}}}
       onKeyDown={event=>{
         if(!statusControl)return;
@@ -86,9 +87,9 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
       }}/>
     <V3ContextMenu target={contextTarget} onClose={()=>setContextTarget(null)}
       actions={statusControl?[
-        {label:"카드 ID 복사",onSelect:()=>navigator.clipboard.writeText(card.id)},
-        ...(statusControl.changeColor?[{label:"카드 색상 변경",separatorBefore:true,onSelect:()=>statusHandle.current?.requestColor()}]:[]),
+        {label:t("cards.copyCardId"),onSelect:()=>navigator.clipboard.writeText(card.id)},
+        ...(statusControl.changeColor?[{label:t("cards.changeColor"),separatorBefore:true,onSelect:()=>statusHandle.current?.requestColor()}]:[]),
       ]:[]}
-      groups={statusControl?[{label:"카드 상태 변경",actions:statusActions}]:[]}/>
+      groups={statusControl?[{label:t("cards.changeStatus"),actions:statusActions}]:[]}/>
   </>;
 }

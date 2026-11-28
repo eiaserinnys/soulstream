@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { DashboardIconCap } from "@seosoyoung/soul-ui";
@@ -78,11 +79,13 @@ function restoreVerticalScroll(board:HTMLElement, positions:Partial<Record<Board
 
 /** One mounted board owns its scope, option and scroll even while expanded. */
 export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=false,boardPlaceholder,...boardProps}:Omit<ComponentProps<typeof CardBoard>,"completedGridSnapshot"|"onCompletedGridSnapshotChange">&{title:string;actions?:ReactNode;initialExpanded?:boolean;boardPlaceholder?:ReactNode}) {
+ const {t}=useTranslation();
   const boardUnavailable=boardPlaceholder!==undefined;
   const [expanded,setExpanded]=useState(initialExpanded);
   const [completedGridSnapshot,setCompletedGridSnapshot]=useState<CompletedGridSnapshot|null>(null);
   const detailOpen=useCardNavigation(state=>state.cardId!==null);
   const root=useRef<HTMLDivElement>(null);
+  const expandButton=useRef<HTMLButtonElement>(null),collapseButton=useRef<HTMLButtonElement>(null);
   const nestedLayers=useRef(0);
   const layer=useMemo(()=>({claim(){nestedLayers.current++;return ()=>{nestedLayers.current--;};}}),[]);
   const snapshot=useRef<BoardSnapshot|null>(null);
@@ -154,14 +157,14 @@ export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=fa
         currentAnchor.current=restoreHorizontalAnchor(board,saved.horizontal,renderedStatuses);
         restoreVerticalScroll(board,saved.vertical);
         saveVerticalScroll(board,verticalPositions.current);
-        root.current?.querySelector<HTMLButtonElement>('button[aria-label="확대 닫기"]')?.focus({preventScroll:true});
+        collapseButton.current?.focus({preventScroll:true});
       }
     } else if(wasExpanded&&snapshot.current) {
       const saved=snapshot.current;
       currentAnchor.current=restoreHorizontalAnchor(board,saved.horizontal,renderedStatuses);
       restoreVerticalScroll(board,saved.vertical);
       saveVerticalScroll(board,verticalPositions.current);
-      const focus=saved.focus?.isConnected?saved.focus:root.current?.querySelector<HTMLButtonElement>('button[aria-label="보드 확대"]');
+      const focus=saved.focus?.isConnected?saved.focus:expandButton.current;
       focus?.focus({preventScroll:true});
       snapshot.current=null;
       mainStatuses.current=[...renderedStatuses];
@@ -195,7 +198,7 @@ export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=fa
   },[expanded,renderedStatusKey,boardUnavailable]);
 
   const content=<div ref={root} className={`v3-card-board-workspace${expanded?" is-expanded border border-glass-border glass-strong glass-chrome lg-rim":""}`}
-    data-card-board-expanded={expanded} role={expanded?"dialog":undefined} aria-modal={expanded||undefined} aria-label={expanded?`${title} 보드`:undefined}
+    data-card-board-expanded={expanded} role={expanded?"dialog":undefined} aria-modal={expanded||undefined} aria-label={expanded?t("cards.namedBoard", {title}):undefined}
     onKeyDown={event=>{
       if(!expanded)return;
       // Popup portals and the sensor own their Escape; only the idle board closes.
@@ -208,12 +211,12 @@ export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=fa
         else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
       }
     }}>
-    <div className="v3-detail-section-head v3-folder-card-head"><h3>{title}</h3>{!boardUnavailable?<span>{boardProps.cards.filter(card=>!card.archived&&(boardProps.completion?.includeCompleted!==false||(card.status!=="done"&&card.status!=="cancelled"))).length}개 표시</span>:null}
+    <div className="v3-detail-section-head v3-folder-card-head"><h3>{title}</h3>{!boardUnavailable?<span>{t("cards.shownCount",{count:boardProps.cards.filter(card=>!card.archived&&(boardProps.completion?.includeCompleted!==false||(card.status!=="done"&&card.status!=="cancelled"))).length})}</span>:null}
       <span className="v3-spacer"/>
       {boardProps.completion?<CardCompletionFilter {...boardProps.completion} hiddenCount={boardProps.cards.filter(card=>!card.archived&&card.status==="done").length}/>:null}
       <div className="v3-card-actions">{draftAction}{expanded?null:actions}
-        {expanded?<DashboardIconCap size="small" label="확대 닫기" onClick={collapse}><X className="h-4 w-4"/></DashboardIconCap>
-          :!boardUnavailable?<DashboardIconCap size="small" label="보드 확대" onClick={expand}><Maximize2 className="h-4 w-4"/></DashboardIconCap>:null}
+        {expanded?<DashboardIconCap ref={collapseButton} size="small" label={t("cards.closeExpanded")} onClick={collapse}><X className="h-4 w-4"/></DashboardIconCap>
+          :!boardUnavailable?<DashboardIconCap ref={expandButton} size="small" label={t("cards.expandBoard")} onClick={expand}><Maximize2 className="h-4 w-4"/></DashboardIconCap>:null}
       </div>
     </div>
     {!boardUnavailable&&!expanded&&boardProps.completion?.includeCompleted&&boardProps.completed?<>

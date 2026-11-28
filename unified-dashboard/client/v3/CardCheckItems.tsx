@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import type { CardCheckItem } from "@seosoyoung/soul-ui/cards/card-types";
@@ -13,6 +14,7 @@ export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,on
  onConfirmChange(itemId:number,confirmed:boolean):void|Promise<void>;onTargetItem(itemId:number):void;
  onOpenImage?(src:string,alt:string,attachment?:ChatAttachmentItem):void;readOnly?:boolean;
 }) {
+ const {t}=useTranslation();
  const current=items??[];
  const initialized=useRef(current.length>0);
  const [initialConfirmedIds,setInitialConfirmedIds]=useState<ReadonlySet<number>>(()=>new Set(current.filter(item=>item.display==="confirmed").map(item=>item.id)));
@@ -69,11 +71,11 @@ export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,on
  };
  return <>
   <div className="v3-card-check-items" data-testid="card-check-items" data-active-count={summary.activeCount} data-confirmed-count={summary.confirmedCount}>
-   {current.length===0?<p className="v3-detail-empty">확인할 항목이 없습니다.</p>:<>
+   {current.length===0?<p className="v3-detail-empty">{t("cards.noCheckItems")}</p>:<>
     {current.filter(item=>!groupedIds.has(item.id)).map(renderItem)}
     {grouped.length?<section className="v3-card-confirmed-group" data-testid="confirmed-items-group">
-     <button type="button" aria-label={`확인함 ${grouped.length}개 ${groupExpanded?"접기":"펼치기"}`} aria-expanded={groupExpanded} onClick={()=>setGroupExpanded(value=>!value)}>
-      <span className="v3-card-confirmed-icon"><Check className="h-4 w-4" aria-hidden="true"/></span><span>확인함 {grouped.length}개</span>
+     <button type="button" aria-label={t("cards.toggleConfirmed", {count:grouped.length,action:groupExpanded?t("cards.collapse"):t("cards.expand")})} aria-expanded={groupExpanded} onClick={()=>setGroupExpanded(value=>!value)}>
+      <span className="v3-card-confirmed-icon"><Check className="h-4 w-4" aria-hidden="true"/></span><span>{t("cards.confirmed")} {t("cards.count",{count:grouped.length})}</span>
       {groupExpanded?<ChevronUp className="h-4 w-4" aria-hidden="true"/>:<ChevronDown className="h-4 w-4" aria-hidden="true"/>}
      </button>
      {groupExpanded?<div>{grouped.map(renderItem)}</div>:null}

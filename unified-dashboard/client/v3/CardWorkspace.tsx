@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useLayoutEffect, useRef, useState, type ComponentProps } from "react";
 import { createPortal } from "react-dom";
 import { SessionFilesPane } from "./SessionFilesPanel";
@@ -19,6 +20,7 @@ export function CardWorkspace({cardId,folders,onClose,onCloseChat,onOpenSession,
  sampleDetail?:ComponentProps<typeof CardDetailPane>["sampleDetail"];
  onSampleChange?:ComponentProps<typeof CardDetailPane>["onSampleChange"];
 } & Omit<ComponentProps<typeof WorkspaceSessionColumn>,"chatClassName"|"chatTestId"|"resizeClassName"|"resizeTestId"|"onResize"|"onResizeKeyDown"|"cardSessionCount">) {
+ const {t}=useTranslation();
  const files=useSessionFilesToggle();
  const storedDetail=useCardStore(s=>s.details[cardId]);
  const cardDetail=sampleDetail??storedDetail;
@@ -34,7 +36,7 @@ export function CardWorkspace({cardId,folders,onClose,onCloseChat,onOpenSession,
   setHost(workspace.current?.closest('.v3-shell')??null);
   return ()=>{if(focus?.isConnected)focus.focus({preventScroll:true});};
  },[]);
- useLayoutEffect(()=>{workspace.current?.querySelector<HTMLButtonElement>('button[aria-label="카드 닫기"]')?.focus({preventScroll:true});},[host]);
+ useLayoutEffect(()=>{workspace.current?.querySelector<HTMLButtonElement>("[data-card-close]")?.focus({preventScroll:true});},[host]);
  useLayoutEffect(()=>{
   const element=workspace.current;
   if(!element||typeof ResizeObserver==="undefined")return;
@@ -64,7 +66,7 @@ export function CardWorkspace({cardId,folders,onClose,onCloseChat,onOpenSession,
   <div className={files.open && chat.activeSession ? "v3-files-detail-hidden" : "v3-files-detail-visible"}><CardDetailPane cardId={cardId} folders={folders} onClose={onClose} onOpenSession={onOpenSession} initialSessionId={initialSessionId} sampleDetail={sampleDetail} sampleExecution={sampleExecution} onSampleChange={onSampleChange}/></div>
   {files.open && chat.activeSession && <SessionFilesPane sessionId={chat.activeSession.agentSessionId} storeScope={chat.storeScope} onClose={files.close} scrollTop={files.readScroll(chat.activeSession.agentSessionId)} onScroll={position=>files.saveScroll(chat.activeSession!.agentSessionId,position)} initiallyExpanded={files.readExpanded(chat.activeSession.agentSessionId)} onExpandedChange={value=>files.saveExpanded(chat.activeSession!.agentSessionId,value)} initiallySessionOpen={files.readSection(chat.activeSession!.agentSessionId, "session")} initiallyOtherOpen={files.readSection(chat.activeSession!.agentSessionId, "other")} onSectionChange={(section,value)=>files.saveSection(chat.activeSession!.agentSessionId,section,value)}/>}
   <WorkspaceSessionColumn cardSessionCount={cardSessionCount} filesOpen={files.open} onToggleFiles={files.toggle} {...chat} onClose={mobileMode?onCloseChat:undefined} chatClassName="" chatTestId="v3-card-session-chat" resizeClassName="v3-workspace-divider" resizeTestId="v3-card-workspace-divider" onResize={delta=>drag(delta,"middle")} onResizeKeyDown={event=>key(event,"middle")}
-   separatorAria={{"aria-valuenow":resolved.cardWidth,"aria-valuemin":resolved.minimum,"aria-valuemax":resolved.totalWidth-resolved.gap-resolved.minimum,"aria-valuetext":`카드 ${Math.round(resolved.cardWidth)}픽셀, 대화 ${Math.round(resolved.chatWidth)}픽셀`}}/>
+   separatorAria={{"aria-valuenow":resolved.cardWidth,"aria-valuemin":resolved.minimum,"aria-valuemax":resolved.totalWidth-resolved.gap-resolved.minimum,"aria-valuetext":t("cards.splitWidths", {card:Math.round(resolved.cardWidth),chat:Math.round(resolved.chatWidth)})}}/>
  </>;
  const content=<div className="v3-workspace-scrim is-chat-open" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}
   onKeyDown={event=>{
@@ -80,7 +82,7 @@ export function CardWorkspace({cardId,folders,onClose,onCloseChat,onOpenSession,
   <div ref={workspace} className="v3-workspace is-chat-open" data-testid="v3-card-workspace" data-placement="overlay" data-mobile-view={mobileMode?mobileTab:undefined} data-mobile-files={mobileMode && mobileTab === "chat" && files.open ? "true" : undefined} onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}
    data-card-width-px={Math.round(resolved.cardWidth)} data-pair-width-px={Math.round(resolved.totalWidth)}>
    <div className="v3-card-workspace-pair" style={mobileMode?{display:"contents"}:workspaceWidth>0?{width:resolved.totalWidth,gridTemplateColumns:`${resolved.cardWidth}px ${resolved.gap}px minmax(0,1fr)`}:undefined}>
-    <div className="v3-workspace-divider v3-card-workspace-left-divider" data-testid="v3-card-workspace-left-divider" role="separator" aria-orientation="vertical" aria-label="카드와 대화 전체 폭" aria-valuenow={resolved.totalWidth} aria-valuemin={resolved.totalMinimum} aria-valuemax={workspaceWidth} aria-valuetext={`${Math.round(resolved.totalWidth)}픽셀`} tabIndex={0} onKeyDown={event=>key(event,"left")}>
+    <div className="v3-workspace-divider v3-card-workspace-left-divider" data-testid="v3-card-workspace-left-divider" role="separator" aria-orientation="vertical" aria-label={t("cards.cardAndChatWidth")} aria-valuenow={resolved.totalWidth} aria-valuemin={resolved.totalMinimum} aria-valuemax={workspaceWidth} aria-valuetext={t("cards.pixels", {width:Math.round(resolved.totalWidth)})} tabIndex={0} onKeyDown={event=>key(event,"left")}>
      <DragHandle widthPx={V3_PANEL_GAP_PX} onDrag={delta=>drag(delta,"left")}/>
     </div>
     {panes}

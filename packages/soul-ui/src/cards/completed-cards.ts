@@ -1,5 +1,7 @@
 export type CompletedPeriod = "7" | "30" | "all" | "custom";
 export type CompletedCardParams = { folderId?: string; completedFrom?: string; completedBefore?: string; q?: string; limit?: number; cursor?: string };
+import type { CardTranslate } from "./card-api";
+
 export function mergeCompletedRefresh<T extends {id:string;completedAt?:string|null}>(
   first:{cards:T[];nextCursor:string|null}, previous:{cards:T[];cursor:string|null},
 ):{cards:T[];cursor:string|null} {
@@ -9,8 +11,16 @@ export function mergeCompletedRefresh<T extends {id:string;completedAt?:string|n
   const tail=previous.cards.filter(card=>!ids.has(card.id)&&(!card.completedAt||!last||card.completedAt<=last));
   return {cards:[...first.cards,...tail],cursor:tail.length?previous.cursor:first.nextCursor};
 }
-export const completedPeriods = [{value:"7",label:"지난 7일"},{value:"30",label:"지난 30일"},
-  {value:"all",label:"전체"},{value:"custom",label:"기간 지정"}] as const;
+export const completedPeriods = [
+  {value:"7",label:"지난 7일"}, // i18n-ignore: 소울앱 기간 선택의 한국어 기본값.
+  {value:"30",label:"지난 30일"}, // i18n-ignore: 소울앱 기간 선택의 한국어 기본값.
+  {value:"all",label:"전체"}, // i18n-ignore: 소울앱 기간 선택의 한국어 기본값.
+  {value:"custom",label:"기간 지정"}, // i18n-ignore: 소울앱 기간 선택의 한국어 기본값.
+] as const;
+
+export function completedPeriodLabel(option: (typeof completedPeriods)[number], t?:CardTranslate) {
+  return t?.(`cards.period.${option.value}`, { defaultValue:option.label }) ?? option.label;
+}
 export function localDate(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
 }

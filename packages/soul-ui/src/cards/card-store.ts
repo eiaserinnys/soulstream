@@ -1,6 +1,6 @@
 import {executeCard,resetCardExecutions,type CardExecutionResult} from "./card-execution";
 import { create } from "zustand";
-import { cardRequest, cardPath, cardMutationKey, confirmCardItem, fetchCards } from "./card-api";
+import { cardRequest, cardPath, cardMutationKey, confirmCardItem, fetchCards, type CardTranslate } from "./card-api";
 import type { CardComment, CardDetail, CardRow } from "./card-types";
 let globalLists=0;
 const pendingListUpdates=new Map<string,number>();
@@ -20,13 +20,13 @@ interface CardState {
   nextRequestSequence(): number;
   getListUpdateSequence(): number;
   markLocalChange(cardId?: string): void;
-  loadFolder(folderId: string): Promise<void>;
-  loadCard(id: string): Promise<CardDetail>;
-  mutate(id: string, suffix: string, body: object, method?: string): Promise<CardDetail>;
-  execute(id:string,version:number):Promise<CardExecutionResult>;
-  confirmItem(id:string,itemId:number,confirmed:boolean):Promise<CardRow>;
-  addComment(id: string, body: string, idempotencyKey: string, itemId?:number, questionId?: string): Promise<CardComment>;
-  create(body: object): Promise<CardRow>;
+  loadFolder(folderId: string,t?:CardTranslate): Promise<void>;
+  loadCard(id: string,t?:CardTranslate): Promise<CardDetail>;
+  mutate(id: string, suffix: string, body: object, method?: string,t?:CardTranslate): Promise<CardDetail>;
+  execute(id:string,version:number,t?:CardTranslate):Promise<CardExecutionResult>;
+  confirmItem(id:string,itemId:number,confirmed:boolean,t?:CardTranslate):Promise<CardRow>;
+  addComment(id: string, body: string, idempotencyKey: string, itemId?:number, questionId?: string,t?:CardTranslate): Promise<CardComment>;
+  create(body: object,t?:CardTranslate): Promise<CardRow>;
   handleCardUpdated(event: {cardId: string; folderId: string}): Promise<CardDetail | undefined>;
   registerGlobalList(): () => void;
   reconcileGlobalList(cards: readonly CardRow[], options?: { startedUpdateSeq?: number; scopeRevision?: number }): void;
@@ -56,14 +56,14 @@ export const useCardStore = create<CardState>((set,get) => ({
   nextRequestSequence() { return ++rowClock; },
   getListUpdateSequence() { return updateSequence; },
   markLocalChange(cardId){if(cardId)markRow(cardId);globalMembership=null;set(s=>({localRevision:s.localRevision+1}));},
-  async loadFolder(folderId) {
+  async loadFolder(folderId,t) {
     const startedAt = get().nextRequestSequence();
-    const cards=await fetchCards(folderId); get().putCards(cards, startedAt);
+    const cards=await fetchCards(folderId,t); get().putCards(cards, startedAt);
     set(s=>({folderIds:{...s.folderIds,[folderId]:cards.map(c=>c.id)}}));
   },
-  async loadCard(id) {
+  async loadCard(id,t) {
     try {
-      const detail=await cardRequest<CardDetail>(cardPath(id));
+      const detail=await cardRequest<CardDetail>(cardPath(id),"GET",undefined,undefined,t);
       const currentCard=get().byId[id],currentDetail=get().details[id];
       if(currentCard&&currentCard.version>detail.card.version) {
         const latestDetail=currentDetail?.card===currentCard?currentDetail:{...(currentDetail??detail),card:currentCard};
@@ -77,10 +77,10 @@ export const useCardStore = create<CardState>((set,get) => ({
       set(s=>({errors:{...s.errors,[id]:error instanceof Error ? error.message : String(error)}})); throw error;
     }
   },
-  async mutate(id,suffix,body,method="POST") {
+  async mutate(id,suffix,body,method="POST",t) {
     try {
-      await cardRequest(cardPath(id)+suffix,method,{...body,idempotencyKey:cardMutationKey()});
-      const detail=await get().loadCard(id);
+      await cardRequest(cardPath(id)+suffix,method,{...body,idempotencyKey:cardMutationKey()},undefined,t);
+      const detail=await get().loadCard(id,t);
       get().markLocalChange();
       return detail;
     } catch(error) {
@@ -88,19 +88,19 @@ export const useCardStore = create<CardState>((set,get) => ({
       throw error;
     }
   },
-  async execute(id,version){
+  async execute(id,version,t){
     const result=await executeCard(id,version,result=>set(state=>{
       if((state.byId[id]?.version??0)>result.card.version)return state;
       markRow(id);
       return {byId:{...state.byId,[id]:result.card},details:state.details[id]?{...state.details,[id]:{...state.details[id],card:result.card}}:state.details};
-    }));
+    }),t);
     get().markLocalChange();
     return result;
   },
-  async confirmItem(id,itemId,confirmed) {
+  async confirmItem(id,itemId,confirmed,t) {
     set(state=>({pendingItemConfirmations:{...state.pendingItemConfirmations,[id]:{...state.pendingItemConfirmations[id],[itemId]:confirmed}},errors:{...state.errors,[id]:""}}));
     try {
-      const {card}=await confirmCardItem(id,itemId,confirmed);
+      const {card}=await confirmCardItem(id,itemId,confirmed,t);
       set(state=>{
         const pendingForCard={...state.pendingItemConfirmations[id]};delete pendingForCard[itemId];
         const pendingItemConfirmations={...state.pendingItemConfirmations};
@@ -121,7 +121,7 @@ export const useCardStore = create<CardState>((set,get) => ({
       throw error;
     }
   },
-  async addComment(id, body, idempotencyKey, itemId, questionId) {
+  async addComment(id, body, idempotencyKey, itemId, questionId,t) {
     const optimistic: CardComment = {id:idempotencyKey,cardId:id,authorKind:"user",authorId:"",sessionId:null,kind:"comment",...(itemId===undefined?{}:{itemId}),...(questionId===undefined?{}:{questionId}),body,createdAt:new Date().toISOString()};
     const patch = (comment: CardComment | null) => set(state => {
       const detail = state.details[id];
@@ -131,10 +131,10 @@ export const useCardStore = create<CardState>((set,get) => ({
     });
     patch(optimistic);
     try {
-      const comment = await cardRequest<CardComment>(cardPath(id)+"/comments","POST",{body,idempotencyKey,...(itemId===undefined?{}:{itemId}),...(questionId===undefined?{}:{questionId})});
+      const comment = await cardRequest<CardComment>(cardPath(id)+"/comments","POST",{body,idempotencyKey,...(itemId===undefined?{}:{itemId}),...(questionId===undefined?{}:{questionId})},undefined,t);
       patch(comment);
       set(state => ({errors:{...state.errors,[id]:""}}));
-      if(itemId!==undefined)try{await get().loadCard(id);}catch{/* loadCard keeps the saved comment and exposes its refresh error */}
+      if(itemId!==undefined)try{await get().loadCard(id,t);}catch{/* loadCard keeps the saved comment and exposes its refresh error */}
       get().markLocalChange();
       return comment;
     } catch (error) {
@@ -143,8 +143,8 @@ export const useCardStore = create<CardState>((set,get) => ({
       throw error;
     }
   },
-  async create(body) {
-    const result=await cardRequest<{card:CardRow}>("/api/cards","POST",body);
+  async create(body,t) {
+    const result=await cardRequest<{card:CardRow}>("/api/cards","POST",body,undefined,t);
     get().putCards([result.card]);
     set(s=>({folderIds:{...s.folderIds,[result.card.folderId]:[...new Set([...(s.folderIds[result.card.folderId]??[]),result.card.id])]}}));
     get().markLocalChange(result.card.id);
