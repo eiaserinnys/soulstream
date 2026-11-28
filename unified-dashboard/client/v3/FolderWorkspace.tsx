@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   DashboardIconCap,
@@ -116,6 +117,7 @@ export function FolderWorkspace({
   markdownDocumentsRevision: number;
   onMarkdownDocumentEditorClosed(): void;
 }) {
+  const { t } = useTranslation();
   const files = useSessionFilesToggle();
   const workspaceRef = useRef<HTMLDivElement>(null);
   const chatSurfaceRef = useRef<HTMLElement>(null);
@@ -206,35 +208,35 @@ export function FolderWorkspace({
           data-mobile-files={mobileMode && mobileTab === "chat" && files.open ? "true" : undefined}
           style={!mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 8px)) 16px minmax(0, 1fr)` } : undefined}
         >
-          <div className={files.open && activeSession ? "v3-files-detail-hidden" : "v3-files-detail-visible"}><section className="v3-detail-pane border border-glass-border glass-strong glass-chrome lg-rim" data-testid="v3-standalone-task-empty" aria-label="빈 폴더 창">
+          <div className={files.open && activeSession ? "v3-files-detail-hidden" : "v3-files-detail-visible"}><section className="v3-detail-pane border border-glass-border glass-strong glass-chrome lg-rim" data-testid="v3-standalone-task-empty" aria-label={t("folders.workspace.emptyWindow")}>
             <header className="v3-workspace-toolbar">
-              <strong>폴더</strong>
+              <strong>{t("folders.common.folder")}</strong>
               <span className="v3-spacer" />
-              <DashboardIconCap label="폴더 창 닫기" onClick={onCloseWorkspace}>
+              <DashboardIconCap label={t("folders.workspace.close")} onClick={onCloseWorkspace}>
                 <X className="h-4 w-4" aria-hidden="true" />
               </DashboardIconCap>
             </header>
             <div className="v3-chat-empty">
-              <strong>{folderResolutionError ?? "연결된 폴더가 없습니다."}</strong>
+              <strong>{folderResolutionError ?? t("folders.workspace.noFolder")}</strong>
               <p>{folderResolutionError
-                ? "폴더 귀속을 다시 확인해 주세요. 이 세션의 채팅은 그대로 확인할 수 있습니다."
-                : "이 세션의 채팅은 그대로 확인할 수 있습니다."}</p>
+                ? t("folders.workspace.checkFolder")
+                : t("folders.workspace.chatAvailable")}</p>
             </div>
           </section></div>
           {files.open && activeSession && <SessionFilesPane sessionId={activeSession.agentSessionId} onClose={files.close} scrollTop={files.readScroll(activeSession.agentSessionId)} onScroll={position=>files.saveScroll(activeSession.agentSessionId,position)} initiallyExpanded={files.readExpanded(activeSession.agentSessionId)} onExpandedChange={value=>files.saveExpanded(activeSession.agentSessionId,value)} initiallySessionOpen={files.readSection(activeSession.agentSessionId, "session")} initiallyOtherOpen={files.readSection(activeSession.agentSessionId, "other")} onSectionChange={(section,value)=>files.saveSection(activeSession.agentSessionId,section,value)}/>}
-          {divider("폴더와 채팅 너비 조절")}
+          {divider(t("folders.workspace.resizeFolder"))}
           <section
             ref={chatSurfaceRef}
             className="v3-chat-pane border border-glass-border glass-strong glass-chrome lg-rim"
             data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
             data-testid="v3-standalone-session-chat"
-            aria-label="세션 채팅"
+            aria-label={t("folders.workspace.sessionChat")}
           >
             <SessionPanelHeader session={activeSession} streamActive={sessionStreamActive}
-                connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} emptyTitle="세션" filesOpen={files.open} onToggleFiles={files.toggle} onClose={onCloseWorkspace}/>
+                connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} emptyTitle={t("folders.common.session")} filesOpen={files.open} onToggleFiles={files.toggle} onClose={onCloseWorkspace}/>
             {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
             <div className="v3-chat-content">
-              {activeSession ? <PersistentSessionChatView sessionId={activeSession.agentSessionId} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled} /> : <div className="v3-chat-empty"><strong>세션을 찾을 수 없습니다.</strong></div>}
+              {activeSession ? <PersistentSessionChatView sessionId={activeSession.agentSessionId} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled} /> : <div className="v3-chat-empty"><strong>{t("folders.workspace.missingSession")}</strong></div>}
             </div>
           </section>
         </div>
@@ -286,12 +288,12 @@ export function FolderWorkspace({
         {files.open && activeSession && chatOpen && <SessionFilesPane sessionId={activeSession.agentSessionId} onClose={files.close} scrollTop={files.readScroll(activeSession.agentSessionId)} onScroll={position=>files.saveScroll(activeSession.agentSessionId,position)} initiallyExpanded={files.readExpanded(activeSession.agentSessionId)} onExpandedChange={value=>files.saveExpanded(activeSession.agentSessionId,value)} initiallySessionOpen={files.readSection(activeSession.agentSessionId, "session")} initiallyOtherOpen={files.readSection(activeSession.agentSessionId, "other")} onSectionChange={(section,value)=>files.saveSection(activeSession.agentSessionId,section,value)}/>}
         {chatOpen ? (
           <>
-            {divider("상세와 채팅 너비 조절")}
+            {divider(t("folders.workspace.resizeDetail"))}
             <section
               ref={chatSurfaceRef}
               className="v3-chat-pane border border-glass-border glass-strong glass-chrome lg-rim"
               data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
-              aria-label="세션 채팅"
+              aria-label={t("folders.workspace.sessionChat")}
             >
               <SessionPanelHeader session={activeSession} streamActive={sessionStreamActive}
                 connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} filesOpen={files.open} onToggleFiles={files.toggle}/>
@@ -302,9 +304,9 @@ export function FolderWorkspace({
                 ) : (
                   <div className="v3-chat-empty" data-testid="v3-chat-empty">
                     <span className="v3-emoji" aria-hidden="true">💬</span>
-                    <strong>선택된 세션이 없습니다.</strong>
-                    <p>폴더 탭에서 세션을 선택하거나 새 세션을 시작하세요.</p>
-                    <button type="button" className="v3-button v3-button--soft" onClick={closeWorkspaceInspector}>폴더 탭으로</button>
+                    <strong>{t("folders.workspace.noSession")}</strong>
+                    <p>{t("folders.workspace.selectSession")}</p>
+                    <button type="button" className="v3-button v3-button--soft" onClick={closeWorkspaceInspector}>{t("folders.workspace.goFolderTab")}</button>
                   </div>
                 )}
               </div>

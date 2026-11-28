@@ -1,3 +1,5 @@
+import { folderErrorText } from "./folder-messages";
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { retainEqualValue } from "@seosoyoung/soul-ui";
 import type { PageDto } from "../../../packages/page-model/src/types";
@@ -58,6 +60,7 @@ export function usePlannerCollections({
   };
   notify(message: string): void;
 }) {
+  const { t } = useTranslation();
   const [todayData, setTodayData] = useState<PlannerLoadState<TodayPlannerData>>({ status: "loading", data: null, message: null });
   const [project, setProject] = useState<PlannerLoadState<FolderPlannerData>>({ status: "loading", data: null, message: null });
   const [starredFolderIndex, setStarredFolderIndex] = useState<PlannerLoadState<PlannerPage<StarredPlannerFolder>>>({ status: "loading", data: null, message: null });
@@ -147,18 +150,18 @@ export function usePlannerCollections({
         }
         starredLoadedRefreshKeyRef.current = null;
         setStarredLoadedRefreshKey(null);
-        const message = errorText(error);
+        const message = folderErrorText(t, error);
         setStarredFolderIndex((current) => {
           const failed = failPlannerLoad(current, message);
           return failed.data
             ? { ...failed, data: { ...failed.data, nextCursor: null } }
             : failed;
         });
-        notify(`별표 폴더 조회 실패 · ${message}`);
+        notify(t("folders.errors.starredList", { detail: message }));
       }
     });
     return () => { active = false; };
-  }, [dependencies, notify, refreshKeys.starred]);
+  }, [t, dependencies, notify, refreshKeys.starred]);
 
   useEffect(() => {
     let active = true;
@@ -166,10 +169,10 @@ export function usePlannerCollections({
     void trackRead(loadTodayPlanner(dependencies)).then((data) => {
       if (active) setTodayData((current) => completePlannerLoad(current, data));
     }).catch((error: unknown) => {
-      if (active) setTodayData((current) => failPlannerLoad(current, errorText(error)));
+      if (active) setTodayData((current) => failPlannerLoad(current, folderErrorText(t, error)));
     });
     return () => { active = false; };
-  }, [dependencies, refreshKeys.daily, trackRead]);
+  }, [t, dependencies, refreshKeys.daily, trackRead]);
 
   const projects = useMemo(() => selectedProject ? [selectedProject] : [], [selectedProject]);
   const starredFolders = useMemo(() => {
@@ -195,10 +198,10 @@ export function usePlannerCollections({
     })).then((data) => {
       if (active) setProject((current) => completePlannerLoad(current, data));
     }).catch((error: unknown) => {
-      if (active) setProject((current) => failPlannerLoad(current, errorText(error)));
+      if (active) setProject((current) => failPlannerLoad(current, folderErrorText(t, error)));
     });
     return () => { active = false; };
-  }, [api, dependencies, mutationRefresh.project, projectPageRefreshKey, refreshKeys.project, selectedFolderId, selectedProject]);
+  }, [t, api, dependencies, mutationRefresh.project, projectPageRefreshKey, refreshKeys.project, selectedFolderId, selectedProject]);
 
   const { starredFoldersReordering, reorderStarredFolders } = useStarredFolderReorder({
     dependencies,
@@ -256,11 +259,11 @@ export function usePlannerCollections({
         });
       });
     } catch (error) {
-      notify(`별표 폴더 더 보기 실패 · ${errorText(error)}`);
+      notify(t("folders.errors.moreStarred", { detail: folderErrorText(t, error) }));
     } finally {
       setStarredFoldersLoadingMore(false);
     }
-  }, [dependencies, notify, starredFolderIndex.data, starredFoldersLoadingMore]);
+  }, [t, dependencies, notify, starredFolderIndex.data, starredFoldersLoadingMore]);
 
   const loadMoreSubfolders = useCallback(async () => {
     const data = project.data;
@@ -276,11 +279,11 @@ export function usePlannerCollections({
         })
         : current);
     } catch (error) {
-      notify(`하위 폴더 더 보기 실패 · ${errorText(error)}`);
+      notify(t("folders.errors.moreSubfolders", { detail: folderErrorText(t, error) }));
     } finally {
       setSubfoldersLoadingMore(false);
     }
-  }, [dependencies, notify, project.data, selectedFolderId, subfoldersLoadingMore]);
+  }, [t, dependencies, notify, project.data, selectedFolderId, subfoldersLoadingMore]);
 
   return {
     waitForReads,
@@ -301,8 +304,4 @@ export function usePlannerCollections({
     loadMoreSubfolders,
     refreshFolder,
   };
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : String(error);
 }

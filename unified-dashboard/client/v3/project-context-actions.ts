@@ -1,3 +1,4 @@
+import { FolderMessageError } from "./folder-messages";
 import type { BlockDto } from "../../../packages/page-model/src/types";
 import type {
   PageApiClient,
@@ -15,7 +16,7 @@ export async function saveProjectGuidance(
   idFactory: ContextOperationIdFactory = operationId,
 ): Promise<PageMutationResponse> {
   const text = input.text.trim();
-  if (!text) throw new Error("프로젝트 지침을 입력해야 합니다");
+  if (!text) throw new FolderMessageError("folders.errors.requireGuidance");
   return await mutate(api, pageId, idFactory, "v3 project guidance save", (blocks) => (
     input.blockId
       ? [{ op: "update_block_text", block_id: input.blockId, text }]
@@ -133,18 +134,18 @@ function createBlock(
 }
 
 export function decodeStateVector(value: string): Uint8Array {
-  if (typeof globalThis.atob !== "function") throw new Error("state vector를 디코딩할 수 없습니다");
+  if (typeof globalThis.atob !== "function") throw new FolderMessageError("folders.errors.decodeState");
   return Uint8Array.from(globalThis.atob(value), (character) => character.charCodeAt(0));
 }
 
 export function projectAtomProperties(input: Parameters<typeof savePageAtomReference>[2], blocks: readonly BlockDto[]): Record<string, unknown> {
   const nodeId = input.nodeId.trim();
-  if (!nodeId) throw new Error("atom 노드를 선택해야 합니다");
+  if (!nodeId) throw new FolderMessageError("folders.errors.chooseAtom");
   if (!Number.isInteger(input.depth) || input.depth < 1 || input.depth > 5) {
-    throw new Error("atom 깊이는 1~5여야 합니다");
+    throw new FolderMessageError("folders.errors.atomDepth");
   }
   if (input.limit != null && (!Number.isInteger(input.limit) || input.limit < 1)) {
-    throw new Error("atom 최근 자식 수는 양의 정수여야 합니다");
+    throw new FolderMessageError("folders.errors.atomRecentCount");
   }
     const previous = input.blockId
       ? blocks.find((block) => block.id === input.blockId)?.properties ?? {}

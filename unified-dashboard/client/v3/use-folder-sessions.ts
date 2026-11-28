@@ -1,3 +1,5 @@
+import { folderErrorText } from "./folder-messages";
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
@@ -18,6 +20,7 @@ export function useFolderSessions({ dependencies, folderId, initial, notify }: {
   initial: PlannerPage<SessionSummary> | null;
   notify(message: string): void;
 }) {
+  const { t } = useTranslation();
   const [state, setState] = useState<FolderSessionsState | null>(() => folderId && initial
     ? { folderId, items: initial.items, nextCursor: initial.nextCursor, loadingMore: false, loadFailed: false, hasLoadedMore: false }
     : null);
@@ -53,13 +56,13 @@ export function useFolderSessions({ dependencies, folderId, initial, notify }: {
         hasLoadedMore: true,
       } : latest);
     } catch (error) {
-      notify(`세션 더 보기 실패 · ${errorText(error)}`);
+      notify(t("folders.errors.moreSessions", { detail: folderErrorText(t, error) }));
       setState((latest) => latest?.folderId === current.folderId
         ? { ...latest, loadingMore: false, loadFailed: true } : latest);
     } finally {
       if (inFlightFolderRef.current === current.folderId) inFlightFolderRef.current = null;
     }
-  }, [dependencies, folderId, notify, state]);
+  }, [t, dependencies, folderId, notify, state]);
 
   const removeSessions = useCallback((sessionIds: readonly string[]) => {
     const removed = new Set(sessionIds);
@@ -83,8 +86,4 @@ function mergeSessions(current: readonly SessionSummary[], incoming: readonly Se
   const byId = new Map(current.map((session) => [session.agentSessionId, session]));
   for (const session of incoming) byId.set(session.agentSessionId, session);
   return [...byId.values()];
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : String(error);
 }

@@ -1,3 +1,4 @@
+import { FolderMessageError } from "./folder-messages";
 import type { PageDto } from "../../../packages/page-model/src/types";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
@@ -20,6 +21,6 @@ export async function setFolderStarred(
 }
 
 export function operationId(prefix: string): string {
-  if (!globalThis.crypto?.randomUUID) throw new Error("브라우저 randomUUID 지원이 필요합니다");
+  if (!globalThis.crypto?.randomUUID) throw new FolderMessageError("folders.errors.randomUuid");
   return `${prefix}-${globalThis.crypto.randomUUID()}`;
 }

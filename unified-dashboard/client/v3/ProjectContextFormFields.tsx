@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useId } from "react";
 import { AtomNodeSelector } from "@seosoyoung/soul-ui";
 
@@ -31,6 +32,7 @@ export function ProjectAtomFields({
   disabled: boolean;
   onChange(value: ProjectAtomFieldValue): void;
 }) {
+  const { t } = useTranslation();
   const nodeLabelId = useId();
   const selector = (
     <AtomNodeSelector presentation={presentation} request={request}
@@ -46,18 +48,18 @@ export function ProjectAtomFields({
   return (
     <div className="v3-project-context-fields">
       <label>
-        atom 인스턴스
+        {t("folders.atom.instance")}
         <span>{value.instance}</span>
-        <small>현재 노드 탐색은 atom만 지원합니다. 기존 atom-nl 자료의 연결은 유지합니다.</small>
+        <small>{t("folders.atom.browseHint")}</small>
       </label>
       {presentation === "inline" ? (
         <div className="v3-project-context-node-field" role="group" aria-labelledby={nodeLabelId}>
-          <span id={nodeLabelId}>atom 노드</span>
+          <span id={nodeLabelId}>{t("folders.atom.node")}</span>
           {selector}
         </div>
-      ) : <label>atom 노드{selector}</label>}
+      ) : <label>{t("folders.atom.node")}{selector}</label>}
       <label>
-        깊이
+        {t("folders.atom.depth")}
         <input
           type="number"
           min={1}
@@ -68,13 +70,13 @@ export function ProjectAtomFields({
         />
       </label>
       {supportsLimit ? <label>
-        최근 자식 수
+        {t("folders.atom.recentCount")}
         <input
           type="number"
           min={1}
           value={value.limit ?? ""}
-          placeholder="전체"
-          aria-label="atom 최근 자식 수"
+          placeholder={t("folders.atom.all")}
+          aria-label={t("folders.atom.recentCountLabel")}
           disabled={disabled}
           onChange={(event) => onChange({
             ...value,
@@ -83,9 +85,9 @@ export function ProjectAtomFields({
         />
       </label> : null}
       <label>
-        렌더 방식
+        {t("folders.atom.renderMode")}
         <select
-          aria-label="atom 렌더 방식"
+          aria-label={t("folders.atom.renderModeLabel")}
           value={value.mode ?? ""}
           disabled={disabled}
           onChange={(event) => {
@@ -95,10 +97,10 @@ export function ProjectAtomFields({
             onChange(next);
           }}
         >
-          <option value="">기존 방식</option>
-          <option value="full">전체 본문</option>
-          <option value="index">색인</option>
-          <option value="titles">제목 트리</option>
+          <option value="">{t("folders.atom.existingMode")}</option>
+          <option value="full">{t("folders.atom.full")}</option>
+          <option value="index">{t("folders.atom.index")}</option>
+          <option value="titles">{t("folders.atom.titles")}</option>
         </select>
       </label>
       <label>
@@ -108,8 +110,7 @@ export function ProjectAtomFields({
           disabled={disabled}
           onChange={(event) => onChange({ ...value, titlesOnly: event.target.checked })}
         />
-        제목만 포함
-      </label>
+        {t("folders.atom.titlesOnly")} </label>
     </div>
   );
 }

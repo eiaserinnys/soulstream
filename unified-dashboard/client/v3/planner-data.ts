@@ -1,3 +1,4 @@
+import { FolderMessageError } from "./folder-messages";
 import {orchestratorFetch} from "@seosoyoung/soul-ui/lib/orchestrator-connection";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
@@ -73,10 +74,7 @@ export function createPlannerDataDependencies(
       });
       if (!response.ok) {
         const detail = await plannerResponseDetail(response);
-        throw Object.assign(new Error([
-          `플래너 요청 실패 (${response.status})`,
-          detail,
-        ].filter(Boolean).join("\n")), {status: response.status});
+        throw Object.assign(new FolderMessageError("folders.errors.plannerHttp", { status: response.status }, detail), {status: response.status});
       }
       return await response.json();
     },
@@ -92,13 +90,10 @@ export function createPlannerDataDependencies(
       });
       if (!response.ok) {
         const detail = await plannerResponseDetail(response);
-        throw new Error([
-          `별표 순서 저장 실패 (${response.status})`,
-          detail,
-        ].filter(Boolean).join("\n"));
+        throw new FolderMessageError("folders.errors.saveStarOrderHttp", { status: response.status }, detail);
       }
       const payload = await response.json() as { ok?: unknown };
-      if (payload?.ok !== true) throw new Error("별표 순서 저장 응답이 올바르지 않습니다.");
+      if (payload?.ok !== true) throw new FolderMessageError("folders.errors.invalidStarOrder");
     },
   };
 }
@@ -210,7 +205,7 @@ export async function loadStarredPlannerFolder(
 ): Promise<PlannerFolder> {
   if (isPlannerFolder(task)) return task;
   const folder = folders.find((candidate) => candidate.projectPageId === task.id);
-  if (!folder) throw new Error("별표 폴더를 찾을 수 없습니다");
+  if (!folder) throw new FolderMessageError("folders.errors.noStarredFolder");
   return loadPlannerFolder(api, folder.id);
 }
 
@@ -290,7 +285,7 @@ function plannerFolder(payload: PlannerFolderPayload): PlannerFolder {
       cards: Object.entries(payload.itemCounts).filter(([, count]) => count > 0)
         .map(([status]) => ({ status })),
     }),
-    assignee: payload.assignee ?? "담당 미지정",
+    assignee: payload.assignee ?? "담당 미지정", // i18n-ignore: Unassigned sentinel consumed by PlannerFolderCard
     contextCount: 0,
     progress: payload.itemTotal > 0
       ? Math.round(100 * payload.completedItemCount / payload.itemTotal)

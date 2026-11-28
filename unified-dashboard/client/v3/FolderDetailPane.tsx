@@ -1,3 +1,5 @@
+import { folderErrorText } from "./folder-messages";
+import { useTranslation } from "react-i18next";
 import {FolderDetailArchiveDialog} from "./FolderDetailArchiveDialog";
 import { FolderCardSection } from "./FolderCardSection";
 import { useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from "react";
@@ -90,6 +92,7 @@ export function FolderDetailPane({
   scrollContainerRef?: RefObject<HTMLDivElement | null>;
   onArchiveFolder?: () => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const inline = placement === "inline";
   const surfaceRef = useRef<HTMLElement>(null);
   const ownScrollRef = useRef<HTMLDivElement>(null);
@@ -111,7 +114,7 @@ export function FolderDetailPane({
     () => descriptionMarkdown(task.page, task.blocks),
     [task.blocks, task.page],
   );
-  const status = plannerStatusPresentation(task.status);
+  const status = plannerStatusPresentation(task.status, t);
   const folderStar = useFolderStar(task.page);
   const api = useMemo(() => createPageApiClient(), []);
   const [folderMenu, setFolderMenu] = useState<V3ContextMenuTarget | null>(null);
@@ -136,13 +139,13 @@ export function FolderDetailPane({
   const effectiveContext = useMemo(() => mergeProjectContextPages([
     ...(inheritedContext.status === "ready" ? inheritedContext.data.pages : []),
     {
-      source: { folderId: task.folderId, folderName: "이 폴더", pageId: task.page.id },
+      source: { folderId: task.folderId, folderName: "이 폴더", pageId: task.page.id }, // i18n-ignore: Current-folder source marker for session context
       details: folderContext,
     },
   ]), [inheritedContext, task.page.id, folderContext]);
   const contextItems = useMemo(
-    () => buildFolderSessionContextItems(effectiveContext, contextBlocks, task.page.id),
-    [contextBlocks, effectiveContext, task.page.id],
+    () => buildFolderSessionContextItems(effectiveContext, contextBlocks, task.page.id, t),
+    [contextBlocks, effectiveContext, task.page.id, t],
   );
   const sourcedDefaults = effectiveContext.sessionDefaults.at(-1);
   const effectiveSessionDefaults = sourcedDefaults ? {
@@ -167,8 +170,8 @@ export function FolderDetailPane({
     allSessions.some((session) => session.agentSessionId === focusRequest.sessionId)
       && runSessionLoadStates.get(focusRequest.sessionId) === "ready"
   );
-  const folderStarLabel = `별표 ${folderStar.starred ? "해제" : "추가"}`;
-  const backLabel = parentFolder ? "상위 폴더로 이동" : "전체 카드로 돌아가기";
+  const folderStarLabel = t(folderStar.starred ? "folders.common.removeStar" : "folders.common.addStar");
+  const backLabel = parentFolder ? t("folders.workspace.goParent") : t("folders.workspace.backToCards");
   const goBack = () => parentFolder ? onOpenParent(parentFolder) : onReturnToToday();
   const actions = <>
     <DashboardIconCap
@@ -181,11 +184,11 @@ export function FolderDetailPane({
     >
       <Star className="h-4 w-4" fill={folderStar.starred ? "currentColor" : "none"} aria-hidden="true" />
     </DashboardIconCap>
-    <DashboardIconCap label="폴더 메뉴" onClick={(event) => setFolderMenu({ x: event.clientX, y: event.clientY })}>
+    <DashboardIconCap label={t("folders.workspace.menu")} onClick={(event) => setFolderMenu({ x: event.clientX, y: event.clientY })}>
       <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
     </DashboardIconCap>
     <V3ContextMenu target={folderMenu} onClose={() => setFolderMenu(null)} actions={onArchiveFolder ? [{
-      label: "폴더 보관",
+      label: t("folders.archive.action"),
       separatorBefore: true,
       destructive: true,
       onSelect: () => setArchiveOpen(true),
@@ -202,7 +205,7 @@ export function FolderDetailPane({
         backLabel={backLabel} onBack={goBack} status={{value:task.status,icon:status.icon,label:status.label}} actions={actions}/>
       <FolderDetailArchiveDialog open={archiveOpen} onOpenChange={setArchiveOpen} title={task.page.title} error={archiveError} onArchive={() => {
         if (!onArchiveFolder) return;
-        void onArchiveFolder().then(() => setArchiveOpen(false)).catch((error: unknown) => setArchiveError(error instanceof Error ? error.message : String(error)));
+        void onArchiveFolder().then(() => setArchiveOpen(false)).catch((error: unknown) => setArchiveError(folderErrorText(t, error)));
       }}/>
       <div ref={ownScrollRef} className="v3-detail-scroll">
         <div className="v3-task-detail-layout">
@@ -215,7 +218,7 @@ export function FolderDetailPane({
           />
           <div className="v3-task-detail-content">
             <section ref={informationSectionRef} className="v3-detail-section" data-task-section="information">
-              <div className="v3-detail-section-head"><h3>정보</h3></div>
+              <div className="v3-detail-section-head"><h3>{t("folders.sections.information")}</h3></div>
               <FolderDescriptionPanel markdown={description} onSave={onSaveDescription} />
               {folderSections}
             </section>

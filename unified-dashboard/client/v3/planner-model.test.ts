@@ -1,3 +1,4 @@
+import { createI18n } from "@soulstream/i18n";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -26,11 +27,12 @@ describe("planner task status", () => {
     expect(derivePlannerFolderStatus(snapshot("completed", ["review"]))).toBe("completed");
   });
 
-  it("maps canonical states to the mockup chips", () => {
-    expect(plannerStatusPresentation("open")).toMatchObject({ icon: "○", label: "Open" });
-    expect(plannerStatusPresentation("in_progress")).toMatchObject({ icon: "●", label: "진행" });
-    expect(plannerStatusPresentation("review")).toMatchObject({ icon: "◆", label: "검수" });
-    expect(plannerStatusPresentation("completed")).toMatchObject({ icon: "✓", label: "완료" });
+  it("maps canonical states to folder chips in the selected language", () => {
+    const { t } = createI18n("ko");
+    expect(plannerStatusPresentation("open", t)).toMatchObject({ icon: "○", label: "Open" });
+    expect(plannerStatusPresentation("in_progress", t)).toMatchObject({ icon: "●", label: "진행" });
+    expect(plannerStatusPresentation("review", t)).toMatchObject({ icon: "◆", label: "검수" });
+    expect(plannerStatusPresentation("completed", t)).toMatchObject({ icon: "✓", label: "완료" });
   });
 });
 

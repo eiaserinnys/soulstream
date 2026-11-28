@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import "./v3-project-star.css";
 import { FolderNameRowContent } from "./FolderNameRowContent";
 import type { CSSProperties, MouseEvent } from "react";
@@ -70,6 +71,7 @@ function ProjectTreeBody({
   onSelect(folder: CatalogFolder): void;
   onContextMenu(event: MouseEvent, folder: CatalogFolder): void;
 }) {
+  const { t } = useTranslation();
   const rootIds = roots.map((node) => node.folder.id);
   const rootDrop = useFolderRootDropSurface(rootIds);
   const folderDragActive = useFolderDragActive();
@@ -80,7 +82,7 @@ function ProjectTreeBody({
         className={`v3-project-root-drop${folderDragActive ? " is-visible" : ""}${rootDrop.isOver ? " is-drop-target" : ""}`}
         data-testid="v3-project-root-drop"
       >
-        최상위로 이동
+        {t("folders.navigation.moveRoot")}
       </div>
       <div className="v3-project-tree-root" data-testid="v3-project-tree-root">
         <FolderSortableContext ids={rootIds}>
@@ -122,6 +124,7 @@ function ProjectTreeNode({
   onSelect(folder: CatalogFolder): void;
   onContextMenu(event: MouseEvent, folder: CatalogFolder): void;
 }) {
+  const { t } = useTranslation();
   const childIds = node.children.map((child) => child.folder.id);
   const expanded = node.children.length > 0 && isExpanded(node.folder.id);
   const dragData: FolderDragData = {
@@ -150,7 +153,7 @@ function ProjectTreeNode({
           <button
             type="button"
             className="v3-project-tree-toggle"
-            aria-label={expanded ? `${node.folder.name} 접기` : `${node.folder.name} 펼치기`}
+            aria-label={expanded ? t("folders.common.collapseNamed", { name: node.folder.name }) : t("folders.common.expandNamed", { name: node.folder.name })}
             aria-expanded={expanded}
             onClick={(event) => { event.stopPropagation(); onToggleExpanded(node.folder.id); }}
           >
@@ -160,7 +163,7 @@ function ProjectTreeNode({
         <button
           type="button"
           className="v3-project-drag-handle"
-          aria-label={`${node.folder.name} 이동`}
+          aria-label={t("folders.navigation.moveNamed", { name: node.folder.name })}
           {...drag.attributes}
           {...drag.listeners}
           onClick={(event) => event.stopPropagation()}

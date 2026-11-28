@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import "./v3-project-star.css";
 import { useId, useMemo, useState, type CSSProperties } from "react";
 import { DisclosureActionIcon, Input, type CatalogFolder } from "@seosoyoung/soul-ui";
@@ -17,6 +18,7 @@ export interface FolderPickerProps {
 }
 
 export function FolderPicker({ folders, starredFolderIds, disabledFolderIds, selectedFolderId, pending, onSelect }: FolderPickerProps) {
+  const { t } = useTranslation();
   const id = useId();
   const [chosenTab, setChosenTab] = useState<"starred" | "all" | null>(null);
   const [query, setQuery] = useState("");
@@ -50,7 +52,7 @@ export function FolderPicker({ folders, starredFolderIds, disabledFolderIds, sel
         aria-expanded={node.children.length ? isExpanded : undefined} data-folder-id={node.folder.id}
         style={{ "--v3-project-depth": depth } as CSSProperties}>
         {node.children.length ? <button type="button" className="v3-project-tree-toggle"
-          aria-label={`${node.folder.name} ${isExpanded ? "접기" : "펼치기"}`} aria-expanded={isExpanded}
+          aria-label={t(isExpanded ? "folders.common.collapseNamed" : "folders.common.expandNamed", { name: node.folder.name })} aria-expanded={isExpanded}
           onClick={() => toggle(node.folder.id)}><DisclosureActionIcon expanded={isExpanded} /></button>
           : <span className="v3-project-tree-toggle-spacer" />}
         <span className="v3-folder-picker-drag-spacer" aria-hidden="true" />
@@ -61,14 +63,14 @@ export function FolderPicker({ folders, starredFolderIds, disabledFolderIds, sel
     </div>;
   };
   return <div className="v3-shell v3-folder-picker" style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px` } as CSSProperties}>
-    <DetailTabs<"starred"|"all"> id={id} label="폴더 목록" panelId={`${id}-folders`} tabs={[["starred","별표"],["all","전체"]]} value={tab} disabled={pending} onChange={setChosenTab}/>
-    <Input type="search" aria-label="이동할 폴더 검색" placeholder="폴더 검색…" value={query}
+    <DetailTabs<"starred"|"all"> id={id} label={t("folders.picker.list")} panelId={`${id}-folders`} tabs={[["starred",t("folders.picker.starred")],["all",t("folders.picker.all")]]} value={tab} disabled={pending} onChange={setChosenTab}/>
+    <Input type="search" aria-label={t("folders.picker.searchLabel")} placeholder={t("folders.picker.search")} value={query}
       disabled={pending} onChange={(event) => setQuery(event.target.value)} />
     <div id={`${id}-folders`} role="tabpanel" aria-labelledby={`${id}-${tab}`} className="v3-navigation-scroll v3-folder-picker-scroll">
-      <div className="v3-nav-list" role="tree" aria-label="이동할 폴더">
+      <div className="v3-nav-list" role="tree" aria-label={t("folders.move.folder")}>
         {tab === "starred" ? starred.map((folder) => renderNode({ folder, children: [] }, 0)) : filteredRoots.map((node) => renderNode(node, 0))}
       </div>
-      {(tab === "starred" ? starred : filteredRoots).length === 0 ? <p>일치하는 폴더가 없습니다.</p> : null}
+      {(tab === "starred" ? starred : filteredRoots).length === 0 ? <p>{t("folders.picker.noMatch")}</p> : null}
     </div>
   </div>;
 }
