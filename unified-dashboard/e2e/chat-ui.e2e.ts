@@ -167,7 +167,10 @@ test("live UI stays independent of streaming/final text, virtual rows, history a
   await scroller.hover(); await page.mouse.wheel(0, -100000);
   await expect(root.locator(".chat-ui")).toHaveCount(0);
   await expect.poll(() => h.histories.filter(cursor => cursor !== null).length).toBeGreaterThan(0);
-  await page.mouse.wheel(0, 100000);
+  await expect(async () => {
+    await page.mouse.wheel(0, 100000);
+    await expect(root.getByText("278,400원/월", { exact: true })).toBeVisible({ timeout: 1000 });
+  }).toPass();
   await expect(root.getByText("278,400원/월", { exact: true })).toBeVisible();
   h.releaseLive();
   await expect(root.locator(".chat-ui")).toHaveCount(2);
