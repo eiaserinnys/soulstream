@@ -7,6 +7,10 @@
   1210x834 피드 칸 머리에는 단추가 없다(사이드바 검색칸이 입구다).
 - 834x1210, 1210x834 카드 보드 머리 제목 「카드」가 잘리지 않는다(scrollWidth = clientWidth).
 - 사이드바 「카드」 줄의 좌우 끝이 중요 작업 상자의 좌우 끝과 같다.
+- 고른 「카드」 줄의 위쪽 선이 보인다(선 가운데를 elementFromPoint로 찍으면 그 줄이다). 가로에서는 줄이
+  검색칸 아래에서 시작한다. RN 웹이 RefreshControl 목록의 style을 두 칸에 주어 위로 당김이 두 번 들던 결함.
+- 피드 칸 머리 「세션 검색」, 「검색 닫기」 단추의 오른쪽 끝이 머리 안쪽 오른쪽 끝에 선다(834 첫 화면,
+  834 검색 연 뒤, 1210 검색 연 뒤). 616 폭에서도 제목과 단추가 겹치지 않는다.
 - 카드 상세 제목은 낱말 단위로 줄을 넘긴다(word-break keep-all).
 - 834x1210 피드 행에 상태 배지 열(session-card-right-rail)이 보인다.
 측정만 하는 것: 사이드바 이름 칸 폭(`operations.sidebar_names`), 피드 칸 폭(`operations.feed_width`).
@@ -16,8 +20,8 @@ from __future__ import annotations
 from playwright.sync_api import Page
 
 from parity_harness import (
-    EDGE_TOLERANCE, FRAMES, TABLET_FRAMES, Run, capture_area, compose_tiles, ensure_sidebar,
-    pull_refresh, visible,
+    EDGE_TOLERANCE, FRAMES, NARROW, TABLET_FRAMES, Run, capture_area, compose_rows, compose_tiles,
+    ensure_sidebar, pull_refresh, visible,
 )
 
 STARRED_TITLES = ("공개 예시 프로젝트", "길이가 긴 폴더 이름의 줄바꿈과 말줄임을 확인하는 공개 예시")
@@ -82,6 +86,43 @@ DAILY_ROW_JS = r"""
 }
 """
 
+ROW_EDGE_JS = r"""
+() => {
+  const list = document.querySelector('[data-testid="sidebar-main-list"]');
+  if (!list) return null;
+  const leaf = [...list.querySelectorAll('div')].find((el) => el.children.length === 0
+    && (el.textContent || '').trim() === '카드' && el.getBoundingClientRect().width > 0);
+  let row = leaf;
+  while (row && parseFloat(getComputedStyle(row).borderTopWidth || '0') === 0) row = row.parentElement;
+  if (!row) return null;
+  const r = row.getBoundingClientRect();
+  const hit = document.elementFromPoint((r.left + r.right) / 2, r.top + 0.5);
+  const search = [...document.querySelectorAll('[data-testid="session-search-input"]')]
+    .find((el) => el.getBoundingClientRect().width > 0);
+  return { top: r.top, topEdgeHitsRow: !!hit && (row === hit || row.contains(hit)),
+    searchBottom: search ? search.getBoundingClientRect().bottom : null };
+}
+"""
+
+FEED_HEADER_JS = r"""
+() => {
+  const header = [...document.querySelectorAll('[data-testid="tablet-feed-header"]')]
+    .find((el) => el.getBoundingClientRect().width > 0);
+  if (!header) return null;
+  const h = header.getBoundingClientRect();
+  const contentRight = h.right - parseFloat(getComputedStyle(header).paddingRight);
+  const button = [...header.querySelectorAll('[aria-label="세션 검색"], [aria-label="검색 닫기"]')]
+    .find((el) => el.getBoundingClientRect().width > 0);
+  const title = header.querySelector('[data-testid="tablet-feed-title"]');
+  const b = button ? button.getBoundingClientRect() : null;
+  const tr = title ? title.getBoundingClientRect() : null;
+  return { left: h.left, right: h.right, bottom: h.bottom, contentRight,
+    button: b && { label: button.getAttribute('aria-label'), left: b.left, right: b.right },
+    title: tr && { left: tr.left, right: tr.right },
+    gapToContentRight: b ? +(contentRight - b.right).toFixed(1) : null };
+}
+"""
+
 FOCUS_JS = r"""
 () => {
   const el = document.activeElement;
@@ -98,6 +139,7 @@ def capture_all(run: Run) -> None:
     capture_search_entry(run)
     capture_board_title(run)
     capture_daily_row(run)
+    capture_feed_header(run)
     check_card_title(run)
     check_feed_rail(run)
     capture_folder_lists(run)
@@ -187,6 +229,7 @@ def capture_board_title(run: Run) -> None:
 
 
 def capture_daily_row(run: Run) -> None:
+    top_rows: list[tuple[str, str]] = []
     for frame in TABLET_FRAMES:
         frame_id, width, _ = frame
         page = run.open(frame, "&starred=ready")
@@ -200,11 +243,65 @@ def capture_daily_row(run: Run) -> None:
             ok = bool(row and sheet) and abs(row["left"] - sheet["left"]) <= EDGE_TOLERANCE \
                 and abs(row["right"] - sheet["right"]) <= EDGE_TOLERANCE
             run.check(f"{frame_id}: sidebar 카드 row edges match the starred sheet", ok, {"row": row, "starred_sheet": sheet})
+            edge = page.evaluate(ROW_EDGE_JS)
+            run.operations.setdefault("sidebar_row_top", {})[frame_id] = edge
+            top_rows.append((f"{frame_id} · 사이드바 위 340x220", crop(run, page, "sidebar-top", frame_id,
+                                                                        {"x": 0, "y": 0, "width": 340, "height": 220})))
+            ok = bool(edge) and edge["topEdgeHitsRow"]
+            if frame_id == "ipad-landscape":
+                ok = ok and edge["searchBottom"] is not None and edge["top"] >= edge["searchBottom"]
+            run.check(f"{frame_id}: selected 카드 row top edge is visible"
+                      + (" below the search field" if frame_id == "ipad-landscape" else ""), ok, edge)
         except Exception as error:  # noqa: BLE001
             run.missing("sidebar-daily-row", frame_id, failure(error))
         finally:
             page.context.close()
     run.missing("sidebar-daily-row", "phone", "iPhone has no sidebar; its 카드 tab is in the bottom bar")
+    run.custom_compares["sidebar-top"] = compose_rows(run.out / f"{run.phase}-sidebar-top-compare.png", top_rows)
+
+
+def crop(run: Run, page: Page, area: str, name: str, clip: dict) -> str:
+    path = run.out / f"{run.phase}-{area}-{name}.png"
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(path), clip=clip)
+    return str(path)
+
+
+def capture_feed_header(run: Run) -> None:
+    portrait, landscape = TABLET_FRAMES
+    cases = (("portrait-entry", portrait, None), ("portrait-open", portrait, "feed"),
+             ("landscape-open", landscape, "sidebar"), ("narrow-entry", NARROW, None))
+    rows: list[tuple[str, str]] = []
+    for name, frame, opener in cases:
+        page = run.open(frame)
+        try:
+            if opener == "feed":
+                page.get_by_test_id("tablet-feed-header").get_by_label("세션 검색", exact=True).first.click()
+            elif opener == "sidebar":
+                page.get_by_test_id("session-search-input").filter(visible=True).first.click()
+            page.wait_for_timeout(900)
+            header = page.evaluate(FEED_HEADER_JS)
+            run.operations.setdefault("feed_header", {})[name] = header
+            if not header:
+                rows.append((name, "missing: no feed header"))
+                run.check(f"{name}: feed header action", False, header)
+                continue
+            left = max(0, header["left"] - 8)
+            rows.append((f"{name} · {frame[1]}x{frame[2]}", crop(run, page, "feed-header", name, {
+                "x": left, "y": 0, "width": min(frame[1], header["right"] + 8) - left, "height": header["bottom"] + 8})))
+            button, title = header["button"], header["title"]
+            if name == "narrow-entry":
+                run.check("ipad-narrow: feed header title and action do not overlap",
+                          bool(button and title) and title["right"] <= button["left"], header)
+            else:
+                run.check(f"{name}: feed header action sits at the header's right edge",
+                          header["gapToContentRight"] is not None and abs(header["gapToContentRight"]) <= 1, header)
+        except Exception as error:  # noqa: BLE001
+            rows.append((name, f"missing: {failure(error)}"))
+            run.check(f"{name}: feed header action", False, failure(error))
+        finally:
+            page.context.close()
+    run.custom_compares["feed-header"] = compose_rows(run.out / f"{run.phase}-feed-header-compare.png", rows)
 
 
 def check_card_title(run: Run) -> None:

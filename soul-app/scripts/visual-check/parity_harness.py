@@ -126,10 +126,10 @@ class Run:
         page.errors = errors  # type: ignore[attr-defined]
         return page
 
-    def shot(self, page: Page, area: str, frame: str) -> None:
+    def shot(self, page: Page, area: str, frame: str, clip: dict | None = None) -> None:
         page.wait_for_timeout(700)
         path = self.out / f"{self.phase}-{area}-{frame}.png"
-        page.screenshot(path=str(path))
+        page.screenshot(path=str(path), clip=clip)
         self.shots.setdefault(area, {})[frame] = str(path)
         errors = getattr(page, "errors", [])
         if errors:
@@ -211,6 +211,28 @@ def compose_tiles(path: Path, tiles: list[tuple[str, str]]) -> str:
     return str(path)
 
 
+def compose_rows(path: Path, rows: list[tuple[str, str]], scale: int = 2) -> str:
+    """작은 잘라 낸 그림을 확대해 위아래로 붙인다(몇 px 차이를 눈으로 보게)."""
+    label_h, gap = 36, 16
+    images = []
+    for label, source in rows:
+        if source.startswith("missing"):
+            images.append((f"{label} · {source}", Image.new("RGB", (640, 60), "#f2f2f2")))
+            continue
+        image = Image.open(source).convert("RGB")
+        images.append((label, image.resize((image.width * scale, image.height * scale), Image.NEAREST)))
+    width = max(image.width for _, image in images) + gap * 2
+    sheet = Image.new("RGB", (width, sum(image.height + label_h + gap for _, image in images) + gap), "white")
+    draw = ImageDraw.Draw(sheet)
+    y = gap
+    for label, image in images:
+        draw.text((gap, y + 6), label, fill="black", font=font(20))
+        sheet.paste(image, (gap, y + label_h))
+        y += image.height + label_h + gap
+    sheet.save(path)
+    return str(path)
+
+
 def compose(run: Run, area: str, frames: dict[str, str]) -> str:
     tiles = [(f"{area} · {frame_id}", frames.get(frame_id, "missing: not captured")) for frame_id, _, _ in FRAMES]
     return compose_tiles(run.out / f"{run.phase}-{area}-compare.png", tiles)
@@ -224,8 +246,8 @@ def stack(top: Path, bottom: Path, path: Path, labels: tuple[str, str]) -> str:
     sheet = Image.new("RGB", (width, sum(image.height + label_h for image in images)), "white")
     draw = ImageDraw.Draw(sheet)
     y = 0
-    for label, image in zip(labels, images):
-        draw.text((24, y + 10), label, fill="#b00020" if label.startswith("before") else "#006400", font=font(24))
+    for index, (label, image) in enumerate(zip(labels, images)):
+        draw.text((24, y + 10), label, fill="#b00020" if index == 0 else "#006400", font=font(24))
         sheet.paste(image, (0, y + label_h))
         y += image.height + label_h
     sheet.save(path)

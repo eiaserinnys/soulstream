@@ -350,7 +350,7 @@ def main() -> int:
     parser.add_argument("--bundle", required=True, help="ios-components 번들 디렉토리")
     parser.add_argument("--out", required=True, help="캡처와 JSON을 저장할 디렉토리")
     parser.add_argument("--phase", required=True, help="파일 이름 앞머리(before, after 등)")
-    parser.add_argument("--pair", help="이 phase의 같은 영역 비교 그림을 위에 붙여 전후 그림을 만든다")
+    parser.add_argument("--pair", help="이 phase(쉼표로 여럿)의 같은 영역 비교 그림을 위에 붙여 전후 그림을 만든다")
     parser.add_argument("--part", choices=("all", "round1", "round2"), default="all",
                         help="한 번에 다 돌면 오래 걸리므로 1회차, 2회차 장면을 나눠 돌린다")
     args = parser.parse_args()
@@ -379,11 +379,13 @@ def main() -> int:
                 if area != "chat-long-title"}
     compares.update(run.custom_compares)
     pairs = {}
-    for area, path in compares.items():
-        earlier = out / f"{args.pair}-{area}-compare.png" if args.pair else None
-        if earlier and earlier.is_file():
-            pairs[area] = stack(earlier, Path(path), out / f"{args.pair}-vs-{args.phase}-{area}.png",
-                                (f"{args.pair} · {area}", f"{args.phase} · {area}"))
+    for pair in (args.pair.split(",") if args.pair else []):
+        for area, path in compares.items():
+            earlier = out / f"{pair}-{area}-compare.png"
+            if earlier.is_file():
+                pairs[f"{pair}-vs-{args.phase}-{area}"] = stack(
+                    earlier, Path(path), out / f"{pair}-vs-{args.phase}-{area}.png",
+                    (f"{pair} · {area}", f"{args.phase} · {area}"))
     passed = all(entry["passed"] for entry in run.checks)
     result = {"phase": args.phase, "passed": passed, "checks": run.checks, "shots": run.shots,
               "compare": compares, "pairs": pairs, "operations": run.operations, "notes": run.notes}

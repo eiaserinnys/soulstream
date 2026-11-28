@@ -151,105 +151,107 @@ export function SidebarPane({
           />
         </View>
       ) : null}
-      <FlatList
-        testID="sidebar-main-list"
-        contentContainerStyle={{ paddingBottom: 0 }}
-        style={styles.list}
-        scrollEnabled={!starredDragging && !starred.reordering}
-        refreshControl={<RefreshControl refreshing={pullRefreshing} onRefresh={handlePullRefresh} />}
-        data={treeRows.length > 0 ? ['project-tree'] : []}
-        keyExtractor={(item) => item}
-        renderItem={() => (
-          <ProjectTreeSheet
-            rows={treeRows}
-            activeProjectPageId={activeSection.kind === 'project'
-              ? activeSection.projectPageId
-              : null}
-            onToggle={(folderId) => setExpandedFolderIds((current) => {
-              const next = new Set(current);
-              if (next.has(folderId)) next.delete(folderId);
-              else next.add(folderId);
-              return next;
-            })}
-            onOpen={(folder, projectPageId) => select({
-              kind: 'project',
-              folderId: folder.id,
-              projectPageId,
-            })}
-            onLongPress={(folder, projectPageId) => menus.openProjectMenu({
-              folder,
-              projectPageId,
-              onOpen: () => select({ kind: 'project', folderId: folder.id, projectPageId }),
-              onCreateFolder: () => promptText('새 폴더', '폴더 이름', (title) => {
-                void actions.createFolder({
-                  title,
-                  folderId: folder.id,
-                  projectPageId,
-                }).catch(reportPlannerError('폴더를 만들지 못했습니다.'));
-              }),
-            })}
-            onManage={(folder) => showProjectManagement(folder, actions)}
-          />
-        )}
-        ListHeaderComponent={
-          <View style={styles.headerContent}>
-            <View testID="sidebar-daily-row" style={styles.dailyRow}>
-              <SidebarRow label="카드" icon="grid-outline" active={activeSection.kind === 'daily'}
-                onPress={() => select({ kind: 'daily', date: today })} styles={styles} t={t} />
-            </View>
-            <View testID="sidebar-starred-section" style={styles.starred}>
-              <SidebarSectionTitle
-                testID="sidebar-section-starred"
-                section="StarredTab"
-                styles={styles}
-                t={t}
-              />
-              {starred.loading && starred.data.items.length === 0 && !pullRefreshing
-                ? <FrameLoading testID="sidebar-starred-loading" />
-                : <StarredFolderList
-                folders={starred.data.items}
-                loading={starred.loading}
-                error={starred.error}
-                hasMore={!!starred.data.nextCursor}
-                onLoadMore={starred.loadMore}
-                onRefresh={starred.refresh}
-                refreshRequired={starred.refreshRequired}
-                onSelect={(folder) => {
-                  openStarredPageWorkspace(folder.page.id, 'sidebar');
-                  onItemSelected?.();
-                }}
-                onLongPress={(folder) => {
-                  menus.openFolderMenu(folder, () => {
+      <View testID="sidebar-main-list-frame" style={styles.listFrame}>
+        <FlatList
+          testID="sidebar-main-list"
+          contentContainerStyle={{ paddingBottom: 0 }}
+          style={styles.listScroll}
+          scrollEnabled={!starredDragging && !starred.reordering}
+          refreshControl={<RefreshControl refreshing={pullRefreshing} onRefresh={handlePullRefresh} />}
+          data={treeRows.length > 0 ? ['project-tree'] : []}
+          keyExtractor={(item) => item}
+          renderItem={() => (
+            <ProjectTreeSheet
+              rows={treeRows}
+              activeProjectPageId={activeSection.kind === 'project'
+                ? activeSection.projectPageId
+                : null}
+              onToggle={(folderId) => setExpandedFolderIds((current) => {
+                const next = new Set(current);
+                if (next.has(folderId)) next.delete(folderId);
+                else next.add(folderId);
+                return next;
+              })}
+              onOpen={(folder, projectPageId) => select({
+                kind: 'project',
+                folderId: folder.id,
+                projectPageId,
+              })}
+              onLongPress={(folder, projectPageId) => menus.openProjectMenu({
+                folder,
+                projectPageId,
+                onOpen: () => select({ kind: 'project', folderId: folder.id, projectPageId }),
+                onCreateFolder: () => promptText('새 폴더', '폴더 이름', (title) => {
+                  void actions.createFolder({
+                    title,
+                    folderId: folder.id,
+                    projectPageId,
+                  }).catch(reportPlannerError('폴더를 만들지 못했습니다.'));
+                }),
+              })}
+              onManage={(folder) => showProjectManagement(folder, actions)}
+            />
+          )}
+          ListHeaderComponent={
+            <View style={styles.headerContent}>
+              <View testID="sidebar-daily-row" style={styles.dailyRow}>
+                <SidebarRow label="카드" icon="grid-outline" active={activeSection.kind === 'daily'}
+                  onPress={() => select({ kind: 'daily', date: today })} styles={styles} t={t} />
+              </View>
+              <View testID="sidebar-starred-section" style={styles.starred}>
+                <SidebarSectionTitle
+                  testID="sidebar-section-starred"
+                  section="StarredTab"
+                  styles={styles}
+                  t={t}
+                />
+                {starred.loading && starred.data.items.length === 0 && !pullRefreshing
+                  ? <FrameLoading testID="sidebar-starred-loading" />
+                  : <StarredFolderList
+                  folders={starred.data.items}
+                  loading={starred.loading}
+                  error={starred.error}
+                  hasMore={!!starred.data.nextCursor}
+                  onLoadMore={starred.loadMore}
+                  onRefresh={starred.refresh}
+                  refreshRequired={starred.refreshRequired}
+                  onSelect={(folder) => {
                     openStarredPageWorkspace(folder.page.id, 'sidebar');
                     onItemSelected?.();
-                  });
-                }}
-                onMove={moveStarredFolder}
-                onDragStateChange={setStarredDragging}
-                reordering={starred.reordering}
-              />}
+                  }}
+                  onLongPress={(folder) => {
+                    menus.openFolderMenu(folder, () => {
+                      openStarredPageWorkspace(folder.page.id, 'sidebar');
+                      onItemSelected?.();
+                    });
+                  }}
+                  onMove={moveStarredFolder}
+                  onDragStateChange={setStarredDragging}
+                  reordering={starred.reordering}
+                />}
+              </View>
+              <View style={styles.sectionHeader}>
+                <SidebarSectionTitle
+                  testID="sidebar-section-project"
+                  section="ProjectTab"
+                  styles={styles}
+                  t={t}
+                />
+                <TouchableOpacity
+                  accessibilityLabel="새 프로젝트"
+                  style={styles.iconAction}
+                  onPress={() => promptText('새 프로젝트', '프로젝트 이름', (name) => {
+                    void actions.createRootFolder(name).catch(reportPlannerError('프로젝트를 만들지 못했습니다.'));
+                  })}
+                >
+                  <Ionicons name="add" color={t.colors.accent} size={t.iconSize.action} />
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={styles.sectionHeader}>
-              <SidebarSectionTitle
-                testID="sidebar-section-project"
-                section="ProjectTab"
-                styles={styles}
-                t={t}
-              />
-              <TouchableOpacity
-                accessibilityLabel="새 프로젝트"
-                style={styles.iconAction}
-                onPress={() => promptText('새 프로젝트', '프로젝트 이름', (name) => {
-                  void actions.createRootFolder(name).catch(reportPlannerError('프로젝트를 만들지 못했습니다.'));
-                })}
-              >
-                <Ionicons name="add" color={t.colors.accent} size={t.iconSize.action} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        }
-        ListFooterComponent={<HomeComposerSpacer enabled precedingGap={0} testID="sidebar-home-composer-spacer" />}
-      />
+          }
+          ListFooterComponent={<HomeComposerSpacer enabled precedingGap={0} testID="sidebar-home-composer-spacer" />}
+        />
+      </View>
       <View
         testID="sidebar-settings-footer"
         style={[
@@ -327,10 +329,11 @@ function makeStyles(t: DesignTokens) {
   const planner = createPlannerVisualRoles(t);
   return StyleSheet.create({
     container: { flex: 1 },
-    list: {
+    listFrame: {
       flex: 1,
       marginTop: -planner.sidebar.firstItemPullUp,
     },
+    listScroll: { flex: 1 },
     searchField: {
       paddingHorizontal: planner.sidebar.contentInset,
       paddingBottom: t.spacing.sm,

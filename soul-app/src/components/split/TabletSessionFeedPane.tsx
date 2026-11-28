@@ -109,7 +109,7 @@ export function TabletSessionFeedPane({ width, onOpenSession, searchEntry = fals
 function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     container: { flex: 1, minWidth: 0, minHeight: 0 },
-    title: { flexShrink: 1 },
+    title: { flex: 1 },
     body: { flex: 1 },
     closeAction: {
       minWidth: t.hitTarget.min,

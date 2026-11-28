@@ -6,6 +6,7 @@ jest.mock('../../../screens/SearchScreen', () => ({
 }));
 
 import { fireEvent, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { useSearchStore } from '../../../store/searchStore';
 import { TabletSessionFeedPane } from '../TabletSessionFeedPane';
 
@@ -29,4 +30,14 @@ test('다른 검색 입구가 있는 피드 칸에는 세션 검색 단추를 �
   const screen = render(<TabletSessionFeedPane />);
 
   expect(screen.queryByLabelText('세션 검색')).toBeNull();
+});
+
+test('피드 머리 제목 칸이 남은 폭을 채워 세션 검색과 검색 닫기 단추가 머리 오른쪽 끝에 선다', () => {
+  const screen = render(<TabletSessionFeedPane searchEntry />);
+  const titleStyle = () => StyleSheet.flatten(screen.getByTestId('tablet-feed-title').props.style);
+
+  expect(titleStyle()).toMatchObject({ flex: 1 });
+  fireEvent.press(screen.getByLabelText('세션 검색'));
+  expect(screen.getByLabelText('검색 닫기')).toBeTruthy();
+  expect(titleStyle()).toMatchObject({ flex: 1 });
 });
