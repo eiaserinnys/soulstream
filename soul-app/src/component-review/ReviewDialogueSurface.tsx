@@ -19,7 +19,8 @@ import { DEFAULT_SEARCH_FILTERS } from '../store/searchStore';
 import { createSessionSuccessionFailureRecord } from '../lib/session-succession-diagnostics';
 import { createPlannerMutationPort } from '../api/plannerMutationPort';
 import { makeCard } from './fixtures';
-import { dialogueApi as api, dialogueChildFolder, dialogueFolder, dialogueFolders } from './dialogue-fixtures';
+import { dialogueApi, dialogueChildFolder, dialogueFolder, dialogueFolders } from './dialogue-fixtures';
+import { withFailingFolderContext } from './folder-context-fixtures';
 import { PlannerAtomContextPicker } from '../components/planner/PlannerAtomContextPicker';
 import { AppModalSurface } from '../components/AppModalSurface';
 import { type DialogueSample } from './dialogue-inventory';
@@ -28,8 +29,11 @@ import { ReviewPersistentEntry } from './ReviewPersistentEntry';
 
 const assignment = { folderId: 'public-project', nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-model' as string | null };
 const exhaustedSample = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('exhausted');
-// The 「새 폴더」 sample also opens the same sheet as a top-level folder, as folder settings, or its reference picker.
+// The 「새 폴더」 sample also opens the same sheet as a top-level folder, as folder settings, or its reference picker;
+//  makes the folder context reads of these sheets and 「새 세션」 fail.
 const folderSheetVariant = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('folderSheet');
+const contextFail = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('contextFail') === '1';
+const api = contextFail ? withFailingFolderContext(dialogueApi) : dialogueApi;
 const exhaustedAssignments: Record<string, typeof assignment> = {
   direct: { ...assignment, modelPreset: 'public-exhausted-model' },
   auto: { ...assignment, agentId: 'public-exhausted-agent', modelPreset: null },

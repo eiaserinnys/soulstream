@@ -28,6 +28,8 @@ export const folderContextBlocks: Record<string, PlannerBlock[]> = {
 const atomChildren = ['시스템 아키텍처', '세션', 'API 레퍼런스', '프론트엔드 아키텍처', '개발 가이드', '실수 사례']
   .map((title, index) => ({ id: `public-atom-child-${index + 1}`, title }));
 
+const manyAtomChildren = Array.from({ length: 24 }, (_, index) => ({ id: `public-atom-mistake-${index + 1}`, title: `공개 예시 사례 ${index + 1}` }));
+
 /** Adds folder context reads to a public review api without touching its other methods. */
 export function withFolderContext<T extends Pick<ApiClient, 'getPage'>>(api: T): T & Pick<ApiClient,
   'getPageSessionDefaults' | 'listAtomRootNodes' | 'listAtomNodeChildren'> {
@@ -52,6 +54,13 @@ export function withFolderContext<T extends Pick<ApiClient, 'getPage'>>(api: T):
     getPage,
     getPageSessionDefaults,
     listAtomRootNodes: async () => ({ nodes: [{ id: 'public-atom-soulstream', title: 'soulstream' }] }),
-    listAtomNodeChildren: async (nodeId: string) => ({ children: nodeId === 'public-atom-soulstream' ? atomChildren : [] }),
+    listAtomNodeChildren: async (nodeId: string) => ({ children: nodeId === 'public-atom-soulstream' ? atomChildren
+      : nodeId === 'public-atom-child-6' ? manyAtomChildren : [] }),
   };
+}
+
+/** The same api whose folder context reads all fail, for the failure states of the sheets. */
+export function withFailingFolderContext<T extends Pick<ApiClient, 'getPage'>>(api: T): ReturnType<typeof withFolderContext<T>> {
+  const fail = async (): Promise<never> => { throw new Error('공개 예시: 맥락을 불러오지 못했습니다.'); };
+  return { ...withFolderContext(api), getPage: fail, getPageSessionDefaults: fail, listAtomRootNodes: fail, listAtomNodeChildren: fail };
 }

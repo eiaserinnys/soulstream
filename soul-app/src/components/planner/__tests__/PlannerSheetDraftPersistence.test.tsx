@@ -226,7 +226,7 @@ test('새 폴더 시트는 직접 정한 지침과 기본 실행 환경을 생�
   />);
 
   fireEvent.press(screen.getByTestId('settings-segment-folder-guidance-own'));
-  fireEvent.changeText(screen.getByPlaceholderText('이 폴더에서 쓸 지침'), '직접 지침');
+  fireEvent.changeText(screen.getByPlaceholderText('이 폴더에서 에이전트가 따를 지침'), '직접 지침');
   fireEvent.press(screen.getByTestId('settings-segment-folder-defaults-own'));
   fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '새 폴더');
   await act(async () => { fireEvent.press(screen.getByText('만들기')); });
@@ -253,7 +253,7 @@ test('새 폴더 순서는 상위 폴더, 이름, 설명, 지침, 참고 자료,
   expect(screen.queryByText('agent-a')).toBeNull();
 });
 
-test('유효하지 않은 preset 경고는 가용성이 회복되면 단방향 래치 없이 해제된다', async () => {
+test('유효하지 않은 preset은 만들기를 막고, 가용성이 회복되면 단방향 래치 없이 다시 연다', async () => {
   const props = {
     visible: true,
     api: null,
@@ -263,18 +263,16 @@ test('유효하지 않은 preset 경고는 가용성이 회복되면 단방향 �
     onSubmit: jest.fn().mockResolvedValue(undefined),
   };
   const screen = render(<NewFolderSheet {...props} />);
+  fireEvent.changeText(screen.getByPlaceholderText('폴더 이름'), '모델 확인');
   fireEvent.press(screen.getByTestId('settings-segment-folder-defaults-own'));
   mockModelPresetSelectionInvalid = true;
   screen.rerender(<NewFolderSheet {...props} />);
-  await waitFor(() => expect(screen.getByText(
-    '노드와 에이전트를 고르고, 쓸 수 있는 모델을 정해 주세요.',
-  )).toBeTruthy());
+  await waitFor(() => expect(screen.getByTestId('new-task-submit')).toBeDisabled());
+  expect(screen.queryByText('노드와 에이전트를 고르고, 쓸 수 있는 모델을 정해 주세요.')).toBeNull();
 
   mockModelPresetSelectionInvalid = false;
   screen.rerender(<NewFolderSheet {...props} />);
-  await waitFor(() => expect(screen.queryByText(
-    '노드와 에이전트를 고르고, 쓸 수 있는 모델을 정해 주세요.',
-  )).toBeNull());
+  await waitFor(() => expect(screen.getByTestId('new-task-submit')).toBeEnabled());
 });
 
 test('기본 실행 환경을 물려받기로 되돌리면 폴더 작성 내용을 보존하고 기본값을 싣지 않는다', async () => {
@@ -342,7 +340,7 @@ test('새 업무 시트는 auth scope 전환 즉시 이전 draft와 프로젝트
   fireEvent.changeText(screen.getByPlaceholderText('목표와 완료 조건을 적어두세요.'), 'A 계정 설명');
   expect(screen.getByText('이전 계정 프로젝트 지침')).toBeTruthy();
   fireEvent.press(screen.getByTestId('settings-segment-folder-guidance-own'));
-  fireEvent.changeText(screen.getByPlaceholderText('이 폴더에서 쓸 지침'), 'A 계정 직접 지침');
+  fireEvent.changeText(screen.getByPlaceholderText('이 폴더에서 에이전트가 따를 지침'), 'A 계정 직접 지침');
 
   mockChain = { data: null, loading: true, error: null };
   await act(async () => {
@@ -353,7 +351,7 @@ test('새 업무 시트는 auth scope 전환 즉시 이전 draft와 프로젝트
   expect(screen.getByPlaceholderText('폴더 이름').props.value).toBe('');
   expect(screen.getByPlaceholderText('목표와 완료 조건을 적어두세요.').props.value).toBe('');
   fireEvent.press(screen.getByTestId('settings-segment-folder-guidance-own'));
-  expect(screen.getByPlaceholderText('이 폴더에서 쓸 지침').props.value).toBe('');
+  expect(screen.getByPlaceholderText('이 폴더에서 에이전트가 따를 지침').props.value).toBe('');
   expect(screen.queryByText('이전 계정 프로젝트 지침')).toBeNull();
 });
 
@@ -572,4 +570,28 @@ test('명시적 거절 뒤 생성 성공과 오늘 반영 실패가 오면 생�
   expect(onSubmit.mock.calls[2][0].creation).toBe(onSubmit.mock.calls[1][0].creation);
   expect(onSubmit.mock.calls[2][0].creation.result).toEqual({ folderId: 'created-folder' });
   expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test('새 세션에서 이전 세션 스위치를 끄면 요청에 이전 세션을 싣지 않고, 스위치 이름은 보이는 글과 같다', async () => {
+  mockCreateFolderSession.mockResolvedValue({ agentSessionId: 'session-new' });
+  const screen = render(<SessionSuccessionSheet api={null} folder={folder('running')} predecessorSessionId="session-1"
+    visible onClose={jest.fn()} onCreated={jest.fn()} />);
+  expect(screen.getByTestId('succession-check-predecessor').props.accessibilityLabel).toBe('이전 세션');
+  expect(screen.getByTestId('succession-check-task-context').props.accessibilityLabel).toBe('폴더 맥락');
+  fireEvent(screen.getByTestId('succession-check-predecessor'), 'valueChange', false);
+  await act(async () => { fireEvent.press(screen.getByLabelText('세션 시작')); });
+  expect(mockCreateFolderSession).toHaveBeenCalledTimes(1);
+  expect(mockCreateFolderSession.mock.calls[0][0]).not.toHaveProperty('predecessorSessionId');
+});
+
+test('새 세션의 폴더 맥락 조회가 실패하면 없다고 말하지 않고 다시 시도를 둔다', () => {
+  const retry = jest.fn();
+  mockChain = { data: null, loading: false, error: '일시 실패', retry };
+  mockPageDefaults = { data: null, loading: false, error: null, retry: jest.fn() };
+  const screen = render(<SessionSuccessionSheet api={null} folder={folder('running')} predecessorSessionId={null}
+    visible onClose={jest.fn()} onCreated={jest.fn()} />);
+  expect(screen.getByText('맥락을 불러오지 못했습니다.')).toBeTruthy();
+  expect(screen.queryByText('연결된 맥락 없음')).toBeNull();
+  fireEvent.press(screen.getByTestId('succession-check-task-context-retry'));
+  expect(retry).toHaveBeenCalledTimes(1);
 });

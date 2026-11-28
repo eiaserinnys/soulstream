@@ -46,7 +46,6 @@ jest.mock('../../../hooks/usePlannerActions', () => ({
     createFolder: jest.fn(),
     renameFolderPage: jest.fn(),
     saveFolderDescription: jest.fn(),
-    saveFolderSessionDefaults: jest.fn(),
   }),
 }));
 jest.mock('../FolderContextSection', () => ({

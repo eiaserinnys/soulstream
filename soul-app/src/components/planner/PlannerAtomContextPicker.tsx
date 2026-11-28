@@ -5,8 +5,7 @@ import type { AtomInstance } from '../../lib/folder-context';
 import { useTokens, type DesignTokens } from '../../theme';
 import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
 import { GroupedGlassRow, GroupedGlassSheet } from './GroupedGlassSheet';
-import { HeadingRow } from './FolderContextParts';
-import { SheetErrorNotice, sheetErrorDetail } from './SheetErrorNotice';
+import { FailedRow, HeadingRow } from './FolderContextParts';
 import { makeStyles as makeSheetStyles } from './SessionSuccessionSheet.styles';
 
 interface AtomNode {
@@ -47,7 +46,8 @@ export function PlannerAtomContextPicker({ visible, api, initial = null, onClose
   const [depth, setDepth] = useState<DepthValue>(initial ? depthValue(initial.depth) : DEFAULT_DEPTH);
   const [titlesOnly, setTitlesOnly] = useState(initial?.titlesOnly ?? false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const confirmed = useRef(false);
   const current = breadcrumb[breadcrumb.length - 1];
 
@@ -55,21 +55,21 @@ export function PlannerAtomContextPicker({ visible, api, initial = null, onClose
     if (!visible || !api) return;
     let cancelled = false;
     setLoading(true);
-    setError(null);
+    setFailed(false);
     (current ? api.listAtomNodeChildren(current.id) : api.listAtomRootNodes()).then((payload) => {
       if (!cancelled) setItems(normalizeNodes(payload));
-    }).catch((cause) => {
+    }).catch(() => {
       if (!cancelled) {
         setItems([]);
-        setError(sheetErrorDetail(cause));
+        setFailed(true);
       }
     }).finally(() => {
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [api, current, visible]);
+  }, [api, attempt, current, visible]);
 
-  const canConfirm = Boolean(selected && api && !loading && !error);
+  const canConfirm = Boolean(selected && api && !loading && !failed);
   const confirm = () => {
     if (!selected || !canConfirm || confirmed.current) return;
     confirmed.current = true;
@@ -91,7 +91,7 @@ export function PlannerAtomContextPicker({ visible, api, initial = null, onClose
           <Text style={styles.headerAction}>취소</Text>
         </TouchableOpacity>
         <Text accessibilityRole="header" style={styles.title}>{initial ? '참고 자료 고치기' : '참고 자료 추가'}</Text>
-        <TouchableOpacity testID="atom-picker-add-selected" accessibilityRole="button" style={styles.headerButton}
+        <TouchableOpacity testID="atom-picker-add-selected" accessibilityRole="button" style={[styles.headerButton, styles.headerButtonEnd]}
           disabled={!canConfirm} accessibilityState={{ disabled: !canConfirm }} onPress={confirm}>
           <Text style={[styles.headerAction, !canConfirm && styles.disabled]}>{initial ? '저장' : '추가'}</Text>
         </TouchableOpacity>
@@ -118,16 +118,21 @@ export function PlannerAtomContextPicker({ visible, api, initial = null, onClose
               selectedOutsideList && !loading ? (
                 <NodeRow key={`selected-${selected.id}`} node={selected} selected styles={styles} t={t} onSelect={() => undefined} />
               ) : null,
-              ...(loading ? [<View key="loading" style={styles.state}><ActivityIndicator color={t.colors.accent} /></View>]
-                : error ? []
-                  : items.length === 0 ? [<Text key="empty" style={styles.empty}>하위 노드가 없습니다.</Text>]
-                    : items.map((item) => (
-                      <NodeRow key={item.id} node={item} selected={selected?.id === item.id} styles={styles} t={t}
-                        onSelect={() => setSelected(item)} onDrill={() => setBreadcrumb((path) => [...path, item])} />
-                    ))),
+              loading ? <View key="loading" style={styles.state}><ActivityIndicator color={t.colors.accent} /></View>
+                : failed ? <FailedRow key="failed" testID="atom-picker-failed" message="자료를 불러오지 못했습니다." onRetry={() => setAttempt((value) => value + 1)} />
+                  : items.length === 0 ? <Text key="empty" style={styles.empty}>하위 노드가 없습니다.</Text>
+                    : (
+                      <ScrollView key="items" testID="atom-picker-node-list" style={styles.nodeList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                        <GroupedGlassSheet surface="inherited">
+                          {items.map((item) => (
+                            <NodeRow key={item.id} node={item} selected={selected?.id === item.id} styles={styles} t={t}
+                              onSelect={() => setSelected(item)} onDrill={() => setBreadcrumb((path) => [...path, item])} />
+                          ))}
+                        </GroupedGlassSheet>
+                      </ScrollView>
+                    ),
             ].filter(Boolean)}
           </GroupedGlassSheet>
-          {error ? <SheetErrorNotice summary="자료를 불러오지 못했습니다. 닫고 다시 열어 주세요." detail={error} /> : null}
         </View>
         <View style={styles.section}>
           <GroupedGlassSheet testID="atom-picker-options">
@@ -193,14 +198,15 @@ function makeStyles(t: DesignTokens) {
     crumb: { flexDirection: 'row', alignItems: 'center', minHeight: t.hitTarget.min, paddingLeft: t.spacing.xs, paddingRight: t.spacing.sm },
     crumbBack: { minWidth: t.hitTarget.min, minHeight: t.hitTarget.min, alignItems: 'center', justifyContent: 'center' },
     crumbTitle: { flex: 1, minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm },
-    crumbText: { flex: 1, color: t.colors.textSecondary, ...t.foundation.typography.label },
+    crumbText: { flex: 1, color: t.colors.textSecondary, ...t.foundation.typography.meta },
+    nodeList: { maxHeight: t.foundation.minHeight.field * 8 },
     node: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm, paddingLeft: t.cardLayout.padding, minHeight: t.foundation.minHeight.field },
     nodeTitle: { flex: 1, color: t.colors.textPrimary, ...t.foundation.typography.body },
     drill: { minWidth: t.hitTarget.min, minHeight: t.hitTarget.min, alignItems: 'center', justifyContent: 'center' },
     state: { minHeight: t.foundation.minHeight.field, justifyContent: 'center', padding: t.cardLayout.padding },
     empty: { color: t.colors.textTertiary, ...t.foundation.typography.body, padding: t.cardLayout.padding },
     option: { padding: t.cardLayout.padding, gap: t.spacing.sm },
-    optionLabel: { color: t.colors.textSecondary, ...t.foundation.typography.label },
+    optionLabel: { color: t.colors.textSecondary, ...t.foundation.typography.meta },
     titlesOnlyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: t.spacing.sm, paddingHorizontal: t.cardLayout.padding, minHeight: t.foundation.minHeight.field },
     titlesOnlyLabel: { flex: 1, color: t.colors.textPrimary, ...t.foundation.typography.body },
   });

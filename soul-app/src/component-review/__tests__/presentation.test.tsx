@@ -29,7 +29,7 @@ test('검수 창의 폴더 맥락은 실제 요약 부품과 로컬 데이터만
     folderId="public-child" folderPageId="public-child-page" active onOpenSettings={openSettings} />);
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   expect(screen.getByText(/화면 검수는 아이폰과 아이패드 폭에서 함께 본다\./)).toBeTruthy();
-  expect(screen.getByText('soulstream, 프론트엔드 아키텍처, UI 디자인 기준')).toBeTruthy();
+  expect(screen.getByText('soulstream · 프론트엔드 아키텍처 · UI 디자인 기준')).toBeTruthy();
   expect(screen.getByText('공개 예시 에이전트 · public-node · 사용 가능한 예시 모델')).toBeTruthy();
   fireEvent.press(screen.getByText('설정'));
   expect(openSettings).toHaveBeenCalledTimes(1);

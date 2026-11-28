@@ -240,7 +240,7 @@ test('폴더 설정의 기본 실행 환경은 노드·에이전트와 같은 �
 
   fireEvent.press(screen.getByText('설정'));
   expect(screen.getByText('폴더 설정')).toBeTruthy();
-  fireEvent.press(screen.getByTestId('settings-segment-folder-defaults-own'));
+  expect(screen.queryByTestId('settings-segment-folder-defaults-own')).toBeNull();
 
   expect(screen.getByText('노드')).toBeTruthy();
   expect(screen.getByText('에이전트')).toBeTruthy();

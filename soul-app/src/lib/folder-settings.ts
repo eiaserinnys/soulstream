@@ -53,8 +53,16 @@ export function folderSettingsDraftFromBlocks({ title, description, blocks }: {
   };
 }
 
-export function executionDefaultsComplete(defaults: FolderExecutionDefaults): boolean {
-  return Boolean(defaults.nodeId && defaults.agentId);
+/**
+ * Sources as saved. A folder without a parent has nothing to inherit: filled values are its own,
+ * and empty guidance or unset defaults write no block. Empty own guidance is saved as inherit everywhere.
+ */
+export function resolveDraftSources(draft: FolderSettingsDraft, hasParent: boolean): FolderSettingsDraft {
+  const guidanceSource: ContextSource = (!hasParent || draft.guidanceSource === 'own') && draft.guidance.trim() ? 'own' : 'inherit';
+  const defaultsSource: ContextSource = hasParent
+    ? draft.defaultsSource
+    : draft.defaults.nodeId || draft.defaults.agentId ? 'own' : 'inherit';
+  return { ...draft, guidanceSource, defaultsSource };
 }
 
 /** Page operations that make the folder's own blocks match the draft. */

@@ -16,8 +16,6 @@ import {
   completeFolderProjection,
   deleteFolderSessionProjection,
   moveFolderSessionProjection,
-  patchProjectPageProjection,
-  patchFolderBlocksProjection,
   renameFolderSessionProjection,
   replaceFolderProjection,
   setFolderStarredProjection,
@@ -48,7 +46,6 @@ import {
   projectDescriptionBlocks,
 } from './plannerActionModels';
 import { createPlannerCatalogActions } from './plannerCatalogActions';
-import { savePlannerSessionDefaults } from '../lib/planner-session-defaults';
 import { captureAuthScope, useAuthScopeGeneration } from '../lib/auth-scope';
 
 export function usePlannerActions(api: ApiClient | null, requestedScopeGeneration?: string) {
@@ -198,16 +195,6 @@ export function createPlannerActions(
       });
     },
 
-    saveFolderSessionDefaults: async (
-      folder: PlannerFolder,
-      input: { blockId: string | null; agentId: string; nodeId: string; modelPreset?: string },
-    ) => {
-      const result = await savePlannerSessionDefaults(requireApi(), folder.page.id, input);
-      applyPlanner(patchFolderBlocksProjection(plannerSnapshot(), folder.page.id, result.blocks));
-      markChanged('page');
-      return result;
-    },
-
     setFolderStarred: (folder: PlannerFolder, starred: boolean) => {
       const client = requireApi();
       return pageTransaction(client, folder.page.id, {
@@ -232,27 +219,6 @@ export function createPlannerActions(
         markChanged('folder');
       }
       return result;
-    },
-
-    saveProjectContext: (projectPageId: string, markdown: string) => {
-      const client = requireApi();
-      const project = usePlannerStore.getState().folderByPageId[projectPageId];
-      const optimistic = project
-        ? { ...project.project, updatedAt: new Date().toISOString() }
-        : null;
-      return pageTransaction(client, projectPageId, {
-        project: (before) => optimistic
-          ? patchProjectPageProjection(before, projectPageId, optimistic)
-          : before,
-        mutate: () => client.plannerMutations.saveProjectContext(projectPageId, markdown),
-        merge: (result) => {
-          if (result) applyPlanner(patchProjectPageProjection(
-            plannerSnapshot(),
-            projectPageId,
-            result.page,
-          ));
-        },
-      });
     },
 
     createFolderSession: async (input: {

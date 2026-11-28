@@ -1,5 +1,3 @@
-// Existing succession state/context flow remains together to preserve its UX;
-// this card change extracts only the shared selection row. Broader splitting is separate work.
 import { captureAuthScope, isAuthScopeCurrent } from '../../lib/auth-scope';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import { SelectedModelPresetName } from '../sheets/SelectedModelPresetName';
@@ -9,7 +7,6 @@ import {
   ActivityIndicator,
   Platform,
   ScrollView,
-  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -51,6 +48,8 @@ import {
   type SessionContextItem,
 } from '../../lib/planner-session-context';
 import { AddRow, HeadingRow, ReferenceRow } from './FolderContextParts';
+import { SuccessionSwitchRow, describeFolderContext } from './SuccessionContextRows';
+import { sheetLayerStyles } from './sheetLayers';
 import { PlannerAtomContextPicker, type PickedAtomReference } from './PlannerAtomContextPicker';
 import { useFolderContextChain, usePageSessionDefaults } from './useFolderContext';
 import { makeStyles } from './SessionSuccessionSheet.styles';
@@ -125,7 +124,10 @@ function SessionSuccessionSheetContent({
   const folderContext = useFolderContextChain(api, folder.folderId, folders, visible);
   const pageDefaults = usePageSessionDefaults(api, folder.page.id, folders, visible);
   const assignmentDefaults = resolveSessionAssignmentDefaults(pageDefaults.data?.defaults ?? null, predecessor);
-  const folderContextDetail = describeFolderContext(folderContext.data, Boolean(pageDefaults.data));
+  const folderContextFailed = Boolean(folderContext.error ?? pageDefaults.error);
+  const folderContextDetail = folderContextFailed
+    ? '맥락을 불러오지 못했습니다.'
+    : describeFolderContext(folderContext.data, Boolean(pageDefaults.data));
   const [references, setReferences] = useState<PickedAtomReference[]>([]);
   const [referencePickerOpen, setReferencePickerOpen] = useState(false);
   const [includeFolderContext, setIncludeFolderContext] = useState(true);
@@ -370,17 +372,13 @@ function SessionSuccessionSheetContent({
       onRequestClose={requestClose}
       safeAreaTestID="succession-safe-area"
     >
-      {referencePickerOpen ? (
-        <PlannerAtomContextPicker visible api={api} onClose={() => setReferencePickerOpen(false)}
-          onPicked={(picked) => setReferences((current) => [
-            ...current.filter((item) => item.instance !== picked.instance || item.nodeId !== picked.nodeId),
-            picked,
-          ])} />
-      ) : <>
+      <View style={[sheetLayerStyles.layer, referencePickerOpen ? sheetLayerStyles.coveredLayer : null]}
+        pointerEvents={referencePickerOpen ? 'none' : 'auto'} accessibilityElementsHidden={referencePickerOpen}
+        importantForAccessibility={referencePickerOpen ? 'no-hide-descendants' : 'auto'}>
       <View testID="succession-header" style={styles.header}>
             <TouchableOpacity accessibilityLabel="세션 작성 취소" style={styles.headerButton} onPress={requestClose} disabled={submitting}><Text style={[styles.headerAction, submitting && styles.disabled]}>취소</Text></TouchableOpacity>
             <Text testID="succession-header-title" style={styles.title}>새 세션</Text>
-            <TouchableOpacity testID="succession-submit" accessibilityLabel="세션 시작" style={styles.headerButton} onPress={submit} disabled={!canSubmit}>
+            <TouchableOpacity testID="succession-submit" accessibilityLabel="세션 시작" style={[styles.headerButton, styles.headerButtonEnd]} onPress={submit} disabled={!canSubmit}>
               {submitting
                 ? <ActivityIndicator color={t.colors.accent} />
                 : <Text style={[styles.headerAction, !canSubmit && styles.disabled]}>세션 시작</Text>}
@@ -501,17 +499,18 @@ function SessionSuccessionSheetContent({
           <HeadingRow title="함께 전달할 자료" />
           <GroupedGlassSheet testID="succession-context-group">
             {[
-              <SwitchRow
+              <SuccessionSwitchRow
                 key="folder"
                 disabled={submitting}
                 value={includeFolderContext}
                 testID="succession-check-task-context"
                 label="폴더 맥락"
                 detail={folderContextDetail}
+                onRetry={folderContextFailed ? () => { folderContext.retry(); pageDefaults.retry(); } : undefined}
                 onChange={(value) => { if (!submissionPending.current) setIncludeFolderContext(value); }}
                 styles={styles}
               />,
-              <SwitchRow
+              <SuccessionSwitchRow
                 key="predecessor"
                 testID="succession-check-predecessor"
                 disabled={submitting || !predecessor}
@@ -534,7 +533,16 @@ function SessionSuccessionSheetContent({
 
         </ScrollView>
       </AppKeyboardAvoidingView>
-      </>}
+      </View>
+      {referencePickerOpen ? (
+        <View style={sheetLayerStyles.pickerLayer}>
+          <PlannerAtomContextPicker visible api={api} onClose={() => setReferencePickerOpen(false)}
+            onPicked={(picked) => setReferences((current) => [
+              ...current.filter((item) => item.instance !== picked.instance || item.nodeId !== picked.nodeId),
+              picked,
+            ])} />
+        </View>
+      ) : null}
     </AppModalSurface>
   );
 }
@@ -555,18 +563,6 @@ export function buildSuccessionContextSelection({
   const atomItem = buildAtomContextItem(references);
   if (atomItem) contextItems.push(atomItem);
   return { needsPageAnchor: includeFolderContext, contextItems };
-}
-
-function describeFolderContext(
-  context: { guidance: readonly unknown[]; atomReferences: readonly unknown[] } | null,
-  hasDefaults: boolean,
-): string {
-  const parts = [
-    context && context.guidance.length > 0 ? '지침' : null,
-    context && context.atomReferences.length > 0 ? `참고 자료 ${context.atomReferences.length}` : null,
-    hasDefaults ? '기본 실행 환경' : null,
-  ].filter(Boolean);
-  return parts.length > 0 ? parts.join(' · ') : '연결된 맥락 없음';
 }
 
 export function resolveSessionPredecessor(
@@ -599,24 +595,4 @@ export function resolveSessionAssignmentDefaults(
     // session alone. Dropping it would rerun the successor at the preset default.
     reasoningEffort: predecessor?.reasoningEffort ?? null,
   };
-}
-
-function SwitchRow({ testID, value, label, detail, onChange, styles, disabled }: {
-  testID?: string;
-  value: boolean;
-  disabled?: boolean;
-  label: string;
-  detail: string;
-  onChange(value: boolean): void;
-  styles: ReturnType<typeof makeStyles>;
-}) {
-  return (
-    <View testID={testID ? `${testID}-row` : undefined} style={styles.switchRow}>
-      <View style={styles.checkBody}>
-        <Text style={styles.rowTitle}>{label}</Text>
-        <Text style={styles.meta} numberOfLines={2}>{detail}</Text>
-      </View>
-      <Switch testID={testID} accessibilityLabel={label} value={value} disabled={disabled} onValueChange={onChange} />
-    </View>
-  );
 }

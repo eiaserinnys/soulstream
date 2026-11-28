@@ -157,8 +157,11 @@ test('최상위 새 폴더는 상위 없이 같은 시트에서 한 번에 만�
   await settle();
   expect(screen.getByText('새 폴더')).toBeTruthy();
   expect(screen.queryByText('상위 폴더')).toBeNull();
+  expect(screen.queryByTestId('settings-segment-folder-guidance-own')).toBeNull();
+  expect(screen.queryByTestId('settings-segment-folder-defaults-own')).toBeNull();
+  expect(screen.queryByText(/물려받을/)).toBeNull();
+  expect(screen.getByTestId('folder-defaults-agent')).toBeDisabled();
   fireEvent.changeText(screen.getByTestId('folder-settings-title'), '새 프로젝트');
-  fireEvent.press(screen.getByTestId('settings-segment-folder-guidance-own'));
   fireEvent.changeText(screen.getByTestId('folder-settings-guidance'), '처음 지침');
   await act(async () => { fireEvent.press(screen.getByText('만들기')); });
   expect(createFolder).toHaveBeenCalledWith(expect.objectContaining({
@@ -192,10 +195,10 @@ test('폴더 화면 맥락은 물려받은 값까지 표시 이름으로 요약�
   expect(screen.getByText('맥락을 불러오지 못했습니다.')).toBeTruthy();
   expect(screen.queryByTestId('folder-context-guidance')).toBeNull();
   getPage.mockImplementation(original);
-  fireEvent.press(screen.getByTestId('folder-context-retry'));
+  fireEvent.press(screen.getByTestId('folder-context-failed-retry'));
   await settle();
   expect(screen.getByTestId('folder-context-guidance')).toHaveTextContent(/첫 지침\s+둘째 지침/);
-  expect(screen.getByTestId('folder-context-references')).toHaveTextContent(/soulstream, 프론트엔드$/);
+  expect(screen.getByTestId('folder-context-references')).toHaveTextContent(/soulstream · 프론트엔드$/);
   expect(screen.getByTestId('folder-context-defaults')).toHaveTextContent(/로젤린 · eiaserinnys$/);
   expect(screen.queryByText('roselin')).toBeNull();
   fireEvent.press(screen.getByText('설정'));
@@ -213,3 +216,147 @@ function plannerFolder(): PlannerFolder {
 function block(pageId: string, id: string, blockType: string, text: string, properties: Record<string, unknown>): PlannerBlock {
   return { id, pageId, parentId: null, positionKey: id, blockType, text, properties, collapsed: false };
 }
+
+test('기본 실행 환경을 고른 뒤 참고 자료를 더해도 값이 남는다', async () => {
+  const { ActionSheetIOS } = require('react-native');
+  jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementationOnce(((_options: unknown, callback: (index: number) => void) => callback(2)) as never);
+  const screen = render(<Harness target={{ kind: 'edit', folder: plannerFolder() }} />);
+  await settle();
+  fireEvent.press(screen.getByTestId('folder-defaults-agent'));
+  await settle();
+  expect(within(screen.getByTestId('folder-defaults-agent')).getByText('서소영')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('folder-reference-add'));
+  await settle();
+  fireEvent.press(screen.getByTestId('atom-picker-select-n2'));
+  fireEvent.press(screen.getByText('추가'));
+  await settle();
+  expect(within(screen.getByTestId('folder-defaults-agent')).getByText('서소영')).toBeTruthy();
+  expect(screen.getByTestId('new-task-submit')).toBeEnabled();
+  await act(async () => { fireEvent.press(screen.getByText('저장')); });
+  expect(operations()).toContainEqual({
+    op: 'update_block_type_and_properties', block_id: 'd1', block_type: 'session_defaults',
+    properties: { agentId: 'utonium', nodeId: 'eiaserinnys', scope: 'session' },
+  });
+  jest.restoreAllMocks();
+});
+
+test('목록에 없는 노드는 원 ID 대신 알 수 없는 노드로 요약한다', async () => {
+  api.getPageSessionDefaults.mockResolvedValue({ agentId: 'roselin', nodeId: 'ghost-node', modelPreset: null, sourcePageId: 'folder-page', sourceBlockId: 'd1' });
+  const screen = render(<FolderContextSection api={api} folderId="folder" folderPageId="folder-page" folders={folders} active />);
+  await settle();
+  expect(screen.getByTestId('folder-context-defaults')).toHaveTextContent(/로젤린 · 알 수 없는 노드$/);
+  expect(screen.queryByText(/ghost-node/)).toBeNull();
+});
+
+test('저장이 실패하면 시트와 입력을 그대로 두고, 저장 연타는 한 번만 보낸다', async () => {
+  let reject!: (cause: Error) => void;
+  api.applyPageOperations.mockImplementationOnce(() => new Promise((_, no) => { reject = no; }));
+  const onClose = jest.fn();
+  const screen = render(<Harness target={{ kind: 'edit', folder: plannerFolder() }} onClose={onClose} />);
+  await settle();
+  fireEvent.changeText(screen.getByTestId('folder-settings-guidance'), '고친 지침');
+  act(() => { fireEvent.press(screen.getByTestId('new-task-submit')); fireEvent.press(screen.getByTestId('new-task-submit')); });
+  await settle();
+  expect(api.applyPageOperations).toHaveBeenCalledTimes(1);
+  await act(async () => reject(new Error('연결 실패')));
+  expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getByText(/폴더를 저장하지 못했습니다/)).toBeTruthy();
+  expect(screen.getByTestId('folder-settings-guidance').props.value).toBe('고친 지침');
+  await act(async () => { fireEvent.press(screen.getByTestId('new-task-submit')); });
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test('폴더 설정 초안은 닫기와 실패 뒤 복원되고 저장에 성공하면 지운다', async () => {
+  const { useDraftStore } = require('../../../store/draftStore');
+  const { useAuthStore } = require('../../../store/authStore');
+  await useAuthStore.persist.rehydrate(); await useSettingsStore.persist.rehydrate(); await useDraftStore.persist.rehydrate();
+  useAuthStore.setState({ jwt: `header.${Buffer.from(JSON.stringify({ email: 'folder@example.com' })).toString('base64url')}.signature` });
+  useDraftStore.setState({ drafts: {} });
+  api.applyPageOperations.mockRejectedValueOnce(new Error('연결 실패'));
+  const first = render(<Harness target={{ kind: 'edit', folder: plannerFolder() }} />);
+  await settle();
+  fireEvent.changeText(first.getByTestId('folder-settings-guidance'), '영속 지침 초안');
+  await act(async () => { fireEvent.press(first.getByTestId('new-task-submit')); });
+  expect(Object.values(useDraftStore.getState().drafts)).toContain('영속 지침 초안');
+  first.unmount();
+  const reopened = render(<Harness target={{ kind: 'edit', folder: plannerFolder() }} />);
+  await settle();
+  expect(reopened.getByTestId('folder-settings-guidance').props.value).toBe('영속 지침 초안');
+  await act(async () => { fireEvent.press(reopened.getByTestId('new-task-submit')); });
+  expect(Object.values(useDraftStore.getState().drafts)).not.toContain('영속 지침 초안');
+  expect(api.applyPageOperations.mock.calls[1][1].operations).toContainEqual({ op: 'update_block_text', block_id: 'g1', text: '영속 지침 초안' });
+});
+
+test('인증 범위가 바뀌면 열린 폴더 설정의 초안을 버린다', async () => {
+  const { useAuthStore } = require('../../../store/authStore');
+  const { resetAuthScopeForTest } = require('../../../lib/auth-scope');
+  useAuthStore.setState({ jwt: 'scope-a' });
+  resetAuthScopeForTest();
+  const screen = render(<Harness target={{ kind: 'edit', folder: plannerFolder() }} />);
+  await settle();
+  fireEvent.changeText(screen.getByTestId('folder-settings-guidance'), 'A 계정 미저장 초안');
+  await act(async () => { useAuthStore.getState().setJwt('scope-b'); await Promise.resolve(); });
+  await settle();
+  expect(screen.queryByDisplayValue('A 계정 미저장 초안')).toBeNull();
+  expect(api.applyPageOperations).not.toHaveBeenCalled();
+});
+
+test('직접 정하기로 바꾸면 이 폴더 값이 없을 때 물려받은 기본 실행 환경으로 채운다', async () => {
+  const folder = { ...plannerFolder(), blocks: folderBlocks.filter((item) => item.blockType !== 'session_defaults') };
+  const screen = render(<Harness target={{ kind: 'edit', folder }} />);
+  await settle();
+  expect(screen.getByTestId('folder-settings-inherited-defaults')).toHaveTextContent(/서소영 · eiaserinnys/);
+  fireEvent.press(screen.getByTestId('settings-segment-folder-defaults-own'));
+  await settle();
+  expect(within(screen.getByTestId('folder-defaults-node')).getByText('eiaserinnys')).toBeTruthy();
+  expect(within(screen.getByTestId('folder-defaults-agent')).getByText('서소영')).toBeTruthy();
+  expect(screen.getByTestId('new-task-submit')).toBeEnabled();
+  await act(async () => { fireEvent.press(screen.getByText('저장')); });
+  expect(operations()).toContainEqual(expect.objectContaining({ block_type: 'session_defaults',
+    properties: { agentId: 'utonium', nodeId: 'eiaserinnys', scope: 'session' } }));
+});
+
+test('물려받는 값을 불러오지 못하면 자리마다 실패와 다시 시도를 두고 없다고 말하지 않는다', async () => {
+  const getPage = api.getPage as jest.Mock;
+  const original = getPage.getMockImplementation()!;
+  getPage.mockImplementation(async (pageId: string) => { if (pageId === 'folder-page') return original(pageId); throw new Error('일시 실패'); });
+  api.getPageSessionDefaults.mockRejectedValueOnce(new Error('일시 실패'));
+  const folder = { ...plannerFolder(), blocks: [] };
+  const screen = render(<Harness target={{ kind: 'edit', folder }} />);
+  await settle();
+  expect(screen.getByTestId('folder-settings-guidance-failed')).toHaveTextContent(/물려받은 지침을 불러오지 못했습니다/);
+  expect(screen.getByTestId('folder-settings-references-failed')).toBeTruthy();
+  expect(screen.getByTestId('folder-settings-defaults-failed')).toBeTruthy();
+  expect(screen.queryByText(/없습니다/)).toBeNull();
+  getPage.mockImplementation(original);
+  fireEvent.press(screen.getByTestId('folder-settings-guidance-failed-retry'));
+  await settle();
+  expect(screen.queryByTestId('folder-settings-guidance-failed')).toBeNull();
+  expect(screen.getByText('상위 폴더의 지침')).toBeTruthy();
+  expect(screen.getByTestId('folder-settings-inherited-defaults')).toHaveTextContent(/서소영 · eiaserinnys/);
+});
+
+test('지침 글 상자를 비우고 저장하면 물려받기로 저장하고 저장 단추는 꺼지지 않는다', async () => {
+  const screen = render(<Harness target={{ kind: 'edit', folder: plannerFolder() }} />);
+  await settle();
+  fireEvent.changeText(screen.getByTestId('folder-settings-guidance'), '  ');
+  expect(screen.getByTestId('folder-settings-guidance').props.placeholder).toBe('이 폴더에서 에이전트가 따를 지침');
+  expect(screen.getByTestId('new-task-submit')).toBeEnabled();
+  await act(async () => { fireEvent.press(screen.getByText('저장')); });
+  expect(operations()).toEqual(expect.arrayContaining([
+    { op: 'delete_block_subtree', block_id: 'g1' },
+    { op: 'delete_block_subtree', block_id: 'g2' },
+  ]));
+});
+
+test('피커는 노드를 불러오지 못하면 같은 카드에서 다시 시도한다', async () => {
+  (api.listAtomRootNodes as jest.Mock).mockRejectedValueOnce(new Error('일시 실패'));
+  const screen = render(<Harness target={{ kind: 'edit', folder: plannerFolder() }} />);
+  await settle();
+  fireEvent.press(screen.getByTestId('folder-reference-add'));
+  await settle();
+  expect(screen.getByTestId('atom-picker-failed')).toHaveTextContent(/자료를 불러오지 못했습니다/);
+  fireEvent.press(screen.getByTestId('atom-picker-failed-retry'));
+  await settle();
+  expect(screen.getByTestId('atom-picker-select-n2')).toBeTruthy();
+});

@@ -5,7 +5,7 @@ import type { ApiClient } from '../../api/client';
 import type { FolderAtomReference, Sourced } from '../../lib/folder-context';
 import type { FolderSettingsDraft } from '../../lib/folder-settings';
 import { useTokens } from '../../theme';
-import { AddRow, HeadingRow, InheritedValue, ReferenceRow, SourceToggle } from './FolderContextParts';
+import { AddRow, FailedRow, HeadingRow, InheritedValue, ReferenceRow, SourceToggle } from './FolderContextParts';
 import { FolderDefaultsFields, type FolderDefaultsFieldsChange } from './FolderDefaultsFields';
 import { GroupedGlassSheet } from './GroupedGlassSheet';
 import { GrowingMultilineInput } from './GrowingMultilineInput';
@@ -16,21 +16,27 @@ export interface FolderInheritedContext {
   references: Array<Sourced<FolderAtomReference>>;
   defaults: { summary: string; sourceName: string | null } | null;
   loading: boolean;
+  chainFailed: boolean;
+  defaultsFailed: boolean;
+  retry(): void;
 }
 
-/** Body of the new folder and folder settings sheet: name, description, guidance, references, execution defaults. */
+/**
+ * Body of the new folder and folder settings sheet: name, description, guidance, references, execution defaults.
+ * A folder without a parent has nothing to inherit, so it shows its own fields without the inherit toggle.
+ */
 export function FolderSettingsForm({
-  api, mode, parentName, onPickParent, locked, draft, inherited, defaultsOpening,
+  api, mode, parentName, hasParent, onPickParent, locked, draft, inherited,
   onChange, onDefaultsChange, onAddReference, onEditReference,
 }: {
   api: ApiClient | null;
   mode: 'create' | 'edit';
   parentName: string | null;
+  hasParent: boolean;
   onPickParent?: () => void;
   locked: boolean;
   draft: FolderSettingsDraft;
   inherited: FolderInheritedContext;
-  defaultsOpening: FolderSettingsDraft['defaults'];
   onChange(patch: Partial<FolderSettingsDraft>): void;
   onDefaultsChange(change: FolderDefaultsFieldsChange): void;
   onAddReference(): void;
@@ -48,6 +54,8 @@ export function FolderSettingsForm({
       }),
     };
   }, [t]);
+  const guidanceOwn = !hasParent || draft.guidanceSource === 'own';
+  const defaultsOwn = !hasParent || draft.defaultsSource === 'own';
   const ownKeys = new Set(draft.atomReferences.map((reference) => `${reference.instance}:${reference.nodeId}`));
   const inheritedReferences = inherited.references.filter((reference) => !ownKeys.has(`${reference.instance}:${reference.nodeId}`));
   const multiline = (testID: string, value: string, placeholder: string, onText: (value: string) => void, label: string) => (
@@ -85,11 +93,13 @@ export function FolderSettingsForm({
     </View>
     <View style={styles.section}>
       <HeadingRow title="지침" />
-      <SourceToggle id="folder-guidance" value={draft.guidanceSource} disabled={locked} onChange={(guidanceSource) => onChange({ guidanceSource })} />
-      {draft.guidanceSource === 'own'
-        ? multiline('folder-settings-guidance', draft.guidance, '이 폴더에서 쓸 지침', (guidance) => onChange({ guidance }), '지침')
+      {hasParent ? <SourceToggle id="folder-guidance" value={draft.guidanceSource} disabled={locked} onChange={(guidanceSource) => onChange({ guidanceSource })} /> : null}
+      {guidanceOwn
+        ? multiline('folder-settings-guidance', draft.guidance, '이 폴더에서 에이전트가 따를 지침', (guidance) => onChange({ guidance }), '지침')
         : <GroupedGlassSheet>
-          {inherited.loading ? <Loading /> : <InheritedValue testID="folder-settings-inherited-guidance" lines={4}
+          {inherited.loading ? <Loading /> : inherited.chainFailed
+            ? <FailedRow testID="folder-settings-guidance-failed" message="물려받은 지침을 불러오지 못했습니다." onRetry={inherited.retry} />
+            : <InheritedValue testID="folder-settings-inherited-guidance" lines={4}
             sourceName={inherited.guidance?.sourceName ?? null} text={inherited.guidance?.text ?? null} empty="물려받을 지침이 없습니다." />}
         </GroupedGlassSheet>}
     </View>
@@ -97,6 +107,9 @@ export function FolderSettingsForm({
       <HeadingRow title="참고 자료" />
       <GroupedGlassSheet testID="folder-settings-references">
         {[
+          hasParent && inherited.chainFailed && !inherited.loading
+            ? <FailedRow key="failed" testID="folder-settings-references-failed" message="물려받은 참고 자료를 불러오지 못했습니다." onRetry={inherited.retry} />
+            : null,
           ...inheritedReferences.map((reference) => (
             <ReferenceRow key={`inherited:${reference.instance}:${reference.nodeId}`} testID={`folder-reference-inherited-${reference.nodeId}`}
               item={reference} sourceName={reference.source.folderName} />
@@ -107,16 +120,18 @@ export function FolderSettingsForm({
               onRemove={() => onChange({ atomReferences: draft.atomReferences.filter((_, position) => position !== index) })} />
           )),
           <AddRow key="add" testID="folder-reference-add" label="참고 자료 추가" disabled={locked} onPress={onAddReference} />,
-        ]}
+        ].filter(Boolean)}
       </GroupedGlassSheet>
     </View>
     <View style={styles.section}>
       <HeadingRow title="기본 실행 환경" />
-      <SourceToggle id="folder-defaults" value={draft.defaultsSource} disabled={locked} onChange={(defaultsSource) => onChange({ defaultsSource })} />
-      {draft.defaultsSource === 'own'
-        ? <FolderDefaultsFields api={api} initial={defaultsOpening} disabled={locked} onChange={onDefaultsChange} />
+      {hasParent ? <SourceToggle id="folder-defaults" value={draft.defaultsSource} disabled={locked} onChange={(defaultsSource) => onChange({ defaultsSource })} /> : null}
+      {defaultsOwn
+        ? <FolderDefaultsFields api={api} initial={draft.defaults} disabled={locked} onChange={onDefaultsChange} />
         : <GroupedGlassSheet>
-          {inherited.loading ? <Loading /> : <InheritedValue testID="folder-settings-inherited-defaults"
+          {inherited.loading ? <Loading /> : inherited.defaultsFailed
+            ? <FailedRow testID="folder-settings-defaults-failed" message="물려받은 기본 실행 환경을 불러오지 못했습니다." onRetry={inherited.retry} />
+            : <InheritedValue testID="folder-settings-inherited-defaults"
             sourceName={inherited.defaults?.sourceName ?? null} text={inherited.defaults?.summary ?? null} empty="물려받을 기본 실행 환경이 없습니다." />}
         </GroupedGlassSheet>}
     </View>

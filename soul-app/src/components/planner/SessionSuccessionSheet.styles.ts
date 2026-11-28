@@ -16,6 +16,7 @@ export function makeStyles(t: DesignTokens) {
       minHeight: t.hitTarget.min,
       justifyContent: 'center',
     },
+    headerButtonEnd: { alignItems: 'flex-end' },
     headerAction: {
       color: t.colors.accent,
       ...t.foundation.typography.body,
@@ -59,7 +60,7 @@ export function makeStyles(t: DesignTokens) {
     fieldLabel: {
       width: 76,
       color: t.colors.textSecondary,
-      ...t.foundation.typography.label,
+      ...t.foundation.typography.meta,
     },
     selectionValue: {
       flex: 1,
@@ -74,6 +75,14 @@ export function makeStyles(t: DesignTokens) {
       paddingHorizontal: t.cardLayout.padding,
       paddingBottom: t.spacing.xs,
     },
+    retryAction: {
+      alignSelf: 'flex-start',
+      minWidth: t.hitTarget.min,
+      minHeight: t.hitTarget.min,
+      justifyContent: 'center',
+    },
+    retryText: { color: t.colors.accent, ...t.foundation.typography.meta },
+    failedDetail: { color: t.colors.errorText, ...t.foundation.typography.meta },
     selectionError: {
       color: t.colors.errorText,
       ...t.foundation.typography.meta,

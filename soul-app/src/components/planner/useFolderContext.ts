@@ -16,7 +16,7 @@ import { resolveSelectedModelPresetName } from '../sheets/newSessionSelection';
 import { sheetErrorDetail } from './SheetErrorNotice';
 
 type ContextApi = Pick<ApiClient, 'getPage' | 'getPageSessionDefaults'>;
-type NamesApi = Pick<ApiClient, 'listNodeAgents' | 'listModelPresets'>;
+type NamesApi = Pick<ApiClient, 'listNodes' | 'listNodeAgents' | 'listModelPresets'>;
 
 interface Loaded<T> {
   key: string;
@@ -111,20 +111,27 @@ export function useExecutionDefaultsNames(api: NamesApi | null, defaults: Folder
   const nodeId = defaults?.nodeId ?? null;
   const key = api && nodeId ? nodeId : null;
   const loaded = useLoaded(key, api && nodeId ? async () => {
-    const [agents, presets] = await Promise.all([
+    const [nodes, agents, presets] = await Promise.all([
+      api.listNodes().then((result) => result.nodes ?? []),
       api.listNodeAgents(nodeId).then((result) => result.agents ?? []),
       api.listModelPresets(nodeId).then((result) => result.model_presets ?? []).catch(() => []),
     ]);
-    return { agents, presets };
+    return { nodes, agents, presets };
   } : null);
   if (!defaults) return { nodeName: null, agentName: null, modelName: null, loading: false };
   const agent = loaded.data?.agents.find((candidate) => candidate.id === defaults.agentId);
   const modelId = defaults.modelPreset ?? agent?.default_preset ?? null;
   const preset = modelId ? loaded.data?.presets.find((candidate) => candidate.id === modelId) : undefined;
+  const node = loaded.data?.nodes.find((candidate) => candidate.nodeId === defaults.nodeId);
   return {
-    nodeName: defaults.nodeId,
-    agentName: agent?.name ?? null,
+    nodeName: loaded.data && defaults.nodeId ? node ? nodeDisplayName(node) : '알 수 없는 노드' : null,
+    agentName: loaded.data && defaults.agentId ? agent?.name ?? '알 수 없는 에이전트' : null,
     modelName: preset ? resolveSelectedModelPresetName(preset.id, [preset], true, false, !defaults.modelPreset) : null,
     loading: loaded.loading,
   };
+}
+
+function nodeDisplayName(node: { nodeId: string; [key: string]: unknown }): string {
+  const named = node.displayName ?? node.name;
+  return typeof named === 'string' && named.trim() ? named : node.nodeId;
 }

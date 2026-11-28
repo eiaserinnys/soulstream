@@ -105,9 +105,6 @@ export function createPlannerMutationPort(api: PlannerMutationApi) {
       target: { folderId: string; projectPageId: string },
     ) => moveFolderParent(api, folder, target),
 
-    saveProjectContext: (projectPageId: string, markdown: string) =>
-      savePageDescription(api, projectPageId, markdown, 'project-context'),
-
     createRootFolder: (name: string) => api.createFolder({
       name: requiredText(name, '프로젝트 이름'),
       idempotencyKey: operationId('project-create'),

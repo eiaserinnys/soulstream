@@ -69,7 +69,7 @@ export function ReferenceRow({ item, testID, sourceName, disabled, onPress, onRe
 }) {
   const { t, styles } = useFolderContextPartStyles();
   return <GroupedGlassRow testID={testID} accessibilityLabel={item.nodeTitle} disabled={disabled}
-    onPress={sourceName ? undefined : onPress} style={styles.refRow}>
+    onPress={sourceName ? undefined : onPress} style={[styles.refRow, sourceName ? styles.refRowSourced : null]}>
     <View style={styles.refBody}>
       <Text style={styles.refTitle} numberOfLines={1}>{item.nodeTitle}</Text>
       <Text style={styles.meta}>{atomReferenceMeta(item)}</Text>
@@ -81,6 +81,17 @@ export function ReferenceRow({ item, testID, sourceName, disabled, onPress, onRe
       </TouchableOpacity>
     ) : null}
   </GroupedGlassRow>;
+}
+
+/** A load that failed says so in place and offers a retry; it never reads as an empty value. */
+export function FailedRow({ testID, message, onRetry }: { testID?: string; message: string; onRetry(): void }) {
+  const { styles } = useFolderContextPartStyles();
+  return <View testID={testID} style={styles.failed}>
+    <Text style={styles.failedText} accessibilityRole="alert" numberOfLines={2}>{message}</Text>
+    <TouchableOpacity testID={testID ? `${testID}-retry` : undefined} accessibilityRole="button" style={styles.retry} onPress={onRetry}>
+      <Text style={styles.retryText}>다시 시도</Text>
+    </TouchableOpacity>
+  </View>;
 }
 
 const keepAll = Platform.OS === 'web' ? { wordBreak: 'keep-all' as const } : {};
@@ -95,12 +106,17 @@ function makeStyles(t: DesignTokens) {
     inheritedText: { color: t.colors.textSecondary, ...t.foundation.typography.body, ...keepAll },
     emptyText: { color: t.colors.textTertiary, ...t.foundation.typography.body },
     refRow: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm, paddingLeft: t.cardLayout.padding, paddingRight: t.spacing.sm, minHeight: t.foundation.minHeight.field },
+    refRowSourced: { paddingRight: t.cardLayout.padding },
     refBody: { flex: 1, gap: t.spacing.xxs, paddingVertical: t.spacing.sm },
     refTitle: { color: t.colors.textPrimary, ...t.foundation.typography.body },
     meta: { color: t.colors.textTertiary, ...t.foundation.typography.meta },
     addRow: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs, paddingHorizontal: t.cardLayout.padding, minHeight: t.foundation.minHeight.field },
     addText: { color: t.colors.accent, ...t.foundation.typography.body },
     disabledText: { color: t.colors.textMuted },
+    failed: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm, paddingHorizontal: t.cardLayout.padding, minHeight: t.foundation.minHeight.field },
+    failedText: { flex: 1, color: t.colors.errorText, ...t.foundation.typography.body },
+    retry: { minWidth: t.hitTarget.min, minHeight: t.hitTarget.min, alignItems: 'flex-end', justifyContent: 'center' },
+    retryText: { color: t.colors.accent, ...t.foundation.typography.body },
     iconButton: { minWidth: t.hitTarget.min, minHeight: t.hitTarget.min, alignItems: 'center', justifyContent: 'center' },
   });
 }

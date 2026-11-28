@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { Folder } from '../../api/types';
 import { formatExecutionDefaultsSummary } from '../../lib/folder-settings';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
+import { FailedRow } from './FolderContextParts';
 import { GroupedGlassSheet } from './GroupedGlassSheet';
 import { PlannerSectionHeader } from './PlannerSectionHeader';
 import { useExecutionDefaultsNames, useFolderContextChain, usePageSessionDefaults } from './useFolderContext';
@@ -23,7 +24,7 @@ export function FolderContextSection({ api, folderId, folderPageId, folders, act
   const defaults = usePageSessionDefaults(api, folderPageId, folders, active);
   const names = useExecutionDefaultsNames(api, defaults.data?.defaults ?? null);
   const guidance = chain.data?.guidance.map((item) => item.text).join('\n\n') ?? '';
-  const references = chain.data?.atomReferences.map((item) => item.nodeTitle).join(', ') ?? '';
+  const references = chain.data?.atomReferences.map((item) => item.nodeTitle).join(' · ') ?? '';
   const defaultsSummary = defaults.data ? formatExecutionDefaultsSummary(names) : '';
   const loading = chain.loading || defaults.loading || names.loading;
   const failed = Boolean(chain.error ?? defaults.error);
@@ -37,12 +38,7 @@ export function FolderContextSection({ api, folderId, folderPageId, folders, act
         actionLabel={onOpenSettings ? '설정' : undefined} onAction={onOpenSettings} />
       <GroupedGlassSheet testID="folder-context-summary">
         {failed ? [
-          <View key="failed" testID="folder-context-failed" style={styles.row}>
-            <Text style={styles.error} accessibilityRole="alert" numberOfLines={2}>맥락을 불러오지 못했습니다.</Text>
-            <TouchableOpacity testID="folder-context-retry" accessibilityRole="button" style={styles.action} onPress={retry}>
-              <Text style={styles.link}>다시 시도</Text>
-            </TouchableOpacity>
-          </View>,
+          <FailedRow key="failed" testID="folder-context-failed" message="맥락을 불러오지 못했습니다." onRetry={retry} />,
         ] : [
           <View key="guidance" testID="folder-context-guidance" style={[styles.row, styles.top]}>
             <Text style={styles.label}>지침</Text>
@@ -80,8 +76,5 @@ function makeStyles(t: DesignTokens) {
     empty: { flex: 1, color: t.colors.textTertiary, ...planner.typography.body },
     keepAll: Platform.OS === 'web' ? { wordBreak: 'keep-all' } as object : {},
     loading: { flex: 1, alignItems: 'flex-start' },
-    error: { flex: 1, color: t.colors.errorText, ...planner.typography.body },
-    action: { minWidth: planner.actionColumn, minHeight: planner.actionColumn, alignItems: 'center', justifyContent: 'center' },
-    link: { color: t.colors.accent, ...planner.typography.label },
   });
 }

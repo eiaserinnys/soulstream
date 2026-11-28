@@ -17,6 +17,7 @@ const mime = { '.html': 'text/html', '.js': 'application/javascript', '.css': 't
 const evidence = { passed: false, shots: [], checks: [], errors: [] };
 const VIEWPORTS = { iphone: { width: 390, height: 844 }, ipad: { width: 1366, height: 1024 } };
 const THEMES = ['light', 'dark'];
+const operationsFromScenes = [];
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://fixture.local');
@@ -52,11 +53,12 @@ async function openPage(context, base, query, name, readyTestID = 'component-rev
 /** The new folder sample opens the top-level, settings and picker variants through `folderSheet`. */
 const VARIANTS = { 'folder-create-root': 'root', 'folder-settings': 'settings', 'reference-picker': 'picker' };
 
-async function openSample(page, sample) {
+async function openSample(page, sample, { fail = false } = {}) {
   const variant = VARIANTS[sample] ?? null;
   const url = new URL(page.url());
-  if (url.searchParams.get('folderSheet') !== variant) {
+  if (url.searchParams.get('folderSheet') !== variant || (url.searchParams.get('contextFail') === '1') !== fail) {
     if (variant) url.searchParams.set('folderSheet', variant); else url.searchParams.delete('folderSheet');
+    if (fail) url.searchParams.set('contextFail', '1'); else url.searchParams.delete('contextFail');
     await page.goto(url.toString());
     await page.getByTestId('component-review').waitFor();
   }
@@ -87,6 +89,32 @@ async function overflow(page) {
   });
 }
 
+/** Right end of the header confirm text against the right end of a card in the sheet body. */
+async function headerEdge(page, buttonTestID, cardTestID) {
+  return page.evaluate(([buttonID, cardID]) => {
+    const button = document.querySelector(`[data-testid="${buttonID}"]`);
+    const text = [...button.querySelectorAll('div[dir="auto"], span')].find((node) => node.childElementCount === 0 && node.textContent.trim());
+    const range = document.createRange(); range.selectNodeContents(text);
+    const card = document.querySelector(`[data-testid="${cardID}"]`).getBoundingClientRect();
+    return { textRight: range.getBoundingClientRect().right, cardRight: card.right };
+  }, [buttonTestID, cardTestID]);
+}
+
+/** Left inset of the title and right inset of the source mark in an inherited reference row. */
+async function rowInsets(page, rowTestID) {
+  return page.evaluate((rowID) => {
+    const row = document.querySelector(`[data-testid="${rowID}"]`);
+    const texts = [...row.querySelectorAll('div[dir="auto"]')].filter((node) => node.childElementCount === 0 && node.textContent.trim());
+    const extent = (node) => { const range = document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect(); };
+    const rect = row.getBoundingClientRect();
+    return { left: extent(texts[0]).left - rect.left, right: rect.right - extent(texts[texts.length - 1]).right };
+  }, rowTestID);
+}
+
+const scrollTop = (page, testID) => page.getByTestId(testID).evaluate((element) => element.scrollTop);
+const modalText = (page) => page.getByTestId('app-modal-viewport').innerText();
+const enabled = async (page, testID) => (await page.getByTestId(testID).getAttribute('aria-disabled')) !== 'true';
+
 async function focusLabel(page) {
   return page.evaluate(() => {
     const element = document.activeElement;
@@ -107,20 +135,59 @@ async function captureScenes(browser, base, device, theme) {
 
   await openSample(page, 'folder-create');
   await shot(page, 'folder-create');
+  const createEdge = await headerEdge(page, 'new-task-submit', 'folder-settings-references');
+  check(`${device}-${theme} 새 폴더 머리 오른쪽 단추 글 끝이 카드 끝과 같다`, Math.abs(createEdge.textRight - createEdge.cardRight) <= 1, createEdge);
   await page.getByTestId('settings-segment-folder-defaults-own').click();
   await scrollSheet(page, 'new-task-content');
   await shot(page, 'folder-create-bottom');
+  check(`${device}-${theme} 새 폴더 직접 정하기는 물려받은 값으로 채운다`, /public-node/.test(await page.getByTestId('folder-defaults-node').textContent()), await page.getByTestId('folder-defaults-node').textContent());
+  check(`${device}-${theme} 새 폴더에 빨간 안내가 없다`, !(await modalText(page)).includes('노드와 에이전트를 고르고'));
   await page.keyboard.press('Escape');
   await page.getByTestId('app-modal-viewport').waitFor({ state: 'hidden' });
 
   await openSample(page, 'folder-create-root');
   await shot(page, 'folder-create-root');
+  const rootText = await modalText(page);
+  check(`${device}-${theme} 최상위 새 폴더에 물려받기 전환과 없습니다 문구가 없다`,
+    await page.getByTestId('settings-segment-folder-guidance-own').count() === 0 && !rootText.includes('물려받을') && !rootText.includes('노드와 에이전트를 고르고'));
+  check(`${device}-${theme} 최상위 새 폴더의 에이전트와 모델 행은 노드 전까지 흐리다`,
+    !(await enabled(page, 'folder-defaults-agent')) && !(await enabled(page, 'folder-defaults-model')));
+  await scrollSheet(page, 'new-task-content');
+  await shot(page, 'folder-create-root-bottom');
   await page.keyboard.press('Escape');
   await page.getByTestId('app-modal-viewport').waitFor({ state: 'hidden' });
 
   await openSample(page, 'folder-settings');
   await page.getByTestId('folder-settings-guidance').waitFor();
+  await page.getByTestId('folder-reference-inherited-public-atom-soulstream').waitFor();
   await shot(page, 'folder-settings');
+  const insets = await rowInsets(page, 'folder-reference-inherited-public-atom-soulstream');
+  check(`${device}-${theme} 물려받은 참고 자료 행의 좌우 여백이 같다`, Math.abs(insets.left - insets.right) <= 1, insets);
+  const settingsEdge = await headerEdge(page, 'new-task-submit', 'folder-settings-references');
+  check(`${device}-${theme} 폴더 설정 머리 오른쪽 단추 글 끝이 카드 끝과 같다`, Math.abs(settingsEdge.textRight - settingsEdge.cardRight) <= 1, settingsEdge);
+  await page.getByTestId('settings-segment-folder-defaults-own').click();
+  await settle(page);
+  const direct = {
+    node: await page.getByTestId('folder-defaults-node').textContent(),
+    agent: await page.getByTestId('folder-defaults-agent').textContent(),
+    model: await page.getByTestId('folder-defaults-model').textContent(),
+  };
+  check(`${device}-${theme} 폴더 설정 직접 정하기는 물려받은 세 값으로 차고 저장이 켜진다`,
+    /public-node/.test(direct.node) && /공개 예시 에이전트/.test(direct.agent) && /사용 가능한 예시 모델/.test(direct.model) && await enabled(page, 'new-task-submit'), direct);
+  await page.getByTestId('folder-reference-add').scrollIntoViewIfNeeded();
+  await page.getByTestId('new-task-content').evaluate((element) => { element.scrollTop = Math.min(element.scrollTop + 120, element.scrollHeight); });
+  await settle(page);
+  const beforePicker = await scrollTop(page, 'new-task-content');
+  await shot(page, 'folder-settings-direct');
+  await page.getByTestId('folder-reference-add').click();
+  await page.getByTestId('atom-picker-select-public-atom-soulstream').click();
+  await page.getByTestId('atom-picker-add-selected').click();
+  await settle(page);
+  const afterPicker = await scrollTop(page, 'new-task-content');
+  const kept = await page.getByTestId('folder-defaults-agent').textContent();
+  operationsFromScenes.push({ scene: `folder-settings-${device}-${theme}`, beforePicker, afterPicker, kept });
+  check(`${device}-${theme} 피커를 다녀와도 스크롤 위치가 같다`, Math.abs(afterPicker - beforePicker) <= 1, { beforePicker, afterPicker });
+  check(`${device}-${theme} 피커를 다녀와도 직접 고른 값과 저장 상태가 남는다`, kept === direct.agent && await enabled(page, 'new-task-submit'), kept);
   await scrollSheet(page, 'new-task-content');
   await shot(page, 'folder-settings-bottom');
   await page.getByTestId('settings-segment-folder-guidance-inherit').click();
@@ -134,6 +201,8 @@ async function captureScenes(browser, base, device, theme) {
   await page.getByTestId('app-modal-viewport').waitFor({ state: 'hidden' });
 
   await openSample(page, 'reference-picker');
+  const pickerEdge = await headerEdge(page, 'atom-picker-add-selected', 'atom-picker-nodes');
+  check(`${device}-${theme} 피커 머리 오른쪽 단추 글 끝이 카드 끝과 같다`, Math.abs(pickerEdge.textRight - pickerEdge.cardRight) <= 1, pickerEdge);
   await page.getByTestId('atom-picker-drill-public-atom-soulstream').click();
   await page.getByTestId('atom-picker-select-public-atom-child-4').click();
   await page.getByTestId('settings-segment-atom-picker-depth-2').click();
@@ -148,8 +217,39 @@ async function captureScenes(browser, base, device, theme) {
   await page.getByTestId('succession-execution-disclosure').click();
   await settle(page);
   await shot(page, 'session-create');
+  const sessionEdge = await headerEdge(page, 'succession-submit', 'succession-initial-instruction-group');
+  check(`${device}-${theme} 새 세션 머리 오른쪽 단추 글 끝이 카드 끝과 같다`, Math.abs(sessionEdge.textRight - sessionEdge.cardRight) <= 1, sessionEdge);
   await scrollSheet(page, 'succession-content');
   await shot(page, 'session-create-bottom');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('app-modal-viewport').waitFor({ state: 'hidden' });
+
+  await openSample(page, 'folder-settings', { fail: true });
+  await page.getByTestId('settings-segment-folder-guidance-inherit').click();
+  await page.getByTestId('settings-segment-folder-defaults-inherit').click();
+  await page.getByTestId('folder-settings-defaults-failed').waitFor();
+  await settle(page);
+  await shot(page, 'folder-settings-failed');
+  await scrollSheet(page, 'new-task-content');
+  await shot(page, 'folder-settings-failed-bottom');
+  const failedText = await modalText(page);
+  check(`${device}-${theme} 폴더 설정 실패는 자리마다 다시 시도를 두고 없습니다라고 말하지 않는다`,
+    !failedText.includes('없습니다') && await page.getByText('다시 시도', { exact: true }).count() === 3, failedText.slice(0, 200));
+  await page.keyboard.press('Escape');
+  await page.getByTestId('app-modal-viewport').waitFor({ state: 'hidden' });
+  await openSample(page, 'reference-picker', { fail: true });
+  await page.getByTestId('atom-picker-failed').waitFor();
+  await settle(page);
+  await shot(page, 'reference-picker-failed');
+  check(`${device}-${theme} 피커 실패는 노드 카드 안의 다시 시도`, !(await modalText(page)).includes('없습니다') && await page.getByTestId('atom-picker-failed-retry').count() === 1);
+  await page.keyboard.press('Escape');
+  await page.getByTestId('app-modal-viewport').waitFor({ state: 'hidden' });
+  await openSample(page, 'session-create', { fail: true });
+  await page.getByTestId('succession-check-task-context-retry').waitFor();
+  await scrollSheet(page, 'succession-content');
+  await shot(page, 'session-create-failed');
+  const sessionFailed = await modalText(page);
+  check(`${device}-${theme} 새 세션 폴더 맥락 실패는 없다고 말하지 않는다`, sessionFailed.includes('맥락을 불러오지 못했습니다.') && !sessionFailed.includes('연결된 맥락 없음'));
   await page.keyboard.press('Escape');
   await page.getByTestId('app-modal-viewport').waitFor({ state: 'hidden' });
   await page.close();
@@ -164,7 +264,7 @@ async function captureScenes(browser, base, device, theme) {
   await shot(project, 'folder-context-loading');
   check(`${device}-${theme} 맥락 로딩은 같은 틀 안의 진행 표시`, await project.getByRole('progressbar').count() > 0);
   await project.getByTestId('settings-segment-review-context-state-error').click();
-  await project.getByTestId('folder-context-retry').waitFor();
+  await project.getByTestId('folder-context-failed-retry').waitFor();
   check(`${device}-${theme} 맥락 실패는 같은 틀 안의 안내와 다시 시도`, await project.getByTestId('folder-context-guidance').count() === 0);
   await settle(project);
   await shot(project, 'folder-context-error');
@@ -185,7 +285,7 @@ async function captureScenes(browser, base, device, theme) {
 async function measureOperations(browser, base) {
   const context = await browser.newContext({ viewport: VIEWPORTS.ipad, locale: 'ko-KR' });
   const page = await openPage(context, base, 'section=dialogues', 'operations');
-  const operations = { dialogs: [] };
+  const operations = { dialogs: [], pickerTrips: operationsFromScenes };
 
   for (const [sample, firstField] of [['folder-create', 'folder-settings-title'], ['folder-settings', null], ['reference-picker', null], ['session-create', null]]) {
     await openSample(page, sample);
@@ -199,6 +299,40 @@ async function measureOperations(browser, base) {
     check(`${sample} Esc로 닫힌다`, closed);
     if (firstField) check(`${sample} 첫 초점이 이름 칸`, openedFocus === firstField, openedFocus);
   }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openSample(page, 'reference-picker');
+  await page.getByTestId('atom-picker-drill-public-atom-soulstream').click();
+  await page.getByTestId('atom-picker-drill-public-atom-child-6').click();
+  await page.getByTestId('atom-picker-select-public-atom-mistake-24').waitFor({ state: 'attached' });
+  await settle(page);
+  const longList = await page.evaluate(() => {
+    const list = document.querySelector('[data-testid="atom-picker-node-list"]');
+    const options = document.querySelector('[data-testid="atom-picker-options"]').getBoundingClientRect();
+    return { listHeight: list.clientHeight, listScrollHeight: list.scrollHeight, optionsBottom: options.bottom, viewportHeight: innerHeight };
+  });
+  operations.longPickerList = longList;
+  check('자식이 많아도 피커의 깊이와 제목만 줄이 화면 안에 남는다',
+    longList.listScrollHeight > longList.listHeight && longList.optionsBottom <= longList.viewportHeight, longList);
+  await page.screenshot({ path: path.join(output, 'reference-picker-long-390.png') });
+  evidence.shots.push('reference-picker-long-390.png');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('app-modal-viewport').waitFor({ state: 'hidden' });
+
+  await page.setViewportSize({ width: 390, height: 600 });
+  await openSample(page, 'session-create');
+  await page.getByTestId('succession-execution-disclosure').click();
+  await scrollSheet(page, 'succession-content');
+  const sessionTrip = { before: await scrollTop(page, 'succession-content') };
+  await page.getByTestId('succession-reference-add').click();
+  await page.getByTestId('atom-picker-cancel').click();
+  await settle(page);
+  sessionTrip.after = await scrollTop(page, 'succession-content');
+  operations.sessionPickerTrip = { viewport: { width: 390, height: 600 }, ...sessionTrip };
+  check('새 세션은 스크롤한 채 피커를 다녀와도 위치가 같다', sessionTrip.before > 0 && Math.abs(sessionTrip.after - sessionTrip.before) <= 1, sessionTrip);
+  await page.keyboard.press('Escape');
+  await page.getByTestId('app-modal-viewport').waitFor({ state: 'hidden' });
+  await page.setViewportSize(VIEWPORTS.ipad);
 
   await openSample(page, 'folder-settings');
   await page.getByTestId('folder-settings-guidance').waitFor();

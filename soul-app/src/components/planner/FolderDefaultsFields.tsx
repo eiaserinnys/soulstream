@@ -22,7 +22,7 @@ export interface FolderDefaultsFieldsChange {
   valid: boolean;
 }
 
-/** Node, agent and model rows of the folder's own execution defaults. The opening value is read once. */
+/** Node, agent and model rows of the folder's own execution defaults. The value at mount is read once. */
 export function FolderDefaultsFields({ api, initial, disabled, onChange }: {
   api: ApiClient | null;
   initial: FolderExecutionDefaults;
@@ -72,13 +72,13 @@ export function FolderDefaultsFields({ api, initial, disabled, onChange }: {
       if (!picked.cancelled) selection.setSelectedModelPresetId(picked.modelPresetId);
     });
   };
-  const unset = <Text style={{ color: t.colors.textTertiary }}>선택</Text>;
+  const unset = (muted: boolean | undefined) => <Text style={{ color: muted ? t.colors.textMuted : t.colors.textTertiary }}>선택</Text>;
   return <GroupedGlassSheet testID="folder-defaults-fields">
     <SessionSelectionRow testID="folder-defaults-node" label="노드" accessibilityLabel="기본 노드" styles={styles}
-      value={node ?? unset} disabled={disabled} onPress={pickNode} />
+      value={node ?? unset(disabled)} disabled={disabled} onPress={pickNode} />
     <SessionSelectionRow testID="folder-defaults-agent" label="에이전트" accessibilityLabel="기본 에이전트" styles={styles}
-      value={agent ? selection.selectedAgentName : unset} disabled={disabled || !node} onPress={pickAgent} />
+      value={agent ? selection.selectedAgentName : unset(disabled || !node)} disabled={disabled || !node} onPress={pickAgent} />
     <SessionSelectionRow testID="folder-defaults-model" label="모델" accessibilityLabel="기본 모델" styles={styles} valueLines={2}
-      value={agent || model ? <SelectedModelPresetName selection={selection} /> : unset} disabled={disabled || !node} onPress={pickModel} />
+      value={agent || model ? <SelectedModelPresetName selection={selection} /> : unset(disabled || !node)} disabled={disabled || !node} onPress={pickModel} />
   </GroupedGlassSheet>;
 }
