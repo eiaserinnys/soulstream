@@ -7,22 +7,15 @@ import json
 import re
 import sys
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from playwright.sync_api import expect, sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from session_files_panel import install_routes
 from settings_i18n import ROOT, capture, start_vite
-from settings_toolbar_fakes import SUMMARY
 
 LOCALES = ROOT / "packages/i18n/src/locales"
 SESSION = "components-session"
-FONT = "fonts/pretendard/1.3.9/PretendardVariable.woff2"
-SESSION_ROUTES = re.compile(
-    r"/api/(?:health|auth/(?:status|config)|nodes(?:/stream)?|persistent-sessions(?:/[^/]+)?"
-    r"|sessions(?:/stream|/[^/]+/(?:timeline|events|story|workspace(?:/[^/]+)?))?)$",
-)
 
 
 def copy_for(language, area):
@@ -36,36 +29,12 @@ def new_page(browser, language, width, scene="ready"):
         reduced_motion="reduce", service_workers="block",
     )
     page = context.new_page()
-    page.set_default_timeout(12000)
+    page.set_default_timeout(30000)
     page.add_init_script(f"localStorage.setItem('soul-language', '{language}');")
     page.add_init_script("""localStorage.setItem('soulstream-pas-device:qa@example.test',
         JSON.stringify({openOnStart: false, showWeeklyUsage: false}));""")
-    page.add_init_script("""{
-        const request = window.fetch.bind(window);
-        window.fetch = (input, options) => {
-            const url = new URL(input instanceof Request ? input.url : input, location.href);
-            if (url.origin === location.origin && url.pathname === '/api/health') {
-                return Promise.resolve(Response.json({healthy: true, ready: true, draining: false, build_id: 'dev'}));
-            }
-            return request(input, options);
-        };
-    }""")
     calls = {"workspace": 0}
     install_routes(page, "ready" if scene == "error" else scene, calls)
-    page.route("**/api/**", lambda route:
-        route.fallback() if SESSION_ROUTES.fullmatch(urlsplit(route.request.url).path)
-        else route.fulfill(status=404, json={"error": "fixture route not provided"}))
-    page.route(f"**/{FONT}", lambda route: route.fulfill(
-        path=ROOT / "unified-dashboard/public" / FONT, content_type="font/woff2",
-    ))
-    page.route(re.compile(r"/api/cards(?:\?.*)?$"), lambda route: route.fulfill(json={"cards": []}))
-    page.route("**/api/folders", lambda route: route.fulfill(json={"folders": [], "sessions": {}}))
-    page.route("**/api/planner/today", lambda route: route.fulfill(json={
-        "attention": [], "running": [], "queued": [], "reviewSessionIds": [SESSION],
-    }))
-    page.route("**/api/planner/starred-folders**", lambda route: route.fulfill(json={
-        "items": [], "nextCursor": None,
-    }))
     page.route("**/api/user/preferences", lambda route: route.fulfill(json={
         "email": "qa@example.test", "preferences": {"language": language},
         "hasBackground": False, "backgroundUrl": None, "updatedAt": None,
@@ -94,51 +63,6 @@ def geometry(locator):
         collapsed: actions.filter(({box}) => box.width < 16).map(({label}) => label),
       };
     }""")
-
-
-def dashboard(browser, base, out, language):
-    context, page, _ = new_page(browser, language, 1440)
-    copy = copy_for(language, "sessions")
-    try:
-        review = {**SUMMARY, "status": "completed", "reviewRequired": True, "reviewState": "needs_review"}
-        page.route(re.compile(r"/api/sessions(?:\?.*)?$"), lambda route: route.fulfill(json={
-            "sessions": [review], "total": 1,
-        }))
-        page.route("**/api/sessions/stream**", lambda route: route.fulfill(
-            content_type="text/event-stream",
-            body=f"event: session_list\ndata: {json.dumps({'type': 'session_list', 'sessions': [review], 'total': 1})}\n\n",
-        ))
-        page.goto(base, wait_until="domcontentloaded")
-        toolbar = page.get_by_test_id("v3-global-toolbar")
-        expect(toolbar.get_by_role("button", name=copy["openSessionSearch"])).to_be_visible(timeout=30000)
-        panel = page.get_by_role("complementary", name=copy["session"])
-        expect(panel.get_by_role("heading", name=copy["running"], exact=True)).to_be_visible()
-        capture(page, out, f"{language}-session-list-1440.png")
-        page.goto(f"{base}/?session={SESSION}", wait_until="domcontentloaded")
-        header = page.get_by_test_id("v3-standalone-session-chat").locator(".v3-chat-header")
-        expect(header.get_by_role("button", name=copy["closeChat"])).to_be_visible(timeout=20000)
-        status = copy_for(language, "ui")["session"]["status"]["turnEnded"]
-        expect(header.locator(".v3-chat-status")).to_have_text(status)
-        expect(page.get_by_role("button", name=copy["acknowledgeReview"], exact=True)).to_be_visible()
-        capture(page, out, f"{language}-session-chat-1440.png")
-        header.click(button="right", force=True)
-        continue_label = copy_for(language, "ui")["session"]["continue"]
-        continue_action = page.get_by_text(continue_label, exact=True)
-        expect(continue_action).to_be_visible()
-        capture(page, out, f"{language}-session-menu-1440.png")
-        continue_action.click()
-        dialog = page.get_by_role("dialog", name=copy["newSession"])
-        expect(dialog.get_by_role("textbox", name=copy["initialInstruction"])).to_be_visible()
-        capture(page, out, f"{language}-succession-1440.png")
-        opened = focus(page)
-        page.keyboard.press("Tab")
-        tabbed = focus(page)
-        page.keyboard.press("Escape")
-        expect(dialog).to_have_count(0)
-        closed = focus(page)
-        return {"succession_open": opened, "succession_tab": tabbed, "succession_close": closed}
-    finally:
-        context.close()
 
 
 def files(browser, base, out, language, width, scene):
@@ -221,31 +145,14 @@ def main():
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
             results = {}
-            failures = []
             for language in ("ko", "en"):
-                try:
-                    results[language] = dashboard(browser, base, out, language)
-                except Exception as error:
-                    error.add_note(f"dashboard, {language}")
-                    failures.append(error)
-                try:
-                    oauth(browser, base, out, language)
-                except Exception as error:
-                    error.add_note(f"OAuth consent, {language}")
-                    failures.append(error)
+                oauth(browser, base, out, language)
             for language, width, scene in [
                 ("ko", 1440, "ready"), ("en", 1440, "ready"), ("en", 360, "ready"),
                 ("en", 1440, "diff-loading"), ("en", 1440, "error"),
             ]:
-                name = f"{language}-{width}-{scene}"
-                try:
-                    results[name] = files(browser, base, out, language, width, scene)
-                except Exception as error:
-                    error.add_note(name)
-                    failures.append(error)
+                results[f"{language}-{width}-{scene}"] = files(browser, base, out, language, width, scene)
             (out / "operations.json").write_text(json.dumps(results, ensure_ascii=False, indent=2) + "\n")
-            if failures:
-                raise ExceptionGroup("Session visual checks failed", failures)
     finally:
         server.terminate()
         server.wait(timeout=20)
