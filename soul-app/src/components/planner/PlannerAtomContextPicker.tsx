@@ -1,16 +1,13 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  StyleSheet,
-  Switch,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { SheetErrorNotice, sheetErrorDetail } from './SheetErrorNotice';
-import type { InitialFolderAtomReference } from '../../api/initialFolderContext';
+import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import type { AtomInstance } from '../../lib/folder-context';
 import { useTokens, type DesignTokens } from '../../theme';
+import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
+import { GroupedGlassRow, GroupedGlassSheet } from './GroupedGlassSheet';
+import { HeadingRow } from './FolderContextParts';
+import { SheetErrorNotice, sheetErrorDetail } from './SheetErrorNotice';
+import { makeStyles as makeSheetStyles } from './SessionSuccessionSheet.styles';
 
 interface AtomNode {
   id: string;
@@ -22,52 +19,44 @@ interface AtomPickerApi {
   listAtomNodeChildren(nodeId: string): Promise<unknown>;
 }
 
-export function PlannerAtomContextPicker({ visible, api, onClose, onPicked }: {
+export interface PickedAtomReference {
+  instance: AtomInstance;
+  nodeId: string;
+  nodeTitle: string;
+  depth: number;
+  titlesOnly: boolean;
+}
+
+const DEPTHS = ['1', '2', '3', '4', '5'] as const;
+type DepthValue = (typeof DEPTHS)[number];
+const DEFAULT_DEPTH: DepthValue = '3';
+
+/** Reference picker: atom node, depth 1-5 and titles only. `initial` opens it as the editor of an existing row. */
+export function PlannerAtomContextPicker({ visible, api, initial = null, onClose, onPicked }: {
   visible: boolean;
   api: AtomPickerApi | null;
+  initial?: PickedAtomReference | null;
   onClose(): void;
-  onPicked(reference: InitialFolderAtomReference): void;
+  onPicked(reference: PickedAtomReference): void;
 }) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useMemo(() => ({ ...makeSheetStyles(t), ...makeStyles(t) }), [t]);
   const [breadcrumb, setBreadcrumb] = useState<AtomNode[]>([]);
   const [items, setItems] = useState<AtomNode[]>([]);
-  const [selected, setSelected] = useState<AtomNode | null>(null);
-  const [depth, setDepth] = useState(3);
-  const [titlesOnly, setTitlesOnly] = useState(false);
+  const [selected, setSelected] = useState<AtomNode | null>(initial ? { id: initial.nodeId, title: initial.nodeTitle } : null);
+  const [depth, setDepth] = useState<DepthValue>(initial ? depthValue(initial.depth) : DEFAULT_DEPTH);
+  const [titlesOnly, setTitlesOnly] = useState(initial?.titlesOnly ?? false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const wasVisible = useRef(false);
   const confirmed = useRef(false);
   const current = breadcrumb[breadcrumb.length - 1];
-
-  useEffect(() => {
-    const opening = visible && !wasVisible.current;
-    wasVisible.current = visible;
-    if (!visible) {
-      setBreadcrumb([]);
-      setItems([]);
-      setSelected(null);
-      setError(null);
-      return;
-    }
-    if (!opening) return;
-    confirmed.current = false;
-    setBreadcrumb([]);
-    setSelected(null);
-    setDepth(3);
-    setTitlesOnly(false);
-  }, [visible]);
 
   useEffect(() => {
     if (!visible || !api) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    const request = current
-      ? api.listAtomNodeChildren(current.id)
-      : api.listAtomRootNodes();
-    request.then((payload) => {
+    (current ? api.listAtomNodeChildren(current.id) : api.listAtomRootNodes()).then((payload) => {
       if (!cancelled) setItems(normalizeNodes(payload));
     }).catch((cause) => {
       if (!cancelled) {
@@ -80,103 +69,104 @@ export function PlannerAtomContextPicker({ visible, api, onClose, onPicked }: {
     return () => { cancelled = true; };
   }, [api, current, visible]);
 
-  const choose = (node: AtomNode) => {
-    setSelected(node);
-    setDepth(3);
-    setTitlesOnly(false);
-  };
-  const addSelected = () => {
-    if (!selected || !api || loading || error || confirmed.current) return;
+  const canConfirm = Boolean(selected && api && !loading && !error);
+  const confirm = () => {
+    if (!selected || !canConfirm || confirmed.current) return;
     confirmed.current = true;
     onPicked({
-      instance: 'atom',
+      instance: initial?.instance ?? 'atom',
       nodeId: selected.id,
       nodeTitle: selected.title,
-      depth,
+      depth: Number(depth),
       titlesOnly,
     });
     onClose();
   };
+  const selectedOutsideList = selected && selected.id !== current?.id && !items.some((item) => item.id === selected.id);
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.headerButton} onPress={onClose}>
-          <Text style={styles.cancel}>취소</Text>
+      <View testID="atom-picker-header" style={styles.header}>
+        <TouchableOpacity testID="atom-picker-cancel" accessibilityRole="button" style={styles.headerButton} onPress={onClose}>
+          <Text style={styles.headerAction}>취소</Text>
         </TouchableOpacity>
-        <Text style={styles.title} numberOfLines={1}>{current?.title ?? 'Atom 컨텍스트'}</Text>
-        <View style={styles.headerButton} />
+        <Text accessibilityRole="header" style={styles.title}>{initial ? '참고 자료 고치기' : '참고 자료 추가'}</Text>
+        <TouchableOpacity testID="atom-picker-add-selected" accessibilityRole="button" style={styles.headerButton}
+          disabled={!canConfirm} accessibilityState={{ disabled: !canConfirm }} onPress={confirm}>
+          <Text style={[styles.headerAction, !canConfirm && styles.disabled]}>{initial ? '저장' : '추가'}</Text>
+        </TouchableOpacity>
       </View>
-      {selected ? (
-        <View testID={`atom-picker-selected-${selected.id}`} style={styles.selectedCard}>
-          <Text style={styles.selectedTitle} numberOfLines={1}>{selected.title}</Text>
-          <View style={styles.settings}>
-            <Text style={styles.label}>깊이</Text>
-            <View style={styles.depthRow}>
-              {[1, 2, 3, 4, 5].map((value) => (
-                <TouchableOpacity
-                  key={value}
-                  testID={`atom-picker-depth-${value}`}
-                  style={[styles.depthChip, depth === value && styles.depthChipActive]}
-                  onPress={() => setDepth(value)}
-                >
-                  <Text style={[styles.depthText, depth === value && styles.depthTextActive]}>{value}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <View style={styles.switchRow}>
-              <Text style={styles.label}>제목만 포함</Text>
-              <Switch
-                testID="atom-picker-titles-only"
-                value={titlesOnly}
-                onValueChange={setTitlesOnly}
-              />
-            </View>
-            <TouchableOpacity testID="atom-picker-add-selected" style={styles.addSelected} disabled={!api || loading || !!error} onPress={addSelected}>
-              <Text style={styles.addSelectedText}>이 설정으로 추가</Text>
-            </TouchableOpacity>
-          </View>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <View style={styles.section}>
+          <HeadingRow title="노드" />
+          <GroupedGlassSheet testID="atom-picker-nodes">
+            {[
+              current ? (
+                <View key="crumb" style={styles.crumb}>
+                  <TouchableOpacity testID="atom-picker-back" accessibilityRole="button" accessibilityLabel="상위로"
+                    style={styles.crumbBack} onPress={() => setBreadcrumb((path) => path.slice(0, -1))}>
+                    <Ionicons name="chevron-back" size={t.iconSize.compact} color={t.colors.accent} />
+                  </TouchableOpacity>
+                  <TouchableOpacity testID="atom-picker-select-current" accessibilityRole="radio"
+                    accessibilityState={{ selected: selected?.id === current.id }} accessibilityLabel={current.title}
+                    style={styles.crumbTitle} onPress={() => setSelected(current)}>
+                    <Text style={styles.crumbText} numberOfLines={1}>{current.title}</Text>
+                    {selected?.id === current.id ? <Ionicons testID={`atom-picker-selected-${current.id}`} name="checkmark" size={t.iconSize.standard} color={t.colors.accent} /> : null}
+                  </TouchableOpacity>
+                </View>
+              ) : null,
+              selectedOutsideList && !loading ? (
+                <NodeRow key={`selected-${selected.id}`} node={selected} selected styles={styles} t={t} onSelect={() => undefined} />
+              ) : null,
+              ...(loading ? [<View key="loading" style={styles.state}><ActivityIndicator color={t.colors.accent} /></View>]
+                : error ? []
+                  : items.length === 0 ? [<Text key="empty" style={styles.empty}>하위 노드가 없습니다.</Text>]
+                    : items.map((item) => (
+                      <NodeRow key={item.id} node={item} selected={selected?.id === item.id} styles={styles} t={t}
+                        onSelect={() => setSelected(item)} onDrill={() => setBreadcrumb((path) => [...path, item])} />
+                    ))),
+            ].filter(Boolean)}
+          </GroupedGlassSheet>
+          {error ? <SheetErrorNotice summary="자료를 불러오지 못했습니다. 닫고 다시 열어 주세요." detail={error} /> : null}
         </View>
-      ) : <Text style={styles.hint}>atom 자료만 조회합니다. 노드를 선택하면 포함 범위를 정할 수 있습니다.</Text>}
-      {breadcrumb.length > 0 ? (
-        <TouchableOpacity style={styles.backRow} onPress={() => setBreadcrumb((path) => path.slice(0, -1))}>
-          <Text style={styles.back}>‹ 상위</Text>
-        </TouchableOpacity>
-      ) : null}
-      {loading ? <ActivityIndicator style={styles.center} color={t.colors.accent} /> : (
-        <FlatList
-          data={items}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={error ? <SheetErrorNotice summary="자료를 불러오지 못했습니다. 닫고 다시 열어 주세요." detail={error} /> : <Text style={styles.meta}>하위 노드가 없습니다.</Text>}
-          renderItem={({ item }) => (
-            <View style={styles.nodeRow}>
-              <TouchableOpacity
-                testID={`atom-picker-drill-${item.id}`}
-                style={styles.drill}
-                onPress={() => setBreadcrumb((path) => [...path, item])}
-              >
-                <Text style={styles.nodeTitle} numberOfLines={1}>{item.title}</Text>
-                <Text style={styles.chevron}>›</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                testID={`atom-picker-select-${item.id}`}
-                style={styles.select}
-                onPress={() => choose(item)}
-              >
-                <Text style={styles.selectText}>선택</Text>
-              </TouchableOpacity>
+        <View style={styles.section}>
+          <GroupedGlassSheet testID="atom-picker-options">
+            <View style={styles.option}>
+              <Text style={styles.optionLabel}>깊이</Text>
+              <SettingsSegmentedControl<DepthValue> id="atom-picker-depth" value={depth} onChange={setDepth}
+                options={DEPTHS.map((value) => ({ value, label: value, accessibilityLabel: `깊이 ${value}` }))} />
             </View>
-          )}
-        />
-      )}
-      {current ? (
-        <TouchableOpacity testID="atom-picker-select-current" style={styles.current} onPress={() => choose(current)}>
-          <Text style={styles.currentText}>“{current.title}” 선택</Text>
-        </TouchableOpacity>
-      ) : null}
+            <View style={styles.titlesOnlyRow}>
+              <Text style={styles.titlesOnlyLabel}>제목만</Text>
+              <Switch testID="atom-picker-titles-only" accessibilityLabel="제목만" value={titlesOnly} onValueChange={setTitlesOnly} />
+            </View>
+          </GroupedGlassSheet>
+        </View>
+      </ScrollView>
     </View>
   );
+}
+
+function NodeRow({ node, selected, styles, t, onSelect, onDrill }: {
+  node: AtomNode; selected: boolean; styles: ReturnType<typeof makeStyles> & ReturnType<typeof makeSheetStyles>; t: DesignTokens;
+  onSelect(): void; onDrill?(): void;
+}) {
+  return <GroupedGlassRow testID={`atom-picker-select-${node.id}`} selected={selected} accessibilityRole="radio"
+    accessibilityLabel={node.title} onPress={onSelect} style={styles.node}>
+    <Text style={styles.nodeTitle} numberOfLines={1}>{node.title}</Text>
+    {selected ? <Ionicons testID={`atom-picker-selected-${node.id}`} name="checkmark" size={t.iconSize.standard} color={t.colors.accent} /> : null}
+    {onDrill ? (
+      <TouchableOpacity testID={`atom-picker-drill-${node.id}`} accessibilityRole="button" accessibilityLabel={`${node.title} 하위 보기`}
+        style={styles.drill} onPress={onDrill}>
+        <Ionicons name="chevron-forward" size={t.iconSize.compact} color={t.colors.textTertiary} />
+      </TouchableOpacity>
+    ) : <View style={styles.drill} />}
+  </GroupedGlassRow>;
+}
+
+function depthValue(depth: number): DepthValue {
+  const value = String(depth);
+  return (DEPTHS as readonly string[]).includes(value) ? value as DepthValue : DEFAULT_DEPTH;
 }
 
 function normalizeNodes(payload: unknown): AtomNode[] {
@@ -200,35 +190,18 @@ function normalizeNodes(payload: unknown): AtomNode[] {
 function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     container: { flex: 1 },
-    header: { minHeight: t.hitTarget.min + t.spacing.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: t.foundation.pageInset },
-    headerButton: { width: 64, minHeight: t.hitTarget.min, justifyContent: 'center' },
-    cancel: { color: t.colors.accent, ...t.foundation.typography.body },
-    title: { color: t.colors.textPrimary, ...t.foundation.typography.navigation, flex: 1, textAlign: 'center' },
-    settings: { gap: t.spacing.sm, paddingHorizontal: t.foundation.pageInset, paddingVertical: t.spacing.md },
-    selectedCard: { marginHorizontal: t.foundation.pageInset, backgroundColor: t.colors.surfaceMuted, borderRadius: t.radius.floor, overflow: 'hidden' },
-    selectedTitle: { color: t.colors.textPrimary, ...t.foundation.typography.cardTitle, paddingHorizontal: t.foundation.pageInset, paddingTop: t.spacing.md },
-    hint: { color: t.colors.textTertiary, ...t.foundation.typography.meta, paddingHorizontal: t.foundation.pageInset, paddingVertical: t.spacing.md },
-    label: { color: t.colors.textSecondary, ...t.foundation.typography.label },
-    depthRow: { flexDirection: 'row', gap: t.spacing.sm },
-    depthChip: { minWidth: t.hitTarget.min, minHeight: t.hitTarget.min, borderRadius: t.radius.capsule, alignItems: 'center', justifyContent: 'center', backgroundColor: t.colors.surfaceMuted },
-    depthChipActive: { backgroundColor: t.colors.accent },
-    depthText: { color: t.colors.textPrimary, ...t.foundation.typography.body },
-    depthTextActive: { color: t.colors.accentText, fontWeight: '700' },
-    switchRow: { minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    addSelected: { minWidth: t.hitTarget.min, minHeight: t.hitTarget.min, alignItems: 'center', justifyContent: 'center', backgroundColor: t.colors.accent, borderRadius: t.radius.capsule },
-    addSelectedText: { color: t.colors.accentText, ...t.foundation.typography.body, fontWeight: '700' },
-    backRow: { minHeight: t.hitTarget.min, justifyContent: 'center', paddingHorizontal: t.foundation.pageInset },
-    back: { color: t.colors.accent, ...t.foundation.typography.body },
-    center: { flex: 1 },
-    list: { paddingHorizontal: t.foundation.pageInset, paddingBottom: t.spacing.xl },
-    nodeRow: { minHeight: t.foundation.minHeight.field, flexDirection: 'row', alignItems: 'center' },
-    drill: { flex: 1, minHeight: t.foundation.minHeight.field, flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm },
+    crumb: { flexDirection: 'row', alignItems: 'center', minHeight: t.hitTarget.min, paddingLeft: t.spacing.xs, paddingRight: t.spacing.sm },
+    crumbBack: { minWidth: t.hitTarget.min, minHeight: t.hitTarget.min, alignItems: 'center', justifyContent: 'center' },
+    crumbTitle: { flex: 1, minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm },
+    crumbText: { flex: 1, color: t.colors.textSecondary, ...t.foundation.typography.label },
+    node: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm, paddingLeft: t.cardLayout.padding, minHeight: t.foundation.minHeight.field },
     nodeTitle: { flex: 1, color: t.colors.textPrimary, ...t.foundation.typography.body },
-    chevron: { color: t.colors.textTertiary, fontSize: t.iconSize.standard },
-    select: { minWidth: 64, minHeight: t.hitTarget.min, alignItems: 'flex-end', justifyContent: 'center' },
-    selectText: { color: t.colors.accent, ...t.foundation.typography.body, fontWeight: '700' },
-    meta: { color: t.colors.textTertiary, ...t.foundation.typography.meta, paddingVertical: t.spacing.lg },
-    current: { minWidth: t.hitTarget.min, minHeight: t.hitTarget.min + t.spacing.md, alignItems: 'center', justifyContent: 'center', backgroundColor: t.colors.accent, margin: t.foundation.pageInset, borderRadius: t.radius.capsule },
-    currentText: { color: t.colors.accentText, ...t.foundation.typography.body, fontWeight: '700' },
+    drill: { minWidth: t.hitTarget.min, minHeight: t.hitTarget.min, alignItems: 'center', justifyContent: 'center' },
+    state: { minHeight: t.foundation.minHeight.field, justifyContent: 'center', padding: t.cardLayout.padding },
+    empty: { color: t.colors.textTertiary, ...t.foundation.typography.body, padding: t.cardLayout.padding },
+    option: { padding: t.cardLayout.padding, gap: t.spacing.sm },
+    optionLabel: { color: t.colors.textSecondary, ...t.foundation.typography.label },
+    titlesOnlyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: t.spacing.sm, paddingHorizontal: t.cardLayout.padding, minHeight: t.foundation.minHeight.field },
+    titlesOnlyLabel: { flex: 1, color: t.colors.textPrimary, ...t.foundation.typography.body },
   });
 }

@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Platform,
   ScrollView,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -19,7 +20,6 @@ import type { PlannerFolder } from '../../api/plannerTypes';
 import { useChatAttachments } from '../../hooks/useChatAttachments';
 import { pendingId } from '../../hooks/plannerActionModels';
 import { usePlannerActions } from '../../hooks/usePlannerActions';
-import { usePlannerPageDetail } from '../../hooks/usePlannerReads';
 import { useNewSessionSelection } from '../sheets/useNewSessionSelection';
 import {
   buildAgentActionSheet,
@@ -29,8 +29,7 @@ import {
   resolveModelPresetActionSheetSelection,
   resolveNodeActionSheetSelection,
 } from '../sheets/newSessionSelection';
-import { plannerContextChips } from '../../lib/planner-context-chips';
-import { buildPlannerContextPresentation, type PlannerDefaultAssignment } from '../../lib/planner-context-presentation';
+import type { PlannerDefaultAssignment } from '../../lib/planner-context-presentation';
 import { buildSessionInitiationPrompt } from '../../lib/session-initiation-prompt';
 import { getSessionDisplayName } from '../../lib/session-display-name';
 import { useSessionStore } from '../../store/sessionStore';
@@ -47,9 +46,13 @@ import { GroupedGlassSheet } from './GroupedGlassSheet';
 import { SessionSelectionRow as SelectionRow } from './SessionSelectionRow';
 import { GrowingMultilineInput } from './GrowingMultilineInput';
 import {
+  buildAtomContextItem,
   buildPlannerFolderContextItem,
   type SessionContextItem,
 } from '../../lib/planner-session-context';
+import { AddRow, HeadingRow, ReferenceRow } from './FolderContextParts';
+import { PlannerAtomContextPicker, type PickedAtomReference } from './PlannerAtomContextPicker';
+import { useFolderContextChain, usePageSessionDefaults } from './useFolderContext';
 import { makeStyles } from './SessionSuccessionSheet.styles';
 import {
   buildEffortActionSheet,
@@ -118,21 +121,13 @@ function SessionSuccessionSheetContent({
   const predecessorSession = useSessionStore((state) => (
     predecessor?.agentSessionId ? state.sessions[predecessor.agentSessionId] : undefined
   ));
-  const projectContext = usePlannerPageDetail(
-    api,
-    folder.projectPageId,
-    visible,
-  );
-  const assignment = buildPlannerContextPresentation({
-    projectName: '프로젝트',
-    projectBlocks: projectContext.data?.blocks ?? [],
-    folderBlocks: folder.blocks,
-  }).assignment;
-  const assignmentDefaults = resolveSessionAssignmentDefaults(assignment, predecessor);
-  const contextChips = useMemo(
-    () => plannerContextChips(folder.blocks),
-    [folder.blocks],
-  );
+  const folders = useSessionStore((state) => state.catalog.folders);
+  const folderContext = useFolderContextChain(api, folder.folderId, folders, visible);
+  const pageDefaults = usePageSessionDefaults(api, folder.page.id, folders, visible);
+  const assignmentDefaults = resolveSessionAssignmentDefaults(pageDefaults.data?.defaults ?? null, predecessor);
+  const folderContextDetail = describeFolderContext(folderContext.data, Boolean(pageDefaults.data));
+  const [references, setReferences] = useState<PickedAtomReference[]>([]);
+  const [referencePickerOpen, setReferencePickerOpen] = useState(false);
   const [includeFolderContext, setIncludeFolderContext] = useState(true);
   const [inheritPredecessor, setInheritPredecessor] = useState(Boolean(predecessor));
   const instructionDraft = usePersistentDraft('session-succession', [predecessor?.agentSessionId ?? folder.folderId], INITIAL_SESSION_PROMPT);
@@ -185,6 +180,8 @@ function SessionSuccessionSheetContent({
     submissionCompleted.current = false;
     setSubmissionError(null);
     setIncludeFolderContext(true);
+    setReferences([]);
+    setReferencePickerOpen(false);
     setInheritPredecessor(Boolean(openingPredecessor.current));
     setAttachmentSessionId(pendingId('attachment'));
     clearAttachments();
@@ -197,6 +194,7 @@ function SessionSuccessionSheetContent({
   const contextSelection = buildSuccessionContextSelection({
     folder,
     includeFolderContext,
+    references,
   });
 
   const pickNode = () => {
@@ -372,6 +370,13 @@ function SessionSuccessionSheetContent({
       onRequestClose={requestClose}
       safeAreaTestID="succession-safe-area"
     >
+      {referencePickerOpen ? (
+        <PlannerAtomContextPicker visible api={api} onClose={() => setReferencePickerOpen(false)}
+          onPicked={(picked) => setReferences((current) => [
+            ...current.filter((item) => item.instance !== picked.instance || item.nodeId !== picked.nodeId),
+            picked,
+          ])} />
+      ) : <>
       <View testID="succession-header" style={styles.header}>
             <TouchableOpacity accessibilityLabel="세션 작성 취소" style={styles.headerButton} onPress={requestClose} disabled={submitting}><Text style={[styles.headerAction, submitting && styles.disabled]}>취소</Text></TouchableOpacity>
             <Text testID="succession-header-title" style={styles.title}>새 세션</Text>
@@ -391,14 +396,13 @@ function SessionSuccessionSheetContent({
           automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
         >
           <View style={styles.section} testID="succession-folder-scope">
-            <Text style={styles.meta}>세션을 시작할 폴더</Text>
+            <Text style={styles.meta}>시작할 폴더</Text>
             <Text style={styles.folderTitle}>{folder.page.title}</Text>
             {submissionError ? <SheetErrorNotice summary="세션을 시작하지 못했습니다. 초기 지시는 유지했습니다. 응답을 받지 못한 경우 세션 목록에서 결과를 확인해 주세요." detail={submissionError} /> : null}
-          <Text style={styles.purpose}>선택한 실행 대상이 이 폴더에서 바로 작업을 시작합니다.</Text>
           </View>
 
           <View style={styles.section} testID="succession-request-section">
-            <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>초기 지시</Text><Text style={styles.required}>선택</Text></View>
+            <HeadingRow title="무엇을 시작할까요?" />
             <GroupedGlassSheet testID="succession-initial-instruction-group">
               <View style={styles.formField}>
                 <AttachmentChips
@@ -434,15 +438,18 @@ function SessionSuccessionSheetContent({
             </GroupedGlassSheet>
           </View>
 
+          <View style={styles.section} testID="succession-execution-section">
+          <HeadingRow title="실행 환경" />
           <GroupedGlassSheet testID="succession-selection-group">
             <TouchableOpacity testID="succession-execution-disclosure" style={styles.disclosure}
-              accessibilityRole="button" accessibilityLabel="실행 설정"
+              accessibilityRole="button" accessibilityLabel="실행 환경"
               accessibilityState={{ expanded: showExecution }} disabled={submitting || executionNeedsAttention}
               onPress={() => setExecutionExpanded(current => !current)}>
               <View style={styles.disclosureBody}>
-                <Text style={styles.rowTitle}>실행 대상</Text>
-                <Text style={styles.meta}>{selection.selectedAgentName}, {selection.selectedNodeName}</Text>
-                <Text style={styles.meta}><SelectedModelPresetName selection={selection} />{presetSupportsEffort(effortPreset) ? `, ${effortRowValue(effortPreset, selectedEffort)}` : ''}</Text>
+                <Text testID="succession-execution-summary" style={styles.rowTitle} numberOfLines={1}>
+                  {selection.selectedAgentName} · {selection.selectedNodeName} · <SelectedModelPresetName selection={selection} />
+                  {presetSupportsEffort(effortPreset) ? ` · ${effortRowValue(effortPreset, selectedEffort)}` : ''}
+                </Text>
               </View>
               <Text style={styles.disclosureAction}>{executionNeedsAttention ? '확인 필요' : showExecution ? '접기 ⌃' : '변경 ⌄'}</Text>
             </TouchableOpacity>
@@ -488,32 +495,46 @@ function SessionSuccessionSheetContent({
             ) : null}
             </View> : null}
           </GroupedGlassSheet>
+          </View>
 
-          <Text style={styles.sectionTitle}>함께 가져갈 컨텍스트</Text>
+          <View style={styles.section} testID="succession-context-section">
+          <HeadingRow title="함께 전달할 자료" />
           <GroupedGlassSheet testID="succession-context-group">
-            <CheckRow
-              disabled={submitting}
-              checked={includeFolderContext}
-              testID="succession-check-task-context"
-              label="폴더 본문과 컨텍스트"
-              detail={contextChips.map((chip) => `${chip.icon} ${chip.label}`).join(' · ') || '연결된 컨텍스트 없음'}
-              onPress={() => { if (!submissionPending.current) setIncludeFolderContext((current) => !current); }}
-              styles={styles}
-            />
-            {predecessor ? (
-              <CheckRow
+            {[
+              <SwitchRow
+                key="folder"
                 disabled={submitting}
-                checked={inheritPredecessor}
-                label="이전 세션"
-                detail={getSessionDisplayName(predecessorSession, predecessor.agentSessionId)}
-                onPress={() => { if (!submissionPending.current) setInheritPredecessor((current) => !current); }}
+                value={includeFolderContext}
+                testID="succession-check-task-context"
+                label="폴더 맥락"
+                detail={folderContextDetail}
+                onChange={(value) => { if (!submissionPending.current) setIncludeFolderContext(value); }}
                 styles={styles}
-              />
-            ) : null}
+              />,
+              <SwitchRow
+                key="predecessor"
+                testID="succession-check-predecessor"
+                disabled={submitting || !predecessor}
+                value={Boolean(predecessor) && inheritPredecessor}
+                label="이전 세션"
+                detail={predecessor ? getSessionDisplayName(predecessorSession, predecessor.agentSessionId) : '이전 세션 없음'}
+                onChange={(value) => { if (!submissionPending.current) setInheritPredecessor(value); }}
+                styles={styles}
+              />,
+              ...references.map((reference) => (
+                <ReferenceRow key={`${reference.instance}:${reference.nodeId}`} testID={`succession-reference-${reference.nodeId}`}
+                  item={reference} disabled={submitting}
+                  onRemove={() => setReferences((current) => current.filter((item) => item !== reference))} />
+              )),
+              <AddRow key="add" testID="succession-reference-add" label="참고 자료 추가" disabled={submitting}
+                onPress={() => setReferencePickerOpen(true)} />,
+            ]}
           </GroupedGlassSheet>
+          </View>
 
         </ScrollView>
       </AppKeyboardAvoidingView>
+      </>}
     </AppModalSurface>
   );
 }
@@ -521,15 +542,31 @@ function SessionSuccessionSheetContent({
 export function buildSuccessionContextSelection({
   folder,
   includeFolderContext,
+  references = [],
 }: {
   folder: PlannerFolder;
   includeFolderContext: boolean;
+  references?: readonly PickedAtomReference[];
 }): { needsPageAnchor: boolean; contextItems: SessionContextItem[] } {
   const contextItems: SessionContextItem[] = [];
   if (includeFolderContext) {
     contextItems.push(buildPlannerFolderContextItem(folder));
   }
+  const atomItem = buildAtomContextItem(references);
+  if (atomItem) contextItems.push(atomItem);
   return { needsPageAnchor: includeFolderContext, contextItems };
+}
+
+function describeFolderContext(
+  context: { guidance: readonly unknown[]; atomReferences: readonly unknown[] } | null,
+  hasDefaults: boolean,
+): string {
+  const parts = [
+    context && context.guidance.length > 0 ? '지침' : null,
+    context && context.atomReferences.length > 0 ? `참고 자료 ${context.atomReferences.length}` : null,
+    hasDefaults ? '기본 실행 환경' : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : '연결된 맥락 없음';
 }
 
 export function resolveSessionPredecessor(
@@ -564,22 +601,22 @@ export function resolveSessionAssignmentDefaults(
   };
 }
 
-function CheckRow({ testID, checked, label, detail, onPress, styles, disabled }: {
+function SwitchRow({ testID, value, label, detail, onChange, styles, disabled }: {
   testID?: string;
-  checked: boolean;
+  value: boolean;
   disabled?: boolean;
   label: string;
-  detail?: string;
-  onPress(): void;
+  detail: string;
+  onChange(value: boolean): void;
   styles: ReturnType<typeof makeStyles>;
 }) {
   return (
-    <TouchableOpacity testID={testID} style={styles.checkRow} onPress={onPress} disabled={disabled} accessibilityRole="checkbox" accessibilityState={{ checked, disabled }}>
-      <Text style={styles.check}>{checked ? '✓' : '○'}</Text>
+    <View testID={testID ? `${testID}-row` : undefined} style={styles.switchRow}>
       <View style={styles.checkBody}>
         <Text style={styles.rowTitle}>{label}</Text>
-        {detail ? <Text style={styles.meta} numberOfLines={2}>{detail}</Text> : null}
+        <Text style={styles.meta} numberOfLines={2}>{detail}</Text>
       </View>
-    </TouchableOpacity>
+      <Switch testID={testID} accessibilityLabel={label} value={value} disabled={disabled} onValueChange={onChange} />
+    </View>
   );
 }

@@ -5,12 +5,12 @@ const SRC_ROOT = path.resolve(__dirname, '../..');
 
 const N5_UNITS = {
   'components/settings/ClaudeProviderSection.tsx': ['ClaudeProviderSection'],
-  'components/planner/NewFolderSheet.tsx': ['NewFolderSheet', 'ContextPreviewRow'],
+  'components/planner/NewFolderSheet.tsx': ['NewFolderSheet', 'FolderSettingsForm'],
   'components/planner/SessionSuccessionHost.tsx': ['SessionSuccessionHost'],
   'components/planner/SessionSuccessionSheet.tsx': [
     'SessionSuccessionSheet',
     'SelectionRow',
-    'CheckRow',
+    'SwitchRow',
   ],
   'components/settings/SettingsModal.tsx': ['SettingsModal'],
   'screens/LoginScreen.tsx': ['LoginScreen'],

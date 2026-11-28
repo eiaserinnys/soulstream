@@ -28,7 +28,7 @@ const server = http.createServer(async (req, res) => {
   try { res.writeHead(200, { 'Content-Type': mime[path.extname(file)] || 'application/octet-stream' }); res.end(await fs.readFile(file)); }
   catch { res.writeHead(404); res.end(); }
 });
-const samples = ['card-create', 'assignment', 'folder-picker', 'execution-picker', 'folder-create', 'session-create',
+const samples = ['card-create', 'assignment', 'folder-picker', 'execution-picker', 'folder-create', 'folder-create-root', 'folder-settings', 'reference-picker', 'session-create',
   'session-diagnostic', 'search-filter', 'settings', 'task-output', 'board-expanded', 'card-status', 'image-viewer'];
 async function metrics(page) {
   return page.evaluate(() => {

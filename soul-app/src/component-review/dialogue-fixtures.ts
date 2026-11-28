@@ -7,6 +7,7 @@ import { Asset } from 'expo-asset';
 import { createPlannerMutationPort } from '../api/plannerMutationPort';
 import { createReviewApi, folders, sessions, starredFolders } from './fixtures';
 import { dialogueMessages } from './chat-fixtures';
+import { folderContextBlocks, withFolderContext } from './folder-context-fixtures';
 
 export const dialogueFolders = folders.map(folder => ({ ...folder, projectPageId: folder.id === 'public-project' ? 'public-page' : 'public-child-page' }));
 export const dialogueSessions = sessions.map((session): Session & PlannerSessionSummary => ({ ...session, folderId: 'public-project', nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-model', predecessorSessionId: null, sessionType: 'interactive', reviewState: session.reviewState ?? 'not_required' }));
@@ -14,6 +15,13 @@ export const dialogueFolder: PlannerFolder = {
   ...starredFolders[0], page: { ...starredFolders[0].page, id: 'public-page' },
   projectPageId: 'public-page', folderSummary: { ...dialogueFolders[0], title: dialogueFolders[0].name, itemCounts: {}, itemTotal: 7, completedItemCount: 1, assignee: null },
   sessions: dialogueSessions, sessionIds: dialogueSessions.map(session => session.agentSessionId),
+};
+/** Child folder with its own guidance blocks and references, opened by the folder settings sample. */
+export const dialogueChildFolder: PlannerFolder = {
+  ...dialogueFolder,
+  folderId: 'public-child', parentFolderId: 'public-project', projectPageId: 'public-child-page',
+  page: { ...dialogueFolder.page, id: 'public-child-page', title: dialogueFolders[1]!.name },
+  blocks: folderContextBlocks['public-child-page']!,
 };
 export const reviewTask = { taskId: 'public-task', status: 'completed' as const, updatedAt: 1, description: '공개 예시 작업 출력', summary: '메모리 예시 결과' };
 export const reviewTaskOutput: ClaudeRuntimeTaskOutputResponse = {
@@ -102,7 +110,7 @@ export function createDialogueApi(): ApiClient {
     listAtomNodeChildren: async () => ({ children: [] }),
     catalogStreamUrl: () => '', nodeStreamUrl: () => '', sessionEventsUrl: () => '',
   };
-  const typed = api as unknown as ApiClient;
+  const typed = withFolderContext(api as unknown as ApiClient) as ApiClient;
   return { ...typed, plannerMutations: createPlannerMutationPort(typed) };
 }
 export const dialogueApi = createDialogueApi();

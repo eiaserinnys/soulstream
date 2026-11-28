@@ -127,6 +127,7 @@ export function initializeReview() {
   const pasImageSample = settingsSection === 'chat' && reviewParams?.get('sample') === 'pas-images';
   const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
+  const folderContextSection = typeof window !== 'undefined' && ['folderWorkspace', 'project'].includes(new URLSearchParams(window.location?.search).get('section') ?? '');
   const chat = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'chat';
   useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || pasCardExpand || cardQuestion || pasReport || chat || contentLinks || contentLinkDocument || attachments || chatUiComposer || chatUiFlow || settingsSection === 'sessionFiles' ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent || iphoneDuo ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
   if (pasImageSample) useAuthStore.setState({ jwt: null, authRejected: false });
@@ -183,7 +184,7 @@ export function initializeReview() {
       catalogLoadState: 'loading',
     });
   } else {
-    useSessionStore.setState({ catalog: { folders: folderTabs ? (new URLSearchParams(window.location.search).get('state') === 'empty' ? [] : folderTabReviewFolders) : dialogues ? dialogueFolders : longSelection ? folders.map((folder, index) => index === 0 ? { ...folder, name: '아주 긴 프로젝트 폴더 이름으로 한 줄 말줄임을 확인합니다' } : folder) : folders, sessions: dialogues || persistent ? fixtureSessions : {} }, ...(dialogues || persistent ? { sessions: fixtureSessions } : {}), catalogLoadState: 'ready' });
+    useSessionStore.setState({ catalog: { folders: folderTabs ? (new URLSearchParams(window.location.search).get('state') === 'empty' ? [] : folderTabReviewFolders) : dialogues || folderContextSection ? dialogueFolders : longSelection ? folders.map((folder, index) => index === 0 ? { ...folder, name: '아주 긴 프로젝트 폴더 이름으로 한 줄 말줄임을 확인합니다' } : folder) : folders, sessions: dialogues || persistent ? fixtureSessions : {} }, ...(dialogues || persistent ? { sessions: fixtureSessions } : {}), catalogLoadState: 'ready' });
   }
   if (iphoneDuo) {
     const iphoneDuoSessions = Object.fromEntries(

@@ -23,26 +23,21 @@ export function projectOptionsFromFolders(
     }));
 }
 
-export function buildNewFolderSubmission(
-  input: {
-    title: string;
-    description: string;
-    selectedProjectPageId: string;
-    initialContext: InitialFolderContext;
-  },
-  options: readonly ProjectFolderOption[],
-) {
+export function buildNewFolderSubmission(input: {
+  title: string;
+  description: string;
+  /** null creates a top-level folder; undefined means the chosen parent is missing. */
+  parent: ProjectFolderOption | null | undefined;
+  initialContext: InitialFolderContext;
+}) {
   const title = input.title.trim();
   if (!title) throw new Error('폴더 이름을 입력해 주세요.');
-  const project = options.find(
-    (option) => option.projectPageId === input.selectedProjectPageId,
-  );
-  if (!project) throw new Error('폴더를 만들 상위 폴더를 선택해 주세요.');
+  if (input.parent === undefined) throw new Error('폴더를 만들 상위 폴더를 선택해 주세요.');
   return {
     title,
     description: input.description,
-    folderId: project.folderId,
-    projectPageId: project.projectPageId,
+    folderId: input.parent?.folderId ?? null,
+    projectPageId: input.parent?.projectPageId ?? null,
     initialContext: input.initialContext,
   };
 }

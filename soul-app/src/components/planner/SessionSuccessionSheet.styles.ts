@@ -88,6 +88,14 @@ export function makeStyles(t: DesignTokens) {
       paddingHorizontal: t.cardLayout.padding,
       paddingVertical: t.spacing.sm,
     },
+    switchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: t.spacing.sm,
+      minHeight: t.foundation.hitTarget,
+      paddingHorizontal: t.cardLayout.padding,
+      paddingVertical: t.spacing.sm,
+    },
     check: {
       width: t.iconSize.standard,
       color: t.colors.accent,

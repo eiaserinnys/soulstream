@@ -3,7 +3,6 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { PlannerFolderDetail } from '../../api/plannerTypes';
 import type { Folder } from '../../api/types';
-import { usePlannerActions } from '../../hooks/usePlannerActions';
 import { usePlannerContextMenus } from '../../hooks/usePlannerContextMenus';
 import { useSessionStore } from '../../store/sessionStore';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
@@ -11,12 +10,12 @@ import { GroupedGlassSheet } from './GroupedGlassSheet';
 import { FrameLoading } from '../FrameLoading';
 import { NewFolderSheet } from './NewFolderSheet';
 import { PlannerFolderRow } from './PlannerFolderRow';
-import { ProjectContextEditor } from './ProjectContextEditor';
+import { useFolderSettingsActions } from './folderSettingsActions';
 import { PlannerSectionHeader } from './PlannerSectionHeader';
 import { folderPage, folderWorkspaceSummary } from './folderWorkspaceModel';
 
 export function FolderWorkspaceSections({
-  api, folder, detail, loading, error, active, loadMoreSubfolders, onOpenFolder,
+  api, folder, detail, loading, error, loadMoreSubfolders, onOpenFolder,
   parentFolder, newFolderDraft, onNewFolderDraftChange,
 }: {
   api: ApiClient | null;
@@ -34,12 +33,11 @@ export function FolderWorkspaceSections({
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const menus = usePlannerContextMenus(api);
-  const actions = usePlannerActions(api);
+  const settingsActions = useFolderSettingsActions(api);
   const folders = useSessionStore((state) => state.catalog.folders);
   const children = detail?.subfolders.items ?? [];
   return (
     <>
-      <ProjectContextEditor api={api} projectPageId={folder.projectPageId!} active={active} />
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {!detail && loading ? <FrameLoading testID="folder-sections-loading" inline /> : null}
       <View style={styles.section}>
@@ -76,9 +74,9 @@ export function FolderWorkspaceSections({
         visible={newFolderDraft !== null}
         api={api}
         folders={folders}
-        defaultProjectPageId={newFolderDraft?.parentPageId ?? folder.projectPageId!}
+        target={{ kind: 'create', parentProjectPageId: newFolderDraft?.parentPageId ?? folder.projectPageId! }}
         onClose={() => onNewFolderDraftChange(null)}
-        onSubmit={actions.createFolder}
+        onSubmit={settingsActions.createFolder}
       />
     </>
   );

@@ -19,7 +19,9 @@ import { DEFAULT_SEARCH_FILTERS } from '../store/searchStore';
 import { createSessionSuccessionFailureRecord } from '../lib/session-succession-diagnostics';
 import { createPlannerMutationPort } from '../api/plannerMutationPort';
 import { makeCard } from './fixtures';
-import { dialogueApi as api, dialogueFolder, dialogueFolders } from './dialogue-fixtures';
+import { dialogueApi as api, dialogueChildFolder, dialogueFolder, dialogueFolders } from './dialogue-fixtures';
+import { PlannerAtomContextPicker } from '../components/planner/PlannerAtomContextPicker';
+import { AppModalSurface } from '../components/AppModalSurface';
 import { type DialogueSample } from './dialogue-inventory';
 import { ReviewDialogueOwners } from './ReviewDialogueOwners';
 import { ReviewPersistentEntry } from './ReviewPersistentEntry';
@@ -48,8 +50,15 @@ export function ReviewDialogueSurface({ opened, onClose, onResult, preview = fal
       {opened === 'assignment' ? <CardAssignmentSheet api={api} value={reviewAssignment} mode="edit" onClose={close} onSave={async value => saved('메모리 담당: ' + value.agentId)} /> : null}
       {opened === 'folder-picker' ? <FolderSelectionSheet api={api} onClose={close} onSelect={id => saved('선택: ' + id)} /> : null}
       {opened === 'execution-picker' ? <ExecutionSelectionSheet api={api} value={reviewAssignment} onClose={close} onSave={value => saved('메모리 실행: ' + value.agentId)} /> : null}
-      {opened === 'folder-create' ? <NewFolderSheet visible api={api} folders={dialogueFolders} defaultProjectPageId="public-page" onClose={close}
+      {opened === 'folder-create' || opened === 'folder-create-root' ? <NewFolderSheet visible api={api} folders={dialogueFolders}
+        target={{ kind: 'create', parentProjectPageId: opened === 'folder-create' ? 'public-page' : null }} onClose={close}
         onSubmit={async input => { const response = await createPlannerMutationPort(api).createFolder(input); setResult('메모리 폴더: ' + response.folder.name); return response; }} /> : null}
+      {opened === 'folder-settings' ? <NewFolderSheet visible api={api} folders={dialogueFolders} target={{ kind: 'edit', folder: dialogueChildFolder }}
+        onClose={close} onSave={async input => saved('메모리 폴더 설정: ' + input.draft.title)} /> : null}
+      {opened === 'reference-picker' ? <AppModalSurface visible variant="expanded" modalId="modal_new_task" presentationStyle="pageSheet"
+        onRequestClose={close} safeAreaTestID="reference-picker-safe-area">
+        <PlannerAtomContextPicker visible api={api} onClose={close} onPicked={picked => setResult('메모리 참고 자료: ' + picked.nodeTitle)} />
+      </AppModalSurface> : null}
       {opened === 'session-create' ? <SessionSuccessionSheet visible api={api} folder={dialogueFolder} predecessorSessionId="public-idle" onClose={close} onCreated={id => setResult('메모리 세션: ' + id)} /> : null}
       {opened === 'session-diagnostic' ? <SessionSuccessionDiagnosticFallback visible api={api} folder={dialogueFolder} predecessorSessionId="public-idle" onClose={close} onCreated={id => saved('메모리 진단 세션: ' + id)}
         failure={createSessionSuccessionFailureRecord({ folderId: 'public-project', folderPageId: 'public-page', projectPageId: 'public-page', phase: 'render', error: new Error('공개 예시: 새 세션 화면을 열지 못했습니다.'), visible: true, predecessorSessionId: 'public-idle', folderBlockCount: 0, folderSessionCount: 1 })} /> : null}

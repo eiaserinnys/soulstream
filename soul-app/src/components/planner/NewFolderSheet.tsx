@@ -7,71 +7,77 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import type { Folder } from '../../api/types';
+import type { PlannerFolder } from '../../api/plannerTypes';
 import { operationId, type FolderCreationAttempt } from '../../api/plannerMutationPort';
 import { ApiHttpError } from '../../api/clientCore';
 import type { ApiClient } from '../../api/client';
 import {
-  emptyInitialFolderContext,
-  type InitialFolderAtomReference,
-  type InitialFolderContext,
-} from '../../api/initialFolderContext';
-import { usePlannerPageDetail } from '../../hooks/usePlannerReads';
-import { buildPlannerContextPresentation } from '../../lib/planner-context-presentation';
+  emptyFolderSettingsDraft,
+  folderSettingsDraftFromBlocks,
+  formatExecutionDefaultsSummary,
+  initialContextFromDraft,
+  type FolderSettingsDraft,
+} from '../../lib/folder-settings';
+import type { FolderAtomReference } from '../../lib/folder-context';
+import { plannerDescriptionText } from '../../lib/planner-description-blocks';
 import { useTokens, type DesignTokens } from '../../theme';
 import { AppModalSurface } from '../AppModalSurface';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import { buildNewFolderSubmission, projectOptionsFromFolders } from './newFolderCreation';
-import { InitialFolderContextEditor } from './InitialFolderContextEditor';
 import { SheetErrorNotice, sheetErrorDetail } from './SheetErrorNotice';
-import { FolderDefaultsPicker } from './FolderDefaultsPicker';
-import { PlannerAtomContextPicker } from './PlannerAtomContextPicker';
+import { PlannerAtomContextPicker, type PickedAtomReference } from './PlannerAtomContextPicker';
+import { FolderSettingsForm, type FolderInheritedContext } from './FolderSettingsForm';
+import type { FolderCreateInput, FolderSaveInput } from './folderSettingsActions';
+import { useExecutionDefaultsNames, useFolderContextChain, usePageSessionDefaults } from './useFolderContext';
 import {
   captureAuthScope,
   isAuthScopeCurrent,
   useAuthScopeGeneration,
 } from '../../lib/auth-scope';
 
+/** `create` takes the parent page (null for a top-level folder); `edit` opens the folder's own settings. */
+export type FolderSheetTarget =
+  | { kind: 'create'; parentProjectPageId: string | null }
+  | { kind: 'edit'; folder: PlannerFolder };
+
+type PickerState = null | { kind: 'add' } | { kind: 'edit'; index: number };
+
+/** One sheet for new folders and folder settings; the confirm writes everything at once. */
 export function NewFolderSheet({
   visible,
   api,
   folders,
-  defaultProjectPageId = null,
+  target,
   onClose,
   onSubmit,
+  onSave,
 }: {
   visible: boolean;
   api: ApiClient | null;
   folders: readonly Folder[];
-  defaultProjectPageId?: string | null;
+  target: FolderSheetTarget;
   onClose(): void;
-  onSubmit(input: {
-    title: string;
-    description: string;
-    folderId: string;
-    projectPageId: string;
-    initialContext: InitialFolderContext;
-    creation?: FolderCreationAttempt;
-  }): Promise<unknown>;
+  onSubmit?(input: FolderCreateInput): Promise<unknown>;
+  onSave?(input: FolderSaveInput): Promise<unknown>;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const options = useMemo(() => projectOptionsFromFolders(folders), [folders]);
   const scopeGeneration = useAuthScopeGeneration();
-  const [title, setTitle] = useState('');
-  const descriptionDraft = usePersistentDraft('folder-create-description', [defaultProjectPageId ?? 'root'], '');
-  const { value: description, setValue: setDescription } = descriptionDraft;
-  const guidanceDraft = usePersistentDraft('folder-create-guidance', [defaultProjectPageId ?? 'root'], '');
-  const ready = descriptionDraft.ready && guidanceDraft.ready;
-  const [projectPageId, setProjectPageId] = useState('');
-  const [initialContext, setInitialContext] = useState<InitialFolderContext>(emptyInitialFolderContext);
-  const [assignmentIncomplete, setAssignmentIncomplete] = useState(false);
-  const [defaultsOpen, setDefaultsOpen] = useState(false);
-  const [atomPickerOpen, setAtomPickerOpen] = useState(false);
+  const editFolder = target.kind === 'edit' ? target.folder : null;
+  const draftTarget = [target.kind === 'create' ? target.parentProjectPageId ?? 'root' : `edit:${editFolder!.page.id}`];
+  const descriptionDraft = usePersistentDraft('folder-create-description', draftTarget, '');
+  const guidanceDraft = usePersistentDraft('folder-create-guidance', draftTarget, '');
+  const ready = editFolder ? true : descriptionDraft.ready && guidanceDraft.ready;
+  const [draft, setDraft] = useState<FolderSettingsDraft>(emptyFolderSettingsDraft);
+  const [baseline, setBaseline] = useState<FolderSettingsDraft>(emptyFolderSettingsDraft);
+  const [defaultsValid, setDefaultsValid] = useState(true);
+  const [parentPageId, setParentPageId] = useState<string | null>(null);
+  const [picker, setPicker] = useState<PickerState>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submittingRef = useRef(false);
@@ -81,48 +87,71 @@ export function NewFolderSheet({
   const locked = submitting || retryingSnapshot;
   const wasVisible = useRef(false);
   const draftScopeGeneration = useRef(scopeGeneration);
-  const openingDefaults = useRef({
-    defaultProjectPageId,
-    firstProjectPageId: options[0]?.projectPageId ?? '',
-  });
-  openingDefaults.current = {
-    defaultProjectPageId,
-    firstProjectPageId: options[0]?.projectPageId ?? '',
-  };
+  const opening = useRef({ target, folders });
+  opening.current = { target, folders };
 
   useEffect(() => {
-    const opening = visible && !wasVisible.current;
+    const isOpening = visible && !wasVisible.current;
     const scopeChanged = draftScopeGeneration.current !== scopeGeneration;
     wasVisible.current = visible;
     draftScopeGeneration.current = scopeGeneration;
-    if (!visible || (!opening && !scopeChanged)) return;
-    const defaults = openingDefaults.current;
+    if (!visible || (!isOpening && !scopeChanged)) return;
+    const { target: openingTarget, folders: openingFolders } = opening.current;
+    const initial = openingTarget.kind === 'edit'
+      ? folderSettingsDraftFromBlocks({
+        title: openingTarget.folder.page.title,
+        description: plannerDescriptionText(openingTarget.folder.blocks),
+        blocks: openingTarget.folder.blocks,
+      })
+      : emptyFolderSettingsDraft();
     submission.current = null;
     submittingRef.current = false;
     completedRef.current = false;
     setRetryingSnapshot(false);
-    setTitle('');
-    setProjectPageId(defaults.defaultProjectPageId ?? defaults.firstProjectPageId);
-    setInitialContext(emptyInitialFolderContext());
-    setAssignmentIncomplete(false);
-    setAtomPickerOpen(false);
-    setDefaultsOpen(false);
+    setDraft(initial);
+    setBaseline(initial);
+    setDefaultsValid(true);
+    setParentPageId(openingTarget.kind === 'create'
+      ? openingTarget.parentProjectPageId
+      : openingFolders.find((folder) => folder.id === openingTarget.folder.parentFolderId)?.projectPageId ?? null);
+    setPicker(null);
     setSubmitting(false);
     setError(null);
   }, [scopeGeneration, visible]);
 
   const ownsDraft = draftScopeGeneration.current === scopeGeneration;
-  const visibleProjectPageId = ownsDraft ? projectPageId : '';
-  const visibleTitle = ownsDraft ? title : '';
-  const visibleDescription = ownsDraft ? description : '';
-  const visibleInitialContext = ownsDraft ? { ...initialContext, guidance: guidanceDraft.value } : emptyInitialFolderContext();
-  const selectedProject = options.find((option) => option.projectPageId === visibleProjectPageId);
-  const projectContext = usePlannerPageDetail(api, visibleProjectPageId || null, visible);
-  const contextPresentation = buildPlannerContextPresentation({
-    projectName: selectedProject?.name ?? '폴더',
-    projectBlocks: projectContext.data?.blocks ?? [],
-    folderBlocks: [],
-  });
+  const visibleDraft: FolderSettingsDraft = !ownsDraft ? emptyFolderSettingsDraft() : editFolder ? draft : {
+    ...draft,
+    description: descriptionDraft.value,
+    guidance: guidanceDraft.value,
+    guidanceSource: draft.guidanceSource === 'own' || guidanceDraft.value.trim() ? 'own' : 'inherit',
+  };
+  const update = (patch: Partial<FolderSettingsDraft>) => {
+    if (!editFolder && patch.description !== undefined) descriptionDraft.setValue(patch.description);
+    if (!editFolder && patch.guidance !== undefined) guidanceDraft.setValue(patch.guidance);
+    if (!editFolder && patch.guidanceSource === 'inherit') guidanceDraft.setValue('');
+    setDraft((current) => ({ ...current, ...patch }));
+  };
+
+  const parentOption = parentPageId ? options.find((option) => option.projectPageId === parentPageId) ?? null : null;
+  const parentFolder = parentPageId ? folders.find((folder) => folder.projectPageId === parentPageId) ?? null : null;
+  const chain = useFolderContextChain(api, parentFolder?.id ?? null, folders, visible);
+  const parentDefaults = usePageSessionDefaults(api, parentPageId, folders, visible);
+  const defaultsNames = useExecutionDefaultsNames(api, parentDefaults.data?.defaults ?? null);
+  const nearestGuidance = chain.data?.guidance ?? [];
+  const inherited: FolderInheritedContext = {
+    guidance: nearestGuidance.length > 0 ? {
+      text: nearestGuidance.map((item) => item.text).join('\n\n'),
+      sourceName: nearestGuidance[nearestGuidance.length - 1]!.source.folderName,
+    } : null,
+    references: chain.data?.atomReferences ?? [],
+    defaults: parentDefaults.data ? {
+      summary: formatExecutionDefaultsSummary(defaultsNames) || '…',
+      sourceName: parentDefaults.data.sourceName,
+    } : null,
+    loading: chain.loading || parentDefaults.loading,
+  };
+
   const pickProject = () => {
     const labels = [...options.map((option) => option.name), '취소'];
     ActionSheetIOS.showActionSheetWithOptions({
@@ -130,7 +159,7 @@ export function NewFolderSheet({
       options: labels,
       cancelButtonIndex: labels.length - 1,
     }, (index) => {
-      if (index < options.length) setProjectPageId(options[index]!.projectPageId);
+      if (index < options.length) setParentPageId(options[index]!.projectPageId);
     });
   };
 
@@ -138,29 +167,37 @@ export function NewFolderSheet({
     if (!ready || submittingRef.current || completedRef.current) return;
     const scope = captureAuthScope();
     const submittedGeneration = scopeGeneration;
+    const owns = () => isAuthScopeCurrent(scope) && draftScopeGeneration.current === submittedGeneration;
     setError(null);
     try {
+      if (editFolder) {
+        submittingRef.current = true;
+        setSubmitting(true);
+        await onSave?.({ folder: editFolder, baseline, draft: visibleDraft });
+        if (owns()) { completedRef.current = true; onClose(); }
+        return;
+      }
       const candidate = buildNewFolderSubmission({
-        title: visibleTitle,
-        description: visibleDescription,
-        selectedProjectPageId: visibleProjectPageId,
-        initialContext: visibleInitialContext,
-      }, options);
+        title: visibleDraft.title,
+        description: visibleDraft.description,
+        parent: parentPageId === null ? null : parentOption ?? undefined,
+        initialContext: initialContextFromDraft(visibleDraft),
+      });
       if (submission.current?.rejected && JSON.stringify(submission.current.input) !== JSON.stringify(candidate)) submission.current = null;
       const input = submission.current?.input ?? candidate;
       submission.current ??= { input, creation: { idempotencyKey: operationId('folder-create') } };
       const attempt = submission.current;
       submittingRef.current = true;
       setSubmitting(true);
-      await onSubmit({ ...attempt.input, creation: attempt.creation });
-      if (isAuthScopeCurrent(scope) && draftScopeGeneration.current === submittedGeneration) {
+      await onSubmit?.({ ...attempt.input, creation: attempt.creation });
+      if (owns()) {
         completedRef.current = true;
         descriptionDraft.clearIfMatches(input.description);
-        guidanceDraft.clearIfMatches(input.initialContext.guidance);
+        guidanceDraft.clearIfMatches(guidanceDraft.value);
         onClose();
       }
     } catch (cause) {
-      if (isAuthScopeCurrent(scope) && draftScopeGeneration.current === submittedGeneration) {
+      if (owns()) {
         // Explicit rejection may be edited; an unknown response keeps its original request.
         if (submission.current) {
           submission.current.rejected = !submission.current.creation.result
@@ -170,7 +207,7 @@ export function NewFolderSheet({
         setError(sheetErrorDetail(cause));
       }
     } finally {
-      if (isAuthScopeCurrent(scope) && draftScopeGeneration.current === submittedGeneration) {
+      if (owns()) {
         submittingRef.current = false;
         setSubmitting(false);
       }
@@ -178,162 +215,89 @@ export function NewFolderSheet({
   };
 
   const requestClose = () => { if (!submittingRef.current) onClose(); };
-  const canSubmit = Boolean(
-    ready && visibleTitle.trim() && visibleProjectPageId && !assignmentIncomplete && !submitting,
-  );
-  const addAtomReference = (reference: InitialFolderAtomReference) => {
-    setInitialContext((current) => ({
-      ...current,
-      atomReferences: [
-        ...current.atomReferences.filter((item) => (
-          item.instance !== reference.instance || item.nodeId !== reference.nodeId
-        )),
-        reference,
-      ],
-    }));
-    setAtomPickerOpen(false);
+  const defaultsReady = visibleDraft.defaultsSource === 'inherit' || defaultsValid;
+  const parentReady = editFolder !== null || parentPageId === null || Boolean(parentOption);
+  const canSubmit = Boolean(ready && visibleDraft.title.trim() && parentReady && defaultsReady && !submitting);
+  const editingReference = picker?.kind === 'edit' ? visibleDraft.atomReferences[picker.index] ?? null : null;
+  const pickReference = (picked: PickedAtomReference) => {
+    const references = visibleDraft.atomReferences;
+    if (picker?.kind === 'edit' && editingReference) {
+      const next: FolderAtomReference = { ...editingReference, ...picked };
+      update({ atomReferences: references.map((reference, index) => index === picker.index ? next : reference) });
+      return;
+    }
+    const sameNode = (reference: FolderAtomReference) => reference.instance === picked.instance && reference.nodeId === picked.nodeId;
+    const existing = references.find(sameNode);
+    update({ atomReferences: existing
+      ? references.map((reference) => sameNode(reference) ? { ...reference, ...picked } : reference)
+      : [...references, { blockId: null, ...picked }] });
   };
+  const title = editFolder ? '폴더 설정' : '새 폴더';
+  const parentName = editFolder
+    ? parentFolder?.name ?? null
+    : parentPageId === null ? null : parentOption?.name ?? '상위 폴더 선택';
   return (
     <AppModalSurface
       visible={visible}
       variant="expanded"
       modalId="modal_new_task"
       presentationStyle="pageSheet"
-      onRequestClose={() => defaultsOpen ? setDefaultsOpen(false) : atomPickerOpen ? setAtomPickerOpen(false) : requestClose()}
+      onRequestClose={() => picker ? setPicker(null) : requestClose()}
       safeAreaTestID="new-task-safe-area"
     >
-      {defaultsOpen ? <FolderDefaultsPicker api={api} value={visibleInitialContext.sessionDefaults}
-        onClose={() => setDefaultsOpen(false)} onSave={(sessionDefaults) => setInitialContext(current => ({ ...current, sessionDefaults }))} /> : atomPickerOpen ? (
+      {picker ? (
         <PlannerAtomContextPicker
           visible
           api={api}
-          onClose={() => setAtomPickerOpen(false)}
-          onPicked={addAtomReference}
+          initial={editingReference}
+          onClose={() => setPicker(null)}
+          onPicked={pickReference}
         />
       ) : <>
       <View testID="new-task-header" style={styles.header}>
-            <TouchableOpacity style={styles.headerButton} onPress={requestClose} disabled={submitting}><Text style={styles.headerAction}>취소</Text></TouchableOpacity>
-            <Text testID="new-task-header-title" style={styles.headerTitle}>새 폴더</Text>
-            <TouchableOpacity testID="new-task-submit" style={styles.headerButton} onPress={submit} disabled={!canSubmit}>
-              {submitting
-                ? <ActivityIndicator color={t.colors.accent} />
-                : <Text style={[styles.headerAction, !canSubmit && styles.disabled]}>만들기</Text>}
-            </TouchableOpacity>
+        <TouchableOpacity testID="new-task-cancel" accessibilityRole="button" style={styles.headerButton} onPress={requestClose} disabled={submitting}>
+          <Text style={styles.headerAction}>취소</Text>
+        </TouchableOpacity>
+        <Text testID="new-task-header-title" accessibilityRole="header" style={styles.headerTitle}>{title}</Text>
+        <TouchableOpacity testID="new-task-submit" accessibilityRole="button" style={styles.headerButton} onPress={submit}
+          disabled={!canSubmit} accessibilityState={{ disabled: !canSubmit }}>
+          {submitting
+            ? <ActivityIndicator color={t.colors.accent} />
+            : <Text style={[styles.headerAction, !canSubmit && styles.disabled]}>{editFolder ? '저장' : '만들기'}</Text>}
+        </TouchableOpacity>
       </View>
       <AppKeyboardAvoidingView testID="new-task-keyboard" style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'height' : undefined}>
-            <ScrollView testID="new-task-content" contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-              <Text style={styles.label}>상위 폴더</Text>
-              <View style={styles.field}>
-                <TouchableOpacity
-                  testID="new-task-project-selection"
-                  style={styles.selection}
-                  onPress={pickProject}
-                  disabled={locked}
-                  accessibilityRole="button"
-                  accessibilityLabel="상위 폴더 선택"
-                >
-                  <Text style={styles.selectionText}>{selectedProject?.name ?? '상위 폴더 선택'}</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.label}>폴더 이름</Text>
-              <View style={styles.field}>
-                <TextInput
-                  editable={!locked}
-                  value={visibleTitle}
-                  onChangeText={setTitle}
-                  placeholder="폴더 이름"
-                  placeholderTextColor={t.colors.textPlaceholder}
-                  style={styles.titleInput}
-                  autoFocus
-                />
-              </View>
-              <Text style={styles.label}>설명</Text>
-              <View style={styles.field}>
-                <TextInput
-                  editable={ready && !locked}
-                  value={visibleDescription}
-                  onChangeText={setDescription}
-                  placeholder="목표와 완료 조건을 적어두세요."
-                  placeholderTextColor={t.colors.textPlaceholder}
-                  style={styles.descriptionInput}
-                  multiline
-                />
-              </View>
-              <Text style={styles.label}>컨텍스트 · {selectedProject?.name ?? '프로젝트'}</Text>
-              <View style={styles.contextPreview}>
-                {projectContext.loading && !projectContext.data
-                  ? <ActivityIndicator color={t.colors.accent} />
-                  : null}
-                    {projectContext.error ? (
-                      <Text style={styles.error} accessibilityRole="alert">
-                        {projectContext.error}
-                      </Text>
-                    ) : null}
-                <ContextPreviewRow
-                  label="지침"
-                  values={contextPresentation.contexts
-                    .filter((item) => item.kind === 'guidance')
-                    .map((item) => ({ value: item.label, source: item.sourceLabel }))}
-                  styles={styles}
-                />
-                <ContextPreviewRow
-                  label="atom"
-                  values={contextPresentation.contexts
-                    .filter((item) => item.kind === 'atom')
-                    .map((item) => ({ value: item.label, source: item.sourceLabel }))}
-                  styles={styles}
-                />
-                <ContextPreviewRow
-                  label="기본 담당"
-                  values={contextPresentation.assignment ? [{
-                    value: `${contextPresentation.assignment.agentId ?? 'agent 미지정'}@${contextPresentation.assignment.nodeId ?? 'node 미지정'}`,
-                    source: contextPresentation.assignment.sourceLabel,
-                  }] : []}
-                  styles={styles}
-                />
-              </View>
-              <InitialFolderContextEditor
-                key={scopeGeneration}
-                visible={visible && ownsDraft}
-                api={api}
-                value={visibleInitialContext}
-                disabled={locked || !ready}
-                assignmentIncomplete={assignmentIncomplete}
-                onChange={(value) => { setInitialContext(value); guidanceDraft.setValue(value.guidance); }}
-                onAssignmentIncompleteChange={setAssignmentIncomplete}
-                onOpenAtomPicker={() => setAtomPickerOpen(true)}
-                onOpenDefaultsPicker={() => setDefaultsOpen(true)}
-              />
-              {retryingSnapshot ? <Text style={styles.meta}>이전 제출의 남은 저장을 다시 시도합니다. 폴더를 새로 만들지 않습니다.</Text> : null}
-              {error ? <SheetErrorNotice summary="폴더를 저장하지 못했습니다. 입력을 유지했습니다. 다시 시도해 주세요." detail={error} /> : null}
-            </ScrollView>
+        <ScrollView testID="new-task-content" contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive">
+          <FolderSettingsForm
+            key={`${scopeGeneration}:${visible}`}
+            api={api}
+            mode={editFolder ? 'edit' : 'create'}
+            parentName={parentName}
+            onPickParent={editFolder || parentPageId === null ? undefined : pickProject}
+            locked={locked || !ready}
+            draft={visibleDraft}
+            inherited={inherited}
+            defaultsOpening={baseline.defaults}
+            onChange={update}
+            onDefaultsChange={(change) => {
+              setDefaultsValid(change.valid);
+              setDraft((current) => JSON.stringify(current.defaults) === JSON.stringify(change.value) ? current : { ...current, defaults: change.value });
+            }}
+            onAddReference={() => setPicker({ kind: 'add' })}
+            onEditReference={(index) => setPicker({ kind: 'edit', index })}
+          />
+          {visibleDraft.defaultsSource === 'own' && !defaultsValid
+            ? <Text style={styles.error} accessibilityRole="alert">노드와 에이전트를 고르고, 쓸 수 있는 모델을 정해 주세요.</Text>
+            : null}
+          {chain.error || parentDefaults.error
+            ? <SheetErrorNotice summary="물려받는 값을 불러오지 못했습니다. 닫고 다시 열어 주세요." detail={chain.error ?? parentDefaults.error ?? ''} />
+            : null}
+          {retryingSnapshot ? <Text style={styles.meta}>이전 제출의 남은 저장을 다시 시도합니다. 폴더를 새로 만들지 않습니다.</Text> : null}
+          {error ? <SheetErrorNotice summary="폴더를 저장하지 못했습니다. 입력을 유지했습니다. 다시 시도해 주세요." detail={error} /> : null}
+        </ScrollView>
       </AppKeyboardAvoidingView>
       </>}
     </AppModalSurface>
-  );
-}
-
-function ContextPreviewRow({
-  label,
-  values,
-  styles,
-}: {
-  label: string;
-  values: Array<{ value: string; source: string }>;
-  styles: ReturnType<typeof makeStyles>;
-}) {
-  return (
-    <View style={styles.contextRow}>
-      <Text style={styles.contextLabel}>{label}</Text>
-      <View style={styles.contextValues}>
-        {values.length === 0 ? <Text style={styles.meta}>없음</Text> : values.map((item, index) => (
-          <View key={`${item.value}:${index}`} style={styles.contextValueRow}>
-            <Text style={styles.contextValue} numberOfLines={2}>{item.value}</Text>
-            <Text style={styles.contextSource} numberOfLines={1}>· {item.source}</Text>
-          </View>
-        ))}
-      </View>
-    </View>
   );
 }
 
@@ -356,19 +320,6 @@ function makeStyles(t: DesignTokens) {
     disabled: { color: t.colors.textMuted },
     headerTitle: { color: t.colors.textPrimary, ...t.foundation.typography.navigation },
     content: { paddingHorizontal: t.foundation.pageInset, paddingVertical: t.spacing.lg, gap: t.spacing.md, paddingBottom: t.spacing.xl },
-    field: { minHeight: t.foundation.minHeight.field },
-    label: { color: t.colors.textSecondary, ...t.foundation.typography.label },
-    selection: { minHeight: t.foundation.minHeight.field, justifyContent: 'center', paddingHorizontal: t.spacing.sm },
-    selectionText: { color: t.colors.textPrimary, ...t.foundation.typography.body },
-    titleInput: { minHeight: t.foundation.minHeight.field, color: t.colors.textPrimary, ...t.foundation.typography.cardTitle, padding: t.spacing.sm },
-    descriptionInput: { minHeight: t.foundation.minHeight.field * 3, color: t.colors.textPrimary, ...t.foundation.typography.body, padding: t.spacing.sm, textAlignVertical: 'top' },
-    contextPreview: { gap: t.spacing.md, paddingVertical: t.spacing.sm },
-    contextRow: { flexDirection: 'row', alignItems: 'flex-start', gap: t.spacing.sm },
-    contextLabel: { width: 72, color: t.colors.textSecondary, ...t.foundation.typography.label },
-    contextValues: { flex: 1, gap: t.spacing.xs },
-    contextValueRow: { flexDirection: 'row', alignItems: 'flex-start', gap: t.spacing.sm },
-    contextValue: { flex: 1, color: t.colors.textPrimary, ...t.foundation.typography.body },
-    contextSource: { color: t.colors.textTertiary, ...t.foundation.typography.meta, marginLeft: 'auto', flexShrink: 1 },
     meta: { color: t.colors.textTertiary, ...t.foundation.typography.meta },
     error: { color: t.colors.errorText, ...t.foundation.typography.meta },
   });

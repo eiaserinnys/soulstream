@@ -20,6 +20,18 @@
       "label": "새 폴더",
       "source": "planner/NewFolderSheet.tsx"
     },
+    "folder-create-root": {
+      "label": "새 최상위 폴더",
+      "source": "planner/NewFolderSheet.tsx"
+    },
+    "folder-settings": {
+      "label": "폴더 설정",
+      "source": "planner/NewFolderSheet.tsx"
+    },
+    "reference-picker": {
+      "label": "참고 자료 추가",
+      "source": "planner/NewFolderSheet.tsx"
+    },
     "session-create": {
       "label": "새 세션·승계",
       "source": "planner/SessionSuccessionSheet.tsx"
@@ -91,6 +103,7 @@
       "ids": [
         "card-create",
         "folder-create",
+        "folder-create-root",
         "session-create"
       ]
     },
@@ -98,6 +111,7 @@
       "id": "select",
       "title": "선택과 담당",
       "ids": [
+        "reference-picker",
         "assignment",
         "folder-picker",
         "execution-picker",
@@ -118,6 +132,7 @@
       "id": "settings",
       "title": "설정과 출력",
       "ids": [
+        "folder-settings",
         "settings",
         "pas-settings",
         "owned-agents",
@@ -197,7 +212,6 @@
     "components/planner/CardBoard.tsx",
     "components/planner/CardCommentComposer.tsx",
     "components/planner/FolderWorkspace.tsx",
-    "components/planner/ProjectContextEditorView.tsx",
     "components/planner/TodayCardComposer.tsx",
     "components/planner/plannerNativeUI.ts",
     "components/planner/projectManagement.ts",

@@ -368,7 +368,7 @@ test("쓸 수 없는 상속값은 '기본값 사용'으로 같은 모델을 유�
 
 test('유효한 상속 실행 대상은 요약하고 요청과 첨부를 먼저 제시한다', async () => {
   const screen = renderInheritedUltra('high');
-  await waitFor(() => expect(screen.getByText('Claude - Opus, High')).toBeTruthy());
+  await waitFor(() => expect(screen.getByTestId('succession-execution-summary')).toHaveTextContent(/· Claude - Opus · High$/));
   expect(screen.queryByTestId('succession-execution-details')).toBeNull();
   expect(screen.getByTestId('succession-execution-disclosure').props.accessibilityState.expanded).toBe(false);
   expect(within(screen.getByTestId('succession-request-section')).getByTestId('succession-attachment-button')).toBeTruthy();
@@ -376,7 +376,8 @@ test('유효한 상속 실행 대상은 요약하고 요청과 첨부를 먼저 
   const sections = screen.UNSAFE_getByType(ScrollView).props.children.filter(Boolean)
     .map((child: any) => child.props.testID);
   expect(sections.indexOf('succession-folder-scope')).toBeLessThan(sections.indexOf('succession-request-section'));
-  expect(sections.indexOf('succession-request-section')).toBeLessThan(sections.indexOf('succession-selection-group'));
+  expect(sections.indexOf('succession-request-section')).toBeLessThan(sections.indexOf('succession-execution-section'));
+  expect(sections.indexOf('succession-execution-section')).toBeLessThan(sections.indexOf('succession-context-section'));
   fireEvent.press(screen.getByTestId('succession-execution-disclosure'));
   expect(screen.getByTestId('succession-selection-effort')).toBeTruthy();
   fireEvent.changeText(screen.getByTestId('succession-initial-instruction'), '입력을 유지합니다');
@@ -432,26 +433,26 @@ test('세션 제출 중 실행 선택과 자료 변경 및 열린 선택기의 �
   let resolveCreate!: (value: { agentSessionId: string }) => void;
   mockCreateFolderSession.mockImplementation(() => new Promise(resolve => { resolveCreate = resolve; }));
   const screen = renderInheritedUltra('high');
-  await waitFor(() => expect(screen.getByText('Claude - Opus, High')).toBeTruthy());
+  await waitFor(() => expect(screen.getByTestId('succession-execution-summary')).toHaveTextContent(/· Claude - Opus · High$/));
   fireEvent.press(screen.getByTestId('succession-execution-disclosure'));
   fireEvent.press(screen.getByTestId('succession-selection-effort'));
   const lateSelection = lastSheetHandler();
   const pickerCount = jest.mocked(ActionSheetIOS.showActionSheetWithOptions).mock.calls.length;
-  const checks = screen.getAllByRole('checkbox');
-  const checkedBefore = checks.map(row => row.props.accessibilityState.checked);
+  const checkedBefore = screen.getAllByRole('switch').map(row => row.props.value);
   fireEvent.press(screen.getByTestId('succession-submit'));
   for (const kind of ['node', 'agent', 'model', 'effort']) {
     const row = screen.getByTestId(`succession-selection-${kind}`);
     expect(row).toBeDisabled();
     fireEvent.press(row);
   }
-  for (const row of screen.getAllByRole('checkbox')) {
-    expect(row).toBeDisabled();
-    fireEvent.press(row);
+  for (const row of screen.getAllByRole('switch')) {
+    expect(row.props.disabled).toBe(true);
+    fireEvent(row, 'valueChange', !row.props.value);
   }
+  expect(screen.getByTestId('succession-reference-add')).toBeDisabled();
   act(() => lateSelection(1));
   expect(ActionSheetIOS.showActionSheetWithOptions).toHaveBeenCalledTimes(pickerCount);
-  expect(screen.getAllByRole('checkbox').map(row => row.props.accessibilityState.checked)).toEqual(checkedBefore);
+  expect(screen.getAllByRole('switch').map(row => row.props.value)).toEqual(checkedBefore);
   expect(effortValue(screen, 'High')).toBeTruthy();
   expect(mockCreateFolderSession).toHaveBeenCalledTimes(1);
   expect(mockCreateFolderSession.mock.calls[0][0]).toMatchObject({ reasoningEffort: 'high', predecessorSessionId: 'prev-1', needsPageAnchor: true });

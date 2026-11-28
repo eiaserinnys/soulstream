@@ -161,7 +161,7 @@ describe('v3 design policy contract', () => {
       'components/planner/Card.styles.ts',
       'components/planner/FolderBoardContent.tsx',
       'components/planner/TabletMarkdownEditor.tsx',
-      'components/planner/ProjectContextEditorView.tsx',
+      'components/planner/FolderContextSection.tsx',
       'components/planner/FolderWorkspace.styles.ts',
     ]) {
       expect(read(file)).toContain('t.cardLayout.padding');
@@ -228,7 +228,7 @@ describe('v3 design policy contract', () => {
     ]) {
       expect(read(file)).toContain('...planner.typography.section');
     }
-    expect(read('components/planner/ProjectContextEditorView.tsx')).toContain('<PlannerSectionHeader');
+    expect(read('components/planner/FolderContextSection.tsx')).toContain('<PlannerSectionHeader');
     expect(read('components/planner/FolderWorkspace.tsx')).toContain('<PlannerSectionHeader');
     expect(read('components/planner/FolderWorkspace.styles.ts')).toContain('...planner.typography.navigation');
     expect(read('components/DisclosureIcon.tsx')).toContain('size?: number');

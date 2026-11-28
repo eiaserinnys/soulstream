@@ -86,6 +86,15 @@ export interface PageBacklink {
   sourceEnd: number;
 }
 
+/** Server resolution of the nearest session_defaults block along the page's mount parents. */
+export interface PageSessionDefaults {
+  agentId: string | null;
+  nodeId: string | null;
+  modelPreset: string | null;
+  sourcePageId: string;
+  sourceBlockId: string;
+}
+
 const BROWSER_BACKLINK_PAGE_SIZE = 50;
 
 export function createPageEndpoints({ base, authFetch, readJson }: ApiRequestContext) {
@@ -94,6 +103,10 @@ export function createPageEndpoints({ base, authFetch, readJson }: ApiRequestCon
       authFetch(`${base}/api/pages/${encodeURIComponent(pageId)}`)
         .then((response) => readJson<PageReadWire>(response, 'getPage'))
         .then(parsePageRead),
+
+    getPageSessionDefaults: (pageId: string): Promise<PageSessionDefaults | null> =>
+      authFetch(`${base}/api/pages/${encodeURIComponent(pageId)}/session-defaults`)
+        .then((response) => readJson<PageSessionDefaults | null>(response, 'getPageSessionDefaults')),
 
     getPageBacklinks: (
       pageId: string,
