@@ -1,5 +1,5 @@
+import type { useTranslation } from "react-i18next";
 import type { CardComment, CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
-import { CARD_BOARD_STATUS_LABELS } from "@seosoyoung/soul-ui/lib/card-board-status-labels";
 import { CARD_QUESTION_KEY_PREFIX, type PersistentReportEntry } from "../../../../packages/wire-schema/src/persistent_report";
 import { isOpenCardQuestion } from "../CardQuestionBlock";
 import type { AgendaKind, RailGroups, ThreadItem } from "@seosoyoung/soul-ui/lib/pas-report-thread-core";
@@ -80,16 +80,20 @@ export function groupAgendas(boardAgendas: readonly Agenda[], cards: readonly Ca
   return { pending, running, snoozed, holdCount: cards.filter(card => card.status === "on_hold").length };
 }
 
-const clock = (date: Date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+type Translate = ReturnType<typeof useTranslation>["t"];
 
-/** 미뤄 둔 행에 쓰는 되돌아올 시각. 오늘이면 시각만, 내일이면 「내일」, 그 뒤는 월/일. */
-export function formatReturnTime(at: number, now: number): string {
+export function formatThreadTime(at: number, withDate: boolean, locale: string): string {
+  const options: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+  if (withDate) Object.assign(options, { month: "numeric", day: "numeric" });
+  return new Intl.DateTimeFormat(locale, options).format(at);
+}
+
+export function formatReturnTime(at: number, now: number, t: Translate, locale: string): string {
   const target = new Date(at), today = new Date(now);
   const dayOf = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
   const diffDays = Math.round((dayOf(target) - dayOf(today)) / 86_400_000);
-  if (diffDays <= 0) return clock(target);
-  if (diffDays === 1) return `내일 ${clock(target)}`;
-  return `${target.getMonth() + 1}/${target.getDate()} ${clock(target)}`;
+  const time = formatThreadTime(at, diffDays > 1, locale);
+  return diffDays === 1 ? t("persistent.thread.tomorrowAt", { time }) : time;
 }
 
 const ORDER: Record<ThreadItem<unknown, unknown>["kind"], number> = { request: 0, milestone: 1, question: 2, comments: 3, notes: 4 };
@@ -99,7 +103,7 @@ const ORDER: Record<ThreadItem<unknown, unknown>["kind"], number> = { request: 0
  * 이정표는 상황판 문구, 상태 전환, 담당이 아닌 세션의 위임이다. statusHistory가 아직 없는 응답은 그 이정표만 뺀다.
  * 질문 글타래의 커멘트는 질문 블록이 그리므로 따로 두지 않는다. 노트는 이어진 것끼리 한 덩이로 묶는다.
  */
-export function buildThread(detail: CardDetail): ThreadItem<CardComment, CardQuestion>[] {
+export function buildThread(detail: CardDetail, t: Translate): ThreadItem<CardComment, CardQuestion>[] {
   const card = detail.card;
   const flat: ThreadItem<CardComment, CardQuestion>[] = [];
   if (card.request.trim()) flat.push({ id: "request", at: parseTime(card.createdAt) ?? 0, kind: "request" });
@@ -114,12 +118,12 @@ export function buildThread(detail: CardDetail): ThreadItem<CardComment, CardQue
   });
   (detail.statusHistory ?? []).forEach((entry, index) => {
     flat.push({ id: `status:${entry.at}:${index}`, at: parseTime(entry.at) ?? 0, kind: "milestone", tone: "status",
-      text: `상태: ${CARD_BOARD_STATUS_LABELS[entry.status] ?? entry.status}` });
+      text: t("persistent.thread.statusChanged", { status: t(`persistent.thread.status.${entry.status}`, { defaultValue: entry.status }) }) });
   });
   for (const session of detail.sessions) {
     if (session.sessionId === card.assigneeSessionId) continue;
     flat.push({ id: `session:${session.sessionId}`, at: parseTime(session.createdAt) ?? 0, kind: "milestone", tone: "delegate",
-      text: `위임: ${session.agentName ?? session.agentId}` });
+      text: t("persistent.thread.delegated", { agent: session.agentName ?? session.agentId }) });
   }
   const questionIds = new Set(detail.questions.map(question => question.id));
   for (const question of detail.questions) flat.push({ id: `question:${question.id}`, at: parseTime(question.askedAt) ?? 0, kind: "question", question });

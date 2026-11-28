@@ -1,7 +1,8 @@
+import { createI18n } from "@soulstream/i18n";
 import { describe, expect, it } from "vitest";
 import type { CardComment, CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import {
-  buildThread, cardAgenda, entryAgenda, formatReturnTime, groupAgendas, openQuestionOf, type ReportEntry,
+  buildThread as buildLocalizedThread, cardAgenda, entryAgenda, formatReturnTime, groupAgendas, openQuestionOf, type ReportEntry,
 } from "./pas-report-thread-model";
 
 const card = (patch: Partial<CardRow> & { id: string }): CardRow => ({
@@ -65,12 +66,15 @@ describe("groupAgendas", () => {
   });
 });
 
+const { t } = createI18n("ko");
+const buildThread = (cardDetail: CardDetail) => buildLocalizedThread(cardDetail, t);
+
 describe("formatReturnTime", () => {
   const now = new Date(2026, 10, 25, 10, 0).getTime();
   it("오늘은 시각, 내일은 「내일」, 그 뒤는 월/일을 붙인다", () => {
-    expect(formatReturnTime(new Date(2026, 10, 25, 19, 0).getTime(), now)).toBe("19:00");
-    expect(formatReturnTime(new Date(2026, 10, 26, 9, 5).getTime(), now)).toBe("내일 09:05");
-    expect(formatReturnTime(new Date(2026, 10, 28, 9, 0).getTime(), now)).toBe("11/28 09:00");
+    expect(formatReturnTime(new Date(2026, 10, 25, 19, 0).getTime(), now, t, "ko")).toBe("19:00");
+    expect(formatReturnTime(new Date(2026, 10, 26, 9, 5).getTime(), now, t, "ko")).toBe("내일 09:05");
+    expect(formatReturnTime(new Date(2026, 10, 28, 9, 0).getTime(), now, t, "ko")).toBe(new Intl.DateTimeFormat("ko", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(2026, 10, 28, 9, 0)));
   });
 });
 
