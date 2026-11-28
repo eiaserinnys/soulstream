@@ -19,3 +19,7 @@
 
 - `skill.retrospective.body`, `skill.work_plan.body`, and `skill.general_create_rule.body` translate the template headings and labels and the human-readable placeholder instructions. Preserve template structure and literal identifiers. No external literal reader for those template headings was found in code or other seed cards.
 - The `section: "담당과 소속"` line in `skill.skill_link_blocks.body` is a nested example. `담당과 소속` is a heading in `common.rules.workflow_md`, but does not occur as a heading in the example's `card-work` target. The English example explains that an active `include` must copy the target heading verbatim. The compiler compares headings in `orch-server-ts/src/skills/link_blocks.ts:216`. Keep the original runtime markers such as `링크:` where the examples show actual compiler output.
+
+## Line breaking
+
+- `skill.html_make.body` retains `word-break: keep-all` for Korean text and spells out the defaults for English, Japanese, and Chinese. It uses `overflow-wrap: anywhere` for all languages and allows `auto-phrase` for Japanese where supported.

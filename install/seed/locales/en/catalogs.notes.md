@@ -33,3 +33,7 @@
 | collections-media | 사진 1장 | "1 photo" |
 
 "Section" and "List" are examples of redundant labels. "Keep" and "Remove intentionally" are review annotations. The scroll bar setting belongs to macOS. These examples use English wording appropriate to their context.
+
+## Line breaking
+
+- `catalog.ui_practice.shard.text_copy` and `catalog.html_design_preset.body` apply `word-break: keep-all` to Korean text. Use `normal` for English, Japanese, and Chinese, with `auto-phrase` as an option for Japanese where supported. Apply `overflow-wrap: anywhere` to all languages.

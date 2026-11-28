@@ -50,7 +50,7 @@ test('Korean uses identical seed bytes and an unfinished language stops before A
   const stateDir = mkdtempSync(join(tmpdir(), 'seed-lang-'));
   const options = { stateDir, atomUrl: 'http://127.0.0.1:9', password: 'test', fetchImpl: () => assert.fail('unexpected Atom request') };
   try {
-    await assert.rejects(loadAtomSeed({ ...options, lang: 'en' }), /아직 준비되지 않았습니다.*ko/);
+    await assert.rejects(loadAtomSeed({ ...options, lang: 'ja' }), /Language ja is not available yet\. Available languages: ko/);
     writeFileSync(join(stateDir, '.atom-seed-state.json'), JSON.stringify({ phase: 'completed', lang: 'en' }));
     await assert.rejects(loadAtomSeed({ ...options, lang: 'ko' }), /en.*ko/);
   } finally {

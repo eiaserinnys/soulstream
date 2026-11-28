@@ -20,6 +20,7 @@ const isFile = (path) => { try { return statSync(path).isFile(); } catch { retur
 export async function installationLanguage(ctx, options) {
   try {
     return await selectInstallLanguage(join(ctx.soulDir, 'config'), options.lang, {
+      uiCulture: options['ui-culture'],
       interactive: options['non-interactive'] !== 'true',
     });
   } catch (error) {

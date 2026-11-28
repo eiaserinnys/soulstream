@@ -60,8 +60,8 @@ test('login guidance points to the dashboard and keeps the SSH alternative for C
     const message = (backends) => spawnSync('bash', ['-c', 'source "$1"; as_soul() { printf abc; }; BACKENDS="$3"; finish_message "$2"', 'bash', script, dir, backends], { encoding: 'utf8' });
     const result = message('claude,codex,antigravity');
     assert.equal(result.status, 0, result.stderr);
-    assert.ok(result.stdout.includes('Login: connect Claude, Codex, and Antigravity in the dashboard under Settings → 코딩 에이전트 연결.\n'));
-    assert.match(result.stdout, /Antigravity stays off until you turn it on under Settings → 코딩 에이전트 연결 and accept Google's terms/);
+    assert.ok(result.stdout.includes('Login: connect Claude, Codex, and Antigravity in the dashboard under 설정 → 코딩 에이전트 연결.\n'));
+    assert.match(result.stdout, /Antigravity stays off until you turn it on under 설정 → 코딩 에이전트 연결 and accept Google's terms/);
     assert.match(result.stdout, /SSH alternative: Codex with "sudo -Hu soulstream \/usr\/local\/bin\/codex login --device-auth".*Antigravity by running ~\/\.local\/bin\/agy/);
     // Claude SSH login guidance is gone; only the dashboard connects Claude.
     assert.ok(!result.stdout.includes('claude auth login'));
@@ -74,7 +74,7 @@ test('login guidance points to the dashboard and keeps the SSH alternative for C
     assert.ok(!claudeOnly.stdout.includes('SSH alternative'));
     const defaults = message('claude,codex');
     assert.equal(defaults.status, 0, defaults.stderr);
-    assert.ok(defaults.stdout.includes('Login: connect Claude and Codex in the dashboard under Settings → 코딩 에이전트 연결.\n'));
+    assert.ok(defaults.stdout.includes('Login: connect Claude and Codex in the dashboard under 설정 → 코딩 에이전트 연결.\n'));
     assert.match(defaults.stdout, /SSH alternative: Codex with "sudo -Hu soulstream \/usr\/local\/bin\/codex login --device-auth"/);
     assert.ok(!/antigravity/i.test(defaults.stdout), 'a claude,codex install does not mention Antigravity');
   } finally { rmSync(dir, { recursive: true, force: true }); }

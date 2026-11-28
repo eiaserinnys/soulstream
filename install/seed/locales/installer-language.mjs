@@ -3,21 +3,22 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { assertStateLanguage, completeLanguages, readStateLanguage, requireCompleteLanguage } from './languages.mjs';
 
-function localeLanguage(env) {
-  const language = (env.LC_ALL || env.LANG || '').split(/[-_.@]/)[0].toLowerCase();
+function localeLanguage(locale) {
+  const [language, variant] = locale.toLowerCase().split(/[.@]/)[0].split(/[-_]/);
   if (language === 'ko' || language === 'ja') return language;
-  return language === 'zh' ? 'zh-Hans' : 'en';
+  if (language === 'zh' && !['tw', 'hk', 'mo', 'hant'].includes(variant)) return 'zh-Hans';
+  return 'en';
 }
 
 export async function selectInstallLanguage(stateDir, requested, {
-  env = process.env, input = process.stdin, output = process.stderr, interactive = true,
+  uiCulture, env = process.env, input = process.stdin, output = process.stderr, interactive = true,
 } = {}) {
   const saved = readStateLanguage(stateDir);
   if (saved !== null && requested !== undefined) assertStateLanguage(saved, requested);
   let lang = saved ?? requested;
   if (lang === undefined) {
-    const preferred = localeLanguage(env);
-    const fallback = completeLanguages.includes(preferred) ? preferred : 'ko';
+    const preferred = localeLanguage(uiCulture ?? (env.LC_ALL || env.LC_MESSAGES || env.LANG || ''));
+    const fallback = [preferred, 'en'].find((language) => completeLanguages.includes(language)) ?? 'ko';
     lang = fallback;
     if (interactive && input.isTTY && output.isTTY && completeLanguages.length > 1) {
       const terminal = createInterface({ input, output });

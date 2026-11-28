@@ -25,3 +25,7 @@ The server fixes the request completion value at `했어`. The translated card u
 | `skill.ui_design.body` | 로딩 중 | Loading |
 
 The last row is an example of generic loading text, so it has no single product key. The worktree error `node_modules가 symlink입니다` is a server error rather than dashboard copy.
+
+## Line breaking
+
+- `skill.ui_design.body` and `skill.ui_css_recipes.body` reserve `word-break: keep-all` for Korean text, including table cells. English, Japanese, and Chinese use `normal`, with `auto-phrase` available for Japanese where supported. Keep `overflow-wrap: anywhere` for all languages.

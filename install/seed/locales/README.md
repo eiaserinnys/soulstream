@@ -37,8 +37,8 @@ node install/seed/locales/tool.mjs check --lang en
 - 원본 카드의 정확한 키 아래에 `title`과 `content`를 모두 쓴다. 원본 본문이 빈 카드에도 `"content": ""`을 쓴다. 제목은 1~50 유니코드 코드 포인트다. 태그를 옮길 때는 선택 필드 `"tags": ["…"]`에 태그 배열 전체를 쓴다. 이 필드를 생략하면 원본 태그를 쓴다.
 - 심링크는 대상 카드의 번역을 그대로 보여 준다. 목록에 있는 카드 키만 넣는다. 부모, 순서, 심링크 대상과 내보내기 키는 원본이 정한다.
 - 묶음이 비어 있으면 파일을 만들 필요가 없다. 언어에 누락된 카드가 있어도 작성 중 `check`를 실행할 수 있다. 완성으로 표시된 언어는 모든 카드의 제목과 본문, 모든 설치기 문구가 필요하다.
-- 세 프로필의 표시 이름과 일간 정리의 이름 및 프롬프트는 `<lang>/installer.json`에 쓴다. [한국어 설치기 문구](ko/installer.json)의 구조와 키를 그대로 따른다. 이 파일은 언어마다 하나이므로 담당 단위에서 작성한다.
-- 묶음 검사를 마치면 전체 `check --lang <lang>`으로 합쳐진 진행률을 확인한다. 모든 묶음과 설치기 문구를 검수한 뒤 담당자가 `languages.json`의 `complete` 값을 바꾼다. 번역 단위는 완성 표시를 직접 바꾸지 않는다.
+- 세 프로필의 표시 이름, 일간 정리의 이름과 프롬프트, 기본 폴더 이름(`workspaceFolder`), 코딩 에이전트 로그인 탭 경로(`codingAgentsPath`)는 `<lang>/installer.json`에 쓴다. [한국어 설치기 문구](ko/installer.json)의 구조와 키를 따른다. `codingAgentsPath`는 해당 언어의 `settings.json`에서 `title`과 `tabs.coding_agents.label`을 ` → `로 잇는다.
+- 묶음 검사를 마치면 전체 `check --lang <lang>`으로 합쳐진 진행률을 확인한다. 담당자는 검수한 뒤 `languages.json`의 완성 표시를 관리한다. 언어별 마무리 단위는 해당 언어의 모든 묶음과 `installer.json`이 main에 들어온 뒤 기준본의 지시에 따라 `complete`를 올린다. 개별 묶음의 번역 단위는 완성 표시를 바꾸지 않는다.
 
 ## 번역 규칙
 
@@ -48,7 +48,8 @@ node install/seed/locales/tool.mjs check --lang en
 4. 한국어 표기 규칙(`common.rules.korean_literals`), Codex 말버릇 교정, 한국어 줄바꿈 CSS 설명처럼 원어에 의존하는 지침은 대상 언어의 사례와 관례에 맞게 고친다. 같은 디렉터리의 `<chunk>.notes.md`에 바꾼 카드 키와 까닭을 적는다.
 5. `persona`의 조선풍 말투는 대상 언어에서 예스럽고 공손하게 들리는 말투로 옮긴다. 이름과 프로필 표기는 [용어집](GLOSSARY.md)을 따른다.
 6. 문장을 다듬을 때 영어는 `sentence-english-docs`, 일본어는 `sentence-japanese-docs`, 중국어 간체는 `sentence-chinese-docs` 스킬을 사용한다.
+7. 한국어 이외의 완성 언어에서는 서버나 렌더러가 그대로 내보내거나 비교하는 한글 값만 남긴다. `hangul-allowlist.json`에 원문 `text`, 유지하는 `reason`, 근거 `source`(경로와 줄 번호)를 적는다. 허용 목록에도 공개 seed 금지 규칙이 적용된다. 각 값은 한국어 이외의 완성 언어에서 한 번 이상 쓰여야 한다.
 
 ## 설치 시 확인
 
-Bash는 `--lang <lang>`, Windows 전체 설치기는 `-Lang <lang>`을 받는다. 완성 언어만 설치할 수 있다. 옵션이 없으면 기존 atom seed state의 언어를 따른다. 새 설치의 기본값은 `LC_ALL`, `LANG` 순으로 확인한다. 한국어 로케일은 `ko`, 일본어는 `ja`, 중국어는 `zh-Hans`, 나머지는 `en`이다. 해당 언어가 미완성이면 `ko`를 사용한다. 터미널에 완성 언어가 둘 이상 있으면 설치기가 선택을 묻는다.
+Bash는 `--lang <lang>`, Windows 전체 설치기는 `-Lang <lang>`을 받는다. 완성 언어만 설치할 수 있다. 기존 atom seed state가 있으면 저장된 언어를 따르며, 다른 언어를 요청하면 설치를 멈춘다. 새 설치에서 언어를 지정하지 않으면 Windows는 표시 언어를, Linux와 macOS는 `LC_ALL`, `LC_MESSAGES`, `LANG` 순으로 확인한다. 한국어는 `ko`, 일본어는 `ja`, 번체 중국어는 `en`, 그 밖의 중국어는 `zh-Hans`다. 나머지 로케일과 빈 값은 `en`을 사용한다. 감지한 언어가 미완성이면 `en`이 완성됐을 때 `en`을, 그 전에는 `ko`를 사용한다. 터미널에 완성 언어가 둘 이상 있으면 설치기가 선택을 묻는다.

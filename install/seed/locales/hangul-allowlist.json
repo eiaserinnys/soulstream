@@ -1,0 +1,117 @@
+[
+  {
+    "text": "했어",
+    "reason": "The server uses this as the answer to a request question.",
+    "source": "orch-server-ts/src/cards/card_control_plane_service.ts:550"
+  },
+  {
+    "text": "[카드 완료]",
+    "reason": "The wire schema uses this tag to identify a card notice.",
+    "source": "packages/wire-schema/src/conversation_visibility.ts:4"
+  },
+  {
+    "text": "[카드 막힘]",
+    "reason": "The wire schema uses this tag to identify a card notice.",
+    "source": "packages/wire-schema/src/conversation_visibility.ts:4"
+  },
+  {
+    "text": "[카드 질문]",
+    "reason": "The wire schema uses this tag to identify a card notice.",
+    "source": "packages/wire-schema/src/conversation_visibility.ts:4"
+  },
+  {
+    "text": "[카드 검수 대기]",
+    "reason": "The wire schema uses this tag to identify a card notice.",
+    "source": "packages/wire-schema/src/conversation_visibility.ts:4"
+  },
+  {
+    "text": "[카드 실행]",
+    "reason": "The server includes this text in a card execution prompt.",
+    "source": "orch-server-ts/src/cards/card_prompt.ts:26"
+  },
+  {
+    "text": "선행 카드",
+    "reason": "The server includes this text in a card execution prompt.",
+    "source": "orch-server-ts/src/cards/card_prompt.ts:32"
+  },
+  {
+    "text": "[카드 커멘트]",
+    "reason": "The server emits this prefix for card changes.",
+    "source": "orch-server-ts/src/cards/card_change_notification.ts:73"
+  },
+  {
+    "text": "[카드 질문 답변]",
+    "reason": "The server emits this prefix for card changes.",
+    "source": "orch-server-ts/src/cards/card_change_notification.ts:20"
+  },
+  {
+    "text": "[카드 질문 되묻기]",
+    "reason": "The server emits this prefix for card changes.",
+    "source": "orch-server-ts/src/cards/card_change_notification.ts:35"
+  },
+  {
+    "text": "[카드 질문 덧붙임]",
+    "reason": "The server emits this prefix for card changes.",
+    "source": "orch-server-ts/src/cards/card_change_notification.ts:35"
+  },
+  {
+    "text": "[검증 대기 시각]",
+    "reason": "The server emits this prefix when a verification wait expires.",
+    "source": "orch-server-ts/src/cards/card_dispatcher.ts:369"
+  },
+  {
+    "text": "[카드 상태 확인]",
+    "reason": "The server emits this prefix for a card status reminder.",
+    "source": "orch-server-ts/src/cards/card_status_reminder.ts:51"
+  },
+  {
+    "text": "답을 취소합니다",
+    "reason": "The dashboard sends this response to the assignee.",
+    "source": "unified-dashboard/client/v3/usePersistentReportSend.ts:17"
+  },
+  {
+    "text": "확인했어",
+    "reason": "The dashboard sends this response to the assignee.",
+    "source": "unified-dashboard/client/v3/usePersistentReportSend.ts:17"
+  },
+  {
+    "text": "지금의 보고 (N장)",
+    "reason": "The server uses this heading in the persistent report context. N represents the number of entries.",
+    "source": "soul-server-ts/src/context/persistent_report_context.ts:6"
+  },
+  {
+    "text": "링크: call",
+    "reason": "The skill compiler emits this text when it expands a link block.",
+    "source": "orch-server-ts/src/skills/skill_compile.ts:217"
+  },
+  {
+    "text": "링크: include",
+    "reason": "The skill compiler emits this text when it expands a link block.",
+    "source": "orch-server-ts/src/skills/skill_compile.ts:285"
+  },
+  {
+    "text": "링크: pick",
+    "reason": "The skill compiler emits this text when it expands a link block.",
+    "source": "orch-server-ts/src/skills/skill_compile.ts:313"
+  },
+  {
+    "text": "링크 오류",
+    "reason": "The skill compiler emits this text when it expands a link block.",
+    "source": "orch-server-ts/src/skills/skill_compile.ts:215"
+  },
+  {
+    "text": "위에서 펼침",
+    "reason": "The skill compiler emits this text when it expands a link block.",
+    "source": "orch-server-ts/src/skills/skill_compile.ts:317"
+  },
+  {
+    "text": "그때 load_skill로 부른다",
+    "reason": "The skill compiler emits this text when it expands a link block.",
+    "source": "orch-server-ts/src/skills/skill_compile.ts:218"
+  },
+  {
+    "text": "어긋남",
+    "reason": "The statechart renderer matches this text in a defect tag.",
+    "source": "skills/diagram-autolayout/scripts/statechart_svg.mjs:35"
+  }
+]
