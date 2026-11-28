@@ -37,8 +37,8 @@ describe("v3 rounded focus ring contract", () => {
     const succession = source("./SessionSuccessionModal.tsx");
     const select = source("../../../packages/soul-ui/src/components/ui/select.tsx");
     expect(succession).not.toMatch(/<select\b/);
-    expect(succession).toMatch(/<CatalogSelectionField[^>]*label="추론 강도"[^>]*ariaLabel="추론 강도 선택"/s);
-    expect(succession).toMatch(/<CatalogSelectionField[^>]*label="이전 세션"[^>]*ariaLabel="이어받을 이전 세션"/s);
+    expect(succession).toMatch(/<CatalogSelectionField[^>]*label=\{t\("sessions\.reasoningEffort"\)\}[^>]*ariaLabel=\{t\("sessions\.selectReasoningEffort"\)\}/s);
+    expect(succession).toMatch(/<CatalogSelectionField[^>]*label=\{t\("sessions\.previousSession"\)\}[^>]*ariaLabel=\{t\("sessions\.choosePrevious"\)\}/s);
     expect(select).toMatch(/rounded-floor[^\"]*focus-visible:ring-\[3px\]/s);
     expect(select).toMatch(/function SelectTrigger\([\s\S]*?selectTriggerVariants\(\{ size \}\)/);
     expect(runHistory).toMatch(/\.v3-run-open\s*{[^}]*border-radius:\s*inherit/s);

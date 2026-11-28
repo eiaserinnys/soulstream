@@ -1,7 +1,8 @@
 // Finds the coding agent CLIs in the places the worker searches on Windows, so a missing CLI stops the install with a
 // clear message instead of a worker that never starts.
 import { statSync } from 'node:fs';
-import { win32 } from 'node:path';
+import { join, win32 } from 'node:path';
+import { selectInstallLanguage } from '../seed/locales/installer-language.mjs';
 import { fail } from './lib.mjs';
 
 const EXTRA_DIRECTORIES = {
@@ -15,6 +16,16 @@ const INSTALL_HINTS = {
 };
 
 const isFile = (path) => { try { return statSync(path).isFile(); } catch { return false; } };
+
+export async function installationLanguage(ctx, options) {
+  try {
+    return await selectInstallLanguage(join(ctx.soulDir, 'config'), options.lang, {
+      interactive: options['non-interactive'] !== 'true',
+    });
+  } catch (error) {
+    throw fail(error.message);
+  }
+}
 
 export function findCli(name, env = process.env) {
   const extensions = (env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);

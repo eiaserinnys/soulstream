@@ -1,3 +1,5 @@
+import { folderErrorText } from "./folder-messages";
+import { useTranslation } from "react-i18next";
 import {
   useCallback,
   useState,
@@ -52,6 +54,7 @@ export function useStarredFolderReorder({
   stableStarredFoldersRef: CurrentRef<StarredPlannerFolder[]>;
   setStarredFolderIndex: Dispatch<SetStateAction<StarredFolderIndex>>;
 }) {
+  const { t } = useTranslation();
   const [starredFoldersReordering, setStarredFoldersReordering] = useState(false);
 
   const reorderStarredFolders = useCallback(async (
@@ -59,7 +62,7 @@ export function useStarredFolderReorder({
     orderedPageIds: readonly string[],
   ) => {
     if (!isStarredFolderRefreshCurrent(starredLoadedRefreshKeyRef.current, starredRefreshKeyRef.current)) {
-      notify("별표 폴더 목록을 새로고침하는 중이라 순서 변경을 잠시 기다려 주세요.");
+      notify(t("folders.planner.starRefreshing"));
       return;
     }
     const original = starredFolderIndexRef.current;
@@ -86,7 +89,7 @@ export function useStarredFolderReorder({
         starredRefreshKeyRef,
         setStarredFolderIndex,
       });
-      notify("별표 목록이 갱신 중이라 순서를 바꾸지 못했습니다. 목록을 새로 불러왔습니다.");
+      notify(t("folders.planner.starReorderRefreshing"));
       return;
     }
     if (samePageIds(visibleIds, orderedPageIds)) return;
@@ -116,7 +119,7 @@ export function useStarredFolderReorder({
               expectedPageIds: visibleIds,
               currentPageIds: latestData.items.map((task) => starredFolderPage(task).id),
             })
-          ) throw new Error("별표 목록 경계가 변경되었습니다.");
+          ) throw new Error(t("folders.planner.starBoundaryChanged"));
           return {
             pageIds: next.items.map((task) => starredFolderPage(task).id),
             nextCursor: next.nextCursor,
@@ -132,7 +135,7 @@ export function useStarredFolderReorder({
         starredRefreshKeyRef,
         setStarredFolderIndex,
       });
-      notify(`별표 목록의 다음 페이지를 확인하지 못해 순서를 취소했습니다 · ${errorText(error)}`);
+      notify(t("folders.planner.starReorderNoPage", { detail: folderErrorText(t, error) }));
       setStarredFoldersReordering(false);
       return;
     }
@@ -159,7 +162,7 @@ export function useStarredFolderReorder({
         starredRefreshKeyRef,
         setStarredFolderIndex,
       });
-      notify("별표 목록이 이동 중 갱신되어 순서를 취소했습니다. 목록을 다시 불러왔습니다.");
+      notify(t("folders.planner.starChanged"));
       setStarredFoldersReordering(false);
       return;
     }
@@ -248,12 +251,12 @@ export function useStarredFolderReorder({
       });
     }
     if (!result.saved) {
-      notify(`별표 순서 저장 실패 · ${errorText(result.saveError)}`);
+      notify(t("folders.planner.starSaveFailed", { detail: folderErrorText(t, result.saveError) }));
     } else if (result.reloadError && reloadRecovery === "failed") {
-      notify(`별표 순서는 저장됐지만 목록을 새로 불러오지 못했습니다 · ${errorText(result.reloadError)}`);
+      notify(t("folders.planner.starReloadFailed", { detail: folderErrorText(t, result.reloadError) }));
     }
     setStarredFoldersReordering(false);
-  }, [dependencies, notify, setStarredFolderIndex, setStarredLoadedRefreshKey, stableStarredFoldersRef, starredLoadedRefreshKeyRef, starredOrderRevisionRef, starredRefreshKeyRef, starredFolderIndexRef]);
+  }, [t, dependencies, notify, setStarredFolderIndex, setStarredLoadedRefreshKey, stableStarredFoldersRef, starredLoadedRefreshKeyRef, starredOrderRevisionRef, starredRefreshKeyRef, starredFolderIndexRef]);
 
   return { starredFoldersReordering, reorderStarredFolders };
 }
@@ -339,8 +342,4 @@ async function reloadFirstStarredPageIfCurrent({
       : current);
     return "failed";
   }
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : String(error);
 }

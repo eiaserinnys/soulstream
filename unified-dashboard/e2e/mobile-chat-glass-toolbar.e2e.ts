@@ -5,7 +5,7 @@
 // - 390 켬/끔 카드 작업 공간: 픽스처 카드로 열어 막대와 .v3-main이 숨고, 모바일 탭과 카드 작업 공간이
 //   보이는지 확인한다. 카드를 닫으면 .v3-main과 막대가 다시 보인다. 카드 상세는 시험 안에서 채운다.
 // 실행: corepack pnpm --dir unified-dashboard exec playwright test --config e2e/radius-glass.config.ts mobile-chat-glass-toolbar
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./test";
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";

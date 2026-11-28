@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 /**
  * VITE_API_BASE=http://127.0.0.1:5200 corepack pnpm --dir unified-dashboard dev --host 127.0.0.1 --port 43183 --strictPort
  * PLAYWRIGHT_MODULE=$(realpath unified-dashboard/node_modules/@playwright/test/../../playwright/index.mjs) V3_POPUP_BASELINE=1 node soul-server-ts/node_modules/tsx/dist/cli.mjs unified-dashboard/e2e/v3-popup-surface.qa.ts
@@ -65,7 +66,7 @@ console.log(JSON.stringify({ baseline, output, results }, null, 2));
 
 async function runCase(browser: Browser, theme: string, glass: string, width: number): Promise<Entry> {
   const height = width === 1440 ? 900 : 844;
-  const context = await browser.newContext({ viewport: { width, height }, colorScheme: theme as "dark" | "light", reducedMotion: "reduce", timezoneId: "Asia/Seoul" });
+  const context = await browser.newContext({ viewport: { width, height }, colorScheme: theme as "dark" | "light", reducedMotion: "reduce", timezoneId: "Asia/Seoul", locale: koreanLocale });
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
   const surfaces: Record<string, Surface> = {};
@@ -186,7 +187,7 @@ async function capture(page: Page, surface: Locator, name: string, theme: string
 }
 
 async function captureFolderPicker(browser: Browser, theme: string, surfaces: Record<string, Surface>) {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: theme as "dark" | "light", reducedMotion: "reduce" });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: theme as "dark" | "light", reducedMotion: "reduce", locale: koreanLocale });
   const page = await context.newPage();
   await page.addInitScript(theme => {
     localStorage.setItem("soul-dashboard-theme", theme);
@@ -219,7 +220,7 @@ async function mountAlertSample(page: Page) {
 }
 
 async function captureDocument(browser: Browser, theme: string, glass: string, width: number, height: number, surfaces: Record<string, Surface>) {
-  const context = await browser.newContext({ viewport: { width, height }, colorScheme: theme as "dark" | "light", reducedMotion: "reduce" });
+  const context = await browser.newContext({ viewport: { width, height }, colorScheme: theme as "dark" | "light", reducedMotion: "reduce", locale: koreanLocale });
   const page = await context.newPage();
   await page.clock.setFixedTime(new Date("2026-07-28T12:00:00+09:00"));
   await page.addInitScript(({ theme, glass }) => {

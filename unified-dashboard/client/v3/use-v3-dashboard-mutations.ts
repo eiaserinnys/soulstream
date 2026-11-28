@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { useDashboardStore, type SessionReviewAcknowledgeResult } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
@@ -25,17 +26,18 @@ export function useV3DashboardMutations({
   patchPlannerFolder(folderId: string, update: (task: PlannerFolder) => PlannerFolder): void;
   refreshFolder(folderId: string): void;
 }) {
+  const { t } = useTranslation();
   const saveDescription = useCallback(async (markdown: string) => {
     if (!selectedFolderEntry) return;
     try {
       await saveFolderDescription(api, selectedFolderEntry.page.id, markdown);
       refreshFolder(selectedFolderEntry.page.id);
-      notify("폴더 설명 저장됨");
+      notify(t("sessions.folderDescriptionSaved"));
     } catch (error) {
-      notifyWriteFailure("폴더 설명 저장", error);
+      notifyWriteFailure(t("sessions.saveFolderDescription"), error);
       throw error;
     }
-  }, [api, notify, notifyWriteFailure, refreshFolder, selectedFolderEntry]);
+  }, [t, api, notify, notifyWriteFailure, refreshFolder, selectedFolderEntry]);
 
   const acknowledgeReview = useCallback((result: SessionReviewAcknowledgeResult) => {
     setAcknowledgedReviewIds((current) => new Set([...current, result.agentSessionId]));

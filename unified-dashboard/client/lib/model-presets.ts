@@ -5,8 +5,8 @@ import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-pres
 type Translate = ReturnType<typeof useTranslation>["t"];
 const legacyT = createI18n("ko").t;
 
-export const MODEL_PRESET_FETCH_ERROR = legacyT("accounts.models.loadError");
-export const NO_AVAILABLE_MODEL_MESSAGE = legacyT("accounts.models.none");
+export const modelPresetFetchError = (t: Translate) => t("accounts.models.loadError");
+export const noAvailableModelMessage = (t: Translate) => t("accounts.models.none");
 
 export function modelPresetOptionLabel(
   preset: ModelPresetAvailability,

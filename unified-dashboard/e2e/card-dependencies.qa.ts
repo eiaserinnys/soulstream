@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 import type { Browser, Page } from "@playwright/test";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -48,7 +49,7 @@ writeFileSync(path.join(output,"metrics.json"),JSON.stringify(measurements,null,
 console.log(JSON.stringify(measurements,null,2));
 
 async function openPage(browser:Browser,width:number,theme:"light"|"dark",postitCards:typeof cards) {
- const context=await browser.newContext({viewport:{width,height:900},colorScheme:theme,reducedMotion:"reduce"});
+ const context=await browser.newContext({viewport:{width,height:900},colorScheme:theme,reducedMotion:"reduce", locale: koreanLocale });
  const page=await context.newPage();
  page.setDefaultTimeout(60_000);
  // 서비스 워커가 로드 뒤 페이지를 다시 불러오므로 등록을 막는다. tsx가 함수에 붙이는 __name 보조 함수가 페이지에 없으니 문자열로 넘기고 빈 함수로 채운다.

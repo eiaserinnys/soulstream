@@ -1,5 +1,5 @@
 // Kept as one suite beyond 500 lines: the U3 specification requires the existing and new quota contracts in this file.
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";

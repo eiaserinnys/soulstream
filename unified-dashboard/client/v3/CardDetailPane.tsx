@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type {CardExecutionState} from "@seosoyoung/soul-ui/cards/card-execution-state";
 import {dialoguesAssignment} from "./dialogues-api";
 import {CardExecutionSettings} from "./CardExecutionSettings";
@@ -30,6 +31,7 @@ const EMPTY_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
 export { cardRequestMarkdown } from "./card-request-markdown";
 export type CardDetailPaneProps={cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary,selection?:CardSessionSelection):void;focus?:string|null;initialSessionId?:string|null;sampleDetail?:CardDetail;sampleExecution?:CardExecutionState;onSampleChange?(update:(current:CardDetail)=>CardDetail):void};
 export function CardDetailPane(props:CardDetailPaneProps) {
+ const {t}=useTranslation();
  const {cardId,folders,onClose,onOpenSession,initialSessionId,sampleDetail,sampleExecution,onSampleChange}=props;
  const openCard=useCardNavigation(s=>s.open);
  const storedCard=useCardStore(s=>s.byId[cardId]);const storedDetail=useCardStore(s=>s.details[cardId]);const error=useCardStore(s=>s.errors[cardId]);
@@ -71,14 +73,14 @@ export function CardDetailPane(props:CardDetailPaneProps) {
  const allChecked=hasCheckItems&&itemSummary.activeCount===0;
  const targetItem=targetItemId===null?undefined:card?.items?.find(item=>item.id===targetItemId);
  const startable=card?.status==='todo'||card?.status==='queued'||card?.status==='on_hold';
- const actionLabel=allChecked?'완료':execution?.phase==='pending'?'시작 중…':execution?(execution.phase==='delayed'?'다시 확인':'다시 시도'):startable?'시작하기':'완료';
+ const actionLabel=allChecked?t("cards.complete"):execution?.phase==='pending'?t("cards.starting"):execution?(execution.phase==='delayed'?t("cards.checkAgain"):t("cards.retry")):startable?t("cards.start"):t("cards.complete");
  const sessionIds=useMemo(()=>[...new Set([...(initialSessionId?[initialSessionId]:[]),...(card?.assigneeSessionId ? [card.assigneeSessionId]:[]),...(detail?.sessions.map(session=>session.sessionId)??[])])],[card?.assigneeSessionId,detail?.sessions,initialSessionId]);
  const assignee=catalog?.sessionList?.find(session=>session.agentSessionId===card?.assigneeSessionId) ?? detail?.sessions.find(session=>session.sessionId===card?.assigneeSessionId);
  const nodeId=assignee?.nodeId ?? card?.nodeId;
  const agentId=assignee?.agentId ?? card?.assigneeAgentId;
  const resolvePortrait=useAgentPortraitUrlResolver();
  const portrait=resolvePortrait(agentId);
- useEffect(()=>{if(!sampleDetail)void useCardStore.getState().loadCard(cardId).catch(()=>undefined);},[cardId,sampleDetail]);
+ useEffect(()=>{if(!sampleDetail)void useCardStore.getState().loadCard(cardId,t).catch(()=>undefined);},[cardId,sampleDetail,t]);
  // 되묻기·덧붙이기 대상은 이 카드 상세가 살아 있는 동안만 산다.
  useEffect(()=>()=>clearCardQuestionTarget(questionScope),[questionScope]);
  useEffect(()=>{if(questionTarget.target&&detail&&!detail.questions.some(question=>question.id===questionTarget.target!.questionId))clearCardQuestionTarget(questionScope);},[detail,questionScope,questionTarget.target]);
@@ -112,7 +114,7 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   // 답 저장 중에 카드 상세가 닫히면 늦게 온 성공 응답이 새 화면의 대상을 되살리지 않는다.
   const generation=cardQuestionTargetGeneration(questionScope);
   setPending(true);
-  try {await useCardStore.getState().mutate(cardId,`/questions/${encodeURIComponent(questionId)}/answer`,cardQuestionChoiceAnswer(text));if(text!=="했어"&&cardQuestionTargetGeneration(questionScope)===generation)setCardQuestionTarget(questionScope,{kind:"append",questionId,label:text});return true;}
+  try {await useCardStore.getState().mutate(cardId,`/questions/${encodeURIComponent(questionId)}/answer`,cardQuestionChoiceAnswer(text),"POST",t);if(text!=="했어"&&cardQuestionTargetGeneration(questionScope)===generation)setCardQuestionTarget(questionScope,{kind:"append",questionId,label:text});return true;} // i18n-ignore: 부탁을 마쳤음을 나타내는 응답 값.
   catch {return false;} finally {setPending(false);}
  };
  const openQuestion=detail?.questions.find(isOpenCardQuestion);
@@ -132,9 +134,9 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   }
   setPending(true);
   try {
-   if(itemId===null&&qTarget)await useCardStore.getState().addComment(cardId,comment.trim(),cardMutationKey(),undefined,qTarget.questionId);
-   else if(itemId===null&&openQuestion)await useCardStore.getState().mutate(cardId,`/questions/${encodeURIComponent(openQuestion.id)}/answer`,cardQuestionTextAnswer(comment.trim()));
-   else await useCardStore.getState().addComment(cardId,comment.trim(),cardMutationKey(),itemId??undefined);
+   if(itemId===null&&qTarget)await useCardStore.getState().addComment(cardId,comment.trim(),cardMutationKey(),undefined,qTarget.questionId,t);
+   else if(itemId===null&&openQuestion)await useCardStore.getState().mutate(cardId,`/questions/${encodeURIComponent(openQuestion.id)}/answer`,cardQuestionTextAnswer(comment.trim()),"POST",t);
+   else await useCardStore.getState().addComment(cardId,comment.trim(),cardMutationKey(),itemId??undefined,undefined,t);
    setTargetItemId(null);clearCardQuestionTarget(questionScope);setSentNotice(true);setNoticeVersion(value=>value+1);if(tab!=="comments")setUnreadComments(true);
    return true;
   } catch {return false;} finally {setPending(false);}
@@ -156,38 +158,40 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   if(sampleDetail){
    updateSample(current=>({...current,card:{...current.card,items:current.card.items?.map(item=>item.id===itemId
     ?confirmed?{...item,state:"done",confirmed:{at:new Date().toISOString(),rev:item.rev},display:"confirmed"}
-     :{...item,state:"doing",confirmed:null,display:"changed",reopened:"샘플에서 확인을 풀었습니다."}:item)}}));
+     :{...item,state:"doing",confirmed:null,display:"changed",reopened:t("cards.sampleUnconfirmed")}:item)}}));
    return;
   }
-  await useCardStore.getState().confirmItem(cardId,itemId,confirmed);
+  await useCardStore.getState().confirmItem(cardId,itemId,confirmed,t);
  };
  const complete=async()=>{
   if(!card || pending)return;
   if(sampleDetail){updateSample(current=>({...current,card:{...current.card,status:"done"}}));onClose();return;}
   setPending(true);
-  try {await useCardStore.getState().mutate(cardId,"/status",{status:"done",expectedVersion:card.version});onClose();}
+  try {await useCardStore.getState().mutate(cardId,"/status",{status:"done",expectedVersion:card.version},"POST",t);onClose();}
   catch {} finally {setPending(false);}
  };
  if(!card)return error ? <div className="v3-detail-section" role="alert">{error}</div>
-  : <div className="v3-detail-pane v3-card-detail border border-glass-border glass-strong glass-chrome lg-rim"><FrameLoading label="카드를 불러오는 중…"/></div>;
+  : <div className="v3-detail-pane v3-card-detail border border-glass-border glass-strong glass-chrome lg-rim"><FrameLoading label={t("cards.loadingCards")}/></div>;
  const statusControl:CardStatusControl={pending,
   assignment:sampleDetail?dialoguesAssignment:undefined,folders,
   saveSettings:sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};updateSample(current=>({...current,card:saved}));return saved;}:undefined,
-  load:()=>sampleDetail ? Promise.resolve(activeSample!) : useCardStore.getState().loadCard(cardId),
-  change:async(latest,status,reason)=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,...latest,status,...(status==="running"?{assigneeKind:"session",assigneeSessionId:current.sessions[0]?.sessionId??"sample-session"}: {})}}));else if(status==="running")await useCardStore.getState().execute(cardId,latest.version);else await useCardStore.getState().mutate(cardId,"/status",{status,expectedVersion:latest.version,...(reason?{reason}:{})});},
-  changeColor:async(latest,color:CardColor)=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,color,version:latest.version+1}}));else await useCardStore.getState().mutate(cardId,"",{color,expectedVersion:latest.version},"PATCH");},
+  load:()=>sampleDetail ? Promise.resolve(activeSample!) : useCardStore.getState().loadCard(cardId,t),
+  change:async(latest,status,reason)=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,...latest,status,...(status==="running"?{assigneeKind:"session",assigneeSessionId:current.sessions[0]?.sessionId??"sample-session"}: {})}}));else if(status==="running")await useCardStore.getState().execute(cardId,latest.version,t);else await useCardStore.getState().mutate(cardId,"/status",{status,expectedVersion:latest.version,...(reason?{reason}:{})},"POST",t);},
+  changeColor:async(latest,color:CardColor)=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,color,version:latest.version+1}}));else await useCardStore.getState().mutate(cardId,"",{color,expectedVersion:latest.version},"PATCH",t);},
  };
  const dockStyle={"--v3-card-dock-height":`${dockHeight}px`} as CSSProperties;
+ const tabLabel=(short:string, full:string)=>short===full?full:
+  <><span aria-hidden="true">{short}</span><span className="sr-only">{full}</span></>;
  const tabs=[
-  ["items",<span className="v3-card-tab-label">확인 항목{itemSummary.toReviewCount>0?<span className="v3-card-tab-count">{itemSummary.toReviewCount}</span>:null}</span>],
-  ["comments",<span className="v3-card-tab-label">커멘트{unreadComments?<span className="v3-card-tab-dot" aria-label="새 커멘트"/>:null}</span>],
-  ["sessions",<span className="v3-card-tab-label">세션{detail?.sessions.length?<span className="v3-card-tab-total">{detail.sessions.length}</span>:null}</span>],
-  ["notes",<span className="v3-card-tab-label">노트{detail?.notes?.length?<span className="v3-card-tab-total">{detail.notes.length}</span>:null}</span>],
+  ["items",<span className="v3-card-tab-label">{tabLabel(t("cards.checkItemsTab"),t("cards.checkItems"))}{itemSummary.toReviewCount>0?<span className="v3-card-tab-count">{itemSummary.toReviewCount}</span>:null}</span>],
+  ["comments",<span className="v3-card-tab-label">{tabLabel(t("cards.commentTab"),t("cards.comment"))}{unreadComments?<span className="v3-card-tab-dot" aria-label={t("cards.newComment")}/>:null}</span>],
+  ["sessions",<span className="v3-card-tab-label">{tabLabel(t("cards.sessionTab"),t("cards.session"))}{detail?.sessions.length?<span className="v3-card-tab-total">{detail.sessions.length}</span>:null}</span>],
+  ["notes",<span className="v3-card-tab-label">{t("cards.notes")}{detail?.notes?.length?<span className="v3-card-tab-total">{detail.notes.length}</span>:null}</span>],
  ] as const;
  return <article ref={surface} className="v3-detail-pane v3-card-detail border border-glass-border glass-strong glass-chrome lg-rim" data-liquid-glass-webgl={webglActive?"true":undefined} data-testid="card-detail">
   <header className="v3-folder-header v3-workspace-toolbar v3-detail-gutter">
-   <DashboardIconCap label="카드 닫기" onClick={onClose}><ArrowLeft className="h-4 w-4"/></DashboardIconCap>
-   <FolderTitleEditor leading={<CardStatusPicker sampleExecution={sampleExecution} ref={statusPicker} card={card} onOpen={()=>{}} control={statusControl}/>} variant="card" title={card.title} headingLevel={1} onRename={async title=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,title}}));else await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
+   <DashboardIconCap data-card-close label={t("cards.closeCard")} onClick={onClose}><ArrowLeft className="h-4 w-4"/></DashboardIconCap>
+   <FolderTitleEditor leading={<CardStatusPicker sampleExecution={sampleExecution} ref={statusPicker} card={card} onOpen={()=>{}} control={statusControl}/>} variant="card" title={card.title} headingLevel={1} onRename={async title=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,title}}));else await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH",t);}}/>
    <div className="v3-folder-header-actions" data-complete-emphasis={allChecked||undefined}>
     <CardStatusPicker trigger="more" card={card} onOpen={()=>{}} control={statusControl} sampleExecution={sampleExecution}/>
     <DashboardIconCap size="small" label={actionLabel} disabled={pending||execution?.phase==='pending'} onClick={()=>{if(!allChecked&&(execution||startable))statusPicker.current?.request('running');else void complete();}}>{execution?.phase==='pending'?<LoaderCircle className="h-4 w-4 animate-spin"/>:allChecked?<Check className="h-4 w-4"/>:execution?<RotateCw className="h-4 w-4"/>:startable?<Play className="h-4 w-4"/>:<Check className="h-4 w-4"/>}</DashboardIconCap>
@@ -197,12 +201,12 @@ export function CardDetailPane(props:CardDetailPaneProps) {
    <section className="v3-detail-section"><CardExecutionSettings assignment={sampleDetail?dialoguesAssignment:undefined} card={card} folders={folders} onSave={sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};updateSample(current=>({...current,card:saved}));return saved;}:undefined}/></section>
   </div>:null}
   {card.dependsOn?.length?<div className="v3-detail-gutter v3-task-detail-content v3-card-dependencies"><section className="v3-detail-section">
-   <div className="v3-detail-section-head"><h3>선행 카드</h3><span>{card.dependsOn.filter(dep=>dep.met).length}/{card.dependsOn.length}</span></div>
+   <div className="v3-detail-section-head"><h3>{t("cards.dependencies")}</h3><span>{card.dependsOn.filter(dep=>dep.met).length}/{card.dependsOn.length}</span></div>
    <div className="v3-card-dependency-list">{card.dependsOn.map(dep=><Button key={dep.id} variant="outline" className="v3-card-dependency-row" data-stopped={cardDependencyStopReason(dep)!==null||undefined} onClick={()=>openCard(dep.id,"overlay")}>
-    <span className="v3-card-dependency-number">{dep.number==null?"":`#${dep.number}`}</span><span className="v3-card-dependency-title">{dep.title}</span><StatusChip tone={cardDependencyStatus(dep).tone} label={cardDependencyStatus(dep).label}/><ChevronRight className="h-4 w-4" aria-hidden="true"/>
+    <span className="v3-card-dependency-number">{dep.number==null?"":`#${dep.number}`}</span><span className="v3-card-dependency-title">{dep.title}</span><StatusChip tone={cardDependencyStatus(dep,t).tone} label={cardDependencyStatus(dep,t).label}/><ChevronRight className="h-4 w-4" aria-hidden="true"/>
    </Button>)}</div></section></div>:null}
   {card.now?<div key={cardId} className="v3-detail-gutter v3-card-now-slot"><CardNowPanel now={card.now} nowHistory={detail?.nowHistory} itemsCount={card.items?.length??0} activeCount={itemSummary.activeCount} onComplete={()=>void complete()} pending={pending||execution?.phase==='pending'}/></div>:null}
-  <div className="v3-detail-gutter v3-card-tabs"><DetailTabs id={tabId} label="카드 보기" panelId={`${tabId}-panel`} variant="card" tabs={tabs} value={tab} onChange={changeTab}/></div>
+  <div className="v3-detail-gutter v3-card-tabs"><DetailTabs id={tabId} label={t("cards.viewCard")} panelId={`${tabId}-panel`} variant="card" tabs={tabs} value={tab} onChange={changeTab}/></div>
   {execution && execution.phase!=="pending"?<p role={execution.phase==="error"?"alert":"status"} className="v3-card-error">{execution.message}</p>:null}
   {error?<p role="alert" className="v3-card-error">{error}</p>:null}
   <div className="v3-detail-scroll v3-card-panel-scroll v3-detail-gutter" data-card-active-tab={tab} ref={scroll} style={dockStyle} role="tabpanel" id={`${tabId}-panel`} aria-labelledby={`${tabId}-${tab}`}>
@@ -222,11 +226,11 @@ export function CardDetailPane(props:CardDetailPaneProps) {
    </div>
   </div>
   <div className="v3-card-composer-slot" ref={dock}>
-   {targetItemId!==null?<div className="v3-card-target-notice" role="status"><span>대상: {targetItemId}번 {targetItem?.title??"항목"}</span><button type="button" aria-label="커멘트 대상 해제" onClick={()=>{setTargetItemId(null);requestFocus();}}>해제</button></div>:null}
-   {targetItemId===null&&validTarget?<CardQuestionNotice label={validTarget.kind==="ask"?"되묻기":`덧붙이기: ${validTarget.label}`} onClear={clearQuestionTarget}/>:null}
-   {sentNotice?<div className="v3-card-sent-notice" role="status">보냈습니다. <button type="button" onClick={()=>changeTab("comments")}>커멘트에서 보기</button></div>:null}
+   {targetItemId!==null?<div className="v3-card-target-notice" role="status"><span>{t("cards.itemTarget", {number:targetItemId,title:targetItem?.title??t("cards.item")})}</span><button type="button" aria-label={t("cards.clearCommentTarget")} onClick={()=>{setTargetItemId(null);requestFocus();}}>{t("cards.clear")}</button></div>:null}
+   {targetItemId===null&&validTarget?<CardQuestionNotice label={validTarget.kind==="ask"?t("cards.askBack"):t("cards.appendTo", {answer:validTarget.label})} onClear={clearQuestionTarget}/>:null}
+   {sentNotice?<div className="v3-card-sent-notice" role="status">{t("cards.sent")} <button type="button" onClick={()=>changeTab("comments")}>{t("cards.viewInComments")}</button></div>:null}
    <CardCommentInput uploadController={sampleDetail?sampleUpload:undefined} key={cardId} cardId={cardId} nodeId={nodeId} sessionId={card.assigneeSessionId} pending={pending} focusRequest={focusRequestForCard+questionTarget.focus} onSend={submit}
-    placeholder={targetItemId!==null?"커멘트":validTarget?.kind==="ask"?"물어볼 것":validTarget?.kind==="append"?"덧붙일 말":openQuestion?"다르게 답하기":"커멘트"}/>
+    kind={targetItemId===null&&(validTarget||openQuestion)?"answer":"comment"} placeholder={targetItemId!==null?t("cards.comment"):validTarget?.kind==="ask"?t("cards.followUpPlaceholder"):validTarget?.kind==="append"?t("cards.appendPlaceholder"):openQuestion?t("cards.answerFreely"):t("cards.comment")}/>
   </div>
  </article>;
 }

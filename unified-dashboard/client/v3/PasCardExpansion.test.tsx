@@ -52,7 +52,7 @@ beforeEach(async () => {
 afterEach(async () => { await act(() => root.unmount()); host.remove(); useCardStore.getState().reset(); vi.restoreAllMocks(); });
 
 it('loads the linked card and shows only its current panel, items, and two latest comments', async () => {
-  expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}`);
+  expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}`, "GET", undefined, undefined, undefined);
   expect(host.querySelector('[data-testid="now"]')?.textContent).toBe('현재 상황:1');
   expect(host.querySelector('[data-testid="items"]')?.textContent).toContain('1');
   expect(host.querySelector('[data-testid="comments"]')?.getAttribute('data-comments-only')).toBe('true');
@@ -75,7 +75,7 @@ it('shows a detail load error when the card is already in the store list', async
 
   await render(listedEntry);
 
-  expect(request).toHaveBeenCalledWith(`/api/cards/${listedCard.id}`);
+  expect(request).toHaveBeenCalledWith(`/api/cards/${listedCard.id}`, "GET", undefined, undefined, undefined);
   expect(useCardStore.getState().byId[listedCard.id]).toEqual(listedCard);
   expect(host.querySelector('[role="alert"].v3-card-error')?.textContent).toBe('상세 조회 실패');
 });
@@ -88,7 +88,7 @@ it('shows a failed card comment send from the card store', async () => {
 
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send"]')!.click());
 
-  expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}/comments`, 'POST', expect.objectContaining({ body: '작성한 글' }));
+  expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}/comments`, 'POST', expect.objectContaining({ body: '작성한 글' }), undefined, undefined);
   expect(host.querySelector('[role="alert"].v3-card-error')?.textContent).toBe('커멘트 전송 실패');
 });
 
@@ -101,8 +101,8 @@ it('answers the linked open question before using a card comment', async () => {
   await render({ ...entry, question_id: 'question-target' });
   expect(host.querySelector('[data-testid="placeholder"]')?.textContent).toBe('다르게 답하기');
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send"]')!.click());
-  expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}/questions/question-target/answer`, 'POST', expect.objectContaining({ answer: '작성한 글' }));
-  expect(request).not.toHaveBeenCalledWith(`/api/cards/${card.id}/comments`, 'POST', expect.anything());
+  expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}/questions/question-target/answer`, 'POST', expect.objectContaining({ answer: '작성한 글' }), undefined, undefined);
+  expect(request).not.toHaveBeenCalledWith(`/api/cards/${card.id}/comments`, 'POST', expect.anything(), undefined, undefined);
 });
 
 it('routes a targeted correction to an item comment before answering an open question', async () => {
@@ -117,8 +117,8 @@ it('routes a targeted correction to an item comment before answering an open que
   expect(host.querySelector('[data-testid="placeholder"]')?.textContent).toBe('다르게 답하기');
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="target-item"]')!.click());
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send"]')!.click());
-  expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}/comments`, 'POST', expect.objectContaining({ body: '작성한 글', itemId: 4 }));
-  expect(request).not.toHaveBeenCalledWith(expect.stringContaining('/questions/'), 'POST', expect.anything());
+  expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}/comments`, 'POST', expect.objectContaining({ body: '작성한 글', itemId: 4 }), undefined, undefined);
+  expect(request).not.toHaveBeenCalledWith(expect.stringContaining('/questions/'), 'POST', expect.anything(), undefined, undefined);
 });
 
 it('omits the duplicated ask from CardNowPanel while an open question is shown on the card', async () => {
@@ -143,7 +143,7 @@ it('uses a card comment when no unanswered, unwithdrawn question remains', async
   await render();
   expect(host.querySelector('[data-testid="placeholder"]')?.textContent).toBe('커멘트');
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send"]')!.click());
-  expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}/comments`, 'POST', expect.objectContaining({ body: '작성한 글' }));
+  expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}/comments`, 'POST', expect.objectContaining({ body: '작성한 글' }), undefined, undefined);
 });
 
 it('places store read errors immediately after the now panel', async () => {

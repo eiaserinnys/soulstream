@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   Button, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPopup, DialogTitle,
   type CatalogFolder,
@@ -8,19 +9,18 @@ export function FolderArchiveDialog({ folder, onClose, onArchive }: {
   onClose(): void;
   onArchive(folder: CatalogFolder): void;
 }) {
+  const { t } = useTranslation();
   return <Dialog open={folder !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
     <DialogPopup className="approved-dialog max-w-sm">
       <DialogHeader>
-        <DialogTitle>폴더를 보관할까요?</DialogTitle>
-        <DialogDescription>
-          &lsquo;{folder?.name ?? ""}&rsquo; 폴더를 보관합니다. 내용과 세션은 보존됩니다.
-        </DialogDescription>
+        <DialogTitle>{t("folders.archive.title")}</DialogTitle>
+        <DialogDescription>{t("folders.archive.description", { name: folder?.name ?? "" })}</DialogDescription>
       </DialogHeader>
       <DialogFooter variant="bare">
-        <Button type="button" variant="outline" onClick={onClose}>취소</Button>
+        <Button type="button" variant="outline" onClick={onClose}>{t("folders.common.cancel")}</Button>
         <Button type="button" variant="default" onClick={() => {
           if (folder) onArchive(folder);
-        }}>폴더 보관</Button>
+        }}>{t("folders.archive.action")}</Button>
       </DialogFooter>
     </DialogPopup>
   </Dialog>;

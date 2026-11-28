@@ -1,3 +1,5 @@
+import { formatTime } from "./CardCheckItemRow";
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
 import type { CardNow, CardNowHistoryEntry } from "@seosoyoung/soul-ui/cards/card-types";
@@ -54,27 +56,28 @@ function NowPanelContents({entry,index,total,latest,hasNavigation,allChecked,onP
  entry:NowSlot;index:number;total:number;latest:boolean;hasNavigation:boolean;allChecked:boolean;
  onPrevious():void;onNext():void;onLatest():void;onComplete?():void;pending?:boolean;hideTurn?:boolean;
 }) {
- const dateLabel=formatUpdated(entry.at);
+ const {t,i18n}=useTranslation();
+ const dateLabel=formatUpdated(entry.at,i18n.language,t);
  return <>
   <div className="v3-card-now-header" data-has-navigation={hasNavigation?"true":undefined}>
-   <div className="v3-card-now-meta"><strong className={latest?undefined:"v3-card-now-past-label"}>{latest?"지금":"지난 상황"}</strong>
+   <div className="v3-card-now-meta"><strong className={latest?undefined:"v3-card-now-past-label"}>{latest?t("cards.now"):t("cards.pastUpdate")}</strong>
     {hasNavigation?<span>{index+1}/{total}</span>:null}<time dateTime={entry.at}>{dateLabel}</time></div>
    {hasNavigation?<div className="v3-card-now-actions">
-    <DashboardIconCap size="small" label="이전 상황" disabled={index===0} onClick={onPrevious}><ArrowLeft className="h-4 w-4"/></DashboardIconCap>
-    <DashboardIconCap size="small" label="다음 상황" disabled={latest} onClick={onNext}><ArrowRight className="h-4 w-4"/></DashboardIconCap>
+    <DashboardIconCap size="small" label={t("cards.previousUpdate")} disabled={index===0} onClick={onPrevious}><ArrowLeft className="h-4 w-4"/></DashboardIconCap>
+    <DashboardIconCap size="small" label={t("cards.nextUpdate")} disabled={latest} onClick={onNext}><ArrowRight className="h-4 w-4"/></DashboardIconCap>
    </div>:null}
   </div>
   <p className="v3-card-now-text">{entry.text}</p>
-  {latest?(hideTurn?null:<div className={`v3-card-now-turn v3-card-now-turn--${allChecked?"complete":entry.turn}`} role="group" aria-label={allChecked?"모두 확인했습니다":turnLabel(entry.turn)}>
-   {allChecked?<><strong>모두 확인했습니다</strong><span>완료로 옮길까요?</span>
-    <Button size="default" variant="ghost" className="v3-card-now-complete" disabled={pending||!onComplete} onClick={onComplete}>완료</Button></>
-    :<>{entry.turn!=="user"||!entry.ask?<strong>{turnLabel(entry.turn)}</strong>:null}{entry.ask?<span>{entry.ask}</span>:null}</>}
-  </div>):<div className="v3-card-now-past-hint"><button type="button" onClick={onLatest}>최신으로</button></div>}
+  {latest?(hideTurn?null:<div className={`v3-card-now-turn v3-card-now-turn--${allChecked?"complete":entry.turn}`} role="group" aria-label={allChecked?t("cards.allConfirmed"):turnLabel(entry.turn,t)}>
+   {allChecked?<><strong>{t("cards.allConfirmed")}</strong><span>{t("cards.completePrompt")}</span>
+    <Button size="default" variant="ghost" className="v3-card-now-complete" disabled={pending||!onComplete} onClick={onComplete}>{t("cards.complete")}</Button></>
+    :<>{entry.turn!=="user"||!entry.ask?<strong>{turnLabel(entry.turn,t)}</strong>:null}{entry.ask?<span>{entry.ask}</span>:null}</>}
+  </div>):<div className="v3-card-now-past-hint"><button type="button" onClick={onLatest}>{t("cards.latestUpdate")}</button></div>}
  </>;
 }
 
-function turnLabel(turn:CardNow["turn"]) { return turn==="agent"?"에이전트 차례":turn==="user"?"내 차례":"바깥 대기"; }
-function formatUpdated(value:string) {
- const date=new Date(value);
- return Number.isNaN(date.getTime())?"":`${date.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"})}에 고침`;
+function turnLabel(turn:CardNow["turn"],t:ReturnType<typeof useTranslation>["t"]) { return turn==="agent"?t("cards.agentTurn"):turn==="user"?t("cards.userTurn"):t("cards.outsideTurn"); }
+function formatUpdated(value:string,locale:string,t:ReturnType<typeof useTranslation>["t"]) {
+ const time=formatTime(value,locale);
+ return time?t("cards.updatedAt",{time}):"";
 }

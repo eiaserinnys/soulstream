@@ -1,4 +1,4 @@
-import {test,expect,type Page,type Locator} from "@playwright/test";
+import {test,expect,type Page,type Locator} from "./test";
 import {mkdirSync,writeFileSync,readFileSync} from "node:fs";
 import path from "node:path";
 import {installV3VisualQaRoutes} from "./v3-visual-fixtures";

@@ -5,11 +5,17 @@ import {
   waitForDashboardMutationsToFlush,
 } from "@seosoyoung/soul-ui/pending-mutation-registry";
 
-const openReaders = new Set<symbol>();
-export function registerDashboardReader(): () => void {
-  const token = Symbol();
-  openReaders.add(token);
-  return () => { openReaders.delete(token); };
+type ReaderElements = { popup?: HTMLElement | null };
+const openReaders = new Set<() => ReaderElements>();
+const bannerUpdates = new Set<() => void>();
+export function updateDashboardReaderPlacement() {
+  for (const update of bannerUpdates) update();
+}
+export function registerDashboardReader(getElements: () => ReaderElements = () => ({})): () => void {
+  const reader = () => getElements();
+  openReaders.add(reader);
+  updateDashboardReaderPlacement();
+  return () => { openReaders.delete(reader); updateDashboardReaderPlacement(); };
 }
 
 export interface ReloadEnvironment {
@@ -30,6 +36,7 @@ export function createDashboardReloadCoordinator(
     if (issued) return;
     issued = true;
     environment.document.querySelector("[data-sw-update-banner]")?.remove();
+    updateDashboardReaderPlacement();
     pendingAction?.();
   };
   const approve = async (deferForOpenReaders: boolean) => {
@@ -49,7 +56,7 @@ export function createDashboardReloadCoordinator(
       if (inFlight) return inFlight;
       pendingAction ??= action;
       const defer = () => {
-        showUpdateBanner(environment.document, () => approve(false), environment.translate ?? adminTranslation);
+        showUpdateBanner(environment.document, () => approve(false), automatic && openReaders.size > 0 && !environment.hasPendingEdits() && !environment.hasAttachments?.(), environment.translate ?? adminTranslation);
         return false;
       };
       if (openReaders.size) return Promise.resolve(defer());
@@ -85,6 +92,7 @@ export function dashboardReloadCoordinator() {
 function showUpdateBanner(
   document: Document,
   apply: () => Promise<boolean>,
+  reading: boolean,
   translate: () => AdminTranslate,
 ): void {
   const t = translate();
@@ -92,7 +100,6 @@ function showUpdateBanner(
   const banner = document.createElement("div");
   banner.dataset.swUpdateBanner = "true";
   banner.setAttribute("role", "status");
-  // Preserve the existing service-worker update banner; connection dialogs use registered tokens.
   Object.assign(banner.style, {
     position: "fixed",
     right: "16px",
@@ -109,7 +116,9 @@ function showUpdateBanner(
     font: "14px/1.4 system-ui, sans-serif",
   });
   const message = document.createElement("span");
-  message.textContent = t("admin.pwa.reviewDraft");
+  message.textContent = reading
+    ? "새 버전이 나왔습니다"
+    : t("admin.pwa.reviewDraft");
   const action = document.createElement("button");
   action.type = "button";
   action.dataset.swUpdateAction = "true";
@@ -138,4 +147,44 @@ function showUpdateBanner(
   });
   banner.append(message, action);
   document.body.appendChild(banner);
+  positionBanner(document, banner);
+}
+
+function positionBanner(document: Document, banner: HTMLElement): void {
+  const view = document.defaultView!;
+  const popups = new Set<HTMLElement>();
+  const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => update());
+  const clearPopup = (popup: HTMLElement) => {
+    popup.style.removeProperty("--viewer-bottom-clearance");
+    observer?.unobserve(popup);
+    popups.delete(popup);
+  };
+  const cleanup = () => {
+    for (const popup of popups) clearPopup(popup);
+    observer?.disconnect();
+    view.removeEventListener("resize", update);
+    bannerUpdates.delete(update);
+  };
+  const update = () => {
+    if (!banner.isConnected) { cleanup(); return; }
+    const nextPopups = new Set(Array.from(openReaders, reader => reader().popup).filter((popup): popup is HTMLElement => !!popup));
+    for (const popup of popups) if (!nextPopups.has(popup)) clearPopup(popup);
+    for (const popup of nextPopups) {
+      if (!popups.has(popup)) {
+        popups.add(popup);
+        observer?.observe(popup);
+      }
+      popup.style.removeProperty("--viewer-bottom-clearance");
+      const readerRect = popup.getBoundingClientRect();
+      const bannerRect = banner.getBoundingClientRect();
+      if (readerRect.left < bannerRect.right && readerRect.right > bannerRect.left &&
+          readerRect.top < bannerRect.bottom && readerRect.bottom > bannerRect.top) {
+        popup.style.setProperty("--viewer-bottom-clearance", `${bannerRect.height + 32}px`);
+      }
+    }
+  };
+  bannerUpdates.add(update);
+  view.addEventListener("resize", update);
+  observer?.observe(banner);
+  update();
 }

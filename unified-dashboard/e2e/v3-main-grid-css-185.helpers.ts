@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 // Kept together beyond 500 lines: this QA module owns the existing grid measurements
 // and their connection-boundary evidence; the scoped repair changes this helper only.
 import { createHash } from "node:crypto";
@@ -54,6 +55,7 @@ export async function createQaPage(
     colorScheme: "dark",
     reducedMotion: "reduce",
     serviceWorkers: "block",
+    locale: koreanLocale,
   });
   await context.addInitScript(() => {
     localStorage.setItem("soul-dashboard-theme", "dark");

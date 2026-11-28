@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import { folderErrorText } from "./folder-messages";
 import { useMemo, useState } from "react";
 import type { PageDto } from "../../../packages/page-model/src/types";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
@@ -11,16 +13,17 @@ import {
 } from "./folder-star-store";
 
 export function useFolderStar(page: PageDto) {
+  const { t } = useTranslation();
   const api = useMemo(() => createPageApiClient(), []);
   const changes = useFolderStarChanges();
   const starred = folderStarredState(page.id, changes, page.metadata.starred === true);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ cause: unknown } | null>(null);
 
   const toggle = async () => {
     if (pending) return;
     setPending(true);
-    setError(null);
+    setFailure(null);
     const nextStarred = !starred;
     const mutationId = publishFolderStarChange({
       page: { ...page, metadata: { ...page.metadata, starred: nextStarred } },
@@ -30,11 +33,11 @@ export function useFolderStar(page: PageDto) {
       await setFolderStarred(api, page.id, nextStarred);
     } catch (cause) {
       clearFolderStarChange(page.id, mutationId);
-      setError(cause instanceof Error && cause.message ? cause.message : String(cause));
+      setFailure({ cause });
     } finally {
       setPending(false);
     }
   };
 
-  return { starred, pending, error, toggle };
+  return { starred, pending, error: failure ? folderErrorText(t, failure.cause) : null, toggle };
 }

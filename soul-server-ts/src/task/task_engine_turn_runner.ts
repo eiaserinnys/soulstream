@@ -1,4 +1,5 @@
 import type { AgentProfile } from "@soulstream/agent-profile-contract";
+import { antigravityDefaultConversation } from "./antigravity_default_conversation.js";
 import type { ExecutionInputV1, UsageSnapshotV1 } from "@soulstream/wire-schema";
 import type { UsageStatsProvider } from "@soulstream/wire-schema/session-statistics";
 import type {
@@ -316,6 +317,9 @@ export class TaskEngineTurnRunner {
         : task.codexThreadId !== undefined
           ? { resumeSessionId: task.codexThreadId }
           : {}),
+      ...(backend === "antigravity" && antigravityDefaultConversation(task)
+        ? { antigravityDefaultConversationId: antigravityDefaultConversation(task) }
+        : {}),
       ...(task.agentsRunState !== undefined ? { resumeRunState: task.agentsRunState } : {}),
       ...(task.agentsPreviousResponseId !== undefined
         ? { previousResponseId: task.agentsPreviousResponseId }

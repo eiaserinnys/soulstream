@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 import type { Browser, Locator } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -23,6 +24,7 @@ async function verifyInputRows(browser: Browser) {
     reducedMotion: "reduce",
     timezoneId: "Asia/Seoul",
     viewport: { width: 1440, height: 900 },
+    locale: koreanLocale,
   });
   const page = await context.newPage();
   const browserErrors: string[] = [];

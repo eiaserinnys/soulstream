@@ -1,3 +1,4 @@
+import { FolderMessageError } from "./folder-messages";
 export type StarredFolderDropBoundary =
   | { kind: "before"; pageId: string }
   | { kind: "next-page" }
@@ -105,10 +106,10 @@ export async function resolveStarredFolderBeforePageId(input: {
     input.movedPageId,
     Boolean(input.nextCursor),
   );
-  if (boundary.kind === "invalid") throw new Error("이동할 별표 폴더를 찾을 수 없습니다.");
+  if (boundary.kind === "invalid") throw new FolderMessageError("folders.errors.starMoveMissing");
   if (boundary.kind === "before") return boundary.pageId;
   if (boundary.kind === "end") return null;
-  if (!input.nextCursor) throw new Error("별표 목록 cursor가 없습니다.");
+  if (!input.nextCursor) throw new FolderMessageError("folders.errors.starCursorMissing");
 
   const next = await input.fetchBoundaryPage(input.nextCursor);
   const pageId = resolveStarredFolderBoundaryPageId(
@@ -117,7 +118,7 @@ export async function resolveStarredFolderBeforePageId(input: {
     next.pageIds,
     next.nextCursor,
   );
-  if (!pageId) throw new Error("다음 별표 페이지 경계를 확인하지 못했습니다.");
+  if (!pageId) throw new FolderMessageError("folders.errors.starBoundaryMissing");
   return pageId;
 }
 

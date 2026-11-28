@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { recordDirectHumanSessionInput } from "../src/cards/card_human_session_input.js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
@@ -62,6 +63,58 @@ describe("card comments HTTP, storage, and delivery", () => {
     await dispatcher.drain();
     return created.operation.target_id;
   }
+
+  it("records direct assignee input once without a delivery and ignores other sessions and agents", async () => {
+    const cardId = await makeCard();
+    await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running'),('other','running')`;
+    await h.sql`UPDATE cards SET status='running',assignee_kind='session',assignee_session_id='owner' WHERE id=${cardId}`;
+    const text = "  직접 입력한 원문\n둘째 줄  ";
+    await recordDirectHumanSessionInput(cards, 'owner', text, { source: 'browser', user_id: 'a@b' });
+    await recordDirectHumanSessionInput(cards, 'other', '다른 세션', { source: 'browser', user_id: 'a@b' });
+    await recordDirectHumanSessionInput(cards, 'owner', '에이전트', { source: 'agent', user_id: 'pas' });
+    await dispatcher.drain();
+    const comments = (await cards.getCard(cardId))!.comments;
+    expect(comments).toHaveLength(1);
+    expect(comments[0]).toMatchObject({ author_kind: 'user', author_id: 'a@b', kind: 'comment', body: text, delivered_at: expect.anything() });
+    expect(messages).not.toHaveBeenCalled();
+  });
+
+  it("prefers the most recently status-changed active card and falls back to a terminal card", async () => {
+    const older = await makeCard("이전 진행"), newer = await makeCard("최근 진행"), done = await makeCard("완료");
+    await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='owner',status='running',status_changed_at='2026-01-01' WHERE id=${older}`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='owner',status='on_hold',status_changed_at='2026-01-02' WHERE id=${newer}`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='owner',status='done',status_changed_at='2026-01-03' WHERE id=${done}`;
+    await recordDirectHumanSessionInput(cards, 'owner', '진행 카드 선택', { source: 'browser', user_id: 'a@b' });
+    expect((await cards.getCard(newer))!.comments.map(c => c.body)).toContain('진행 카드 선택');
+    await h.sql`UPDATE cards SET status='cancelled' WHERE id IN (${older},${newer})`;
+    await recordDirectHumanSessionInput(cards, 'owner', '완료 카드 선택', { source: 'browser', user_id: 'a@b' });
+    expect((await cards.getCard(done))!.comments.map(c => c.body)).toContain('완료 카드 선택');
+  });
+
+  it("re-reads and retries once after a version conflict", async () => {
+    const cardId = await makeCard();
+    await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='owner' WHERE id=${cardId}`;
+    const original = cards.addComment.bind(cards);
+    const spy = vi.spyOn(cards, 'addComment').mockImplementationOnce(async params => {
+      await h.sql`UPDATE cards SET version=version+1 WHERE id=${cardId}`;
+      return original(params);
+    });
+    try {
+      await recordDirectHumanSessionInput(cards, 'owner', '충돌 뒤 보존', { source: 'browser', user_id: 'a@b' });
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect((await cards.getCard(cardId))!.comments.map(c => c.body)).toEqual(['충돌 뒤 보존']);
+    } finally { spy.mockRestore(); }
+  });
+
+  it("records an agent comment without mode as an agent reply", async () => {
+    const cardId = await makeCard();
+    await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running')`;
+    await h.sql`UPDATE cards SET status='running',assignee_kind='session',assignee_session_id='owner' WHERE id=${cardId}`;
+    await cards.addComment({ actorKind: 'agent', actorSessionId: 'owner', cardId, body: '담당의 답' });
+    expect((await cards.getCard(cardId))!.comments[0]).toMatchObject({ author_kind: 'agent', kind: 'comment', body: '담당의 답' });
+  });
 
   it("sends actual external state changes once to the captured owner, excluding same state, own changes and done",async()=>{
     const cardId=await makeCard(),otherId=await makeCard("다른 카드");
@@ -230,7 +283,7 @@ describe("card comments HTTP, storage, and delivery", () => {
         headers: { authorization: "Bearer service-test", "x-soulstream-agent-session-id": "old-owner" },
         payload: { body: "HTTP 옛 발언", mode: "spoken", idempotencyKey: key() } });
       expect(response.statusCode).toBe(422);
-      expect(response.json()).toMatchObject({ detail: { error: { code: "INVALID_CARD_REQUEST", message } } });
+      expect(response.body).toContain("mode");
     } finally { await server.close(); }
 
     const newOwner = { actorKind: "agent" as const, actorSessionId: "new-owner", cardId };

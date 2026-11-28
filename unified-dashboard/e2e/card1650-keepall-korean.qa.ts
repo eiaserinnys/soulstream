@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 /**
  * 카드 #1650 보완: 남은 영어 문구 한국어화와 대화 맨 위 표기 제거의 시각 검수.
  *
@@ -76,6 +77,7 @@ async function ctx(browser: Browser, width: number, height = 1000) {
     reducedMotion: "reduce",
     timezoneId: "Asia/Seoul",
     colorScheme: "dark",
+    locale: koreanLocale,
   });
   await context.addInitScript({ content: "window.__name = (f) => f;" });
   const page = await context.newPage();

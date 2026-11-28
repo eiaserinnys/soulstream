@@ -1,3 +1,5 @@
+import type { useTranslation } from "react-i18next";
+type Translate = ReturnType<typeof useTranslation>["t"];
 import type {CSSProperties, HTMLAttributes, ReactNode, Ref} from 'react';
 import { CARD_COLORS, type CardColor } from '../../../packages/wire-schema/src/card_colors';
 
@@ -15,9 +17,9 @@ export function PostItGrid({children,className='',variant='default',fontSize,...
 
 /** Shared paper presentation. The owner supplies preferences, navigation and status. */
 export function PostItCardView({id,title,status,color,fontSize,activity,assigneeName,avatar,statusContent,
- onOpen,error,variant='default',readOnly=false,showStatus=true,supplement,summary,nowText,turnText,turnLabel,turnTone,...props}:Omit<HTMLAttributes<HTMLElement>,'id'|'title'>&{
+ t,onOpen,error,variant='default',readOnly=false,showStatus=true,supplement,summary,nowText,turnText,turnLabel,turnTone,...props}:Omit<HTMLAttributes<HTMLElement>,'id'|'title'>&{
  id:string;title:string;status:string;color?:CardColor;fontSize:number;activity:PostItActivity|null;assigneeName:string;
- avatar?:ReactNode;statusContent?:ReactNode;
+ avatar?:ReactNode;statusContent?:ReactNode;t:Translate;
  onOpen?:()=>void;error?:string;variant?:PostItVariant;readOnly?:boolean;showStatus?:boolean;supplement?:string;
  summary?:ReactNode;nowText?:string;turnText?:string;turnLabel?:string;turnTone?:'neutral'|'error';
 }) {
@@ -26,13 +28,13 @@ export function PostItCardView({id,title,status,color,fontSize,activity,assignee
  const text=<>
   {summary!==undefined?summary:null}
   <span className="v3-postit-title" title={title}>{title}</span>
-  <span className={`v3-postit-body${activity||nowText?'':' v3-postit-empty'}`} data-card-now={nowText!==undefined||undefined}>{nowText??activity?.text??'아직 지시나 보고가 없습니다'}</span>
+  <span className={`v3-postit-body${activity||nowText?'':' v3-postit-empty'}`} data-card-now={nowText!==undefined||undefined}>{nowText??activity?.text??t("cards.noCardActivity")}</span>
   {turnText||turnLabel?<span className="v3-postit-turn" data-dependency-tone={turnTone} title={[turnLabel,turnText].filter(Boolean).join(", ")}><span className="v3-postit-turn-text"><strong>{turnLabel}</strong>{turnText}</span></span>:null}
  </>;
  return <article {...props} className={`v3-postit-card${variant==='compact'?' v3-postit-card--compact':''}`}
   data-card-id={id} data-card-size={variant} data-card-status={status} data-card-color={resolvedColor} data-card-readonly={readOnly||undefined} data-card-enhanced={enhanced||undefined}
   style={{...postItScale(fontSize),'--postit-paper':CARD_COLORS[resolvedColor].hex,'--postit-rotation':`${postItRotation(id)}deg`} as CSSProperties}>
-  {readOnly?<div className="v3-postit-open">{text}</div>:<button type="button" className="v3-postit-open" aria-label={`카드 ${title} 열기`} onClick={onOpen}>{text}</button>}
+  {readOnly?<div className="v3-postit-open">{text}</div>:<button type="button" className="v3-postit-open" aria-label={t("cards.openNamedCard",{title:title})} onClick={onOpen}>{text}</button>}
   <div className="v3-postit-footer" onClick={readOnly?undefined:onOpen}>
    <span className="v3-postit-assignee">{readOnly?<span aria-hidden="true">·</span>:avatar}<span title={assigneeName}>{assigneeName}</span></span>
    {!readOnly&&showStatus?statusContent:null}

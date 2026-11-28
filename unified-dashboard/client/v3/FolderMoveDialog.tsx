@@ -1,3 +1,5 @@
+import { folderErrorText } from "./folder-messages";
+import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useState } from "react";
 import { Button, Dialog, DialogFooter, DialogHeader, DialogDescription, DialogPanel, DialogPopup, DialogTitle, FrameLoading, useDashboardStore } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
@@ -17,6 +19,7 @@ export function FolderMoveDialog({
   onClose(): void;
   onMove(target: FolderMoveTarget): Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [movePending, setMovePending] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
@@ -41,28 +44,28 @@ export function FolderMoveDialog({
       await onMove(target);
       onClose();
     } catch (error) {
-      setMoveError(error instanceof Error ? error.message : String(error));
+      setMoveError(folderErrorText(t, error));
     } finally { setMovePending(false); }
   };
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) close(); }}>
       <DialogPopup className="approved-dialog max-w-md">
-        <DialogHeader><DialogTitle>다른 폴더로 이동</DialogTitle><DialogDescription>이동할 위치를 고른 뒤 확인하세요.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{t("folders.move.toOther")}</DialogTitle><DialogDescription>{t("folders.move.instructions")}</DialogDescription></DialogHeader>
         <DialogPanel>
-          <div className="dialog-selection-context">현재 위치 <strong>{pickerFolders.find(folder => folder.id === currentFolderId)?.name ?? "현재 폴더"}</strong></div>
+          <div className="dialog-selection-context">{t("folders.move.currentLocation")} <strong>{pickerFolders.find(folder => folder.id === currentFolderId)?.name ?? t("folders.move.currentFolder")}</strong></div>
           <div data-testid="v3-run-move-targets">
-            {stars.loading ? <FrameLoading inline label="폴더를 불러오는 중…" /> : open ? <FolderPicker
+            {stars.loading ? <FrameLoading inline label={t("folders.move.loading")} /> : open ? <FolderPicker
               folders={pickerFolders} starredFolderIds={stars.folderIds} disabledFolderIds={disabledFolderIds}
               selectedFolderId={selectedFolderId} pending={movePending} onSelect={(folder) => setSelectedFolderId(folder.id)} /> : null}
           </div>
-          {stars.error ? <p className="v3-load-error" role="alert" data-v3-selectable-content="true">별표 조회 실패 · {stars.error}</p> : null}
+          {stars.error ? <p className="v3-load-error" role="alert" data-v3-selectable-content="true">{t("folders.move.starError", { detail: stars.error })}</p> : null}
           {moveError ? <p className="v3-load-error" role="alert" data-v3-selectable-content="true">{moveError}</p> : null}
         </DialogPanel>
         <DialogFooter>
-          <p className="dialog-selection-destination">{selectedFolderId ? `${pickerFolders.find(folder => folder.id === selectedFolderId)?.name}으로 이동` : "이동할 폴더를 선택하세요"}</p>
-          <Button variant="ghost" disabled={movePending} onClick={close}>취소</Button>
-          <Button disabled={movePending || !selectedFolderId || disabledFolderIds.has(selectedFolderId)} onClick={() => { void move(); }}>이동</Button>
+          <p className="dialog-selection-destination">{selectedFolderId ? t("folders.move.destination", { name: pickerFolders.find(folder => folder.id === selectedFolderId)?.name }) : t("folders.move.selectFolder")}</p>
+          <Button variant="ghost" disabled={movePending} onClick={close}>{t("folders.common.cancel")}</Button>
+          <Button disabled={movePending || !selectedFolderId || disabledFolderIds.has(selectedFolderId)} onClick={() => { void move(); }}>{t("folders.common.move")}</Button>
         </DialogFooter>
       </DialogPopup>
     </Dialog>

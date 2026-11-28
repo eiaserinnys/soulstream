@@ -11,14 +11,14 @@ export function checkRowContract(props: RunRowFrameProps) {
   // @ts-expect-error actions are semantic data, not arbitrary JSX
   const jsxAction = <RunRowFrame {...props} actions={<button/>}/>;
   // @ts-expect-error action size is fixed by the frame
-  const size: RunRowAction = {kind:"open",label:"열기",onAction:()=>{},size:"default"};
+  const size: RunRowAction = {kind:"open",label:"열기",onAction:()=>{},size:"default"}; // i18n-ignore: type-only fixture
   // @ts-expect-error action styles cannot bypass its role contract
-  const style: RunRowAction = {kind:"complete",label:"완료",onAction:()=>{},style:{width:44}};
+  const style: RunRowAction = {kind:"complete",label:"완료",onAction:()=>{},style:{width:44}}; // i18n-ignore: type-only fixture
   // @ts-expect-error custom action classes cannot bypass its role contract
-  const actionClass: RunRowAction = {kind:"menu",label:"관리",onAction:()=>{},className:"large"};
+  const actionClass: RunRowAction = {kind:"menu",label:"관리",onAction:()=>{},className:"large"}; // i18n-ignore: type-only fixture
   // @ts-expect-error only existing operational action kinds are accepted
-  const kind: RunRowAction = {kind:"custom",label:"다른 동작",onAction:()=>{}};
+  const kind: RunRowAction = {kind:"custom",label:"다른 동작",onAction:()=>{}}; // i18n-ignore: type-only fixture
   // @ts-expect-error disclosure must retain its accessible expanded state
-  const disclosure: RunRowAction = {kind:"disclosure",label:"펼치기",onAction:()=>{}};
+  const disclosure: RunRowAction = {kind:"disclosure",label:"펼치기",onAction:()=>{}}; // i18n-ignore: type-only fixture
   return [trailing,classOverride,styleOverride,jsxAction,size,style,actionClass,kind,disclosure];
 }

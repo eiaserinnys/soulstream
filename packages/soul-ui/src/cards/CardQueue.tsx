@@ -5,7 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 import { DashboardIconCap } from "../components/DashboardIconCap";
 import type { CardRow } from "./card-types";
-import { queueAfterId } from "./card-api";
+import { queueAfterId, type CardTranslate } from "./card-api";
 import { useCardStore } from "./card-store";
 
 export interface CardQueueStatusActivator {
@@ -17,11 +17,12 @@ export interface CardQueueStatusActivator {
  onPopupOpenChange(open:boolean):void;
 }
 
-export function CardQueue({cards,renderRow,layout="list",activatorMode="handle",onReorder}: {
+export function CardQueue({cards,renderRow,layout="list",activatorMode="handle",onReorder,t}: {
  cards:readonly CardRow[];
  renderRow(card:CardRow,handle:ReactNode,activator?:CardQueueStatusActivator):ReactNode;
  layout?:"list"|"grid";
  activatorMode?:"handle"|"status-chip";
+ t?:CardTranslate;
  onReorder?(ids:readonly string[]):void|Promise<void>;
 }) {
  const [pending,setPending]=useState(false),[error,setError]=useState<string|null>(null);
@@ -35,15 +36,16 @@ export function CardQueue({cards,renderRow,layout="list",activatorMode="handle",
   const moved=cards[from],ids=arrayMove(cards.map(c=>c.id),from,to);
   setPending(true);setError(null);
   const save=onReorder?Promise.resolve(onReorder(ids)):
-   useCardStore.getState().mutate(moved.id,"/queue-position",{afterCardId:queueAfterId(ids,moved.id),expectedVersion:moved.version});
+   useCardStore.getState().mutate(moved.id,"/queue-position",{afterCardId:queueAfterId(ids,moved.id),expectedVersion:moved.version},"POST",t);
   void save.catch(e=>setError(String(e))).finally(()=>setPending(false));
- }}><SortableContext items={cards.map(c=>c.id)} strategy={layout==="grid"?rectSortingStrategy:verticalListSortingStrategy}>{cards.map(card=><QueueItem key={card.id} card={card} pending={pending} renderRow={renderRow} layout={layout} activatorMode={activatorMode}/>)}</SortableContext></DndContext>{error?<p role="alert">{error}</p>:null}</>;
+ }}><SortableContext items={cards.map(c=>c.id)} strategy={layout==="grid"?rectSortingStrategy:verticalListSortingStrategy}>{cards.map(card=><QueueItem key={card.id} card={card} pending={pending} renderRow={renderRow} layout={layout} activatorMode={activatorMode} t={t}/>)}</SortableContext></DndContext>{error?<p role="alert">{error}</p>:null}</>;
 }
 
-function QueueItem({card,pending,renderRow,layout,activatorMode}:{card:CardRow;pending:boolean;renderRow(card:CardRow,handle:ReactNode,activator?:CardQueueStatusActivator):ReactNode;layout:"list"|"grid";activatorMode:"handle"|"status-chip"}) {
+function QueueItem({card,pending,renderRow,layout,activatorMode,t}:{card:CardRow;pending:boolean;renderRow(card:CardRow,handle:ReactNode,activator?:CardQueueStatusActivator):ReactNode;layout:"list"|"grid";activatorMode:"handle"|"status-chip";t?:CardTranslate}) {
  const [popupOpen,setPopupOpen]=useState(false);
  const {attributes,listeners,setNodeRef,setActivatorNodeRef,transform,transition}=useSortable({id:card.id,disabled:pending||popupOpen});
  const activator:CardQueueStatusActivator={setActivatorNodeRef,attributes,listeners,disabled:pending,popupOpen,onPopupOpenChange:setPopupOpen};
- const handle=activatorMode==="handle"?<span ref={element=>setActivatorNodeRef(element?.querySelector("button")??null)}><DashboardIconCap size={layout==="grid"?"small":"default"} label={`${card.title} 순서 변경`} disabled={pending} {...attributes} {...listeners} onClick={event=>event.stopPropagation()}><GripVertical className="h-4 w-4"/></DashboardIconCap></span>:null;
+ const label=t?.("cards.reorderCard",{title:card.title})??`${card.title} 순서 변경`; // i18n-ignore: 번역 함수를 받지 않는 대기열의 한국어 기본값.
+ const handle=activatorMode==="handle"?<span ref={element=>setActivatorNodeRef(element?.querySelector("button")??null)}><DashboardIconCap size={layout==="grid"?"small":"default"} label={label} disabled={pending} {...attributes} {...listeners} onClick={event=>event.stopPropagation()}><GripVertical className="h-4 w-4"/></DashboardIconCap></span>:null;
  return <div ref={setNodeRef} style={{transform:CSS.Transform.toString(transform),transition}}>{renderRow(card,handle,activatorMode==="status-chip"?activator:undefined)}</div>;
 }

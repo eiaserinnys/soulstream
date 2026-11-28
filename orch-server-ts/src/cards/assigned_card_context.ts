@@ -10,6 +10,14 @@ export interface AssignedCardSnapshot {
   }>;
 }
 
+export async function findDirectInputCardId(sql: RepositorySql, sessionId: string): Promise<string | null> {
+  const rows = await sql<{ id: string }[]>`
+    SELECT id FROM cards WHERE assignee_session_id=${sessionId} AND archived=FALSE
+    ORDER BY (status IN ('done','cancelled')),status_changed_at DESC,id COLLATE "C" DESC LIMIT 1
+  `;
+  return rows[0]?.id ?? null;
+}
+
 /** One bounded server query, scoped by the trusted execution session, never by folder membership. */
 export async function readAssignedCardContext(sql: RepositorySql, sessionId: string): Promise<AssignedCardSnapshot> {
   const rows = await sql<Array<{

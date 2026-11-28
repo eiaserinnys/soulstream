@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { DashboardIconCap } from "@seosoyoung/soul-ui";
 import { RotateCw } from "lucide-react";
@@ -11,6 +12,7 @@ export function RunHistoryAutoLoader({ hasMore, loading, failed, onLoadMore, tes
   onLoadMore(): Promise<void>;
   testId: string;
 }) {
+  const { t } = useTranslation();
   const sentinelRef = useRef<HTMLSpanElement>(null);
   const [intersecting, setIntersecting] = useState(false);
 
@@ -32,9 +34,9 @@ export function RunHistoryAutoLoader({ hasMore, loading, failed, onLoadMore, tes
   return <div className="v3-run-load-more" data-testid={testId}>
     <span ref={sentinelRef} className="v3-run-load-sentinel" aria-hidden="true"
       style={{ height: RUN_HISTORY_PREFETCH_DISTANCE_PX }} />
-    {loading ? <span className="v3-detail-empty" role="status">불러오는 중…</span> : failed ? <>
-      <span className="v3-detail-empty" role="status">세션을 더 불러오지 못했습니다</span>
-      <DashboardIconCap label="다시 시도" onClick={() => { void onLoadMore(); }}>
+    {loading ? <span className="v3-detail-empty" role="status">{t("sessions.loading")}</span> : failed ? <>
+      <span className="v3-detail-empty" role="status">{t("sessions.historyLoadFailed")}</span>
+      <DashboardIconCap label={t("sessions.retry")} onClick={() => { void onLoadMore(); }}>
         <RotateCw className="h-4 w-4" aria-hidden="true" />
       </DashboardIconCap>
     </> : null}

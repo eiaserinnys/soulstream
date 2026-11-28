@@ -12,12 +12,12 @@ describe("PR-CN planner polish contract", () => {
 
     expect(toolbar).not.toContain("onOpenNewTask");
     expect(home).not.toContain("역대 폴더");
-    expect(navigation).toMatch(/label="새 폴더"[\s\S]*?onClick=\{\(\) => \{ setProjectDialog\(\{ mode: "create", parentFolderId: null, parentName: null \}\); setError\(null\); \}\}/);
+    expect(navigation).toMatch(/label=\{t\("sessions\.newFolder"\)\}[\s\S]*?onClick=\{\(\) => \{ setProjectDialog\(\{ mode: "create", parentFolderId: null, parentName: null \}\); setError\(null\); \}\}/);
     expect(navigation).toContain("target={projectDialog}");
     expect(navigation).toContain("onCreateIdentity={onCreateProject}");
-    expect(layout).toContain('createLabel="새 폴더"');
+    expect(layout).toContain('createLabel={t("sessions.newFolder")}');
     expect(layout).toContain("folderSessions.state?.items.map");
-    expect(navigation).toContain("<h2>중요 작업</h2>");
+    expect(navigation).toContain('<h2>{t("sessions.importantWork")}</h2>');
     expect(navigation).not.toContain("<h2>★ 작업</h2>");
     expect(home).toContain("<CardInbox");
     expect(home).toContain("<CardHandoff");

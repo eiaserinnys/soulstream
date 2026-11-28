@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 import type { Browser, Locator, Page } from "@playwright/test";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -62,7 +63,7 @@ const bannerButton = (root: Locator) => root.getByRole("button", { name: "↓ �
 const followButton = (root: Locator) => root.getByRole("button", { name: "자동 스크롤", exact: true });
 
 async function chatPage(browser: Browser, width: number, height: number, deliverLive = false, fixedClock = true, theme: "dark" | "light" = "dark") {
-  const context = await browser.newContext({ viewport: { width, height }, reducedMotion: "reduce", timezoneId: "Asia/Seoul", colorScheme: theme });
+  const context = await browser.newContext({ viewport: { width, height }, reducedMotion: "reduce", timezoneId: "Asia/Seoul", colorScheme: theme, locale: koreanLocale });
   const page = await context.newPage();
   await page.addInitScript({ content: "window.__name = (f) => f;" });
   if (process.env.CARD1683_TRACE === "1") await page.addInitScript(() => {

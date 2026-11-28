@@ -113,7 +113,7 @@ it("sends from the current tab, targets an item comment, then clears its unread 
  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(textarea,"입력 폭을 고쳐 주세요");
  await act(()=>textarea.dispatchEvent(new Event("input",{bubbles:true})));
  await act(async()=>textarea.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",ctrlKey:true,bubbles:true})));
- expect(useCardStore.getState().addComment).toHaveBeenCalledWith("inherit","입력 폭을 고쳐 주세요",expect.any(String),4);
+ expect(useCardStore.getState().addComment).toHaveBeenCalledWith("inherit","입력 폭을 고쳐 주세요",expect.any(String),4,undefined,expect.any(Function));
  expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("확인 항목");
  expect(container.querySelector('[aria-label="새 커멘트"]')).not.toBeNull();
  expect(container.textContent).toContain("보냈습니다.");
@@ -126,7 +126,7 @@ it("unchecking targets and focuses the composer without sending",async()=>{
  await render();
  const textarea=container.querySelector('textarea')!;
  await act(()=>container.querySelector<HTMLButtonElement>('[data-item-id="1"] [role="checkbox"]')!.click());
- expect(useCardStore.getState().confirmItem).toHaveBeenCalledWith("inherit",1,false);
+ expect(useCardStore.getState().confirmItem).toHaveBeenCalledWith("inherit",1,false,expect.any(Function));
  expect(container.querySelector('.v3-card-target-notice')).not.toBeNull();
  expect(document.activeElement).toBe(textarea);
  expect(useCardStore.getState().addComment).not.toHaveBeenCalled();
@@ -135,7 +135,7 @@ it("closes after successful completion",async()=>{
  useCardStore.setState({byId:{inherit:{...card,status:"review"}},details:{inherit:{...detail,card:{...card,status:"review"}}},mutate:vi.fn().mockResolvedValue(undefined)});
  const close=await render();
  await act(async()=>{container.querySelector<HTMLButtonElement>('[aria-label="완료"]')!.click();await Promise.resolve();});
- expect(useCardStore.getState().mutate).toHaveBeenCalledWith("inherit","/status",{status:"done",expectedVersion:1});
+ expect(useCardStore.getState().mutate).toHaveBeenCalledWith("inherit","/status",{status:"done",expectedVersion:1},"POST",expect.any(Function));
  expect(close).toHaveBeenCalledTimes(1);
 });
 it("opens the header status menu, moves the card to on hold, and keeps both actions small",async()=>{
@@ -150,7 +150,7 @@ it("opens the header status menu, moves the card to on hold, and keeps both acti
  await act(async()=>{actions.querySelector<HTMLButtonElement>('[aria-label="상태 변경 메뉴"]')!.click();await new Promise(done=>setTimeout(done,20));});
  const hold=[...document.querySelectorAll<HTMLButtonElement>("[data-card-status-picker] button")].find(button=>button.textContent==="보류")!;
  await act(async()=>hold.click());
- expect(mutate).toHaveBeenCalledWith("inherit","/status",{status:"on_hold",expectedVersion:1});
+ expect(mutate).toHaveBeenCalledWith("inherit","/status",{status:"on_hold",expectedVersion:1},"POST",expect.any(Function));
 });
 it("closes the review sample after completion and has no undo action",async()=>{
  const sampleCard={...card,status:"review" as const,items:[item(1,"todo")]};
@@ -202,7 +202,7 @@ it("reopens a completed detail through the existing status menu without reports"
  await act(async()=>container.querySelector<HTMLButtonElement>('button[aria-label="카드 상태 변경"]')!.click());
  const move=[...document.querySelectorAll<HTMLButtonElement>('[data-card-status-picker] button')].find(button=>button.textContent==="실행 중")!;
  await act(async()=>move.click());
- expect(execute).toHaveBeenCalledWith("inherit",8);expect(mutate).not.toHaveBeenCalled();
+ expect(execute).toHaveBeenCalledWith("inherit",8,expect.any(Function));expect(mutate).not.toHaveBeenCalled();
 });
 
 it("PATCHes a color chosen from the detail pane with the freshly loaded card version",async()=>{
@@ -215,7 +215,7 @@ it("PATCHes a color chosen from the detail pane with the freshly loaded card ver
  await act(async()=>colorRow.click());
  const mint=[...document.querySelectorAll<HTMLButtonElement>('[data-card-status-picker] button')].find(button=>button.textContent==="민트")!;
  await act(async()=>mint.click());
- expect(mutate).toHaveBeenCalledWith("inherit","",{color:"mint",expectedVersion:9},"PATCH");
+ expect(mutate).toHaveBeenCalledWith("inherit","",{color:"mint",expectedVersion:9},"PATCH",expect.any(Function));
  expect(container.querySelector('[data-card-status-picker]')).toBeNull();
 });
 
@@ -234,7 +234,7 @@ it.each(['todo','queued','on_hold'] as const)('starts a %s detail through the ex
  const source={...card,status};const latest={...detail,card:source};const execute=vi.fn().mockResolvedValue({card:{...source,status:'running'},execution:{state:'pending',requestId:'req',sessionId:'owner'}});
  useCardStore.setState({byId:{inherit:source},details:{inherit:latest},loadCard:vi.fn().mockResolvedValue(latest),execute});
  const close=await render();await act(async()=>{container.querySelector<HTMLButtonElement>('[aria-label="시작하기"]')!.click();});
- expect(execute).toHaveBeenCalledWith('inherit',1);expect(close).not.toHaveBeenCalled();expect(document.querySelector('[data-card-status-picker]')).toBeNull();
+ expect(execute).toHaveBeenCalledWith('inherit',1,expect.any(Function));expect(close).not.toHaveBeenCalled();expect(document.querySelector('[data-card-status-picker]')).toBeNull();
 });
 
 it("closes the status menu before the execution settings modal opens for a card without a model",async()=>{

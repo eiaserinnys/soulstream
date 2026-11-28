@@ -171,12 +171,12 @@ describe("card check-item locked mutations", () => {
     expect((await cards.getCard(newCardId))!.card.version).toBe(before);
     expect(await h.sql`SELECT id FROM card_reports WHERE card_id=${newCardId}`).toHaveLength(0);
 
-    await expect(cards.requestCardReview({ ...assignee, cardId: newCardId }))
+    await expect(cards.requestCardReview({ ...assignee, cardId: newCardId, report: "결과 보고" }))
       .rejects.toMatchObject({ statusCode: 422, message: "사용자가 볼 것을 ask에 한 줄로 적으세요" });
-    const review = await cards.requestCardReview({ ...assignee, cardId: newCardId, ask: "로그인 화면에서 확인해 주세요" });
+    const review = await cards.requestCardReview({ ...assignee, cardId: newCardId, ask: "로그인 화면에서 확인해 주세요", report: "결과 보고" });
     expect(review.operation.operation_type).toBe("set_card_status");
     let current = (await cards.getCard(newCardId))!.card;
-    expect(current).toMatchObject({ status: "review", now: { text: "로그인 화면에서 확인해 주세요", turn: "user", ask: "로그인 화면에서 확인해 주세요", sessionId: "owner" } });
+    expect(current).toMatchObject({ status: "review", now: { text: "", turn: "user", ask: "로그인 화면에서 확인해 주세요", sessionId: "owner" } });
 
     const question = "가".repeat(61);
     await cards.askQuestion({ ...assignee, cardId: newCardId, text: question, options: ['진행'] });

@@ -11,6 +11,7 @@ import { effectiveTaskBackend } from "./task_model_preset.js";
 import { isRuntimeFollowup, sortInterventionsByPriority } from "./task_intervention_queue.js";
 import { buildModelBackendMetadataEntry, buildPersistentGenerationMetadataEntry } from "./task_metadata.js";
 import { resolveGenerationState } from "./persistent_generation_state.js";
+import { ANTIGRAVITY_LEGACY_RESUME } from "./antigravity_default_conversation.js";
 
 import type {
   ActiveGenerationRollover,
@@ -61,7 +62,7 @@ export function beginGenerationRolloverIfPending(
   if (pending.applyingFrom === undefined) {
     const firstIntervention = sortInterventionsByPriority(task.interventionQueue)[0];
     if (
-      !(task.persistent === true || readModelPresetFallbackPolicy(task.metadata) !== null)
+      !(task.persistent === true || readModelPresetFallbackPolicy(task.metadata) !== null || pending.reason === ANTIGRAVITY_LEGACY_RESUME)
       || task.runnerRetainedForDetachedWork === true
       || task.interventionQueue.length === 0
       || (firstIntervention !== undefined && isRuntimeFollowup(firstIntervention))
@@ -111,6 +112,11 @@ export function beginGenerationRolloverIfPending(
       active.previousModelPreset = pending.previousModelPreset;
       active.previousBackend = pending.previousBackend;
     }
+  }
+
+  if (pending.reason === ANTIGRAVITY_LEGACY_RESUME && !pending.targetModelPreset) {
+    task.modelPresetBackend = effectiveTaskBackend(task, agent);
+    return active;
   }
 
   if (!modelCatalog) {

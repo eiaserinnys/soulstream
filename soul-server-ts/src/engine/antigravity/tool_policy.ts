@@ -226,7 +226,14 @@ if (policy.allowedTools) {
   const canonical = aliases[name] || name;
   const tools = isSubagent ? policy.subagentTools : policy.allowedTools;
   if (name !== "call_mcp_tool" && tools.indexOf(canonical) < 0) deny("tool not allowed");
-  if (!isSubagent && name === "invoke_subagent" && (!policy.subagents || policy.subagents.indexOf(args.TypeName) < 0)) deny("subagent not allowed");
+  if (!isSubagent && name === "invoke_subagent") {
+    if (args.TypeName !== "research" || !policy.subagents || policy.subagents.indexOf(args.Role) < 0) {
+      deny('subagent not allowed: use TypeName "research" and Role with an allowed name: ' + (policy.subagents || []).join(", "));
+    }
+    if ((args.Workspace !== undefined && args.Workspace !== "inherit") || (args.Model !== undefined && args.Model !== "inherit")) {
+      deny("subagent not allowed: Workspace and Model must be omitted or inherit");
+    }
+  }
 }
 
 const WRITE_TOOLS = ["write_file", "write_to_file"];
@@ -245,6 +252,32 @@ function pathAllowed(family, value) {
     }
   }
   return false;
+}
+
+function canonicalPath(value) {
+  let current = path.resolve(value);
+  const suffix = [];
+  while (true) {
+    try { return path.resolve(fs.realpathSync(current), ...suffix); } catch (error) {
+      if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+      const parent = path.dirname(current);
+      if (parent === current) throw error;
+      suffix.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+function protectedPath(value) {
+  if (!policy.protectedPaths || typeof value !== "string" || value === "") return false;
+  const target = path.resolve(value);
+  const realTarget = canonicalPath(target);
+  return (policy.protectedPaths || []).some(root => {
+    const absolute = path.resolve(root);
+    const realRoot = canonicalPath(absolute);
+    return [target, realTarget].some(candidate => [absolute, realRoot].some(parent =>
+      candidate === parent || candidate.startsWith(parent + path.sep)));
+  });
 }
 
 function unsafeShell(command) {
@@ -274,7 +307,9 @@ if (WRITE_TOOLS.indexOf(name) >= 0 || EDIT_TOOLS.indexOf(name) >= 0) {
   const value = args.Path !== undefined
     ? args.Path
     : (args.TargetFile !== undefined ? args.TargetFile : args.AbsolutePath);
-  if (pathAllowed(family, value)) allow();
+  try {
+    if (!protectedPath(value) && pathAllowed(family, value)) allow();
+  } catch (error) {}
   deny("path not allowed");
 }
 

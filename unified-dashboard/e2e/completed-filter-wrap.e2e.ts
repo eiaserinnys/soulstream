@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Locator } from '@playwright/test';
+import { test, expect, type Page, type Locator } from './test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 const output = path.resolve('../../../.local/artifacts/20261002-completed-card-browser');

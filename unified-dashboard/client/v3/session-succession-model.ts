@@ -8,7 +8,7 @@ const SUCCESSION_SESSION_LABEL_LENGTH = 80;
 
 export interface SuccessionSessionOption {
   sessionId: string;
-  label: string;
+  label: string | null;
   runNumber: number | null;
 }
 
@@ -88,7 +88,7 @@ export function buildSuccessionSessionOptions(
         ) ?? singleLinePreview(
           visibleLastMessagePreview(node.session),
           SUCCESSION_SESSION_LABEL_LENGTH,
-        ) ?? "제목 없는 세션",
+        ),
         runNumber: node.runNumber,
       });
     }

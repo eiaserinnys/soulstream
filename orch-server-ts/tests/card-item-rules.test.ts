@@ -244,9 +244,9 @@ describe("card now projections", () => {
   it("moves review and question requests to the user turn without adding an update record", () => {
     const existing = { text: "진행 중", turn: "agent" as const, ask: null, updatedAt: at, sessionId: "session-1" };
     expect(reviewCardNow(existing, "결과를 확인해 주세요", at, "session-2")).toMatchObject({
-      text: "진행 중", turn: "user", ask: "결과를 확인해 주세요", updatedAt: at, sessionId: "session-2",
+      text: "", turn: "user", ask: "결과를 확인해 주세요", updatedAt: at, sessionId: "session-2",
     });
-    expect(reviewCardNow(null, "결과를 확인해 주세요", at, null)?.text).toBe("결과를 확인해 주세요");
+    expect(reviewCardNow(null, "결과를 확인해 주세요", at, null)?.text).toBe("");
     expect(questionCardNow(null, "추가 질문", at, "session-1")).toBeNull();
     expect(questionCardNow(existing, "추가 질문", at, "session-1")).toMatchObject({ turn: "user", ask: "추가 질문" });
     expect(questionCardNow(existing, "가".repeat(60) + "나", at, "session-1")?.ask).toBe("가".repeat(59) + "…");

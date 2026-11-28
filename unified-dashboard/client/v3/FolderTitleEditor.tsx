@@ -1,6 +1,7 @@
+import { folderErrorText } from "./folder-messages";
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { errorText } from "./v3-dashboard-utils";
 
 export function FolderTitleEditor({
   title,
@@ -15,6 +16,7 @@ export function FolderTitleEditor({
   variant?: "default" | "card";
   leading?: ReactNode;
 }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
   const [saving, setSaving] = useState(false);
@@ -35,7 +37,7 @@ export function FolderTitleEditor({
     if (savingRef.current) return;
     const nextTitle = draft.trim();
     if (!nextTitle) {
-      setError("폴더 제목을 입력해야 합니다");
+      setError(t("folders.title.required"));
       return;
     }
     if (nextTitle === title) {
@@ -49,7 +51,7 @@ export function FolderTitleEditor({
       await onRename(nextTitle);
       setEditing(false);
     } catch (cause) {
-      setError(`폴더 제목 변경 실패 · ${errorText(cause)}`);
+      setError(t("folders.title.error", { detail: folderErrorText(t, cause) }));
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -58,8 +60,8 @@ export function FolderTitleEditor({
 
   const titleProps = {
     className: `v3-task-title-button${variant === "card" ? " v3-card-title-button" : ""}`,
-    "aria-label": "폴더 제목 편집",
-    title: "클릭해서 폴더 제목 편집",
+    "aria-label": t("folders.title.edit"),
+    title: t("folders.title.hint"),
     onClick: () => {
       setDraft(title);
       setError(null);
@@ -79,7 +81,7 @@ export function FolderTitleEditor({
         <input
           autoFocus
           className={`v3-task-title-input${variant === "card" ? " v3-card-title-input" : ""}`}
-          aria-label="폴더 제목 편집"
+          aria-label={t("folders.title.edit")}
           value={draft}
           disabled={saving}
           onChange={(event) => setDraft(event.target.value)}

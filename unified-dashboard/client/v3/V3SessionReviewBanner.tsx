@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import {
   DashboardIconCap,
@@ -8,6 +9,8 @@ import {
 } from "@seosoyoung/soul-ui";
 import { Check } from "lucide-react";
 
+type Translate = ReturnType<typeof useTranslation>["t"];
+
 export function V3SessionReviewBanner({
   session,
   onAcknowledged,
@@ -15,6 +18,7 @@ export function V3SessionReviewBanner({
   session: SessionSummary | undefined;
   onAcknowledged(result: SessionReviewAcknowledgeResult): void;
 }) {
+  const { t } = useTranslation();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const pendingRef = useRef(false);
@@ -39,10 +43,10 @@ export function V3SessionReviewBanner({
     try {
       const result = await acknowledgeSessionReview(requestedId);
       if (sessionIdRef.current !== requestedId) return;
-      setMessage(result.changed ? "검수를 확인했습니다." : "이미 확인된 세션입니다.");
+      setMessage(result.changed ? t("sessions.reviewAcknowledged") : t("sessions.alreadyAcknowledged"));
       onAcknowledged(result);
     } catch (error) {
-      if (sessionIdRef.current === requestedId) setMessage(reviewErrorMessage(error));
+      if (sessionIdRef.current === requestedId) setMessage(reviewErrorMessage(error, t));
     } finally {
       if (sessionIdRef.current === requestedId) {
         pendingRef.current = false;
@@ -54,9 +58,9 @@ export function V3SessionReviewBanner({
   return (
     <div className={`v3-review-banner${message ? " has-message" : ""}`} role="status">
       <span aria-hidden="true">{message ? "✓" : "◆"}</span>
-      <p><strong>{message ? "검수 상태" : "검수 대기"}</strong><small>{message ?? "이 세션의 결과 확인이 필요합니다."}</small></p>
+      <p><strong>{message ? t("sessions.reviewStatus") : t("sessions.needsReview")}</strong><small>{message ?? t("sessions.reviewPrompt")}</small></p>
       {!message ? (
-        <DashboardIconCap label="검수 확인" disabled={pending} onClick={() => { void acknowledge(); }}>
+        <DashboardIconCap label={t("sessions.acknowledgeReview")} disabled={pending} onClick={() => { void acknowledge(); }}>
           <Check className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       ) : null}
@@ -64,11 +68,11 @@ export function V3SessionReviewBanner({
   );
 }
 
-export function reviewErrorMessage(error: unknown): string {
+export function reviewErrorMessage(error: unknown, t: Translate): string {
   if (error instanceof SessionReviewAcknowledgeError) {
-    if (error.status === 404) return "세션을 찾을 수 없습니다. 목록을 새로 고쳐주세요.";
-    if (error.status === 409) return "검수 상태가 바뀌었습니다. 목록을 새로 고쳐주세요.";
-    return `검수 확인 실패: ${error.detail}`;
+    if (error.status === 404) return t("sessions.sessionMissingRefresh");
+    if (error.status === 409) return t("sessions.reviewChangedRefresh");
+    return t("sessions.reviewError", { detail: error.detail });
   }
-  return "서버에 연결할 수 없습니다. 잠시 뒤 다시 시도하세요.";
+  return t("sessions.serverUnreachable");
 }

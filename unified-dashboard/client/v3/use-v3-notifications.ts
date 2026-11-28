@@ -1,8 +1,10 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { reportV3WriteFailure } from "./v3-dashboard-utils";
 
 export function useV3Notifications(refreshAuthStatus: () => Promise<void>) {
+  const { t } = useTranslation();
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const notify = useCallback((message: string) => {
@@ -12,16 +14,17 @@ export function useV3Notifications(refreshAuthStatus: () => Promise<void>) {
   }, []);
   const notifyWriteFailure = useCallback((action: string, error: unknown) => {
     return reportV3WriteFailure({
+      t,
       action,
       error,
       notify,
       refreshAuthStatus: () => {
         void refreshAuthStatus().catch((refreshError: unknown) => {
-          console.error("[v3/auth] 인증 상태 갱신 실패", refreshError);
+          console.error("[v3/auth] 인증 상태 갱신 실패", refreshError); // i18n-ignore: diagnostic log
         });
       },
     });
-  }, [notify, refreshAuthStatus]);
+  }, [t, notify, refreshAuthStatus]);
   useEffect(() => () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);

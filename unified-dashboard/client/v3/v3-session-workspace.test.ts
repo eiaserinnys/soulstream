@@ -1,3 +1,4 @@
+import { createI18n } from "@soulstream/i18n";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
@@ -8,6 +9,8 @@ import {
   SessionWorkspaceResolutionError,
 } from "./v3-session-workspace";
 import type { PlannerFolder } from "./planner-data";
+
+const t = createI18n("ko").t;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -74,7 +77,7 @@ describe("resolveSessionFolderWorkspace", () => {
   it("reuses a loaded folder entry for the session folder", async () => {
     const loaded = plannerTask("folder-page", "folder-a", "in_progress");
     const loadFolderById = vi.fn();
-    const result = await resolveSessionFolderWorkspace({
+    const result = await resolveSessionFolderWorkspace({ t,
       session: session("session-a", "folder-a"),
       currentFolderEntries: [loaded],
       loadFolderById,
@@ -87,7 +90,7 @@ describe("resolveSessionFolderWorkspace", () => {
   it("target-loads a folder outside the currently loaded entries by its folder id", async () => {
     const target = plannerTask("folder-page", "folder-a", "in_progress");
     const loadFolderById = vi.fn(async () => target);
-    const result = await resolveSessionFolderWorkspace({
+    const result = await resolveSessionFolderWorkspace({ t,
       session: session("session-a", "folder-a"),
       currentFolderEntries: [],
       loadFolderById,
@@ -98,7 +101,7 @@ describe("resolveSessionFolderWorkspace", () => {
   });
 
   it("keeps the owning folder load failure distinct from a truly unassigned session", async () => {
-    const promise = resolveSessionFolderWorkspace({
+    const promise = resolveSessionFolderWorkspace({ t,
       session: session("session-a", "missing-folder"),
       currentFolderEntries: [],
       loadFolderById: async () => { throw new Error("Not Found"); },
@@ -109,7 +112,7 @@ describe("resolveSessionFolderWorkspace", () => {
       message: "소속 폴더를 불러오지 못했습니다.",
     });
 
-    await expect(resolveSessionFolderWorkspace({
+    await expect(resolveSessionFolderWorkspace({ t,
       session: session("session-unassigned", null),
       currentFolderEntries: [],
       loadFolderById: vi.fn(),

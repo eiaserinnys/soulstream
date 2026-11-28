@@ -1,4 +1,4 @@
-import {expect,test} from '@playwright/test';
+import {expect,test} from './test';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {installV3VisualQaRoutes} from './v3-visual-fixtures';
 const output=process.env.CARD_EXECUTION_CAPTURE_DIR!;

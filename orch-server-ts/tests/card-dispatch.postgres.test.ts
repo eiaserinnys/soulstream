@@ -163,7 +163,7 @@ describe("card dispatch and session lifecycle", () => {
         await cards.reportCardItem({...agent,itemId:1,state:'done',result:'첫째 확인됨'});
         await dispatcher.drain();
         messages.mockClear();
-        const result = await cards.requestCardReview({...agent,ask:'결과를 확인해 주세요'});
+        const result = await cards.requestCardReview({...agent,ask:'결과를 확인해 주세요',report:'결과 보고'});
         await dispatcher.drain();
         const card = (await cards.getCard(id))!.card;
         expect(messages.mock.calls.filter(call => call[1].startsWith('[카드 검수 대기]'))).toEqual([['pas',`[카드 검수 대기] 맡긴 카드 #${card.number} 「맡긴 작업」(${id})가 검수 대기가 됐습니다. 볼 것: 결과를 확인해 주세요. 확인 항목: 1. 첫째 확인(결과 있음), 2. 둘째 확인(아직).`,undefined,
@@ -179,7 +179,7 @@ describe("card dispatch and session lifecycle", () => {
     });
     it("does not send review notices for an unconnected card", async () => {
         const id = await makeNoticeCard(false);
-        await cards.requestCardReview({actorKind:'agent',actorSessionId:'worker',cardId:id,ask:'결과 확인'});
+        await cards.requestCardReview({actorKind:'agent',actorSessionId:'worker',cardId:id,ask:'결과 확인',report:'결과 보고'});
         await dispatcher.drain();
         expect(messages.mock.calls.filter(call => call[1].startsWith('[카드 검수 대기]'))).toHaveLength(0);
     });

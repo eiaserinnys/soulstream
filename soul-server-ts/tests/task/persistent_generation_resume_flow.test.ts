@@ -8,7 +8,7 @@ import type { SessionDB, SessionRow } from "../../src/db/session_db.js";
 import type { EngineExecuteParams, EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
 import type { ModelCatalog } from "../../src/model_catalog.js";
 import type { ModelCatalogConfig } from "@soulstream/model-catalog";
-import { engineEventFrame } from "../../src/runner/frame_protocol.js";
+import { engineEventFrame, RunnerExecuteParamsSchema } from "../../src/runner/frame_protocol.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { TaskExecutor, type RunnerProcessRuntimeFactory } from "../../src/task/task_executor.js";
 import { TaskManager } from "../../src/task/task_manager.js";
@@ -320,6 +320,83 @@ describe("persistent generation rollover through the production resume path", ()
     vi.unstubAllGlobals();
   });
 
+  it.each([false, true])("moves an old Antigravity conversation to a checkpointed generation (persistent: %s)", async persistent => {
+    const row = productionSessionRow();
+    row.model_preset = "gemini-4-argon";
+    row.model = "gemini-4-argon";
+    row.reasoning_effort = "high";
+    row.metadata = [
+      { type: "model_backend", value: { backend: "antigravity" } },
+      ...(persistent ? [{ type: "persistent_session", value: { enabled: true } }] : []),
+    ];
+    const fixture = makeFixture(row);
+    Object.assign(fixture.engine, { backendId: "antigravity" });
+    await resume(fixture);
+    expect(fixture.executed).toHaveLength(1);
+    expect(fixture.executed[0]).not.toHaveProperty("resumeSessionId");
+    expect(fixture.executed[0]).toMatchObject({ backendSessionRolloverFrom: OLD_NATIVE_ID });
+    expect(fixture.executed[0]?.prompt).toContain("checkpoint data");
+  });
+
+  it("passes durable conversation identity and rebuilt instructions across the runner boundary after GC", async () => {
+    const row = productionSessionRow();
+    row.model_preset = "gemini-4-argon";
+    row.model = "gemini-4-argon";
+    row.reasoning_effort = "high";
+    row.metadata = [
+      { type: "model_backend", value: { backend: "antigravity" } },
+      { type: "antigravity_default_conversation", value: OLD_NATIVE_ID },
+    ];
+    const fixture = makeFixture(row);
+    Object.assign(fixture.engine, { backendId: "antigravity" });
+    Object.assign(fixture.runnerProcessFactorySpy, { antigravityWorkspace: () => ({ instructionsPresent: false }) });
+    fixture.contextBuilder.buildFollowupContext.mockResolvedValue({
+      effectiveSystemPrompt: "restored instructions", contextItems: [],
+    } as never);
+    fixture.runnerEvents.splice(0, fixture.runnerEvents.length,
+      { type: "session", session_id: OLD_NATIVE_ID } as SSEEventPayload,
+      { type: "complete", timestamp: 2 } as SSEEventPayload,
+    );
+    await resume(fixture);
+    expect(RunnerExecuteParamsSchema.parse(fixture.executed[0])).toMatchObject({
+      resumeSessionId: OLD_NATIVE_ID, antigravityDefaultConversationId: OLD_NATIVE_ID,
+      systemPrompt: "restored instructions",
+    });
+  });
+
+  it("rolls over an old conversation that has a raw model and no preset", async () => {
+    const row = productionSessionRow();
+    row.model_preset = null;
+    row.model = "legacy-test-model";
+    row.reasoning_effort = "high";
+    row.metadata = [{ type: "model_backend", value: { backend: "antigravity" } }];
+    const fixture = makeFixture(row);
+    Object.assign(fixture.engine, { backendId: "antigravity" });
+    const task = await resume(fixture);
+    expect(fixture.executed[0]).toMatchObject({ backendSessionRolloverFrom: OLD_NATIVE_ID, model: "legacy-test-model" });
+    expect(fixture.executed[0]).not.toHaveProperty("resumeSessionId");
+    expect(fixture.executed[0]?.prompt).toContain("checkpoint data");
+    expect(task.persistentGeneration?.pending).toBeUndefined();
+  });
+
+  it("keeps a pre-upgrade marked conversation and records it durably", async () => {
+    const row = productionSessionRow();
+    row.model_preset = "gemini-4-argon";
+    row.model = "gemini-4-argon";
+    row.reasoning_effort = "high";
+    row.metadata = [{ type: "model_backend", value: { backend: "antigravity" } }];
+    const fixture = makeFixture(row);
+    Object.assign(fixture.engine, { backendId: "antigravity" });
+    Object.assign(fixture.runnerProcessFactorySpy, { antigravityWorkspace: () => ({ conversationId: OLD_NATIVE_ID, instructionsPresent: true }) });
+    fixture.runnerEvents.splice(0, fixture.runnerEvents.length,
+      { type: "session", session_id: OLD_NATIVE_ID } as SSEEventPayload,
+      { type: "complete", timestamp: 2 } as SSEEventPayload,
+    );
+    const task = await resume(fixture);
+    expect(fixture.executed[0]).toMatchObject({ resumeSessionId: OLD_NATIVE_ID });
+    expect(task.metadata).toContainEqual({ type: "antigravity_default_conversation", value: OLD_NATIVE_ID });
+  });
+
   it("starts a new backend session when a message resumes a completed session read through the host transport", async () => {
     const fixture = makeFixture();
     const deliveryId = "11111111-1111-4111-8111-111111111111";
@@ -584,6 +661,7 @@ describe("retained runner backend selection after persistent rollover", () => {
 
   it("does not reuse Claude after native-ID reconciliation clears the pending generation", async () => {
     const fixture = makeFixture();
+    Object.assign(fixture.runnerProcessFactorySpy, { antigravityWorkspace: () => ({ conversationId: "native-already-rotated", instructionsPresent: true }) });
     const order: string[] = [];
     useReplacementRunnerFactory(fixture, order);
     const start = startWithRetainedRunner(fixture, {

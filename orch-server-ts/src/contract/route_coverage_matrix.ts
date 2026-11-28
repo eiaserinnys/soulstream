@@ -186,6 +186,7 @@ export const tsOnlyRouteKeys = [
   "GET /api/cards/{id}/execution",
   "POST /api/cards/{id}/execution-settings",
   "GET /api/cards/{id}/messages",
+  "GET /api/cards/{id}/progress",
   "POST /api/cards/{id}/messages",
   "GET /api/settings/card-orchestration",
   "PUT /api/settings/card-orchestration",

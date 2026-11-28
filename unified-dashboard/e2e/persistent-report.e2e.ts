@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './test';
 import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { installChatUiRoutes, chatUiSession } from './chat-ui-fixtures';

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {useRef} from "react";
 import {Button,FileAttachmentPreview} from "@seosoyoung/soul-ui";
 import type {UploadedFile} from "@seosoyoung/soul-ui/hooks/useFileUpload";
@@ -7,6 +8,7 @@ export function SessionAttachmentFields({files,pending,nodeId,isUploading,addFil
  files:UploadedFile[];pending:boolean;nodeId:string;isUploading:boolean;
  addFiles(files:FileList|File[]):void;removeFile(id:string):void;
 }) {
+  const { t } = useTranslation();
  const fileInput=useRef<HTMLInputElement>(null);
  return (
             <div className="flex min-w-0 flex-col gap-2">
@@ -29,9 +31,9 @@ export function SessionAttachmentFields({files,pending,nodeId,isUploading,addFil
                   disabled={pending || !nodeId}
                   onClick={() => fileInput.current?.click()}
                 >
-                  파일 첨부
+                  {t("sessions.attachFiles")}
                 </Button>
-                {isUploading ? <small>업로드 중…</small> : null}
+                {isUploading ? <small>{t("sessions.uploading")}</small> : null}
               </div>
               <input
                 ref={fileInput}

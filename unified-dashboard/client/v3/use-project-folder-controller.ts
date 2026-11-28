@@ -1,3 +1,5 @@
+import { folderErrorText } from "./folder-messages";
+import { useTranslation } from "react-i18next";
 import { useCallback, useRef, useState } from "react";
 import type { CatalogFolder } from "@seosoyoung/soul-ui";
 import type { PageDto } from "../../../packages/page-model/src/types";
@@ -20,6 +22,7 @@ interface ResolutionInput {
 }
 
 export function useProjectFolderController() {
+  const { t } = useTranslation();
   const [resolution, setResolution] = useState<ProjectFolderResolution>({
     status: "idle",
     folderId: null,
@@ -43,11 +46,11 @@ export function useProjectFolderController() {
         status: "error",
         folderId: input.folder.id,
         project: null,
-        message: errorText(error),
+        message: folderErrorText(t, error),
       });
-      input.notify("폴더를 열지 못했습니다.");
+      input.notify(t("folders.errors.openFolder"));
     }
-  }, []);
+  }, [t]);
 
   const openFolder = useCallback(async (
     api: PageApiClient,
@@ -86,10 +89,10 @@ export function useProjectFolderController() {
     parentFolderId: string | null = null,
   ) => {
     const folder = await createFolder(title, parentFolderId);
-    if (!folder) throw new Error("폴더를 생성하지 못했습니다");
+    if (!folder) throw new Error(t("folders.errors.createFolder"));
     await openFolder(api, folder, knownPages, notify);
     return folder;
-  }, [openFolder]);
+  }, [t, openFolder]);
 
   return {
     resolution,
@@ -101,8 +104,4 @@ export function useProjectFolderController() {
     clearProject,
     createProject,
   };
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : String(error);
 }

@@ -1,3 +1,4 @@
+import { FolderMessageError } from "./folder-messages";
 import type { PageDto } from "../../../packages/page-model/src/types";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import type { PageStructureOperation } from "@seosoyoung/soul-ui/page/page-structure-operation";
@@ -22,7 +23,7 @@ export async function renameFolderPageTitle(
   idFactory: () => string = () => `v3-folder-title-${crypto.randomUUID()}`,
 ): Promise<PageDto> {
   const title = titleValue.trim();
-  if (!title) throw new Error("폴더 제목을 입력해야 합니다");
+  if (!title) throw new FolderMessageError("folders.title.required");
   const current = await api.getPage(pageId);
   if (title === current.page.title) return current.page;
   const result = await api.applyOperations(pageId, {
@@ -43,7 +44,7 @@ export async function fetchPageSessionDefaults(
     `/api/pages/${encodeURIComponent(pageId)}/session-defaults`,
     { credentials: "same-origin", headers: { Accept: "application/json" } },
   );
-  if (!response.ok) throw new Error(`실행 기본값을 불러오지 못했습니다 (${response.status})`);
+  if (!response.ok) throw new FolderMessageError("folders.errors.defaultsHttp", { status: response.status });
   return await response.json() as PageSessionDefaults | null;
 }
 
@@ -67,7 +68,7 @@ export async function saveFolderSessionDefaults(
     scope: "session",
   };
   if (!properties.agentId && !properties.nodeId) {
-    throw new Error("에이전트 또는 노드를 선택해야 합니다");
+    throw new FolderMessageError("folders.errors.chooseAssignment");
   }
   const current = await api.getPage(pageId);
   const operation: PageStructureOperation = input.blockId
@@ -144,7 +145,7 @@ export async function createFolderPageAnchor(
     }],
   });
   const blockId = result.temp_id_mapping[tempId];
-  if (!blockId) throw new Error("새 세션 page anchor 블록 ID를 받지 못했습니다");
+  if (!blockId) throw new FolderMessageError("folders.errors.noAnchor");
   return { pageId, blockId, expectedVersion: result.page.version };
 }
 

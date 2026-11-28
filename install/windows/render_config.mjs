@@ -5,6 +5,7 @@ import {
   chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { posix, win32 } from 'node:path';
+import { readInstallerText } from '../seed/locales/installer-text.mjs';
 import { readEnvValue } from './lib.mjs';
 import { PAS_DISALLOWED_TOOLS } from './pas_disallowed_tools.mjs';
 
@@ -82,14 +83,16 @@ function atomContexts(nodes, items) {
   return out === '' ? '' : `    atom_contexts:\n${out}`;
 }
 
-export function renderAgents({ backends, defaults, nodes, workspace, root, path }) {
+export function renderAgents({ backends, defaults, nodes, workspace, root, path, lang = 'ko' }) {
+  const { profiles } = readInstallerText(lang);
+  const name = (id) => lang === 'ko' ? profiles[id] : JSON.stringify(profiles[id]);
   const first = backends[0];
   const rules = BACKEND_RULES[first];
   const preset = (backend) => defaults.backends[backend];
   const portrait = (name) => path.join(root, 'install', 'assets', 'portraits', name);
   let out = 'agents:\n';
   out += `  - id: seosoyoung
-    name: 서소영
+    name: ${name('seosoyoung')}
     backend: ${first}
     default_preset: ${preset(first)}
     workspace_dir: ${workspace}
@@ -106,7 +109,7 @@ export function renderAgents({ backends, defaults, nodes, workspace, root, path 
 `;
   out += atomContexts(nodes, ['common_rules:5', 'common_rules_extra:index', rules, 'seosoyoung_rules:5', 'seosoyoung_skills:1'].filter(Boolean));
   out += `  - id: seosoyoung-pas
-    name: 서소영 (PAS)
+    name: ${name('seosoyoung-pas')}
     backend: ${first}
     default_preset: ${preset(first)}
     workspace_dir: ${workspace}
@@ -119,7 +122,7 @@ ${PAS_DISALLOWED_TOOLS.map((tool) => `      - ${tool}\n`).join('')}    context_s
   out += atomContexts(nodes, ['common_rules:5', rules, 'seosoyoung_general:0', 'seosoyoung_rules_pas:5', 'seosoyoung_rules_extra_pas:index', 'seosoyoung_skills_pas:1'].filter(Boolean));
   if (backends.includes('claude')) {
     out += `  - id: card-orchestrator
-    name: 카드 오케스트레이터
+    name: ${name('card-orchestrator')}
     backend: claude
     default_preset: ${defaults.profiles['card-orchestrator']}
     workspace_dir: ${workspace}
@@ -338,7 +341,7 @@ export function renderConfig(options) {
   const agentsMdPath = path.join(workspace, 'AGENTS.md');
   const previousAgentsMd = existsSync(agentsMdPath) ? readFileSync(agentsMdPath) : null;
   const warnings = writeManaged(path.join(root, 'config', '.installer-managed.sha256'), [
-    { file: path.join(root, 'config', 'agents.yaml'), content: renderAgents({ backends, defaults, nodes, workspace, root, path }) },
+    { file: path.join(root, 'config', 'agents.yaml'), content: renderAgents({ backends, defaults, nodes, workspace, root, path, lang: options.lang }) },
     {
       file: path.join(root, 'config', 'mcp-registry.yaml'),
       content: `servers:

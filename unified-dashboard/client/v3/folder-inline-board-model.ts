@@ -1,3 +1,4 @@
+import { translateFolderFallback, type FolderTranslate } from "./folder-messages";
 import type { CatalogBoardItem } from "@seosoyoung/soul-ui";
 
 export interface FolderBoardMarkdownDocument {
@@ -7,12 +8,13 @@ export interface FolderBoardMarkdownDocument {
 
 export function boardMarkdownDocuments(
   items: readonly CatalogBoardItem[],
+  t: FolderTranslate = translateFolderFallback,
 ): FolderBoardMarkdownDocument[] {
   return items.flatMap((item) => {
     if (item.itemType !== "markdown") return [];
     return [{
       pageId: item.itemId,
-      title: metadataText(item, "title") || "제목 없는 문서",
+      title: metadataText(item, "title") || t("folders.board.untitled"),
     }];
   });
 }

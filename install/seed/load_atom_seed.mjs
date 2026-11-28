@@ -15,7 +15,7 @@
 //
 // CLI:
 //   node install/seed/load_atom_seed.mjs --atom-url <url> \
-//     --password-file <path> --state-dir <dir> [--seed <path>]
+//     --password-file <path> --state-dir <dir> [--seed <path>] [--lang <language>]
 //
 // HTTP rules: one password login per run; a single re-login plus a restart of
 // the state machine when any request answers 401; abort on 403, 429, 5xx,
@@ -27,14 +27,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DEFAULT_SEED_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'atom-seed.json');
+import { assertStateLanguage, readStateLanguage, stateFile } from './locales/languages.mjs';
+import { defaultSeedPath, readLocalizedSeed } from './locales/seed.mjs';
+import { placeholderKeys, placeholderPattern } from './locales/text.mjs';
+
+export { placeholderKeys };
 const SEED_SOURCE_TYPE = 'soulstream-seed';
-const STATE_FILE = '.atom-seed-state.json';
 const INPROGRESS_FILE = '.atom-seed-inprogress.json';
 const MAP_FILE = '.atom-seed-map.json';
 const STATE_SCHEMA = 1;
 const REQUEST_TIMEOUT_MS = 30_000;
-const PLACEHOLDER_RE = /\{\{node_id:([^}]+)\}\}/g;
 
 const CARD_KEYS = new Set(['card', 'symlink']);
 
@@ -77,17 +79,9 @@ function sortedObject(entries) {
 // Seed helpers
 // ---------------------------------------------------------------------------
 
-/** Returns every placeholder key in the order it appears (duplicates kept). */
-export function placeholderKeys(content) {
-  const text = typeof content === 'string' ? content : '';
-  const keys = [];
-  for (const match of text.matchAll(PLACEHOLDER_RE)) keys.push(match[1]);
-  return keys;
-}
-
 /** Replaces every {{node_id:<key>}} with the node id recorded for that key. */
 export function renderContent(content, keyMap) {
-  return String(content ?? '').replace(PLACEHOLDER_RE, (_full, key) => {
+  return String(content ?? '').replace(placeholderPattern, (_full, key) => {
     const entry = keyMap?.[key];
     if (!entry?.node_id) throw new Error(`no node id recorded for placeholder key: ${key}`);
     return entry.node_id;
@@ -220,12 +214,13 @@ class SeedEngine {
   constructor(options) {
     this.atomUrl = options.atomUrl.replace(/\/+$/, '');
     this.password = options.password;
+    this.lang = options.lang;
     this.seedBytes = options.seedBytes;
     this.seed = options.seed;
     this.fetchImpl = options.fetchImpl;
     this.randomUUID = options.randomUUID;
     this.stateDir = options.stateDir;
-    this.statePath = path.join(this.stateDir, STATE_FILE);
+    this.statePath = path.join(this.stateDir, stateFile);
     this.inprogressPath = path.join(this.stateDir, INPROGRESS_FILE);
     this.mapPath = path.join(this.stateDir, MAP_FILE);
     this.cookie = null;
@@ -349,6 +344,7 @@ class SeedEngine {
   async run() {
     const state = this.readState();
     if (state === null) return this.startFresh();
+    assertStateLanguage(state.lang ?? 'ko', this.lang);
     if (state.phase === 'completed') return this.runCompleted(state);
     if (!['creating', 'created', 'symlinked'].includes(state.phase)) {
       throw new SeedLoadError('state', 'LOCAL', this.statePath, 'local', `unknown phase: ${state.phase}`);
@@ -387,6 +383,7 @@ class SeedEngine {
     this.writeInprogress(this.seedBytes);
     const state = {
       schema: STATE_SCHEMA,
+      lang: this.lang,
       install_id: this.randomUUID(),
       phase: 'creating',
       seed_sha256: sha256Hex(this.seedBytes),
@@ -634,7 +631,8 @@ export async function loadAtomSeed({
   atomUrl,
   password,
   stateDir,
-  seedPath = DEFAULT_SEED_PATH,
+  seedPath = defaultSeedPath,
+  lang = 'ko',
   fetchImpl = globalThis.fetch,
   randomUUID = defaultRandomUUID,
 }) {
@@ -642,18 +640,9 @@ export async function loadAtomSeed({
   if (typeof password !== 'string') throw new Error('password is required');
   if (typeof stateDir !== 'string' || stateDir.length === 0) throw new Error('stateDir is required');
 
-  let seedBytes;
-  try {
-    seedBytes = fs.readFileSync(seedPath);
-  } catch {
-    throw new SeedLoadError('load-seed', 'LOCAL', seedPath, 'local', 'cannot read the seed file');
-  }
-  let seed;
-  try {
-    seed = JSON.parse(seedBytes.toString('utf8'));
-  } catch {
-    throw new SeedLoadError('load-seed', 'LOCAL', seedPath, 'local', 'seed file is not valid JSON');
-  }
+  const savedLanguage = readStateLanguage(stateDir);
+  if (savedLanguage !== null) assertStateLanguage(savedLanguage, lang);
+  const { bytes: seedBytes, seed } = readLocalizedSeed(seedPath, lang);
   try {
     validateSeed(seed);
   } catch (error) {
@@ -661,7 +650,7 @@ export async function loadAtomSeed({
   }
   fs.mkdirSync(stateDir, { recursive: true });
 
-  const engine = new SeedEngine({ atomUrl, password, stateDir, seedBytes, seed, fetchImpl, randomUUID });
+  const engine = new SeedEngine({ atomUrl, password, stateDir, seedBytes, seed, lang, fetchImpl, randomUUID });
   await engine.login();
   let relogged = false;
   for (;;) {
@@ -693,6 +682,9 @@ function parseCliArgs(argv) {
       index += 1;
     } else if (arg === '--state-dir' && value !== undefined) {
       options.stateDir = value;
+      index += 1;
+    } else if (arg === '--lang' && value && !value.startsWith('--')) {
+      options.lang = value;
       index += 1;
     } else if (arg === '--seed' && value !== undefined) {
       options.seedPath = value;
@@ -729,7 +721,8 @@ async function main(argv) {
       atomUrl: options.atomUrl,
       password,
       stateDir: options.stateDir,
-      seedPath: options.seedPath ?? DEFAULT_SEED_PATH,
+      seedPath: options.seedPath,
+      lang: options.lang,
     });
     process.stdout.write(`atom seed: ${result.phase}\n`);
     const lines = dedupe([

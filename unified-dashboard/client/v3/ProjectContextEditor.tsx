@@ -1,3 +1,5 @@
+import { folderErrorText } from "./folder-messages";
+import { useTranslation } from "react-i18next";
 import { FilePlus2, Network, Bot } from "lucide-react";
 import {
   useCallback,
@@ -66,12 +68,13 @@ export function ProjectContextEditor({
   snapshot: ProjectPageSnapshot;
   onChanged(): Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [editor, setEditor] = useState<EditorState>(()=> initialEditor === "atom-add" ? emptyAtomEditor() : initialEditor === "atom-edit" && snapshot.atomReferences[0] ? atomEditor(snapshot.atomReferences[0]) : initialEditor === "defaults-add" ? emptyDefaultsEditor() : initialEditor === "defaults-edit" && snapshot.sessionDefaults[0] ? defaultsEditor(snapshot.sessionDefaults[0]) : null);
   const [addingGuidance, setAddingGuidance] = useState(false);
   const committing = useRef(false);
   const [pending, setPending] = useState(false);
   const [modelPresetValid, setModelPresetValid] = useState(true);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ text: string; failed?: boolean } | null>(null);
   const api = useMemo(() => suppliedApi ?? createPageApiClient(), [suppliedApi]);
   const changeDefaultAgent = useCallback((agentId: string) => {
     setEditor((current) => current?.kind === "defaults" ? { ...current, agentId } : current);
@@ -90,15 +93,15 @@ export function ProjectContextEditor({
   const empty = snapshot.guidance.length + snapshot.atomReferences.length + snapshot.sessionDefaults.length === 0;
 
   const commitGuidance = async (blockId: string | null, text: string) => {
-    if (pending) throw new Error("다른 컨텍스트를 저장하는 중입니다.");
+    if (pending) throw new Error(t("folders.context.saveInProgress"));
     setPending(true);
     setMessage(null);
     try {
       await saveProjectGuidance(api, pageId, { blockId, text });
       await onChanged();
-      setMessage("프로젝트 guidance를 저장했습니다.");
+      setMessage({ text: t("folders.context.guidanceSaved") });
     } catch (cause) {
-      setMessage(`저장 실패 · ${errorText(cause)}`);
+      setMessage({ text: t("folders.common.saveError", { detail: folderErrorText(t, cause) }), failed: true });
       throw cause;
     } finally {
       committing.current = false;
@@ -127,9 +130,9 @@ export function ProjectContextEditor({
       }
       await onChanged();
       setEditor(null);
-      setMessage("프로젝트 컨텍스트를 저장했습니다.");
+      setMessage({ text: t("folders.context.saved") });
     } catch (cause) {
-      setMessage(`저장 실패 · ${errorText(cause)}`);
+      setMessage({ text: t("folders.common.saveError", { detail: folderErrorText(t, cause) }), failed: true });
     } finally {
       committing.current = false;
       setPending(false);
@@ -144,9 +147,9 @@ export function ProjectContextEditor({
       await deleteProjectContextBlock(api, pageId, blockId);
       await onChanged();
       setEditor(null);
-      setMessage("atom 컨텍스트를 제거했습니다.");
+      setMessage({ text: t("folders.context.atomRemoved") });
     } catch (cause) {
-      setMessage(`삭제 실패 · ${errorText(cause)}`);
+      setMessage({ text: t("folders.common.deleteError", { detail: folderErrorText(t, cause) }), failed: true });
     } finally {
       committing.current = false;
       setPending(false);
@@ -156,14 +159,14 @@ export function ProjectContextEditor({
   return (
     <section className="v3-project-context" data-testid="v3-project-context">
       <div className="v3-detail-section-head">
-        <h3>프로젝트 컨텍스트</h3><span className="v3-spacer"/>
+        <h3>{t("folders.context.title")}</h3><span className="v3-spacer"/>
       <div className="v3-folder-header-actions">
-        <DashboardIconCap size="small" label="guidance 추가" disabled={pending || addingGuidance} onClick={() => setAddingGuidance(true)}><FilePlus2 className="h-4 w-4"/></DashboardIconCap>
+        <DashboardIconCap size="small" label={t("folders.context.addGuidance")} disabled={pending || addingGuidance} onClick={() => setAddingGuidance(true)}><FilePlus2 className="h-4 w-4"/></DashboardIconCap>
         <Popover
           open={editor?.kind === "atom" && editor.blockId === null}
           onOpenChange={(open) => { if (!committing.current) setEditor(open ? emptyAtomEditor() : null); }}
         >
-          <PopoverTrigger render={<DashboardIconCap size="small" label="atom 추가" disabled={pending}><Network className="h-4 w-4"/></DashboardIconCap>} aria-haspopup="dialog"/>
+          <PopoverTrigger render={<DashboardIconCap size="small" label={t("folders.context.addAtom")} disabled={pending}><Network className="h-4 w-4"/></DashboardIconCap>} aria-haspopup="dialog"/>
           <ContextPopover>
             {editor?.kind === "atom" && editor.blockId === null ? (
               <AtomEditorFields request={request} editor={editor} pending={pending} setEditor={setEditor} onCancel={() => setEditor(null)} onSave={commit} />
@@ -179,10 +182,10 @@ export function ProjectContextEditor({
               setEditor(open ? emptyDefaultsEditor() : null);
             }}
           >
-            <PopoverTrigger render={<DashboardIconCap size="small" label="기본 에이전트 추가" disabled={pending}><Bot className="h-4 w-4"/></DashboardIconCap>} aria-haspopup="dialog"/>
+            <PopoverTrigger render={<DashboardIconCap size="small" label={t("folders.context.addDefaultAgent")} disabled={pending}><Bot className="h-4 w-4"/></DashboardIconCap>} aria-haspopup="dialog"/>
             <ContextPopover>
               {editor?.kind === "defaults" && editor.blockId === null ? (
-                <DefaultsEditorFields assignment={assignment} editor={editor} pending={pending} modelPresetValid={modelPresetValid} onAgentIdChange={changeDefaultAgent} onNodeIdChange={changeDefaultNode} onModelPresetChange={changeDefaultModelPreset} onModelPresetValidityChange={setModelPresetValid} onError={setMessage} onCancel={() => setEditor(null)} onSave={commit} />
+                <DefaultsEditorFields assignment={assignment} editor={editor} pending={pending} modelPresetValid={modelPresetValid} onAgentIdChange={changeDefaultAgent} onNodeIdChange={changeDefaultNode} onModelPresetChange={changeDefaultModelPreset} onModelPresetValidityChange={setModelPresetValid} onError={text => setMessage(text ? { text, failed: true } : null)} onCancel={() => setEditor(null)} onSave={commit} />
               ) : null}
             </ContextPopover>
           </Popover>
@@ -199,7 +202,7 @@ export function ProjectContextEditor({
             <PopoverTrigger
               type="button"
               className="v3-project-context-popover-trigger"
-              aria-label={`${reference.nodeTitle} atom 설정 편집`}
+              aria-label={t("folders.context.editAtom", { name: reference.nodeTitle })}
               aria-haspopup="dialog"
               disabled={pending}
             >
@@ -225,7 +228,7 @@ export function ProjectContextEditor({
             <PopoverTrigger
               type="button"
               className="v3-project-context-popover-trigger"
-              aria-label="기본 에이전트 설정 편집"
+              aria-label={t("folders.context.editDefaultAgent")}
               aria-haspopup="dialog"
               disabled={pending}
             >
@@ -233,12 +236,12 @@ export function ProjectContextEditor({
             </PopoverTrigger>
             <ContextPopover>
               {editor?.kind === "defaults" && editor.blockId === defaults.blockId ? (
-                <DefaultsEditorFields assignment={assignment} editor={editor} pending={pending} modelPresetValid={modelPresetValid} onAgentIdChange={changeDefaultAgent} onNodeIdChange={changeDefaultNode} onModelPresetChange={changeDefaultModelPreset} onModelPresetValidityChange={setModelPresetValid} onError={setMessage} onCancel={() => setEditor(null)} onSave={commit} />
+                <DefaultsEditorFields assignment={assignment} editor={editor} pending={pending} modelPresetValid={modelPresetValid} onAgentIdChange={changeDefaultAgent} onNodeIdChange={changeDefaultNode} onModelPresetChange={changeDefaultModelPreset} onModelPresetValidityChange={setModelPresetValid} onError={text => setMessage(text ? { text, failed: true } : null)} onCancel={() => setEditor(null)} onSave={commit} />
               ) : null}
             </ContextPopover>
           </Popover>
         ))}
-        {empty ? <small>연결된 guidance · atom · 실행 기본값이 없습니다.</small> : null}
+        {empty ? <small>{t("folders.context.empty")}</small> : null}
       </div>
 
       <div className="v3-project-guidance-list">
@@ -246,8 +249,8 @@ export function ProjectContextEditor({
           <FolderDescriptionPanel
             key={guidance.blockId}
             markdown={guidance.text}
-            ariaLabel="프로젝트 guidance"
-            emptyText="프로젝트 guidance를 작성하세요."
+            ariaLabel={t("folders.context.guidanceLabel")}
+            emptyText={t("folders.context.guidanceEmpty")}
             variant="compact"
             testId={`v3-project-guidance-${guidance.blockId}`}
             onSave={(text) => commitGuidance(guidance.blockId, text)}
@@ -256,8 +259,8 @@ export function ProjectContextEditor({
         {addingGuidance ? (
           <FolderDescriptionPanel
             markdown=""
-            ariaLabel="새 프로젝트 guidance"
-            emptyText="프로젝트 guidance를 작성하세요."
+            ariaLabel={t("folders.context.newGuidance")}
+            emptyText={t("folders.context.guidanceEmpty")}
             variant="compact"
             initialEditing
             onEditingChange={(editing) => { if (!editing) setAddingGuidance(false); }}
@@ -267,7 +270,7 @@ export function ProjectContextEditor({
       </div>
 
 
-      {message ? <p className={message.includes("실패") ? "v3-project-star-error" : undefined} role="status" data-v3-selectable-content="true">{message}</p> : null}
+      {message ? <p className={message.failed ? "v3-project-star-error" : undefined} role="status" data-v3-selectable-content="true">{message.text}</p> : null}
     </section>
   );
 }
@@ -411,16 +414,13 @@ function emptyDefaultsEditor(): DefaultsEditorState {
 }
 
 function EditorActions({ pending, invalid = false, onCancel, onSave, onDelete }: { pending: boolean; invalid?: boolean; onCancel(): void; onSave(): void; onDelete?: () => void }) {
+  const { t } = useTranslation();
   return (
     <div className="v3-project-context-editor-actions">
-      {onDelete ? <Button variant="destructive-outline" disabled={pending} onClick={onDelete}>삭제</Button> : null}
+      {onDelete ? <Button variant="destructive-outline" disabled={pending} onClick={onDelete}>{t("folders.common.delete")}</Button> : null}
       <span />
-      <Button variant="ghost" disabled={pending} onClick={onCancel}>취소</Button>
-      <Button disabled={pending || invalid} onClick={onSave}>{pending ? "저장 중…" : "저장"}</Button>
+      <Button variant="ghost" disabled={pending} onClick={onCancel}>{t("folders.common.cancel")}</Button>
+      <Button disabled={pending || invalid} onClick={onSave}>{pending ? t("folders.common.saving") : t("folders.common.save")}</Button>
     </div>
   );
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : String(error);
 }

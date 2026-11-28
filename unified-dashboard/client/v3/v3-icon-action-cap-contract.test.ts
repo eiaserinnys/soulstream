@@ -27,7 +27,7 @@ describe("v3 icon action cap contract", () => {
     const theme = read("../../../packages/soul-ui/src/components/ThemeToggle.tsx");
     const config = read("../components/ConfigButton.tsx");
     const minimal = toolbar.match(/if \(variant === 'minimal'\)[\s\S]*?<div className="dashboard-toolbar-actions">([\s\S]*?)<\/div>/)?.[1] ?? "";
-    expect(minimal).toContain('<DashboardIconCap label="홈" appearance={appearance}');
+    expect(minimal).toContain('<DashboardIconCap label={t("sessions.home")} appearance={appearance}');
     expect(minimal).toContain('<House className="size-5" strokeWidth={1.4} absoluteStrokeWidth');
     expect(theme).toContain('<Moon className="size-5" strokeWidth={1.4} absoluteStrokeWidth');
     expect(theme).toContain('<Sun className="size-5" strokeWidth={1.4} absoluteStrokeWidth');
@@ -41,16 +41,16 @@ describe("v3 icon action cap contract", () => {
   });
 
   it.each([
-    ["./FolderCardSection.tsx", ["카드 추가"]],
+    ["./FolderCardSection.tsx", ["folders.cards.add"]],
     ["../../../packages/soul-ui/src/folder-status/FolderCompletionAction.tsx", ["actionLabel"]],
-    ["./FolderDetailPane.tsx", ["전체 카드로 돌아가기", "별표"]],
-    ["./FolderDescriptionPanel.tsx", ["편집"]],
-    ["./FolderInlineBoard.tsx", ["마크다운 추가", "마크다운 이름 변경 저장", "마크다운 이름 변경 취소"]],
-    ["./FolderSessionHistory.tsx", ["새 세션"]],
-    ["./FolderWorkspace.tsx", ["폴더 창 닫기"]],
-    ["./FolderWorkspaceSections.tsx", ["하위 폴더 더 보기"]],
-    ["./V3Navigation.tsx", ["별표 폴더 더 보기", "새 폴더"]],
-    ["./V3SessionReviewBanner.tsx", ["검수 확인"]],
+    ["./FolderDetailPane.tsx", ["folders.workspace.backToCards", "folders.common.addStar", "folders.common.removeStar"]],
+    ["./FolderDescriptionPanel.tsx", ["folders.description.edit"]],
+    ["./FolderInlineBoard.tsx", ["folders.board.addMarkdown", "folders.board.saveRename", "folders.board.cancelRename"]],
+    ["./FolderSessionHistory.tsx", ["folders.session.new"]],
+    ["./FolderWorkspace.tsx", ["folders.workspace.close"]],
+    ["./FolderWorkspaceSections.tsx", ["folders.workspace.moreSubfolders"]],
+    ["./V3Navigation.tsx", ['label={t("sessions.moreStarredFolders")}', 'label={t("sessions.newFolder")}']],
+    ["./V3SessionReviewBanner.tsx", ['label={t("sessions.acknowledgeReview")}']],
   ] as const)("%s uses the shared icon cap for its chrome actions", (path, labels) => {
     const source = read(path);
     expect(source).toContain("DashboardIconCap");
@@ -63,8 +63,8 @@ describe("v3 icon action cap contract", () => {
 
     expect(board).toMatch(/<InlineMarkdownCard key=\{item\.id\} title=\{title\} expanded=\{expanded\}[\s\S]*?onToggle=\{\(\) => setExpandedId\(expanded \? null : item\.id\)\}[\s\S]*?onRename=\{\(\) => beginRename\(item\)\}/);
     expect(inlineCard).toContain("DashboardIconCap");
-    expect(inlineCard).toContain('label={`${title} ${expanded ? "접기" : "펼치기"}`}');
-    expect(inlineCard).toContain('label={`${title} 이름 수정`}');
+    expect(inlineCard).toContain('label={t("cards.toggleDocument", {title,action:expanded?t("cards.collapse"):t("cards.expand")})}');
+    expect(inlineCard).toContain('label={t("cards.renameDocument", {title})}');
     expect(inlineCard).toContain("aria-expanded={expanded} onClick={onToggle}");
     expect(inlineCard).toContain("onClick={onRename}");
   });
@@ -74,7 +74,7 @@ describe("v3 icon action cap contract", () => {
     const loader = read("./RunHistoryAutoLoader.tsx");
 
     expect(history).toMatch(/<RunHistoryAutoLoader hasMore=\{runHistoryHasMore\} loading=\{runHistoryLoading\}[\s\S]*?failed=\{runHistoryFailed\} onLoadMore=\{onLoadMoreRuns\}/);
-    expect(loader).toContain('<DashboardIconCap label="다시 시도" onClick={() => { void onLoadMore(); }}>');
+    expect(loader).toContain('<DashboardIconCap label={t("sessions.retry")} onClick={() => { void onLoadMore(); }}>');
   });
 
   it("keeps chat close on the shared session header only when its owner passes onClose", () => {
@@ -84,7 +84,7 @@ describe("v3 icon action cap contract", () => {
     expect(workspace).toMatch(/<SessionPanelHeader session=\{activeSession\}[\s\S]*?onClose=\{onCloseWorkspace\}\/>/);
     expect(workspace.match(/<SessionPanelHeader\b/g)).toHaveLength(2);
     expect(workspace.match(/<SessionPanelHeader\b[^>]*onClose=/g)).toHaveLength(1);
-    expect(headers).toContain('{onClose ? <DashboardIconCap label="채팅 닫기" onClick={onClose}');
+    expect(headers).toContain('{onClose ? <DashboardIconCap label={t("sessions.closeChat")} onClick={onClose}');
   });
 
   it("forwards review acknowledgement through the shared row action owner", () => {
@@ -93,7 +93,7 @@ describe("v3 icon action cap contract", () => {
     const rowFrame = read("./RunRowFrame.tsx");
     const reviewRow = panel.match(/<RichSessionRow\b[\s\S]*?\/>/)?.[0] ?? "";
 
-    expect(reviewRow).toContain('actions={review ? [{kind:"acknowledge",label:`${sessionPanelTitle(session)} 확인 처리`,pending,onAction:()=>{void onAcknowledge(session);}}] : undefined}');
+    expect(reviewRow).toContain('actions={review ? [{kind:"acknowledge",label:t("sessions.acknowledgeSession", { title: sessionPanelTitle(session, t) }),pending,onAction:()=>{void onAcknowledge(session);}}] : undefined}');
     expect(richRow).toMatch(/<RunRowFrame[\s\S]*?actions=\{actions\}/);
     expect(rowFrame).toMatch(/actions!\.map\(action=><DashboardIconCap[\s\S]*?label=\{action\.label\}[\s\S]*?disabled=\{disabled\|\|action\.disabled\|\|action\.pending\}[\s\S]*?onClick=\{event=>\{event\.stopPropagation\(\);action\.onAction\(event\);\}\}/);
   });
@@ -118,7 +118,7 @@ describe("v3 icon action cap contract", () => {
     const workspace = read("./FolderWorkspace.tsx");
     const layout = read("./V3DashboardLayout.tsx");
 
-    expect(detail).toContain('parentFolder ? "상위 폴더로 이동" : "전체 카드로 돌아가기"');
+    expect(detail).toContain('parentFolder ? t("folders.workspace.goParent") : t("folders.workspace.backToCards")');
     expect(detail).not.toContain('label="폴더 상세 닫기"');
     expect(workspace).not.toContain('label="우측 패널 닫기"');
     expect(workspace).toContain("onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}");

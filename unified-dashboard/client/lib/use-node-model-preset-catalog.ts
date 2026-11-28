@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
 
 import { fetchNodeModelPresets } from "@seosoyoung/soul-ui/shared/model-presets";
-import { MODEL_PRESET_FETCH_ERROR } from "./model-presets";
+import { useTranslation } from "react-i18next";
+import { modelPresetFetchError } from "./model-presets";
 
 const MODEL_PRESET_FETCH_TIMEOUT_MS = 10_000;
 
@@ -16,6 +17,7 @@ export function useNodeModelPresetCatalog(
   nodeId: string,
   onError?: (message: string) => void,
 ): NodeModelPresetCatalog {
+  const { t } = useTranslation();
   const [catalog, setCatalog] = useState<NodeModelPresetCatalog>({
     status: "idle",
     nodeId: "",
@@ -44,7 +46,7 @@ export function useNodeModelPresetCatalog(
       .catch(() => {
         if (!active) return;
         setCatalog({ status: "error", nodeId, presets: [] });
-        onErrorRef.current?.(MODEL_PRESET_FETCH_ERROR);
+        onErrorRef.current?.(modelPresetFetchError(t));
       })
       .finally(() => {
         window.clearTimeout(timeoutId);
@@ -55,7 +57,7 @@ export function useNodeModelPresetCatalog(
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [nodeId]);
+  }, [nodeId,t]);
 
   return catalog;
 }

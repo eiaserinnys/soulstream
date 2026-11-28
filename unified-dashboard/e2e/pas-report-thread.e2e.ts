@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Route } from "./test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { CardComment, CardDetail, CardRow } from "@seosoyoung/soul-ui/cards/card-types";

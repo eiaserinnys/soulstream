@@ -110,9 +110,9 @@ export async function collectAdditionalObservations(world: CardMachineWorld) {
   const accepted = await work.accept({kind:'followup',cardId:queuedId,request:'담당에게 후속 지시',idempotencyKey:'observation-followup'}, {actorKind:'agent',actorSessionId:'other'});
   expect(accepted.accepted).toBe(true);
   expect((await cards.getCard(queuedId))!.card.status).toBe('running');
-  step = 'extra-40: direct spoken permission precedes missing mode';
+  step = 'extra-40: an agent reply requires the current assignee';
   await h.sql`UPDATE cards SET items=${h.sql.json([{id:1}])} WHERE id=${queuedId}`;
-  await expect(cards.addComment({actorKind:'agent',actorSessionId:'other',cardId:queuedId,body:'상황 전달'})).rejects.toThrow('다른 세션이 담당인 카드입니다');
+  await expect(cards.addComment({actorKind:'agent',actorSessionId:'other',cardId:queuedId,body:'상황 전달'})).rejects.toThrow('담당 세션만 카드 커멘트에 답할 수 있습니다');
   step = 'extra-41: transactional creation';
   await adapter.begin(sql=>cards.createCardTx(sql,{actorKind:'agent',actorSessionId:'other',cardId:randomUUID(),assignee:null,folderId:'machine',title:'Tx 생성',request:'동일 생성 규칙'}));
   } catch (error) { throw new Error(`${step}: ${String(error)}`, { cause: error }); }

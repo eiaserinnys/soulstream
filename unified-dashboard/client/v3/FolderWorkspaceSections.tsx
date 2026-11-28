@@ -1,3 +1,5 @@
+import { folderErrorText } from "./folder-messages";
+import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useState } from "react";
 import {
   DashboardIconCap,
@@ -56,12 +58,14 @@ export function FolderWorkspaceSections({
   onMoveFolderToParent(task: PlannerFolder): void;
   onBlocksChanged(blocks: PlannerFolder["blocks"]): void;
 }) {
+  const { t, i18n } = useTranslation();
+  const number = new Intl.NumberFormat(i18n.resolvedLanguage);
   const api = useMemo(() => createPageApiClient(), []);
   const [details, setDetails] = useState<{
     status: "loading" | "ready" | "error";
     data: ProjectPageSnapshot | null;
-    message: string | null;
-  }>({ status: "loading", data: null, message: null });
+    error: unknown;
+  }>({ status: "loading", data: null, error: null });
   const [cardPages, setCardPages] = useState<Record<string, PageDto>>({});
   const pageId = folder.projectPageId;
 
@@ -72,18 +76,18 @@ export function FolderWorkspaceSections({
       load: () => fetchProjectPageDetails(pageId),
       clearsVisibleContent: (current, next) => current.blocks.length > 0 && next.blocks.length === 0,
     });
-    setDetails((current) => retainEqualValue(current, { status: "ready", data: loaded, message: null }));
+    setDetails((current) => retainEqualValue(current, { status: "ready", data: loaded, error: null }));
     onBlocksChanged(loaded.blocks);
   };
 
   useEffect(() => {
     if (!pageId) return;
     let active = true;
-    setDetails({ status: "loading", data: null, message: null });
+    setDetails({ status: "loading", data: null, error: null });
     void fetchProjectPageDetails(pageId).then((loaded) => {
-      if (active) setDetails({ status: "ready", data: loaded, message: null });
+      if (active) setDetails({ status: "ready", data: loaded, error: null });
     }).catch((error: unknown) => {
-      if (active) setDetails({ status: "error", data: null, message: errorText(error) });
+      if (active) setDetails({ status: "error", data: null, error });
     });
     return () => { active = false; };
   }, [pageId, invalidationKey]);
@@ -98,7 +102,7 @@ export function FolderWorkspaceSections({
     })).then((entries) => {
       if (active) setCardPages((current) => ({ ...current, ...Object.fromEntries(entries) }));
     }).catch((error: unknown) => {
-      console.error("[v3/folder] 하위 폴더 페이지 조회 실패", error);
+      console.error("[v3/folder] 하위 폴더 페이지 조회 실패", error); // i18n-ignore: Diagnostic log for subfolder reads
     });
     return () => { active = false; };
   }, [api, children, knownPages, parentFolder]);
@@ -120,16 +124,16 @@ export function FolderWorkspaceSections({
       {details.status === "ready" && details.data && pageId ? (
         <ProjectContextEditor pageId={pageId} snapshot={details.data} onChanged={refreshDetails} />
       ) : details.status === "loading" ? (
-        <section className="v3-project-context" aria-busy="true"><FrameLoading inline label="프로젝트 컨텍스트를 불러오는 중…" /></section>
+        <section className="v3-project-context" aria-busy="true"><FrameLoading inline label={t("folders.context.loading")} /></section>
       ) : details.status === "error" ? (
-        <V3ErrorNotice className="v3-project-context v3-project-star-error" message="프로젝트 컨텍스트를 불러오지 못했습니다." detail={details.message} />
+        <V3ErrorNotice className="v3-project-context v3-project-star-error" message={t("folders.context.loadError")} detail={folderErrorText(t, details.error)} />
       ) : null}
 
       <section className="v3-child-folders">
         <div className="v3-section-head">
-          <h2>하위 폴더</h2><span>{children.length}개</span>
+          <h2>{t("folders.workspace.subfolders")}</h2><span>{t("folders.common.itemCount", { total: number.format(children.length) })}</span>
           <span className="v3-spacer" />
-          <DashboardIconCap size="small" label="새 폴더" onClick={onCreateSubfolder}>
+          <DashboardIconCap size="small" label={t("folders.common.newFolder")} onClick={onCreateSubfolder}>
             <FolderPlus className="h-4 w-4" aria-hidden="true" />
           </DashboardIconCap>
         </div>
@@ -137,7 +141,7 @@ export function FolderWorkspaceSections({
           {parentFolder && parentTask ? <div data-testid={`v3-parent-folder-${parentFolder.id}`}>
             <PlannerFolderCard
               task={parentTask}
-              navigationLabel="상위 폴더"
+              navigationLabel={t("folders.workspace.parentFolder")}
               sessions={sessions}
               nodeConnectivity={nodeConnectivity}
               onOpen={() => onOpenFolder(parentFolder)}
@@ -158,14 +162,10 @@ export function FolderWorkspaceSections({
             />
           </div>)}
         </div>
-        {hasMoreChildren ? <DashboardIconCap label="하위 폴더 더 보기" disabled={childrenLoadingMore} onClick={onLoadMoreChildren}>
+        {hasMoreChildren ? <DashboardIconCap label={t("folders.workspace.moreSubfolders")} disabled={childrenLoadingMore} onClick={onLoadMoreChildren}>
           <ChevronsDown className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap> : null}
       </section>
     </>
   );
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : String(error);
 }

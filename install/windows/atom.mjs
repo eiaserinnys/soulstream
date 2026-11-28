@@ -104,6 +104,7 @@ export function loadAtomInstructions(ctx) {
   const output = run(process.execPath, [
     join(ctx.soulDir, 'install', 'seed', 'load_atom_seed.mjs'),
     '--atom-url', atomUrl(ctx), '--password-file', join(ctx.soulDir, '.admin-password'), '--state-dir', join(ctx.soulDir, 'config'),
+    '--lang', ctx.lang,
   ], { capture: true, label: 'atom seed loader' });
   if (output.trim() !== '') log(output.trimEnd());
   return output.split('\n').filter((line) => line.startsWith('WARNING: ')).map((line) => line.slice('WARNING: '.length));

@@ -39,7 +39,7 @@ describe("Antigravity workspace policy lifecycle", () => {
       expect(readFileSync(join(overlay, "instructions", "chunk-000000.txt"), "utf8")).toBe(instructions);
       const policy = JSON.parse(readFileSync(join(overlay, "policy.json"), "utf8"));
       expect(policy.allowedTools).toContain("invoke_subagent");
-      expect(policy.subagents).toEqual([expect.stringMatching(/-eye$/)]);
+      expect(policy.subagents).toEqual(["eye"]);
     } finally { await engine.close(); }
   });
   it("adds no PreToolUse hook when dontAsk has no allowed list", async () => {

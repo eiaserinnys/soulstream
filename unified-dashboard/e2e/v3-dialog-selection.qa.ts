@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 /**
  * VITE_API_BASE=http://127.0.0.1:5200 corepack pnpm --dir unified-dashboard dev --host 127.0.0.1 --port 43183 --strictPort
  * PLAYWRIGHT_MODULE=$(realpath unified-dashboard/node_modules/@playwright/test/../../playwright/index.mjs) CHROMIUM_PATH=/usr/bin/google-chrome V3_QA_BASE_URL=http://127.0.0.1:43183 V3_SELECTION_QA_OUTPUT=.local/card1583/after node soul-server-ts/node_modules/tsx/dist/cli.mjs unified-dashboard/e2e/v3-dialog-selection.qa.ts
@@ -63,7 +64,7 @@ writeFileSync(path.join(output, "metrics.json"), JSON.stringify({ baseline, resu
 console.log(JSON.stringify({ baseline, output, result }, null, 2));
 
 async function verify(browser: Browser, width: number) {
-  const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"], viewport: { width: 1440, height: 1000 }, reducedMotion: "reduce", timezoneId: "Asia/Seoul" });
+  const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"], viewport: { width: 1440, height: 1000 }, reducedMotion: "reduce", timezoneId: "Asia/Seoul", locale: koreanLocale });
   await context.addInitScript({ content: "window.__name = (f) => f;" });
   const page = await context.newPage();
   await page.clock.setFixedTime(new Date("2026-07-28T12:00:00+09:00"));
@@ -197,7 +198,7 @@ async function waitForPopupToSettle(popup: Locator) {
   }));
 }
 async function ctx(browser: Browser, width: number) {
-  const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"], viewport: { width, height: width < 500 ? 844 : 1000 }, reducedMotion: "reduce", timezoneId: "Asia/Seoul", colorScheme: "dark" });
+  const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"], viewport: { width, height: width < 500 ? 844 : 1000 }, reducedMotion: "reduce", timezoneId: "Asia/Seoul", colorScheme: "dark", locale: koreanLocale });
   await context.addInitScript({ content: "window.__name = (f) => f;" });
   const page = await context.newPage();
   await page.clock.setFixedTime(new Date("2026-07-28T12:00:00+09:00"));

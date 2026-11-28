@@ -1,3 +1,4 @@
+import { isDirectHumanSessionInput, recordDirectHumanSessionInput } from "./cards/card_human_session_input.js";
 import { warnWhenProductionHasNoLogin } from "./auth/first_login_access.js";
 import { SkillLintReportStore } from "./skills/skill_lint_report_store.js";
 import { PersistentDefaultsSettings } from "./settings/persistent_defaults_settings.js";
@@ -2026,9 +2027,12 @@ export function buildProductionRouteOptions(
       ...providers.runtime.sessionActionCommandRoutes,
       accessProvider: sessionRequestAccess,
       ...(uploadInlineAttachment === undefined ? {} : { uploadInlineAttachment }),
-      onHumanSessionInput: async targetSessionId => {
+      onHumanSessionInput: async (targetSessionId, text, callerInfo) => {
         if (!cardServiceProvider) return;
         const cards=await cardServiceProvider();
+        if (isDirectHumanSessionInput(callerInfo) && text) {
+          await recordDirectHumanSessionInput(cards, targetSessionId, text, callerInfo);
+        }
         const assigned=await cards.getAssignedCardContext(targetSessionId);
         for (const summary of assigned.cards) {
           if (summary.status!=="blocked" && summary.status!=="awaiting_verification") continue;

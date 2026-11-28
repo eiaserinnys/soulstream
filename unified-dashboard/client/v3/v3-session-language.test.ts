@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
+import { dictionaries } from "@soulstream/i18n";
 
 const USER_COPY_FILES = [
   "./PlannerFolderCard.tsx",
@@ -18,6 +19,7 @@ describe("v3 session language", () => {
   it("does not expose the legacy run term in Korean user copy", () => {
     const source = USER_COPY_FILES
       .map((name) => readFileSync(fileURLToPath(new URL(name, import.meta.url)), "utf8"))
+      .concat(Object.values(dictionaries.ko.sessions))
       .join("\n");
 
     expect(source).not.toMatch(/Run 히스토리|이전 Run|Run 불러오는|Run 채팅|선택된 run|run #|run 0|마지막 run|새 폴더 run|run 이동|\} run`/);
@@ -35,15 +37,15 @@ describe("v3 session language", () => {
 
     expect(contextForm).toContain("ProjectAtomFields");
     expect(contextForm).toContain("ProjectSessionDefaultsFields");
-    expect(succession).toContain("보드 문서");
+    expect(succession).toContain('<strong>{t("sessions.boardDocuments")}</strong>');
     expect(succession).toContain("<ProjectAtomFields request={atomRequest} value={atomDraft}");
     expect(succession).toMatch(/<ProjectAtomFields request=\{atomRequest\} value=\{atomDraft\} disabled=\{pending\} supportsLimit=\{false\}[\s\S]*?selectorOpen=\{atomOpen\} onSelectorOpenChange=\{setAtomOpen\} onSelectorStatusChange=\{setAtomStatus\} onChange=\{setAtomDraft\}/);
-    expect(succession).toContain("<strong>추가 참고 자료</strong>");
+    expect(succession).toContain('<strong>{t("sessions.referenceMaterial")}</strong>');
     expect(succession).toMatch(/setAtomDraft\(\{ \.\.\.atomValue \}\); setAtomStatus\("loading"\); setAtomOpen\(true\);/);
     expect(succession).toMatch(/atomNode: atomNodeId \? \{ nodeId: atomNodeId, title: atomNodeTitle, depth: atomValue\.depth, titlesOnly: atomValue\.titlesOnly, mode: atomValue\.mode \} : null/);
     expect(succession).toMatch(/contextItems: contextSelection\.contextItems\.length > 0\s*\?\s*contextSelection\.contextItems\s*:\s*undefined/);
     expect(succession).not.toContain("추가 지침");
-    expect(succession).toContain("초기 지시");
+    expect(succession).toContain('aria-label={t("sessions.initialInstruction")}');
     expect(succession).not.toContain("기본 지침");
   });
 });

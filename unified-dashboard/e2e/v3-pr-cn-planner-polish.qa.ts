@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 import type { Browser, Locator, Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -41,6 +42,7 @@ async function verifyDesktop(browser: Browser, theme: Theme) {
     reducedMotion: "reduce",
     timezoneId: "Asia/Seoul",
     viewport: { width: 1440, height: 1000 },
+    locale: koreanLocale,
   });
   const page = await context.newPage();
   const errors = collectErrors(page);
@@ -98,6 +100,7 @@ async function verifyMobile(browser: Browser, theme: Theme) {
     reducedMotion: "reduce",
     timezoneId: "Asia/Seoul",
     viewport: { width: 390, height: 844 },
+    locale: koreanLocale,
   });
   const page = await context.newPage();
   const errors = collectErrors(page);

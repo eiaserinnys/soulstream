@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {flushSync} from "react-dom";
 import {useQueryClient} from "@tanstack/react-query";
 import {useCardStore} from "@seosoyoung/soul-ui/cards/card-store";
@@ -68,6 +69,7 @@ export function V3DashboardLayout() {
   return <LiquidGlassProvider renderDefaultCanvas={false}><V3DashboardContent /></LiquidGlassProvider>;
 }
 function V3DashboardContent() {
+  const { t } = useTranslation();
   const cardNavigation = useCardNavigation();
   const queryClient = useQueryClient();
   const api = useMemo(() => createPageApiClient(), []);
@@ -111,7 +113,7 @@ function V3DashboardContent() {
   const catalogLoadError = catalogLoadState.status === "authentication"
     || catalogLoadState.status === "forbidden"
     || catalogLoadState.status === "error"
-    ? "목록 불러오기 실패"
+    ? t("sessions.listLoadFailed")
     : null;
   useReadPositionSync();
   useNotification(true);
@@ -217,7 +219,7 @@ function V3DashboardContent() {
       const known = catalog?.folders.find((folder) => folder.id === task.folderId);
       const snapshot = known ? null : await fetchFolderSnapshot(task.folderId);
       const folder = known ?? (snapshot ? { ...snapshot.folder, sortOrder: 0 } : null);
-      if (!folder) throw new Error("세션의 폴더를 찾을 수 없습니다");
+      if (!folder) throw new Error(t("sessions.sessionFolderMissing"));
       await selectFolder(folder, task, true);
     },
     onClearFolder: clearProject,
@@ -247,12 +249,12 @@ function V3DashboardContent() {
       if (target.kind !== "page") return false;
       const folder = catalog?.folders.find((candidate) => candidate.projectPageId === target.pageId);
       if (!folder) {
-        notify("페이지와 연결된 폴더를 찾을 수 없습니다.");
+        notify(t("sessions.pageFolderMissing"));
         return false;
       }
       return selectFolder(folder).then(() => true);
     },
-  }), [cardNavigation.open, catalog?.folders, notify, selectFolder, sessionPanel.openSessionById]);
+  }), [t, cardNavigation.open, catalog?.folders, notify, selectFolder, sessionPanel.openSessionById]);
   useRegisterDashboardLinkOpeners(dashboardLinkOpeners);
 
   const attemptedDashboardIntent = useRef<string | null>(null);
@@ -296,7 +298,7 @@ function V3DashboardContent() {
         attemptedDashboardIntent.current = identity;
         sessionIntentPending.current = false;
         chatTabPressedWhilePending.current = false;
-        notify("세션 링크 형식이 잘못되었습니다. URL을 확인한 뒤 다시 시도하세요.");
+        notify(t("sessions.invalidSessionLink"));
         return;
       }
       if (sessionIntent.eventId !== undefined) {
@@ -305,7 +307,7 @@ function V3DashboardContent() {
           attemptedDashboardIntent.current = identity;
           sessionIntentPending.current = false;
           chatTabPressedWhilePending.current = false;
-          notify("세션 링크의 이벤트 ID가 잘못되었습니다. URL을 확인한 뒤 다시 시도하세요.");
+          notify(t("sessions.invalidSessionEvent"));
           return;
         }
       }
@@ -353,7 +355,7 @@ function V3DashboardContent() {
         }
       },
     );
-  }, [authLoading, catalogLoadState.status, isAuthenticated, notify, openDashboardLink]);
+  }, [t, authLoading, catalogLoadState.status, isAuthenticated, notify, openDashboardLink]);
   const clearSessionPanelFocus = sessionPanel.clearFocusRequest;
   const removeRunHistorySessions = folderSessions.removeSessions;
   const moveRunHistorySession = folderSessions.moveSession;
@@ -437,10 +439,10 @@ function V3DashboardContent() {
     void fetchPageSessionDefaults(selectedProjectId).then((defaults) => {
       if (active) setSessionDefaults(defaults);
     }).catch((error: unknown) => {
-      if (active) notify(`실행 기본값 조회 실패 · ${errorText(error)}`);
+      if (active) notify(t("sessions.runDefaultsError", { detail: errorText(error) }));
     });
     return () => { active = false; };
-  }, [notify, selectedProjectId]);
+  }, [t, notify, selectedProjectId]);
   const activeSession = catalogSessions.find((session) => session.agentSessionId === activeSessionKey)
     ?? sessions.find((session) => session.agentSessionId === activeSessionKey)
     ?? (activeSessionSummary?.agentSessionId === activeSessionKey ? activeSessionSummary : undefined);
@@ -529,7 +531,7 @@ function V3DashboardContent() {
     const targetPage = starredFolderPage(page);
     const folder = catalog?.folders.find((candidate) => candidate.projectPageId === targetPage.id) ?? null;
     if (!folder) {
-      notify("별표 폴더를 찾을 수 없습니다.");
+      notify(t("sessions.starredFolderMissing"));
       return;
     }
     await selectFolder(folder, "page" in page ? page : undefined);
@@ -574,7 +576,7 @@ function V3DashboardContent() {
     [folderSessions.state?.items, selectedFolderEntry],
   );
   const parentFolder = catalog?.folders.find((folder) => folder.id === selectedFolder?.parentFolderId) ?? null;
-  const projectTitle = parentFolder?.name ?? "미분류";
+  const projectTitle = parentFolder?.name ?? t("sessions.uncategorized");
   const projectFolderId = selectedFolderId;
   const folderSections = selectedFolder ? <FolderWorkspaceSections
     folder={selectedFolder}
@@ -598,11 +600,11 @@ function V3DashboardContent() {
         try {
           hasContents = await projectNavigationMutations.projectHasContents(folder.id);
         } catch (error) {
-          notifyWriteFailure("폴더 내용 확인", error);
+          notifyWriteFailure(t("sessions.checkFolderContents"), error);
           return;
         }
         if (hasContents) setChildArchiveTarget(folder);
-        else void projectNavigationMutations.onDeleteProject(folder).catch((error) => notifyWriteFailure("폴더 보관", error));
+        else void projectNavigationMutations.onDeleteProject(folder).catch((error) => notifyWriteFailure(t("sessions.archiveFolder"), error));
       })();
     }}
     onCompleteFolder={plannerActions.completeFolder}
@@ -611,7 +613,7 @@ function V3DashboardContent() {
   /> : null;
   const renameSelectedFolder = (title: string) => workspaceFolderEntry
     ? plannerActions.renameFolderPageTitle(workspaceFolderEntry, title)
-    : Promise.reject(new Error("연결된 폴더가 없습니다"));
+    : Promise.reject(new Error(t("sessions.noLinkedFolder")));
   return (
     <SessionMenuProvider sessions={sessions} onRename={plannerActions.renameSession}
       onDelete={plannerActions.deleteSessions} onMove={plannerActions.moveSession} onCreated={sessionPanel.openSession}>
@@ -677,10 +679,10 @@ function V3DashboardContent() {
               <section className="v3-planner-loading" aria-busy={resolution.status === "loading"}>
                 {resolution.status === "error" || project.status === "error" ? (
                   <FrameNotice>
-                    <V3ErrorNotice message="플래너를 불러오지 못했습니다."
+                    <V3ErrorNotice message={t("sessions.plannerLoadFailed")}
                       detail={resolution.status === "error" ? resolution.message : project.message} />
                   </FrameNotice>
-                ) : <FrameLoading label="불러오는 중…" />}
+                ) : <FrameLoading label={t("sessions.loading")} />}
               </section>
             ) : null) : <CardHome folders={catalog?.folders??[]}/> }
           </div>
@@ -731,7 +733,7 @@ function V3DashboardContent() {
           onCloseWorkspace={() => { setChatOpen(false); setActiveSessionSummary(null); setActiveSession(null); if (!workspaceFolderEntry) closeWorkspace(); }}
           onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }}
           onOpenSession={openSession}
-          onRenameFolderTitle={(title) => workspaceFolderEntry ? plannerActions.renameFolderPageTitle(workspaceFolderEntry, title) : Promise.reject(new Error("연결된 폴더가 없습니다"))}
+          onRenameFolderTitle={(title) => workspaceFolderEntry ? plannerActions.renameFolderPageTitle(workspaceFolderEntry, title) : Promise.reject(new Error(t("sessions.noLinkedFolder")))}
           onSaveDescription={saveDescription}
 
           onFolderBlocksChanged={applyFolderBlocks}
@@ -756,7 +758,7 @@ function V3DashboardContent() {
       <FolderParentMoveDialog {...folderParentMove.dialogProps} />
       <ProjectDialog
         target={childFolderDialog}
-        createLabel="새 폴더"
+        createLabel={t("sessions.newFolder")}
         onClose={() => setChildFolderDialog(null)}
         onCreateIdentity={projectNavigationMutations.onCreateProject}
         onRename={projectNavigationMutations.onRenameProject}
@@ -768,7 +770,7 @@ function V3DashboardContent() {
         onClose={() => setChildArchiveTarget(null)}
         onArchive={(folder) => {
           setChildArchiveTarget(null);
-          void projectNavigationMutations.onDeleteProject(folder).catch((error) => notifyWriteFailure("폴더 보관", error));
+          void projectNavigationMutations.onDeleteProject(folder).catch((error) => notifyWriteFailure(t("sessions.archiveFolder"), error));
         }}
       />
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />

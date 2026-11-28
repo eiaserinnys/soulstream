@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type {CardExecutionState} from "@seosoyoung/soul-ui/cards/card-execution-state";
 import {cardExecutionState,subscribeCardExecution} from "@seosoyoung/soul-ui/cards/card-execution";
 import {CardApiError} from "@seosoyoung/soul-ui/cards/card-api";
@@ -22,6 +23,7 @@ export interface CardStatusHandle { request(status?:CardStatus):void; requestCol
 export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activator,trigger="chip"}: {
   card:CardRow;control:CardStatusControl;onOpen():void;ref?:Ref<CardStatusHandle>;sampleExecution?:CardExecutionState;activator?:CardQueueStatusActivator;trigger?:"chip"|"more";
 }) {
+ const {t}=useTranslation();
   const observedExecution=useSyncExternalStore(subscribeCardExecution,()=>cardExecutionState(card.id),()=>undefined);
   const execution=sampleExecution??observedExecution;
   const catalogFolders=useDashboardStore(s=>s.catalog?.folders);
@@ -79,47 +81,47 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
   const answerConfirmation=(value:boolean)=>{confirmation?.resolve(value);setConfirmation(null);};
   return <>{settingsCard?<CardExecutionSettingsDialog card={settingsCard} folders={folders} startAfterSave assignment={control.assignment} onSave={control.saveSettings} onStart={saved=>control.change(saved,"running")} onClose={()=>setSettingsCard(null)}/>:null}
   <AlertDialog open={Boolean(confirmation)} onOpenChange={next=>{if(!next)answerConfirmation(false);}}><AlertDialogPopup>
-    <AlertDialogHeader><AlertDialogTitle>선행 카드가 끝나지 않았습니다</AlertDialogTitle><AlertDialogDescription className="v3-card-start-confirm-description">
-      {confirmation?.card.dependsOn?.filter(dep=>!dep.met).map(dep=>`${dep.number==null?dep.title:`#${dep.number}`}(${cardDependencyStatus(dep).label})`).join(", ")}이 아직 충족되지 않았습니다. 기다리지 않고 지금 시작할까요?
-    </AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><Button variant="outline" onClick={()=>answerConfirmation(false)}>취소</Button><Button onClick={()=>answerConfirmation(true)}>지금 시작</Button></AlertDialogFooter>
+    <AlertDialogHeader><AlertDialogTitle>{t("cards.dependenciesIncomplete")}</AlertDialogTitle><AlertDialogDescription className="v3-card-start-confirm-description">
+      {t("cards.dependenciesStartPrompt", {dependencies:confirmation?.card.dependsOn?.filter(dep=>!dep.met).map(dep=>`${dep.number==null?dep.title:`#${dep.number}`}(${cardDependencyStatus(dep,t).label})`).join(", ")})}
+    </AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><Button variant="outline" onClick={()=>answerConfirmation(false)}>{t("cards.cancel")}</Button><Button onClick={()=>answerConfirmation(true)}>{t("cards.startNow")}</Button></AlertDialogFooter>
   </AlertDialogPopup></AlertDialog><Popover open={open&&!confirmation} onOpenChange={(next,details)=>{
     if(details.reason==="escape-key")details.event.preventDefault();
     changeOpen(next);
   }}>
     <PopoverTrigger ref={activator?.setActivatorNodeRef} {...activator?.attributes} {...activator?.listeners}
-      render={trigger==="more"?<DashboardIconCap size="small" label="상태 변경 메뉴"><MoreHorizontal className="h-4 w-4" aria-hidden="true"/></DashboardIconCap>:undefined}
+      render={trigger==="more"?<DashboardIconCap size="small" label={t("cards.statusMenu")}><MoreHorizontal className="h-4 w-4" aria-hidden="true"/></DashboardIconCap>:undefined}
       payload={popupContent}
-      {...(trigger==="chip"?{className:"v3-postit-status-trigger","aria-label":"카드 상태 변경"}:{})}
+      {...(trigger==="chip"?{className:"v3-postit-status-trigger","aria-label":t("cards.changeStatus")}:{})}
       aria-disabled={control.pending||activator?.disabled||false}
       disabled={control.pending||activator?.disabled||false} style={activator?{touchAction:"none"}:undefined}
       onClick={event => event.stopPropagation()}
       >
-      {trigger==="chip"?<StatusChip label={execution?.phase==="pending"?"시작 중…":cardStatusLabel(card)} tone={tone}/>:null}
+      {trigger==="chip"?<StatusChip label={execution?.phase==="pending"?t("cards.starting"):cardStatusLabel(card,t)} tone={tone}/>:null}
     </PopoverTrigger>
     <PopoverPopup align={trigger==="more"?"end":"start"} className="v3-surface v3-card-status-picker glass-strong glass-chrome min-w-32 max-w-(--available-width)" data-card-status-picker onClick={event => event.stopPropagation()} initialFocus={view==="color"?initialColorFocus:undefined}>
       <div className="v3-card-status-picker-content">
-        {execution && execution.phase!=='pending'?<><p data-v3-selectable-content="true" role={execution.phase==='error'?'alert':'status'}>{execution.message}</p><Button size="sm" variant="ghost" disabled={busy} onClick={()=>void state.request('running')}>{execution.phase==='delayed'?'다시 확인':'다시 시도'}</Button></>:null}
-        {loading ? <FrameLoading inline label="불러오는 중…" /> : null}
-        {error ? <><p data-v3-selectable-content="true" role={error.startsWith("실행 결과")?"status":"alert"}>{error}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void refresh()}>{detail ? "갱신 후 재시도" : "다시 불러오기"}</Button></> : null}
+        {execution && execution.phase!=='pending'?<><p data-v3-selectable-content="true" role={execution.phase==='error'?'alert':'status'}>{execution.phase==="delayed"&&!sampleExecution?t("cards.executionDelayed"):execution.message}</p><Button size="sm" variant="ghost" disabled={busy} onClick={()=>void state.request('running')}>{execution.phase==='delayed'?t("cards.checkAgain"):t("cards.retry")}</Button></>:null}
+        {loading ? <FrameLoading inline label={t("cards.loading")} /> : null}
+        {error ? <><p data-v3-selectable-content="true" role={error.startsWith("실행 결과" /* i18n-ignore: 실행 결과 안내 접두사로 알림 역할을 판별합니다. */)?"status":"alert"}>{error}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void refresh()}>{detail ? t("cards.refreshAndRetry") : t("cards.reload")}</Button></> : null}
         {view==="status"?<>
-          {statusOutsideChoices?<p data-v3-selectable-content="true">지금 상태는 {CARD_STATUS_LABELS[statusOutsideChoices]}입니다. 담당이 정한 시각에 다시 확인하며, 아래에서 다른 상태로 바꿀 수 있습니다.</p>:null}
-          <div aria-label="카드 상태 목록">{cardStatusChoices.map(status => <Button key={status} variant="menu"
+          {statusOutsideChoices?<p data-v3-selectable-content="true">{t("cards.statusOutsideChoices", {status:t(`cards.status.${statusOutsideChoices}`,{defaultValue:CARD_STATUS_LABELS[statusOutsideChoices]})})}</p>:null}
+          <div aria-label={t("cards.statusList")}>{cardStatusChoices.map(status => <Button key={status} variant="menu"
             aria-pressed={status === (detail?.card.status ?? card.status)} disabled={unavailable}
-            onClick={() => void change(status)}>{cardStatusLabel({...card, status,blockedKind:null,blockedDetail:null})}</Button>)}</div>
+            onClick={() => void change(status)}>{cardStatusLabel({...card, status,blockedKind:null,blockedDetail:null},t)}</Button>)}</div>
           {control.changeColor?<Button variant="menu" aria-pressed="false" disabled={unavailable} onClick={showColors}>
-            카드 색상: {CARD_COLORS[detail?.card.color??card.color??"yellow"].name}
+            {t("cards.cardColor", {color:t(`cards.color.${currentColor}`,{defaultValue:CARD_COLORS[currentColor].name})})}
           </Button>:null}
         </>:<>
-          <div aria-label="카드 색상 목록">{CARD_COLOR_KEYS.map(color=>{
+          <div aria-label={t("cards.colorList")}>{CARD_COLOR_KEYS.map(color=>{
             const selected=color===currentColor;
             return <Button key={color} ref={colorButtonRef(color)} variant="menu"
               aria-pressed={selected} disabled={unavailable}
               onClick={()=>void changeColor(color)}>
               <span className="inline-flex size-4 shrink-0 items-center justify-center">{selected?<Check className="size-4" aria-hidden="true"/>:null}</span>
-              <span>{CARD_COLORS[color].name}</span>
+              <span>{t(`cards.color.${color}`,{defaultValue:CARD_COLORS[color].name})}</span>
             </Button>;
           })}</div>
-          <Button variant="ghost" disabled={busy} onClick={showStatuses}>돌아가기</Button>
+          <Button variant="ghost" disabled={busy} onClick={showStatuses}>{t("cards.back")}</Button>
         </>}
       </div>
     </PopoverPopup>

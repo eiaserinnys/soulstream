@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { koreanLocale } from "./korean-locale.mjs";
+import { expect, test, type Page } from "./test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
@@ -19,6 +20,7 @@ for (const theme of ["dark", "light"] as const) {
       colorScheme: theme,
       reducedMotion: "reduce",
       viewport: { width: 1600, height: 1000 },
+      locale: koreanLocale,
     });
     const page = await context.newPage();
     const browserErrors: string[] = [];

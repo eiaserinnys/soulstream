@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
   useDashboardStore,
@@ -46,6 +47,7 @@ export function useV3SessionPanelController({
   openCard(cardId: string, placement?: "overlay", focus?: string | null, initialSessionId?: string | null): void;
   clearCard(): void;
 }) {
+  const { t } = useTranslation();
   const panelRef = useRef<HTMLElement>(null);
   const focusRequestSequence = useRef(0);
   const openRequestSequence = useRef(0);
@@ -75,6 +77,7 @@ export function useV3SessionPanelController({
   ): Promise<boolean> => {
     try {
       const resolved = await resolveSessionFolderWorkspace({
+        t,
         session,
         currentFolderEntries,
         loadFolderById: (folderId) => loadPlannerFolderById(api, folderId,{includeCompleted:false}),
@@ -101,15 +104,15 @@ export function useV3SessionPanelController({
       if (requestSequence !== openRequestSequence.current) return false;
       const message = error instanceof SessionWorkspaceResolutionError
         ? error.message
-        : "세션의 폴더를 열지 못했습니다.";
+        : t("sessions.sessionFolderOpenFailed");
       const detail = error instanceof SessionWorkspaceResolutionError && error.cause
         ? errorText(error.cause)
         : errorText(error);
       setWorkspaceFolderError(message);
-      notify(`세션의 폴더 열기 실패 · ${message} · ${detail}`);
+      notify(t("sessions.openFolderError", { message, detail }));
       return false;
     }
-  }, [api, currentFolderEntries, notify, onClearFolder, onSelectFolder, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen]);
+  }, [t, api, currentFolderEntries, notify, onClearFolder, onSelectFolder, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen]);
 
   const openSession = useCallback(async (session: SessionSummary) => {
     const requestSequence = ++openRequestSequence.current;
@@ -142,10 +145,10 @@ export function useV3SessionPanelController({
       return openSessionForRequest(session, requestSequence);
     } catch (error) {
       if (requestSequence !== openRequestSequence.current) return false;
-      notify(`세션의 연결 카드를 확인하지 못했습니다 · ${errorText(error)}`);
+      notify(t("sessions.linkedCardError", { detail: errorText(error) }));
       return false;
     }
-  }, [clearCard, notify, openCard, openSessionForRequest, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen, setFocusEventId]);
+  }, [t, clearCard, notify, openCard, openSessionForRequest, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen, setFocusEventId]);
 
   const openSessionById = useCallback(async (
     sessionId: string,
@@ -162,7 +165,7 @@ export function useV3SessionPanelController({
       });
       if (requestSequence !== openRequestSequence.current) return false;
       if (!session) {
-        notify("선택한 세션을 찾을 수 없습니다");
+        notify(t("sessions.selectedSessionMissing"));
         return false;
       }
       const opened = await openSessionForRequest(session, requestSequence);
@@ -171,10 +174,10 @@ export function useV3SessionPanelController({
       return true;
     } catch (error) {
       if (requestSequence !== openRequestSequence.current) return false;
-      notify(`세션 열기 실패 · ${errorText(error)}`);
+      notify(t("sessions.openSessionError", { detail: errorText(error) }));
       return false;
     }
-  }, [notify, openSessionForRequest, setFocusEventId]);
+  }, [t, notify, openSessionForRequest, setFocusEventId]);
 
   return {
     panelRef,

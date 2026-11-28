@@ -53,7 +53,7 @@ it("opens the ordered card context menu and routes a selected status through the
   const reopened=document.querySelector<HTMLElement>('[data-slot="menu-popup"]')!;
   const queued=[...reopened.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item=>item.textContent?.trim()==="대기")!;
   await act(async()=>{queued.click();await Promise.resolve();await Promise.resolve();});
-  expect(mutate).toHaveBeenCalledWith(reviewCard.id,"/status",{status:"queued",expectedVersion:reviewCard.version});
+  expect(mutate).toHaveBeenCalledWith(reviewCard.id,"/status",{status:"queued",expectedVersion:reviewCard.version},"POST",expect.any(Function));
 });
 
 it("opens the dedicated menu with the keyboard context-menu command",async()=>{
@@ -77,7 +77,7 @@ it("opens color editing from the card context menu and PATCHes the latest versio
   await act(async()=>{colorAction.click();await new Promise(done=>setTimeout(done,20));});
   const colorChoice=[...document.querySelectorAll<HTMLButtonElement>('[data-card-status-picker] button')].find(item=>item.textContent?.trim()==="민트")!;
   await act(async()=>{colorChoice.click();await new Promise(done=>setTimeout(done,20));});
-  expect(mutate).toHaveBeenCalledWith(card.id,"",{color:"mint",expectedVersion:12},"PATCH");
+  expect(mutate).toHaveBeenCalledWith(card.id,"",{color:"mint",expectedVersion:12},"PATCH",expect.any(Function));
   expect(document.querySelector('[data-card-status-picker]')).toBeNull();
 });
 

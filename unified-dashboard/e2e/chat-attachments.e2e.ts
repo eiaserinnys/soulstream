@@ -1,4 +1,4 @@
-import { expect, test, type Download, type Page, type Request, type Response } from "@playwright/test";
+import { expect, test, type Download, type Page, type Request, type Response } from "./test";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

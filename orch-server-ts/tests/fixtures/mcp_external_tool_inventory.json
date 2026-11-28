@@ -1,6 +1,6 @@
 [
   {
-    "description": "spoken은 사용자 발언 요약을 사용자 글로 기록하며 첫 줄은 \"아래는 사용자의 발언을 요약하여 옮긴 것입니다\"입니다. reply는 담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 mode가 필수이고 답은 1200자까지 한 번만 받습니다. 진행은 add_card_note에, 일을 마친 결과 보고는 request_card_review나 set_card_status(done)의 report에 씁니다. item_id로 대상 항목을 표시할 수 있습니다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다. 사용자가 질문에 되묻거나 덧붙인 글에 답할 때는 mode=reply와 question_id를 붙입니다. 이 답은 질문을 닫거나 카드 상태를 바꾸지 않습니다.",
+    "description": "담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 답은 1200자까지 한 번만 받습니다. 진행은 add_card_note에, 일을 마친 결과 보고는 request_card_review나 set_card_status(done)의 report에 씁니다. item_id로 대상 항목을 표시할 수 있습니다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다. 사용자가 질문에 되묻거나 덧붙인 글에 답할 때는 mode=reply와 question_id를 붙입니다. 이 답은 질문을 닫거나 카드 상태를 바꾸지 않습니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -20,10 +20,7 @@
           "type": "integer"
         },
         "mode": {
-          "enum": [
-            "spoken",
-            "reply"
-          ],
+          "const": "reply",
           "type": "string"
         },
         "question_id": {
@@ -3324,7 +3321,7 @@
     "name": "rename_folder"
   },
   {
-    "description": "담당 카드의 검수를 요청합니다. 확인 항목이 있으면 ask에 사용자가 볼 것을 한 줄로 적으세요. ask는 60자까지이며 식별자를 넣지 않습니다. report에 일을 마친 결과 보고를 적으면 카드 커멘트로 남습니다(2000자까지). 사용자가 대화창을 열지 않고 카드에서 읽는 글이니 첫 세 줄에 요점을 쓰세요. 보고나 미답 질문은 상태 변경을 막지 않습니다.",
+    "description": "담당 카드의 검수를 요청합니다. 확인 항목이 있으면 ask에 사용자가 볼 것을 한 줄로 적으세요. ask는 60자까지이며 식별자를 넣지 않습니다. 담당 세션은 report에 일을 마친 결과 보고를 반드시 적습니다. 카드 커멘트로 남습니다(2000자까지). 사용자가 대화창을 열지 않고 카드에서 읽는 글이니 첫 세 줄에 요점을 쓰세요. 보고나 미답 질문은 상태 변경을 막지 않습니다.",
     "execution": {
       "taskSupport": "forbidden"
     },

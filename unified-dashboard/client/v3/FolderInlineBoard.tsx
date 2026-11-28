@@ -1,3 +1,5 @@
+import { folderErrorText } from "./folder-messages";
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   CustomViewIframe,
@@ -68,6 +70,8 @@ export function FolderInlineBoard({
   markdownDocumentsRevision?: number;
   onMarkdownDocumentsChanged(documents: FolderBoardMarkdownDocument[]): void;
 }) {
+  const { t, i18n } = useTranslation();
+  const number = new Intl.NumberFormat(i18n.resolvedLanguage);
   const [items, setItems] = useState<CatalogBoardItem[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [boardExpanded, setBoardExpanded] = useState(false);
@@ -132,8 +136,8 @@ export function FolderInlineBoard({
   }, [itemInvalidationKey, folderId]);
 
   useEffect(() => {
-    onMarkdownDocumentsChanged(boardMarkdownDocuments(items));
-  }, [items, onMarkdownDocumentsChanged]);
+    onMarkdownDocumentsChanged(boardMarkdownDocuments(items, t));
+  }, [items, onMarkdownDocumentsChanged, t]);
 
   const createMarkdown = async () => {
     if (status !== "ready" || creating) return;
@@ -142,7 +146,7 @@ export function FolderInlineBoard({
     try {
       const result = await createMarkdownDocument({
         folderId,
-        title: "제목 없는 문서",
+        title: t("folders.board.untitled"),
         body: "",
       });
       discardFolderBoardItems(folderId);
@@ -155,7 +159,7 @@ export function FolderInlineBoard({
         error: "",
       });
     } catch {
-      setCreateError("문서를 만들지 못했습니다.");
+      setCreateError(t("folders.board.createError"));
     } finally {
       setCreating(false);
     }
@@ -164,7 +168,7 @@ export function FolderInlineBoard({
   const beginRename = (item: CatalogBoardItem) => {
     setRenameState({
       documentId: item.itemId,
-      input: metadataText(item, "title") || "제목 없는 문서",
+      input: metadataText(item, "title") || t("folders.board.untitled"),
       pending: false,
       error: "",
     });
@@ -184,12 +188,12 @@ export function FolderInlineBoard({
     if (version === null) {
       setRenameState((current) => current ? {
         ...current,
-        error: "문서 정보를 새로 불러온 뒤 다시 시도하세요.",
+        error: t("folders.board.reloadToRename"),
       } : null);
       return;
     }
-    const previousTitle = metadataText(item, "title") || "제목 없는 문서";
-    const title = renameState.input.trim() || "제목 없는 문서";
+    const previousTitle = metadataText(item, "title") || t("folders.board.untitled");
+    const title = renameState.input.trim() || t("folders.board.untitled");
     if (title === previousTitle) {
       setRenameState(null);
       return;
@@ -211,7 +215,7 @@ export function FolderInlineBoard({
         ...current,
         input: title,
         pending: false,
-        error: error instanceof Error ? error.message : "문서 이름을 바꾸지 못했습니다.",
+        error: error instanceof Error ? folderErrorText(t, error) : t("folders.board.renameError"),
       } : null);
     }
   };
@@ -243,12 +247,12 @@ export function FolderInlineBoard({
   return (
     <section className="v3-detail-section v3-inline-board" data-testid="v3-inline-board">
       <div className="v3-detail-section-head">
-        <h3>▦ 보드</h3><span>{status === "ready" ? `${items.length}개` : ""}</span>
+        <h3>▦ {t("folders.sections.board")}</h3><span>{status === "ready" ? t("folders.common.itemCount", { total: number.format(items.length) }) : ""}</span>
         <span className="v3-spacer" />
         {items.length > COLLAPSED_BOARD_ITEM_LIMIT ? (
           <DashboardIconCap
             size="small"
-            label={boardExpanded ? "보드 접기" : "보드 전체 펼치기"}
+            label={boardExpanded ? t("folders.board.collapse") : t("folders.board.expand")}
             aria-expanded={boardExpanded}
             onClick={() => setBoardExpanded((expanded) => !expanded)}
           >
@@ -257,22 +261,22 @@ export function FolderInlineBoard({
         ) : null}
         <DashboardIconCap
           size="small"
-          label="마크다운 추가"
+          label={t("folders.board.addMarkdown")}
           disabled={status !== "ready" || creating}
           onClick={() => { void createMarkdown(); }}
         >
           <FilePlus2 className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </div>
-      {status === "loading" ? <FrameLoading label="보드 항목을 불러오는 중…" /> : null}
-      {status === "error" ? <p className="v3-inline-board-error" role="alert">보드 항목을 불러오지 못했습니다.</p> : null}
+      {status === "loading" ? <FrameLoading label={t("folders.board.loading")} /> : null}
+      {status === "error" ? <p className="v3-inline-board-error" role="alert">{t("folders.board.loadError")}</p> : null}
       {createError ? <p className="v3-inline-board-error" role="alert">{createError}</p> : null}
-      {status === "ready" && items.length === 0 ? <p className="v3-detail-empty">보드에 표시할 문서가 없습니다.</p> : null}
+      {status === "ready" && items.length === 0 ? <p className="v3-detail-empty">{t("folders.board.empty")}</p> : null}
       <div className="v3-inline-board-list">
         {(boardExpanded ? items : items.slice(0, COLLAPSED_BOARD_ITEM_LIMIT)).map((item) => {
           const expanded = expandedId === item.id;
           if (item.itemType === "markdown") {
-            const title = metadataText(item, "title") || "제목 없는 문서";
+            const title = metadataText(item, "title") || t("folders.board.untitled");
             const activeRename = renameState?.documentId === item.itemId ? renameState : null;
             return (
               <InlineMarkdownCard key={item.id} title={title} expanded={expanded}
@@ -300,7 +304,7 @@ export function FolderInlineBoard({
                       <span aria-hidden="true">📄</span>
                       <input
                         autoFocus
-                        aria-label="마크다운 이름"
+                        aria-label={t("folders.board.markdownName")}
                         value={activeRename.input}
                         disabled={activeRename.pending}
                         onChange={(event) => setRenameState((current) => current ? { ...current, input: event.target.value, error: "" } : null)}
@@ -313,14 +317,14 @@ export function FolderInlineBoard({
                       />
                       <div className="v3-inline-board-rename-actions">
                         <DashboardIconCap
-                          label="마크다운 이름 변경 저장"
+                          label={t("folders.board.saveRename")}
                           type="submit"
                           disabled={activeRename.pending}
                         >
                           <Check className="h-4 w-4" aria-hidden="true" />
                         </DashboardIconCap>
                         <DashboardIconCap
-                          label="마크다운 이름 변경 취소"
+                          label={t("folders.board.cancelRename")}
                           disabled={activeRename.pending}
                           onClick={() => setRenameState(null)}
                         >
@@ -342,7 +346,7 @@ export function FolderInlineBoard({
                 <div className="v3-inline-board-row">
                   <div className="v3-inline-board-label"><span>▦ {title}</span></div>
                   <DashboardIconCap
-                    label={`${title} ${expanded ? "접기" : "펼치기"}`}
+                    label={t(expanded ? "folders.common.collapseNamed" : "folders.common.expandNamed", { name: title })}
                     aria-expanded={expanded}
                     onClick={() => setExpandedId(expanded ? null : item.id)}
                   >
@@ -378,6 +382,7 @@ function createMoveIdempotencyKey(boardItemId: string, targetFolderId: string): 
 }
 
 function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; invalidationKey: number }) {
+  const { t } = useTranslation();
   const [document, setDocument] = useState<MarkdownDocument | null>(null);
   const [error, setError] = useState(false);
   useEffect(() => {
@@ -390,14 +395,14 @@ function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; i
       });
     return () => controller.abort();
   }, [documentId, invalidationKey]);
-  if (error) return <FrameNotice><p className="v3-inline-board-error" role="alert">문서 본문을 불러오지 못했습니다.</p></FrameNotice>;
-  if (!document) return <FrameLoading label="본문을 불러오는 중…" />;
+  if (error) return <FrameNotice><p className="v3-inline-board-error" role="alert">{t("folders.board.bodyError")}</p></FrameNotice>;
+  if (!document) return <FrameLoading label={t("folders.board.bodyLoading")} />;
   return (
     <div className="v3-inline-markdown" data-testid="v3-inline-markdown">
       <FolderDescriptionPanel
         markdown={document.body}
-        ariaLabel={`${document.title} 문서`}
-        emptyText="클릭해서 문서 본문을 작성하세요."
+        ariaLabel={t("folders.board.documentLabel", { name: document.title })}
+        emptyText={t("folders.board.bodyEmpty")}
         variant="inline"
         onSave={async (body) => {
           const updated = await saveInlineMarkdown({
@@ -414,6 +419,7 @@ function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; i
 }
 
 function InlineCustomView({ customViewId, invalidationKey }: { customViewId: string; invalidationKey: number }) {
+  const { t } = useTranslation();
   const bindings = useCustomViewBindings();
   const [document, setDocument] = useState<CustomViewDocument | null>(null);
   const [error, setError] = useState(false);
@@ -426,8 +432,8 @@ function InlineCustomView({ customViewId, invalidationKey }: { customViewId: str
       });
     return () => controller.abort();
   }, [customViewId, invalidationKey]);
-  if (error) return <FrameNotice><p className="v3-inline-board-error" role="alert">커스텀 뷰를 불러오지 못했습니다.</p></FrameNotice>;
-  if (!document) return <FrameLoading label="커스텀 뷰를 불러오는 중…" />;
+  if (error) return <FrameNotice><p className="v3-inline-board-error" role="alert">{t("folders.board.customViewError")}</p></FrameNotice>;
+  if (!document) return <FrameLoading label={t("folders.board.customViewLoading")} />;
   return (
     <CustomViewIframe
       html={document.html}
@@ -439,11 +445,12 @@ function InlineCustomView({ customViewId, invalidationKey }: { customViewId: str
 }
 
 function InlineAsset({ item }: { item: CatalogBoardItem }) {
-  const title = metadataText(item, "originalName") || metadataText(item, "title") || "첨부 파일";
+  const { t } = useTranslation();
+  const title = metadataText(item, "originalName") || metadataText(item, "title") || t("folders.board.attachment");
   const href = metadataText(item, "signedUrl") || metadataText(item, "sourceUrl");
   return (
     <LiquidGlassCard webglSurface cornerRadius="floor" className="v3-inline-board-item" data-board-kind="asset">
-      {href ? <a href={href} target="_blank" rel="noreferrer"><span>↗ {title}</span><small>열기</small></a> : <div><span>📎 {title}</span></div>}
+      {href ? <a href={href} target="_blank" rel="noreferrer"><span>↗ {title}</span><small>{t("folders.common.open")}</small></a> : <div><span>📎 {title}</span></div>}
     </LiquidGlassCard>
   );
 }

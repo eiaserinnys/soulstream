@@ -70,7 +70,7 @@ it("한도를 다 쓴 모델에 사유와 해제 시각을 붙이고 선택은 �
 
   const sol = [...section("모델").querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.includes("Sol"))!;
   expect(sol.querySelector(".v3-card-execution-name")?.textContent).toBe("Sol");
-  expect(sol.querySelector(".v3-card-execution-reason")?.textContent).toBe("7일 사용량 제한 · 11/28 03:20 해제");
+  expect(sol.querySelector(".v3-card-execution-reason")?.textContent).toBe("7일 사용량 제한 · 11. 28. 03:20 해제");
   expect(sol.disabled).toBe(false);
   await press("모델", "Sol");
   expect(sol.getAttribute("aria-pressed")).toBe("true");
