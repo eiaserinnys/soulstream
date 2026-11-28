@@ -4,7 +4,7 @@ import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
 import {
   createPlannerDataDependencies,
-  loadDailyPlanner,
+  loadTodayPlanner,
   loadFolderSessionPage,
   loadFolderSubfolderPage,
   loadPlannerFolderById,
@@ -33,15 +33,11 @@ describe("unified folder planner API", () => {
     }));
   });
 
-  it("reads today as one folder list with no page fanout", async () => {
-    const fetchPlanner = vi.fn(async () => ({
-      daily: { page: page("daily"), blocks: [], state_vector: "" },
-      attention: [], running: [], queued: [], folders: [entry("folder-a")], memoBlocks: [], reviewSessionIds: [],
-    }));
-    const result = await loadDailyPlanner(api, "2026-09-29", { fetchPlanner });
-    expect(result.folders).toMatchObject([{ folderId: "folder-a", page: { id: "folder-a-page" } }]);
-    expect(fetchPlanner).toHaveBeenCalledOnce();
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/today?date=2026-09-29");
+  it("loads cards and review sessions without a date", async () => {
+    const payload = { attention: [], running: [], queued: [], reviewSessionIds: ["review-1"] };
+    const fetchPlanner = vi.fn(async () => payload);
+    expect(await loadTodayPlanner({ fetchPlanner })).toEqual(payload);
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/today");
   });
 
   it("reads the folder aggregate including each first cursor slice", async () => {

@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
-import { openV3DailyPlanner, openV3Folder } from "./v3-qa-entry";
+import { openV3Home, openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const mode = process.env.PR_AD_QA_MODE === "before" ? "before" : "after";
@@ -36,12 +36,6 @@ console.log(JSON.stringify({ ok: true, mode, residualProcesses: 0, ...results },
 
 async function captureBefore(page: Page) {
   await gotoPlanner(page);
-  const memo = page.locator(".v3-daily-memo");
-  console.log("[pr-ad/qa] 기준 오늘 메모 확인");
-  await waitVisible(memo.locator("textarea"), "기준 오늘 메모 textarea");
-  console.log("[pr-ad/qa] 기준 오늘 메모 textarea 확인됨");
-  await capture(page, "01-daily-memo-always-open");
-
   await openProject(page);
   const context = page.getByTestId("v3-project-context");
   const heightBefore = await elementHeight(context);
@@ -53,7 +47,7 @@ async function captureBefore(page: Page) {
   }
   await capture(page, "02-atom-inline-layout-shift");
 
-  await gotoPlanner(page);
+  await openProject(page);
   await openPrimaryTask(page);
   await page.getByRole("button", { name: "PR-O 결정 로그 펼치기" }).click();
   const inlineMarkdown = page.getByTestId("v3-inline-markdown");
@@ -64,15 +58,6 @@ async function captureBefore(page: Page) {
 }
 
 async function captureAfter(page: Page) {
-  await gotoPlanner(page);
-  const memo = page.locator(".v3-daily-memo");
-  await waitCount(memo.locator("textarea"), 0, "오늘 메모 textarea");
-  await waitVisible(memo.getByRole("button", { name: "오늘 메모 편집" }), "오늘 메모 편집 버튼");
-  await capture(page, "01-daily-memo-preview");
-  await memo.getByRole("button", { name: "오늘 메모 편집" }).click();
-  await waitVisible(memo.getByRole("textbox", { name: "오늘 메모 마크다운" }), "오늘 메모 마크다운 편집기");
-  await capture(page, "02-daily-memo-editor");
-
   await gotoPlanner(page);
   await openProject(page);
   const context = page.getByTestId("v3-project-context");
@@ -201,7 +186,7 @@ async function openFixturePage(browser: Browser, viewport: { width: number; heig
 
 async function gotoPlanner(page: Page) {
   console.log("[pr-ad/qa] /v3 진입");
-  await openV3DailyPlanner(page, baseUrl);
+  await openV3Home(page, baseUrl);
   console.log("[pr-ad/qa] 플래너 로드됨");
 }
 

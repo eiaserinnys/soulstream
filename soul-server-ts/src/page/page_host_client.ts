@@ -74,18 +74,6 @@ export class PageYjsHostClient {
     });
   }
 
-  async getDailyPage(input: {
-    date?: string;
-    actorKind?: PageActorKind;
-    actorSessionId: string | null;
-  }): Promise<{ page: PageDto; created: boolean; operation?: BlockOperationDto }> {
-    return await this.request("get-daily-page", {
-      ...(input.date ? { date: input.date } : {}),
-      actor_kind: input.actorKind ?? "agent",
-      actor_session_id: input.actorSessionId,
-    });
-  }
-
   private async request<T>(operation: string, body: unknown): Promise<T> {
     const response = await this.transport.send(
       "POST",

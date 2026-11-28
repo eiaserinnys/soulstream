@@ -5,7 +5,6 @@ import { buildPageYjsSnapshotRepairPlan } from "../src/page/page_yjs_repair_plan
 interface MissingPageRow {
   id: string;
   title: string;
-  daily_date: string | null;
   version: number;
   archived: boolean;
   metadata: Record<string, unknown>;
@@ -28,7 +27,7 @@ try {
     await transaction`SET TRANSACTION READ ONLY`;
     const pages = await transaction<MissingPageRow[]>`
       SELECT
-        p.id, p.title, p.daily_date::text AS daily_date, p.version,
+        p.id, p.title, p.version,
         p.archived, p.metadata
       FROM pages p
       LEFT JOIN board_yjs_documents document
@@ -50,7 +49,7 @@ try {
         page: {
           id: page.id,
           title: page.title,
-          dailyDate: page.daily_date,
+          dailyDate: null,
           mutationVersion: Number(page.version),
           archived: page.archived,
           metadata: page.metadata,

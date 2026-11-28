@@ -17,7 +17,6 @@ import {
 } from "./page_mutation_helpers.js";
 import { reconcilePageLinks } from "./page_link_projection.js";
 import {
-  findPageIdByDailyDate,
   findPageIdByTitle,
   getBrowserBacklinks,
   getPageBacklinks,
@@ -163,10 +162,6 @@ export class PageRepository {
 
   async findPageIdByTitle(title: string): Promise<string | null> {
     return await findPageIdByTitle(await this.resolveSql(), title);
-  }
-
-  async findPageIdByDailyDate(date: string): Promise<string | null> {
-    return await findPageIdByDailyDate(await this.resolveSql(), date);
   }
 
   async listPages(input: {

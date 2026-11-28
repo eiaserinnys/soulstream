@@ -4,12 +4,10 @@ import type { McpToolDefinition } from "./tool_definitions.js";
 
 const id = z.string().trim().min(1);
 const callerSessionId = id.optional();
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const jsonObject = z.record(z.string(), z.unknown());
 const pageForCreate = z.object({
   id: id.optional(),
   title: id,
-  daily_date: date.nullable().optional(),
 });
 const placement = {
   parent_id: id.nullable().default(null),
@@ -130,7 +128,6 @@ export const pageTools = {
     description: mutationDescription("새 페이지를 생성한다."),
     inputSchema: {
       title: id,
-      daily_date: date.optional(),
       id: id.optional(),
       idempotency_key: id,
       caller_session_id: callerSessionId,
@@ -144,9 +141,5 @@ export const pageTools = {
   upsert_page_markdown: { name: "upsert_page_markdown", audience: "all", config: {
     description: mutationDescription("마크다운으로 페이지 블록 전체를 명시적으로 교체한다."),
     inputSchema: upsertInput.shape,
-  } },
-  get_daily_page: { name: "get_daily_page", audience: "all", config: {
-    description: mutationDescription("Asia/Seoul 기준 데일리 페이지를 멱등 get-or-create한다."),
-    inputSchema: { date: date.optional(), caller_session_id: callerSessionId },
   } },
 } as const satisfies Record<string, McpToolDefinition>;

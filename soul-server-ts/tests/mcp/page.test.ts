@@ -5,7 +5,7 @@ import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { registerPageTools } from "../../src/mcp/tools/page.js";
 
 describe("page MCP tools", () => {
-  it("registers exactly the eight spec tools and caller_session_id on every input", () => {
+  it("registers exactly the seven spec tools and caller_session_id on every input", () => {
     const { registered } = register();
     expect([...registered.keys()]).toEqual([
       "get_page",
@@ -15,7 +15,6 @@ describe("page MCP tools", () => {
       "create_page",
       "batch_page_operations",
       "upsert_page_markdown",
-      "get_daily_page",
     ]);
     for (const value of registered.values()) {
       expect(Object.keys(value.config.inputSchema)).toContain("caller_session_id");

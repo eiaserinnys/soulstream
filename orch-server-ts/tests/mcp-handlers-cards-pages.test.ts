@@ -42,12 +42,6 @@ describe("page MCP execution", () => {
       actor: expect.objectContaining({ actorSessionId: "session-1" }), idempotencyKey: "create_page:session-1:req",
     }));
   });
-  it("falls back to the request header for lazy daily creation", async () => {
-    const { service, options } = pageHarness();
-    await call(options, "get_daily_page", { date: "2026-07-12" }, { ...context, callerSessionId: "header-session" });
-    expect(service.getDailyPage).toHaveBeenCalledWith({ date: "2026-07-12",
-      actor: { actorKind: "agent", actorSessionId: "header-session", actorUserId: null } });
-  });
   it("rejects invalid XOR and missing CAS before calling the host", async () => {
     const { service, options } = pageHarness();
     const result = await call(options, "batch_page_operations", { page_id: "page-1",

@@ -1749,17 +1749,6 @@
         },
         "page": {
           "properties": {
-            "daily_date": {
-              "anyOf": [
-                {
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
             "id": {
               "minLength": 1,
               "type": "string"
@@ -2341,10 +2330,6 @@
       "properties": {
         "caller_session_id": {
           "minLength": 1,
-          "type": "string"
-        },
-        "daily_date": {
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
           "type": "string"
         },
         "id": {
@@ -3152,27 +3137,6 @@
       "type": "object"
     },
     "name": "get_custom_view"
-  },
-  {
-    "description": "Asia/Seoul 기준 데일리 페이지를 멱등 get-or-create한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
-    "inputSchema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "caller_session_id": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "date": {
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "get_daily_page"
   },
   {
     "annotations": {

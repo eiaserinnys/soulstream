@@ -11,17 +11,17 @@ export class SessionPageBindingRepository {
     const rows = await this.sql<SessionPageBindingRow[]>`
       INSERT INTO session_page_bindings (
         session_id, node_id, target_page_id, target_block_id, target_expected_version,
-        daily_date, session_type, legacy_folder_id, page_state
+        session_type, legacy_folder_id, page_state
       ) VALUES (
         ${input.sessionId}, ${input.nodeId}, ${input.targetPageId}, ${input.targetBlockId},
-        ${input.targetExpectedVersion}, ${input.dailyDate}, ${input.sessionType},
+        ${input.targetExpectedVersion}, ${input.sessionType},
         ${input.legacyFolderId},
         ${input.initialPageState}
       )
       ON CONFLICT (session_id) DO NOTHING
       RETURNING *
     `;
-    if (rows[0]) return normalizeRow(rows[0]);
+    if (rows[0]) return rows[0];
     const existing = await this.get(input.sessionId);
     if (!existing) throw new Error(`session page binding enqueue lost: ${input.sessionId}`);
     return existing;
@@ -31,7 +31,7 @@ export class SessionPageBindingRepository {
     const rows = await this.sql<SessionPageBindingRow[]>`
       SELECT * FROM session_page_bindings WHERE session_id = ${sessionId}
     `;
-    return rows[0] ? normalizeRow(rows[0]) : null;
+    return rows[0] ?? null;
   }
 
   async listForSessions(sessionIds: string[]): Promise<SessionPageBindingRow[]> {
@@ -40,7 +40,7 @@ export class SessionPageBindingRepository {
       SELECT * FROM session_page_bindings
       WHERE session_id = ANY(${this.sql.array(sessionIds)}::text[])
     `;
-    return rows.map(normalizeRow);
+    return rows;
   }
 
   async listDue(nodeId: string, limit = 50): Promise<SessionPageBindingRow[]> {
@@ -52,7 +52,7 @@ export class SessionPageBindingRepository {
       ORDER BY next_retry_at, created_at
       LIMIT ${limit}
     `;
-    return rows.map(normalizeRow);
+    return rows;
   }
 
   async markPageBound(sessionId: string): Promise<void> {
@@ -97,14 +97,4 @@ export class SessionPageBindingRepository {
       `;
     }
   }
-}
-
-function normalizeRow(row: SessionPageBindingRow): SessionPageBindingRow {
-  const rawDate = row.daily_date as unknown;
-  return {
-    ...row,
-    daily_date: rawDate instanceof Date
-      ? rawDate.toISOString().slice(0, 10)
-      : String(rawDate).slice(0, 10),
-  };
 }

@@ -9,7 +9,6 @@ export interface SessionPageBindingRow {
   target_page_id: string | null;
   target_block_id: string | null;
   target_expected_version: number | null;
-  daily_date: string;
   session_type: string;
   legacy_folder_id: string | null;
   page_state: "pending" | "bound" | "manual_repair";
@@ -26,7 +25,6 @@ export interface EnqueueSessionPageBinding {
   targetBlockId: string | null;
   targetExpectedVersion: number | null;
   initialPageState: "pending" | "bound";
-  dailyDate: string;
   sessionType: string;
   legacyFolderId: string | null;
 }

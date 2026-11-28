@@ -91,10 +91,6 @@ describe("route registry", () => {
         staticPath: "/api/folders/reorder",
         dynamicPath: "/api/folders/{folder_id}",
       },
-      {
-        staticPath: "/api/pages/daily",
-        dynamicPath: "/api/pages/{pageId}",
-      },
     ]);
 
     const brokenFixture: RouteInventoryFixture = {
@@ -154,7 +150,6 @@ describe("route registry", () => {
     const browserRoutes = [
       ["GET", "/api/pages"],
       ["GET", "/api/pages/search"],
-      ["POST", "/api/pages/daily"],
       ["GET", "/api/pages/{pageId}"],
       ["GET", "/api/pages/{pageId}/backlinks"],
       ["POST", "/api/pages/{pageId}/operations"],
@@ -162,7 +157,6 @@ describe("route registry", () => {
       ["GET", "/api/planner/today"],
       ["GET", "/api/planner/starred-folders"],
       ["PATCH", "/api/planner/starred-folders/order"],
-      ["GET", "/api/planner/daily-history"],
       ["GET", "/api/planner/folders/{folder_id}"],
       ["GET", "/api/planner/folders/{folder_id}/subfolders"],
       ["GET", "/api/planner/folders/{folder_id}/sessions"],

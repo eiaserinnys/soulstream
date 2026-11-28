@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   SessionLegacyProjection,
   SessionPageBindingService,
-  kstDate,
 } from "../../src/page/session_page_binding_service.js";
 import type { SessionPageBindingRow } from "@soulstream/mcp-contract";
 import type { SessionPageBindingHostClient } from "../../src/control_plane/persistence_host_clients.js";
@@ -18,7 +17,6 @@ function binding(overrides: Partial<SessionPageBindingRow> = {}): SessionPageBin
     target_page_id: null,
     target_block_id: null,
     target_expected_version: null,
-    daily_date: "2026-07-13",
     session_type: "claude",
     legacy_folder_id: "folder-1",
     page_state: "pending",
@@ -33,7 +31,7 @@ function binding(overrides: Partial<SessionPageBindingRow> = {}): SessionPageBin
 function harness(initial = binding()) {
   let row = initial;
   const repository = {
-    enqueue: vi.fn(async () => row),
+    enqueue: vi.fn(async (input) => { row = { ...row, page_state: input.initialPageState }; return row; }),
     get: vi.fn(async () => row),
     listDue: vi.fn(async () => [row]),
     markPageBound: vi.fn(async () => {
@@ -79,7 +77,7 @@ function harness(initial = binding()) {
 describe("SessionPageBindingService", () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  it("records KST intent and binds an unanchored session to the daily page", async () => {
+  it("excludes an unanchored browser session from page binding", async () => {
     const h = harness();
     const hookParams = {
       task: { agentSessionId: "sess-1" } as never,
@@ -95,20 +93,11 @@ describe("SessionPageBindingService", () => {
 
     expect(h.repository.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "sess-1",
-      dailyDate: "2026-07-13",
       targetPageId: null,
-      initialPageState: "pending",
+      initialPageState: "bound",
     }));
-    expect(h.pageHost.batchPageOperations).toHaveBeenCalledWith(expect.objectContaining({
-      page_id: "daily-1",
-      expected_version: 3,
-      idempotency_key: "session-page-binding:sess-1:primary",
-      operations: [expect.objectContaining({
-        op: "create_block",
-        block_type: "session_ref",
-        properties: { sessionId: "sess-1", primary: true },
-      })],
-    }));
+    expect(h.pageHost.getDailyPage).not.toHaveBeenCalled();
+    expect(h.pageHost.batchPageOperations).not.toHaveBeenCalled();
     expect(h.legacyProjection.project).not.toHaveBeenCalled();
     await h.service.afterLegacyProjection({
       task: { agentSessionId: "sess-1" } as never,
@@ -176,7 +165,7 @@ describe("SessionPageBindingService", () => {
   });
 
   it("replays the same idempotency key after a crash between page mutation and outbox update", async () => {
-    const h = harness();
+    const h = harness(binding({ target_page_id: "page-1", target_block_id: "block-1", target_expected_version: 7 }));
     vi.mocked(h.repository.markPageBound).mockRejectedValueOnce(new Error("db disconnected"));
     await h.service.reconcile(h.row());
     await h.service.reconcile(h.row());
@@ -214,85 +203,6 @@ describe("SessionPageBindingService", () => {
       "sess-1", "page", "stale page anchor block: deleted-block", true,
     );
     expect(h.legacyProjection.project).not.toHaveBeenCalled();
-  });
-
-  it("retries an unanchored daily-page CAS race with the latest page version", async () => {
-    const h = harness();
-    h.pageHost.getDailyPage
-      .mockResolvedValueOnce({ page: { id: "daily-1", title: "2026-07-13", version: 3 }, created: false })
-      .mockResolvedValueOnce({ page: { id: "daily-1", title: "2026-07-13", version: 4 }, created: false });
-    h.pageHost.batchPageOperations
-      .mockRejectedValueOnce(new Error("page version conflict (409)"))
-      .mockResolvedValueOnce({});
-
-    await h.service.reconcile(h.row(), true);
-    expect(h.repository.markFailure).toHaveBeenCalledWith(
-      "sess-1", "page", "page version conflict (409)", false,
-    );
-    await h.service.reconcile(h.row(), true);
-
-    expect(h.pageHost.batchPageOperations.mock.calls.map(([input]) => input.expected_version))
-      .toEqual([3, 4]);
-    expect(h.row().page_state).toBe("bound");
-  });
-
-  it("eventually binds two concurrent unanchored sessions to the same daily page", async () => {
-    const rows = new Map([
-      ["sess-a", binding({ session_id: "sess-a", legacy_state: "completed" })],
-      ["sess-b", binding({ session_id: "sess-b", legacy_state: "completed" })],
-    ]);
-    const repository = {
-      get: vi.fn(async (sessionId: string) => rows.get(sessionId) ?? null),
-      markPageBound: vi.fn(async (sessionId: string) => {
-        rows.set(sessionId, { ...rows.get(sessionId)!, page_state: "bound" });
-      }),
-      markLegacyCompleted: vi.fn(async () => undefined),
-      markFailure: vi.fn(async (sessionId: string, step: string, error: string, manual: boolean) => {
-        rows.set(sessionId, {
-          ...rows.get(sessionId)!,
-          ...(step === "page" ? { page_state: manual ? "manual_repair" as const : "pending" as const } : {}),
-          last_error: error,
-        });
-      }),
-      listDue: vi.fn(async () => []),
-    } as unknown as SessionPageBindingHostClient;
-    let pageVersion = 3;
-    let dailyReads = 0;
-    let releaseDaily!: () => void;
-    const dailyBarrier = new Promise<void>((resolve) => { releaseDaily = resolve; });
-    const pageHost = {
-      getDailyPage: vi.fn(async () => {
-        const snapshotVersion = pageVersion;
-        dailyReads += 1;
-        if (dailyReads === 2) releaseDaily();
-        await dailyBarrier;
-        return { page: { id: "daily-1", title: "2026-07-13", version: snapshotVersion }, created: false };
-      }),
-      getPage: vi.fn(),
-      batchPageOperations: vi.fn(async (input: { expected_version: number }) => {
-        if (input.expected_version !== pageVersion) throw new Error("page version conflict (409)");
-        pageVersion += 1;
-        return {};
-      }),
-    };
-    const service = new SessionPageBindingService({
-      nodeId: "node-1",
-      repository,
-      pageHost: pageHost as never,
-      legacyProjection: { project: vi.fn(async () => undefined) },
-      logger,
-    });
-
-    await Promise.all([
-      service.reconcile(rows.get("sess-a")!, true),
-      service.reconcile(rows.get("sess-b")!, true),
-    ]);
-    const retry = [...rows.values()].find((row) => row.page_state === "pending");
-    expect(retry).toBeDefined();
-    await service.reconcile(retry!, true);
-
-    expect([...rows.values()].map((row) => row.page_state)).toEqual(["bound", "bound"]);
-    expect(pageHost.batchPageOperations).toHaveBeenCalledTimes(3);
   });
 
   it("keeps an explicit pageAnchor CAS conflict in manual repair", async () => {
@@ -336,7 +246,7 @@ describe("SessionPageBindingService", () => {
   });
 
   it("serializes hook and stale background work per session and rereads durable state", async () => {
-    const h = harness();
+    const h = harness(binding({ target_page_id: "page-1", target_block_id: "block-1", target_expected_version: 7 }));
     const stale = { ...h.row() };
     vi.mocked(h.repository.listDue).mockResolvedValueOnce([stale]);
     let releasePage!: () => void;
@@ -347,7 +257,7 @@ describe("SessionPageBindingService", () => {
 
     const hookParams = {
       task: { agentSessionId: "sess-1" } as never,
-      params: { agentSessionId: "sess-1", prompt: "start" },
+      params: { agentSessionId: "sess-1", prompt: "start", pageAnchor: { pageId: "page-1", blockId: "block-1", expectedVersion: 7 } },
     };
     await h.service.persistCreationIntent(hookParams);
     const hook = h.service.afterSessionRegistered(hookParams);
@@ -394,13 +304,6 @@ describe("SessionPageBindingService", () => {
     expect(h.repository.listDue).toHaveBeenCalledOnce();
     release();
     await first;
-  });
-});
-
-describe("kstDate", () => {
-  it("rolls over at Korea midnight", () => {
-    expect(kstDate(new Date("2026-07-12T14:59:59.999Z"))).toBe("2026-07-12");
-    expect(kstDate(new Date("2026-07-12T15:00:00.000Z"))).toBe("2026-07-13");
   });
 });
 

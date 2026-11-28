@@ -4,7 +4,6 @@ import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import type { BlockDto, PageDto } from "../../../packages/page-model/src/types";
 import type {
   PageApiClient,
-  PageReadResponse,
 } from "@seosoyoung/soul-ui/page";
 import { type CatalogFolder, type PlannerFolderStatus, type SessionSummary } from "@seosoyoung/soul-ui";
 
@@ -36,14 +35,10 @@ export function starredFolderPage(value: StarredPlannerFolder): PageDto {
   return isPlannerFolder(value) ? value.page : value;
 }
 
-export interface DailyPlannerData {
+export interface TodayPlannerData {
   attention: CardRow[];
   running: CardRow[];
   queued: CardRow[];
-  daily: PageReadResponse;
-  projects: PageDto[];
-  memoBlocks: BlockDto[];
-  folders: PlannerFolder[];
   reviewSessionIds: string[];
 }
 
@@ -135,24 +130,17 @@ async function plannerResponseDetail(response: Response): Promise<string | null>
   }
 }
 
-export async function loadDailyPlanner(
-  _api: PageApiClient,
-  date: string,
+export async function loadTodayPlanner(
   dependencies: PlannerDataDependencies,
-): Promise<DailyPlannerData> {
-  const query = new URLSearchParams({ date });
+): Promise<TodayPlannerData> {
   const store = useCardStore.getState();
   const startedAt = store.nextRequestSequence();
   const payload = await dependencies.fetchPlanner(
-    `/api/planner/today?${query.toString()}`,
+    "/api/planner/today",
   ) as PlannerTodayPayload;
   store.putCards([...payload.attention, ...payload.running, ...payload.queued], startedAt);
   return {
     attention: payload.attention, running: payload.running, queued: payload.queued,
-    daily: payload.daily,
-    projects: [],
-    folders: payload.folders.map(plannerFolder),
-    memoBlocks: payload.memoBlocks,
     reviewSessionIds: payload.reviewSessionIds,
   };
 }
@@ -188,17 +176,6 @@ export async function loadStarredFolders(
     items: payload.items.map(plannerFolder),
     nextCursor: payload.nextCursor,
   };
-}
-
-export async function loadDailyHistoryDates(
-  dependencies: PlannerDataDependencies,
-  before: string,
-): Promise<string[]> {
-  const query = new URLSearchParams({ before });
-  const payload = await dependencies.fetchPlanner(
-    `/api/planner/daily-history?${query.toString()}`,
-  ) as { dates: string[] };
-  return payload.dates;
 }
 
 export async function loadFolderSubfolderPage(
@@ -275,9 +252,6 @@ function pagePath(path: string, cursor: string | undefined): string {
 
 interface PlannerTodayPayload {
   attention: CardRow[]; running: CardRow[]; queued: CardRow[];
-  daily: PageReadResponse;
-  folders: PlannerFolderPayload[];
-  memoBlocks: BlockDto[];
   reviewSessionIds: string[];
 }
 

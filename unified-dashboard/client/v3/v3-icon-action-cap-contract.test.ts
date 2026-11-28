@@ -43,13 +43,11 @@ describe("v3 icon action cap contract", () => {
   it.each([
     ["./FolderCardSection.tsx", ["카드 추가"]],
     ["../../../packages/soul-ui/src/folder-status/FolderCompletionAction.tsx", ["actionLabel"]],
-    ["./FolderDetailPane.tsx", ["오늘 플래너로 돌아가기", "별표"]],
-    ["./FolderTodayToggle.tsx", ["todayPlannerMenuLabel"]],
+    ["./FolderDetailPane.tsx", ["전체 카드로 돌아가기", "별표"]],
     ["./FolderDescriptionPanel.tsx", ["편집"]],
     ["./FolderInlineBoard.tsx", ["마크다운 추가", "마크다운 이름 변경 저장", "마크다운 이름 변경 취소"]],
     ["./FolderSessionHistory.tsx", ["새 세션"]],
     ["./FolderWorkspace.tsx", ["폴더 창 닫기"]],
-    ["./PlannerViews.tsx", ["아침 정리"]],
     ["./FolderWorkspaceSections.tsx", ["하위 폴더 더 보기"]],
     ["./V3Navigation.tsx", ["별표 폴더 더 보기", "새 폴더"]],
     ["./V3SessionReviewBanner.tsx", ["검수 확인"]],
@@ -113,7 +111,6 @@ describe("v3 icon action cap contract", () => {
     expect(folderCard).toContain('kind:"star"');
     expect(folderCard).toContain("pressed:folderStar.starred,pending:folderStar.pending,onAction:()=>{void folderStar.toggle();}");
     expect(rowFrame).toMatch(/actions!\.map\(action=><DashboardIconCap[\s\S]*?label=\{action\.label\}[\s\S]*?disabled=\{disabled\|\|action\.disabled\|\|action\.pending\}[\s\S]*?aria-pressed=\{action\.kind==="star"\?action\.pressed:undefined\}[\s\S]*?action\.onAction\(event\)/);
-    expect(read("./FolderTodayToggle.tsx")).toMatch(/DashboardIconCap[\s\S]*aria-pressed=\{inToday\}/);
   });
 
   it("leaves the planner return action as the only visible close affordance in task detail", () => {
@@ -121,7 +118,7 @@ describe("v3 icon action cap contract", () => {
     const workspace = read("./FolderWorkspace.tsx");
     const layout = read("./V3DashboardLayout.tsx");
 
-    expect(detail).toContain('parentFolder ? "상위 폴더로 이동" : "오늘 플래너로 돌아가기"');
+    expect(detail).toContain('parentFolder ? "상위 폴더로 이동" : "전체 카드로 돌아가기"');
     expect(detail).not.toContain('label="폴더 상세 닫기"');
     expect(workspace).not.toContain('label="우측 패널 닫기"');
     expect(workspace).toContain("onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}");

@@ -310,8 +310,7 @@ for(const [width,font] of [[390,17],[1210,14],[1440,17],[1920,18]])test(`product
  expect(expandedRect).toEqual({x:20,y:20,width:width-40,height:(width===1210?834:1000)-40});
  await capture(page,`after-expanded-${width}-font${font}`);await dialog.locator(".v3-card-board").evaluate(el=>el.scrollLeft=el.scrollWidth);
  await page.keyboard.press("Escape");await expect(dialog).toHaveCount(0);expect(await state.board.evaluate(el=>el.scrollLeft)).toBe(old);await expect(expand).toBeFocused();
- await home.getByRole("button",{name:"기록",exact:true}).click();await expect(page.locator(".v3-date-head")).toBeVisible();
- if(width===390)await page.getByTestId("v3-mobile-tab-today").click();else await page.getByRole("button",{name:"전체 카드",exact:true}).click();
+ await expect(home.getByRole("button",{name:"기록",exact:true})).toHaveCount(0);
  await expect(home).toBeVisible();
  if(width===390){await page.getByTestId("v3-mobile-tab-projects").click();await page.getByTestId("v3-mobile-project-list").getByRole("button",{name:"소울스트림",exact:true}).click();}
  else await page.getByTestId("v3-all-projects").getByRole("button",{name:"소울스트림",exact:true}).click();
@@ -488,10 +487,8 @@ for(const width of [390,1440])test(`card1698 초점 링과 첫 줄 ${width}`,asy
  await page.keyboard.press('Enter');const dialog=page.getByRole('dialog',{name:'전체 카드 보드'});await expect(dialog).toBeVisible();
  await expect(dialog.getByRole('button',{name:'확대 닫기'})).toBeFocused();await page.keyboard.press('Escape');await expect(expand).toBeFocused();
  const restored=await verifyRing();await card1698Shot(page,`home-restored-${width}`);
- await home.getByRole('button',{name:'기록',exact:true}).click();const daily=page.locator('.v3-date-head');await expect(daily).toBeVisible();
- const dailyGeometry=await geometry('.v3-date-head');await card1698Shot(page,`daily-${width}`);
- for(const item of [homeGeometry,dailyGeometry])expect(Math.abs(item.rowTop-item.contentTop)).toBeLessThanOrEqual(1);
- mkdirSync(card1698Dir,{recursive:true});writeFileSync(path.join(card1698Dir,`geometry-${width}.json`),JSON.stringify({before,restored,homeGeometry,dailyGeometry},null,2));
+ expect(Math.abs(homeGeometry.rowTop-homeGeometry.contentTop)).toBeLessThanOrEqual(1);
+ mkdirSync(card1698Dir,{recursive:true});writeFileSync(path.join(card1698Dir,`geometry-${width}.json`),JSON.stringify({before,restored,homeGeometry},null,2));
 });
 
 for(const width of [390,1440])test(`card1698 폴더 로딩 오류 복구 ${width}`,async({page})=>{
@@ -757,35 +754,14 @@ async function measureFolderError(page:Page,width:number,verify=true,name?:strin
  if(verify){expect(board.gap).toBeGreaterThan(0);expect(Math.abs(board.gap-list.gap)).toBeLessThanOrEqual(1);}
  return {board,list};
 }
-async function measureRitualError(page:Page,width:number,verify=true,name?:string){
- await page.setViewportSize({width,height:width===390?844:900});await fixture(page);
- await page.locator('.v3-card-inbox').getByRole('button',{name:'기록',exact:true}).click();await page.locator('.v3-date-head').waitFor({state:'visible'});
- const historyMatcher=(url:URL)=>url.pathname==='/api/planner/daily-history';
- await page.route(historyMatcher,route=>route.fulfill({status:500,json:{message:'플래너 기록 조회 실패 (500): daily-history upstream timeout after 30000ms'}}));
- await page.getByTestId('v3-planner-scroll').getByRole('button',{name:'아침 정리',exact:true}).click();
- const alert=page.getByRole('dialog').getByRole('alert');await expect(alert).toBeVisible();await page.waitForTimeout(300);
- await page.screenshot({animations:'disabled'});
- const closed=await alert.evaluate(el=>({width:el.getBoundingClientRect().width,align:getComputedStyle(el).textAlign,containerWidth:el.parentElement!.getBoundingClientRect().width}));
- if(name)await visualShot(page,`${name}-closed`);
- await alert.getByText('기술 상세').click();await expect(alert.locator('pre')).toBeVisible();
- const opened=await alert.evaluate(el=>({width:el.getBoundingClientRect().width,align:getComputedStyle(el).textAlign,containerWidth:el.parentElement!.getBoundingClientRect().width}));
- if(name){await visualShot(page,`${name}-open`);visualSave(name,{closed,opened});}
- if(verify){
-  expect(['start','left']).toContain(opened.align);expect(opened.width).toBeCloseTo(closed.width,0);expect(opened.width).toBeCloseTo(opened.containerWidth,0);
-  await page.unroute(historyMatcher);await alert.getByRole('button',{name:'다시 시도'}).click();await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0);
- }
- return {closed,opened};
-}
 for(const [width,height] of [[390,844],[1366,768]])test(`card1680 긴 오류 상세가 완료 열 안에 유지 ${width}`,async({page})=>{await measureLongError(page,width,height);});
 test('card1680 폴더 오류와 머리 간격이 보기마다 같다',async({page})=>{await measureFolderError(page,390);});
-test('card1680 아침 정리 오류 정렬과 폭 유지',async({page})=>{await measureRitualError(page,390);});
 
 for(const theme of ['light','dark'] as const){
  for(const width of [390,1440])test(`visual1680-review board-error-long ${theme} ${width}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureLongError(page,width,width===390?844:900,false,visualPhase==='review-after',`board-error-long-${theme}-${width}`);});
  test(`visual1680-review board-error-size ${theme}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureLongError(page,1366,768,false,visualPhase==='review-after',`board-error-size-${theme}-1366`);});
  test(`visual1680-review folder-board-long ${theme}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureLongError(page,390,844,true,visualPhase==='review-after',`folder-board-long-${theme}-390`);});
  for(const width of [390,1440])test(`visual1680-review folder-error-board ${theme} ${width}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureFolderError(page,width,visualPhase==='review-after',`folder-error-board-${theme}-${width}`);});
- for(const width of [390,1440])test(`visual1680-review ritual-error ${theme} ${width}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureRitualError(page,width,visualPhase==='review-after',`ritual-error-${theme}-${width}`);});
 }
 
 test('card1680 정상 폴더 진행 격자와 완료 묶음 간격',async({page})=>{

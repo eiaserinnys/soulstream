@@ -3626,7 +3626,6 @@ CREATE TABLE IF NOT EXISTS pages (
     id                 TEXT PRIMARY KEY,
     title              TEXT NOT NULL CHECK (btrim(title) <> ''),
     title_key          TEXT GENERATED ALWAYS AS (lower(btrim(title))) STORED,
-    daily_date         DATE,
     version            INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
     archived           BOOLEAN NOT NULL DEFAULT FALSE,
     metadata           JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -3646,7 +3645,6 @@ CREATE TABLE IF NOT EXISTS pages (
 
 ALTER TABLE pages ADD COLUMN IF NOT EXISTS title TEXT NOT NULL CHECK (btrim(title) <> '');
 ALTER TABLE pages ADD COLUMN IF NOT EXISTS title_key TEXT GENERATED ALWAYS AS (lower(btrim(title))) STORED;
-ALTER TABLE pages ADD COLUMN IF NOT EXISTS daily_date DATE;
 ALTER TABLE pages ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0);
 ALTER TABLE pages ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE pages ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::JSONB;
@@ -3683,8 +3681,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_folders_project_page_id
     ON folders(project_page_id) WHERE project_page_id IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pages_title_key ON pages(title_key);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_pages_daily_date
-    ON pages(daily_date) WHERE daily_date IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_pages_active_updated
     ON pages(archived, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_pages_title_prefix
@@ -3807,7 +3803,6 @@ CREATE TABLE IF NOT EXISTS session_page_bindings (
     target_page_id         TEXT,
     target_block_id        TEXT,
     target_expected_version INTEGER,
-    daily_date             DATE NOT NULL,
     session_type           TEXT NOT NULL,
     legacy_folder_id       TEXT,
     page_state             TEXT NOT NULL DEFAULT 'pending'

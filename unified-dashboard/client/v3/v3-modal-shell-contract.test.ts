@@ -14,7 +14,6 @@ const expectedV3DialogConsumers = [
   "FolderArchiveDialog.tsx",
   "FolderDetailArchiveDialog.tsx",
   "ProjectDialog.tsx",
-  "RitualModal.tsx",
   "SessionSuccessionModal.tsx",
   "FolderMoveDialog.tsx",
   "FolderParentMoveDialog.tsx",
@@ -91,7 +90,6 @@ describe("v3 modal shell contract", () => {
     expect(read("./v3-context-succession.css")).not.toMatch(
       /\.v3-succession-modal\s*\{[^}]*border-radius/s,
     );
-    expect(read("./ritual.css")).not.toMatch(/\.v3-ritual-modal\s*\{[^}]*border-radius/s);
   });
 
   it("orders the new-session sections and exposes the bounded document preview", () => {

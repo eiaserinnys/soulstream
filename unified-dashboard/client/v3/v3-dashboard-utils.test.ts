@@ -3,10 +3,8 @@ import type { CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 import {
   AUTH_EXPIRED_MESSAGE,
   buildMobileFolderOptions,
-  dateKey,
   errorText,
   reportV3WriteFailure,
-  recentDates,
   writeFailureText,
 } from "./v3-dashboard-utils";
 
@@ -25,13 +23,7 @@ describe("v3 dashboard utilities", () => {
     }, { folderId: "folder-2", runIds: [], latestRunId: null }]);
   });
 
-  it("produces stable planner dates and error messages", () => {
-    expect(dateKey(new Date(2026, 6, 14))).toBe("2026-07-14");
-    expect(recentDates("2026-07-20")).toEqual([
-      { date: "2026-07-20", label: "7월 20일 월요일 (오늘)" },
-      { date: "2026-07-19", label: "7월 19일 일요일" },
-      { date: "2026-07-18", label: "7월 18일 토요일" },
-    ]);
+  it("formats error messages", () => {
     expect(errorText(new Error("실패"))).toBe("실패");
     expect(errorText("문자열 오류")).toBe("문자열 오류");
   });

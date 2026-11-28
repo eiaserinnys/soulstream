@@ -149,12 +149,6 @@ export const dialoguesInventory = [
     component: "confirmPersistentSessionRelease",
   },
   {
-    section: "settings",
-    id: "ritual",
-    name: "아침 정리",
-    component: "RitualModal",
-  },
-  {
     section: "overlays",
     id: "atom-add",
     name: "atom 컨텍스트 추가",

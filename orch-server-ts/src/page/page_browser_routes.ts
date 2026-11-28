@@ -33,7 +33,6 @@ export const pageBrowserRouteAuthRequirements = {
   "GET /api/pages/{pageId}": true,
   "GET /api/pages/{pageId}/session-defaults": true,
   "GET /api/pages/{pageId}/backlinks": true,
-  "POST /api/pages/daily": true,
   "POST /api/pages/block-transfers": true,
   "POST /api/pages/{pageId}/operations": true,
   "PATCH /api/pages/{pageId}/starred": true,
@@ -54,7 +53,6 @@ export interface PageBrowserRouteOptions {
     PageYjsService,
     | "listPages"
     | "getBrowserPage"
-    | "getDailyPage"
     | "mutatePage"
     | "transferBlocks"
   >;
@@ -76,7 +74,6 @@ export interface PageBrowserReads {
 }
 
 const id = z.string().trim().min(1);
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const listQuerySchema = z.object({
   starred: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
   cursor: id.optional(),
@@ -93,7 +90,6 @@ const backlinksQuerySchema = z.object({
     .transform((value) => value === "true"),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
-const dailySchema = z.object({ date: date.optional() });
 const mutationSchema = z.object({
   expected_version: z.number().int().positive(),
   expected_state_vector: id,
@@ -201,21 +197,6 @@ export function registerPageBrowserRoutes(
       }
     },
   );
-
-  app.post("/api/pages/daily", async (request, reply) => {
-    const userId = await resolveUserId(request, options);
-    if (!userId) return unauthorized(reply);
-    const parsed = dailySchema.safeParse(request.body ?? {});
-    if (!parsed.success) return invalid(reply, parsed.error.message);
-    try {
-      return reply.send(await options.service.getDailyPage({
-        date: parsed.data.date,
-        actor: userActor(userId),
-      }));
-    } catch (error) {
-      return routeError(request, reply, error, "daily");
-    }
-  });
 
   app.post<{ Params: { pageId: string } }>(
     "/api/pages/:pageId/operations",

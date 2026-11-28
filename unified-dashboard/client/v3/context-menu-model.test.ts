@@ -13,12 +13,12 @@ describe("v3 context menu model", () => {
     const planner = buildFolderContextMenuActions({
       starred: true,
       completed: false,
-      inToday: true,
+
     }, actions);
     const starredNavigation = buildFolderContextMenuActions({
       starred: true,
       completed: false,
-      inToday: true,
+
     }, actions);
 
     expect(starredNavigation).toEqual(planner);
@@ -28,7 +28,6 @@ describe("v3 context menu model", () => {
       "별표 해제",
       "다른 폴더로 이동",
       "완료 처리",
-      "오늘에서 제외",
     ]);
     expect(planner[2]?.separatorBefore).toBe(true);
   });
@@ -37,17 +36,16 @@ describe("v3 context menu model", () => {
     const menu = buildFolderContextMenuActions({
       starred: false,
       completed: true,
-      inToday: false,
+
     }, folderActions());
 
     expect(menu[2]?.label).toBe("별표 추가");
     expect(menu[3]?.label).toBe("다른 폴더로 이동");
     expect(menu[4]).toMatchObject({ label: "완료 처리", disabled: true });
-    expect(menu[5]?.label).toBe("오늘에 추가");
     expect(buildFolderContextMenuActions({
       starred: false,
       completed: false,
-      inToday: false,
+
     }, folderActions()).map((action) => action.label)).toContain("완료 처리");
   });
 
@@ -55,7 +53,7 @@ describe("v3 context menu model", () => {
     const rename = vi.fn();
     const archive = vi.fn();
     const menu = buildFolderContextMenuActions({
-      starred: false, completed: false, inToday: false,
+      starred: false, completed: false,
     }, { ...folderActions(), rename, archive });
 
     expect(menu.slice(-2).map((action) => action.label)).toEqual([
@@ -136,6 +134,5 @@ function folderActions() {
     toggleStar: vi.fn(),
     moveToParent: vi.fn(),
     complete: vi.fn(),
-    toggleToday: vi.fn(),
   };
 }

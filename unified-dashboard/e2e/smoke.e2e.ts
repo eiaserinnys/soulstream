@@ -36,8 +36,7 @@ test("renders the built v3 dashboard with its deterministic API fixture", async 
   await expect(inbox.locator('[data-board-column="done"]')).toHaveCount(0);
   await expect(inbox.getByRole("button", { name: "새 카드", exact: true })).toBeVisible();
   await expect(inbox.getByRole("button", { name: "보드 확대", exact: true })).toBeVisible();
-  await inbox.getByRole("button", { name: "기록", exact: true }).click();
-  await expect(page.locator(".v3-date-head")).toBeVisible();
+  await expect(inbox.getByRole("button", { name: "기록", exact: true })).toHaveCount(0);
   await expect(page.getByTestId("persistent-session-entry")).toBeVisible();
   expect(pageErrors).toEqual([]);
 });

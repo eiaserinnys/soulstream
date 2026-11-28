@@ -13,9 +13,6 @@ describe("folder planner PostgreSQL", () => {
       await h.sql`INSERT INTO planner_starred_page_order(page_id,position) VALUES (${`p-${n}`},${n==='a'?0:n==='b'?1:2})`;
     }
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,status) VALUES ('i','b','a0','Card','done')`;
-    await h.sql`INSERT INTO pages(id,title,daily_date,version) VALUES ('daily','2026-09-30','2026-09-30',1)`;
-    await h.sql`INSERT INTO blocks(id,page_id,position_key,block_type,text_plain) VALUES ('mount','daily','a0','paragraph','[[Folder a]]'),('memo','daily','a1','paragraph','memo')`;
-    await h.sql`INSERT INTO block_links(id,source_block_id,link_kind,ordinal,source_start,source_end,target_page_id,target_title,target_title_key) VALUES ('l','mount','mount',0,0,12,'p-a','Folder a','folder a')`;
     await h.sql`INSERT INTO sessions(session_id,folder_id,status) VALUES ('session','b','idle')`;
     await h.sql`INSERT INTO blocks(id,page_id,position_key,block_type,properties) VALUES ('ref','p-b','a0','session_ref','{"sessionId":"session","primary":true}')`;
   },60_000);
@@ -29,7 +26,6 @@ describe("folder planner PostgreSQL", () => {
     expect(second.items[0]).toMatchObject({ itemTotal: 1, completedItemCount: 1, itemCounts: { done: 1 } });
   });
   it("uses page mounts for today and returns one session despite two ownership references", async () => {
-    expect(await repo.getToday("2026-09-30")).toMatchObject({ folders: [{ folder: { id: "a" } }], memoBlocks: [{ id: "memo" }] });
     expect((await repo.getSessions("b", { limit: 20 })).items.map(x=>x.agentSessionId)).toEqual(["session"]);
     expect(await repo.getFolder("b", { limit: 20 })).toMatchObject({ folder: { id: "b" }, cards: [{ id: "i" }] });
   });

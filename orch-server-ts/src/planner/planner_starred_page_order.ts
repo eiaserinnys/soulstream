@@ -53,7 +53,6 @@ export async function syncStarredFolderOrderProjection(
 export function isStarredFolderOrderMember(replica: PageYjsReplica): boolean {
   if (
     replica.page.archived
-    || replica.page.dailyDate !== null
     || replica.page.metadata.starred !== true
   ) return false;
 
@@ -82,7 +81,6 @@ export async function moveStarredFolderOrder(
       JOIN pages page ON page.id = ordering.page_id
       WHERE ordering.page_id = ANY(${tx.array(requestedIds)}::text[])
         AND page.archived = FALSE
-        AND page.daily_date IS NULL
         AND page.metadata->'starred' = 'true'::jsonb
         AND EXISTS (
           SELECT 1 FROM folders folder WHERE folder.project_page_id = page.id
@@ -100,7 +98,6 @@ export async function moveStarredFolderOrder(
       FROM planner_starred_page_order ordering
       JOIN pages page ON page.id = ordering.page_id
       WHERE page.archived = FALSE
-        AND page.daily_date IS NULL
         AND page.metadata->'starred' = 'true'::jsonb
         AND EXISTS (
           SELECT 1 FROM folders folder WHERE folder.project_page_id = page.id

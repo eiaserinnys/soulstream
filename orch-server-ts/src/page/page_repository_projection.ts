@@ -35,18 +35,17 @@ export async function upsertPageProjection(
   if (provenance) {
     const rows = await sql<readonly { created_at: Date; updated_at: Date }[]>`
       INSERT INTO pages (
-        id, title, daily_date, version, archived, metadata,
+        id, title, version, archived, metadata,
         created_session_id, created_event_id, updated_session_id, updated_event_id,
         updated_at
       ) VALUES (
-        ${page.id}, ${page.title}, ${page.dailyDate}, ${page.mutationVersion},
+        ${page.id}, ${page.title}, ${page.mutationVersion},
         ${page.archived}, ${sql.json(page.metadata)}::jsonb,
         ${provenance.actorSessionId}, ${provenance.eventId},
         ${provenance.actorSessionId}, ${provenance.eventId}, NOW()
       )
       ON CONFLICT (id) DO UPDATE
       SET title = EXCLUDED.title,
-          daily_date = EXCLUDED.daily_date,
           version = EXCLUDED.version,
           archived = EXCLUDED.archived,
           metadata = EXCLUDED.metadata,
@@ -62,21 +61,20 @@ export async function upsertPageProjection(
   }
   const rows = await sql<readonly { created_at: Date; updated_at: Date }[]>`
     INSERT INTO pages (
-      id, title, daily_date, version, archived, metadata, updated_at
+      id, title, version, archived, metadata, updated_at
     ) VALUES (
-      ${page.id}, ${page.title}, ${page.dailyDate}, ${page.mutationVersion},
+      ${page.id}, ${page.title}, ${page.mutationVersion},
       ${page.archived}, ${sql.json(page.metadata)}::jsonb, NOW()
     )
     ON CONFLICT (id) DO UPDATE
     SET title = EXCLUDED.title,
-        daily_date = EXCLUDED.daily_date,
         version = EXCLUDED.version,
         archived = EXCLUDED.archived,
         metadata = EXCLUDED.metadata,
         updated_at = EXCLUDED.updated_at
-    WHERE (pages.title, pages.daily_date, pages.version, pages.archived, pages.metadata)
+    WHERE (pages.title, pages.version, pages.archived, pages.metadata)
       IS DISTINCT FROM
-      (EXCLUDED.title, EXCLUDED.daily_date, EXCLUDED.version, EXCLUDED.archived, EXCLUDED.metadata)
+      (EXCLUDED.title, EXCLUDED.version, EXCLUDED.archived, EXCLUDED.metadata)
     RETURNING created_at, updated_at
   `;
   await syncStarredFolderOrderProjection(sql, replica);

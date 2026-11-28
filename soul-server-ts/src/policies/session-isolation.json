@@ -134,9 +134,6 @@
     "get_custom_view": {
       "category": "allow"
     },
-    "get_daily_page": {
-      "category": "allow"
-    },
     "get_event_ingress_delivery_latency": {
       "category": "allow"
     },

@@ -74,7 +74,7 @@ export async function listPages(
   const cursorId = cursor?.id ?? "";
   const starred = input.starred ?? null;
   const rows = await sql<readonly PageRow[]>`
-    SELECT id, title, daily_date::text AS daily_date, version, archived,
+    SELECT id, title, NULL::text AS daily_date, version, archived,
            metadata, created_at, updated_at
     FROM pages
     WHERE archived = FALSE
@@ -106,16 +106,6 @@ export async function findPageIdByTitle(
 ): Promise<string | null> {
   const rows = await sql<readonly { id: string }[]>`
     SELECT id FROM pages WHERE title_key = lower(btrim(${title})) LIMIT 1
-  `;
-  return rows[0]?.id ?? null;
-}
-
-export async function findPageIdByDailyDate(
-  sql: PageReadQuerySql,
-  date: string,
-): Promise<string | null> {
-  const rows = await sql<readonly { id: string }[]>`
-    SELECT id FROM pages WHERE daily_date = ${date}::date LIMIT 1
   `;
   return rows[0]?.id ?? null;
 }
@@ -340,7 +330,7 @@ function pageDto(row: PageRow): PageDto {
   return {
     id: row.id,
     title: row.title,
-    daily_date: row.daily_date,
+    daily_date: null,
     version: row.version,
     archived: row.archived,
     metadata: row.metadata,

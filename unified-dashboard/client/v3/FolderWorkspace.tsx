@@ -61,9 +61,7 @@ export function FolderWorkspace({
   reconnectSession,
   onChatVisibilityChange,
   folderMoveTargets,
-  folderInToday,
   onReturnToToday,
-  onToggleFolderToday,
   onCloseWorkspace,
   onCloseChat,
   onOpenSession,
@@ -106,9 +104,7 @@ export function FolderWorkspace({
   reconnectSession(): void;
   onChatVisibilityChange(visible: boolean): void;
   folderMoveTargets: readonly PlannerFolder[];
-  folderInToday: boolean;
   onReturnToToday(): void;
-  onToggleFolderToday(): Promise<void>;
   onCloseWorkspace(): void;
   onCloseChat(): void;
   onOpenSession(session: SessionSummary): void;
@@ -276,9 +272,9 @@ export function FolderWorkspace({
           onLoadMoreRuns={onLoadMoreRuns}
           sessionDefaults={sessionDefaults}
           folderMoveTargets={folderMoveTargets}
-          folderInToday={folderInToday}
+
           onReturnToToday={onReturnToToday}
-          onToggleFolderToday={onToggleFolderToday}
+
           onOpenSession={onOpenSession}
           onRenameFolderTitle={async (title) => {
             const renamedTitle = await onRenameFolderTitle(title);

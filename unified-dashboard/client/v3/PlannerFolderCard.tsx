@@ -25,10 +25,8 @@ type PlannerFolderCardProps = {
   task: PlannerFolder;
   sessions: readonly SessionSummary[];
   nodeConnectivity: SessionNodeConnectivity;
-  isInToday: boolean;
   onOpen(): void;
   onComplete(): Promise<void>;
-  onToggleToday(): Promise<void>;
   onMoveToParent(): void;
   navigationLabel?: string;
   onRename?(): void;
@@ -45,10 +43,8 @@ export function PlannerFolderCardView({
   task,
   sessions,
   nodeConnectivity,
-  isInToday,
   onOpen,
   onComplete,
-  onToggleToday,
   onMoveToParent,
   navigationLabel,
   onRename,
@@ -89,14 +85,12 @@ export function PlannerFolderCardView({
         actions={buildFolderContextMenuActions({
           starred: folderStar.starred,
           completed: task.status === "completed",
-          inToday: isInToday,
         }, {
           open: onOpen,
           copyId: () => navigator.clipboard.writeText(task.folderId),
           toggleStar: folderStar.toggle,
           moveToParent: onMoveToParent,
           complete: onComplete,
-          toggleToday: onToggleToday,
           rename: onRename,
           archive: onArchive,
         })}

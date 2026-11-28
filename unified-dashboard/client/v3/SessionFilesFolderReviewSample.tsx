@@ -17,8 +17,8 @@ export function SessionFilesFolderReviewSample() {
     runHistoryHasMore={false} runHistoryLoading={false} onLoadMoreRuns={async()=>{}} activeSession={reviewSession}
     focusRequest={null} onFocusRequestHandled={()=>{}} chatOpen chatInputDisabled={false} fileUploadUrl={undefined} sessionDefaults={null}
     mobileMode={mobileMode} mobileTab="chat" historyEnabled={false} sessionStreamActive={false} sessionConnectionStatus="disconnected"
-    reconnectSession={()=>{}} onChatVisibilityChange={()=>{}} folderMoveTargets={[]} folderInToday={false} onReturnToToday={()=>{}}
-    onToggleFolderToday={async()=>{}} onCloseWorkspace={()=>{}} onCloseChat={()=>{}} onOpenSession={()=>{}}
+    reconnectSession={()=>{}} onChatVisibilityChange={()=>{}} folderMoveTargets={[]} onReturnToToday={()=>{}}
+    onCloseWorkspace={()=>{}} onCloseChat={()=>{}} onOpenSession={()=>{}}
     onRenameFolderTitle={async title=>title} onSaveDescription={async()=>{}} onFolderBlocksChanged={()=>{}}
     onAcknowledgedReview={()=>{}} markdownDocumentsRevision={0} onMarkdownDocumentEditorClosed={()=>{}} />
   </SessionMenuProvider>;

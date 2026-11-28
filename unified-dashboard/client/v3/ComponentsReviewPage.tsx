@@ -22,7 +22,6 @@ import { InlineMarkdownCard } from "./InlineMarkdownCard";
 import { CardTimeline } from "./CardTimeline";
 import { CardHandoffSample } from "./CardHandoffSample";
 import { FolderDescriptionPanel } from "./FolderDescriptionPanel";
-import { FolderTodayToggle } from "./FolderTodayToggle";
 import { ComponentsReviewControls } from "./ComponentsReviewControls";
 import { ProjectNavigationTree } from "./ProjectNavigationTree";
 import { reviewCard, reviewCardItems, reviewDeliveryFailureMessages, reviewDetail, reviewFolder, reviewFolders, reviewNow, reviewSession, reviewSessionFiles, reviewTitle } from "./components-review-fixtures";
@@ -140,7 +139,6 @@ export function ComponentsReviewPage() {
   const [title, setTitle] = useState("컴포넌트 검수");
   const [notice, setNotice] = useState("샘플을 눌러 비교합니다. 입력과 버튼은 이 페이지 안에서만 동작합니다.");
   const [starred, setStarred] = useState(false);
-  const [inToday, setInToday] = useState(false);
   const [documentExpanded, setDocumentExpanded] = useState(false);
   const [documentBody, setDocumentBody] = useState("# 문서 샘플\n\n운영 문서 행과 같은 표시와 여백을 사용합니다.");
   const [inputSampleVersion, setInputSampleVersion] = useState(0);
@@ -159,13 +157,13 @@ export function ComponentsReviewPage() {
     setNotice("샘플 메시지를 페이지의 말풍선에 추가했습니다.");
   };
   const reset = () => {
-    setStarred(false); setInToday(false); setDocumentExpanded(false); setInputSampleVersion(value=>value+1);
+    setStarred(false); setDocumentExpanded(false); setInputSampleVersion(value=>value+1);
     setFolder(reviewFolders[0]); setComments([]); setNotice("샘플 상태를 초기화했습니다.");
   };
   const folderProps = {
     sessions: [reviewSession], nodeConnectivity: { ready: true, connectedNodeIds: new Set(["eiaserinnys"]) },
-    isInToday: inToday, folderStar, onComplete: async () => open("폴더 완료"),
-    onToggleToday: async () => setInToday(value => !value), onMoveToParent: () => open("상위 폴더 이동"),
+    folderStar, onComplete: async () => open("폴더 완료"),
+    onMoveToParent: () => open("상위 폴더 이동"),
   };
 
   const sampleParams = new URLSearchParams(window.location.search);
@@ -327,7 +325,6 @@ export function ComponentsReviewPage() {
                     backLabel="샘플 뒤로" onBack={() => open("뒤로")}
                     status={{value:"in_progress",icon:"○",label:"Open"}} actions={<>
                       <DashboardIconCap label="샘플 폴더 별표" onClick={() => setStarred(value => !value)}><Star className="h-4 w-4"/></DashboardIconCap>
-                      <FolderTodayToggle inToday={inToday} onToggle={async () => setInToday(value => !value)}/>
                       <DashboardIconCap label="샘플 폴더 보드" onClick={() => open("보드")}><LayoutDashboard className="h-4 w-4"/></DashboardIconCap>
                       <DashboardIconCap label="샘플 폴더 메뉴" onClick={() => open("메뉴")}><MoreHorizontal className="h-4 w-4"/></DashboardIconCap>
                     </>}/>
@@ -351,9 +348,8 @@ export function ComponentsReviewPage() {
             </div>
             <div className="v3-run-list"><RichSessionRow size="small" session={reviewSession} onOpen={() => open("섹션 항목")}/></div>
             </div></Sample>
-            <Sample name="FolderTodayToggle / DashboardIconCap" state="기본 · 선택 · 포커스">
+            <Sample name="DashboardIconCap" state="기본 · 선택 · 포커스">
               <div className="v3-folder-header-actions">
-                <FolderTodayToggle inToday={inToday} onToggle={async () => setInToday(value => !value)}/>
                 <DashboardIconCap label="샘플 별표" aria-pressed={starred} onClick={() => setStarred(value => !value)}>
                   <Star className="h-4 w-4" fill={starred ? "currentColor" : "none"}/>
                 </DashboardIconCap>

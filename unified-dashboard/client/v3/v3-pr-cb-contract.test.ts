@@ -5,14 +5,6 @@ import { describe, expect, it } from "vitest";
 const read = (file: string) => readFileSync(path.resolve(import.meta.dirname, file), "utf8");
 
 describe("PR-CB visual contracts", () => {
-  it("keeps daily headings and task cards inside one responsive column", () => {
-    const view = read("./PlannerViews.tsx");
-    const css = read("./v3-planner.css");
-
-    expect(view).toContain('<div className="v3-planner-column v3-planner-column--daily">');
-    expect(css).toMatch(/\.v3-planner-scroll > \*\s*\{[\s\S]*max-width:\s*892px;[\s\S]*margin-inline:\s*auto;/);
-  });
-
   it("uses symmetric horizontal padding for the shared session-card surface", () => {
     const css = read("./v3-run-history.css");
 

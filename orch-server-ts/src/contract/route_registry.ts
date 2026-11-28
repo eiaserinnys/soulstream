@@ -98,10 +98,6 @@ const KNOWN_STATIC_BEFORE_DYNAMIC_HAZARDS: StaticBeforeDynamicHazard[] = [
     staticPath: "/api/folders/reorder",
     dynamicPath: "/api/folders/{folder_id}",
   },
-  {
-    staticPath: "/api/pages/daily",
-    dynamicPath: "/api/pages/{pageId}",
-  },
 ];
 
 export function routeKey(method: RouteMethod, path: string): RouteKey {
@@ -306,13 +302,6 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
     methods: ["PATCH"],
     path: "/api/planner/starred-folders/order",
     name: "move_planner_starred_folder",
-    authRequired: true,
-    family: "page_yjs",
-  },
-  {
-    methods: ["GET"],
-    path: "/api/planner/daily-history",
-    name: "list_planner_daily_history",
     authRequired: true,
     family: "page_yjs",
   },

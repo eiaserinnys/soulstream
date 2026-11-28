@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
-import { openV3DailyPlanner, openV3Folder } from "./v3-qa-entry";
+import { openV3Home, openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 type Theme = "dark" | "light";
@@ -14,7 +14,6 @@ const outputRoot = path.resolve(
 );
 // 날짜 라벨은 실행일 기준으로 만들어진다. 특정 날짜를 고정하지 않고
 // 첫 항목이 오늘이며 모두 📅 기록 항목인지만 확인한다.
-const dateLabelPattern = /^📅 .+\(오늘\)$/;
 
 const result = await runPlaywrightLifecycle({
   lockName: "pr-cn-planner-polish",
@@ -49,30 +48,12 @@ async function verifyDesktop(browser: Browser, theme: Theme) {
 
   try {
     await openPlanner(page);
-    const dateLabels = await page.getByTestId("v3-navigation-scroll")
-      .locator(".v3-nav-list").filter({ hasText: "📅" }).first().locator("button").evaluateAll(
-        (buttons) => buttons.slice(0, 3).map((button) => Array.from(button.querySelectorAll("span"))
-          .map((span) => span.textContent?.trim())
-          .filter(Boolean)
-          .join(" ")),
-      );
-    assert(dateLabels.length > 0 && dateLabelPattern.test(dateLabels[0]), `오늘 날짜 표기가 다릅니다: ${JSON.stringify(dateLabels)}`);
-    assert(dateLabels.slice(1).every((label) => label.startsWith("📅 ")), `기록 날짜 표기가 다릅니다: ${JSON.stringify(dateLabels)}`);
     assert(await page.getByRole("heading", { name: "중요 작업", exact: true }).count() === 1, "중요 작업 제목이 없습니다.");
     assert(await page.getByText("★ 작업", { exact: true }).count() === 0, "이전 ★ 작업 제목이 남았습니다.");
 
     const toolbar = page.getByTestId("v3-global-toolbar");
     assert(await toolbar.getByRole("button", { name: "아침 정리", exact: true }).count() === 0, "아침 정리가 전역 툴바에 남았습니다.");
     assert(await toolbar.getByRole("button", { name: "새 폴더", exact: true }).count() === 0, "새 폴더가 전역 툴바에 남았습니다.");
-    const dailyActions = {
-      ritual: await compactCap(page.getByTestId("v3-planner-scroll").getByRole("button", { name: "아침 정리", exact: true })),
-    };
-    const dailyCenterOffsetPx = await horizontalCenterDelta(
-      page.locator(".v3-planner-scroll > .v3-planner-column"),
-      page.locator(".v3-planner-scroll"),
-    );
-    assert(await page.getByRole("heading", { name: "오늘 메모", exact: true }).count() === 0, "오늘 메모 제목이 남았습니다.");
-
     await page.getByTestId("v3-starred-tasks").locator(".v3-starred-task-link").first().click();
     await page.locator(".v3-detail-pane").waitFor({ state: "visible" });
     assert(await page.getByText("별표 페이지가 task 폴더가 아닙니다", { exact: false }).count() === 0, "별표 폴더 열기 오류가 재현됐습니다.");
@@ -89,16 +70,7 @@ async function verifyDesktop(browser: Browser, theme: Theme) {
     assert(await sessionDialog.getByRole("textbox", { name: "초기 지시" }).count() === 1, "초기 지시 입력이 없습니다.");
     assert(await sessionDialog.getByRole("button", { name: "파일 첨부", exact: true }).count() === 1, "초기 지시 파일 첨부가 없습니다.");
     await page.getByRole("button", { name: "승계 닫기" }).click();
-    await openV3DailyPlanner(page, baseUrl);
-
-    await page.getByRole("button", { name: "아침 정리", exact: true }).click();
-    const ritualDialog = page.getByRole("dialog", { name: "어제에서 넘어온 것", exact: true });
-    await ritualDialog.waitFor({ state: "visible" });
-    await ritualDialog.getByRole("button", { name: "오늘로 이월", exact: true }).waitFor({ state: "visible" });
-    const ritualActions = await ritualDialog.locator(".v3-ritual-actions button").allTextContents();
-    assert(JSON.stringify(ritualActions) === JSON.stringify(["오늘로 이월", "데일리에서 내리기"]), `아침 정리 액션이 다릅니다: ${JSON.stringify(ritualActions)}`);
-    assert(!((await ritualDialog.textContent()) ?? "").includes("완료 처리"), "아침 정리에 완료 처리가 남았습니다.");
-    await page.getByRole("button", { name: "아침 정리 닫기" }).click();
+    await openV3Home(page, baseUrl);
 
     await openV3Folder(page, baseUrl);
     await page.locator(".v3-detail-pane").waitFor({ state: "visible" });
@@ -110,13 +82,9 @@ async function verifyDesktop(browser: Browser, theme: Theme) {
     await capture(page, theme, "desktop");
     assert(errors.length === 0, `브라우저 오류: ${errors.join(" | ")}`);
     return {
-      dateLabels,
-      dailyActions,
       projectNewTask,
-      dailyCenterOffsetPx,
       descriptionBackground,
       sessionAttachmentVisible: true,
-      ritualActions,
       browserErrors: errors.length,
     };
   } finally {
@@ -137,20 +105,11 @@ async function verifyMobile(browser: Browser, theme: Theme) {
 
   try {
     await openPlanner(page);
-    const actions = {
-      ritual: await compactCap(page.getByRole("button", { name: "아침 정리", exact: true })),
-    };
     const overflowPx = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert(overflowPx <= 0, `모바일 가로 오버플로가 ${overflowPx}px입니다.`);
-    await page.getByRole("button", { name: "아침 정리", exact: true }).click();
-    const ritual = page.getByRole("dialog", { name: "어제에서 넘어온 것", exact: true });
-    await ritual.waitFor({ state: "visible" });
-    await ritual.getByRole("button", { name: "오늘로 이월", exact: true }).waitFor({ state: "visible" });
-    const dialogBox = await ritual.boundingBox();
-    assert(dialogBox !== null && dialogBox.width <= 390, `모바일 아침 정리 너비가 ${dialogBox?.width}px입니다.`);
     await capture(page, theme, "mobile");
     assert(errors.length === 0, `모바일 브라우저 오류: ${errors.join(" | ")}`);
-    return { actions, overflowPx, ritualDialogWidth: dialogBox.width, browserErrors: errors.length };
+    return { overflowPx, browserErrors: errors.length };
   } finally {
     await context.close();
   }
@@ -173,7 +132,7 @@ async function preparePage(page: Page, theme: Theme) {
 }
 
 async function openPlanner(page: Page) {
-  await openV3DailyPlanner(page, baseUrl);
+  await openV3Home(page, baseUrl);
 }
 
 async function compactCap(locator: Locator, size = 28) {
@@ -189,14 +148,6 @@ async function compactCap(locator: Locator, size = 28) {
 
 async function computedBackground(locator: Locator) {
   return locator.evaluate((element) => getComputedStyle(element).backgroundColor);
-}
-
-async function horizontalCenterDelta(subject: Locator, container: Locator) {
-  const [subjectBox, containerBox] = await Promise.all([subject.boundingBox(), container.boundingBox()]);
-  assert(subjectBox !== null && containerBox !== null, "중앙 정렬 좌표를 읽지 못했습니다.");
-  return Math.round(Math.abs(
-    subjectBox.x + subjectBox.width / 2 - (containerBox.x + containerBox.width / 2),
-  ) * 100) / 100;
 }
 
 function collectErrors(page: Page) {

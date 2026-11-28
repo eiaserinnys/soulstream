@@ -1,13 +1,13 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { registerPlannerRoutes, type PlannerRouteOptions } from "../src/planner/planner_routes.js";
+import { registerPlannerRoutes } from "../src/planner/planner_routes.js";
 import type { PlannerReadProvider } from "../src/planner/planner_contract.js";
 import { PlannerStarredFolderMembershipConflictError } from "../src/planner/planner_starred_page_order.js";
 const apps: ReturnType<typeof Fastify>[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map(a => a.close())); });
 function setup(loggedIn = true) {
   const slice = { items: [], nextCursor: null };
-  const provider = { getToday: vi.fn(async () => ({ attention: [],running: [],queued: [],folders: [],memoBlocks: [],reviewSessionIds: [] })),
+  const provider = { getToday: vi.fn(async () => ({ attention: [],running: [],queued: [],reviewSessionIds: [] })),
     getStarredFolders: vi.fn(async () => slice), getDailyHistory: vi.fn(async () => ({ dates: [] })),
     getFolder: vi.fn(async () => ({ folder: { id: "f" } })), getSubfolders: vi.fn(async () => slice),
     getSessions: vi.fn(async () => slice) };
@@ -16,7 +16,6 @@ function setup(loggedIn = true) {
   const app = Fastify(); apps.push(app);
   registerPlannerRoutes(app, { provider: provider as unknown as PlannerReadProvider,
     starredFolderOrder: { moveStarredFolder }, onPageUpdated,
-    dailyPages: { getDailyPage } as unknown as PlannerRouteOptions["dailyPages"],
     resolveUser: async () => loggedIn ? { email: "u@example.com" } : null });
   return { app, provider, moveStarredFolder, onPageUpdated, getDailyPage };
 }
@@ -29,8 +28,8 @@ describe("folder planner HTTP", () => {
     }
   });
   it.each([
-    ["/today?date=2026-09-30", "getToday"], ["/starred-folders", "getStarredFolders"],
-    ["/daily-history?before=2026-09-30", "getDailyHistory"], ["/folders/f", "getFolder"],
+    ["/today", "getToday"], ["/starred-folders", "getStarredFolders"],
+ ["/folders/f", "getFolder"],
     ["/folders/f/subfolders", "getSubfolders"], ["/folders/f/sessions", "getSessions"],
   ] as const)("authenticates and dispatches %s", async (path, method) => {
     const anonymous = setup(false); expect((await anonymous.app.inject(`/api/planner${path}`)).statusCode).toBe(401);
@@ -59,11 +58,13 @@ describe("folder planner HTTP", () => {
     expect((await app.inject({ method: "PATCH", url: "/api/planner/starred-folders/order", payload: { pageId: "p", beforePageId: null } })).statusCode).toBe(409);
     expect(onPageUpdated).toHaveBeenCalledOnce();
   });
-  it("lazily creates a missing daily page and has no old planner routes", async () => {
+  it("returns card and review data without creating a daily page", async () => {
     const { app, provider, getDailyPage } = setup();
-    provider.getToday.mockResolvedValueOnce(null as never);
-    expect((await app.inject("/api/planner/today?date=2026-09-30")).statusCode).toBe(200);
-    expect(getDailyPage).toHaveBeenCalledWith({ date: "2026-09-30", actor: { actorKind: "user", actorUserId: "u@example.com" } });
+    const response = await app.inject("/api/planner/today");
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ attention: [], running: [], queued: [], reviewSessionIds: [] });
+    expect(provider.getToday).toHaveBeenCalledWith();
+    expect(getDailyPage).not.toHaveBeenCalled();
     for (const path of ["starred-tasks", "projects/p", "tasks/p/runs"]) expect((await app.inject(`/api/planner/${path}`)).statusCode).toBe(404);
   });
 });

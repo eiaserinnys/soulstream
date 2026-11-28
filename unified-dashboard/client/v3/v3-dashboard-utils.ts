@@ -2,32 +2,6 @@ import type { CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 
 import type { MobilePlannerFolderOption } from "./mobile-planner-state";
 import { buildRunTree, type RunTreeNode } from "./folder-workspace-run-model";
-import type { PlannerDateNavItem } from "./V3Navigation";
-
-export function recentDates(today: string): PlannerDateNavItem[] {
-  const base = new Date(`${today}T12:00:00`);
-  return [0, 1, 2].map((offset) => {
-    const value = new Date(base);
-    value.setDate(base.getDate() - offset);
-    return {
-      date: dateKey(value),
-      label: `${new Intl.DateTimeFormat("ko-KR", {
-        month: "long",
-        day: "numeric",
-        weekday: "long",
-      }).format(value)}${offset === 0 ? " (오늘)" : ""}`,
-    };
-  });
-}
-
-export function dateKey(value: Date): string {
-  return [
-    value.getFullYear(),
-    String(value.getMonth() + 1).padStart(2, "0"),
-    String(value.getDate()).padStart(2, "0"),
-  ].join("-");
-}
-
 export function errorText(error: unknown): string {
   return error instanceof Error && error.message ? error.message : String(error);
 }

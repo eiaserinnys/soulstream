@@ -63,7 +63,6 @@ describe("v3 project model local-stack PostgreSQL round-trip", () => {
       provider: plannerRepository,
       starredFolderOrder: plannerRepository,
       onPageUpdated: () => undefined,
-      dailyPages: service,
       resolveUser,
     });
     baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });

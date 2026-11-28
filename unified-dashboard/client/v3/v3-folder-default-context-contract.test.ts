@@ -35,7 +35,7 @@ describe("PR-CD task default and context contract", () => {
     const mutations = read("./use-v3-dashboard-mutations.ts");
     const applyFolderBlocks = mutations.slice(
       mutations.indexOf("const applyFolderBlocks"),
-      mutations.indexOf("const applyRitualAction"),
+      mutations.indexOf("  return {"),
     );
 
     expect(applyFolderBlocks).toContain("patchPlannerFolder");

@@ -197,7 +197,7 @@ describe("apply-schema.mjs", () => {
         ORDER BY table_name, ordinal_position
       `;
       expect(columnNames(pageModelColumns, "pages")).toEqual([
-        "id", "title", "title_key", "daily_date", "version", "archived", "metadata",
+        "id", "title", "title_key", "version", "archived", "metadata",
         "created_session_id", "created_event_id", "updated_session_id", "updated_event_id",
         "created_at", "updated_at",
       ]);
@@ -261,7 +261,6 @@ describe("apply-schema.mjs", () => {
       expect(pageModelIndexes.map((row) => row.indexname)).toEqual(
         expect.arrayContaining([
           "uq_pages_title_key",
-          "uq_pages_daily_date",
           "idx_pages_active_updated",
           "idx_blocks_tree",
           "idx_blocks_type",
@@ -275,18 +274,13 @@ describe("apply-schema.mjs", () => {
       );
 
       await sql`
-        INSERT INTO pages (id, title, daily_date)
-        VALUES ('page-schema-1', '  Daily Note  ', DATE '2026-07-11')
+        INSERT INTO pages (id, title)
+        VALUES ('page-schema-1', '  Daily Note  ')
       `;
       await expect(sql`
         INSERT INTO pages (id, title)
         VALUES ('page-schema-2', 'daily note')
       `).rejects.toMatchObject({ code: "23505" });
-      await expect(sql`
-        INSERT INTO pages (id, title, daily_date)
-        VALUES ('page-schema-3', 'Another page', DATE '2026-07-11')
-      `).rejects.toMatchObject({ code: "23505" });
-
       await sql`
         INSERT INTO blocks (id, page_id, position_key)
         VALUES ('block-schema-1', 'page-schema-1', 'V')

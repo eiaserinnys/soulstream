@@ -60,11 +60,9 @@ const actorSchema = z.object(actorFields).superRefine((value, context) => {
   }
 });
 
-const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const pageInputSchema = z.object({
   id,
   title: id,
-  daily_date: dateSchema.nullable(),
   metadata: jsonObject.optional(),
 });
 
@@ -105,7 +103,6 @@ const schemas = {
     include_self: z.boolean().default(false),
     limit: z.number().int().min(1).max(200).default(50),
   }),
-  "get-daily-page": z.object({ date: dateSchema.optional(), ...actorFields }),
   "create-page": z.object({
     page: pageInputSchema,
     blocks: z.array(blockInputSchema).optional(),
@@ -145,7 +142,7 @@ const schemas = {
 } as const;
 
 const ACTOR_OPERATIONS = new Set([
-  "get-daily-page", "create-page", "rename-page", "archive-page", "unarchive-page",
+  "create-page", "rename-page", "archive-page", "unarchive-page",
   "create-block", "update-block-text", "update-block-type-and-properties", "move-block",
   "delete-block-subtree", "set-check-state", "replace-page-markdown", "batch-page-operations",
 ]);
@@ -240,15 +237,6 @@ async function dispatch(
       limit: input.limit as number,
     });
   }
-  if (operation === "get-daily-page") {
-    const result = await service.getDailyPage({
-      date: input.date as string | undefined,
-      actor: toActor(input),
-    });
-    return result.operation
-      ? { ...result, operation: toOperationDto(result.operation) }
-      : result;
-  }
   const actor = toActor(input);
   const common = {
     actor,
@@ -323,13 +311,12 @@ function pageFromInput(raw: unknown) {
   const page = raw as {
     id: string;
     title: string;
-    daily_date: string | null;
     metadata?: Record<string, unknown>;
   };
   return {
     id: page.id,
     title: page.title,
-    dailyDate: page.daily_date,
+    dailyDate: null,
     metadata: page.metadata ?? {},
   };
 }

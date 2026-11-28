@@ -26,11 +26,8 @@ describe("page MCP → orch host complete round-trip", () => {
     harness = await createPagePostgresHarness();
     await harness.sql`INSERT INTO sessions (session_id) VALUES ('agent-session')`;
     const repository = new PageRepository(createLiveDbSqlResolver({ sql: harness.liveSql }));
-    let pageSequence = 0;
     service = new PageYjsService({
       repository,
-      createPageId: () => `daily-page-${++pageSequence}`,
-      now: () => new Date("2026-07-11T15:30:00.000Z"),
     });
     app = Fastify({ logger: false });
     registerPageYjsHostOperationRoutes(app, {
@@ -141,17 +138,6 @@ describe("page MCP → orch host complete round-trip", () => {
       next_cursor: null,
     });
 
-    const daily = await call("get_daily_page", { caller_session_id: "agent-session" });
-    expect(daily.structuredContent).toMatchObject({
-      page: { title: "2026년 7월 12일", daily_date: "2026-07-12" },
-      created: true,
-      operation: { operation_type: "create_page" },
-    });
-    const repeated = await call("get_daily_page", { caller_session_id: "agent-session" });
-    expect(repeated.structuredContent).toMatchObject({
-      page: { id: daily.structuredContent.page.id },
-      created: false,
-    });
   }, 30_000);
 });
 

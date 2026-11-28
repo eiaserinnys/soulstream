@@ -30,12 +30,6 @@ export interface PageReadResponse {
   state_vector: string;
 }
 
-export interface PageDailyResponse {
-  page: PageDto;
-  created: boolean;
-  operation?: PageOperationResponse;
-}
-
 export interface PageOperationResponse {
   id: string;
   [key: string]: unknown;
@@ -107,7 +101,6 @@ export interface PageApiClient {
     limit?: number;
   }): Promise<BrowserBacklinkPageDto>;
   getPage(pageId: string): Promise<PageReadResponse>;
-  getDailyPage(date?: string): Promise<PageDailyResponse>;
   applyOperations(pageId: string, input: ApplyPageOperationsInput): Promise<PageMutationResponse>;
   transferBlocks(input: TransferPageBlocksInput): Promise<TransferPageBlocksResponse>;
   setStarred(pageId: string, input: SetPageStarredInput): Promise<PageMutationResponse>;
@@ -171,10 +164,6 @@ export function createPageApiClient(options: {
     },
     getPage: async (pageId) =>
       await request<PageReadResponse>(`/api/pages/${encodeURIComponent(pageId)}`),
-    getDailyPage: async (date) => await request<PageDailyResponse>("/api/pages/daily", {
-      method: "POST",
-      body: JSON.stringify(date === undefined ? {} : { date }),
-    }),
     applyOperations: async (pageId, input) =>
       await request<PageMutationResponse>(`/api/pages/${encodeURIComponent(pageId)}/operations`, {
         method: "POST",

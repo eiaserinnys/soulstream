@@ -82,7 +82,6 @@ describe("markdown surface mount inventory", () => {
   it("enumerates every FolderDescriptionPanel wrapper surface", () => {
     const mounts = [
       "unified-dashboard/client/v3/ComponentsReviewPage.tsx",
-      "unified-dashboard/client/v3/DailyMemo.tsx",
       "unified-dashboard/client/v3/FolderDetailPane.tsx",
       "unified-dashboard/client/v3/FolderInlineBoard.tsx",
       "unified-dashboard/client/v3/ProjectContextEditor.tsx",
@@ -93,7 +92,6 @@ describe("markdown surface mount inventory", () => {
       countMounts("FolderDescriptionPanel", file),
     ]))).toEqual({
       "unified-dashboard/client/v3/ComponentsReviewPage.tsx": 5,
-      "unified-dashboard/client/v3/DailyMemo.tsx": 1,
       "unified-dashboard/client/v3/ProjectContextEditor.tsx": 2,
       "unified-dashboard/client/v3/FolderDetailPane.tsx": 1,
       "unified-dashboard/client/v3/FolderInlineBoard.tsx": 1,

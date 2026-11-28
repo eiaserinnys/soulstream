@@ -10,7 +10,6 @@ const CLIENT_PAGE_API_INVENTORY = {
   "soul-ui/v3": [
     ["GET", "/api/pages"],
     ["GET", "/api/pages/search"],
-    ["POST", "/api/pages/daily"],
     ["GET", "/api/pages/{pageId}"],
     ["GET", "/api/pages/{pageId}/backlinks"],
     ["GET", "/api/pages/{pageId}/session-defaults"],
@@ -19,7 +18,6 @@ const CLIENT_PAGE_API_INVENTORY = {
     ["PATCH", "/api/pages/{pageId}/starred"],
   ],
   "soul-app": [
-    ["POST", "/api/pages/daily"],
     ["GET", "/api/pages/{pageId}"],
     ["GET", "/api/pages/{pageId}/backlinks"],
     ["POST", "/api/pages/block-transfers"],

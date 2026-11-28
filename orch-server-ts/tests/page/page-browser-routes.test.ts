@@ -54,7 +54,7 @@ describe("browser page routes", () => {
     }
   });
 
-  it("reads browser bootstrap state and creates the KST daily page with user provenance", async () => {
+  it("reads browser bootstrap state", async () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });
     registerPageBrowserRoutes(app, { service, reads: service, resolveUser: cookieUserResolver() });
@@ -71,17 +71,6 @@ describe("browser page routes", () => {
       });
       expect(service.getBrowserPage).toHaveBeenCalledWith("page-1");
 
-      const daily = await app.inject({
-        method: "POST",
-        url: "/api/pages/daily",
-        headers: { cookie: browserCookie },
-        payload: { date: "2026-07-12" },
-      });
-      expect(daily.statusCode).toBe(200);
-      expect(service.getDailyPage).toHaveBeenCalledWith({
-        date: "2026-07-12",
-        actor: { actorKind: "user", actorUserId: "user@example.com" },
-      });
     } finally {
       await app.close();
     }
@@ -643,7 +632,6 @@ describe("browser page routes", () => {
       "GET /api/pages/{pageId}": true,
       "GET /api/pages/{pageId}/session-defaults": true,
       "GET /api/pages/{pageId}/backlinks": true,
-      "POST /api/pages/daily": true,
       "POST /api/pages/block-transfers": true,
       "POST /api/pages/{pageId}/operations": true,
       "PATCH /api/pages/{pageId}/starred": true,

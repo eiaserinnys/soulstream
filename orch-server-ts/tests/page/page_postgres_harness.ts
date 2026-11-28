@@ -246,7 +246,6 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       title_key TEXT GENERATED ALWAYS AS (lower(btrim(title))) STORED,
-      daily_date DATE,
       version INTEGER NOT NULL CHECK (version > 0),
       archived BOOLEAN NOT NULL DEFAULT FALSE,
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -310,7 +309,6 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       target_page_id TEXT,
       target_block_id TEXT,
       target_expected_version INTEGER,
-      daily_date DATE NOT NULL,
       session_type TEXT NOT NULL,
       page_state TEXT NOT NULL DEFAULT 'pending'
         CHECK (page_state IN ('pending','bound','manual_repair')),
@@ -346,7 +344,6 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       CHECK (actor_kind <> 'user' OR actor_user_id IS NOT NULL)
     );
     CREATE UNIQUE INDEX uq_pages_title_key ON pages(title_key);
-    CREATE UNIQUE INDEX uq_pages_daily_date ON pages(daily_date) WHERE daily_date IS NOT NULL;
     CREATE INDEX idx_pages_title_prefix
       ON pages (title_key text_pattern_ops, id) WHERE archived = FALSE;
     CREATE TABLE block_links (

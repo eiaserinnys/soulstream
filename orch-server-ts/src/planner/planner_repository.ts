@@ -19,7 +19,7 @@ export class PlannerRepository implements PlannerReadProvider {
       SELECT f.id, p.id AS page_id, o.position::text AS position
       FROM planner_starred_page_order o JOIN pages p ON p.id = o.page_id
       JOIN folders f ON f.project_page_id = p.id
-      WHERE NOT f.archived AND NOT p.archived AND p.daily_date IS NULL
+      WHERE NOT f.archived AND NOT p.archived
         AND f.id NOT IN ('claude', 'llm') AND p.metadata->'starred' = 'true'::jsonb
         AND (${cursor?.position ?? null}::bigint IS NULL OR (o.position, p.id) > (${cursor?.position ?? null}::bigint, ${cursor?.second ?? ""}))
       ORDER BY o.position, p.id LIMIT ${input.limit + 1}
@@ -27,25 +27,8 @@ export class PlannerRepository implements PlannerReadProvider {
     const slice = sliceRows(rows, input.limit, "starred-folder", r => [String(r.position), String(r.page_id)], r => String(r.id));
     return { items: await loadPlannerFolders(sql, slice.items), nextCursor: slice.nextCursor };
   }
-  async getDailyHistory(input: { before: string; limit: number }) {
+  async getToday(): Promise<PlannerTodayDto> {
     const sql = await this.resolver.resolveSql();
-    const rows = await sql`SELECT daily_date::text AS daily_date FROM pages
-      WHERE NOT archived AND daily_date IS NOT NULL AND daily_date < ${input.before}::date
-      GROUP BY daily_date ORDER BY daily_date DESC LIMIT ${input.limit}`;
-    return { dates: rows.map(r => String(r.daily_date)) };
-  }
-  async getToday(date: string): Promise<PlannerTodayDto | null> {
-    const sql = await this.resolver.resolveSql();
-    const [page] = await sql`SELECT id, title, daily_date::text, version, archived, metadata, created_at, updated_at
-      FROM pages WHERE daily_date = ${date}::date AND NOT archived LIMIT 1`;
-    if (!page) return null;
-    const blocks = await sql`SELECT b.*, EXISTS(SELECT 1 FROM block_links l WHERE l.source_block_id = b.id AND l.link_kind = 'mount') AS is_mount
-      FROM blocks b WHERE b.page_id = ${page.id} ORDER BY b.position_key, b.id`;
-    const mounted = await sql`SELECT f.id, MIN(b.position_key) AS position FROM blocks b
-      JOIN block_links l ON l.source_block_id = b.id AND l.link_kind = 'mount'
-      JOIN folders f ON f.project_page_id = l.target_page_id
-      WHERE b.page_id = ${page.id} AND NOT f.archived AND f.id NOT IN ('claude', 'llm')
-      GROUP BY f.id ORDER BY position, f.id`;
     const review = await sql`SELECT session_id FROM sessions WHERE review_state = 'needs_review'
       ORDER BY updated_at DESC, session_id DESC LIMIT 50`;
     const cards = await projectCardActivity(sql, await sql`SELECT c.* FROM cards c JOIN folders f ON f.id=c.folder_id
@@ -53,9 +36,7 @@ export class PlannerRepository implements PlannerReadProvider {
       ORDER BY (CASE WHEN c.status='queued' THEN c.queue_position_key END) COLLATE "C" NULLS LAST,c.status_changed_at DESC,c.id`);
     const byStatus = (status: string) => cards.filter(c=>c.status === status).map(serializeCardRow);
     return { attention: cards.filter(c=>c.status === 'review' || c.status === 'blocked').map(serializeCardRow),
-      running: byStatus('running'), queued: byStatus('queued'), daily: { page: pageDto(page), blocks: blocks.map(blockDto), state_vector: "" },
-      folders: await loadPlannerFolders(sql, mounted.map(r => String(r.id))),
-      memoBlocks: blocks.filter(r => r.block_type === "paragraph" && !r.is_mount).map(blockDto),
+      running: byStatus('running'), queued: byStatus('queued'),
       reviewSessionIds: review.map(r => String(r.session_id)) };
   }
   async getFolder(folderId: string, input: { limit: number; includeCompleted?: boolean }): Promise<PlannerFolderDetailDto | null> {
