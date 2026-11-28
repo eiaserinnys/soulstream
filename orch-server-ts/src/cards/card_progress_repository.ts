@@ -24,7 +24,7 @@ export async function readCardProgress(sql: RepositorySql, cardId: string) {
   ]);
   const sessionIds = sessionRows.map(row => row.session_id);
   const milestones: CardProgressMilestone[] = milestoneRows.map(row => ({
-    id: row.id, at: row.created_at.toISOString(), text: row.payload_json.text,
+    id: row.id, at: row.created_at.toISOString(), text: row.payload_json.text ?? null,
     ask: row.payload_json.ask ?? null, turn: row.payload_json.turn ?? null,
   }));
   const recorded: CardProgressRecord[] = recordRows.map(row => ({ sessionId: row.session_id, at: row.at.toISOString() }));
@@ -64,10 +64,11 @@ async function readTurns(sql: RepositorySql, sessionIds: string[]): Promise<Card
     for (const complete of events.filter(event => event.selected)) {
       const turn = reconstructTurnFromEvents(events, complete.id);
       if (!turn) continue;
-      const start = events.find(event => event.id === turn.turnStartEventId)!;
-      const response = events.find(event => event.id === turn.finalResponseEventId)!;
+      const start = events.find(event => event.id === turn.turnStartEventId);
+      const response = events.find(event => event.id === turn.finalResponseEventId);
+      if (!start || !response || typeof response.payload.content !== "string") continue;
       turns.push({ sessionId, eventId: complete.id, startedAt: start.createdAt.toISOString(), at: complete.createdAt.toISOString(),
-        text: response.payload.content as string, callerInfo: asRecord(start.payload.caller_info ?? start.payload.callerInfo) ?? {} });
+        text: response.payload.content, callerInfo: asRecord(start.payload.caller_info ?? start.payload.callerInfo) ?? {} });
     }
   }
   return turns;

@@ -9,7 +9,7 @@ import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from 
 
 describe("card progress over PostgreSQL and HTTP", () => {
   let h: FullSchemaPostgresHarness;
-  const folderId = randomUUID(), cardId = randomUUID(), milestoneId = randomUUID();
+  const folderId = randomUUID(), cardId = randomUUID(), milestoneId = randomUUID(), emptyMilestoneId = randomUUID();
   let app: ReturnType<typeof Fastify>;
 
   beforeAll(async () => {
@@ -21,8 +21,12 @@ describe("card progress over PostgreSQL and HTTP", () => {
     await h.sql`INSERT INTO folder_operations(id,folder_id,target_kind,target_id,operation_type,actor_session_id,payload_json,created_at)
       VALUES (${milestoneId},${folderId},'card',${cardId},'update_card_now','previous',
         ${h.sql.json({ text: "작업 중", turn: "agent", ask: "검토" })},'2026-01-01T00:02:00Z')`;
+    await h.sql`INSERT INTO folder_operations(id,folder_id,target_kind,target_id,operation_type,actor_session_id,payload_json,created_at)
+      VALUES (${emptyMilestoneId},${folderId},'card',${cardId},'update_card_now','assignee',
+        ${h.sql.json({})},'2026-01-01T00:09:00Z')`;
     for (const [session, start, response, complete, base] of [
       ["previous", 1, 2, 3, 0], ["assignee", 1, 2, 3, 3], ["assignee", 4, 5, 6, 6],
+      ["assignee", 10, 11, 12, 12],
     ] as const) {
       const at = (minute: number) => new Date(Date.UTC(2026, 0, 1, 0, minute));
       await h.sql`INSERT INTO events(session_id,id,event_type,payload,created_at) VALUES
@@ -30,6 +34,10 @@ describe("card progress over PostgreSQL and HTTP", () => {
         (${session},${response},'assistant_message',${h.sql.json({ content: `경과 ${base}` })},${at(base + 1)}),
         (${session},${complete},'complete',${h.sql.json({})},${at(base + 2)})`;
     }
+    await h.sql`INSERT INTO events(session_id,id,event_type,payload,created_at) VALUES
+      ('assignee',7,'user_message',${h.sql.json({ text: "진행" })},'2026-01-01T00:09:00Z'),
+      ('assignee',8,'assistant_message',${h.sql.json({ content: { invalid: true } })},'2026-01-01T00:10:00Z'),
+      ('assignee',9,'complete',${h.sql.json({})},'2026-01-01T00:11:00Z')`;
     const cards = new CardControlPlaneService(createFolderContentSqlAdapter(h.sql as unknown as LivePostgresSql), { appendEventTx: async () => 0 });
     app = Fastify();
     registerFolderRoutes(app, {
@@ -54,6 +62,10 @@ describe("card progress over PostgreSQL and HTTP", () => {
       { sessionId: "previous", eventId: 3, startedAt: "2026-01-01T00:00:00.000Z", at: "2026-01-01T00:02:00.000Z", text: "경과 0", truncated: false },
       { sessionId: "assignee", eventId: 3, startedAt: "2026-01-01T00:03:00.000Z", at: "2026-01-01T00:05:00.000Z", text: "경과 3", truncated: false },
       { sessionId: "assignee", eventId: 6, startedAt: "2026-01-01T00:06:00.000Z", at: "2026-01-01T00:08:00.000Z", text: "경과 6", truncated: false },
+    ] }, { milestone: {
+      id: emptyMilestoneId, at: "2026-01-01T00:09:00.000Z", text: null, ask: null, turn: null,
+    }, entries: [
+      { sessionId: "assignee", eventId: 12, startedAt: "2026-01-01T00:12:00.000Z", at: "2026-01-01T00:14:00.000Z", text: "경과 12", truncated: false },
     ] }]);
     const detail = await app.inject(`/api/cards/${cardId}`);
     expect(detail.statusCode).toBe(200);
