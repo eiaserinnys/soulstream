@@ -414,7 +414,9 @@ function resumeScheduleMessage(
 function resumeScheduleTime(value: string, language: string | undefined): string | undefined {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return undefined;
-  const day = date.toLocaleDateString(language, { month: "long", day: "numeric" });
-  const time = date.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit", hourCycle: language === "ko" ? "h23" : undefined });
+  const day = date.toLocaleDateString(language, { month: "short", day: "numeric" });
+  const time = date.toLocaleTimeString(language, language === "ko"
+    ? { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }
+    : { hour: "numeric", minute: "2-digit" });
   return `${day} ${time}`;
 }
