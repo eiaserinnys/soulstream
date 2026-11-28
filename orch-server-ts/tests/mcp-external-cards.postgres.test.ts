@@ -341,7 +341,7 @@ describe("external MCP card writes", () => {
   });
   it.each(["spoken", "reply"])("rejects explicit external comment mode %s", async mode => {
     const result = await call("add_card_comment", { card_id: "card", text: "지시", mode });
-    expect(result).toMatchObject({ isError: true, content: [{ type: "text", text: expect.stringContaining("mode는 신뢰된 세션만 고를 수 있습니다. 이 호출에서는 mode를 생략하세요.") }] });
+    expect(result).toMatchObject({ isError: true, content: [{ type: "text", text: expect.stringContaining(mode === "spoken" ? "mode" : "mode는 신뢰된 세션만 고를 수 있습니다. 이 호출에서는 mode를 생략하세요.") }] });
     expect((await cards.getCard("card"))!.comments).toEqual([]);
   });
   it("records a null-session question without legacy push and stores the answer without external push or errors", async () => {
