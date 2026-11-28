@@ -44,5 +44,7 @@ export function buildFolderSessionContextItems(effectiveContext: ProjectContextI
 }
 
 function contextSourceLabel(folderName: string, t: FolderTranslate): string {
-  return folderName === "이 폴더" ? t("folders.context.thisFolder") : t("folders.context.inherited", { name: folderName }); // i18n-ignore: Current-folder marker produced by FolderDetailPane and prepare-session-menu-succession
+  return folderName === "이 폴더" // i18n-ignore: Current-folder marker from FolderDetailPane.tsx:142 and prepare-session-menu-succession.ts:14.
+    ? t("folders.context.thisFolder")
+    : t("folders.context.inherited", { name: folderName });
 }

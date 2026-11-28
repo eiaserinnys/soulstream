@@ -139,7 +139,7 @@ export function FolderDetailPane({
   const effectiveContext = useMemo(() => mergeProjectContextPages([
     ...(inheritedContext.status === "ready" ? inheritedContext.data.pages : []),
     {
-      source: { folderId: task.folderId, folderName: "이 폴더", pageId: task.page.id }, // i18n-ignore: Current-folder source marker for session context
+      source: { folderId: task.folderId, folderName: "이 폴더", pageId: task.page.id }, // i18n-ignore: Current-folder marker compared in folder-session-context-items.ts:47.
       details: folderContext,
     },
   ]), [inheritedContext, task.page.id, folderContext]);
