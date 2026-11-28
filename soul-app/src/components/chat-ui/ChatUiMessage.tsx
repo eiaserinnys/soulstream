@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Text } from 'react-native';
-import { renderText, type NormalizedChatUiDocumentV1 } from '@soulstream/chat-ui';
+import { renderText, type Node, type NormalizedChatUiDocumentV1 } from '@soulstream/chat-ui';
 import { useTokens } from '../../theme';
 import { AssistantMessage } from '../events/AssistantMessage';
 import { readChatUiPublication, type ChatUiRichPublication } from './chatUiPublication';
@@ -10,6 +10,10 @@ import { ChatUiLinkFocusScope } from './ChatUiLinkFocusScope';
 import { ChatUiNodes } from './ChatUiNodes';
 
 type Props = Omit<React.ComponentProps<typeof AssistantMessage>, 'children' | 'textOverride' | 'notice'>;
+const displayKinds = new Set(['stats', 'badge', 'table', 'list', 'bars', 'line', 'steps', 'compare', 'flow', 'image', 'html']);
+function containsDisplay(nodes: Node[]): boolean {
+  return nodes.some(node => displayKinds.has(node.kind) || (node.kind === 'group' && containsDisplay(node.children)));
+}
 export function ChatUiMessage(props: Props) {
   const publication = useMemo(() => readChatUiPublication(props.event.data), [props.event.data]);
   if (publication.kind === 'absent') return <AssistantMessage {...props} />;
@@ -17,6 +21,7 @@ export function ChatUiMessage(props: Props) {
     notice={<FallbackNotice text="화면을 표시하지 못했어. 저장된 글로 보여줄게." />} /></ChatUiLinkFocusScope>;
   if (publication.kind === 'unsupported') return <ChatUiLinkFocusScope><AssistantMessage {...props}
     textOverride={renderText(publication.document)} notice={<FallbackNotice text="이 버전에서는 기본값 글로 보여줄게." />} /></ChatUiLinkFocusScope>;
+  if (containsDisplay(publication.document.body)) return <ChatUiLinkFocusScope><AssistantMessage {...props} /></ChatUiLinkFocusScope>;
   return <ChatUiLinkFocusScope><ChatUiErrorBoundary key={JSON.stringify([publication.uiId, publication.hash])}
     fallback={<ChatUiRenderFallback {...props} document={publication.document} />}>
     <RichMessage {...props} publication={publication} />

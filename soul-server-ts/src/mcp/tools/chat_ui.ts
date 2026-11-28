@@ -10,6 +10,7 @@ import { z } from "zod";
 import { EventAcknowledgementTimeoutError } from "../../upstream/event_outbox_pump.js";
 import { getCurrentMcpCallerSessionId } from "../request_context.js";
 import type { McpRuntime } from "../runtime.js";
+import { validateChatUiImages } from "./chat_ui_attachments.js";
 
 export function registerChatUiTools(server: McpServer, runtime: McpRuntime): void {
   server.registerTool(
@@ -35,7 +36,7 @@ sources: 키→{type:"assumption",label,note?} | {type:"external_link",label,url
         idempotentHint: true,
       },
     },
-    async ({ publication_key, document }) => {
+    async ({ publication_key, document }, extra) => {
       const sessionId = getCurrentMcpCallerSessionId();
       if (!sessionId) return errorResult("호출 세션 정보를 찾을 수 없습니다.");
 
@@ -56,6 +57,13 @@ sources: 키→{type:"assumption",label,note?} | {type:"external_link",label,url
       }
 
       const doc = validation.document;
+      const registrationId = task.executionRegistration.registrationId;
+      const outputCommandId = task.runner?.dispatcher.activeExecutionCommandId?.();
+      const images = await validateChatUiImages(doc.body, runtime, sessionId, outputCommandId, extra.signal);
+      if (images.errors.length) return errorResultWithContent(images.errors.map(issue => `${issue.path}: ${issue.reason}`).join("\n"), { code: "INVALID_CHAT_UI", errors: images.errors });
+      if (images.ids.length && (task.runner?.dispatcher.activeExecutionCommandId?.() !== outputCommandId || runtime.taskManager.getTask(sessionId)?.executionRegistration?.registrationId !== registrationId)) {
+        return errorResultWithContent("첨부 검증 중 실행이 바뀌었습니다.", { code: "PUBLISH_FAILED" });
+      }
       const canonical = canonicalJson(doc);
       const hash = createHash("sha256").update(canonical).digest("hex");
       const uiId = `ui_${createHash("sha256")
@@ -64,7 +72,6 @@ sources: 키→{type:"assumption",label,note?} | {type:"external_link",label,url
         .slice(0, 32)}`;
       const content = renderText(doc);
       const text = previewText(content);
-      const outputCommandId = task.runner?.dispatcher.activeExecutionCommandId?.();
       const publisher = runtime.chatUiPublisher;
       if (!publisher) {
         return errorResultWithContent("chat UI event publisher is unavailable", {
@@ -76,6 +83,7 @@ sources: 키→{type:"assumption",label,note?} | {type:"external_link",label,url
       const event = {
         type: "assistant_message",
         content,
+        ...(images.ids.length ? { attachment_ids: images.ids } : {}),
         ...(outputCommandId ? { output_command_id: outputCommandId } : {}),
         ui: {
           schema_version: 1,
@@ -92,7 +100,7 @@ sources: 키→{type:"assumption",label,note?} | {type:"external_link",label,url
         const { eventId } = await publisher.publish(
           sessionId,
           event,
-          task.executionRegistration.registrationId,
+          registrationId,
         );
         return jsonResult({
           status: "committed",

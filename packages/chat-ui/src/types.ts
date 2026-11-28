@@ -71,6 +71,12 @@ export type Action =
   | { type: "copy" }
   | ComposeAction;
 
+export type Tone = "neutral" | "good" | "warn" | "bad" | "info";
+export type DisplayValue = string | number | Exclude<TextPart, string>;
+export type BadgeValue = { label: string; tone: Tone };
+export type LinkValue = { label: string; url: string };
+export type Cell = DisplayValue | BadgeValue | LinkValue | null;
+
 type NodeBase = { id: Key; visibleWhen?: Expr };
 export type Node = NodeBase & (
   | { kind: "heading"; level: 1 | 2 | 3; parts: TextPart[] }
@@ -83,6 +89,17 @@ export type Node = NodeBase & (
   | { kind: "button"; label: string; action: Action }
   | { kind: "entity"; label: string; details: TextPart[]; source?: Key }
   | { kind: "citation"; source: Key }
+  | { kind: "stats"; label?: string; tiles: Array<{ label: string; value: DisplayValue; unit?: Key; note?: string; tone?: Tone }> }
+  | { kind: "badge"; label: string; tone: Tone }
+  | { kind: "table"; label?: string; columns: Array<{ key: Key; label: string; type?: "text" | "number" | "badge" | "link"; wrap?: boolean; unit?: Key }>; rows: Array<Record<Key, Cell>> }
+  | { kind: "list"; label?: string; numbered?: boolean; items: Array<{ id: Key; title: string; note?: string; badge?: BadgeValue; value?: DisplayValue; url?: string }> }
+  | { kind: "bars"; label?: string; unit?: Key; max?: number; series?: Array<{ key: Key; label: string }>; items: Array<{ label: string; value: number | number[]; tone?: Tone; excluded?: boolean }> }
+  | { kind: "line"; label?: string; unit?: Key; series: Array<{ label: string; points: Array<{ x: string; y: number }> }>; baseline?: { value: number; label: string } }
+  | { kind: "steps"; items: Array<{ title: string; state: "done" | "current" | "pending" | "failed"; note?: string; time?: string }> }
+  | { kind: "compare"; columns: Array<{ id: Key; title: string; selected?: boolean; items: Array<{ mark?: "yes" | "no" | "partial"; text: DisplayValue }> }> }
+  | { kind: "flow"; nodes: Array<{ id: Key; title: string; note?: string; col: 1 | 2 | 3 | 4; row: 1 | 2 | 3 | 4; tone?: Tone }>; edges: Array<{ from: Key; to: Key; both?: boolean }> }
+  | { kind: "image"; attachment_id: string; alt: string; caption?: string }
+  | { kind: "html"; html: string; height: number; alt: string }
 );
 
 export type ChatUiState = { values: Record<Key, FieldValue> };

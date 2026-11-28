@@ -5,16 +5,19 @@ import { Button } from '../ui/button';
 import { Slider } from '../ui/slider';
 import { ChatUiEntity, ChatUiSource } from './ChatUiEntity';
 import { ChatUiCheckbox, ChatUiField, type RegisterNumberInput } from './ChatUiFields';
+import { ChatUiDisplay } from './ChatUiDisplay';
 
 // The approved surface choice is owned here, including source actions and entities.
 const BUTTON_VARIANTS = { default: 'outline', manuscript: 'outline' } as const;
 
-export function ChatUiRenderer({ doc, state, onSet, onAction, presentation = 'default' }: {
+export function ChatUiRenderer({ doc, state, onSet, onAction, presentation = 'default', sessionId, imageUrl }: {
   doc: NormalizedChatUiDocumentV1;
   state: ChatUiState;
   onSet: (field: string, value: FieldValue) => FieldValue;
   onAction: (action: Exclude<Action, { type: 'open_source' }>, nodeId: string) => void;
   presentation?: 'default' | 'manuscript';
+  sessionId?: string;
+  imageUrl?: (attachmentId: string) => string;
 }) {
   const { t } = useTranslation();
   const prefix = useId();
@@ -66,6 +69,7 @@ export function ChatUiRenderer({ doc, state, onSet, onAction, presentation = 'de
           : <Button variant={variant} onClick={() => runAction(node.action as Exclude<Action, { type: 'open_source' }>, node.id)}>{node.label}</Button>;
         case 'entity': return <ChatUiEntity node={node} doc={doc} state={state} variant={variant} showSource={!!node.source && remainingSources.includes(node.source)} open={!!openEntities[node.id]} onOpenChange={open => setOpenEntities(current => ({ ...current, [node.id]: open }))} />;
         case 'citation': return <ChatUiSource source={doc.sources[node.source]} />;
+        default: return <ChatUiDisplay node={node} doc={doc} state={state} sessionId={sessionId} imageUrl={imageUrl} />;
       }
     };
     return <div key={node.id} className="chat-ui-node" data-chat-ui-node={node.id}>{body()}</div>;

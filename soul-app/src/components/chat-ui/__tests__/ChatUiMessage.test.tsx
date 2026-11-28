@@ -315,3 +315,12 @@ test.each(['number', 'slider', 'plus', 'minus', 'checkbox', 'choice', 'text', 's
     expect(screen.getByText('현재 값 복사됨')).toBeTruthy();
     change(); expect(screen.queryByTestId('chat-ui-action-notice')).toBeNull();
 });
+
+test('새 표시 부품이 있으면 문서 전체를 저장된 대체 글로 보여준다', () => {
+  const document = { schema_version: 1, body: [{ id: 'stats', kind: 'stats', tiles: [{ label: 'CPU', value: 30 }, { label: '메모리', value: 40 }] }] };
+  const base = chatUiFixtureEvent('normal', { document });
+  const event = { ...base, data: { ...base.data, content: 'CPU 30, 메모리 40' } };
+  const screen = render(sample(event));
+  expect(screen.getByTestId('assistant-markdown').props.markdown).toBe('CPU 30, 메모리 40');
+  expect(screen.queryByTestId('chat-ui-fallback-notice')).toBeNull();
+});

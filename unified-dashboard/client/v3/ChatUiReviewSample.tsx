@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { renderText, canonicalJson, validateChatUiDocument } from '@soulstream/chat-ui';
 import { Button, ChatUiControllerProvider, ChatUiMessage, ChatInput } from '@seosoyoung/soul-ui';
 import type { ChatUiComposerHandle, RegisterGeneratedTextActions } from '@seosoyoung/soul-ui/components/chat-ui/chat-ui-composer';
@@ -17,10 +18,11 @@ import { DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME, MANUSCRIPT_CHAT_REVIEW_COLUMN_CL
 import { reviewDocuments, reviewPrompts, publishedSonnetEvent, publishedSolEvent } from './chat-ui-review-documents';
 import './chat-ui-review-sample.css';
 
-type Example = 'pas' | 'normal' | 'gallery' | 'sonnet' | 'sol' | 'long';
+type Example = 'pas' | 'normal' | 'gallery' | 'sonnet' | 'sol' | 'long' | 'displayCards' | 'displayResources' | 'displayDeploy' | 'displayResearch' | 'displayLargeTable' | 'displayFlow' | 'displayMedia';
 type Mode = 'rich' | 'error' | 'unsupported' | 'invalid';
-const examples: [Example, string][] = [['pas', '카드'], ['normal', '요금'], ['gallery', '갤러리'], ['long', '긴 이름'], ['sonnet', 'Sonnet 발행본'], ['sol', 'Sol 발행본']];
+const baseExamples: [Example, string][] = [['pas', '카드'], ['normal', '요금'], ['gallery', '갤러리'], ['long', '긴 이름'], ['sonnet', 'Sonnet 발행본'], ['sol', 'Sol 발행본']];
 const modes: [Mode, string][] = [['rich', '화면'], ['error', '렌더 오류'], ['unsupported', '미지원 버전'], ['invalid', '손상 문서']];
+const reviewImageUrl = new URL('./review-assets/img-0168.png?no-inline', import.meta.url).href;
 
 function longDocument() {
   const raw = JSON.parse(canonicalJson(reviewDocuments.gallery));
@@ -61,6 +63,13 @@ function RenderFailure({ msg }: { msg: ChatMessage }) {
 }
 
 export function ChatUiReviewSample({ presentation }: { presentation: 'default' | 'manuscript' }) {
+  const { t } = useTranslation();
+  const examples: [Example, string][] = [...baseExamples,
+    ['displayCards', t('ui.chatUiReview.cards')], ['displayResources', t('ui.chatUiReview.resources')],
+    ['displayDeploy', t('ui.chatUiReview.deploy')], ['displayResearch', t('ui.chatUiReview.research')],
+    ['displayLargeTable', t('ui.chatUiReview.largeTable')],
+    ['displayFlow', t('ui.chatUiReview.flow')], ['displayMedia', t('ui.chatUiReview.media')],
+  ];
   const [example, setExample] = useState<Example>('pas');
   const [mode, setMode] = useState<Mode>('rich');
   const sessionId = `chat-ui-review-${presentation}-${example}`;
@@ -81,7 +90,7 @@ export function ChatUiReviewSample({ presentation }: { presentation: 'default' |
           <div className="chat-ui-review-messages">{messages.map(msg => msg.role === 'user'
             ? <UserMessage key={msg.treeNodeId} msg={msg} presentation={presentation} />
             : <AssistantMessage key={msg.treeNodeId} msg={msg} presentation={presentation} contentLayout={msg.ui ? 'structured' : 'text'}>
-              {msg.ui ? mode === 'error' ? <RenderFailure key={`${example}-${mode}`} msg={msg} /> : <ChatUiMessage ui={msg.ui} content={msg.content} presentation={presentation} /> : undefined}
+              {msg.ui ? mode === 'error' ? <RenderFailure key={`${example}-${mode}`} msg={msg} /> : <ChatUiMessage ui={msg.ui} content={msg.content} presentation={presentation} sessionId={sessionId} imageUrl={() => reviewImageUrl} /> : undefined}
             </AssistantMessage>)}
           </div>
           <footer className="chat-ui-review-composer"><ChatInput presentation={presentation} registerGeneratedTextActions={registerGeneratedTextActions} /></footer>

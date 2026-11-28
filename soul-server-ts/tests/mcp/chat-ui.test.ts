@@ -271,3 +271,26 @@ describe("publish_chat_ui", () => {
     });
   });
 });
+
+describe('publish_chat_ui 그림 첨부', () => {
+  it('다른 세션이나 없는 첨부는 거부하고 현재 실행의 첨부만 발행한다', async () => {
+    const publisher = vi.fn<NonNullable<McpRuntime["chatUiPublisher"]>["publish"]>(async () => ({ eventId: 41 }));
+    const runtime = makeRuntime({ publisher, task: activeTaskWithCommand('command-1') });
+    const validateSessionOutput = vi.fn(async ({ attachment_ids }: { attachment_ids: string[] }) => {
+      if (attachment_ids[0] !== 'valid') throw Error('첨부를 찾을 수 없습니다');
+      return { attachment_ids };
+    });
+    Object.assign(runtime, { producedAttachments: { validateSessionOutput } });
+    const client = await createClient(runtime);
+    for (const attachment_id of ['missing', 'other-session']) {
+      const result = await callTool(client, { publication_key: attachment_id, document: { schema_version: 1, body: [{ id: 'picture', kind: 'image', attachment_id, alt: '그림' }] } }, 'session-1');
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result)).toContain('body[0]');
+    }
+    expect(publisher).not.toHaveBeenCalled();
+    const result = await callTool(client, { publication_key: 'valid', document: { schema_version: 1, body: [{ id: 'picture', kind: 'image', attachment_id: 'valid', alt: '그림' }] } }, 'session-1');
+    expect(result.isError).not.toBe(true);
+    expect(publisher.mock.calls[0]?.[1]).toMatchObject({ attachment_ids: ['valid'] });
+    expect(validateSessionOutput).toHaveBeenCalledWith({ attachment_ids: ['valid'] }, expect.objectContaining({ sessionId: 'session-1', outputCommandId: 'command-1' }), expect.anything());
+  });
+});

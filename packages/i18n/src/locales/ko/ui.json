@@ -1,4 +1,13 @@
 {
+  "chatUiReview": {
+    "cards": "카드 현황",
+    "resources": "노드 자원",
+    "deploy": "배포",
+    "research": "조사 요약",
+    "largeTable": "긴 표",
+    "flow": "흐름",
+    "media": "그림과 HTML"
+  },
   "chat": {
     "assistantModel": "어시스턴트 ({{model}})",
     "assistant": "어시스턴트",

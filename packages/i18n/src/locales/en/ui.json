@@ -1,4 +1,13 @@
 {
+  "chatUiReview": {
+    "cards": "Card status",
+    "resources": "Node resources",
+    "deploy": "Deployment",
+    "research": "Research summary",
+    "largeTable": "Long table",
+    "flow": "Flow",
+    "media": "Images and HTML"
+  },
   "chat": {
     "assistantModel": "Assistant ({{model}})",
     "assistant": "Assistant",

@@ -20,7 +20,7 @@ import { ToolMessage } from "./ToolMessage";
 import { ChatInputRequest } from "./ChatInputRequest";
 import { ChatToolApproval } from "./ChatToolApproval";
 import { AwaySummaryMessage } from "./AwaySummaryMessage";
-import { ChatUiMessage, isSupportedChatUiPublication } from "../chat-ui/ChatUiMessage";
+import { ChatUiMessage, displayedChatUiImageIds, isSupportedChatUiPublication } from "../chat-ui/ChatUiMessage";
 
 /**
  * 모듈 범위의 seen 집합.
@@ -39,13 +39,15 @@ function shouldAnimateEnter(key: string): boolean {
 
 function filterDisplayedAttachments(msg: ChatMessage, items: ChatAttachmentItem[]): ChatAttachmentItem[] {
   const truncationAttachmentId = msg.truncation?.attachment?.attachment_id;
-  if (msg.attachmentDisplayIds === undefined && truncationAttachmentId === undefined) return items;
+  const imageIds = displayedChatUiImageIds(msg.ui);
+  if (msg.attachmentDisplayIds === undefined && truncationAttachmentId === undefined && imageIds.size === 0) return items;
   const allowedIds = msg.attachmentDisplayIds === undefined ? null : new Set(msg.attachmentDisplayIds);
   return items.filter((item) => {
     const attachmentId = item.source.kind === "asset" || item.source.kind === "unavailable"
       ? item.source.attachmentId
       : undefined;
     if (truncationAttachmentId !== undefined && attachmentId === truncationAttachmentId) return false;
+    if (attachmentId !== undefined && imageIds.has(attachmentId)) return false;
     if (allowedIds === null) return true;
     if (attachmentId !== undefined) {
       return allowedIds.has(attachmentId);
@@ -160,7 +162,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
             representedAttachments={attachmentItems}
             readContext={sessionId ? { type: "session", id: sessionId } : undefined}
           >
-            <ChatUiMessage ui={msg.ui} content={msg.content} presentation={presentation} />
+            <ChatUiMessage ui={msg.ui} content={msg.content} presentation={presentation} sessionId={sessionId} />
           </AssistantMessage>
           : <AssistantMessage
             msg={msg}

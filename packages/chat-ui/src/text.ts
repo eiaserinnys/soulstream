@@ -1,6 +1,8 @@
 import { createEvaluationContext } from "./evaluate.js";
 import { initialState } from "./controller.js";
 import type {
+  Cell,
+  DisplayValue,
   ChatUiState,
   Expr,
   FieldValue,
@@ -170,6 +172,7 @@ function renderNode(
       ? labelledLine(node.label, renderPartsWithContext(doc, node.details, evaluateExpression))
       : node.label;
   }
+  if (node.kind !== "citation") return renderDisplayNode(doc, state, node);
   const source = doc.sources[node.source]!;
   return source.type === "assumption"
     ? `출처: ${source.label}`
@@ -291,4 +294,37 @@ export function composeText(
       .join("\n");
   }
   return renderText(doc, state);
+}
+
+export function renderDisplayValue(doc: NormalizedChatUiDocumentV1, state: ChatUiState, value: DisplayValue, unit?: string): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return `${value.toLocaleString('en-US')}${unit ? doc.units[unit]?.symbol ?? '' : ''}`;
+  return renderParts(doc, state, [unit ? { ...value, unit } : value]);
+}
+
+function cellText(doc: NormalizedChatUiDocumentV1, state: ChatUiState, cell: Cell | undefined, unit?: string): string {
+  if (cell == null) return '';
+  if (typeof cell === 'object' && 'label' in cell) return 'url' in cell ? `[${cell.label}](${cell.url})` : cell.label;
+  return renderDisplayValue(doc, state, cell, unit);
+}
+
+function renderDisplayNode(doc: NormalizedChatUiDocumentV1, state: ChatUiState, node: Node): string {
+  switch (node.kind) {
+    case 'stats': return [node.label, ...node.tiles.map(tile => [tile.label, renderDisplayValue(doc, state, tile.value, tile.unit), tile.note].filter(Boolean).join(' '))].filter(Boolean).join('\n');
+    case 'badge': return node.label;
+    case 'table': {
+      const escape = (value: string) => value.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+      const row = (values: string[]) => `| ${values.map(escape).join(' | ')} |`;
+      return [node.label, row(node.columns.map(c => c.label)), row(node.columns.map(() => '---')), ...node.rows.map(r => row(node.columns.map(c => cellText(doc, state, r[c.key], c.unit))))].filter(Boolean).join('\n');
+    }
+    case 'list': return [node.label, ...node.items.map((item, i) => `${node.numbered ? `${i + 1}.` : '-'} ${[item.url ? `[${item.title}](${item.url})` : item.title, item.note, item.badge?.label, item.value === undefined ? undefined : renderDisplayValue(doc, state, item.value)].filter(Boolean).join(' ')}`)].filter(Boolean).join('\n');
+    case 'bars': return [node.label, ...node.items.map(item => `${item.label} ${Array.isArray(item.value) ? item.value.join(', ') : item.value}${node.unit ? doc.units[node.unit]?.symbol ?? '' : ''}`)].filter(Boolean).join('\n');
+    case 'line': return [node.label, ...node.series.map(series => { const first = series.points[0]!, last = series.points[series.points.length - 1]!; return `${series.label} ${first.x}: ${first.y} → ${last.x}: ${last.y}${node.unit ? doc.units[node.unit]?.symbol ?? '' : ''}`; })].filter(Boolean).join('\n');
+    case 'steps': return node.items.map(item => `[${item.state}] ${[item.title, item.note, item.time].filter(Boolean).join(' ')}`).join('\n');
+    case 'compare': return node.columns.map(column => `${column.title}\n${column.items.map(item => `- ${renderDisplayValue(doc, state, item.text)}`).join('\n')}`).join('\n\n');
+    case 'flow': return node.edges.map(edge => `${node.nodes.find(n => n.id === edge.from)!.title} ${edge.both ? '↔' : '→'} ${node.nodes.find(n => n.id === edge.to)!.title}`).concat(node.nodes.filter(n => !node.edges.some(e => e.from === n.id || e.to === n.id)).map(n => n.title)).join('\n');
+    case 'image': return [node.alt, node.caption].filter(Boolean).join(' — ');
+    case 'html': return node.alt;
+    default: return '';
+  }
 }
