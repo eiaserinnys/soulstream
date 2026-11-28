@@ -12,6 +12,9 @@ on:
       - 'soul-server-ts/package.json'
       - 'soul-server-ts/tsconfig*.json'
       - 'soul-server-ts/vitest.config.ts'
+      # soul-server-ts/tests/model_catalog_code_tables.test.ts scans soul-app/src and soul-app/targets.
+      - 'soul-app/src/**'
+      - 'soul-app/targets/**'
       # soul-server-ts/tests/mcp/cluster-roundtrip-fixture.ts imports orch-server-ts/src.
       - 'orch-server-ts/src/**'
       - 'orch-server-ts/tests/**'
@@ -32,6 +35,9 @@ on:
       - 'soul-server-ts/package.json'
       - 'soul-server-ts/tsconfig*.json'
       - 'soul-server-ts/vitest.config.ts'
+      # soul-server-ts/tests/model_catalog_code_tables.test.ts scans soul-app/src and soul-app/targets.
+      - 'soul-app/src/**'
+      - 'soul-app/targets/**'
       - 'orch-server-ts/src/**'
       - 'orch-server-ts/tests/**'
       - 'packages/mcp-contract/**'
