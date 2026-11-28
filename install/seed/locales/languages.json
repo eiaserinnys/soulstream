@@ -1,6 +1,6 @@
 {
   "ko": { "complete": true },
   "en": { "complete": true },
-  "ja": { "complete": false },
+  "ja": { "complete": true },
   "zh-Hans": { "complete": false }
 }

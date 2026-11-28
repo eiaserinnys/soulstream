@@ -113,5 +113,35 @@
     "text": "어긋남",
     "reason": "The statechart renderer matches this text in a defect tag.",
     "source": "skills/diagram-autolayout/scripts/statechart_svg.mjs:35"
+  },
+  {
+    "text": "node_modules가 symlink입니다",
+    "reason": "The worker reports this error when an isolated worktree has symlinked dependencies.",
+    "source": "soul-server-ts/src/runner/session_filesystem_cache.ts:119"
+  },
+  {
+    "text": "확인 요청:",
+    "reason": "The push notifier prefixes confirmation requests with this text.",
+    "source": "orch-server-ts/src/push/push_notifier.ts:105"
+  },
+  {
+    "text": "부탁:",
+    "reason": "The push notifier prefixes action requests with this text.",
+    "source": "orch-server-ts/src/push/push_notifier.ts:106"
+  },
+  {
+    "text": "에 다시 확인",
+    "reason": "The server appends this text to the recheck time in the card status summary.",
+    "source": "orch-server-ts/src/cards/card_verification_wait.ts:66"
+  },
+  {
+    "text": "담당이 바뀌어 자동 재개 예약을 해제했습니다",
+    "reason": "The server reports this status when replacing an assignee clears a scheduled resume.",
+    "source": "orch-server-ts/src/control_plane/repositories/session_card_replacement.ts:39"
+  },
+  {
+    "text": "작업에 맞는 것을 골라 읽는다",
+    "reason": "The skill compiler emits this instruction when it presents candidates for an unresolved pick.",
+    "source": "orch-server-ts/src/skills/skill_compile.ts:376"
   }
 ]

@@ -7,7 +7,6 @@ export const BOOTSTRAP_NO_MODEL_MESSAGE =
   "쓸 수 있는 모델이 없습니다. 코딩 에이전트를 먼저 연결해 주십시오.";
 export const BOOTSTRAP_NO_AGENT_MESSAGE = "기본 영구 세션에 쓸 에이전트가 정해져 있지 않습니다.";
 const FALLBACK_DISPLAY_NAME = "PAS";
-const PAS_NAME_SUFFIX = " (PAS)";
 
 /** Runs one task per key at a time; callers that overlap receive the first caller's result. */
 export class SingleFlightByKey<T> {
@@ -42,14 +41,11 @@ export function parseBootstrapBody(input: unknown): void {
   }
 }
 
-/** 「서소영 (PAS)」 becomes 「서소영」; a profile without a usable name becomes 「PAS」. */
+/** 「ソ・ソヨン(PAS)」 becomes 「ソ・ソヨン」. A profile without a usable name becomes 「PAS」. */
 export function bootstrapDisplayName(profileName: unknown): string {
   if (typeof profileName !== "string") return FALLBACK_DISPLAY_NAME;
-  const trimmed = profileName.trim();
-  const name = trimmed.endsWith(PAS_NAME_SUFFIX)
-    ? trimmed.slice(0, -PAS_NAME_SUFFIX.length).trim()
-    : trimmed;
-  return name.length === 0 ? FALLBACK_DISPLAY_NAME : name;
+  const name = profileName.trim().replace(/\s*\(PAS\)$/, "");
+  return name || FALLBACK_DISPLAY_NAME;
 }
 
 /**

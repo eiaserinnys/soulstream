@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "seosoyoung": "ソ・ソヨン",
+    "seosoyoung-pas": "ソ・ソヨン(PAS)",
+    "card-orchestrator": "カードオーケストレーター"
+  },
+  "dailyReview": {
+    "name": "日次まとめ",
+    "prompt": "daily-reviewスキルを実行し、この1日の作業をまとめる。"
+  },
+  "workspaceFolder": "ワークスペース",
+  "codingAgentsPath": "設定 → コーディングエージェントの接続"
+}
