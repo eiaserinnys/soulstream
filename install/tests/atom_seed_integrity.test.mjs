@@ -22,6 +22,7 @@ import { readInstallerText } from '../seed/locales/installer-text.mjs';
 import { completeLanguages } from '../seed/locales/languages.mjs';
 import { readLocalizedSeed } from '../seed/locales/seed.mjs';
 import { forbiddenSeedText } from '../seed/locales/text.mjs';
+import { compareLinkBlocks, extractLinkBlocks, parseLinkBlockBody } from './support/seed_link_blocks.mjs';
 
 const SEED_PATH = fileURLToPath(new URL('../seed/atom-seed.json', import.meta.url));
 const PORTRAIT_PATHS = {
@@ -110,88 +111,19 @@ test('buildCreatePayload: 172 creates, seed order, positions, body under the Fas
 
 // --- link blocks -----------------------------------------------------------
 
-const ALLOWED_LINK_KEYS = new Set(['call', 'include', 'section', 'when', 'note', 'pick', 'axis', 'top', 'optional']);
-
-function extractLinkBlocks(markdown) {
-  const lines = String(markdown).split('\n');
-  const blocks = [];
-  let open = null;
-  for (const line of lines) {
-    if (open) {
-      const close = /^ {0,3}(`+|~+)\s*$/.exec(line);
-      if (close && close[1][0] === open.char && close[1].length >= open.length) {
-        blocks.push(open.body.join('\n'));
-        open = null;
-      } else {
-        let indent = 0;
-        while (indent < open.indent && line[indent] === ' ') indent += 1;
-        open.body.push(line.slice(indent));
-      }
-      continue;
-    }
-    const fence = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line);
-    if (fence && fence[3].trim() === 'link') open = { char: fence[2][0], length: fence[2].length, indent: fence[1].length, body: [] };
-  }
-  if (open) throw new Error('unclosed link code fence');
-  return blocks;
-}
-
-function parseScalar(raw) {
-  const value = raw.trim();
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  if (/^-?\d+$/.test(value)) return Number(value);
-  if (value.startsWith('"') && value.endsWith('"')) return value.slice(1, -1);
-  if (value.startsWith("'") && value.endsWith("'")) return value.slice(1, -1).replaceAll("''", "'");
-  if (value.startsWith('[') && value.endsWith(']')) {
-    return value.slice(1, -1).split(',').map((part) => parseScalar(part));
-  }
-  return value;
-}
-
-function parseLinkBlockBody(body) {
-  const fields = {};
-  for (const line of body.split('\n')) {
-    if (line.trim() === '' || line.trim().startsWith('#')) continue;
-    const match = /^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/.exec(line);
-    if (!match) throw new Error(`unreadable link block line: ${line}`);
-    const [, key, raw] = match;
-    if (!ALLOWED_LINK_KEYS.has(key)) throw new Error(`unknown link block key: ${key}`);
-    if (key in fields) throw new Error(`duplicate link block key: ${key}`);
-    fields[key] = parseScalar(raw);
-  }
-  const kinds = ['call', 'include', 'pick'].filter((key) => key in fields);
-  if (kinds.length !== 1) throw new Error('link block must contain exactly one of call, include, or pick');
-  const kind = kinds[0];
-  const isString = (value) => typeof value === 'string' && value.trim().length > 0;
-  if (kind === 'call') {
-    if (!isString(fields.call)) throw new Error('call must be a non-empty skill name');
-    for (const key of ['include', 'section', 'pick', 'axis', 'top', 'optional']) {
-      if (key in fields) throw new Error(`call has keys belonging to another link kind: ${key}`);
-    }
-  } else if (kind === 'include') {
-    if (!isString(fields.include)) throw new Error('include must be a non-empty document name');
-    for (const key of ['call', 'pick', 'axis', 'top', 'optional', 'when']) {
-      if (key in fields) throw new Error(`include has keys belonging to another link kind: ${key}`);
-    }
-    if ('section' in fields && typeof fields.section !== 'string') throw new Error('section must be a string');
-  } else {
-    if (fields.pick !== 'catalog') throw new Error('pick must be catalog');
-    if (!Array.isArray(fields.axis) || fields.axis.length === 0 || fields.axis.some((axis) => !isString(axis))) {
-      throw new Error('pick needs a non-empty string axis list');
-    }
-    for (const key of ['call', 'include', 'section', 'when']) {
-      if (key in fields) throw new Error(`pick has keys belonging to another link kind: ${key}`);
-    }
-    const top = 'top' in fields ? fields.top : 1;
-    const optional = 'optional' in fields ? fields.optional : false;
-    if (!Number.isInteger(top) || top < 1 || typeof optional !== 'boolean') throw new Error('bad pick top/optional');
-  }
-  for (const key of ['note', 'when']) {
-    if (key in fields && typeof fields[key] !== 'string') throw new Error(`${key} must be a string`);
-  }
-  return { kind, fields };
-}
+test('ja link block fixture resolves a translated include section outside example fences', () => {
+  const entry = { key: 'skill.fixture', title: 'fixture', content: "body_node_id: '{{node_id:skill.fixture.body}}'" };
+  const body = { key: 'skill.fixture.body', title: 'body', content: '## 원문' };
+  const caller = { key: 'caller', content: '```link\ninclude: fixture\nsection: 원문\n```' };
+  const original = [entry, body, caller];
+  const translatedCaller = {
+    ...caller,
+    content: '~~~~markdown\n```link\ninclude: example\n```\n~~~~\n' + caller.content.replace('원문', '見出し'),
+  };
+  const compare = (content) => compareLinkBlocks('ja', original, [entry, { ...body, content }, translatedCaller]);
+  assert.throws(() => compare('```markdown\n## 見出し\n```'), /ja caller link block #1 section "見出し" must match one heading in skill\.fixture\.body/);
+  compare('### `見出し` <!-- comment -->');
+});
 
 // --- forbidden patterns ----------------------------------------------------
 
@@ -445,6 +377,12 @@ for (const lang of completeLanguages) {
     }
     assert.ok(blockCount > 0, 'the seed is expected to contain link blocks');
   });
+
+  if (lang !== 'ko') {
+    test(`${lang} link blocks match the Korean seed and resolve include sections`, () => {
+      compareLinkBlocks(lang, CARDS, cards);
+    });
+  }
 
   test(`${lang} forbidden patterns: seed titles, content and exports contain only public text`, () => {
     for (const [where, text] of seedTexts(seed)) {

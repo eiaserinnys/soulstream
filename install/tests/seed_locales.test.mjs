@@ -45,12 +45,12 @@ test('partial translations validate by key, chunk, title and placeholder multise
   assert.throws(() => validateOverlay(persona, 'en', 'persona', inventory, seen), /duplicate translation/);
 });
 
-test('Korean uses identical seed bytes and an unfinished language stops before Atom', async () => {
+test('Korean uses identical seed bytes and an unknown language stops before Atom', async () => {
   assert.deepEqual(readLocalizedSeed(defaultSeedPath, 'ko').bytes, bytes);
   const stateDir = mkdtempSync(join(tmpdir(), 'seed-lang-'));
   const options = { stateDir, atomUrl: 'http://127.0.0.1:9', password: 'test', fetchImpl: () => assert.fail('unexpected Atom request') };
   try {
-    await assert.rejects(loadAtomSeed({ ...options, lang: 'ja' }), /Language ja is not available yet\. Available languages: ko/);
+    await assert.rejects(loadAtomSeed({ ...options, lang: 'xx' }), /Unknown installation language "xx"/);
     writeFileSync(join(stateDir, '.atom-seed-state.json'), JSON.stringify({ phase: 'completed', lang: 'en' }));
     await assert.rejects(loadAtomSeed({ ...options, lang: 'ko' }), /en.*ko/);
   } finally {
