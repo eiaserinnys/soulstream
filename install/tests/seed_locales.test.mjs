@@ -86,7 +86,7 @@ test('the loader hashes and keeps the same bytes that it sends for seed creation
     const fixtureSeed = join(root, 'seed');
     cpSync(new URL('../seed/', import.meta.url), fixtureSeed, { recursive: true });
     const locales = join(fixtureSeed, 'locales');
-    mkdirSync(join(locales, 'en'));
+    mkdirSync(join(locales, 'en'), { recursive: true });
     const languages = JSON.parse(readFileSync(join(locales, 'languages.json')));
     languages.en.complete = true;
     writeFileSync(join(locales, 'languages.json'), JSON.stringify(languages));
