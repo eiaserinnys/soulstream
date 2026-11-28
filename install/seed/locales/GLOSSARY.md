@@ -21,6 +21,6 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | 페르소나와 기본 프로필 | `seosoyoung` | 서소영 | Seo Soyoung | ソ・ソヨン | Seo Soyoung |
 | 영구 세션 기본 프로필 | `seosoyoung-pas` | 서소영 (PAS) | Seo Soyoung (PAS) | ソ・ソヨン(PAS) | Seo Soyoung (PAS) |
-| 카드 실행 판단 프로필 | `card-orchestrator` | 카드 오케스트레이터 | Card orchestrator | カードオーケストレーター | 번역 단위에서 정함 |
+| 카드 실행 판단 프로필 | `card-orchestrator` | 카드 오케스트레이터 | Card orchestrator | カードオーケストレーター | 卡片编排器 |
 
 카드 실행 판단 프로필을 옮길 때는 atom 카드의 제목과 `installer.json`의 표시 이름을 맞춘다. 프로필 ID와 `PAS`는 그대로 둔다.
