@@ -213,7 +213,7 @@
   },
   "count": "{{count, number}}",
   "shownCount": "{{count, number}} shown",
-  "cardStatus": "Card status: {{status}}",
+  "cardStatus": "{{status}}",
   "openNamedCard": "Open card {{title}}",
   "toReviewCount": "To review: {{count, number}}",
   "item": "Item",
