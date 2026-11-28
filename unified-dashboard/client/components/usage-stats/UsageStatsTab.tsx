@@ -333,11 +333,11 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
             <div className="usage-stats-chart-heading-controls">
               <div className="v3-completed-periods" role="group" aria-label={t("admin.stats.metric")}>
                 <Button size="sm" variant="ghost" aria-pressed={metric === "tokens"} onClick={() => setMetric("tokens")}>{t("admin.stats.tokens")}</Button>
-                <Button size="sm" variant="ghost" aria-pressed={metric === "cost"} onClick={() => setMetric("cost")}>{t("admin.stats.listPrice")}</Button>
+                <Button size="sm" variant="ghost" aria-pressed={metric === "cost"} onClick={() => setMetric("cost")}>{t("admin.stats.chartPrice")}</Button>
               </div>
               <div className="v3-completed-periods" role="group" aria-label={t("admin.stats.cacheRead")}>
-                <Button size="sm" variant="ghost" aria-pressed={!includeCacheRead} onClick={() => setIncludeCacheRead(false)}>{t("admin.stats.cacheReadExclude")}</Button>
-                <Button size="sm" variant="ghost" aria-pressed={includeCacheRead} onClick={() => setIncludeCacheRead(true)}>{t("admin.stats.cacheReadInclude")}</Button>
+                <Button size="sm" variant="ghost" aria-label={t("admin.stats.cacheReadExclude")} aria-pressed={!includeCacheRead} onClick={() => setIncludeCacheRead(false)}>{t("admin.stats.cacheOff")}</Button>
+                <Button size="sm" variant="ghost" aria-label={t("admin.stats.cacheReadInclude")} aria-pressed={includeCacheRead} onClick={() => setIncludeCacheRead(true)}>{t("admin.stats.cacheOn")}</Button>
               </div>
             </div>
           </div>

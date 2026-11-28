@@ -66,7 +66,10 @@
     "unknown": "Unknown category",
     "harness_internal": "Internal harness input",
     "summaryLoadError": "Couldn't load the usage summary ({{status}})",
-    "summaryRefreshError": "Couldn't refresh usage ({{status}})"
+    "summaryRefreshError": "Couldn't refresh usage ({{status}})",
+    "chartPrice": "Price",
+    "cacheOff": "No cache",
+    "cacheOn": "+ Cache"
   },
   "log": {
     "date": "Date",
@@ -126,7 +129,8 @@
     "all": "All",
     "deletedFolder": "Deleted folder",
     "confirmRemove": "Delete {{email}}?",
-    "close": "Close"
+    "close": "Close",
+    "retry": "Retry"
   },
   "storage": {
     "bucketHint": "Private bucket name",

@@ -66,7 +66,10 @@
     "unknown": "분류 미확인",
     "harness_internal": "하네스 내부 입력",
     "summaryLoadError": "사용량 요약을 불러오지 못했습니다 ({{status}})",
-    "summaryRefreshError": "사용량을 새로 고치지 못했습니다 ({{status}})"
+    "summaryRefreshError": "사용량을 새로 고치지 못했습니다 ({{status}})",
+    "chartPrice": "정가",
+    "cacheOff": "캐시 제외",
+    "cacheOn": "캐시 포함"
   },
   "log": {
     "date": "날짜",
@@ -126,7 +129,8 @@
     "all": "전체",
     "deletedFolder": "삭제된 폴더",
     "confirmRemove": "{{email}} 사용자를 삭제할까요?",
-    "close": "닫기"
+    "close": "닫기",
+    "retry": "다시 불러오기"
   },
   "storage": {
     "bucketHint": "비공개 버킷 이름",

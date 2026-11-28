@@ -201,7 +201,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
         </div>
       )}
 
-      {loadError !== null ? <V3ErrorNotice message={t("admin.users.loadError")} detail={loadError} onRetry={() => { void load(); }} /> : <div
+      {loadError !== null ? <V3ErrorNotice message={t("admin.users.loadError")} detail={loadError} retryLabel={t("admin.users.retry")} onRetry={() => { void load(); }} /> : <div
         data-testid="user-management-table-scroll"
         className="overflow-x-auto rounded-floor border border-border"
       >
