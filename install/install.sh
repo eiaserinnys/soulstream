@@ -641,13 +641,24 @@ pas_disallowed_tools_yaml() {
 YAML
 }
 
+installer_text_path() {
+  printf '%s/install/seed/locales/%s/installer.json' "$1" "${INSTALL_LANG:-ko}"
+}
+
 render_agents() {
   local home=$1 root=$2 first=${BACKENDS%%,*} backend name rules
+  local profile_names
+  profile_names=$(jq -er --arg lang "${INSTALL_LANG:-ko}" '
+    .profiles | [.seosoyoung, ."seosoyoung-pas", ."card-orchestrator"] |
+    .[] | if $lang == "ko" then . else tojson end
+  ' "$(installer_text_path "$root")") || return 1
+  local -a localized_names
+  mapfile -t localized_names <<< "$profile_names"
   rules=$(backend_rules_context "$first")
   printf 'agents:\n'
   cat <<YAML
   - id: seosoyoung
-    name: 서소영
+    name: ${localized_names[0]}
     backend: ${first}
     default_preset: $(backend_preset "$first")
     workspace_dir: ${home}/workspace
@@ -665,7 +676,7 @@ YAML
   atom_contexts_yaml common_rules:5 common_rules_extra:index $rules seosoyoung_rules:5 seosoyoung_skills:1
   cat <<YAML
   - id: seosoyoung-pas
-    name: 서소영 (PAS)
+    name: ${localized_names[1]}
     backend: ${first}
     default_preset: $(backend_preset "$first")
     workspace_dir: ${home}/workspace
@@ -682,7 +693,7 @@ YAML
   if has_backend claude; then
     cat <<YAML
   - id: card-orchestrator
-    name: 카드 오케스트레이터
+    name: ${localized_names[2]}
     backend: claude
     default_preset: $(jq -er '.profiles["card-orchestrator"]' <<< "$INSTALL_DEFAULTS")
     workspace_dir: ${home}/workspace
@@ -1593,9 +1604,10 @@ UNIT
 # never overwrites what the user switched on or edited. A refusal (for example no signed-in backend yet) only warns:
 # the job can be created later from the recurring jobs tab.
 register_daily_review_job() {
-  local folder_id body status
+  local root=$1 folder_id body status
+  shift
   folder_id=$(curl -fsS "$@" http://127.0.0.1:5200/api/folders | jq -r '[.folders[] | select(.name=="작업실")][0].id') || return 1
-  body=$(jq -n --arg folder "$folder_id" '{idempotencyKey: "clean-install-daily-review", name: "일간 정리", prompt: "daily-review 스킬을 발동하여 지난 하루의 작업을 정리한다.", timezone: "UTC", scheduleExpressions: ["0 9 * * *"], nodeId: "local", agentId: "seosoyoung", modelPreset: null, folderId: $folder, enabled: false}') || return 1
+  body=$(jq --arg folder "$folder_id" '{idempotencyKey: "clean-install-daily-review", name: .dailyReview.name, prompt: .dailyReview.prompt, timezone: "UTC", scheduleExpressions: ["0 9 * * *"], nodeId: "local", agentId: "seosoyoung", modelPreset: null, folderId: $folder, enabled: false}' "$(installer_text_path "$root")") || return 1
   status=$(curl -s -o /dev/null -w '%{http_code}' "$@" -X POST -H 'Content-Type: application/json' --data "$body" http://127.0.0.1:5200/api/recurring-jobs)
   if [[ "$status" != 200 && "$status" != 201 ]]; then
     printf 'Could not register the daily review recurring job (HTTP %s). Create it later in the recurring jobs settings tab.\n' "$status" >&2
@@ -1623,7 +1635,7 @@ wait_and_create_workspace() {
       curl -fsS -H "@$cookie" -X POST -H 'Content-Type: application/json' --data '{"name":"작업실","idempotencyKey":"clean-install-default-workspace"}' http://127.0.0.1:5200/api/folders >/dev/null
     fi
     curl -fsS -H "@$cookie" http://127.0.0.1:5200/api/folders | jq -e '[.folders[] | select(.name=="작업실")] | length == 1' >/dev/null
-    register_daily_review_job -H "@$cookie" || { rm -f "$header" "$cookie"; return 1; }
+    register_daily_review_job "$root" -H "@$cookie" || { rm -f "$header" "$cookie"; return 1; }
     status=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5200/api/folders)
     [[ "$status" == 401 ]]
     status=$(curl -s -o /dev/null -w '%{http_code}' -H "@$cookie" -H 'Tailscale-Funnel-Request: ?1' http://127.0.0.1:5200/api/folders)
@@ -1645,7 +1657,7 @@ wait_and_create_workspace() {
     curl -fsS -b "$cookie" -X POST -H 'Content-Type: application/json' --data '{"name":"작업실","idempotencyKey":"clean-install-default-workspace"}' http://127.0.0.1:5200/api/folders >/dev/null
   fi
   curl -fsS -b "$cookie" http://127.0.0.1:5200/api/folders | jq -e '[.folders[] | select(.name=="작업실")] | length == 1' >/dev/null
-  register_daily_review_job -b "$cookie" || { rm -f "$header" "$cookie"; return 1; }
+  register_daily_review_job "$root" -b "$cookie" || { rm -f "$header" "$cookie"; return 1; }
   status=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5200/api/folders)
   rm -f "$header" "$cookie"
   [[ "$status" == 401 ]]
@@ -1759,7 +1771,9 @@ finish_message() {
     printf 'Generated administrator password (for Soulstream and atom): %s\n' "$ADMIN_PASSWORD" >&4
     exec 4>&-
   fi
-  printf 'PAS: once you connect a coding agent, the dashboard creates a default 서소영 (PAS) persistent session.\n'
+  local pas_name
+  pas_name=$(jq -er '.profiles."seosoyoung-pas"' "$(installer_text_path "$root")") || return 1
+  printf 'PAS: once you connect a coding agent, the dashboard creates a default %s persistent session.\n' "$pas_name"
   if [[ -n "${ATOM_SEED_WARNINGS:-}" ]]; then
     printf 'Atom instructions:\n'
     while IFS= read -r line; do

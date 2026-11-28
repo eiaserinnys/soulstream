@@ -6,6 +6,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { readInstallerText } from '../seed/locales/installer-text.mjs';
 import { buildAtom, initAtom, issueAtomApiKey, loadAtomInstructions, withTemporaryAtom } from './atom.mjs';
 import { requireClis } from './cli.mjs';
 import { prepareSecrets, setupDatabases, setupSchema } from './database.mjs';
@@ -90,7 +91,8 @@ async function finish(ctx) {
   log(`Soulstream: ${readEnvValue(envOrch, 'SOULSTREAM_PUBLIC_URL') || orchUrl(ctx)}`);
   log(`Atom: ${readEnvValue(envOrch, 'ATOM_PUBLIC_URL') || `http://127.0.0.1:${ctx.ports.atom}`}${atomDashboard ? '' : ' (API only; its dashboard did not build)'}`);
   log(`Password for both: ${readEnvValue(join(ctx.soulDir, '.env.orch'), 'DASHBOARD_ADMIN_PASSWORD')} (saved in ${join(ctx.soulDir, '.admin-password')})`);
-  log('PAS: once you connect a coding agent, the dashboard creates a default 서소영 (PAS) persistent session.');
+  const pasName = readInstallerText(ctx.lang ?? 'ko').profiles['seosoyoung-pas'];
+  log(`PAS: once you connect a coding agent, the dashboard creates a default ${pasName} persistent session.`);
   if (notes.length > 0) log(`Notes:\n${notes.map((n) => `  ${n}`).join('\n')}`);
   log('Login: connect Claude and Codex in the dashboard under Settings → 코딩 에이전트 연결.');
   log(confirmed ? 'Model presets are confirmed.' : 'Model preset status is not confirmed yet; it updates within five minutes.');

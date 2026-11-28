@@ -59,6 +59,8 @@ test('finish creates the workspace folder and registers the paused daily review 
     assert.equal(posts.length, 2);
     const job = JSON.parse(posts[0].body);
     assert.equal(job.idempotencyKey, 'clean-install-daily-review');
+    assert.equal(job.name, '일간 정리');
+    assert.equal(job.prompt, 'daily-review 스킬을 발동하여 지난 하루의 작업을 정리한다.');
     assert.equal(job.enabled, false);
     assert.equal(job.agentId, 'seosoyoung');
     assert.equal(job.nodeId, 'local');
