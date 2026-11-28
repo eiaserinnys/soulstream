@@ -661,7 +661,7 @@ jobs:
           $env:TMP = $temp
           Write-Host "TEMP and TMP: $temp (ANSI code page $([Text.Encoding]::Default.CodePage))"
           $installer = Get-Content -Raw -Encoding UTF8 .\install\install-windows.ps1
-          & ([scriptblock]::Create($installer)) -NonInteractive -Ref $env:INSTALL_REF -InstallRoot $env:SOULSTREAM_TEST_ROOT
+          & ([scriptblock]::Create($installer)) -NonInteractive -Lang ko -Ref $env:INSTALL_REF -InstallRoot $env:SOULSTREAM_TEST_ROOT
 
       - name: Check the running installation
         shell: pwsh
@@ -683,6 +683,7 @@ jobs:
           $login = @{ password = $password } | ConvertTo-Json -Compress
           $null = Invoke-WebRequest -Uri "http://127.0.0.1:5200/api/auth/password-login" -Method Post -ContentType "application/json" -Body $login -SessionVariable session -UseBasicParsing
           $folders = Invoke-RestMethod -Uri "http://127.0.0.1:5200/api/folders" -WebSession $session
+          # This job installs in Korean to verify the workspace name on PowerShell 5.1 regardless of the runner locale.
           if (@($folders.folders | Where-Object { $_.name -eq "작업실" }).Count -ne 1) { throw "The workspace folder is missing." }
           $bearer = (Select-String -LiteralPath (Join-Path $soul ".env.orch") -Pattern "^AUTH_BEARER_TOKEN=(.+)$").Matches[0].Groups[1].Value
           $nodes = Invoke-RestMethod -Uri "http://127.0.0.1:5200/api/nodes" -Headers @{ Authorization = "Bearer $bearer" }

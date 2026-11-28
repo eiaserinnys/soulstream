@@ -87,7 +87,7 @@ cleanup_temp_files() {
 usage() {
   printf 'Usage: install.sh [--backends claude,codex,antigravity] [--lang language] [--ref git-ref] [--atom-ref git-ref] [--worker-port port] [--public-url url] [--atom-public-url url] [--admin-password-file path | --set-admin-password] [--tailscale [--tailscale-auth-key-file path] [--tailscale-user login]] [--help]\n'
   printf '  --backends  comma-separated list of claude, codex, antigravity (default: claude,codex)\n'
-  printf '  --lang  installation language: ko|en|ja|zh-Hans when available (default: saved language or system locale)\n'
+  printf '  --lang  installation language: ko|en|ja|zh-Hans when available (default: saved language or LC_ALL, LC_MESSAGES, then LANG, with English then Korean as fallbacks)\n'
   printf '  --worker-port  loopback port of the worker, 1024-65534; its MCP port is the next one (default: 4205, or the port of the previous install)\n'
   printf '  --public-url  address the browser opens the dashboard at, such as http://127.0.0.1:15200 (password mode; default: the current address, or http://127.0.0.1:5200)\n'
   printf '  --atom-public-url  address the browser opens atom at, such as http://127.0.0.1:14200 (password mode; default: the current address, or http://127.0.0.1:4200)\n'

@@ -52,4 +52,4 @@ node install/seed/locales/tool.mjs check --lang en
 
 ## 설치 시 확인
 
-Bash는 `--lang <lang>`, Windows 전체 설치기는 `-Lang <lang>`을 받는다. 완성 언어만 설치할 수 있다. 옵션이 없으면 기존 atom seed state의 언어를 따른다. 새 설치의 기본값은 `LC_ALL`, `LANG` 순으로 확인한다. 한국어 로케일은 `ko`, 일본어는 `ja`, 중국어는 `zh-Hans`, 나머지는 `en`이다. 해당 언어가 미완성이면 `ko`를 사용한다. 터미널에 완성 언어가 둘 이상 있으면 설치기가 선택을 묻는다.
+Bash는 `--lang <lang>`, Windows 전체 설치기는 `-Lang <lang>`을 받는다. 완성 언어만 설치할 수 있다. 기존 atom seed state가 있으면 저장된 언어를 따르며, 다른 언어를 요청하면 설치를 멈춘다. 새 설치에서 언어를 지정하지 않으면 Windows는 표시 언어를, Linux와 macOS는 `LC_ALL`, `LC_MESSAGES`, `LANG` 순으로 확인한다. 한국어는 `ko`, 일본어는 `ja`, 번체 중국어는 `en`, 그 밖의 중국어는 `zh-Hans`다. 나머지 로케일과 빈 값은 `en`을 사용한다. 감지한 언어가 미완성이면 `en`이 완성됐을 때 `en`을, 그 전에는 `ko`를 사용한다. 터미널에 완성 언어가 둘 이상 있으면 설치기가 선택을 묻는다.

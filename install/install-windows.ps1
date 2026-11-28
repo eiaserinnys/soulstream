@@ -3,6 +3,7 @@
 # Usage, from an elevated PowerShell:
 #   irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install-windows.ps1 | iex
 #   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install-windows.ps1))) -WorkerPort 4305
+#   -Lang ko|en|ja|zh-Hans selects an available language. The default is the saved language or the Windows display language, with English then Korean as fallbacks.
 #
 # This script checks and installs the tools, prepares PostgreSQL 17, fetches the sources and starts Haniel from a logon
 # task. Secrets, configuration, databases, schema and atom setup are done by install/windows/setup.mjs.
@@ -323,6 +324,11 @@ if ($AtomPublicUrl) { $common += @("--atom-public-url", $AtomPublicUrl) }
 $prepare = @($setup, "prepare") + $common
 if ($AdminPasswordFile) { $prepare += @("--admin-password-file", (Resolve-Path -LiteralPath $AdminPasswordFile).Path) }
 if ($Lang) { $prepare += @("--lang", $Lang) }
+else {
+    $uiCulture = (Get-UICulture).Name
+    if (!$uiCulture) { $uiCulture = "C" }
+    $prepare += @("--ui-culture", $uiCulture)
+}
 if ($NonInteractive) { $prepare += @("--non-interactive", "true") }
 Invoke-Native "node" $prepare -InheritConsole:(-not $NonInteractive)
 Remove-Item Env:\SOULSTREAM_PG_PASSWORD
