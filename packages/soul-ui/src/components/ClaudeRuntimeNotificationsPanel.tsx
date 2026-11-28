@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useId, useState } from "react";
 import { Bell, Loader2, RefreshCw } from "lucide-react";
 
@@ -19,6 +20,7 @@ export function ClaudeRuntimeNotificationsPanel({
   tone = "default",
   variant = "default",
 }: ClaudeRuntimeNotificationsPanelProps) {
+  const { t } = useTranslation();
   const bodyId = useId();
   const [expanded, setExpanded] = useState(false);
   const { signals, loading, error, refresh } = useClaudeRuntimeSignals(sessionId);
@@ -38,7 +40,7 @@ export function ClaudeRuntimeNotificationsPanel({
     <Button
       variant="ghost"
       size="icon-xs"
-      title="새로고침"
+      title={t("ui.common.refresh")}
       disabled={loading}
       onClick={() => void refresh()}
     >
@@ -70,8 +72,8 @@ export function ClaudeRuntimeNotificationsPanel({
             title={
               <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
                 <Bell className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="shrink-0 font-medium">알림 {signals.visibleCount}</span>
-                {signals.hasError ? <span className="shrink-0 chat-tone-danger-text">오류 {signals.errorCount}</span> : null}
+                <span className="shrink-0 font-medium">{t("ui.runtime.notifications")} {signals.visibleCount}</span>
+                {signals.hasError ? <span className="shrink-0 chat-tone-danger-text">{t("ui.common.error")} {signals.errorCount}</span> : null}
               </span>
             }
             align="start"
@@ -98,7 +100,7 @@ export function ClaudeRuntimeNotificationsPanel({
         >
           <DisclosureActionIcon expanded={expanded} className="size-3.5" />
           <Bell className="size-4 text-muted-foreground" />
-          <span className="break-keep">런타임 신호</span>
+          <span className="break-keep">{t("ui.runtime.signals")}</span>
           <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
             {signals.visibleCount}
           </span>
@@ -106,7 +108,7 @@ export function ClaudeRuntimeNotificationsPanel({
             <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
               tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
             }`}>
-              오류 {signals.errorCount}
+              {t("ui.common.error")} {signals.errorCount}
             </span>
           ) : null}
         </button>

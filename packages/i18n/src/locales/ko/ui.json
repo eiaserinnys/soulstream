@@ -120,7 +120,9 @@
     "technicalDetails": "기술 상세",
     "cancel": "취소",
     "delete": "삭제",
-    "confirm": "확인"
+    "confirm": "확인",
+    "refresh": "새로고침",
+    "error": "오류"
   },
   "chatUi": {
     "appendUnavailable": "지금은 입력창에 더할 수 없어.",
@@ -202,5 +204,31 @@
     "quoteCopyFailed": "인용문을 복사하지 못했습니다",
     "copyQuote": "인용문 복사",
     "deleteDescription": "‘{{title}}’ 문서를 삭제하시겠습니까? 삭제한 문서는 되돌릴 수 없습니다."
+  },
+  "runtime": {
+    "notifications": "알림",
+    "signals": "런타임 신호",
+    "scheduleNotFound": "예약을 찾을 수 없습니다: {{id}}",
+    "scheduledPrompt": "예약된 프롬프트",
+    "noNextRun": "다음 실행 없음",
+    "schedules": "예약",
+    "mirror": "미러",
+    "remote": "원격",
+    "planMode": "계획 모드",
+    "planModeOff": "계획 모드 꺼짐",
+    "sdkTask": "SDK 작업",
+    "viewOutput": "출력 보기",
+    "stopTask": "중단",
+    "noOutput": "출력이 없습니다",
+    "backgroundTasks": "백그라운드 작업",
+    "keep": "유지",
+    "remove": "제거",
+    "worktreeModeOff": "워크트리 모드 꺼짐",
+    "worktreeMode": "워크트리 모드",
+    "backgroundBash": "백그라운드 Bash",
+    "backgroundAgent": "백그라운드 에이전트",
+    "task": "작업",
+    "nextRunAt": "다음 {{time}}",
+    "worktreeModeOffAction": "워크트리 모드 꺼짐 ({{action}})"
   }
 }

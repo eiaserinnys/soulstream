@@ -37,7 +37,7 @@ describe("ClaudeRuntimeSchedulesPanel presentation", () => {
 
   it("uses the manuscript icon cap and short date only in the caption variant", () => {
     const caption = render("caption");
-    const shortDate = new Date(nextRunAt).toLocaleString(undefined, {
+    const shortDate = new Date(nextRunAt).toLocaleString("ko", {
       month: "numeric",
       day: "numeric",
       hour: "numeric",
@@ -49,7 +49,7 @@ describe("ClaudeRuntimeSchedulesPanel presentation", () => {
     expect(caption).toContain('aria-label="새로고침"');
 
     const defaultMarkup = render("default");
-    expect(defaultMarkup).toContain(`다음 ${new Date(nextRunAt).toLocaleString()}`);
+    expect(defaultMarkup).toContain(`다음 ${new Date(nextRunAt).toLocaleString("ko")}`);
     expect(defaultMarkup).toContain("예약");
     expect(defaultMarkup).not.toContain("dashboard-icon-cap--small");
   });

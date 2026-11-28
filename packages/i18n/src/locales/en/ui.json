@@ -120,7 +120,9 @@
     "technicalDetails": "Technical details",
     "cancel": "Cancel",
     "delete": "Delete",
-    "confirm": "OK"
+    "confirm": "OK",
+    "refresh": "Refresh",
+    "error": "Error"
   },
   "chatUi": {
     "appendUnavailable": "Can’t add this to the input right now.",
@@ -202,5 +204,31 @@
     "quoteCopyFailed": "Couldn’t copy quote",
     "copyQuote": "Copy quote",
     "deleteDescription": "Delete ‘{{title}}’? You can’t undo this."
+  },
+  "runtime": {
+    "notifications": "Notifications",
+    "signals": "Runtime signals",
+    "scheduleNotFound": "Schedule not found: {{id}}",
+    "scheduledPrompt": "Scheduled prompt",
+    "noNextRun": "No next run",
+    "schedules": "Schedules",
+    "mirror": "Mirror",
+    "remote": "Remote",
+    "planMode": "Plan mode",
+    "planModeOff": "Plan mode off",
+    "sdkTask": "SDK task",
+    "viewOutput": "View output",
+    "stopTask": "Stop",
+    "noOutput": "No output",
+    "backgroundTasks": "Background tasks",
+    "keep": "Keep",
+    "remove": "Remove",
+    "worktreeModeOff": "Worktree mode off",
+    "worktreeMode": "Worktree mode",
+    "backgroundBash": "Background Bash",
+    "backgroundAgent": "Background agent",
+    "task": "Task",
+    "nextRunAt": "Next {{time}}",
+    "worktreeModeOffAction": "Worktree mode off ({{action}})"
   }
 }

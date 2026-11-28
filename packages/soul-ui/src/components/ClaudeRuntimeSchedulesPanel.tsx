@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useId, useMemo, useState } from "react";
 import { CalendarClock, Loader2, RefreshCw, Trash2 } from "lucide-react";
 
@@ -39,6 +40,7 @@ export function ClaudeRuntimeSchedulesPanel({
   tone = "default",
   variant = "default",
 }: ClaudeRuntimeSchedulesPanelProps) {
+  const { t, i18n } = useTranslation();
   const bodyId = useId();
   const [fetchedSchedules, setFetchedSchedules] = useState<ClaudeRuntimeScheduleView[]>([]);
   const [deletedScheduleIds, setDeletedScheduleIds] = useState<Set<string>>(() => new Set());
@@ -89,7 +91,7 @@ export function ClaudeRuntimeSchedulesPanel({
         setDeletedScheduleIds((current) => new Set([...current, scheduleId]));
         await refresh();
       } else {
-        setError(`예약을 찾을 수 없습니다: ${scheduleId}`);
+        setError(t("ui.runtime.scheduleNotFound", { id: scheduleId }));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -111,7 +113,7 @@ export function ClaudeRuntimeSchedulesPanel({
     <Button
       variant="ghost"
       size="icon-xs"
-      title="새로고침"
+      title={t("ui.common.refresh")}
       disabled={loading}
       onClick={() => void refresh()}
     >
@@ -121,7 +123,7 @@ export function ClaudeRuntimeSchedulesPanel({
 
   const captionRefreshButton = (
     <DashboardIconCap
-      label="새로고침"
+      label={t("ui.common.refresh")}
       size="small"
       appearance="bare"
       disabled={loading}
@@ -165,16 +167,16 @@ export function ClaudeRuntimeSchedulesPanel({
                   </span>
                 </div>
                 <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                  {schedule.prompt ?? schedule.cronExpression ?? "예약된 프롬프트"}
+                  {schedule.prompt ?? schedule.cronExpression ?? t("ui.runtime.scheduledPrompt")}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {schedule.nextRunAt ? formatDateTime(schedule.nextRunAt) : "다음 실행 없음"}
+                  {schedule.nextRunAt ? formatDateTime(schedule.nextRunAt, i18n.resolvedLanguage) : t("ui.runtime.noNextRun")}
                 </div>
               </div>
               <Button
                 variant="destructive-outline"
                 size="icon-xs"
-                title="삭제"
+                title={t("ui.common.delete")}
                 disabled={!canDelete || busy}
                 onClick={() => void removeSchedule(schedule.scheduleId)}
               >
@@ -197,9 +199,9 @@ export function ClaudeRuntimeSchedulesPanel({
             title={
               <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
                 <CalendarClock className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="shrink-0 font-medium">예약 {schedules.length}</span>
-                {nextRunAt ? <span className="min-w-0 truncate">다음 {formatCaptionDateTime(nextRunAt)}</span> : null}
-                {errorCount > 0 ? <span className="shrink-0 chat-tone-danger-text">오류 {errorCount}</span> : null}
+                <span className="shrink-0 font-medium">{t("ui.runtime.schedules")} {schedules.length}</span>
+                {nextRunAt ? <span className="min-w-0 truncate">{t("ui.runtime.nextRunAt", { time: formatCaptionDateTime(nextRunAt, i18n.resolvedLanguage) })}</span> : null}
+                {errorCount > 0 ? <span className="shrink-0 chat-tone-danger-text">{t("ui.common.error")} {errorCount}</span> : null}
               </span>
             }
             align="start"
@@ -226,20 +228,20 @@ export function ClaudeRuntimeSchedulesPanel({
         >
           <DisclosureActionIcon expanded={expanded} className="size-3.5" />
           <CalendarClock className="size-4 text-muted-foreground" />
-          <span className="break-keep">예약</span>
+          <span className="break-keep">{t("ui.runtime.schedules")}</span>
           <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
             {schedules.length}
           </span>
           {nextRunAt ? (
             <span className="truncate text-xs font-normal text-muted-foreground">
-              다음 {formatDateTime(nextRunAt)}
+              {t("ui.runtime.nextRunAt", { time: formatDateTime(nextRunAt, i18n.resolvedLanguage) })}
             </span>
           ) : null}
           {errorCount > 0 ? (
             <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
               tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
             }`}>
-              오류 {errorCount}
+              {t("ui.common.error")} {errorCount}
             </span>
           ) : null}
         </button>
@@ -265,16 +267,16 @@ function firstNextRunAt(schedules: ClaudeRuntimeScheduleView[]): string | null {
     .sort()[0] ?? null;
 }
 
-function formatDateTime(value: string): string {
+function formatDateTime(value: string, language: string | undefined): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+  return date.toLocaleString(language);
 }
 
-function formatCaptionDateTime(value: string): string {
+function formatCaptionDateTime(value: string, language: string | undefined): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(language, {
     month: "numeric",
     day: "numeric",
     hour: "numeric",
