@@ -21,7 +21,6 @@ import {
   type FolderSectionRefs,
 } from "./FolderSectionNavigation";
 import { FolderPanelHeader } from "./WorkspacePanelHeaders";
-import { FolderTodayToggle } from "./FolderTodayToggle";
 import "./v3-context-succession.css";
 import { useFolderStar } from "./use-folder-star";
 import { buildFolderSessionContextItems } from "./folder-session-context-items";
@@ -53,8 +52,6 @@ export function FolderDetailPane({
   onLoadMoreRuns,
   sessionDefaults,
   onReturnToToday,
-  folderInToday,
-  onToggleFolderToday,
   folderMoveTargets,
   onOpenSession,
   onRenameFolderTitle,
@@ -84,8 +81,6 @@ export function FolderDetailPane({
   onLoadMoreRuns(): Promise<void>;
   sessionDefaults: PageSessionDefaults | null;
   onReturnToToday(): void;
-  folderInToday: boolean;
-  onToggleFolderToday(): Promise<void>;
   folderMoveTargets: readonly PlannerFolder[];
   onOpenSession(session: SessionSummary): void;
   onRenameFolderTitle(title: string): Promise<void>;
@@ -173,7 +168,7 @@ export function FolderDetailPane({
       && runSessionLoadStates.get(focusRequest.sessionId) === "ready"
   );
   const folderStarLabel = `별표 ${folderStar.starred ? "해제" : "추가"}`;
-  const backLabel = parentFolder ? "상위 폴더로 이동" : "오늘 플래너로 돌아가기";
+  const backLabel = parentFolder ? "상위 폴더로 이동" : "전체 카드로 돌아가기";
   const goBack = () => parentFolder ? onOpenParent(parentFolder) : onReturnToToday();
   const actions = <>
     <DashboardIconCap
@@ -186,7 +181,6 @@ export function FolderDetailPane({
     >
       <Star className="h-4 w-4" fill={folderStar.starred ? "currentColor" : "none"} aria-hidden="true" />
     </DashboardIconCap>
-    <FolderTodayToggle inToday={folderInToday} onToggle={onToggleFolderToday} />
     <DashboardIconCap label="폴더 메뉴" onClick={(event) => setFolderMenu({ x: event.clientX, y: event.clientY })}>
       <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
     </DashboardIconCap>

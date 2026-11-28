@@ -27,37 +27,6 @@ describe("PageYjsHostClient", () => {
     });
   });
 
-  it("forwards agent provenance for lazy-create operations", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ page: page(), created: true }));
-    vi.stubGlobal("fetch", fetchMock);
-    const client = makeClient();
-
-    await client.getDailyPage({ actorSessionId: "session-1" });
-
-    expect(requestBody(fetchMock, 0)).toEqual({
-      actor_kind: "agent",
-      actor_session_id: "session-1",
-    });
-  });
-
-  it("forwards sessionless llm provenance without fabricating an actor session", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ page: page(), created: true }));
-    vi.stubGlobal("fetch", fetchMock);
-    const client = makeClient();
-
-    await client.getDailyPage({
-      actorKind: "llm",
-      actorSessionId: null,
-    });
-
-    expect(requestBody(fetchMock, 0)).toEqual({
-      actor_kind: "llm",
-      actor_session_id: null,
-    });
-  });
-
   it("surfaces the orch structured error without a local fallback", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       detail: {
@@ -97,10 +66,6 @@ function jsonResponse(value: unknown) {
     status: 200,
     headers: { "content-type": "application/json" },
   });
-}
-
-function requestBody(fetchMock: ReturnType<typeof vi.fn>, index: number) {
-  return JSON.parse((fetchMock.mock.calls[index]?.[1] as RequestInit).body as string);
 }
 
 function page() {

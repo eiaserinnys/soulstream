@@ -2,7 +2,7 @@ import { expect, test, type Page, type Request } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
-import { openV3DailyPlanner, openV3Folder } from "./v3-qa-entry";
+import { openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const BASE_URL = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -82,14 +82,6 @@ for (const theme of ["dark", "light"] as const) {
     await capture(page, outputDir, "04-task-full-history");
 
     await page.getByRole("button", { name: "상위 폴더로 이동" }).click();
-    // 첫 화면은 카드 홈이고, 일일 플래너는 기록 버튼으로 연다.
-    await openV3DailyPlanner(page, BASE_URL);
-    await page.getByRole("button", { name: "아침 정리", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "어제에서 넘어온 것" })).toBeVisible();
-    await expect(page.locator(".v3-ritual-card")).toBeVisible();
-    expect(apiRequests(requests, "/api/planner/daily-history")).toHaveLength(1);
-    await capture(page, outputDir, "05-ritual");
-
     expect(browserErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
   });

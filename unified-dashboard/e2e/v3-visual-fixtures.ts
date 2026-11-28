@@ -670,13 +670,8 @@ export async function installV3VisualQaRoutes(
           folder.parentFolderId === decodeURIComponent(unifiedChildrenMatch[1])), nextCursor: null });
       }
       if (path === "/api/planner/today" && request.method() === "GET") {
-        const daily = url.searchParams.get("date") === "2026-07-13" ? pageReads[pages.yesterday.id] : pageReads[pages.today.id];
-        const todayIds = url.searchParams.get("date") === "2026-07-13" ? ["rb-carry"] : ["rb-alpha", "rb-beta"];
         const cards=options.postitCards??[];
-        return fulfillJson(route, { attention: cards.filter(card=>card.status==="review"||card.status==="blocked"), running: cards.filter(card=>card.status==="running"), queued: cards.filter(card=>card.status==="queued"), daily, folders: todayIds.map((id) => {
-          const folder = unifiedFolders.find((candidate) => candidate.id === id)!;
-          return plannerFolderPayload(folder, folderPageById.get(id)!);
-        }), memoBlocks: daily.blocks.filter((item) => !item.text.startsWith("[[")),
+        return fulfillJson(route, { attention: cards.filter(card=>card.status==="review"||card.status==="blocked"), running: cards.filter(card=>card.status==="running"), queued: cards.filter(card=>card.status==="queued"),
         reviewSessionIds: qaSessions.filter((session) => session.reviewState === "needs_review")
           .map((session) => session.agentSessionId) });
       }
@@ -901,14 +896,6 @@ export async function installV3VisualQaRoutes(
         contentType: "image/svg+xml",
         body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#2563eb"/><circle cx="32" cy="25" r="12" fill="#dbeafe"/><path d="M14 57c2-13 10-19 18-19s16 6 18 19" fill="#dbeafe"/></svg>',
       });
-    }
-    if (path === "/api/pages/daily" && request.method() === "POST") {
-      const body = request.postDataJSON() as { date?: string };
-      const selected = body.date === "2026-07-13" ? pages.yesterday : pages.today;
-      return fulfillJson(route, { page: selected, created: false });
-    }
-    if (path === "/api/planner/daily-history" && request.method() === "GET") {
-      return fulfillJson(route, { dates: ["2026-07-13"] });
     }
     if (path === "/api/pages" && request.method() === "GET") {
       const items = url.searchParams.get("starred") === "true"

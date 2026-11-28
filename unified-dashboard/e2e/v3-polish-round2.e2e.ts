@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
-import { openV3DailyPlanner, openV3Folder } from "./v3-qa-entry";
+import { openV3Home, openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const BASE_URL = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -21,16 +21,12 @@ for (const theme of ["dark", "light"] as const) {
     // 그대로 두고 테스트 상한만 늘린다.
     test.setTimeout(300_000);
     await preparePage(page, theme, false);
-    await openV3DailyPlanner(page, BASE_URL);
+    await openV3Home(page, BASE_URL);
 
     await setWebgl(page, true);
     await expectGlobalToolbarChrome(page);
     await capture(page, theme, "00-v3-dashboard-toolbar");
 
-    await expect(page.locator(".v3-daily-memo")).toHaveAttribute("data-liquid-glass-webgl", "true");
-    await expect(page.locator(".v3-daily-memo")).toHaveCSS("border-radius", "16px");
-    await expect(page.locator(".v3-date-head h1")).toHaveCSS("font-weight", /7\d\d|8\d\d|900/);
-    await capture(page, theme, "01-today-planner");
     await setWebgl(page, false);
 
     await openV3Folder(page, BASE_URL);

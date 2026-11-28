@@ -18,7 +18,7 @@ export const pageHandlers = {
   get_backlinks: (o, a) => run(() => request(o, "get-backlinks", { page_id: a.page_id, kinds: a.kinds, cursor: a.cursor, include_self: a.include_self ?? false, limit: a.limit })),
   create_page: (o, a, c) => run(async () => {
     const actor = mutationActor(a, c);
-    const result = await request(o, "create-page", { page: { id: a.id ?? randomUUID(), title: a.title, daily_date: a.daily_date ?? null }, ...actor, idempotency_key: a.idempotency_key });
+    const result = await request(o, "create-page", { page: { id: a.id ?? randomUUID(), title: a.title }, ...actor, idempotency_key: a.idempotency_key });
     return { page: result.page, created: true, operation: result.operation };
   }),
   batch_page_operations: async (o, a, c) => {
@@ -28,7 +28,7 @@ export const pageHandlers = {
       const data = parsed.data;
       const actor = mutationActor(data, c);
       const result = await request(o, "batch-page-operations", {
-        ...(data.page ? { page: { id: data.page.id ?? randomUUID(), title: data.page.title, daily_date: data.page.daily_date ?? null } }
+        ...(data.page ? { page: { id: data.page.id ?? randomUUID(), title: data.page.title } }
           : { page_id: data.page_id!, expected_version: data.expected_version! }),
         operations: data.operations, ...actor, idempotency_key: data.idempotency_key,
       });
@@ -43,7 +43,7 @@ export const pageHandlers = {
       const actor = mutationActor(data, c);
       if (data.title) {
         const blocks = markdownToPageBlocks(data.markdown, { title: data.title, createId: randomUUID });
-        const result = await request(o, "create-page", { page: { id: randomUUID(), title: data.title, daily_date: null }, blocks, ...actor, idempotency_key: data.idempotency_key });
+        const result = await request(o, "create-page", { page: { id: randomUUID(), title: data.title }, blocks, ...actor, idempotency_key: data.idempotency_key });
         return { ...result, created: true };
       }
       const current = await request(o, "get-page", { page_id: data.page_id!, include_blocks: false });
@@ -52,7 +52,6 @@ export const pageHandlers = {
       return { ...result, created: false };
     });
   },
-  get_daily_page: (o, a, c) => run(() => request(o, "get-daily-page", { date: a.date, ...mutationActor(a, c) })),
 } satisfies Record<keyof typeof pageTools, McpToolHandler>;
 
 function mutationActor(args: Args, context: McpCallContext) {

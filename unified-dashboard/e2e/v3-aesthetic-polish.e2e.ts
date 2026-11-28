@@ -45,7 +45,7 @@ for (const theme of ["dark", "light"] as const) {
       await capture(page, theme, "04-task-board");
 
       await page.getByRole("button", { name: "상위 폴더로 이동" }).click();
-      await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
+      await page.getByRole("button", { name: "전체 카드로 돌아가기" }).click();
       const sessionRow = page.getByTestId("v3-session-row-run-alpha-2");
       await sessionRow.locator(".v3-run-open").click();
       // 인라인 폴더 패널과 작업 공간에 같은 내비게이션이 있다. 열린 작업 공간 쪽만 본다.

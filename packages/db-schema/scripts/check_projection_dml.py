@@ -19,6 +19,8 @@ EXEMPT_SQL_PATHS = frozenset(
         # atom nodes 7d002930-863d-46c7-8a06-2b3ecf87097d and
         # d3eb3f92-30fb-45e0-ba0f-00569eb50151.
         "packages/db-schema/sql/migrations/042_runbook_to_task.sql",
+        # The migration deletes the corresponding Y.Doc before its projection.
+        "packages/db-schema/sql/migrations/177_retire_daily_pages.sql",
     }
 )
 

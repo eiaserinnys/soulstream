@@ -10,14 +10,14 @@ describe("decideSessionPageEnrollment", () => {
       expected: { kind: "explicit_page" },
     },
     {
-      name: "browser speech enrolls in daily",
+      name: "browser source is excluded",
       input: { hasPageAnchor: false, callerSource: "browser" },
-      expected: { kind: "daily" },
+      expected: { kind: "excluded", reason: "non_human_source" },
     },
     {
-      name: "soul app speech enrolls in daily",
+      name: "soul app source is excluded",
       input: { hasPageAnchor: false, callerSource: "soul-app" },
-      expected: { kind: "daily" },
+      expected: { kind: "excluded", reason: "non_human_source" },
     },
     ...["agent", "system", "api", "llm", "slack", "channel_observer"].map((callerSource) => ({
       name: `${callerSource} automation is excluded`,

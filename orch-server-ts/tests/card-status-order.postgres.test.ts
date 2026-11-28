@@ -35,9 +35,8 @@ it("listPagedCards는 상태 묶음 안에서 상태 변경순이고 커서도 �
 });
 
 it("getToday는 attention·queued 안에서 상태 변경 시각순을 쓴다", async () => {
-  await h.sql`INSERT INTO pages(id,title,daily_date,version) VALUES ('order-day','데일리','2026-10-10',1)`;
   const planner = new PlannerRepository({ resolveSql: async () => h.liveSql, close: async () => {} });
-  const today = (await planner.getToday("2026-10-10"))!;
+  const today = (await planner.getToday())!;
   expect(today.attention.filter(c => ["o1", "o2", "o3", "bl"].includes(String(c.id))).map(c => c.id)).toEqual(["o2", "o3", "bl", "o1"]);
   expect(today.queued.filter(c => String(c.id).startsWith("q")).map(c => c.id)).toEqual(["q2", "q1"]);
 });

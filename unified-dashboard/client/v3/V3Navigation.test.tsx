@@ -46,22 +46,21 @@ describe("V3Navigation frame contract", () => {
   it("keeps a dedicated scroll body and removes legacy navigation decoration", () => {
     const html = renderToStaticMarkup(
       <V3Navigation
-        dates={[{ date: "2026-07-15", label: "오늘" }]}
-        selectedDate="2026-07-15"
+
         folders={[folder("project-a", "프로젝트 A")]}
         selectedFolderId={null}
         starredFolders={[]}
         starredFoldersHasMore={false}
         starredFoldersLoading={false}
-        todayFolderIds={new Set()}
+
         completedFolderIds={new Set()}
         onLoadMoreStarredFolders={vi.fn()}
         onReorderStarredFolders={vi.fn(async () => undefined)}
-        onSelectDate={vi.fn()}
+
         onSelectFolder={vi.fn()}
         onSelectStarredFolder={vi.fn()}
         onCompleteFolder={vi.fn(async () => undefined)}
-        onToggleFolderToday={vi.fn(async () => undefined)}
+
         onMoveFolderToParent={vi.fn()}
         onCreateProject={vi.fn(async (title, parentFolderId) => ({ status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
@@ -81,22 +80,21 @@ describe("V3Navigation frame contract", () => {
   it("labels the folder list and its empty state as folders", () => {
     const html = renderToStaticMarkup(
       <V3Navigation
-        dates={[{ date: "2026-07-15", label: "오늘" }]}
-        selectedDate="2026-07-15"
+
         folders={[]}
         selectedFolderId={null}
         starredFolders={[]}
         starredFoldersHasMore={false}
         starredFoldersLoading={false}
-        todayFolderIds={new Set()}
+
         completedFolderIds={new Set()}
         onLoadMoreStarredFolders={vi.fn()}
         onReorderStarredFolders={vi.fn(async () => undefined)}
-        onSelectDate={vi.fn()}
+
         onSelectFolder={vi.fn()}
         onSelectStarredFolder={vi.fn()}
         onCompleteFolder={vi.fn(async () => undefined)}
-        onToggleFolderToday={vi.fn(async () => undefined)}
+
         onMoveFolderToParent={vi.fn()}
         onCreateProject={vi.fn(async (title, parentFolderId) => ({ status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
@@ -115,8 +113,7 @@ describe("V3Navigation frame contract", () => {
   it("keeps task opening separate from an accessible drag handle", () => {
     const html = renderToStaticMarkup(
       <V3Navigation
-        dates={[]}
-        selectedDate="2026-07-15"
+
         folders={[]}
         catalogLoadError="목록 불러오기 실패"
         selectedFolderId={null}
@@ -132,15 +129,15 @@ describe("V3Navigation frame contract", () => {
         } as never]}
         starredFoldersHasMore={true}
         starredFoldersLoading={false}
-        todayFolderIds={new Set()}
+
         completedFolderIds={new Set()}
         onLoadMoreStarredFolders={vi.fn()}
         onReorderStarredFolders={vi.fn(async () => undefined)}
-        onSelectDate={vi.fn()}
+
         onSelectFolder={vi.fn()}
         onSelectStarredFolder={vi.fn()}
         onCompleteFolder={vi.fn(async () => undefined)}
-        onToggleFolderToday={vi.fn(async () => undefined)}
+
         onMoveFolderToParent={vi.fn()}
         onCreateProject={vi.fn(async (title, parentFolderId) => ({ status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
@@ -160,8 +157,7 @@ describe("V3Navigation frame contract", () => {
   it("opens the folder context menu from the drag handle", () => {
     flushSync(() => root.render(
       <V3Navigation
-        dates={[]}
-        selectedDate="2026-07-15"
+
         folders={[{ ...folder("folder-starred-a", "중요 작업 A"), projectPageId: "starred-a" }]}
         selectedFolderId={null}
         starredFolders={[{
@@ -176,15 +172,15 @@ describe("V3Navigation frame contract", () => {
         } as never]}
         starredFoldersHasMore={false}
         starredFoldersLoading={false}
-        todayFolderIds={new Set()}
+
         completedFolderIds={new Set()}
         onLoadMoreStarredFolders={vi.fn()}
         onReorderStarredFolders={vi.fn(async () => undefined)}
-        onSelectDate={vi.fn()}
+
         onSelectFolder={vi.fn()}
         onSelectStarredFolder={vi.fn()}
         onCompleteFolder={vi.fn(async () => undefined)}
-        onToggleFolderToday={vi.fn(async () => undefined)}
+
         onMoveFolderToParent={vi.fn()}
         onCreateProject={vi.fn(async (title, parentFolderId) => ({ status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}

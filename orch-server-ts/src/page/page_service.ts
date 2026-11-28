@@ -58,7 +58,6 @@ export interface PageServiceRepository extends PageYjsPersistenceRepository {
     pageId: string,
   ): Promise<{ pageCreatedAt: Date; pageUpdatedAt: Date } | null>;
   findPageIdByTitle(title: string): Promise<string | null>;
-  findPageIdByDailyDate(date: string): Promise<string | null>;
   listPages(input: {
     starred?: boolean;
     cursor?: string;
@@ -82,8 +81,6 @@ export interface PageYjsServiceConfig {
   repository: PageServiceRepository;
   mutationCore?: PageMutationCore;
   createOperationId?: () => string;
-  createPageId?: () => string;
-  now?: () => Date;
   logger?: FastifyBaseLogger;
   onPageUpdated?: PageUpdatedObserver;
   mutateFolderIdentity?: (
@@ -106,28 +103,17 @@ export interface PageServiceMutationResult extends PageServiceReadResult {
   idempotent?: boolean;
 }
 
-export interface PageServiceDailyResult {
-  page: PageDto;
-  created: boolean;
-  operation?: PageOperationRecord;
-}
-
 export class PageYjsService {
   private closePromise: Promise<void> | undefined;
   private readonly mutationCore: PageMutationCore;
   private readonly createOperationId: () => string;
-  private readonly createPageId: () => string;
-  private readonly now: () => Date;
   private readonly mutex = new PageAsyncMutex();
-  private readonly dailyMutex = new PageAsyncMutex();
   private readonly hocuspocus: Hocuspocus;
   private readonly persistence: PageYjsPersistence;
 
   constructor(private readonly config: PageYjsServiceConfig) {
     this.mutationCore = config.mutationCore ?? new PageMutationCore();
     this.createOperationId = config.createOperationId ?? randomUUID;
-    this.createPageId = config.createPageId ?? randomUUID;
-    this.now = config.now ?? (() => new Date());
     this.persistence = createPageYjsPersistence(config.repository, this.mutex, {
       withDocumentAccess: config.documentGate ? action => config.documentGate!.run(action) : undefined,
       onFailure: ({ documentName, attempts, error }) => {
@@ -298,28 +284,6 @@ export class PageYjsService {
     return await this.config.repository.getPageBacklinks(input);
   }
 
-  async getDailyPage(input: {
-    date?: string;
-    actor: CreatePageMutationInput["actor"];
-  }): Promise<PageServiceDailyResult> {
-    const date = input.date ?? kstDate(this.now());
-    return await this.dailyMutex.runExclusive(date, async () => {
-      const existingId = await this.config.repository.findPageIdByDailyDate(date);
-      if (existingId) return { page: (await this.getPage(existingId)).page, created: false };
-      const created = await this.createPage({
-        page: {
-          id: this.createPageId(),
-          title: dailyPageTitle(date),
-          dailyDate: date,
-          metadata: {},
-        },
-        actor: input.actor,
-        idempotencyKey: `get_daily_page:KST:${date}`,
-      });
-      return { page: created.page, operation: created.operation, created: true };
-    });
-  }
-
   decodeSnapshot(snapshot: Uint8Array): Y.Doc {
     const document = new Y.Doc();
     Y.applyUpdate(document, snapshot);
@@ -380,23 +344,6 @@ export class PageYjsService {
 
 }
 
-function kstDate(now: Date): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(now);
-  const value = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? "";
-  return `${value("year")}-${value("month")}-${value("day")}`;
-}
-
-function dailyPageTitle(date: string): string {
-  const [year, month, day] = date.split("-").map(Number);
-  return `${year}년 ${month}월 ${day}일`;
-}
-
 export function toMutationResult(
   replica: PageYjsReplica,
   mapping: Record<string, string>,
@@ -418,7 +365,7 @@ function toReadResult(
     page: {
       id: replica.page.id,
       title: replica.page.title,
-      daily_date: replica.page.dailyDate,
+      daily_date: null,
       version: replica.page.mutationVersion,
       archived: replica.page.archived,
       metadata: replica.page.metadata,

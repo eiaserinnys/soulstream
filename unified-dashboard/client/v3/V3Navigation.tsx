@@ -35,18 +35,11 @@ import {
 } from "./context-menu-model";
 import { starredFolderPage, type StarredPlannerFolder } from "./planner-data";
 
-export interface PlannerDateNavItem {
-  date: string;
-  label: string;
-}
-
 type MenuState =
   | { target: V3ContextMenuTarget; kind: "starred_folder"; task: StarredPlannerFolder }
   | { target: V3ContextMenuTarget; kind: "folder"; folder: CatalogFolder };
 
 export function V3Navigation({
-  dates,
-  selectedDate,
   onSelectHome,
   homeSelected=false,
   folders,
@@ -55,15 +48,12 @@ export function V3Navigation({
   starredFolders,
   starredFoldersHasMore,
   starredFoldersLoading,
-  todayFolderIds,
   completedFolderIds,
   onLoadMoreStarredFolders,
   onReorderStarredFolders,
-  onSelectDate,
   onSelectFolder,
   onSelectStarredFolder,
   onCompleteFolder,
-  onToggleFolderToday,
   onMoveFolderToParent,
   onCreateProject,
   onRenameProject,
@@ -71,25 +61,20 @@ export function V3Navigation({
   onReorderProjects,
   projectHasContents,
 }: {
-  dates: readonly PlannerDateNavItem[];
   onSelectHome?():void;
   homeSelected?:boolean;
-  selectedDate: string;
   folders: readonly CatalogFolder[];
   catalogLoadError?: string | null;
   selectedFolderId: string | null;
   starredFolders: readonly StarredPlannerFolder[];
   starredFoldersHasMore: boolean;
   starredFoldersLoading: boolean;
-  todayFolderIds: ReadonlySet<string>;
   completedFolderIds: ReadonlySet<string>;
   onLoadMoreStarredFolders(): void;
   onReorderStarredFolders(movedPageId: string, orderedPageIds: readonly string[]): Promise<void>;
-  onSelectDate(date: string): void;
   onSelectFolder(folder: CatalogFolder): void;
   onSelectStarredFolder(folder: StarredPlannerFolder): void;
   onCompleteFolder(task: StarredPlannerFolder): Promise<void>;
-  onToggleFolderToday(task: StarredPlannerFolder): Promise<void>;
   onMoveFolderToParent(task: StarredPlannerFolder): void;
   onCreateProject(title: string, parentFolderId: string | null): Promise<CatalogFolder>;
   onRenameProject(folder: CatalogFolder, title: string): Promise<void>;
@@ -201,14 +186,6 @@ export function V3Navigation({
       setPendingFolderId(null);
     }
   };
-  const toggleFolderToday = async (folder: CatalogFolder) => {
-    if (!folder.projectPageId || isSystemFolderId(folder.id)) return;
-    try {
-      await onToggleFolderToday((await api.getPage(folder.projectPageId)).page);
-    } catch (cause) {
-      setError(`오늘 목록 변경 실패 · ${errorText(cause)}`);
-    }
-  };
   const starredContextFolder = contextMenu?.kind === "starred_folder"
     ? folders.find((folder) => folder.projectPageId === starredFolderPage(contextMenu.task).id)
     : null;
@@ -222,21 +199,6 @@ export function V3Navigation({
     >
       <div className="v3-navigation-scroll" data-testid="v3-navigation-scroll">
       {onSelectHome?<><h2>카드</h2><div className="v3-nav-list"><button type="button" className={homeSelected?"is-active":""} onClick={onSelectHome}><span className="v3-emoji" aria-hidden="true">▦</span><span>전체 카드</span></button></div></>:null}
-      <h2>기록</h2>
-      <div className="v3-nav-list">
-        {dates.map((item) => (
-          <button
-            type="button"
-            key={item.date}
-            className={!homeSelected && selectedFolderId === null && selectedDate === item.date ? "is-active" : ""}
-            onClick={() => onSelectDate(item.date)}
-          >
-            <span className="v3-emoji" aria-hidden="true">📅</span>
-            <span>{item.label}</span>
-          </button>
-        ))}
-      </div>
-
       <h2>중요 작업</h2>
       <DashboardDndProvider
         collisionDetection={pointerFirstCollisionDetection}
@@ -312,14 +274,12 @@ export function V3Navigation({
         actions={contextMenu?.kind === "starred_folder" && starredContextFolder ? buildFolderContextMenuActions({
           starred: folderStarredState(starredFolderPage(contextMenu.task).id, folderStarChanges, true),
           completed: completedFolderIds.has(starredFolderPage(contextMenu.task).id),
-          inToday: todayFolderIds.has(starredFolderPage(contextMenu.task).id),
         }, {
           open: () => onSelectStarredFolder(contextMenu.task),
           copyId: () => navigator.clipboard.writeText(starredContextFolder.id),
           toggleStar: () => clearFolderStar(contextMenu.task),
           moveToParent: () => onMoveFolderToParent(contextMenu.task),
           complete: () => onCompleteFolder(contextMenu.task),
-          toggleToday: () => onToggleFolderToday(contextMenu.task),
         }) : contextMenu?.kind === "folder" ? buildProjectContextMenuActions({
           open: () => onSelectFolder(contextMenu.folder),
           copyId: () => navigator.clipboard.writeText(contextMenu.folder.id),
@@ -329,8 +289,6 @@ export function V3Navigation({
         }).concat(contextMenu.folder.projectPageId && !isSystemFolderId(contextMenu.folder.id) ? [
           { label: starredFolderIds.includes(contextMenu.folder.projectPageId) ? "별표 해제" : "별표 추가",
             onSelect: () => toggleFolderStar(contextMenu.folder) },
-          { label: todayFolderIds.has(contextMenu.folder.projectPageId) ? "오늘에서 제외" : "오늘에 추가",
-            onSelect: () => toggleFolderToday(contextMenu.folder) },
         ] : []) : []}
       />
       <ProjectDialog

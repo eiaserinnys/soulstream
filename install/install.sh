@@ -595,7 +595,6 @@ pas_disallowed_tools_yaml() {
       - mcp__soulstream__create_page
       - mcp__soulstream__upsert_page_markdown
       - mcp__soulstream__batch_page_operations
-      - mcp__soulstream__get_daily_page
       - mcp__soulstream__move_board_item_to_folder
       - mcp__soulstream__update_board_item_position
       - mcp__soulstream__create_custom_view

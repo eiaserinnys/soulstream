@@ -107,15 +107,13 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       targetBlockId: null,
       targetExpectedVersion: null,
       initialPageState: "pending" as const,
-      dailyDate: "2026-07-13",
       sessionType: "claude",
       legacyFolderId: null,
     };
     const first = await repository.enqueue(input);
-    const duplicate = await repository.enqueue({ ...input, dailyDate: "2026-07-14" });
-    expect(first.daily_date).toBe("2026-07-13");
+    const duplicate = await repository.enqueue(input);
     expect(first.page_state).toBe("pending");
-    expect(duplicate.daily_date).toBe("2026-07-13");
+    expect(duplicate.session_id).toBe(first.session_id);
     expect(await repository.listDue("node-1")).toHaveLength(1);
 
     await harness!.sql`
@@ -410,7 +408,6 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       targetBlockId: "block-target",
       targetExpectedVersion: 7,
       initialPageState: "pending",
-      dailyDate: "2026-07-13",
       sessionType: "claude",
       legacyFolderId: null,
     });

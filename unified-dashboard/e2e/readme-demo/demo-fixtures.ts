@@ -334,7 +334,6 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
       const item = folders.find((folder) => folder.id === folderId)!;
       return json({ items: [{ folder: item, page: pageDto(pageIds.aurora, item.name), itemCounts: { running: 1, review: 1, blocked: 1, queued: 1 }, itemTotal: 5, completedItemCount: 1, assignee: "노바" }], nextCursor: null });
     }
-    if (path.startsWith("/api/planner/daily-history")) return json({ dates: [] });
     if (path === `/api/planner/folders/${folderId}?includeCompleted=false` || path === `/api/planner/folders/${folderId}`) {
       const parent = folders.find((folder) => folder.id === folderId)!;
       return json({

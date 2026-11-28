@@ -170,7 +170,7 @@ card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 pers
 
 ## 앱 PAS 카드 상세와 복귀 (N5)
 
-`PersistentSessionScreen`의 cards scene은 기존 `PersistentSessionTaskList`와 `CardDetailContent variant="readSummary"`를 조합한다. 읽기 요약의 「카드 열기」는 phone PersistentStack.CardDetail 또는 tablet Main/PersistentSession/CardDetail native stack에 같은 카드 id를 전달한다. tablet CardDetail은 transparentModal로 기존 folder-workspace-layout의 카드 칸 폭과 glassSoft 표면을 재사용한다. 일반 FolderWorkspaceReadOverlay 호스트는 담당 세션을 자동 선택하므로 PAS에서 호출하지 않고 CardDetailContent inline을 직접 사용한다. 실제 상세는 기존 `PhoneCardDetail`/`CardDetailContent`이며 닫으면 goBack으로 동일 PAS·scene·선택 카드에 복귀한다. 일반 Daily/Folder의 CardDetail 계약은 유지한다.
+`PersistentSessionScreen`의 cards scene은 기존 `PersistentSessionTaskList`와 `CardDetailContent variant="readSummary"`를 조합한다. 읽기 요약의 「카드 열기」는 phone PersistentStack.CardDetail 또는 tablet Main/PersistentSession/CardDetail native stack에 같은 카드 id를 전달한다. tablet CardDetail은 transparentModal로 기존 folder-workspace-layout의 카드 칸 폭과 glassSoft 표면을 재사용한다. 일반 FolderWorkspaceReadOverlay 호스트는 담당 세션을 자동 선택하므로 PAS에서 호출하지 않고 CardDetailContent inline을 직접 사용한다. 실제 상세는 기존 `PhoneCardDetail`/`CardDetailContent`이며 닫으면 goBack으로 동일 PAS·scene·선택 카드에 복귀한다. 일반 폴더의 CardDetail 계약은 유지한다.
 
 앱 CardDetailContent는 담당 세션 메타를 읽고 FolderSessionHistory에 목록을 전달한다. 목록의 세션 조회는 sessionStore 메타만 merge하며 담당 세션을 자동 선택하지 않는다. useChatStore 표시 설정·이벤트와 UI 활성 세션을 변경하는 경로가 없다. 세션 행을 직접 누를 때만 openSession 콜백을 실행하여 PAS를 떠나 기존 일반 대화 진입 helper로 연다. 카드 커멘트 초안은 card-comment 키, 첨부는 그 composer의 로컬 훅 상태여서 PAS ChatBody 초안과 분리돼 있다. PAS ChatBody는 상세를 열고 닫는 동안 스택 아래에 같은 session id로 마운트되어 있다.
 

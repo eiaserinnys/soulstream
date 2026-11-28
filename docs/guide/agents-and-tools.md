@@ -60,7 +60,7 @@ The control plane tracks active worktree leases so two concurrent sessions canno
 
 Soulstream provides two document surfaces inside folders:
 
-- **Collaborative pages**: backed by Y.Doc snapshots in PostgreSQL (`packages/page-model`) and projected to structured blocks. Agents read and update pages with `get_page`, `find_page`, `get_page_markdown`, `get_backlinks`, `create_page`, `upsert_page_markdown`, `batch_page_operations`, and `get_daily_page`. See [`docs/task-page-invariants.md`](../task-page-invariants.md).
+- **Collaborative pages**: backed by Y.Doc snapshots in PostgreSQL (`packages/page-model`) and projected to structured blocks. Agents read and update pages with `get_page`, `find_page`, `get_page_markdown`, `get_backlinks`, `create_page`, `upsert_page_markdown`, `batch_page_operations`. See [`docs/task-page-invariants.md`](../task-page-invariants.md).
 - **Folder markdown documents**: lightweight board documents managed via `create_markdown_document`, `get_markdown_document`, `update_markdown_document`, and `delete_markdown_document`.
 
 ## Recurring jobs

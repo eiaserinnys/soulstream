@@ -60,10 +60,10 @@ describe("PlannerFolderCard node connectivity", () => {
           createdAt: "2026-07-16T00:00:00Z",
         } as SessionSummary]}
         nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["node-online"]) }}
-        isInToday
+
         onOpen={() => undefined}
         onComplete={async () => undefined}
-        onToggleToday={async () => undefined}
+
         onMoveToParent={() => undefined}
       />,
     );
@@ -97,10 +97,10 @@ describe("PlannerFolderCard node connectivity", () => {
           createdAt: "2026-07-16T00:00:00Z",
         } as SessionSummary]}
         nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["node-online"]) }}
-        isInToday
+
         onOpen={() => undefined}
         onComplete={async () => undefined}
-        onToggleToday={async () => undefined}
+
         onMoveToParent={() => undefined}
       />,
     );
@@ -131,10 +131,10 @@ describe("PlannerFolderCard node connectivity", () => {
           createdAt: "2026-07-16T00:00:00Z",
         } as SessionSummary]}
         nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["node-online"]) }}
-        isInToday
+
         onOpen={() => undefined}
         onComplete={async () => undefined}
-        onToggleToday={async () => undefined}
+
         onMoveToParent={() => undefined}
       />,
     );
@@ -158,10 +158,10 @@ describe("PlannerFolderCard node connectivity", () => {
         } as never}
         sessions={[]}
         nodeConnectivity={{ ready: true, connectedNodeIds: new Set() }}
-        isInToday
+
         onOpen={() => undefined}
         onComplete={async () => undefined}
-        onToggleToday={async () => undefined}
+
         onMoveToParent={() => undefined}
       />,
     );

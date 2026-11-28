@@ -33,10 +33,10 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); window.history.replaceState(null, "", "/"); });
 
-it("covers all 47 actual variants exactly once in the requested shape groups", () => {
+it("covers all 46 actual variants exactly once in the requested shape groups", () => {
   const ids = webDialogueGroups.flatMap(group => group.ids);
-  expect(ids).toHaveLength(47);
-  expect(new Set(ids).size).toBe(47);
+  expect(ids).toHaveLength(46);
+  expect(new Set(ids).size).toBe(46);
   expect([...ids].sort()).toEqual(dialoguesInventory.map(item => item.id).sort());
   expect(webDialogueGroups.find(group => group.id === "expand")?.ids).toContain("card-attachments");
   expect(dialoguesInventory.find(item => item.id === "card-attachments")?.name).toBe("카드 첨부 미리보기");

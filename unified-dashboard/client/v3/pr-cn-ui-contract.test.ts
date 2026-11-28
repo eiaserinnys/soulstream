@@ -4,38 +4,23 @@ import { describe, expect, it } from "vitest";
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 describe("PR-CN planner polish contract", () => {
-  it("moves planner actions into their owning headers and renames starred work", () => {
+  it("keeps folder creation and card sections in their owning surfaces", () => {
     const layout = read("./V3DashboardLayout.tsx");
     const toolbar = read("./V3GlobalToolbar.tsx");
-    const views = read("./PlannerViews.tsx");
+    const home = read("./CardHome.tsx");
     const navigation = read("./V3Navigation.tsx");
-    const morningRitualAction = views.match(/<DashboardIconCap\b[^>]*label="아침 정리"[^>]*>/)?.[0] ?? "";
 
-    expect(toolbar).not.toContain("onOpenRitual");
     expect(toolbar).not.toContain("onOpenNewTask");
-    expect(morningRitualAction).toContain('label="아침 정리"');
-    expect(morningRitualAction).toContain("onClick={onOpenRitual}");
-    expect(views).toContain("<CardInbox folders={folders} />");
-    expect(views).toContain("<CardHandoff folders={folders} />");
+    expect(home).not.toContain("역대 폴더");
     expect(navigation).toMatch(/label="새 폴더"[\s\S]*?onClick=\{\(\) => \{ setProjectDialog\(\{ mode: "create", parentFolderId: null, parentName: null \}\); setError\(null\); \}\}/);
     expect(navigation).toContain("target={projectDialog}");
     expect(navigation).toContain("onCreateIdentity={onCreateProject}");
     expect(layout).toContain('createLabel="새 폴더"');
-    expect(views).not.toContain("역대 폴더");
     expect(layout).toContain("folderSessions.state?.items.map");
-    expect(layout).toContain("onOpenRitual={() => setRitualOpen(true)}");
     expect(navigation).toContain("<h2>중요 작업</h2>");
     expect(navigation).not.toContain("<h2>★ 작업</h2>");
-    expect(navigation).toContain('<span className="v3-emoji" aria-hidden="true">📅</span>');
-  });
-
-  it("keeps memo semantics while removing its visible title", () => {
-    const memo = read("./DailyMemo.tsx");
-    const views = read("./PlannerViews.tsx");
-
-    expect(memo).not.toContain('className="v3-memo-label"');
-    expect(memo).toContain('ariaLabel={index === 0 ? "오늘 메모"');
-    expect(views).toContain('<div className="v3-planner-column v3-planner-column--daily">');
+    expect(home).toContain("<CardInbox");
+    expect(home).toContain("<CardHandoff");
   });
 
   it("removes session-only guidance and reuses the attachment submission contract", () => {
@@ -49,16 +34,5 @@ describe("PR-CN planner polish contract", () => {
     expect(modal).toContain("/api/attachments/sessions?nodeId=");
     expect(modal).toContain("resetLocal");
     expect(modal).toContain("cancel");
-  });
-
-  it("keeps the morning ritual on daily membership and never requests task completion", () => {
-    const ritual = read("./RitualModal.tsx");
-    const model = read("./ritual-model.ts");
-    const browserPort = read("./ritual-browser-port.ts");
-
-    expect(ritual).toContain("데일리에서 내리기");
-    expect(ritual).not.toContain("완료 처리");
-    expect(model).not.toContain("completeFolder");
-    expect(browserPort).not.toContain("postFolderStatus");
   });
 });

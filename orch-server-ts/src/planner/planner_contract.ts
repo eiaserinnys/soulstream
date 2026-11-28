@@ -35,9 +35,6 @@ export interface PlannerTodayDto {
   attention: Record<string, unknown>[];
   running: Record<string, unknown>[];
   queued: Record<string, unknown>[];
-  daily: { page: PageDto; blocks: PlannerBlockDto[]; state_vector: string };
-  folders: PlannerFolderDto[];
-  memoBlocks: PlannerBlockDto[];
   reviewSessionIds: string[];
 }
 
@@ -50,18 +47,15 @@ export interface PlannerFolderDetailDto {
   sessions: PlannerPageSlice<PlannerSessionDto>;
 }
 
-export interface PlannerDailyHistoryDto { dates: string[] }
 export interface PlannerPageInput { cursor?: string; limit: number }
 export const PLANNER_READ_PAGE_LIMITS = {
   starredFolders: { default: 50, max: 100 },
-  dailyHistory: { default: 2, max: 10 },
   folder: { default: 20, max: 50 },
 } as const;
 
 export interface PlannerReadProvider {
   getStarredFolders(input: PlannerPageInput): Promise<PlannerPageSlice<PlannerFolderDto>>;
-  getDailyHistory(input: { before: string; limit: number }): Promise<PlannerDailyHistoryDto>;
-  getToday(date: string): Promise<PlannerTodayDto | null>;
+  getToday(): Promise<PlannerTodayDto>;
   getFolder(folderId: string, input: { limit: number; includeCompleted?: boolean }): Promise<PlannerFolderDetailDto | null>;
   getSubfolders(folderId: string, input: PlannerPageInput): Promise<PlannerPageSlice<Record<string, unknown>>>;
   getSessions(folderId: string, input: PlannerPageInput): Promise<PlannerPageSlice<PlannerSessionDto>>;

@@ -22,8 +22,6 @@
 | 카드 커멘트·실제 서술형 질문 답변 / CardDetailContent | card-comment / cardId | 커멘트·답변 저장 성공 |
 | 카드 요청 / CardCreateSheet | card-request / 호출 folderId 또는 all | 카드 생성 성공 |
 | 서술형 재실행 사유 / CardStatusMenu | card-reason / cardId | 상태 변경 성공 |
-| 기존 메모 / DailyMemo.MemoBlock | daily-memo / blockId | 기존 자동·명시 저장 성공 또는 명시 취소 |
-| 신규 메모 / DailyMemo | daily-memo-new / 날짜, daily pageId | 새 메모 저장 성공 |
 | 폴더 설명 / FolderWorkspace | folder-description / folderId | 설명 저장 성공 또는 태블릿 명시 취소 |
 | 새 폴더 설명 / NewFolderSheet | folder-create-description / 부모 projectPageId 또는 root | 폴더 생성 성공 |
 | 새 폴더 초기 지침 / InitialFolderContextEditor → NewFolderSheet | folder-create-guidance / 부모 projectPageId 또는 root | 폴더 생성 성공 |
@@ -31,7 +29,6 @@
 | 승계 초기 지시 / SessionSuccessionSheet | session-succession / sourceSessionId 또는 folderId | 세션 생성 성공 |
 | 반복작업 지시 본문 / RecurringJobEditor | recurring-prompt / jobId 또는 new | 폼 저장 성공; 활성화만 바꾸는 동작은 제거하지 않음 |
 
-데일리 API에는 folderId가 없으므로 신규 메모는 실제 날짜별 `daily.page.id`와 날짜로 구분합니다. 날짜는 메모의 대상이며 날짜 필터를 저장하는 기능은 추가하지 않습니다.
 
 대화는 기존 optimistic 표시와 첨부 정리를 유지합니다. 전송 시작 시 입력창과 영속 초안을 함께 비우며, 실패한 글은 실패 말풍선의 되돌리기로 입력창과 초안에 복원합니다. 자동 재전송·outbox는 추가하지 않습니다. 메모·폴더 설명·프로젝트 지침은 기존 `mergeServerDraft`와 저장 큐 정책을 유지합니다.
 

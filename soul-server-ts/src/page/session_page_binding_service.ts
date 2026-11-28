@@ -17,7 +17,6 @@ import type { SessionPageBindingRow } from "@soulstream/mcp-contract";
 
 interface PageBindingPort {
   getPage: PageYjsHostClient["getPage"];
-  getDailyPage: PageYjsHostClient["getDailyPage"];
   batchPageOperations: PageYjsHostClient["batchPageOperations"];
 }
 
@@ -55,7 +54,6 @@ export class SessionPageBindingService implements TaskCreationHook {
       targetBlockId: params.pageAnchor?.blockId ?? null,
       targetExpectedVersion: params.pageAnchor?.expectedVersion ?? null,
       initialPageState: enrollment.kind === "excluded" ? "bound" : "pending",
-      dailyDate: kstDate(this.deps.now?.() ?? new Date()),
       sessionType: params.sessionType ?? "claude",
       legacyFolderId: params.folderId ?? null,
     });
@@ -141,6 +139,10 @@ export class SessionPageBindingService implements TaskCreationHook {
   }
 
   private async reconcileLatest(binding: SessionPageBindingRow, pageOnly: boolean): Promise<void> {
+    if (binding.page_state === "pending" && !binding.target_page_id) {
+      await this.deps.repository.markPageBound(binding.session_id);
+      binding = { ...binding, page_state: "bound" };
+    }
     if (binding.page_state === "pending") {
       try {
         await this.withTimeout(this.bindPrimaryPage(binding), "primary page binding");
@@ -180,25 +182,6 @@ export class SessionPageBindingService implements TaskCreationHook {
       });
       return;
     }
-    const daily = await this.deps.pageHost.getDailyPage({
-      date: binding.daily_date,
-      actorSessionId: binding.session_id,
-    });
-    await this.deps.pageHost.batchPageOperations({
-      page_id: daily.page.id,
-      expected_version: daily.page.version,
-      operations: [{
-        op: "create_block",
-        temp_id: `session-ref-${binding.session_id}`,
-        parent_id: null,
-        after_block_id: null,
-        block_type: "session_ref",
-        text: `[[${daily.page.title}]]`,
-        properties: { sessionId: binding.session_id, primary: true },
-      }],
-      actor_session_id: binding.session_id,
-      idempotency_key: `session-page-binding:${binding.session_id}:primary`,
-    });
   }
 
   private async recordFailure(
@@ -208,10 +191,9 @@ export class SessionPageBindingService implements TaskCreationHook {
   ): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
     const conflict = /\b409\b|conflict/i.test(message);
-    const dailyCasRace = step === "page" && binding.target_page_id === null && conflict;
     const manualRepair = err instanceof ManualRepairError
       || /\b(401|403|404)\b|unauthori[sz]ed|forbidden|not found|stale|permission/i.test(message)
-      || (conflict && !dailyCasRace);
+      || conflict;
     await this.deps.repository.markFailure(binding.session_id, step, message, manualRepair);
     this.deps.logger.warn(
       { err, sessionId: binding.session_id, step, manualRepair },
@@ -276,7 +258,3 @@ export class SessionLegacyProjection implements LegacyProjectionPort {
 }
 
 class ManualRepairError extends Error {}
-
-export function kstDate(now: Date): string {
-  return new Date(now.getTime() + 9 * 60 * 60 * 1_000).toISOString().slice(0, 10);
-}

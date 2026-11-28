@@ -27,8 +27,6 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
     repository = new PageRepository(createLiveDbSqlResolver({ sql: harness.liveSql }));
     service = new PageYjsService({
       repository,
-      now: () => new Date("2026-07-11T15:30:00.000Z"),
-      createPageId: () => "daily-page-1",
     });
   }, 60_000);
 
@@ -176,9 +174,9 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
     await harness.sql`INSERT INTO sessions (session_id) VALUES ('moved-session')`;
     await harness.sql`
       INSERT INTO session_page_bindings (
-        session_id, node_id, daily_date, session_type, page_state, legacy_state
+        session_id, node_id, session_type, page_state, legacy_state
       ) VALUES (
-        'moved-session', 'test-node', '2026-07-13', 'agent', 'pending', 'completed'
+        'moved-session', 'test-node', 'agent', 'pending', 'completed'
       )
     `;
     await service.createPage({
@@ -723,7 +721,6 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
         hasPageOperation: repository.hasPageOperation.bind(repository),
         getPageTimestamps: repository.getPageTimestamps.bind(repository),
         findPageIdByTitle: repository.findPageIdByTitle.bind(repository),
-        findPageIdByDailyDate: repository.findPageIdByDailyDate.bind(repository),
         listPages: repository.listPages.bind(repository),
         getPageBacklinks: repository.getPageBacklinks.bind(repository),
         commitPageMutation: async () => { throw new Error("commit failed"); },
@@ -745,32 +742,6 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       await failing.close();
     }
   });
-
-  it("derives the omitted daily date in KST and returns the same page idempotently", async () => {
-    const actor = { actorKind: "user" as const, actorUserId: "user@example.com" };
-    const [first, second] = await Promise.all([
-      service.getDailyPage({ actor }),
-      service.getDailyPage({ actor }),
-    ]);
-
-    expect(first).toMatchObject({
-      created: true,
-      page: {
-        id: "daily-page-1",
-        daily_date: "2026-07-12",
-        title: "2026년 7월 12일",
-      },
-      operation: {
-        operation_type: "create_page",
-        actor_kind: "user",
-        actor_user_id: "user@example.com",
-      },
-    });
-    expect(second).toMatchObject({
-      created: false,
-      page: { id: first.page.id, daily_date: "2026-07-12" },
-    });
-  }, 30_000);
 
   it("persists live edits that race a durable server mutation exactly once", async () => {
     const created = await service.createPage({

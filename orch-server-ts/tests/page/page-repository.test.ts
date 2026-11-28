@@ -148,10 +148,9 @@ describe("orch PageRepository", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("looks up normalized titles and daily dates through the page replica", async () => {
+  it("looks up normalized titles through the page replica", async () => {
     const { sql, calls } = createMockSql((call) => {
       if (call.query.includes("title_key")) return [{ id: "page-title" }];
-      if (call.query.includes("daily_date")) return [{ id: "page-daily" }];
       return [];
     });
     const repository = new PageRepository({
@@ -160,9 +159,7 @@ describe("orch PageRepository", () => {
     });
 
     await expect(repository.findPageIdByTitle("  PAGE  ")).resolves.toBe("page-title");
-    await expect(repository.findPageIdByDailyDate("2026-07-12")).resolves.toBe("page-daily");
     expect(calls[0]?.query).toContain("lower(btrim");
-    expect(calls[1]?.query).toContain("::date");
   });
 
   it("paginates backlinks with an opaque (created_at,id) cursor", async () => {

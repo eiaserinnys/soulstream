@@ -47,13 +47,6 @@
 }
 .v3-today-list::-webkit-scrollbar { display: none; }
 .v3-shell .v3-today-list > .v3-date-head { margin: 0 0 var(--v3-space-5); gap: var(--v3-space-3); }
-.v3-shell .v3-today-list .v3-daily-memo {
-  min-height: var(--v3-control-height);
-  padding: 0 var(--v3-space-3);
-  border-radius: var(--radius-floor);
-  justify-content: center;
-  margin-bottom: var(--v3-space-5);
-}
 .v3-shell .v3-card-inbox { gap: var(--v3-space-5); }
 .v3-shell .v3-card-inbox > section { gap: var(--v3-space-2); margin: 0; }
 .v3-shell .v3-card-inbox .v3-section-head { margin: 0; gap: var(--v3-space-2); justify-content: flex-start; }

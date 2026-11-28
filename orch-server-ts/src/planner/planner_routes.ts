@@ -5,7 +5,6 @@ import {
   pageBrowserUserId,
   type PageBrowserUser,
 } from "../page/page_browser_routes.js";
-import type { PageYjsService } from "../page/page_service.js";
 import { notifyPageUpdates, type PageUpdatedObserver } from "../page/page_update_notifications.js";
 import {
   PLANNER_READ_PAGE_LIMITS,
@@ -21,7 +20,6 @@ export const plannerRouteAuthRequirements = {
   "GET /api/planner/today": true,
   "GET /api/planner/starred-folders": true,
   "PATCH /api/planner/starred-folders/order": true,
-  "GET /api/planner/daily-history": true,
   "GET /api/planner/folders/{folder_id}": true,
   "GET /api/planner/folders/{folder_id}/subfolders": true,
   "GET /api/planner/folders/{folder_id}/sessions": true,
@@ -31,13 +29,10 @@ export interface PlannerRouteOptions {
   provider: PlannerReadProvider;
   starredFolderOrder: PlannerStarredFolderOrderWriter;
   onPageUpdated: PageUpdatedObserver;
-  dailyPages: Pick<PageYjsService, "getDailyPage">;
   resolveUser: (request: FastifyRequest) => Promise<PageBrowserUser | null>;
 }
 
 const id = z.string().trim().min(1);
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const todayQuery = z.object({ date });
 const starredFoldersQuery = z.object({
   cursor: id.optional(),
   limit: pageLimit(PLANNER_READ_PAGE_LIMITS.starredFolders),
@@ -46,10 +41,6 @@ const starredFolderOrderBody = z.object({
   pageId: id,
   beforePageId: id.nullable(),
 }).strict();
-const dailyHistoryQuery = z.object({
-  before: date,
-  limit: pageLimit(PLANNER_READ_PAGE_LIMITS.dailyHistory),
-});
 const folderQuery = z.object({ limit: pageLimit(PLANNER_READ_PAGE_LIMITS.folder),
   includeCompleted: z.enum(["true","false"]).default("true").transform(value=>value === "true") });
 const folderSliceQuery = cursorPageQuery(PLANNER_READ_PAGE_LIMITS.folder);
@@ -59,22 +50,9 @@ export function registerPlannerRoutes(
   options: PlannerRouteOptions,
 ): void {
   app.get("/api/planner/today", async (request, reply) => {
-    const actorUserId = pageBrowserUserId(await options.resolveUser(request));
-    if (!actorUserId) return unauthorized(reply);
-    const parsed = todayQuery.safeParse(request.query);
-    if (!parsed.success) return invalid(reply, parsed.error.message);
+    if (!pageBrowserUserId(await options.resolveUser(request))) return unauthorized(reply);
     try {
-      let planner = await options.provider.getToday(parsed.data.date);
-      if (!planner) {
-        await options.dailyPages.getDailyPage({
-          date: parsed.data.date,
-          actor: { actorKind: "user", actorUserId },
-        });
-        planner = await options.provider.getToday(parsed.data.date);
-      }
-      return planner
-        ? reply.send(planner)
-        : notFound(reply, `daily page not found: ${parsed.data.date}`);
+      return reply.send(await options.provider.getToday());
     } catch (error) {
       return failed(request, reply, error, "today");
     }
@@ -127,17 +105,6 @@ export function registerPlannerRoutes(
       }
     },
   );
-
-  app.get("/api/planner/daily-history", async (request, reply) => {
-    if (!await options.resolveUser(request)) return unauthorized(reply);
-    const parsed = dailyHistoryQuery.safeParse(request.query);
-    if (!parsed.success) return invalid(reply, parsed.error.message);
-    try {
-      return reply.send(await options.provider.getDailyHistory(parsed.data));
-    } catch (error) {
-      return failed(request, reply, error, "daily-history");
-    }
-  });
 
   app.get<{ Params: { folder_id: string } }>("/api/planner/folders/:folder_id", async (request, reply) => {
     if (!await options.resolveUser(request)) return unauthorized(reply);

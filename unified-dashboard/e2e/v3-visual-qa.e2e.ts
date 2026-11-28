@@ -2,7 +2,7 @@ import { expect, test, type Page, type Request } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { openV3DailyPlanner, openV3Folder } from "./v3-qa-entry";
+import { openV3Home, openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const BASE_URL = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -106,7 +106,7 @@ for (const theme of ["dark", "light"] as const) {
         }
       }, { appearance: theme, webglOverride: WEBGL_OVERRIDE });
       await installV3VisualQaRoutes(page);
-      await openV3DailyPlanner(page, BASE_URL);
+      await openV3Home(page, BASE_URL);
       await page.waitForLoadState("networkidle");
       diagnostics.fontFamily = await page.locator(".v3-emoji").first().evaluate((element) => (
         getComputedStyle(element).fontFamily
@@ -178,26 +178,6 @@ for (const theme of ["dark", "light"] as const) {
       await expect(page.getByRole("dialog", { name: "새 세션", exact: true })).toBeVisible();
       await capture(page, outputDir, "07-session-succession", diagnostics);
       await page.getByRole("button", { name: "승계 닫기" }).click();
-
-      await returnToPlanner(page, viewport.name);
-      const ritualTrigger = page.getByRole("button", { name: /아침 정리/ });
-      await expect(ritualTrigger).toBeVisible();
-      await ritualTrigger.click();
-      await expect(page.getByRole("dialog", { name: "어제에서 넘어온 것" })).toBeVisible();
-      await expect(page.locator(".v3-ritual-card")).toBeVisible();
-      await capture(page, outputDir, "08-ritual-in-progress", diagnostics);
-      const ritualProgress = page.getByRole("progressbar", { name: "아침 정리 진행률" });
-      for (let count = 0; count < 6; count += 1) {
-        if (await page.locator(".v3-ritual-done").isVisible().catch(() => false)) break;
-        const valueBefore = await ritualProgress.getAttribute("aria-valuenow");
-        await page.getByRole("button", { name: "데일리에서 내리기" }).click();
-        // 처리 중에는 버튼이 비활성화되고, 응답이 끝나야 다음 항목으로 넘어간다.
-        // 진행률이 바뀌는 것을 다음 항목 준비 완료의 신호로 삼는다.
-        await expect(ritualProgress).not.toHaveAttribute("aria-valuenow", valueBefore ?? "", { timeout: 30_000 });
-      }
-      await expect(page.locator(".v3-ritual-done")).toBeVisible();
-      await capture(page, outputDir, "08b-ritual-complete", diagnostics);
-      await page.getByRole("button", { name: "플래너 열기" }).click();
 
       if (viewport.name === "mobile") {
         await expect(page.getByTestId("v3-mobile-tab-today")).toBeVisible();
@@ -272,10 +252,6 @@ async function dragDivider(page: Page, ratio: number): Promise<void> {
   await page.mouse.down();
   await page.mouse.move(workspace.x + workspace.width * ratio, divider.y + divider.height / 2, { steps: 8 });
   await page.mouse.up();
-}
-
-async function returnToPlanner(page: Page, _viewport: "desktop" | "mobile"): Promise<void> {
-  await openV3DailyPlanner(page, BASE_URL);
 }
 
 function formatRequestFailure(request: Request): string {

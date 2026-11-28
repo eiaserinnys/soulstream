@@ -7,14 +7,13 @@ export interface V3ContextMenuAction {
 }
 
 export function buildFolderContextMenuActions(
-  state: { starred: boolean; completed: boolean; inToday: boolean },
+  state: { starred: boolean; completed: boolean },
   actions: {
     open(): void | Promise<void>;
     copyId(): void | Promise<void>;
     toggleStar(): void | Promise<void>;
     moveToParent(): void | Promise<void>;
     complete(): void | Promise<void>;
-    toggleToday(): void | Promise<void>;
     rename?(): void | Promise<void>;
     archive?(): void | Promise<void>;
   },
@@ -35,10 +34,6 @@ export function buildFolderContextMenuActions(
       label: "완료 처리",
       onSelect: actions.complete,
       disabled: state.completed,
-    },
-    {
-      label: state.inToday ? "오늘에서 제외" : "오늘에 추가",
-      onSelect: actions.toggleToday,
     },
     ...(actions.rename && actions.archive ? [
       { label: "이름 변경", onSelect: actions.rename, separatorBefore: true },

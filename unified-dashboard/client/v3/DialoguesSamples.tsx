@@ -20,7 +20,6 @@ import { FolderParentMoveDialog } from "./FolderParentMoveDialog";
 import { FolderMoveDialog } from "./FolderMoveDialog";
 import { CardCreateDialog } from "./CardCreateDialog";
 import { SessionSuccessionModal } from "./SessionSuccessionModal";
-import { RitualModal } from "./RitualModal";
 import { dialoguesFolders, dialoguesAssignment, createDialoguesApi } from "./dialogues-api";
 import { reviewFolder, reviewSession } from "./components-review-fixtures";
 import type { DialogueId } from "./dialogues-inventory";
@@ -255,39 +254,6 @@ export function DialoguesSamples({
         initialTab={id === "settings" ? undefined : "users"}
         userEditor={id === "user-create" ? "create" : id === "user-edit" ? "edit" : undefined}
         onOpenChange={openChange}
-      />
-    );
-  if (id === "ritual")
-    return (
-      <RitualModal
-        open
-        today="2026-10-03"
-        reviewCount={1}
-        onClose={onClose}
-        onFocusSessionPanel={() => done("세션 패널 열기")}
-        onActionApplied={() => {
-          onChanged();
-        }}
-        actions={{
-          load: async () => ({
-            dailyPageId: "sample-daily",
-            items: [
-              {
-                kind: "task",
-                id: folder.id,
-                title: "어제에서 넘어온 폴더",
-                description: "오늘 할 일을 결정합니다.",
-                agentLabel: "로젤린",
-                sourceDate: "2026-10-02",
-                sourcePageId: "sample-yesterday",
-                task: reviewFolder(folder.name, folder.id),
-              },
-            ],
-          }),
-          apply: async (_, action) => {
-            api.record(`아침 정리 · ${action}`);
-          },
-        }}
       />
     );
   return <DialoguesOverlaySamples id={id} api={api} onClose={onClose} onChanged={onChanged} />;

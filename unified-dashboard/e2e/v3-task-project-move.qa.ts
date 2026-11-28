@@ -33,7 +33,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
-  const audit = { folderMoves: 0, dailyWrites: 0 };
+  const audit = { folderMoves: 0 };
   await preparePage(page, theme, audit);
 
   try {
@@ -66,7 +66,6 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     assert(await page.getByTestId("v3-task-task-alpha").count() === 0,
       "이동 후 기존 폴더에 하위 폴더가 남았습니다.");
     assert(audit.folderMoves === 2, `폴더 이동 호출 수가 다릅니다: ${audit.folderMoves}`);
-    assert(audit.dailyWrites === 0, "프로젝트 이동이 데일리 마운트를 변경했습니다.");
     assert(browserErrors.length === 0, `브라우저 오류가 발생했습니다: ${browserErrors.join(" | ")}`);
     await capture(page, theme, "01-project-move");
 
@@ -86,7 +85,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 async function preparePage(
   page: Page,
   theme: "dark" | "light",
-  audit: { folderMoves: number; dailyWrites: number },
+  audit: { folderMoves: number },
 ) {
   await page.addInitScript({ content: `
     localStorage.setItem("soul-dashboard-theme", ${JSON.stringify(theme)});
@@ -125,10 +124,6 @@ async function preparePage(
     if (audit.folderMoves === 1) {
       return route.fulfill({ status: 200, contentType: "application/json", body: "{" });
     }
-    return route.fallback();
-  });
-  await page.route("**/api/pages/daily-*/operations", async (route) => {
-    audit.dailyWrites += 1;
     return route.fallback();
   });
 }

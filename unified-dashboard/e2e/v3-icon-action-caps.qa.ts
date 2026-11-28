@@ -39,7 +39,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await openV3Folder(page, baseUrl);
     await expect(page.getByRole("button", { name: "새 문서" })).toHaveCount(0);
     const projectCaps = await auditVisibleCaps(page);
-    for (const label of ["오늘 플래너로 돌아가기"]) {
+    for (const label of ["전체 카드로 돌아가기"]) {
       assert(projectCaps.some((cap) => cap.label === label), `${label} 아이콘 캡이 없습니다.`);
     }
     await capture(page, theme, "02-project-actions");

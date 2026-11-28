@@ -7,7 +7,6 @@ describe("page API client", () => {
     const fetch = vi.fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: null }))
       .mockResolvedValueOnce(jsonResponse({ page: page(), blocks: [], state_vector: "AA==" }))
-      .mockResolvedValueOnce(jsonResponse({ page: page(), created: false }))
       .mockResolvedValueOnce(jsonResponse({ items: [{ pageId: "page-1", title: "Page" }] }))
       .mockResolvedValueOnce(jsonResponse({ items: [], nextCursor: "next cursor" }))
       .mockResolvedValueOnce(jsonResponse({ items: [], nextCursor: null }));
@@ -15,7 +14,6 @@ describe("page API client", () => {
 
     await client.listPages({ starred: true, cursor: "cursor 1", limit: 25 });
     await client.getPage("page/one");
-    await client.getDailyPage("2026-07-12");
     await client.searchPages("Daily note", 12);
     await client.getBacklinks("page/one", {
       kinds: ["mount", "block_ref"],
@@ -32,22 +30,17 @@ describe("page API client", () => {
       credentials: "same-origin",
       headers: { Accept: "application/json" },
     });
-    expect(fetch).toHaveBeenNthCalledWith(3, "/api/pages/daily", expect.objectContaining({
-      method: "POST",
-      credentials: "same-origin",
-      body: JSON.stringify({ date: "2026-07-12" }),
-    }));
-    expect(fetch).toHaveBeenNthCalledWith(4, "/api/pages/search?q=Daily+note&limit=12", {
+    expect(fetch).toHaveBeenNthCalledWith(3, "/api/pages/search?q=Daily+note&limit=12", {
       credentials: "same-origin",
       headers: { Accept: "application/json" },
     });
     expect(fetch).toHaveBeenNthCalledWith(
-      5,
+      4,
       "/api/pages/page%2Fone/backlinks?kinds=mount%2Cblock_ref&cursor=cursor+2&limit=15",
       { credentials: "same-origin", headers: { Accept: "application/json" } },
     );
     expect(fetch).toHaveBeenNthCalledWith(
-      6,
+      5,
       "/api/pages/page%2Fone/backlinks?include_self=true",
       { credentials: "same-origin", headers: { Accept: "application/json" } },
     );

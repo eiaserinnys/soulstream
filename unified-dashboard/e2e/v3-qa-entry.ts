@@ -32,10 +32,7 @@ export async function openV3Folder(
   await page.getByTestId("v3-folder-cards-section").waitFor({ state: "visible", timeout: 30_000 });
 }
 
-/** `/v3` → CardHome → 기록 버튼 → 일일 플래너 화면. */
-export async function openV3DailyPlanner(page: Page, baseUrl: string): Promise<void> {
+export async function openV3Home(page: Page, baseUrl: string): Promise<void> {
   await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
   await page.getByTestId("card-home").waitFor({ state: "visible", timeout: 30_000 });
-  await page.locator(".v3-card-inbox").getByRole("button", { name: "기록", exact: true }).click();
-  await page.locator(".v3-date-head").waitFor({ state: "visible", timeout: 30_000 });
 }

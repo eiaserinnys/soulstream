@@ -712,6 +712,10 @@
     {
       "id": "176_card_dependencies.sql",
       "sha256": "3a1f44f713f312af5856a2d28232c8e6f3e07d4b8100c8c8177364589eaf8f7d"
+    },
+    {
+      "id": "177_retire_daily_pages.sql",
+      "sha256": "3c8aafeb7036c8048182b51cee630731ca0487839795ea7157bad1bb2ecd8a12"
     }
   ]
 }

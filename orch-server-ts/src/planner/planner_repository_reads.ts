@@ -21,7 +21,7 @@ export function sliceRows<T, R>(
     ? encodeCursor(scope, ...key(last)) : null };
 }
 export function pageDto(row: Record<string, unknown>): PageDto {
-  return { id: String(row.id), title: String(row.title), daily_date: row.daily_date == null ? null : String(row.daily_date).slice(0, 10),
+  return { id: String(row.id), title: String(row.title), daily_date: null,
     version: Number(row.version), archived: Boolean(row.archived), metadata: row.metadata as Record<string, unknown>,
     created_at: timestamp(row.created_at), updated_at: timestamp(row.updated_at) };
 }

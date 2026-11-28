@@ -31,7 +31,6 @@ describe("Phase 3 first-turn page context integration", () => {
           target_page_id: input.targetPageId,
           target_block_id: input.targetBlockId,
           target_expected_version: input.targetExpectedVersion,
-          daily_date: input.dailyDate,
           session_type: input.sessionType,
           legacy_folder_id: input.legacyFolderId,
           page_state: input.initialPageState,

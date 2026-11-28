@@ -672,7 +672,7 @@ export async function createLiveProductionApplication(
         onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),
         mutateFolderIdentity: async (input) =>
           await folderProjectIdentityService?.mutateFromPage(input) ?? null,
-      }), overrides.pageGate ?? unrestrictedPageGate(), ["createPage", "mutatePage", "transferBlocks", "getPage", "getBrowserPage", "findPage", "getDailyPage", "hydrateCommittedPage"]),
+      }), overrides.pageGate ?? unrestrictedPageGate(), ["createPage", "mutatePage", "transferBlocks", "getPage", "getBrowserPage", "findPage", "hydrateCommittedPage"]),
     },
   });
   appendReportTimeline = createReportTimelineAppender({

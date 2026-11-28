@@ -106,7 +106,6 @@
     {"order": 108, "methods": ["POST"], "path": "/api/auth/dev-login", "name": "dev_login", "authRequired": false},
     {"order": 109, "methods": ["POST"], "path": "/api/page-yjs/host/{operation}", "name": "page_yjs_host_operation", "authRequired": true},
     {"order": 110, "methods": ["GET"], "path": "/api/pages", "name": "list_browser_pages", "authRequired": true},
-    {"order": 111, "methods": ["POST"], "path": "/api/pages/daily", "name": "get_or_create_browser_daily_page", "authRequired": true},
     {"order": 112, "methods": ["GET"], "path": "/api/pages/{pageId}", "name": "get_browser_page", "authRequired": true},
     {"order": 113, "methods": ["POST"], "path": "/api/pages/{pageId}/operations", "name": "batch_browser_page_operations", "authRequired": true},
     {"order": 114, "methods": ["PATCH"], "path": "/api/pages/{pageId}/starred", "name": "set_browser_page_starred", "authRequired": true},

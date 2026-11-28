@@ -29,14 +29,12 @@ export function FolderWorkspaceSections({
   knownPages,
   sessions,
   nodeConnectivity,
-  todayFolderIds,
   invalidationKey,
   onOpenFolder,
   onCreateSubfolder,
   onRenameChild,
   onArchiveChild,
   onCompleteFolder,
-  onToggleFolderToday,
   onMoveFolderToParent,
   onBlocksChanged,
 }: {
@@ -49,14 +47,12 @@ export function FolderWorkspaceSections({
   knownPages: readonly PageDto[];
   sessions: readonly SessionSummary[];
   nodeConnectivity: SessionNodeConnectivity;
-  todayFolderIds: ReadonlySet<string>;
   invalidationKey: number;
   onOpenFolder(folder: CatalogFolder): void;
   onCreateSubfolder(): void;
   onRenameChild(folder: CatalogFolder): void;
   onArchiveChild(folder: CatalogFolder): void;
   onCompleteFolder(task: PlannerFolder): Promise<void>;
-  onToggleFolderToday(task: PlannerFolder): Promise<void>;
   onMoveFolderToParent(task: PlannerFolder): void;
   onBlocksChanged(blocks: PlannerFolder["blocks"]): void;
 }) {
@@ -144,10 +140,8 @@ export function FolderWorkspaceSections({
               navigationLabel="상위 폴더"
               sessions={sessions}
               nodeConnectivity={nodeConnectivity}
-              isInToday={todayFolderIds.has(parentTask.page.id)}
               onOpen={() => onOpenFolder(parentFolder)}
               onComplete={() => onCompleteFolder(parentTask)}
-              onToggleToday={() => onToggleFolderToday(parentTask)}
               onMoveToParent={() => onMoveFolderToParent(parentTask)}
             />
           </div> : null}
@@ -156,10 +150,8 @@ export function FolderWorkspaceSections({
               task={task}
               sessions={sessions}
               nodeConnectivity={nodeConnectivity}
-              isInToday={todayFolderIds.has(task.page.id)}
               onOpen={() => onOpenFolder(child)}
               onComplete={() => onCompleteFolder(task)}
-              onToggleToday={() => onToggleFolderToday(task)}
               onMoveToParent={() => onMoveFolderToParent(task)}
               onRename={() => onRenameChild(child)}
               onArchive={() => onArchiveChild(child)}

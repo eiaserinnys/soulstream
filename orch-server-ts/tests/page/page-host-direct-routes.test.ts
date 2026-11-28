@@ -260,31 +260,6 @@ describe("orch-local Page Yjs host operation routes", () => {
     }
   });
 
-  it("delegates daily get-or-create with agent provenance and no client idempotency key", async () => {
-    const service = serviceDouble();
-    const app = Fastify({ logger: false });
-    registerPageYjsHostOperationRoutes(app, { nodeCredentials: null, service, authBearerToken: "service-token" });
-    try {
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/page-yjs/host/get-daily-page",
-        headers: { authorization: "Bearer service-token" },
-        payload: {
-          date: "2026-07-12",
-          actor_kind: "agent",
-          actor_session_id: "agent-session",
-        },
-      });
-      expect(response.statusCode).toBe(200);
-      expect(service.getDailyPage).toHaveBeenCalledWith({
-        date: "2026-07-12",
-        actor: { actorKind: "agent", actorSessionId: "agent-session", actorUserId: null },
-      });
-    } finally {
-      await app.close();
-    }
-  });
-
   it("maps mutation conflicts and isolates unexpected failures to the request", async () => {
     const service = serviceDouble();
     vi.mocked(service.mutatePage)

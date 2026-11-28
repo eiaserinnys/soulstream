@@ -554,17 +554,6 @@
         },
         "page": {
           "properties": {
-            "daily_date": {
-              "anyOf": [
-                {
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
             "id": {
               "minLength": 1,
               "type": "string"
@@ -923,10 +912,6 @@
           "minLength": 1,
           "type": "string"
         },
-        "daily_date": {
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-          "type": "string"
-        },
         "id": {
           "minLength": 1,
           "type": "string"
@@ -1238,27 +1223,6 @@
       "type": "object"
     },
     "name": "get_custom_view"
-  },
-  {
-    "description": "Asia/Seoul 기준 데일리 페이지를 멱등 get-or-create한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
-    "inputSchema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "caller_session_id": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "date": {
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "get_daily_page"
   },
   {
     "description": "폴더와 카드를 조회한다. 기본 full은 기존 상세 응답이다. view=outline은 상세 본문 없는 카드 목록을 기본 20장씩 반환하며 보관 카드는 기본 제외한다. outline 목록은 limit(최대 50), cursor로 이어 읽고 get_card로 상세를 확인한다. 목록 옵션은 full 또는 card_id 직접 조회에서 무시된다.",

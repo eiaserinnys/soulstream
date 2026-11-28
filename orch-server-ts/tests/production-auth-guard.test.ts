@@ -270,7 +270,6 @@ describe("production auth guard", () => {
     })).toBeUndefined();
     for (const [method, routeUrl] of [
       ["GET", "/api/pages"],
-      ["POST", "/api/pages/daily"],
       ["GET", "/api/pages/:pageId"],
       ["GET", "/api/pages/search"],
       ["GET", "/api/pages/:pageId/backlinks"],

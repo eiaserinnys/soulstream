@@ -59,7 +59,6 @@ export function registerPageYjsRoutes(
         provider: options.plannerReads,
         starredFolderOrder: options.starredFolderOrder,
         onPageUpdated: options.onPageUpdated,
-        dailyPages: service,
         resolveUser: options.resolveBrowserUser,
       });
     }

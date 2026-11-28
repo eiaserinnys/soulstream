@@ -36,9 +36,9 @@ describe("Phase 3 binding warning browser projection PostgreSQL integration", ()
     `;
     await harness.sql`
       INSERT INTO session_page_bindings (
-        session_id, node_id, daily_date, session_type, page_state, legacy_state
+        session_id, node_id, session_type, page_state, legacy_state
       ) VALUES (
-        'sess-browser-recovery', 'test-node', '2026-07-13', 'agent',
+        'sess-browser-recovery', 'test-node', 'agent',
         'manual_repair', 'pending'
       )
     `;

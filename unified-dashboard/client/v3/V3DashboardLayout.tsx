@@ -17,10 +17,8 @@ import { ConfigModal } from "../components/ConfigModal";
 import { V3SearchModal } from "./V3SearchModal";
 import { orchestratorSessionProvider } from "../providers";
 import { CardHome } from "./CardHome";
-import { DailyPlannerView } from "./PlannerViews";
 import { MobilePlannerTabs, useMobilePlannerMode } from "./MobilePlannerTabs";
 import { MobileProjectList } from "./MobileProjectList";
-import { RitualModal } from "./RitualModal";
 import { FolderWorkspace } from "./FolderWorkspace";
 import { FolderDetailPane } from "./FolderDetailPane";
 import { FolderWorkspaceSections } from "./FolderWorkspaceSections";
@@ -36,12 +34,11 @@ import { V3Toast } from "./V3Toast";
 import { useV3PlannerActions } from "./use-v3-planner-actions";
 import { useV3Notifications } from "./use-v3-notifications";
 import { reduceMobilePlannerEscape, resolveSessionIntentTabPress, revealAttentionDetail, selectMobilePlannerTab, shouldApplyRememberedChatTab, type MobilePlannerState, type MobilePlannerTab } from "./mobile-planner-state";
-import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import { useFolderStarChanges } from "./folder-star-store";
-import { createPlannerDataDependencies, starredFolderPage, type PlannerFolder } from "./planner-data";
+import { createPlannerDataDependencies, isPlannerFolder, starredFolderPage, type PlannerFolder } from "./planner-data";
 import { fetchPageSessionDefaults, type PageSessionDefaults } from "./folder-workspace-page-api";
 import { activateRunSession, resolveRunSessions } from "./folder-workspace-run-model";
-import { buildMobileFolderOptions, errorText, recentDates } from "./v3-dashboard-utils";
+import { buildMobileFolderOptions, errorText } from "./v3-dashboard-utils";
 import { usePlannerCollections } from "./use-v3-planner-reads";
 import { useProjectFolderController } from "./use-project-folder-controller";
 import { invalidateV3, useV3PageInvalidationKey, useV3PlannerInvalidationKeys } from "./v3-live-invalidation-plane";
@@ -55,7 +52,6 @@ import { useV3MainColumns } from "./use-v3-main-columns";
 import { useSessionNodeConnectivity } from "./use-session-node-connectivity";
 import { useProjectNavigationMutations } from "./use-project-navigation-mutations";
 import { useFolderSessions } from "./use-folder-sessions";
-import { useTodayDate } from "./use-today-date";
 import { InternalLinkViewers } from "./InternalLinkViewers";
 import {
   useDashboardInternalLinks,
@@ -74,14 +70,8 @@ export function V3DashboardLayout() {
 function V3DashboardContent() {
   const cardNavigation = useCardNavigation();
   const queryClient = useQueryClient();
-  const today = useTodayDate();
-  const dates = useMemo(() => recentDates(today), [today]);
   const api = useMemo(() => createPageApiClient(), []);
   const dataDependencies = useMemo(() => createPlannerDataDependencies(), []);
-  const mutationPort = useMemo(() => new BrowserPlannerMutationPort(api), [api]);
-  const [selectedDate, setSelectedDate] = useState(today);
-  const [showRecord,setShowRecord]=useState(false);
-  const selectedDateFollowsToday = useRef(true);
   const projectSelection = useProjectFolderController();
   const { resolution, selectedFolderId, selectedProject, clearProject } = projectSelection;
   const workspaceOpen = selectedFolderId !== null;
@@ -90,7 +80,6 @@ function V3DashboardContent() {
   const projectContextInvalidationKey = useV3PageInvalidationKey([selectedProjectId]) + plannerInvalidationKeys.pageDetail;
   const [childFolderDialog, setChildFolderDialog] = useState<ProjectDialogTarget | null>(null);
   const [childArchiveTarget, setChildArchiveTarget] = useState<CatalogFolder | null>(null);
-  const [ritualOpen, setRitualOpen] = useState(false);
   const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<ReadonlySet<string>>(() => new Set());
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -110,9 +99,6 @@ function V3DashboardContent() {
   const plannerScrollRef = useRef<HTMLDivElement>(null);
   const plannerWebglActive = useGlassSurface(plannerSurfaceRef, { enabled: true });
   useEffect(() => { initTheme(); }, []);
-  useEffect(() => {
-    if (selectedDateFollowsToday.current) setSelectedDate(today);
-  }, [today]);
   const { user, refreshAuthStatus, isLoading: authLoading, isAuthenticated } = useAuth();
   const handleStreamConnectionError = useCallback(() => {
     void refreshAuthStatus().catch(() => undefined);
@@ -154,10 +140,7 @@ function V3DashboardContent() {
   const { nodes, nodeConnectivity } = useSessionNodeConnectivity();
   const folderStarChanges = useFolderStarChanges();
   const {
-    daily,
-    todayFolderIds,
-    setFolderTodayPresence,
-    addFolderToToday,
+    todayData,
     project,
     projects,
     starredFolders,
@@ -169,18 +152,11 @@ function V3DashboardContent() {
     loadMoreStarredFolders,
     reorderStarredFolders,
     loadMoreSubfolders,
-    patchFolder: patchLoadedFolder,
-    removeSessions: removeLoadedSessions,
-    moveSession: moveLoadedSession,
-    moveFolderParent: moveLoadedFolderParent,
-    refreshDaily,
     refreshFolder,
     waitForReads,
   } = usePlannerCollections({
     api,
     dependencies: dataDependencies,
-    selectedDate,
-    today,
     selectedProject,
     selectedFolderId,
     folderStarChanges,
@@ -205,10 +181,8 @@ function V3DashboardContent() {
     notify,
   });
   const currentFolderEntries = useMemo(
-    () => [
-      ...(daily.data?.folders ?? []),
-    ],
-    [daily.data?.folders],
+    () => starredFolders.filter(isPlannerFolder),
+    [starredFolders],
   );
   const selectedFolder = catalog?.folders.find((folder) => folder.id === selectedFolderId) ?? null;
   const childFolders = useMemo(() => (catalog?.folders ?? []).filter(
@@ -384,16 +358,13 @@ function V3DashboardContent() {
   const removeRunHistorySessions = folderSessions.removeSessions;
   const moveRunHistorySession = folderSessions.moveSession;
   const { patchPlannerFolder, removeSessionsFromPlanner, moveSessionInPlanner, moveFolderParentInPlanner } = useV3MutationProjection({
-    patchLoadedFolder, removeLoadedSessions, moveLoadedSession, moveLoadedFolderParent, removeRunHistorySessions, moveRunHistorySession, setSelectedFolderSnapshot,
+    removeRunHistorySessions, moveRunHistorySession, setSelectedFolderSnapshot,
   });
   const plannerActions = useV3PlannerActions({
     api,
     folders: catalog?.folders ?? [],
     notify,
     notifyWriteFailure,
-    todayFolderIds,
-    setFolderTodayPresence,
-    addFolderToToday,
     patchFolder: patchPlannerFolder,
     removeSessionsFromPlanner,
     moveSessionInPlanner,
@@ -418,10 +389,10 @@ function V3DashboardContent() {
   const plannerSessionIds = useMemo(
     () => [...new Set([
       ...currentFolderEntries.flatMap((task) => task.sessionIds),
-      ...(daily.data?.reviewSessionIds ?? []),
+      ...(todayData.data?.reviewSessionIds ?? []),
       ...(folderSessions.state?.items.map((session) => session.agentSessionId) ?? []),
     ])].sort(),
-    [currentFolderEntries, daily.data?.reviewSessionIds, folderSessions.state?.items],
+    [currentFolderEntries, todayData.data?.reviewSessionIds, folderSessions.state?.items],
   );
   const {
     sessions: targetedRunSessions,
@@ -497,12 +468,9 @@ function V3DashboardContent() {
       }
     }
     if (next.activeTab === "today") {
-      setShowRecord(false);
       clearProject();
-      selectedDateFollowsToday.current = true;
-      setSelectedDate(today);
     }
-  }, [activeSessionKey, catalog?.folders, clearProject, selectFolder, selectedFolderId, sessions, setActiveSession, setActiveSessionSummary, setActiveTab, today]);
+  }, [activeSessionKey, catalog?.folders, clearProject, selectFolder, selectedFolderId, sessions, setActiveSession, setActiveSessionSummary, setActiveTab]);
   const switchMobileTab = useCallback((target: MobilePlannerTab) => {
     cardNavigation.close();
     const press = resolveSessionIntentTabPress(target, sessionIntentPending.current);
@@ -522,10 +490,7 @@ function V3DashboardContent() {
     setMobileTab("today");
     setChatOpen(false);
     clearProject();
-    selectedDateFollowsToday.current = true;
-    setSelectedDate(today);
-    setShowRecord(false);
-  }, [cardNavigation.close, clearProject, today]);
+  }, [cardNavigation.close, clearProject]);
   const closeWorkspace = useCallback(() => {
     setMobileTab("today");
     setChatOpen(false);
@@ -556,22 +521,10 @@ function V3DashboardContent() {
       }
       else if (workspaceOpen) closeWorkspace();
       else if (selectedProjectId) clearProject();
-      else if (selectedDate !== today) {
-        selectedDateFollowsToday.current = true;
-        setSelectedDate(today);
-      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeSessionKey, applyMobileState, cardNavigation.cardId, closeCardWorkspace, chatOpen, childFolderDialog, clearProject, closeWorkspace, mobileMode, mobileTab, selectedDate, selectedFolderId, selectedProjectId, today, workspaceOpen]);
-  const openFolder = (task: PlannerFolder) => {
-    clearSessionPanelFocus();
-    setActiveSessionSummary(null);
-    setActiveSession(null);
-    void selectFolder(catalog?.folders.find((folder) => folder.id === task.folderId) ?? null, task);
-    setChatOpen(false);
-    if (mobileMode) setMobileTab("task");
-  };
+  }, [activeSessionKey, applyMobileState, cardNavigation.cardId, closeCardWorkspace, chatOpen, childFolderDialog, clearProject, closeWorkspace, mobileMode, mobileTab, selectedFolderId, selectedProjectId, workspaceOpen]);
   const openStarredFolder = async (page: typeof starredFolders[number]) => {
     const targetPage = starredFolderPage(page);
     const folder = catalog?.folders.find((candidate) => candidate.projectPageId === targetPage.id) ?? null;
@@ -588,26 +541,20 @@ function V3DashboardContent() {
     if (selection?.source !== 'automatic' && mobileMode && (selectedFolderId || cardNavigation.cardId)) setMobileTab("chat");
   }, [cardNavigation.cardId, clearSessionPanelFocus, mobileMode, selectedFolderId, setActiveSession, setActiveSessionSummary, setActiveTab]);
   const {
-    saveMemo,
     saveDescription,
     acknowledgeReview,
     applyFolderBlocks,
-    applyRitualAction,
   } = useV3DashboardMutations({
     api,
-    mutationPort,
-    daily,
     selectedFolderEntry,
     selectedPageId: selectedProjectId,
     setAcknowledgedReviewIds,
     notify,
     notifyWriteFailure,
     patchPlannerFolder,
-    addFolderToToday,
-    refreshDaily,
     refreshFolder,
   });
-  const { sessions: panelSessions, reviewSessions } = sessionPanel;
+  const { sessions: panelSessions } = sessionPanel;
   const shellStyle = {
     "--v3-card-gap": `${V3_CARD_GAP_PX}px`,
     "--v3-panel-gap": `${V3_PANEL_GAP_PX}px`,
@@ -641,7 +588,6 @@ function V3DashboardContent() {
     knownPages={projects}
     sessions={sessions}
     nodeConnectivity={nodeConnectivity}
-    todayFolderIds={todayFolderIds}
     invalidationKey={projectContextInvalidationKey}
     onOpenFolder={(folder) => { void selectFolder(folder); }}
     onCreateSubfolder={() => setChildFolderDialog({ mode: "create", parentFolderId: selectedFolder.id, parentName: selectedFolder.name })}
@@ -660,13 +606,9 @@ function V3DashboardContent() {
       })();
     }}
     onCompleteFolder={plannerActions.completeFolder}
-    onToggleFolderToday={plannerActions.toggleFolderToday}
     onMoveFolderToParent={folderParentMove.openFolder}
     onBlocksChanged={applyFolderBlocks}
   /> : null;
-  const toggleSelectedToday = () => workspaceFolderEntry
-    ? plannerActions.toggleFolderToday(workspaceFolderEntry)
-    : Promise.reject(new Error("연결된 폴더가 없습니다"));
   const renameSelectedFolder = (title: string) => workspaceFolderEntry
     ? plannerActions.renameFolderPageTitle(workspaceFolderEntry, title)
     : Promise.reject(new Error("연결된 폴더가 없습니다"));
@@ -681,13 +623,13 @@ function V3DashboardContent() {
         onOpenSearch={() => setSearchOpen(true)}
       />
       <V3Navigation
-        onSelectHome={returnToPlanner} homeSelected={!selectedFolderId&&!showRecord} dates={dates} selectedDate={selectedDate} folders={catalog?.folders ?? []} catalogLoadError={catalogLoadError} selectedFolderId={selectedFolderId}
-        starredFolders={starredFolders} starredFoldersHasMore={starredFoldersHasMore} starredFoldersLoading={starredFoldersLoading || starredFoldersLoadingMore || starredFoldersReordering} todayFolderIds={todayFolderIds}
+        onSelectHome={returnToPlanner} homeSelected={!selectedFolderId} folders={catalog?.folders ?? []} catalogLoadError={catalogLoadError} selectedFolderId={selectedFolderId}
+        starredFolders={starredFolders} starredFoldersHasMore={starredFoldersHasMore} starredFoldersLoading={starredFoldersLoading || starredFoldersLoadingMore || starredFoldersReordering}
         completedFolderIds={new Set(currentFolderEntries.filter((task) => task.status === "completed").map((task) => task.page.id))}
         onLoadMoreStarredFolders={() => { void loadMoreStarredFolders(); }}
         onReorderStarredFolders={reorderStarredFolders}
-        onSelectDate={(date) => { setShowRecord(true); cardNavigation.close(); clearProject(); selectedDateFollowsToday.current = date === today; setSelectedDate(date); }} onSelectFolder={(folder) => { void selectFolder(folder); }}
-        onSelectStarredFolder={(task) => { void openStarredFolder(task); }} onCompleteFolder={plannerActions.completeStarredFolder} onToggleFolderToday={plannerActions.toggleStarredFolderToday}
+        onSelectFolder={(folder) => { void selectFolder(folder); }}
+        onSelectStarredFolder={(task) => { void openStarredFolder(task); }} onCompleteFolder={plannerActions.completeStarredFolder}
         onMoveFolderToParent={(task) => { void folderParentMove.openPage(task); }} {...projectNavigationMutations}
       />
       {mobileMode && mobileTab === "projects" && !selectedFolderId ? <MobileProjectList folders={catalog?.folders ?? []} onSelect={(folder) => { void selectFolder(folder); }} /> : null}
@@ -724,8 +666,6 @@ function V3DashboardContent() {
               onLoadMoreRuns={folderSessions.loadMore}
               sessionDefaults={sessionDefaults}
               onReturnToToday={returnToPlanner}
-              folderInToday={todayFolderIds.has(workspaceFolderEntry.page.id)}
-              onToggleFolderToday={toggleSelectedToday}
               folderMoveTargets={currentFolderEntries}
               onOpenSession={openSession}
               onRenameFolderTitle={async (title) => { await renameSelectedFolder(title); }}
@@ -742,9 +682,7 @@ function V3DashboardContent() {
                   </FrameNotice>
                 ) : <FrameLoading label="불러오는 중…" />}
               </section>
-            ) : null) : !showRecord ? <CardHome folders={catalog?.folders??[]} onOpenRecord={()=>setShowRecord(true)}/> : (
-              <DailyPlannerView state={daily} folders={catalog?.folders ?? []} selectedDate={selectedDate} isTodayView={selectedDate === today} todayFolderIds={todayFolderIds} sessions={sessions} nodeConnectivity={nodeConnectivity} onSaveMemo={saveMemo} onOpenProject={(folderId) => { void selectFolder(catalog?.folders.find((folder) => folder.id === folderId) ?? null); }} onOpenFolder={openFolder} onCompleteFolder={plannerActions.completeFolder} onToggleFolderToday={plannerActions.toggleFolderToday} onMoveFolderToParent={folderParentMove.openFolder} onOpenRitual={() => setRitualOpen(true)} onCreateFolder={() => setChildFolderDialog({ mode: "create", parentFolderId: null, parentName: null })} />
-            )}
+            ) : null) : <CardHome folders={catalog?.folders??[]}/> }
           </div>
         </div>
       </main>
@@ -789,9 +727,7 @@ function V3DashboardContent() {
           reconnectSession={reconnectSession}
           onChatVisibilityChange={setDetailChatVisible}
           folderMoveTargets={currentFolderEntries}
-          folderInToday={workspaceFolderEntry ? todayFolderIds.has(workspaceFolderEntry.page.id) : false}
           onReturnToToday={returnToPlanner}
-          onToggleFolderToday={() => workspaceFolderEntry ? plannerActions.toggleFolderToday(workspaceFolderEntry) : Promise.reject(new Error("연결된 폴더가 없습니다"))}
           onCloseWorkspace={() => { setChatOpen(false); setActiveSessionSummary(null); setActiveSession(null); if (!workspaceFolderEntry) closeWorkspace(); }}
           onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }}
           onOpenSession={openSession}
@@ -836,7 +772,6 @@ function V3DashboardContent() {
         }}
       />
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
-      <RitualModal open={ritualOpen} today={today} reviewCount={reviewSessions.length} onClose={() => setRitualOpen(false)} onActionApplied={applyRitualAction} onFocusSessionPanel={() => { requestAnimationFrame(() => sessionPanel.panelRef.current?.focus({ preventScroll: true })); }} />
       <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
       <V3SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} onOpenSession={sessionPanel.openSessionById} onOpenFolder={(folderId) => { const folder = catalog?.folders.find((candidate) => candidate.id === folderId); if (folder) void selectFolder(folder); }} />
       <V3Toast message={toast} />
