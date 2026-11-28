@@ -113,7 +113,7 @@ export function SourceItem({ row, title, compact, loading, inactive, ready, expa
   onToggle(): void;
   onOpenBody(): void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const expandable = row.documents !== null;
   const open = ready && expandable && expanded;
   const name = rowTitle(row);
@@ -133,7 +133,7 @@ export function SourceItem({ row, title, compact, loading, inactive, ready, expa
         titlePrefix={ready ? row.parentTitle : null}
         meta={rowMeta(row, t)}
         status={row.status}
-        size={row.status === "ok" && row.chars !== null ? formatChars(row.chars) : null}
+        size={row.status === "ok" && row.chars !== null ? formatChars(row.chars, t, i18n.resolvedLanguage) : null}
         compact={compact}
         loading={loading}
         inactive={inactive}
@@ -155,7 +155,7 @@ export function commonLoadedHow(hows: ReadonlyArray<LoadedHow | null>): LoadedHo
 }
 
 function DocumentTree({ row, skillsByEntryCard, actions }: { row: Row; skillsByEntryCard: ReadonlyMap<string, SkillGuide>; actions: ReactNode }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const documents = row.documents ?? [];
   if (documents.length === 0) {
     return (
@@ -176,7 +176,7 @@ function DocumentTree({ row, skillsByEntryCard, actions }: { row: Row; skillsByE
       {(common || actions) && (
         <div className="flex items-center gap-3 pb-1">
           <span className="size-4 shrink-0" aria-hidden="true" />
-          <p className="min-w-0 flex-1 text-xs text-muted-foreground" data-testid={common ? "agent-context-documents-how" : undefined}>{common ? howLabel(common) : ""}</p>
+          <p className="min-w-0 flex-1 text-xs text-muted-foreground" data-testid={common ? "agent-context-documents-how" : undefined}>{common ? howLabel(common, t) : ""}</p>
           {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </div>
       )}
@@ -188,8 +188,8 @@ function DocumentTree({ row, skillsByEntryCard, actions }: { row: Row; skillsByE
             <li key={document.node_id} className="flex min-w-0 items-center gap-3 py-0.5 text-sm">
               <span className="size-4 shrink-0" aria-hidden="true" />
               <span className={`min-w-0 flex-1 truncate ${how ? "" : "text-muted-foreground"}`} style={{ paddingInlineStart: `calc(var(--v3-space-4) * ${document.depth})` }} title={document.title} data-v3-selectable-content="true">{document.title}</span>
-              {how && !common && <span className={`shrink-0 whitespace-nowrap text-xs ${how === "body" ? "text-muted-foreground" : ""}`}>{howLabel(how)}</span>}
-              <span className="min-w-14 shrink-0 whitespace-nowrap text-right text-xs tabular-nums text-muted-foreground">{how && how !== "title" ? formatChars(document.chars) : ""}</span>
+              {how && !common && <span className={`shrink-0 whitespace-nowrap text-xs ${how === "body" ? "text-muted-foreground" : ""}`}>{howLabel(how, t)}</span>}
+              <span className="min-w-14 shrink-0 whitespace-nowrap text-right text-xs tabular-nums text-muted-foreground">{how && how !== "title" ? formatChars(document.chars, t, i18n.resolvedLanguage) : ""}</span>
             </li>
           );
         })}

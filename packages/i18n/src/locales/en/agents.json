@@ -141,9 +141,71 @@
   "skill": {
     "label": "Skills",
     "verify": "Verify",
-    "verifiedAt": "Verified {{time}}"
+    "verifiedAt": "Verified {{time}}",
+    "list": "Skills",
+    "loadingList": "Loading list",
+    "loadingDetail": "Loading details",
+    "loadError": "Couldn't load skills.",
+    "warningsOnly": "Warnings only",
+    "noWarnings": "No warnings.",
+    "empty": "No items.",
+    "kind": "Type",
+    "backToList": "Back to list",
+    "body": "Text",
+    "links": "Links",
+    "usage": "Used by",
+    "views": "Skill views",
+    "loadingBody": "Loading text…",
+    "readError": "Couldn't load the text.",
+    "outgoingLinks": "Outgoing links",
+    "incomingLinks": "Incoming links",
+    "noUsage": "No profile lists this skill.",
+    "profileCount": "Profiles: {{profiles}}"
   },
   "copyBody": "Copy text",
   "copied": "Copied",
-  "openInAtom": "Open in Atom"
+  "openInAtom": "Open in Atom",
+  "finding": {
+    "error": "Error",
+    "warning": "Warning",
+    "info": "Info",
+    "empty": "No findings.",
+    "label": "Findings"
+  },
+  "how": {
+    "body": "Full text",
+    "entry": "Name and description",
+    "title": "Titles only"
+  },
+  "report": {
+    "notListed": "Not in report",
+    "empty": "No verification report",
+    "noJob": "No verification job",
+    "requestError": "Request failed",
+    "verifying": "Verifying",
+    "verifyAgain": "Verify again",
+    "loading": "Loading report",
+    "verifiedAt": "Verified <date>{{time}}</date>"
+  },
+  "overview": {
+    "loadingLabel": "Loading profiles",
+    "condition": "Conditional: {{condition}}",
+    "error": "Couldn't load profiles.",
+    "noProfiles": "No profiles on this node.",
+    "conditional": "Conditional",
+    "readError": "Couldn't load",
+    "unreadable": "Unavailable",
+    "perProfile": "Profile-specific instructions",
+    "loading": "Loading profiles…"
+  },
+  "none": "None",
+  "always": "Always",
+  "catalog": {
+    "list": "Catalogs",
+    "label": "Catalogs",
+    "axes": "Axes",
+    "composition": "Composition",
+    "usedBy": "Skills using this catalog"
+  },
+  "charCount": "{{chars}} chars"
 }

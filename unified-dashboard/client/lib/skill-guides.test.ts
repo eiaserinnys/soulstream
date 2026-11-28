@@ -2,6 +2,7 @@
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
+import { createI18n } from "@soulstream/i18n";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildMatrix, computeSkillUsage, conditionText, formatChars, listText, loadedHow, normalizeFinding, profileCount, profileLabel, reportTime, requestVerify, resetGuideSession,
@@ -20,6 +21,9 @@ const profile = (agent_id: string, sources: OverviewSource[], extra: Partial<Ove
   agent_id, display_name: `프로필 ${agent_id}`, source: "db", status: "ok", error: null, sources, ...extra,
 });
 const overview = (profiles: OverviewProfile[]): ContextOverview => ({ node_id: "node-a", collected_at: null, profiles });
+
+const ko = createI18n("ko");
+const en = createI18n("en");
 
 const skills = [skill("alpha"), skill("beta"), skill("gamma"), skill("delta")];
 const byCard = skillsByEntryCard(skills);
@@ -46,14 +50,14 @@ describe("서버가 null로 보내는 칸", () => {
     expect(loadedHow({ mode: "full" }, doc("n1", null, 1, 40), map, nodes)).toBe("body");
     expect(loadedHow({ mode: "full" }, doc("n1", null, 1, 0), map, nodes)).toBeNull();
     const data = overview([profile("p1", [source("s1", [doc("e1", null), doc("e2", "c-alpha")])])]);
-    expect(computeSkillUsage(data, [...skills, orphan]).get("alpha")?.length).toBe(1);
-    expect(computeSkillUsage(data, [orphan]).size).toBe(0);
+    expect(computeSkillUsage(data, [...skills, orphan], ko.t).get("alpha")?.length).toBe(1);
+    expect(computeSkillUsage(data, [orphan], ko.t).size).toBe(0);
   });
   it("이름이 없는 프로필은 agent_id로 보인다", () => {
     expect(profileLabel({ agent_id: "central-3", display_name: null })).toBe("central-3");
     expect(profileLabel({ agent_id: "central-3", display_name: "한울" })).toBe("한울");
     const data = overview([profile("p9", [source("s1", [doc("e1", "c-alpha")])], { display_name: null })]);
-    expect(computeSkillUsage(data, skills).get("alpha")![0]!.profileName).toBe("p9");
+    expect(computeSkillUsage(data, skills, ko.t).get("alpha")![0]!.profileName).toBe("p9");
   });
 });
 
@@ -63,7 +67,7 @@ describe("computeSkillUsage", () => {
     profile("p2", [source("s2", [doc("e3", "c-alpha")], { origin: { kind: "node_config" }, mode: "index" })]),
     profile("p3", [source("s3", [doc("e4", "c-alpha")])], { status: "error", error: "연결 실패" }),
   ]);
-  const usage = computeSkillUsage(data, skills);
+  const usage = computeSkillUsage(data, skills, ko.t);
   it("스킬마다 프로필, 출처 말, 조건, 실린 방식을 계산하고 오류 프로필은 건너뛴다", () => {
     expect(usage.get("alpha")).toEqual([
       { profileId: "p1", profileName: "프로필 p1", origin: "공통 스킬", sourceTitle: "s1", sourceParent: "공통", appliesWhen: { os: ["windows"] }, how: "body" },
@@ -75,7 +79,7 @@ describe("computeSkillUsage", () => {
     expect(profileCount(undefined)).toBe(0);
   });
   it("overview가 없으면 비어 있다", () => {
-    expect(computeSkillUsage(null, skills).size).toBe(0);
+    expect(computeSkillUsage(null, skills, ko.t).size).toBe(0);
   });
 });
 
@@ -118,16 +122,18 @@ describe("작은 계산", () => {
   it("조건 글, 글자 수, 느슨한 값 펴기", () => {
     expect(conditionText({ backend: ["codex"], card_role: ["assignee", "member"] })).toBe("backend: codex · card_role: assignee, member");
     expect(conditionText(null)).toBe("");
-    expect(formatChars(1234)).toBe("1,234자");
+    expect(formatChars(1234, ko.t, "ko")).toBe("1,234자");
+    expect(formatChars(1234, en.t, "en")).toBe("1,234 chars");
     expect(listText(["a", ["b"], { k: ["v", "w"] }, null])).toEqual(["a", "b", "k: v, w"]);
     expect(listText("축")).toEqual(["축"]);
     expect(listText(null)).toEqual([]);
   });
   it("보고 시각은 만든 때, 없으면 올린 때, 보고가 없으면 null", () => {
-    expect(reportTime(null)).toBeNull();
+    expect(reportTime(null, "ko")).toBeNull();
     const base = { uploaded_by_session_id: null, verify_job_id: null, findings: [] };
-    expect(reportTime({ ...base, generated_at: "2026-11-25T05:30:00.000Z", uploaded_at: null })).toBe("11월 25일 14:30");
-    expect(reportTime({ ...base, generated_at: null, uploaded_at: "2026-11-25T06:00:00.000Z" })).toBe("11월 25일 15:00");
+    expect(reportTime({ ...base, generated_at: "2026-11-25T05:30:00.000Z", uploaded_at: null }, "ko")).toBe("11월 25일 14:30");
+    expect(reportTime({ ...base, generated_at: "2026-11-25T05:30:00.000Z", uploaded_at: null }, "en")).toBe("November 25 at 14:30");
+    expect(reportTime({ ...base, generated_at: null, uploaded_at: "2026-11-25T06:00:00.000Z" }, "ko")).toBe("11월 25일 15:00");
   });
 });
 

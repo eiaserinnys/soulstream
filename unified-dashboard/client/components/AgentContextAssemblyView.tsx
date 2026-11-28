@@ -36,7 +36,7 @@ export interface AgentContextAssemblyViewProps {
 }
 
 export function AgentContextAssemblyView({ target, nodeId, initialBackend, presentOnNode, request = fetch }: AgentContextAssemblyViewProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [callerSource, setCallerSource] = useState("browser");
   const [backend, setBackend] = useState(initialBackend);
   const [cardRole, setCardRole] = useState("");
@@ -98,7 +98,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
   const listedSkills = useMemo(() => collectListedSkills(rows, skillsByEntryCard), [rows, skillsByEntryCard]);
   // 스킬이 모두 같은 방식으로 실리면 구역 머리에 한 번만 적고, 다른 것만 줄에 적는다.
   const commonHow = listedSkills.length > 0 && listedSkills.every(item => item.how === listedSkills[0]!.how) ? listedSkills[0]!.how : null;
-  const reportTime = guides.state.status === "ready" ? formatReport(guides.state.data.report) : null;
+  const reportTime = guides.state.status === "ready" ? formatReport(guides.state.data.report, i18n.resolvedLanguage) : null;
   const reportExists = guides.state.status === "ready" && guides.state.data.report !== null;
   const toggle = (key: string) => setExpanded(current => {
     const next = new Set(current);
@@ -216,7 +216,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
               <section className="space-y-2 pt-3" aria-label={t("agents.skill.label")} data-testid="agent-context-skills">
                 <div className="flex items-baseline gap-2">
                   <h4 className="text-sm font-semibold">{t("agents.skill.label")}</h4>
-                  {commonHow && <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{howLabel(commonHow)}</p>}
+                  {commonHow && <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{howLabel(commonHow, t)}</p>}
                   {reportTime && <p className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground">{t("agents.skill.verifiedAt", { time: reportTime })}</p>}
                 </div>
                 {listedSkills.map(({ skill, rowKey, how }) => (
@@ -229,7 +229,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
                     <span className="flex min-w-0 items-center gap-2">
                       <span className="min-w-0 truncate font-medium">{skill.name}</span>
                       <SkillLintBadge skill={skill} reportExists={reportExists} />
-                      {!commonHow && <span className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground">{howLabel(how)}</span>}
+                      {!commonHow && <span className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground">{howLabel(how, t)}</span>}
                     </span>
                     <span className="block truncate text-xs text-muted-foreground">{skill.description}</span>
                     {skill.lint && skill.lint.links.length > 0 && <span className="mt-1 block"><LinkChips links={skill.lint.links} /></span>}
@@ -289,7 +289,7 @@ function SourceDetail({ row, data, skillsByEntryCard, atomBaseUrl, requestState,
   const origin = all ? null : [row.origin, contextShape(row.context, t)].filter(Boolean).join(" · ");
   const chars = all ? data.manifest.total_chars ?? 0 : row.chars;
   const tokens = all ? data.manifest.total_token_estimate ?? 0 : row.status === "ok" ? row.tokens : null;
-  const meta = <>{origin && <span className="max-w-full min-w-0 truncate">{origin} · </span>}{chars !== null && <span className="shrink-0 whitespace-nowrap">{formatChars(chars)}{tokens !== null ? " · " : ""}</span>}{tokens !== null && <span className="shrink-0 whitespace-nowrap">{t("agents.assembly.estimatedTokens", { tokens: tokens.toLocaleString(i18n.resolvedLanguage) })}</span>}</>;
+  const meta = <>{origin && <span className="max-w-full min-w-0 truncate">{origin} · </span>}{chars !== null && <span className="shrink-0 whitespace-nowrap">{formatChars(chars, t, i18n.resolvedLanguage)}{tokens !== null ? " · " : ""}</span>}{tokens !== null && <span className="shrink-0 whitespace-nowrap">{t("agents.assembly.estimatedTokens", { tokens: tokens.toLocaleString(i18n.resolvedLanguage) })}</span>}</>;
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="agent-context-assembly-detail">
       <DetailHeader title={all ? t("agents.assembly.all") : rowTitle(row)} meta={meta} copyText={text ?? null} copyLabel={all ? t("agents.assembly.copyAll") : t("agents.copyBody")} atomUrl={atomUrl} onBack={onBack} backLabel={t("agents.assembly.backToSources")} />
@@ -334,7 +334,7 @@ function SourceDetail({ row, data, skillsByEntryCard, atomBaseUrl, requestState,
 function SkillOriginal({ nodeId, request, atomBaseUrl, skillNodeId, name, parentTitle, parentRow, parentState, onRetryParent, onBack }: {
   nodeId: string; request: typeof fetch; atomBaseUrl: string | null; skillNodeId: string; name: string; parentTitle: string; parentRow: Row; parentState: { status: "loading" } | { status: "ready" } | { status: "error"; message: string | null }; onRetryParent(): void; onBack(): void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [state, setState] = useState<{ status: "loading" } | { status: "ready"; markdown: string | null } | { status: "error" }>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -358,7 +358,7 @@ function SkillOriginal({ nodeId, request, atomBaseUrl, skillNodeId, name, parent
   const markdown = state.status === "ready" ? state.markdown : null;
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="agent-context-skill-original">
-      <DetailHeader title={name} meta={<><span className="max-w-full min-w-0 truncate">{parentTitle} · {t("agents.assembly.skillOriginal")}{markdown && parentRow.status !== "filtered" ? " · " : ""}</span>{markdown && parentRow.status !== "filtered" && <span className="shrink-0 whitespace-nowrap">{formatChars(markdown.length)}</span>}</>} copyText={parentRow.status === "filtered" ? null : markdown} atomUrl={atomBaseUrl ? `${atomBaseUrl}/#${skillNodeId}` : null} onBack={onBack} backLabel={t("agents.assembly.backToSource")} />
+      <DetailHeader title={name} meta={<><span className="max-w-full min-w-0 truncate">{parentTitle} · {t("agents.assembly.skillOriginal")}{markdown && parentRow.status !== "filtered" ? " · " : ""}</span>{markdown && parentRow.status !== "filtered" && <span className="shrink-0 whitespace-nowrap">{formatChars(markdown.length, t, i18n.resolvedLanguage)}</span>}</>} copyText={parentRow.status === "filtered" ? null : markdown} atomUrl={atomBaseUrl ? `${atomBaseUrl}/#${skillNodeId}` : null} onBack={onBack} backLabel={t("agents.assembly.backToSource")} />
       {parentState.status === "loading" ? <FrameLoading label={t("agents.assembly.loading")} /> : parentState.status === "error" ? <FrameNotice><div className="flex flex-col items-center gap-3"><p role="alert" className="text-sm text-destructive-foreground">{parentState.message ?? t("agents.assembly.error")}</p><Button type="button" size="sm" variant="outline" onClick={onRetryParent}>{t("agents.retry")}</Button></div></FrameNotice>
         : parentRow.status === "filtered" ? <FrameNotice><p className="text-sm text-muted-foreground">{t("agents.assembly.filteredDetail", { condition: conditionSummary(parentRow.context.applies_when) })}</p></FrameNotice>
         : state.status === "loading" ? <FrameLoading label={t("agents.assembly.loadingOriginal")} />

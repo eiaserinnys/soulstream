@@ -141,9 +141,71 @@
   "skill": {
     "label": "스킬",
     "verify": "검증",
-    "verifiedAt": "{{time}} 검증"
+    "verifiedAt": "{{time}} 검증",
+    "list": "스킬 목록",
+    "loadingList": "목록을 불러오는 중",
+    "loadingDetail": "상세를 불러오는 중",
+    "loadError": "스킬을 불러오지 못했습니다.",
+    "warningsOnly": "경고 있는 것만",
+    "noWarnings": "경고가 없습니다.",
+    "empty": "항목이 없습니다.",
+    "kind": "종류",
+    "backToList": "목록으로",
+    "body": "본문",
+    "links": "연결",
+    "usage": "쓰이는 곳",
+    "views": "스킬 보기",
+    "loadingBody": "본문을 불러오는 중...",
+    "readError": "본문을 읽지 못했습니다.",
+    "outgoingLinks": "나가는 연결",
+    "incomingLinks": "들어오는 연결",
+    "noUsage": "상시 목록에 넣은 프로필이 없습니다.",
+    "profileCount": "프로필 {{profiles}}"
   },
   "copyBody": "본문 복사",
   "copied": "복사됨",
-  "openInAtom": "atom에서 열기"
+  "openInAtom": "atom에서 열기",
+  "finding": {
+    "error": "오류",
+    "warning": "경고",
+    "info": "정보",
+    "empty": "진단이 없습니다.",
+    "label": "진단"
+  },
+  "how": {
+    "body": "본문까지",
+    "entry": "이름과 설명만",
+    "title": "제목만"
+  },
+  "report": {
+    "notListed": "보고에 없음",
+    "empty": "검증 보고 없음",
+    "noJob": "검증 작업이 없습니다",
+    "requestError": "요청하지 못했습니다",
+    "verifying": "검증 중",
+    "verifyAgain": "다시 검증",
+    "loading": "보고를 불러오는 중",
+    "verifiedAt": "<date>{{time}}</date> 검증"
+  },
+  "overview": {
+    "loadingLabel": "프로필을 모으는 중",
+    "condition": "조건부: {{condition}}",
+    "error": "프로필을 모으지 못했습니다.",
+    "noProfiles": "이 노드에는 프로필이 없습니다.",
+    "conditional": "조건부",
+    "readError": "읽지 못했습니다",
+    "unreadable": "읽지 못함",
+    "perProfile": "프로필마다 따로 둔 지침",
+    "loading": "프로필을 모으는 중..."
+  },
+  "none": "없음",
+  "always": "항상",
+  "catalog": {
+    "list": "카탈로그 목록",
+    "label": "카탈로그",
+    "axes": "축",
+    "composition": "구성",
+    "usedBy": "쓰는 스킬"
+  },
+  "charCount": "{{chars}}자"
 }
