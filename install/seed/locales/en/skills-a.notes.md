@@ -5,7 +5,7 @@
 | Card | Adaptation |
 | --- | --- |
 | `skill.atom_tree_cleanup.body` | Use English names for the protected project sections, "Work history" and "Mistake examples". The draft and verdict examples use English prose. The tool calls and operation keys keep their original structure. |
-| `skill.card_work.body` | Use the install profile name "Seo Soyoung (PAS)" and the English persistent-session title. Translate the PAS report prefix `[별건]` as `[Out-of-scope findings]` and the handoff heading `PAS에 못 보낸 별건` as `Findings not delivered to the PAS`. They are document conventions. Translate the notice at the top of a user summary. The notice appears in the tool description, and the server uses `mode: "spoken"` to choose attribution. |
+| `skill.card_work.body` | Use the install profile name "Seo Soyoung (PAS)" and the English persistent-session title. Translate the PAS report prefix `[별건]` as `[Separate issue]` and the handoff heading `PAS에 못 보낸 별건` as `Findings not delivered to the PAS`. They are document conventions. Translate the notice at the top of a user summary. The notice appears in the tool description, and the server uses `mode: "spoken"` to choose attribution. |
 | `skill.review_code.body` | Generalize Korean composition to Enter handling during IME composition (`event.isComposing`). |
 | `skill.ui_design.body` | Keep CJK word units together where applicable. Use normal word breaking for English. |
 | `skill.statechart.body` | Translate visible diagram labels and keep IDs and syntax. Preserve `(어긋남 N)` because diagram-autolayout's `DEFECT_TAG` matcher reads that suffix. |
