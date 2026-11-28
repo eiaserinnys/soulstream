@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useTranslation } from "react-i18next";
+import { useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@seosoyoung/soul-ui';
 import { parseSessionSearchIntent } from '@soulstream/search-contract';
 import { createPersistentSessionsApi, type PersistentSessionList } from '../lib/persistent-sessions';
@@ -8,6 +9,8 @@ import { useV3Notifications } from './use-v3-notifications';
 import { readDashboardLinkIntent } from './dashboard-link-intent';
 
 export function usePersistentSessionStartup(pathname: string) {
+  const { i18n } = useTranslation();
+  const api = useMemo(() => createPersistentSessionsApi(fetch, i18n.t), [i18n]);
   const { user, isLoading, isAuthenticated, refreshAuthStatus } = useAuth();
   const { toast, notify } = useV3Notifications(refreshAuthStatus);
   const consumed = useRef(false);
@@ -20,7 +23,7 @@ export function usePersistentSessionStartup(pathname: string) {
     const preferences = readPersistentSessionDevicePreferences(user.email);
     if (!preferences.openOnStart) { consumed.current = true; return; }
     let current = true;
-    request.current ??= createPersistentSessionsApi().list();
+    request.current ??= api.list();
     void request.current.then(({ sessions }) => {
       if (!current || consumed.current) return;
       consumed.current = true;
@@ -33,6 +36,6 @@ export function usePersistentSessionStartup(pathname: string) {
       notify(error instanceof Error ? error.message : String(error));
     });
     return () => { current = false; };
-  }, [isAuthenticated, isLoading, notify, pathname, user?.email]);
+  }, [api, isAuthenticated, isLoading, notify, pathname, user?.email]);
   return toast;
 }

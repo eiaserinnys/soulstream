@@ -2,9 +2,12 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { createI18n } from '@soulstream/i18n';
+import { I18nextProvider } from 'react-i18next';
 import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import { useDashboardStore } from '@seosoyoung/soul-ui';
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
+import { submitIntervention } from '@seosoyoung/soul-ui/components/chat/submitIntervention';
 import { usePersistentReportSend } from './usePersistentReportSend';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const entry: PersistentReportEntry = { key: 'one', kind: 'ask', title: '확인', context: '맥락', action: '선택', options: ['응'], card_numbers: [], state: 'open', answer: '', updated_at: 'one' };
@@ -52,6 +55,27 @@ it('retains failures in the chat slot and retries the same answer with the same 
 it('treats unknown delivery as failure', async () => {
   transport.mockResolvedValueOnce({ ok: true, delivered: null }); await act(async () => send.reply(entry, '응'));
   expect(useDashboardStore.getState().pendingChatSends.a.status).toBe('failed'); expect(send.canCancel(entry)).toBe(false);
+});
+it('localizes HTTP failures without server detail and preserves server detail in English', async () => {
+  const fetch = vi.fn()
+    .mockResolvedValueOnce(new Response('Service unavailable', { status: 503 }))
+    .mockResolvedValueOnce(new Response('{}', { status: 503 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ detail: '세션이 일시 중지됐습니다.' }), { status: 503 }));
+  vi.stubGlobal('fetch', fetch);
+  try {
+    transport.mockImplementation(submitIntervention);
+    await act(async () => root.render(
+      <I18nextProvider i18n={createI18n('en')}>
+        <PersistentReportProvider sessionId="a" entries={[entry]}><Harness/></PersistentReportProvider>
+      </I18nextProvider>,
+    ));
+    for (const reason of ['Could not send the message.', 'Could not send the message.', 'Could not send. 세션이 일시 중지됐습니다.']) {
+      await act(async () => send.reply(entry, '응'));
+      expect(useDashboardStore.getState().pendingChatSends.a).toMatchObject({ status: 'failed', reason });
+    }
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 it('sends cancellation as a normal visible-context message, keeps its label until the publication changes, and restores it on failure', async () => {
   const answered = { ...entry, state: 'answered' as const, answer: '응' };

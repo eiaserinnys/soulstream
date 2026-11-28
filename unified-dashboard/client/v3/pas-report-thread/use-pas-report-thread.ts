@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cardMutationKey, cardQuestionChoiceAnswer, cardQuestionTextAnswer } from "@seosoyoung/soul-ui/cards/card-api";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
@@ -36,6 +37,7 @@ function useNow(next: number | null) {
 }
 
 export function usePasReportThread({ entries, completion, dismissReport, startCardId, cardSource }: PasReportThreadInput) {
+  const { t } = useTranslation();
   const byId = useCardStore(state => state.byId);
   const live = useCardMembership(undefined, [], cardSource === undefined);
   const cards = cardSource ?? live.cards;
@@ -62,7 +64,7 @@ export function usePasReportThread({ entries, completion, dismissReport, startCa
   const busyRef = useRef(false);
 
   const liveIds = new Set([...groups.pending, ...groups.snoozed, ...groups.running].map(agenda => agenda.cardId));
-  const processedAgendas = processed.filter(item => !liveIds.has(item.agenda.cardId));
+  const processedAgendas = processed.filter(item => !liveIds.has(item.agenda.cardId)).map(item => ({ ...item, label: t(item.label) }));
   const active: Agenda | null = [...groups.pending, ...groups.snoozed, ...groups.running, ...processedAgendas.map(item => item.agenda)]
     .find(agenda => agenda.cardId === activeId) ?? groups.pending[0] ?? groups.running[0] ?? null;
   const activeCardId = active?.cardId ?? null;
@@ -122,18 +124,19 @@ export function usePasReportThread({ entries, completion, dismissReport, startCa
     const done = await completion.complete(entry as ReportEntry & { card_id: string }, [...entries], status, setActionError);
     if (!done) return false;
     setSnoozeUndo(null);
-    setProcessed(items => [...items.filter(item => item.agenda.cardId !== agenda.cardId), { agenda, label: status === "on_hold" ? "보류" : "완료" }]);
+    setProcessed(items => [...items.filter(item => item.agenda.cardId !== agenda.cardId), { agenda, label: status === "on_hold" ? "persistent.thread.held" : "persistent.thread.completed" }]);
     setActiveId(next?.cardId ?? agenda.cardId);
   });
   const acknowledge = (agenda: Agenda) => run(async () => {
     if (!agenda.entry) return false;
     await dismissReport(agenda.entry.key);
-    settle(agenda, "확인함");
+    settle(agenda, "persistent.thread.acknowledged");
   });
   const choose = (agenda: Agenda, option: string) => run(async () => {
     if (!question) return false;
     await useCardStore.getState().mutate(agenda.cardId, `/questions/${encodeURIComponent(question.id)}/answer`, cardQuestionChoiceAnswer(option));
-    settle(agenda, option === "했어" ? "했어" : "답함");
+    const isRequestDone = option === "했어"; // i18n-ignore: 서버가 부여한 요청 완료 선택지와 비교한다.
+    settle(agenda, isRequestDone ? "persistent.thread.didIt" : "persistent.thread.answered");
   });
   const send = (agenda: Agenda, text: string, mode: SendMode) => run(async () => {
     const body = text.trim();
@@ -142,7 +145,7 @@ export function usePasReportThread({ entries, completion, dismissReport, startCa
     if (mode === "answer") {
       if (!question) return false;
       await store.mutate(agenda.cardId, `/questions/${encodeURIComponent(question.id)}/answer`, cardQuestionTextAnswer(body));
-      settle(agenda, "답함");
+      settle(agenda, "persistent.thread.answered");
       return true;
     }
     // 열린 질문이 있으면 질문을 닫지 않도록 글에 questionId를 붙인다. 서버는 질문과 항목을 함께 받지 않는다.
@@ -195,7 +198,7 @@ export function usePasReportThread({ entries, completion, dismissReport, startCa
     ? { kind: "completion" as const, cardId: completion.recent.cardId, label: completion.recent.label, expiresAt: completion.recent.expiresAt }
     : null;
   const snoozeRow = snoozeUndo
-    ? { kind: "snooze" as const, cardId: snoozeUndo.cardId, label: snoozeUndo.number === null ? "미뤄 둠" : `#${snoozeUndo.number} 미뤄 둠`, expiresAt: snoozeUndo.expiresAt }
+    ? { kind: "snooze" as const, cardId: snoozeUndo.cardId, label: snoozeUndo.number === null ? t("persistent.thread.snoozed") : t("persistent.thread.cardSnoozed", { number: snoozeUndo.number }), expiresAt: snoozeUndo.expiresAt }
     : null;
   const undo = completionUndo && snoozeRow ? (completionUndo.expiresAt >= snoozeRow.expiresAt ? completionUndo : snoozeRow) : completionUndo ?? snoozeRow;
 

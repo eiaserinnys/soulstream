@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { CARD_COMPLETION_UNDO_MS, type PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
@@ -5,7 +6,7 @@ import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 export type CardCompletionTarget = 'done' | 'on_hold';
 export type CardTransition = (cardId: string, status: CardCompletionTarget | 'review') => Promise<void>;
 export type CompletionEntry = Pick<PersistentReportEntry, 'card_numbers'> & { card_id: string; key?: string; updated_at?: string } & Partial<PersistentReportEntry>;
-type RecentCompletion = { cardId: string; target: CardCompletionTarget; label: string; expiresAt: number };
+type RecentCompletion = { cardId: string; target: CardCompletionTarget; number?: number; expiresAt: number };
 type CompletedRecord = { key: string; cardId: string; target: CardCompletionTarget; updatedAt: string; snapshot: PersistentReportEntry | null; nextKey: string | null };
 type RestoredRecord = { key: string; cardId: string; snapshot: PersistentReportEntry; updatedAt: string; nextKey: string | null };
 
@@ -20,6 +21,7 @@ async function transitionCard(cardId: string, status: CardCompletionTarget | 're
 }
 
 export function usePersistentCardCompletion(notify: (text: string) => void, cardTransition?: CardTransition) {
+  const { t } = useTranslation();
   const [recent, setRecent] = useState<RecentCompletion | null>(null);
   const [busy, setBusy] = useState(false);
   const [revision, bump] = useState(0);
@@ -60,8 +62,7 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
       completedByKey.current.set(key, { key, cardId: entry.card_id, target, updatedAt: sourceEntry?.updated_at ?? entry.updated_at ?? '', snapshot: sourceEntry, nextKey });
       restoredByKey.current.delete(key);
       const expiresAt = Date.now() + CARD_COMPLETION_UNDO_MS;
-      const label = target === 'on_hold' ? '보류됨' : '완료됨';
-      const next = { cardId: entry.card_id, target, label: entry.card_numbers[0] === undefined ? label : `#${entry.card_numbers[0]} ${label}`, expiresAt };
+      const next = { cardId: entry.card_id, target, number: entry.card_numbers[0], expiresAt };
       recentRef.current = next;
       setRecent(next);
       timer.current = setTimeout(() => {
@@ -87,13 +88,13 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
           setRecent(null);
         }
       }
-      (onFailure ?? notify)(error instanceof CardStatusChangedError ? '카드 상태가 바뀌었어.' : target === 'on_hold' ? '카드를 보류하지 못했어.' : '카드를 완료하지 못했어.');
+      (onFailure ?? notify)(error instanceof CardStatusChangedError ? t("persistent.completion.changed") : target === 'on_hold' ? t("persistent.completion.holdFailed") : t("persistent.completion.completeFailed"));
       return false;
     } finally {
       busyRef.current = false;
       setBusy(false);
     }
-  }, [clearTimer, notify, runTransition]);
+  }, [clearTimer, notify, runTransition, t]);
 
   /** 되돌렸으면 true. 실패하거나 되돌릴 것이 없으면 false다. */
   const undo = useCallback(async (onFailure?: (text: string) => void): Promise<boolean> => {
@@ -124,13 +125,13 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
         recentRef.current = null;
         setRecent(null);
       }
-      (onFailure ?? notify)(error instanceof CardStatusChangedError ? '카드 상태가 바뀌었어.' : '되돌리지 못했어.');
+      (onFailure ?? notify)(error instanceof CardStatusChangedError ? t("persistent.completion.changed") : t("persistent.completion.undoFailed"));
       return false;
     } finally {
       busyRef.current = false;
       setBusy(false);
     }
-  }, [clearTimer, notify, runTransition]);
+  }, [clearTimer, notify, runTransition, t]);
 
   /**
    * Projects optimistic completions and restores onto the published deck.
@@ -162,5 +163,10 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
     return inserted ? projected : (visible.length === rawEntries.length ? rawEntries : visible);
   }, []);
 
-  return { recent, busy, complete, undo, filterEntries, revision };
+  const label = recent && t(recent.target === 'on_hold' ? "persistent.completion.held" : "persistent.completion.done");
+  const recentWithLabel = recent && label ? {
+    cardId: recent.cardId, target: recent.target, expiresAt: recent.expiresAt,
+    label: recent.number === undefined ? label : t("persistent.completion.numbered", { number: recent.number, label }),
+  } : null;
+  return { recent: recentWithLabel, busy, complete, undo, filterEntries, revision };
 }

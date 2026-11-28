@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, DashboardIconCap } from '@seosoyoung/soul-ui';
 import { SourceLink } from '@seosoyoung/soul-ui/components/SourceLink';
@@ -28,6 +29,7 @@ type ReportCardEntry = PersistentReportEntry & { card_id?: string; card_status?:
 const LINK_FOCUS = 'rounded-floor outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
 
 export function PersistentReportDeck({ sessionId, focusInput, dismissReport, notify, disabled = false, seat, transport, renderQuestion, renderCardDetails, renderCardStatus, renderReportWindow, cardTransition, completion: providedCompletion }: Props) {
+  const { t } = useTranslation();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [windowStart, setWindowStart] = useState<{ cardId: string | null } | null>(null);
   const windowTrigger = useRef<HTMLElement | null>(null);
@@ -148,14 +150,14 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   // The global reduced-motion duration must not interpolate the initial font
   // gate's opacity or measured height for a frame.
   const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} data-inline-max-height={inlineMaxHeight !== undefined || undefined} data-overflow={sizing.overflowing} data-undo={Boolean(completion.recent) || undefined} style={{ transitionProperty: 'none', opacity: sizing.waitingForFont ? 0 : undefined, height: sizing.height, maxHeight: bubble?.maxHeight, ...(inlineMaxHeight !== undefined ? { '--pas-report-inline-max-height': `${inlineMaxHeight}px` } : {}), ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}
-    inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} aria-label="지금의 보고" aria-roledescription="carousel"
+    inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} aria-label={t("persistent.report.current")} aria-roledescription="carousel"
     onPointerDownCapture={sizing.hold}
     onPointerEnter={bubble ? undefined : sizing.startHandling}
     onPointerLeave={bubble ? undefined : sizing.endHandling}
     onFocusCapture={() => { focusWithin.current = true; }}
     onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null) && (event.relatedTarget || event.target.isConnected)) focusWithin.current = false; }}
     onKeyDown={event => { if (renderCardDetails && (event.target as Element).closest('input,textarea,[contenteditable=true]')) return; if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); go(index + (event.key === 'ArrowRight' ? 1 : -1)); } }}>
-    <div ref={track} className="pas-report-track" data-testid="report-track" tabIndex={entries.length > 1 ? 0 : -1} role="group" aria-label="보고 장. 좌우 화살표로 넘깁니다"
+    <div ref={track} className="pas-report-track" data-testid="report-track" tabIndex={entries.length > 1 ? 0 : -1} role="group" aria-label={t("persistent.report.slides")}
       onScroll={event => {
         const node = event.currentTarget;
         sizing.startScroll();
@@ -175,7 +177,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
       }}>
       {!entries.length && completion.recent ? <article className="pas-report-sheet" data-current="true" data-undo-only data-publication={JSON.stringify([sessionId, 'undo', completion.recent.cardId])}>
         <div className="pas-report-reading"><div className="pas-report-content" /></div>
-        <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}><UndoCountdownRing key={`${completion.recent.cardId}-${completion.recent.expiresAt}`} expiresAt={completion.recent.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS}/>되돌리기</Button></div>
+        <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}><UndoCountdownRing key={`${completion.recent.cardId}-${completion.recent.expiresAt}`} expiresAt={completion.recent.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS}/>{t("persistent.undo")}</Button></div>
       </article> : entries.map((entry, position) => {
         const cardEntry = entry as ReportCardEntry;
         const completionEligible = entry.key.startsWith('card_') && cardEntry.card_status === 'review' && Boolean(cardEntry.card_id);
@@ -190,7 +192,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
         const answered = answer !== undefined;
         const suppressActions = answered && !completionEligible;
         const acknowledgeable = entry.kind === 'see' || (entry.kind === 'ask' && entry.options.length === 0 && !answered);
-        const tag = entry.kind === 'see' ? '보실 것' : answered ? '답 받음' : '답하실 것';
+        const tag = entry.kind === 'see' ? t("persistent.report.toReview") : answered ? t("persistent.report.answered") : t("persistent.report.toAnswer");
         return <article key={entry.key} className="pas-report-sheet" data-testid={`report-sheet-${entry.key}`} data-current={position === index}
           data-answered={answered} data-publication={JSON.stringify([sessionId, entry.key, expanded, entry.title, entry.context, entry.action, entry.options, entry.card_numbers, cardEntry.card_id, cardEntry.card_status])} inert={position !== index} aria-hidden={position !== index} tabIndex={-1} aria-roledescription="slide"
           aria-label={`${entries.length > 1 ? `${position + 1} / ${entries.length}, ` : ''}${tag}, ${entry.title}`}>
@@ -206,9 +208,9 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
                   {renderCardStatus?.(entry)}
                   {question?.meta}
                 </div>
-                {renderReportWindow && <DashboardIconCap size="small" className="pas-report-window" label="보고 창 열기" data-testid="pas-report-open-window"
+                {renderReportWindow && <DashboardIconCap size="small" className="pas-report-window" label={t("persistent.report.openWindow")} data-testid="pas-report-open-window"
                   onClick={event => { windowTrigger.current = event.currentTarget; setWindowStart({ cardId: cardEntry.card_id ?? null }); }}><PanelRightOpen className="h-4 w-4" aria-hidden="true" /></DashboardIconCap>}
-                {expandable && <DashboardIconCap size="small" className="pas-report-window" label={expanded ? '축소' : '확대'} aria-expanded={expanded} onClick={toggle}>
+                {expandable && <DashboardIconCap size="small" className="pas-report-window" label={expanded ? t("persistent.report.collapse") : t("persistent.report.expand")} aria-expanded={expanded} onClick={toggle}>
                   {expanded ? <Minimize2 className="h-4 w-4" aria-hidden="true" /> : <Maximize2 className="h-4 w-4" aria-hidden="true" />}
                 </DashboardIconCap>}
               </div>
@@ -221,32 +223,37 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
           </div>
           {question ? <div className="pas-report-footer">{question.actions}</div> : (entries.length > 1 || completionEligible || acknowledgeable || entry.options.length > 0 || answered) && <div className="pas-report-footer">
             {(completionEligible || acknowledgeable || entry.options.length > 0) && !(answered && sizing.overflowing && !completionEligible) && <div className="chat-ui-actions pas-report-actions" aria-hidden={suppressActions || undefined} inert={suppressActions || undefined} style={suppressActions ? { visibility: 'hidden' } : undefined}>
-              {(completionEligible ? ['완료','보류'] : acknowledgeable ? ['확인했어'] : entry.options).map(option => <Button key={option} variant="outline" disabled={disabled || sending.sending || (completionEligible && completion.busy)} onClick={() => {
-                if (completionEligible) {
+              {(completionEligible ? [
+                { action: 'done' as const, label: t("persistent.thread.done") },
+                { action: 'on_hold' as const, label: t("persistent.thread.hold") },
+              ] : acknowledgeable
+                ? [{ action: 'acknowledge' as const, label: t("persistent.thread.acknowledge") }]
+                : entry.options.map(option => ({ action: 'reply' as const, label: option }))
+              ).map(({ action, label }) => <Button key={action === 'reply' ? label : action} variant="outline" disabled={disabled || sending.sending || (completionEligible && completion.busy)} onClick={() => {
+                if (action === 'done' || action === 'on_hold') {
                   const nextKey = entries[position + 1]?.key ?? entries[position - 1]?.key ?? null;
-                  const target = option === '보류' ? 'on_hold' : 'done';
-                  void completion.complete(cardEntry as ReportCardEntry & { card_id: string; card_numbers: number[] }, entries, target).then(done => {
+                  void completion.complete(cardEntry as ReportCardEntry & { card_id: string; card_numbers: number[] }, entries, action).then(done => {
                     if (done && nextKey && report.visibleKey === entry.key) selectKey(nextKey);
                   });
-                } else if (acknowledgeable) {
+                } else if (action === 'acknowledge') {
                   if (entry.key.startsWith('card_') || entry.key.startsWith('cq_')) void dismissReport(entry.key);
                   else if (sending.close(entry)) void dismissReport(entry.key);
-                } else void sending.reply(entry, option);
-              }}>{option}</Button>)}
+                } else void sending.reply(entry, label);
+              }}>{label}</Button>)}
             </div>}
             {answered && <div className="pas-report-received">
-              <p className="pas-report-todo"><span className="pas-report-received-label">받은 답</span>{answer}</p>
-              {sending.canCancel(entry) && (sending.cancelRequested(entry) ? <span className="pas-report-cancel-sent">취소 요청 보냄</span> : <Button variant="ghost" size="xs" disabled={disabled || sending.sending} onClick={() => void sending.cancel(entry)}>취소 요청</Button>)}
+              <p className="pas-report-todo"><span className="pas-report-received-label">{t("persistent.report.receivedAnswer")}</span>{answer}</p>
+              {sending.canCancel(entry) && (sending.cancelRequested(entry) ? <span className="pas-report-cancel-sent">{t("persistent.report.cancelSent")}</span> : <Button variant="ghost" size="xs" disabled={disabled || sending.sending} onClick={() => void sending.cancel(entry)}>{t("persistent.report.requestCancel")}</Button>)}
             </div>}
           </div>}
-          {position === index && completion.recent && <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}><UndoCountdownRing key={`${completion.recent.cardId}-${completion.recent.expiresAt}`} expiresAt={completion.recent.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS}/>되돌리기</Button></div>}
+          {position === index && completion.recent && <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}><UndoCountdownRing key={`${completion.recent.cardId}-${completion.recent.expiresAt}`} expiresAt={completion.recent.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS}/>{t("persistent.undo")}</Button></div>}
         </article>;
       })}
     </div>
     {entries.length > 1 && <div className="pas-report-nav">
-      <DashboardIconCap size="small" appearance="bare" label="앞 장" disabled={index === 0} onClick={() => go(index - 1)}><ChevronLeft className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" /></DashboardIconCap>
+      <DashboardIconCap size="small" appearance="bare" label={t("persistent.report.previous")} disabled={index === 0} onClick={() => go(index - 1)}><ChevronLeft className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" /></DashboardIconCap>
       <span className="pas-report-count" aria-live="polite" aria-atomic="true">{index + 1} / {entries.length}</span>
-      <DashboardIconCap size="small" appearance="bare" label="다음 장" disabled={index === entries.length - 1} onClick={() => go(index + 1)}><ChevronRight className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" /></DashboardIconCap>
+      <DashboardIconCap size="small" appearance="bare" label={t("persistent.report.next")} disabled={index === entries.length - 1} onClick={() => go(index + 1)}><ChevronRight className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" /></DashboardIconCap>
     </div>}
     {bubble && <i aria-hidden="true" className="pas-report-tail" data-direction={bubble.tailDirection} />}
   </section>;
@@ -254,6 +261,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
 }
 
 function ReportCardLink({ number, pending, lookupCards }: { number: number; pending: Set<number>; lookupCards: () => Promise<void> }) {
+  const { t } = useTranslation();
   const id = useCardStore(state => Object.values(state.byId).find(card => card.number === number)?.id);
   const anchor = useRef<HTMLAnchorElement>(null);
   const [openAfterLookup, setOpenAfterLookup] = useState(false);
@@ -273,7 +281,7 @@ function ReportCardLink({ number, pending, lookupCards }: { number: number; pend
     } finally { if (open) pending.delete(number); }
   };
   return <SourceLink href={id ? `/?card=${encodeURIComponent(id)}` : undefined}
-    role="link" tabIndex={0} className={`v3-chat-status pas-report-card hover:underline ${LINK_FOCUS}`} aria-label={`카드 ${number}번 열기`}
+    role="link" tabIndex={0} className={`v3-chat-status pas-report-card hover:underline ${LINK_FOCUS}`} aria-label={t("persistent.report.openNumberedCard", { number })}
     onKeyDown={event => { if (!id && event.key === 'Enter') {
       event.preventDefault();
       void resolve(!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey, event.currentTarget);

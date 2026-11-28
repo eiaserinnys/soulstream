@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ChatView, ReportTimelineRowProvider, useDashboardStore, type ChatSessionStoreScope, type ReportTimelineAlignmentInset } from "@seosoyoung/soul-ui";
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
@@ -24,6 +25,8 @@ type PersistentSessionChatViewProps = {
 } & Omit<NonNullable<Parameters<typeof ChatView>[0]>, "presentation" | "composerAnchorRef">;
 
 export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySettings = true, showReport = false, reportEntries, reportSeat, dismissReport, ...props }: PersistentSessionChatViewProps) {
+  const { i18n } = useTranslation();
+  const api = useMemo(() => createPersistentSessionsApi(fetch, i18n.t), [i18n]);
   const storedReport = useDashboardStore(state => showReport ? state.persistentReports[sessionId] ?? EMPTY_REPORT : EMPTY_REPORT);
   const entries = reportEntries ?? storedReport;
   const listedSettings = useDashboardStore(state => !storeScope && state.persistentSessionDisplaySettings?.sessionId === sessionId);
@@ -58,7 +61,7 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
     const hasSettings = () => (storeScope?.store.getState() ?? useDashboardStore.getState()).persistentSessionDisplaySettings?.sessionId === sessionId;
     if (!hasSettings()) setDisplaySettings(sessionId, null);
     const reportBaseline = useDashboardStore.getState().persistentReports[sessionId];
-    void createPersistentSessionsApi().get(sessionId).then(({ session }) => {
+    void api.get(sessionId).then(({ session }) => {
       if (!active) return;
       setDisplaySettings(sessionId, session.persistent ? session.settings : null);
       if (session.persistent_report !== undefined) useDashboardStore.getState().setPersistentReport(sessionId, session.persistent_report, { current: reportBaseline });
@@ -67,7 +70,7 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
       if (active) { if (!hasSettings()) setDisplaySettings(sessionId, null); setSettledSettingsSession(sessionId); }
     });
     return () => { active = false; };
-  }, [loadDisplaySettings, sessionId, setDisplaySettings, storeScope]);
+  }, [api, loadDisplaySettings, sessionId, setDisplaySettings, storeScope]);
   if (!showReport) return <ReportTimelineRowProvider render={renderReportTimelineRow}>
     <ChatView {...props} storeScope={storeScope} />
   </ReportTimelineRowProvider>;
