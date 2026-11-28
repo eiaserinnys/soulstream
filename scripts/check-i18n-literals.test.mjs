@@ -31,3 +31,18 @@ test('ignores dictionary JSON, tests and i18n-ignore lines', () => {
   writeFileSync(join(root, 'src/ignored.test.ts'), 'const a = "시험";');
   assert.equal(run('--init').status, 0); assert.deepEqual(JSON.parse(readFileSync(join(root, 'scripts/baseline.json'), 'utf8')), {});
 });
+test('only checks selected globs without reading a baseline', () => {
+  setup('const a = "하나";');
+  writeFileSync(join(root, 'src/other.ts'), 'const b = "둘";');
+  let result = run('--only', 'src/view.tsx');
+  assert.equal(result.status, 1); assert.match(result.stdout, /view\.tsx:1/); assert.doesNotMatch(result.stdout, /other\.ts/);
+  result = run('--only', 'src/missing.ts', '--only', 'src/other.ts');
+  assert.equal(result.status, 1); assert.match(result.stdout, /other\.ts:1/);
+  assert.equal(run('--only', 'src/missing.ts').status, 0);
+});
+test('excludes configured globs', () => {
+  setup('const a = "하나";');
+  writeFileSync(join(root, 'scripts/config.json'), JSON.stringify({ roots: ['src'], baseline: 'scripts/baseline.json', exclude: ['src/view.tsx'] }));
+  assert.equal(run('--init').status, 0);
+  assert.deepEqual(JSON.parse(readFileSync(join(root, 'scripts/baseline.json'), 'utf8')), {});
+});
