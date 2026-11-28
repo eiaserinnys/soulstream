@@ -1,0 +1,62 @@
+{
+  "core": [
+    "agent.root",
+    "projects.root",
+    "mistakes.root",
+    "common.root",
+    "common.rules",
+    "common.rules_templates",
+    "common.rules_scoped",
+    "common.rules_extra",
+    "common.soulstream_guide",
+    "claude_common",
+    "coding_common",
+    "orchestrator"
+  ],
+  "catalogs": [
+    "common.catalogs",
+    "catalog"
+  ],
+  "persona": [
+    "seosoyoung"
+  ],
+  "skills-a": [
+    "common.skills",
+    "skill.atom_tree_cleanup",
+    "skill.card_work",
+    "skill.review_code",
+    "skill.statechart",
+    "skill.ui_css_recipes",
+    "skill.ui_design",
+    "skill.worktree_manager"
+  ],
+  "skills-b": [
+    "skill.agent_delegation",
+    "skill.artifacts",
+    "skill.atom_search",
+    "skill.atom_zettelkasten",
+    "skill.cogito",
+    "skill.daily_review",
+    "skill.debugging",
+    "skill.delegate_task",
+    "skill.find_skill",
+    "skill.general_create_rule",
+    "skill.git_setup",
+    "skill.html_make",
+    "skill.lite_delegation",
+    "skill.mistake_record",
+    "skill.modern_web_guidance",
+    "skill.node_model_selection",
+    "skill.recurring_jobs",
+    "skill.retrospective",
+    "skill.review_spec",
+    "skill.set_session_name",
+    "skill.skill_creator",
+    "skill.skill_link_blocks",
+    "skill.soulstream_guide",
+    "skill.soulstream_session",
+    "skill.verification_before_completion",
+    "skill.work_plan",
+    "skill.work_plan_execute"
+  ]
+}
