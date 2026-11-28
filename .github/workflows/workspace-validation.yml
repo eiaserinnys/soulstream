@@ -9,6 +9,8 @@ on:
     paths:
       - 'packages/**'
       - 'unified-dashboard/**'
+      # unified-dashboard/client/v3/IosComponentsReviewPage.tsx imports soul-app/src/component-review/dialogue-metadata.json.
+      - 'soul-app/src/component-review/**'
       - 'soul-desktop/**'
       - 'soul-server-ts/**'
       - 'orch-server-ts/**'
@@ -43,6 +45,8 @@ on:
     paths:
       - 'packages/**'
       - 'unified-dashboard/**'
+      # unified-dashboard/client/v3/IosComponentsReviewPage.tsx imports soul-app/src/component-review/dialogue-metadata.json.
+      - 'soul-app/src/component-review/**'
       - 'soul-desktop/**'
       - 'soul-server-ts/**'
       - 'orch-server-ts/**'
