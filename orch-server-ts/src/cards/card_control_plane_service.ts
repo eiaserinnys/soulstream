@@ -37,6 +37,7 @@ import { findCardSessionByOrdinal, findCardsByNumber, readCardChildOrdinals, rea
 import type { CardWorkExecution } from "./card_work_lifecycle.js";
 import { CardMcpReadService } from "./card_mcp_read.js";
 import { readCardSessionMessages, type CardSessionMessagesQuery } from "./card_session_messages.js";
+import { readCardProgress } from "./card_progress_repository.js";
 import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
@@ -168,6 +169,7 @@ export class CardControlPlaneService {
     const detail=await this.getCard(cardId);
     return detail ? await readCardSessionMessages(this.repoSql, detail, query) : null;
   }
+  getCardProgress(cardId: string) { return readCardProgress(this.repoSql, cardId); }
   listReports(cardId: string) { return this.repo.listReports(cardId); }
   listConfirmedItemsSinceLastCommentDelivery(cardId:string,throughAt:Date) {
     return this.repo.listConfirmedItemsSinceLastCommentDelivery(cardId,throughAt);

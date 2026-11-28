@@ -146,10 +146,11 @@ export class CardRepositoryRead {
     return this.projectSourceRows(cardId, rows);
   }
   async listCardNowHistory(cardId:string) {
-    const rows=await this.sql<{payload_json:Record<string,unknown>;created_at:Date}[]>`SELECT payload_json,created_at FROM folder_operations
+    const rows=await this.sql<{id:string;payload_json:Record<string,unknown>;created_at:Date}[]>`SELECT id,payload_json,created_at FROM folder_operations
       WHERE target_kind='card' AND target_id=${cardId} AND operation_type='update_card_now'
       ORDER BY created_at DESC,id DESC LIMIT 20`;
-    return rows.reverse().map(({payload_json,created_at})=>({
+    return rows.reverse().map(({id,payload_json,created_at})=>({
+      id,
       text:payload_json.text,
       turn:payload_json.turn,
       ask:payload_json.ask ?? null,
