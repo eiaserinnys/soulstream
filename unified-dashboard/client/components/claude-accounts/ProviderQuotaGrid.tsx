@@ -42,7 +42,8 @@ export function formatQuotaResetLabel(
   if (minutes < 12 * 60) return t("accounts.quota.inHours", { number: number.format(Math.ceil(minutes / 60)) });
   if (isMonthlyOrLong) return dateLabel;
   const weekday = new Intl.DateTimeFormat(locale, { weekday: "short" }).format(reset);
-  return t("accounts.quota.weekdayTime", { weekday, time: clockText(reset, locale) });
+  const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(reset);
+  return t("accounts.quota.weekdayTime", { weekday, time });
 }
 
 export function quotaColor(usedPercent: number): string {

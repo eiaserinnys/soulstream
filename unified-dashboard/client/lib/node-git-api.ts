@@ -114,7 +114,9 @@ const SSH_CHECK_REASON_KEY: Record<Exclude<NodeGitSshCheckResult["reason"], "con
 
 /** 요청 오류와 클론 작업 오류를 화면 문구로 옮긴다. 입력 칸 오류는 칸 이름을 붙여 말한다. */
 export function nodeGitErrorText(error: { code: string; field?: NodeGitField | null }, t: Translate): string {
-  if (error.code === "invalid_request" && error.field) return t(FIELD_KEY[error.field]);
+  if (error.code === "invalid_request" && error.field && Object.hasOwn(FIELD_KEY, error.field)) {
+    return t(FIELD_KEY[error.field]);
+  }
   return t(Object.hasOwn(CODE_KEY, error.code) ? CODE_KEY[error.code] : "accounts.git.requestFailed");
 }
 

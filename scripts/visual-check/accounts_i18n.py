@@ -221,6 +221,17 @@ def account_views(page, fake, settings, text, out, locale, width, results, actio
       ...(locale === "ko" ? { hour12: false } : {}),
     }).format(new Date(reset))""", [locale, reset_at])
     expect(first.locator(".c724-quota-reset").first).to_have_text(text["quota"]["resetAt"].replace("{{time}}", reset))
+    weekly_reset = fake.local_accounts["accounts"][0]["usage"]["seven_day"]["resets_at"]
+    weekday_time = page.evaluate("""([locale, reset]) => {
+      const date = new Date(reset);
+      const weekday = new Intl.DateTimeFormat(locale, { weekday: "short" }).format(date);
+      const time = new Intl.DateTimeFormat(locale, {
+        hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+      }).format(date);
+      return { weekday, time };
+    }""", [locale, weekly_reset])
+    weekly_label = text["quota"]["weekdayTime"].replace("{{weekday}}", weekday_time["weekday"]).replace("{{time}}", weekday_time["time"])
+    expect(first.locator(".c724-quota-reset").nth(1)).to_have_text(weekly_label)
     first.scroll_into_view_if_needed()
     record(page, out, locale, width, "claude-accounts", results)
 
@@ -354,6 +365,10 @@ def run_case(browser, base, output, locale, width):
             page.get_by_role("option", name="English", exact=True).click()
         expect(page.locator("html")).to_have_attribute("lang", locale)
         account_views(page, fake, settings, text, output, locale, width, results, actions)
+        if locale == "en" and width == 360:
+            for scene in ("claude-accounts", "claude-login"):
+                metrics = results[f"{locale}-{scene}-{width}.png"]
+                assert not metrics["clipped"], (scene, metrics["clipped"])
         agent_view(page, settings, text, output, locale, width, results, actions)
         model_view(page, settings, text, jobs, output, locale, width, results, actions)
         git_views(page, fake, settings, text, output, locale, width, results, actions)
@@ -411,7 +426,9 @@ def write_operations(output, results):
         f"- 실행 `python3 -P scripts/visual-check/accounts_i18n.py --output {output}`",
         f"- 산출물 `{output}`",
     ]
-    lines.extend(f"- {name} `{json.dumps(data, ensure_ascii=False)}`" for name, data in overflow.items())
+    narrow_account_scenes = ("en-claude-accounts-360.png", "en-claude-login-360.png")
+    measured = {name: reports[name] for name in narrow_account_scenes} | overflow
+    lines.extend(f"- {name} `{json.dumps(data, ensure_ascii=False)}`" for name, data in measured.items())
     (output / "operations.md").write_text("\n".join(lines) + "\n", encoding="utf8")
 
 
