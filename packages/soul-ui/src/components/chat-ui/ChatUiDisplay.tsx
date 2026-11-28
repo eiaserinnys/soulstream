@@ -1,6 +1,6 @@
 import { renderDisplayValue, type ChatUiState, type DisplayValue, type Node, type NormalizedChatUiDocumentV1, type Tone } from '@soulstream/chat-ui';
 import { useInternalLinkClick } from '../InternalLinkProvider';
-import { StatusChip } from '../../../../../unified-dashboard/client/v3/StatusChip';
+import { StatusChip } from '../ui/status-chip';
 import { ChatUiLine, ChatUiFlow } from './ChatUiDiagrams';
 import { ChatUiImage, ChatUiHtml } from './ChatUiMedia';
 import './chat-ui-display.css';

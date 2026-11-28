@@ -171,7 +171,7 @@ test("live UI stays independent of streaming/final text, virtual rows, history a
   await expect(root.getByText("278,400원/월", { exact: true })).toBeVisible();
   h.releaseLive();
   await expect(root.locator(".chat-ui")).toHaveCount(2);
-  await expect(root.locator('[data-slot="chat-body"]').filter({ hasText: /^앞뒤$/ })).toContainText("앞뒤");
+  await expect(root.getByText("앞뒤", { exact: true })).toBeVisible();
   await expect(root.locator(".animate-caret-blink")).toHaveCount(1);
   h.releaseFinal();
   await expect(root.getByText("앞뒤 최종 답", { exact: true })).toBeVisible();

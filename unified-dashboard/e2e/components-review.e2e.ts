@@ -122,7 +122,7 @@ for (const width of [1440, 390]) {
     await expect(review.locator('#components-heads .v3-detail-section-head > h3').filter({ hasText: "섹션 머리와 캡" })).toHaveText("섹션 머리와 캡");
     await page.reload();
     await expect(review).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator(".v3-navigation, .v3-session-panel, .v3-planner, .v3-global-toolbar")).toHaveCount(0);
+    await expect(page.locator(':is(.v3-navigation, .v3-session-panel, .v3-planner, .v3-global-toolbar):not([data-testid="settings-toolbar-review"] *)')).toHaveCount(0);
     // 카드 질문 장 표본의 PAS 판(main.persistent-session-main)과 구분한다.
     const viewport = await page.locator("main.v3-components-main").evaluate(el => {
       const r = el.getBoundingClientRect();
@@ -484,14 +484,16 @@ for (const width of [1440, 390]) {
 
     // 표본 첨부(사람 메시지)는 서버 없이 같은 출처의 번들 raster 그림으로 로드된다.
     await defaultChat.getByText("첨부 이미지를 확인해주세요.").scrollIntoViewIfNeeded();
-    const reviewAttachmentImages = defaultChat.locator('img[src*="review-assets"][src*=".png"]');
+    const reviewAttachmentImages = defaultChat.locator('img[src*="pas-settings-1"][src$=".png"]');
     await expect(reviewAttachmentImages.first()).toBeVisible();
     await expect.poll(async () => reviewAttachmentImages.first().evaluate(
       image => (image as HTMLImageElement).naturalWidth,
     )).toBeGreaterThan(0);
     await expect.poll(async () => reviewAttachmentImages.count()).toBeGreaterThan(0);
     for (const source of await reviewAttachmentImages.evaluateAll(images => images.map(image => (image as HTMLImageElement).getAttribute("src") ?? ""))) {
-      expect(source).toMatch(/review-assets\/[^/]+\.png/);
+      const imageUrl = new URL(source, page.url());
+      expect(imageUrl.origin).toBe(new URL(page.url()).origin);
+      expect(imageUrl.pathname).toMatch(/^\/assets\/pas-settings-1-[\w-]+\.png$/);
       expect(source).not.toContain("/api/attachments");
     }
     await expect(defaultChat).not.toContainText("첨부를 찾을 수 없거나");
