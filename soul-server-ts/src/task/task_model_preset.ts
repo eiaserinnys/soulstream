@@ -9,6 +9,45 @@ import type { Task } from "./task_models.js";
 
 export type ModelPresetResolver = Pick<ModelCatalog, "resolve">;
 
+export class UntrustedExecutionPresetError extends Error {
+  constructor(agentId: string, untrustedIds: string[], trustedIds: string[]) {
+    super(`${agentId} 프로필은 상자 밖 프리셋으로만 띄울 수 있습니다. 상자 안 프리셋: ${untrustedIds.join(", ")}. 상자 밖 프리셋: ${trustedIds.join(", ")}`);
+    this.name = "UntrustedExecutionPresetError";
+  }
+}
+
+export function assertTrustedExecutionPresets({
+  agent,
+  presetId,
+  fallbackPresetIds,
+  platform,
+  modelCatalog,
+}: {
+  agent?: Pick<AgentProfile, "id" | "requires_trusted_execution">;
+  presetId: string | null;
+  fallbackPresetIds: readonly string[];
+  platform: NodeJS.Platform;
+  modelCatalog?: Pick<ModelCatalog, "resolve" | "snapshot">;
+}): void {
+  if (agent?.requires_trusted_execution !== true || platform === "win32") return;
+
+  const untrustedIds = [presetId, ...fallbackPresetIds].filter((id) => {
+    if (!id || !modelCatalog) return true;
+    try {
+      return modelCatalog.resolve(id).trusted_execution !== true;
+    } catch (error) {
+      if (error instanceof UnknownModelPresetError) return true;
+      throw error;
+    }
+  }).map((id) => id ?? "프리셋 없음");
+  if (untrustedIds.length === 0) return;
+
+  const trustedIds = modelCatalog?.snapshot().presets
+    .filter((preset) => preset.trusted_execution === true)
+    .map((preset) => preset.id) ?? [];
+  throw new UntrustedExecutionPresetError(agent.id, untrustedIds, trustedIds);
+}
+
 type ModelSelection = Pick<CreateTaskParams, "model" | "modelPreset">;
 
 export function resolveModelPresetSelection(

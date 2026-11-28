@@ -61,7 +61,7 @@ import {
   type ClaudeRuntimeTaskStopResult,
 } from "./claude_runtime_control.js";
 import { TaskClaudeRuntimeControlRoute } from "./task_claude_runtime_control_route.js";
-import { resolveModelPresetSelection } from "./task_model_preset.js";
+import { assertTrustedExecutionPresets, resolveModelPresetSelection } from "./task_model_preset.js";
 import {
   IsolationPolicyUnavailableError,
   resolveExecutionSecurityDecision,
@@ -346,6 +346,13 @@ export class TaskManager {
       : undefined;
     const effortPreset = selectedPreset
       ?? resolveEffortPreset(canonicalParams.modelPreset, this.modelCatalog);
+    assertTrustedExecutionPresets({
+      agent: canonicalParams.agentProfileSnapshot ?? agent,
+      presetId: selectedPreset?.id ?? (canonicalParams.modelPreset?.trim() || null),
+      fallbackPresetIds: canonicalParams.modelPresetFallbacks ?? [],
+      platform: process.platform,
+      modelCatalog: this.modelCatalog,
+    });
     const reasoningEffort = resolveReasoningEffortForCreate(
       effortPreset,
       canonicalParams.reasoningEffort,

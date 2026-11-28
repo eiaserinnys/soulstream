@@ -1129,6 +1129,16 @@
                 }
               ]
             },
+            "requires_trusted_execution": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "workspace_dir": {
               "anyOf": [
                 {
@@ -5890,6 +5900,16 @@
                 }
               ]
             },
+            "requires_trusted_execution": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "workspace_dir": {
               "anyOf": [
                 {
@@ -6864,6 +6884,16 @@
               "anyOf": [
                 {
                   "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "requires_trusted_execution": {
+              "anyOf": [
+                {
+                  "type": "boolean"
                 },
                 {
                   "type": "null"
@@ -9706,6 +9736,16 @@
               "anyOf": [
                 {
                   "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "requires_trusted_execution": {
+              "anyOf": [
+                {
+                  "type": "boolean"
                 },
                 {
                   "type": "null"
