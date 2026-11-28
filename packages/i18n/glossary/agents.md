@@ -20,6 +20,7 @@
 | 스킬 정의 원문 | Skill definition |
 | 쓰이는 곳 | Used by |
 | 검증 | Verification |
+| 다시 검증 | Recheck |
 | 진단 | Finding |
 | 실행 노드 | Run node |
 | 실행 에이전트 | Run agent |

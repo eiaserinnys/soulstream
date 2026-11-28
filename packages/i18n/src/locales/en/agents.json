@@ -192,7 +192,7 @@
     "noJob": "No verification job",
     "requestError": "Request failed",
     "verifying": "Verifying",
-    "verifyAgain": "Verify again",
+    "verifyAgain": "Recheck",
     "loading": "Loading report",
     "verifiedAt": "Verified <date>{{time}}</date>"
   },

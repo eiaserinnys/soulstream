@@ -132,7 +132,7 @@ describe("작은 계산", () => {
     expect(reportTime(null, "ko")).toBeNull();
     const base = { uploaded_by_session_id: null, verify_job_id: null, findings: [] };
     expect(reportTime({ ...base, generated_at: "2026-11-25T05:30:00.000Z", uploaded_at: null }, "ko")).toBe("11월 25일 14:30");
-    expect(reportTime({ ...base, generated_at: "2026-11-25T05:30:00.000Z", uploaded_at: null }, "en")).toBe("November 25 at 14:30");
+    expect(reportTime({ ...base, generated_at: "2026-11-25T05:30:00.000Z", uploaded_at: null }, "en")).toBe("Nov 25, 14:30");
     expect(reportTime({ ...base, generated_at: null, uploaded_at: "2026-11-25T06:00:00.000Z" }, "ko")).toBe("11월 25일 15:00");
   });
 });

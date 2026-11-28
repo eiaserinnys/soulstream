@@ -382,7 +382,7 @@ export function severityRank(findings: readonly GuideFinding[]): number {
 export const skillFindings = (skill: SkillGuide): readonly GuideFinding[] => skill.lint?.findings ?? [];
 export const catalogFindings = (catalog: CatalogGuide): readonly GuideFinding[] => catalog.lint?.findings ?? [];
 
-const REPORT_TIME_OPTIONS = { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Seoul" } satisfies Intl.DateTimeFormatOptions;
+const REPORT_TIME_OPTIONS = { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Seoul" } satisfies Intl.DateTimeFormatOptions;
 
 function formatReportTime(iso: string | null | undefined, language: string | undefined): string | null {
   if (!iso) return null;
