@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, extname, relative, resolve, sep } from 'node:path';
+import { dirname, extname, matchesGlob, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -8,22 +8,24 @@ const require = createRequire(resolve(repo, 'packages/soul-ui/package.json'));
 const ts = require('typescript');
 
 function options(args) {
-  const result = { root: repo, config: 'scripts/i18n-literal-check.config.json', mode: 'check' };
+  const result = { root: repo, config: 'scripts/i18n-literal-check.config.json', mode: 'check', only: [] };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === '--root' || arg === '--config') {
+    if (arg === '--root' || arg === '--config' || arg === '--only') {
       if (!args[i + 1] || args[i + 1].startsWith('--')) throw Error(`${arg}에 경로가 필요합니다`);
-      result[arg.slice(2)] = args[++i];
+      if (arg === '--only') result.only.push(args[++i]);
+      else result[arg.slice(2)] = args[++i];
     } else if (arg === '--init' || arg === '--update') {
       if (result.mode !== 'check') throw Error('--init과 --update는 함께 쓸 수 없습니다');
       result.mode = arg.slice(2);
     } else throw Error(`알 수 없는 인자: ${arg}`);
   }
+  if (result.only.length && result.mode !== 'check') throw Error('--only는 --init 또는 --update와 함께 쓸 수 없습니다');
   result.root = resolve(result.root);
   return result;
 }
 
-function collect(root, roots) {
+function collect(root, roots, exclude = [], only = []) {
   const findings = {};
   function visitDirectory(directory) {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -31,10 +33,11 @@ function collect(root, roots) {
       if (entry.isDirectory()) {
         if (!['__tests__', 'tests', 'test', 'e2e', 'qa'].includes(entry.name)) visitDirectory(file);
       } else if (entry.isFile() && ['.ts', '.tsx', '.js', '.jsx'].includes(extname(file)) && !/\.(?:test|spec|stories|qa)(?:[.-]|$)/.test(entry.name)) {
+        const name = relative(root, file).split(sep).join('/');
+        if (exclude.some(pattern => matchesGlob(name, pattern)) || (only.length && !only.some(pattern => matchesGlob(name, pattern)))) continue;
         const source = readFileSync(file, 'utf8');
         const lines = source.split(/\r?\n/);
         const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, /x$/.test(file) ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
-        const name = relative(root, file).split(sep).join('/');
         function visit(node) {
           if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node) || ts.isJsxText(node)) && /[가-힣]/.test(node.text)) {
             const line = parsed.getLineAndCharacterOfPosition(node.getStart(parsed)).line + 1;
@@ -57,12 +60,16 @@ function writeBaseline(path, counts) {
 }
 
 function main() {
-  const { root, config: configPath, mode } = options(process.argv.slice(2));
+  const { root, config: configPath, mode, only } = options(process.argv.slice(2));
   const config = JSON.parse(readFileSync(resolve(root, configPath), 'utf8'));
+  const findings = collect(root, config.roots, config.exclude, only);
+  if (only.length) {
+    for (const [file, entries] of Object.entries(findings)) for (const finding of entries) console.log(`${file}:${finding.line}: ${finding.text}`);
+    return Object.keys(findings).length ? 1 : 0;
+  }
   const path = resolve(root, config.baseline);
   if (mode === 'init' && existsSync(path)) throw Error(`기준치 파일이 이미 있습니다: ${config.baseline}`);
   const baseline = mode === 'init' ? {} : JSON.parse(readFileSync(path, 'utf8'));
-  const findings = collect(root, config.roots);
   const counts = Object.fromEntries(Object.entries(findings).map(([file, entries]) => [file, entries.length]));
   if (mode === 'init') { writeBaseline(path, counts); console.log(`기준치 생성: ${config.baseline}`); return 0; }
   if (mode === 'update') {
