@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useLayoutEffect, useRef } from "react";
 import {
   Button,
@@ -48,6 +49,7 @@ export function McpDialogs({
   remove(target: DeleteTarget): void;
   rollback(id: number): void;
 }) {
+  const { t, i18n } = useTranslation();
   const cancelButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const deleteSnapshot = useRef<{ target: DeleteTarget; error: string; nodes: string[]; profiles: string[] } | null>(null);
@@ -69,11 +71,11 @@ export function McpDialogs({
       >
         <DialogPopup className="approved-dialog" initialFocus={cancelButton}>
           <DialogHeader>
-            <DialogTitle>삭제</DialogTitle>
+            <DialogTitle>{t("mcp.delete")}</DialogTitle>
             <DialogDescription>
-              “{deleteContent?.target.id}” 항목을 삭제할까요? 사용 중이면 삭제할 수 없습니다.
+              {t("mcp.confirmDelete", { id: deleteContent?.target.id ?? "" })}
               {deleteContent?.target.kind === "profile" && deleteContent.nodes.length
-                ? ` 소속 노드: ${deleteContent.nodes.join(", ")}`
+                ? " " + t("mcp.memberNodesValue", { nodes: deleteContent.nodes.join(", ") })
                 : ""}
             </DialogDescription>
           </DialogHeader>
@@ -83,12 +85,12 @@ export function McpDialogs({
                 {deleteContent.error}
                 {deleteContent.error.includes("다시 읽은") ? (
                   <Button type="button" variant="outline" onClick={reload}>
-                    다시 읽기
+                    {t("mcp.reload")}
                   </Button>
                 ) : null}
                 {deleteContent.profiles.length > 0 && deleteContent.error.includes("사용 중인 프로필") ? (
                   <details className="config-advanced">
-                    <summary>사용 중인 프로필 전체 <span>{deleteContent.profiles.length}개</span></summary>
+                    <summary>{t("mcp.allUsingProfiles")} <span>{t("mcp.itemCount", { count: deleteContent.profiles.length })}</span></summary>
                     <p>{deleteContent.profiles.join(", ")}</p>
                   </details>
                 ) : null}
@@ -102,7 +104,7 @@ export function McpDialogs({
               variant="outline"
               onClick={closeDelete}
             >
-              취소
+              {t("mcp.cancel")}
             </Button>
             <Button
               type="button"
@@ -112,7 +114,7 @@ export function McpDialogs({
                 if (deleting) remove(deleting);
               }}
             >
-              삭제
+              {t("mcp.delete")}
             </Button>
           </DialogFooter>
         </DialogPopup>
@@ -126,9 +128,9 @@ export function McpDialogs({
       >
         <DialogPopup className="approved-dialog" initialFocus={closeButton}>
           <DialogHeader>
-            <DialogTitle>되돌리기</DialogTitle>
+            <DialogTitle>{t("mcp.rollback")}</DialogTitle>
             <DialogDescription>
-              {historyContent?.target.id}의 저장된 판을 고릅니다.
+              {t("mcp.chooseRevision", { id: historyContent?.target.id ?? "" })}
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
@@ -137,7 +139,7 @@ export function McpDialogs({
                 {historyContent.error}
                 {historyContent.error.includes("다시 읽은") ? (
                   <Button type="button" variant="outline" onClick={reload}>
-                    다시 읽기
+                    {t("mcp.reload")}
                   </Button>
                 ) : null}
               </SettingsAlert>
@@ -149,8 +151,8 @@ export function McpDialogs({
                   className="flex items-center justify-between gap-2 py-2"
                 >
                   <span>
-                    판 {revision.id} ·{" "}
-                    {new Date(revision.created_at).toLocaleString("ko-KR")}
+                    {t("mcp.revision", { revision: revision.id })} ·{" "}
+                    {new Date(revision.created_at).toLocaleString(i18n.resolvedLanguage === "ko" ? "ko-KR" : "en-US")}
                   </span>
                   <Button
                     type="button"
@@ -158,12 +160,12 @@ export function McpDialogs({
                     disabled={busy}
                     onClick={() => rollback(revision.id)}
                   >
-                    이 판으로 되돌리기
+                    {t("mcp.restoreRevision")}
                   </Button>
                 </div>
               ))
             ) : (
-              <p>저장된 판이 없습니다.</p>
+              <p>{t("mcp.noRevisions")}</p>
             )}
           </DialogPanel>
           <DialogFooter>
@@ -173,7 +175,7 @@ export function McpDialogs({
               variant="outline"
               onClick={closeHistory}
             >
-              닫기
+              {t("mcp.close")}
             </Button>
           </DialogFooter>
         </DialogPopup>
