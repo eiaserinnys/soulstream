@@ -48,7 +48,23 @@
     "nodeUnavailable": "The node is offline. Check its connection.",
     "linkFailed": "Could not get the sign-in link.",
     "linkMissing": "Sign-in link missing",
-    "connectTitle": "Connect {{label}}"
+    "connectTitle": "Connect {{label}}",
+    "deviceCodeDisabled": "Turn on Codex device code authentication in ChatGPT’s Security settings, then try again.",
+    "invalidCode": "The code is incorrect. Try again for a new link.",
+    "timeout": "Sign-in timed out. Try again.",
+    "cliExited": "The {{value}} CLI closed during sign-in. Try again.",
+    "verifyFailed": "Signed in, but {{value}} usage could not be verified. Check your account and subscription, then try again.",
+    "replaced": "A new sign-in request canceled this one.",
+    "failed": "Could not sign in. Try again.",
+    "cliMissing": "The {{value}} CLI is missing on this node.",
+    "offline": "The node is offline. Check its connection and try again.",
+    "notFound": "This sign-in request was not found. Try again.",
+    "notReady": "Sign-in is not ready to accept a code yet.",
+    "approveInBrowser": "Approve this sign-in in your browser without pasting a code.",
+    "adminOnly": "Only admins can connect coding agents.",
+    "workerFailed": "The node worker could not handle the request. Try again in a moment.",
+    "httpError": "Request failed (HTTP {{value}}).",
+    "networkError": "Could not send the request. Check your connection and try again."
   },
   "claude": {
     "needsRelogin": "Sign in again",
@@ -104,5 +120,20 @@
     "inMinutes": "In {{number}} min",
     "inHours": "In {{number}} hr",
     "weekdayTime": "{{weekday}} {{time}}"
+  },
+  "agents": {
+    "selectNode": "Choose a node for agent sign-in",
+    "offline": "Sign-in is unavailable while the node is offline."
+  },
+  "antigravity": {
+    "status": "Status {{value}}",
+    "use": "Use Antigravity (agy)",
+    "loadError": "Could not load settings.",
+    "terms": "Google’s terms prohibit using agy for automation. Turn it on anyway?",
+    "title": "Turn on Antigravity (agy)",
+    "enable": "Turn on",
+    "acknowledge": "Type “{{phrase}}” to continue.",
+    "conflict": "Settings changed elsewhere. The latest settings are loaded. Try again.",
+    "saveError": "Could not save settings ({{status}})"
   }
 }

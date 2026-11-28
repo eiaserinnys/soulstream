@@ -36,7 +36,7 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
   const { t } = useTranslation();
   const label = AGENT_LOGIN_PROVIDER_LABEL[provider];
   const [flow, setFlow] = useState<AgentLoginFlow | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<{ cause: unknown } | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
@@ -63,7 +63,7 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
-    setMessage(null);
+    setRequestError(null);
     setCode("");
     setFlow(null);
     doneNotified.current = false;
@@ -76,7 +76,7 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
       }
       accept(next);
     } catch (caught) {
-      if (!unmounted.current) setMessage(agentLoginRequestErrorMessage(provider, caught));
+      if (!unmounted.current) setRequestError({ cause: caught });
     } finally {
       inFlight.current = false;
       if (!unmounted.current) setBusy(false);
@@ -113,12 +113,12 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
       void getAgentLogin(context.current.request, context.current.nodeId, loginId)
         .then((next) => {
           if (!active) return;
-          setMessage(null);
+          setRequestError(null);
           accept(next);
         })
         .catch((caught: unknown) => {
           if (!active) return;
-          setMessage(agentLoginRequestErrorMessage(provider, caught));
+          setRequestError({ cause: caught });
           // 같은 상태로 다시 그려 다음 읽기를 예약한다.
           setFlow((current) => current ? { ...current } : current);
         });
@@ -133,14 +133,14 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
     if (!flow || inFlight.current || !code.trim()) return;
     inFlight.current = true;
     setBusy(true);
-    setMessage(null);
+    setRequestError(null);
     const submitted = code.trim();
     // 붙여 넣은 코드는 보낸 즉시 화면 상태에서 지운다.
     setCode("");
     try {
       accept(await submitAgentLoginCode(context.current.request, context.current.nodeId, flow.login_id, submitted));
     } catch (caught) {
-      setMessage(agentLoginRequestErrorMessage(provider, caught));
+      setRequestError({ cause: caught });
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -159,7 +159,7 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
       onClose();
     } catch (caught) {
       pending.shouldCancel = true;
-      setMessage(agentLoginRequestErrorMessage(provider, caught));
+      setRequestError({ cause: caught });
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -168,7 +168,7 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
 
   // 초점은 시트가 지금 기다리는 첫 동작으로 간다. 열 때는 시트 자신(연결 단추가 비활성이 되어도 초점이 사라지지 않게),
   // 주소가 오면 「주소 열기」(Antigravity는 코드 입력칸), 실패하면 「다시 시도」.
-  const focusKey = flow ? `${flow.state}:${flow.expects_code ? "code" : "open"}` : message ? "error" : "starting";
+  const focusKey = flow ? `${flow.state}:${flow.expects_code ? "code" : "open"}` : requestError ? "error" : "starting";
   useEffect(() => {
     const root = sheetRef.current;
     if (!root) return;
@@ -183,7 +183,8 @@ export function AgentLoginSheet({ nodeId, provider, request, onClose, onDone }: 
 
   const authUrl = safeAuthUrl(flow?.auth_url ?? null);
   const terminal = flow !== null && isTerminalAgentLoginState(flow.state);
-  const failedText = flow?.state === "failed" ? agentLoginFailureMessage(provider, flow.error?.code) : null;
+  const failedText = flow?.state === "failed" ? agentLoginFailureMessage(provider, flow.error?.code, t) : null;
+  const message = requestError && agentLoginRequestErrorMessage(provider, requestError.cause, t);
   const visibleError = message ?? failedText ?? (flow?.state === "cancelled" ? t("accounts.login.cancelled") : null);
   const asksForCode = flow?.state === "url_ready" && flow.expects_code;
   const showsDeviceCode = flow?.state === "url_ready" && !flow.expects_code && Boolean(flow.user_code);
