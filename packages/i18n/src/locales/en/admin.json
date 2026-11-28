@@ -210,5 +210,31 @@
     "nodeMissing": "Can't continue this session. Its node is missing.",
     "notFound": "Can't continue. The session wasn't found.",
     "moveError": "Couldn't move the session ({{status}})."
+  },
+  "config": {
+    "hide": "Hide",
+    "show": "Show",
+    "restart": "Applies after restart",
+    "saving": "Saving…",
+    "empty": "None",
+    "collapse": "Show less",
+    "expand": "Show more",
+    "nodes": "Nodes",
+    "noNodes": "No connected nodes.",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "applied_one": "{{count}} setting applied",
+    "applied_other": "{{count}} settings applied",
+    "restartRequired_one": "{{count}} setting takes effect after the server restarts",
+    "restartRequired_other": "{{count}} settings take effect after the server restarts",
+    "open": "Open settings",
+    "button": "Settings"
+  },
+  "pwa": {
+    "reviewDraft": "Review your draft before reloading",
+    "apply": "Update",
+    "saving": "Saving edits…",
+    "retry": "Retry",
+    "savePending": "Edits are still saving. Try again shortly."
   }
 }

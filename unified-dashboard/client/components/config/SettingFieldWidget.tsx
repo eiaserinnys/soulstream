@@ -1,11 +1,4 @@
-/**
- * SettingFieldWidget — 설정 필드 입력 위젯
- *
- * value_type(str/int/float/bool/csv)별 입력 분기,
- * sensitive 마스킹(show/hide 토글),
- * read_only disabled, hot_reloadable 인디케이터를 제공한다.
- */
-
+import { useTranslation } from "react-i18next";
 import { useState, type ReactNode } from "react";
 import { cn, Input } from "@seosoyoung/soul-ui";
 import { Eye, EyeOff, RotateCcw } from "lucide-react";
@@ -73,6 +66,7 @@ function SensitiveInput({
   onChange: (v: string) => void;
   disabled: boolean;
 }) {
+  const { t } = useTranslation();
   const [visible, setVisible] = useState(false);
 
   return (
@@ -89,7 +83,7 @@ function SensitiveInput({
         type="button"
         onClick={() => setVisible(!visible)}
         className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-        title={visible ? "숨기기" : "보기"}
+        title={visible ? t("admin.config.hide") : t("admin.config.show")}
       >
         {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
       </button>
@@ -171,6 +165,7 @@ export function SettingFieldWidget({
   controlSlot?: ReactNode;
   statusSlot?: ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       data-testid="config-field-row"
@@ -186,7 +181,7 @@ export function SettingFieldWidget({
           </span>
           {!field.hot_reloadable && !field.read_only && (
             <span
-              title="재시작 후 적용"
+              title={t("admin.config.restart")}
               className="shrink-0 text-muted-foreground"
             >
               <RotateCcw className="h-3 w-3" />
@@ -199,7 +194,7 @@ export function SettingFieldWidget({
       </div>
       {controlSlot ?? (saving === undefined ? <FieldInput field={field} value={value} onChange={onChange} interactionBlocked={interactionBlocked} /> : <div className="relative min-w-0">
         <FieldInput field={field} value={value} onChange={onChange} interactionBlocked={interactionBlocked} />
-        {saving ? <span role="status" className="pointer-events-none absolute inset-y-0 right-0 flex items-center text-xs text-muted-foreground">저장 중…</span> : null}
+        {saving ? <span role="status" className="pointer-events-none absolute inset-y-0 right-0 flex items-center text-xs text-muted-foreground">{t("admin.config.saving")}</span> : null}
       </div>)}
       {statusSlot ? <div className="col-start-1 sm:col-start-2">{statusSlot}</div> : null}
     </div>

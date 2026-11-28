@@ -1,25 +1,20 @@
-/**
- * ConfigResultMessage — 설정 저장 결과 메시지
- *
- * applied / restart_required / errors 3종 요약을 작은 배너로 표시한다.
- */
-
+import { useTranslation } from "react-i18next";
 import type { SaveResponse } from "../../hooks/useConfigSettings";
 
 export function ConfigResultMessage({ result }: { result: SaveResponse | null }) {
+  const { t } = useTranslation();
   if (!result) return null;
 
   return (
     <div className="text-xs space-y-1 mb-2">
       {result.applied.length > 0 && (
         <p className="text-success" data-v3-selectable-content="true">
-          ✅ {result.applied.length}개 설정 적용됨
+          ✅ {t("admin.config.applied", { count: result.applied.length })}
         </p>
       )}
       {result.restart_required.length > 0 && (
         <p className="text-accent-amber" data-v3-selectable-content="true">
-          🔄 {result.restart_required.length}개 설정은 서버 재시작 후
-          적용됩니다
+          🔄 {t("admin.config.restartRequired", { count: result.restart_required.length })}
         </p>
       )}
       {result.errors.length > 0 && (
