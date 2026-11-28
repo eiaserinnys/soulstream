@@ -1,10 +1,4 @@
-/**
- * ConfigButton - 설정 모달 열기 버튼 (unified-dashboard)
- *
- * soul-dashboard의 ConfigButton에서 포팅.
- * ThemeToggle과 동일한 스타일 패턴. 헤더 우상단 배치용.
- */
-
+import { useTranslation } from "react-i18next";
 import { cn, DashboardIconCap } from "@seosoyoung/soul-ui";
 import { SlidersHorizontal } from "lucide-react";
 
@@ -17,6 +11,7 @@ export function ConfigButton({
   variant?: "default" | "chrome";
   appearance?: "default" | "bare";
 }) {
+  const { t } = useTranslation();
   if (variant === "chrome") {
     return <ChromeConfigButton onClick={onClick} appearance={appearance} />;
   }
@@ -30,11 +25,11 @@ export function ConfigButton({
         "border border-border text-muted-foreground hover:bg-input",
         "transition-colors cursor-pointer",
       )}
-      title="설정"
-      aria-label="Open server configuration"
+      title={t("settings.title")}
+      aria-label={t("admin.config.open")}
     >
       <span className="text-xs">⚙️</span>
-      <span>Config</span>
+      <span>{t("admin.config.button")}</span>
     </button>
   );
 }
@@ -43,9 +38,10 @@ function ChromeConfigButton({
   onClick,
   appearance,
 }: { onClick: () => void; appearance: "default" | "bare" }) {
+  const { t } = useTranslation();
   return (
     <DashboardIconCap
-      label="설정"
+      label={t("settings.title")}
       data-testid="config-button"
       appearance={appearance}
       onClick={onClick}

@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import type { AdminTranslate } from "../components/config/admin-translation";
 import { useEffect, useRef } from "react";
 import "../v3/v3-visual-tokens.css";
 import { Wifi, WifiOff, LoaderCircle, RefreshCw } from "lucide-react";
@@ -12,44 +14,43 @@ import {
 } from "@seosoyoung/soul-ui/components/ui/dialog";
 import type { ConnectionSnapshot } from "./connection-monitor";
 
-const disconnected = [
-  "소울스트림 오케스트레이터와의\n연결이 끊겼습니다.",
-  "일시적인 연결 이상이거나 업데이트가 진행 중일 수 있습니다.",
-  "자동으로 다시 연결하고 있습니다",
-  "연결이 돌아오면 자동으로 이어집니다.",
-  "",
-];
-function copy({ phase, fresh }: ConnectionSnapshot) {
+function copy({ phase, fresh }: ConnectionSnapshot, t: AdminTranslate) {
   if (phase === "planned")
     return [
-      "소울스트림 업데이트가 곧 시작됩니다",
-      "업데이트 중에는 오케스트레이터와의 연결이 잠시 끊길 수 있습니다.",
-      "업데이트를 준비하고 있습니다",
-      "이 화면을 그대로 두세요. 연결이 돌아오면 자동으로 이어집니다.",
-      "업데이트가 끝날 때까지 현재 화면을 유지합니다.",
+      t("admin.connection.plannedTitle"),
+      t("admin.connection.plannedDetail"),
+      t("admin.connection.preparing"),
+      t("admin.connection.plannedResume"),
+      t("admin.connection.plannedFooter"),
     ];
   if (phase === "recovering")
     return [
-      "소울스트림 연결이 복구되었습니다",
-      "최신 내용을 불러오고 있습니다.",
-      "화면을 복구하고 있습니다",
+      t("admin.connection.recoveredTitle"),
+      t("admin.connection.recoveredDetail"),
+      t("admin.connection.restoring"),
       "",
       "",
     ];
   if (phase === "new-version")
     return [
-      "새 버전으로 연결합니다",
-      "새 버전을 적용하기 위해 자동으로 새로고침합니다.",
-      "새 버전으로 연결하고 있습니다",
-      "새 화면이 열리면 이전 작업을 이어갈 수 있습니다.",
-      "새 화면이 열릴 때까지 잠시 기다려 주세요.",
+      t("admin.connection.newVersionTitle"),
+      t("admin.connection.newVersionDetail"),
+      t("admin.connection.connectingNewVersion"),
+      t("admin.connection.newVersionResume"),
+      t("admin.connection.newVersionWait"),
     ];
-  const text = [...disconnected];
-  if (phase === "checking") text[2] = "연결 상태를 확인하고 있습니다";
+  const text = [
+    t("admin.connection.disconnectedTitle"),
+    t("admin.connection.disconnectedDetail"),
+    t("admin.connection.reconnecting"),
+    t("admin.connection.resume"),
+    "",
+  ];
+  if (phase === "checking") text[2] = t("admin.connection.checking");
   if (fresh) {
     text[3] =
-      "이 화면을 그대로 두세요. 연결이 돌아오면 자동으로 화면을 엽니다.";
-    text[4] = "화면이 열릴 때까지 잠시 기다려 주세요.";
+      t("admin.connection.freshResume");
+    text[4] = t("admin.connection.freshWait");
   }
   return text;
 }
@@ -59,10 +60,11 @@ export function ConnectionDialog({
 }: {
   snapshot: ConnectionSnapshot;
 }) {
+  const { t } = useTranslation();
   const open = snapshot.phase !== "connected",
     title = useRef<HTMLHeadingElement>(null),
     popup = useRef<HTMLDivElement>(null);
-  const text = copy(snapshot);
+  const text = copy(snapshot, t);
   useEffect(() => {
     if (!open) return;
     const holdFocus = (event: PointerEvent) => {

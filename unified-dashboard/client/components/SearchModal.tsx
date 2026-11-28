@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Dialog,
@@ -50,17 +51,17 @@ const DEFAULT_FILTER_STATE: FilterState = {
   includeStory: false,
 };
 
-const EVENT_FILTER_LABELS: { key: keyof FilterState; label: string }[] = [
-  { key: "sessionId", label: "세션 아이디" },
-  { key: "userMessage", label: "사용자 메시지" },
-  { key: "agentResponse", label: "에이전트 응답" },
-  { key: "agentThinking", label: "에이전트 내부 사고" },
+const EVENT_FILTER_LABELS: { key: keyof FilterState; labelKey: string }[] = [
+  { key: "sessionId", labelKey: "admin.search.sessionId" },
+  { key: "userMessage", labelKey: "admin.search.userMessage" },
+  { key: "agentResponse", labelKey: "admin.search.agentResponse" },
+  { key: "agentThinking", labelKey: "admin.search.agentThinking" },
 ];
 
-const DERIVED_FILTER_LABELS: { key: keyof FilterState; label: string }[] = [
-  { key: "includeTurnSummaries", label: "턴 요약" },
-  { key: "includeHighlight", label: "하이라이트" },
-  { key: "includeStory", label: "줄거리" },
+const DERIVED_FILTER_LABELS: { key: keyof FilterState; labelKey: string }[] = [
+  { key: "includeTurnSummaries", labelKey: "admin.search.turnSummary" },
+  { key: "includeHighlight", labelKey: "admin.search.highlight" },
+  { key: "includeStory", labelKey: "admin.search.story" },
 ];
 
 function toSearchFilters(state: FilterState): SearchFilters {
@@ -82,13 +83,13 @@ function toSearchFilters(state: FilterState): SearchFilters {
 const SEARCH_RESULT_KIND_BADGE_CLASS =
   "inline-flex w-20 shrink-0 items-center justify-center rounded-full bg-input px-1.5 py-0.5 text-xs text-muted-foreground";
 
-const SEARCH_MATCH_SOURCE_LABELS: Record<
+const SEARCH_MATCH_SOURCE_KEYS: Record<
   Exclude<SearchMatchSource, "message">,
   string
 > = {
-  turn_summary: "턴 요약",
-  highlight: "하이라이트",
-  story: "줄거리",
+  turn_summary: "admin.search.turnSummary",
+  highlight: "admin.search.highlight",
+  story: "admin.search.story",
 };
 
 function SearchResultRow({
@@ -98,13 +99,14 @@ function SearchResultRow({
   result: SearchResultItem;
   onClick: () => void;
 }) {
+  const { t } = useTranslation();
   const isDerivedMatch = result.match_source !== "message";
   const opensStoryPanel =
     result.match_source === "highlight" || result.match_source === "story";
   const badgeLabel =
     result.match_source === "message"
       ? searchEventTypeLabel(result.event_type)
-      : SEARCH_MATCH_SOURCE_LABELS[result.match_source];
+      : t(SEARCH_MATCH_SOURCE_KEYS[result.match_source]);
 
   const openMenu = useSessionMenu();
   return (
@@ -128,7 +130,7 @@ function SearchResultRow({
             isDerivedMatch && "bg-muted",
           )}
           aria-label={
-            isDerivedMatch ? `매치 출처: ${badgeLabel}` : undefined
+            isDerivedMatch ? t("admin.search.matchSource", { source: badgeLabel }) : undefined
           }
         >
           {badgeLabel}
@@ -137,7 +139,7 @@ function SearchResultRow({
           {result.session_id.slice(0, 20)}…
         </span>
         <span className="text-xs text-muted-foreground/60 ml-auto shrink-0">
-          {opensStoryPanel ? "스토리 패널" : `#${result.event_id}`}
+          {opensStoryPanel ? t("admin.search.storyPanel") : `#${result.event_id}`}
         </span>
       </div>
       <p
@@ -159,6 +161,7 @@ function SearchSessionResultRow({
   result: SearchSessionResult;
   onClick: () => void;
 }) {
+  const { t } = useTranslation();
   const openMenu = useSessionMenu();
   return (
     <button
@@ -173,7 +176,7 @@ function SearchSessionResultRow({
       )}
     >
       <div className="flex items-center gap-2 mb-1">
-        <span className={SEARCH_RESULT_KIND_BADGE_CLASS}>세션</span>
+        <span className={SEARCH_RESULT_KIND_BADGE_CLASS}>{t("admin.search.session")}</span>
         <span className="text-sm text-foreground truncate">{result.title}</span>
         {result.updated_at && (
           <time className="text-xs text-muted-foreground ml-auto shrink-0">
@@ -186,7 +189,7 @@ function SearchSessionResultRow({
       </p>
       {result.task_title && (
         <p className="mt-1 text-xs text-muted-foreground truncate">
-          폴더 · {result.task_title}
+          {t("admin.search.folderMatch", { name: result.task_title })}
         </p>
       )}
     </button>
@@ -233,6 +236,7 @@ function NavigationResultRow({
   result: SearchNavigationResult;
   onClick: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <button
       onClick={onClick}
@@ -244,7 +248,7 @@ function NavigationResultRow({
     >
       <div className="flex items-center gap-2">
         <span className={SEARCH_RESULT_KIND_BADGE_CLASS}>
-          폴더
+          {t("admin.search.folder")}
         </span>
         <span className="text-sm text-foreground truncate">{result.title}</span>
       </div>
@@ -278,6 +282,7 @@ export function SearchModal({
   onOpenSession,
   onOpenFolder,
 }: SearchModalProps) {
+  const { t } = useTranslation();
   const catalog = useDashboardStore((s) => s.catalog);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const { results, navigationResults, sessionResults, searchStatus, loading, expansionPending, expansionFailed, error, search, invalidate, clear, currentSearchFlowId } =
@@ -369,7 +374,7 @@ export function SearchModal({
           return false;
         })
         .catch((storyOpenError) => {
-          console.error("세션 스토리 패널 열기 실패", storyOpenError);
+          console.error("세션 스토리 패널 열기 실패", storyOpenError); // i18n-ignore: 개발자 콘솔 진단
         });
     }
   };
@@ -419,19 +424,19 @@ export function SearchModal({
     || searchStatus?.search?.status === "partial"
     || searchStatus?.query_expansion?.status === "partial";
   const partialSearchMessage = expansionFailed
-    ? "추가 검색을 마치지 못했습니다. 현재 결과를 유지합니다."
+    ? t("admin.search.expansionError")
     : searchStatus?.search?.status === "partial"
     ? resultCount === 0
-      ? "검색을 완료하지 못했습니다. 다시 검색해 주세요."
+      ? t("admin.search.retrySearch")
       : searchStatus.search.stage === "lexical"
-        ? "검색이 시간 제한에 걸려 완료되지 않았습니다. 받은 결과만 표시합니다."
-        : "검색이 시간 제한에 걸려 일부 결과만 표시합니다."
+        ? t("admin.search.lexicalTimeout")
+        : t("admin.search.timeout")
     : searchStatus?.db_cancel === "failed"
-      ? "검색 요청 정리가 지연될 수 있습니다. 잠시 후 다시 검색해 주세요."
+      ? t("admin.search.cancelError")
     : searchStatus?.query_expansion?.status === "partial"
       ? searchStatus.query_expansion.reason === "configuration"
-        ? "의미 검색 설정을 사용할 수 없어 원문 검색만 표시합니다."
-      : "의미 검색이 제한되어 원문 검색 결과를 함께 표시합니다."
+        ? t("admin.search.semanticUnavailable")
+      : t("admin.search.semanticLimited")
       : null;
   const showPartialSearchBanner = !loading
     && !error
@@ -442,7 +447,7 @@ export function SearchModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>세션 기록 검색</DialogTitle>
+          <DialogTitle>{t("admin.search.title")}</DialogTitle>
         </DialogHeader>
 
         <DialogPanel scrollFade={false}>
@@ -451,7 +456,7 @@ export function SearchModal({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             <input
               type="text"
-              placeholder="검색어를 입력하세요..."
+              placeholder={t("admin.search.placeholder")}
               value={query}
               onChange={(e) => {
                 if (e.target.value !== query) clear();
@@ -467,7 +472,7 @@ export function SearchModal({
 
           {/* 이벤트 필터 체크박스 */}
           <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
-            {EVENT_FILTER_LABELS.map(({ key, label }) => (
+            {EVENT_FILTER_LABELS.map(({ key, labelKey }) => (
               <label
                 key={key}
                 className="flex items-center gap-1.5 cursor-pointer select-none"
@@ -481,7 +486,7 @@ export function SearchModal({
                   }}
                   className="w-3.5 h-3.5 rounded-mark accent-primary"
                 />
-                <span className="text-xs text-muted-foreground">{label}</span>
+                <span className="text-xs text-muted-foreground">{t(labelKey)}</span>
               </label>
             ))}
           </div>
@@ -489,12 +494,12 @@ export function SearchModal({
           {/* 파생 텍스트 포함 범위 */}
           <div
             className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-floor bg-muted/30 px-2.5 py-2"
-            aria-label="검색 포함 범위"
+            aria-label={t("admin.search.scope")}
           >
             <span className="text-xs font-medium text-muted-foreground">
-              포함 범위
+              {t("admin.search.scopeHeading")}
             </span>
-            {DERIVED_FILTER_LABELS.map(({ key, label }) => (
+            {DERIVED_FILTER_LABELS.map(({ key, labelKey }) => (
               <label
                 key={key}
                 className="flex items-center gap-1.5 cursor-pointer select-none"
@@ -508,7 +513,7 @@ export function SearchModal({
                   }}
                   className="w-3.5 h-3.5 rounded-mark accent-primary"
                 />
-                <span className="text-xs text-muted-foreground">{label}</span>
+                <span className="text-xs text-muted-foreground">{t(labelKey)}</span>
               </label>
             ))}
           </div>
@@ -521,7 +526,7 @@ export function SearchModal({
 
           {expansionPending && !loading && (
             <div role="status" className="mb-2 px-1 text-xs text-muted-foreground">
-              추가 검색 중…
+              {t("admin.search.expanding")}
             </div>
           )}
 
@@ -531,7 +536,7 @@ export function SearchModal({
             data-slot="search-results-region"
             className="flex min-h-40 min-w-0 flex-col"
           >
-            {loading && <FrameLoading label="검색 중..." />}
+            {loading && <FrameLoading label={t("admin.search.loading")} />}
 
             {error && !loading && (
               <div className="flex flex-1 items-center justify-center px-2 py-4 text-center text-sm text-accent-red" data-v3-selectable-content="true">
@@ -542,16 +547,16 @@ export function SearchModal({
             {!loading && !error && resultCount === 0 && query.trim() && (
               <div className="flex flex-1 items-center justify-center px-2 text-center text-sm text-muted-foreground">
                 {expansionPending
-                  ? "추가 검색 중…"
+                  ? t("admin.search.expanding")
                   : searchIncomplete
-                  ? "검색을 완료하지 못했습니다. 다시 검색해 주세요."
-                  : "검색 결과가 없습니다"}
+                  ? t("admin.search.retrySearch")
+                  : t("admin.search.empty")}
               </div>
             )}
 
             {!loading && !error && resultCount === 0 && !query.trim() && (
               <div className="flex flex-1 items-center justify-center px-2 text-center text-sm text-muted-foreground">
-                위 필터를 선택하여 세션 기록을 검색합니다
+                {t("admin.search.hint")}
               </div>
             )}
 
@@ -559,7 +564,7 @@ export function SearchModal({
             {!loading && resultCount > 0 && (
               <div className="max-h-[400px] space-y-1 overflow-y-auto">
                 <div className="mb-2 px-1 text-xs text-muted-foreground">
-                  {resultCount}개 결과
+                  {t("admin.search.results", { count: resultCount })}
                 </div>
                 {navigationResults.map((result, index) => (
                   <NavigationResultRow

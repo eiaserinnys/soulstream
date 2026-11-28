@@ -1,5 +1,7 @@
+import { useTranslation } from "react-i18next";
+import { usageDate, usageNumber } from "./usage-format";
 import { useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
-import { FrameLoading, formatUsageStatsDateWithWeekday, formatUsageStatsTokenCount, formatUsageStatsUsd, USAGE_STATS_LABELS, usageStatsBucketStarts, usageStatsCalendarRange, usageStatsSeriesKey } from "@seosoyoung/soul-ui";
+import { FrameLoading, usageStatsBucketStarts, usageStatsCalendarRange, usageStatsSeriesKey } from "@seosoyoung/soul-ui";
 import type { UsageStatsMetrics, UsageStatsPeriod, UsageStatsRange, UsageStatsSeriesPoint } from "../../../../packages/wire-schema/src/session_statistics";
 
 export interface UsageChartSeries {
@@ -14,33 +16,16 @@ function metricValue(metrics: UsageStatsMetrics, metric: Metric): number | null 
   return metric === "tokens" ? metrics.total_tokens : metrics.reference_cost_usd;
 }
 
-function valueLabel(value: number, metric: Metric): string {
-  return metric === "tokens" ? formatUsageStatsTokenCount(value) : formatUsageStatsUsd(value);
-}
-
-function unknownLabel(metric: Metric): string {
-  return metric === "tokens" ? USAGE_STATS_LABELS.missingUsage : USAGE_STATS_LABELS.unknownPrice;
-}
-
 function pointKey(point: UsageStatsSeriesPoint, kind: "provider" | "project", modelMode: boolean): string {
   if (kind === "project") return point.project_id ?? "__unclassified__";
   return usageStatsSeriesKey(point.provider ?? "unknown", point.model ?? null, modelMode);
 }
 
-function bucketLabel(bucket: string, period: UsageStatsPeriod): string {
-  if (period === "all") return `${Number(bucket.slice(5, 7))}월`;
-  const date = new Date(`${bucket}T00:00:00Z`);
-  if (period === "week") return ["일", "월", "화", "수", "목", "금", "토"][date.getUTCDay()]!;
-  const day = date.getUTCDate();
-  return day === 1 || (day - 1) % 7 === 0 ? String(day) : "";
-}
-
-function bucketDescription(bucket: string, period: UsageStatsPeriod): string {
-  if (period === "all") {
-    const date = new Date(`${bucket}T00:00:00Z`);
-    return `${date.getUTCFullYear()}년 ${date.getUTCMonth() + 1}월`;
-  }
-  return formatUsageStatsDateWithWeekday(bucket);
+function bucketLabel(bucket: string, period: UsageStatsPeriod, locale: string | undefined): string {
+  if (period === "all") return usageDate(bucket, locale, { month: "short" });
+  if (period === "week") return usageDate(bucket, locale, { weekday: "short" });
+  const day = Number(bucket.slice(8, 10));
+  return day === 1 || (day - 1) % 7 === 0 ? day.toLocaleString(locale) : "";
 }
 
 function isBeforeCoverage(bucket: string, period: UsageStatsPeriod, coveredSince: string): boolean {
@@ -85,6 +70,9 @@ export function UsageStackedBars({
   modelMode?: boolean;
   onSelect(bucket: string, intent: "toggle" | "set"): void;
 }) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage;
+  const unknownLabel = t(metric === "tokens" ? "admin.stats.missingUsage" : "admin.stats.unknownPrice");
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
   const drag = useRef<{ x: number; y: number; horizontal: boolean } | null>(null);
   const ignoreClick = useRef(false);
@@ -129,11 +117,11 @@ export function UsageStackedBars({
   };
 
   return <div className="usage-stats-chart" aria-label={label}>
-    {hasKnownValue && !emptyMessage && !loading ? <div className="usage-stats-axis-label" aria-hidden="true">{valueLabel(maximum, metric)}</div> : null}
-    {loading ? <div className="usage-stats-chart-message"><FrameLoading inline label="불러오는 중…" /></div> : emptyMessage ? (
+    {hasKnownValue && !emptyMessage && !loading ? <div className="usage-stats-axis-label" aria-hidden="true">{usageNumber(maximum, metric, locale)}</div> : null}
+    {loading ? <div className="usage-stats-chart-message"><FrameLoading inline label={t("admin.stats.loading")} /></div> : emptyMessage ? (
       <div className="usage-stats-chart-message">{emptyMessage}</div>
     ) : !hasKnownValue ? (
-      <div className="usage-stats-chart-message">{unknownLabel(metric)}</div>
+      <div className="usage-stats-chart-message">{unknownLabel}</div>
     ) : null}
     <div className="usage-stats-chart-plot" role="group" aria-label={label} style={{ "--usage-stats-column-count": values.length } as CSSProperties} onKeyDownCapture={(event: KeyboardEvent<HTMLDivElement>) => {
       if (event.key !== "Escape" || !selectedBucket) return;
@@ -151,15 +139,16 @@ export function UsageStackedBars({
         const unavailable = isUnavailable(item.bucket, period, range, coveredSince);
         const total = item.total;
         const height = maximum > 0 && total !== null ? (total / maximum) * 100 : 0;
-        const dateLabel = bucketDescription(item.bucket, period);
         const partial = item.segments.some(segment => segment.value === null);
         const beforeCoverage = coveredSince !== null && isBeforeCoverage(item.bucket, period, coveredSince);
         const afterRange = range !== null && item.bucket >= range.effective_until;
-        const accessibleValue = beforeCoverage ? "기록 전" : afterRange ? "아직 기록되지 않음"
-          : total === null || (total === 0 && partial) ? (item.hasPoint ? unknownLabel(metric) : "기록 없음") : `${valueLabel(total, metric)}${partial ? "+" : ""}`;
+        const accessibleValue = beforeCoverage ? t("admin.stats.beforeTracking") : afterRange ? t("admin.stats.notYetRecorded")
+          : total === null || (total === 0 && partial) ? (item.hasPoint ? unknownLabel : t("admin.stats.noRecord")) : `${usageNumber(total, metric, locale)}${partial ? "+" : ""}`;
         const selected = selectedBucket === item.bucket;
         const disabled = unavailable || Boolean(emptyMessage);
-        const description = period === "all" ? dateLabel : formatUsageStatsDateWithWeekday(item.bucket);
+        const description = usageDate(item.bucket, locale, period === "all"
+          ? { year: "numeric", month: "short" }
+          : { month: "short", day: "numeric", weekday: "short" });
         return <button
           key={item.bucket}
           ref={element => { buttons.current[index] = element; }}
@@ -201,7 +190,7 @@ export function UsageStackedBars({
     </div>
     <div className="usage-stats-chart-labels" aria-hidden="true" style={{ "--usage-stats-column-count": values.length } as CSSProperties}>
       {hasKnownValue && !emptyMessage && !loading ? <span className="usage-stats-axis-zero">0</span> : null}
-      {values.map(item => <span key={item.bucket} className="usage-stats-bucket-label" style={{ opacity: isUnavailable(item.bucket, period, range, coveredSince) ? 0.48 : 1 }}>{bucketLabel(item.bucket, period)}</span>)}
+      {values.map(item => <span key={item.bucket} className="usage-stats-bucket-label" style={{ opacity: isUnavailable(item.bucket, period, range, coveredSince) ? 0.48 : 1 }}>{bucketLabel(item.bucket, period, locale)}</span>)}
     </div>
   </div>;
 }

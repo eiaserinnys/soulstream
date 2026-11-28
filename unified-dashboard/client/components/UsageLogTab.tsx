@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 /**
  * 사용 로그 열람 탭.
  *
@@ -36,30 +37,8 @@ type InstallRow = {
   eventCount: number;
 };
 
-/** 사람이 읽는 이름. 해석을 섞지 않는다 — "이탈"이지 "취소"가 아니다. */
-const EVENT_LABELS: Readonly<Record<string, string>> = {
-  view_open: "화면 열기",
-  search_submit: "검색 실행",
-  search_result: "검색 결과",
-  search_result_open: "결과 선택",
-  notification_open: "알림 클릭",
-  compose_start: "입력 시작",
-  compose_submit: "전송",
-  compose_result: "전송 결과",
-  compose_abandon: "작성 중 이탈",
-  compose_resume: "작성 복귀",
-  app_active: "활성",
-  app_inactive: "비활성",
-  action_start: "조작 시작",
-  action_end: "조작 종료",
-};
-
-const CLIENT_LABELS: Readonly<Record<string, string>> = {
-  browser: "웹",
-  "soul-app": "앱",
-};
-
 export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}) {
+  const { t, i18n } = useTranslation();
   const [date, setDate] = useState(() => todayInputValue());
   const [installId, setInstallId] = useState("");
   const [events, setEvents] = useState<UiEventRow[]>([]);
@@ -85,7 +64,7 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
           { credentials: "same-origin" },
         ),
       ]);
-      if (!eventsResponse.ok) throw new Error(`조회 실패: ${eventsResponse.status}`);
+      if (!eventsResponse.ok) throw new Error(t("admin.log.requestError", { status: eventsResponse.status }));
       const body = await eventsResponse.json();
       setEvents(body.events ?? []);
       if (installsResponse.ok) {
@@ -96,7 +75,7 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
     } finally {
       setLoading(false);
     }
-  }, [range.from, range.to, installId]);
+  }, [range.from, range.to, installId, request, t]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -111,7 +90,7 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          날짜
+          {t("admin.log.date")}
           <input
             type="date"
             value={date}
@@ -120,16 +99,16 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          기기
+          {t("admin.log.device")}
           <select
             value={installId}
             onChange={(event) => setInstallId(event.target.value)}
             className="rounded-floor border border-border bg-transparent px-2 py-1 text-sm"
           >
-            <option value="">전체</option>
+            <option value="">{t("admin.log.all")}</option>
             {installs.map((install) => (
               <option key={install.installId} value={install.installId}>
-                {CLIENT_LABELS[install.clientKind] ?? install.clientKind}
+                {t(`admin.log.${install.clientKind}`, { defaultValue: install.clientKind })}
                 {" · "}
                 {install.installId.slice(0, 8)} ({install.eventCount})
               </option>
@@ -137,7 +116,7 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
           </select>
         </label>
         <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-          {loading ? "불러오는 중..." : "새로고침"}
+          {loading ? t("admin.log.loading") : t("admin.log.refresh")}
         </Button>
       </div>
 
@@ -145,7 +124,7 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
 
       {!loading && !error && events.length === 0 && (
         <div className="py-8 text-center text-sm text-muted-foreground">
-          이 날짜에 기록된 사용 로그가 없습니다.
+          {t("admin.log.empty")}
         </div>
       )}
 
@@ -154,24 +133,24 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
           <table className="w-full text-left text-xs">
             <thead className="sticky top-0 bg-background">
               <tr className="text-muted-foreground">
-                <th className="px-2 py-1 font-normal">시각</th>
-                <th className="px-2 py-1 font-normal">기기</th>
-                <th className="px-2 py-1 font-normal">사건</th>
-                <th className="px-2 py-1 font-normal">진입</th>
-                <th className="px-2 py-1 font-normal">대상</th>
-                <th className="px-2 py-1 font-normal">세부</th>
+                <th className="px-2 py-1 font-normal">{t("admin.log.time")}</th>
+                <th className="px-2 py-1 font-normal">{t("admin.log.device")}</th>
+                <th className="px-2 py-1 font-normal">{t("admin.log.event")}</th>
+                <th className="px-2 py-1 font-normal">{t("admin.log.entry")}</th>
+                <th className="px-2 py-1 font-normal">{t("admin.log.target")}</th>
+                <th className="px-2 py-1 font-normal">{t("admin.log.details")}</th>
               </tr>
             </thead>
             <tbody>
               {events.map((event) => (
                 <tr key={event.eventId} className="border-t border-border/60">
                   <td className="whitespace-nowrap px-2 py-1 tabular-nums" data-v3-selectable-content="true">
-                    {clockTime(event.occurredAt)}
+                    {clockTime(event.occurredAt, i18n.resolvedLanguage)}
                   </td>
                   <td className="px-2 py-1" data-v3-selectable-content="true">
-                    {CLIENT_LABELS[event.clientKind] ?? event.clientKind}
+                    {t(`admin.log.${event.clientKind}`, { defaultValue: event.clientKind })}
                   </td>
-                  <td className="px-2 py-1" data-v3-selectable-content="true">{EVENT_LABELS[event.type] ?? event.type}</td>
+                  <td className="px-2 py-1" data-v3-selectable-content="true">{t(`admin.log.${event.type}`, { defaultValue: event.type })}</td>
                   <td className="px-2 py-1 text-muted-foreground" data-v3-selectable-content="true">{event.entry ?? "—"}</td>
                   <td className="px-2 py-1" data-v3-selectable-content="true">
                     {event.target === null ? (
@@ -195,7 +174,7 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
       )}
 
       <p className="text-xs text-muted-foreground">
-        원시 기록 30일 보존. 이동/체류 시간은 해석 없이 사실만 남습니다.
+        {t("admin.log.retention")}
       </p>
     </div>
   );
@@ -207,9 +186,9 @@ function summarize(attrs: Record<string, unknown>): string {
   return entries.map(([key, value]) => `${key}=${String(value)}`).join(" ");
 }
 
-function clockTime(iso: string): string {
+function clockTime(iso: string, locale: string | undefined): string {
   const parsed = new Date(iso);
-  return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleTimeString();
+  return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleTimeString(locale);
 }
 
 function todayInputValue(): string {

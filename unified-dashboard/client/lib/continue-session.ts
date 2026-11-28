@@ -1,14 +1,8 @@
+import { adminTranslation, type AdminTranslate } from "../components/config/admin-translation";
 import type {
   CatalogState,
   SessionSummary,
 } from "@seosoyoung/soul-ui";
-
-export const CONTINUE_SESSION_AGENT_MISSING_REASON =
-  "이 세션에는 에이전트 정보가 없어 이어서 시작할 수 없습니다.";
-export const CONTINUE_SESSION_NODE_MISSING_REASON =
-  "이 세션에는 노드 정보가 없어 이어서 시작할 수 없습니다.";
-export const CONTINUE_SESSION_NOT_FOUND_REASON =
-  "세션 정보를 찾을 수 없어 이어서 시작할 수 없습니다.";
 
 export interface ResolveContinueSessionTargetInput {
   session: SessionSummary | null | undefined;
@@ -28,18 +22,18 @@ export interface ContinueSessionTarget {
 export function resolveContinueSessionTarget({
   session,
   catalog,
-}: ResolveContinueSessionTargetInput): ContinueSessionTarget {
+}: ResolveContinueSessionTargetInput, t: AdminTranslate = adminTranslation()): ContinueSessionTarget {
   if (!session) {
-    return { disabledReason: CONTINUE_SESSION_NOT_FOUND_REASON };
+    return { disabledReason: t("admin.session.notFound") };
   }
 
   const nodeId = session.nodeId;
   if (!nodeId) {
-    return { disabledReason: CONTINUE_SESSION_NODE_MISSING_REASON };
+    return { disabledReason: t("admin.session.nodeMissing") };
   }
 
   if (!session.agentId) {
-    return { disabledReason: CONTINUE_SESSION_AGENT_MISSING_REASON };
+    return { disabledReason: t("admin.session.agentMissing") };
   }
 
   return {

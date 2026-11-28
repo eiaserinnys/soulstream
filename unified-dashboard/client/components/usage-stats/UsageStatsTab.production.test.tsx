@@ -3,6 +3,7 @@ import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { usageStatsFilterKey } from "@seosoyoung/soul-ui";
+import * as soulUi from "@seosoyoung/soul-ui";
 import type { UsageStatsAggregate, UsageStatsDayDetail, UsageStatsMetrics, UsageStatsOverview } from "../../../../packages/wire-schema/src/session_statistics";
 import { UsageStatsTab } from "./UsageStatsTab";
 import { ALL_USAGE_STATS_FILTER, useUsageStats, type UsageStatsFilter } from "./useUsageStats";
@@ -339,6 +340,26 @@ function dayDetail(totalTokens: number): UsageStatsDayDetail {
     tool_calls: 0,
   };
 }
+
+it("shows an untranslated input category as its raw name", async () => {
+  const category = "provider_extension";
+  vi.spyOn(soulUi, "groupUsageStatsInputMaterial").mockReturnValue([{
+    category,
+    label: category,
+    approximate_tokens: 12,
+    share: 0.6,
+    measurement: "reported",
+    partial: false,
+  }]);
+  request.mockImplementation(input => Promise.resolve(String(input).includes("/days/")
+    ? jsonResponse(dayDetail(20))
+    : jsonResponse(overview(20))));
+
+  await act(async () => root.render(<UsageStatsTab request={request} />));
+  await act(async () => document.querySelector<HTMLButtonElement>('[data-bucket-index="1"]')!.click());
+
+  expect(document.querySelector(".usage-stats-input-material .usage-stats-share-name")?.textContent).toBe(category);
+});
 
 function jsonResponse<T>(value: T): Response {
   return { status: 200, ok: true, json: async () => value } as Response;
