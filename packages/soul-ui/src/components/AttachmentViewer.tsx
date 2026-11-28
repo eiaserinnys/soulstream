@@ -2,7 +2,7 @@
 
 import type { dictionaries } from "@soulstream/i18n";
 import { useTranslation } from "react-i18next";
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { Button } from "./ui/button";
 import {
@@ -88,6 +88,7 @@ export function AttachmentViewer({
   onClose,
   returnFocus,
   panelContent,
+  popupRef: externalPopupRef,
 }: {
   items: ChatAttachmentItem[];
   index: number | null;
@@ -95,6 +96,7 @@ export function AttachmentViewer({
   onClose(): void;
   returnFocus?: HTMLElement | null;
   panelContent?: ReactNode;
+  popupRef?: RefObject<HTMLDivElement | null>;
 }): ReactNode {
   const { t } = useTranslation();
   const item = index === null ? undefined : items[index];
@@ -103,7 +105,8 @@ export function AttachmentViewer({
   const previewKey = item
     ? JSON.stringify([item.key, item.previewUrl, item.byteSize, item.mimeType, localFile?.name, localFile?.size])
     : "";
-  const popupRef = useRef<HTMLDivElement>(null);
+  const localPopupRef = useRef<HTMLDivElement>(null);
+  const popupRef = externalPopupRef ?? localPopupRef;
   const imageMediaRef = useRef<HTMLDivElement>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [textState, setTextState] = useState<TextState | null>(null);

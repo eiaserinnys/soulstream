@@ -27,6 +27,18 @@ it("registers an open document and releases it when closed", async () => {
   expect(await createDashboardReloadCoordinator(env).request()).toBe(true);
   expect(reload).toHaveBeenCalledOnce();
 });
+it("provides its document body for banner clearance while open", async () => {
+  const request = vi.fn(async () => Response.json({ id: "doc-1", title: "문서", body: "본문", version: 1 }));
+  await mount(request);
+  const panel = document.querySelector<HTMLElement>('[role="region"][aria-label="문서 본문"]')!;
+  const owner = createDashboardReloadCoordinator({ document, reload: vi.fn(), hasPendingEdits: () => false, flushPendingEdits: async () => true });
+  try {
+    expect(await owner.request()).toBe(false);
+    expect(panel.style.paddingBottom).not.toBe("");
+    await act(async () => root.render(<DocumentReaderDialog documentId={null} request={request} onClose={() => {}}/>));
+    expect(panel.style.paddingBottom).toBe("");
+  } finally { document.querySelector('[data-sw-update-banner]')?.remove(); }
+});
 it("keeps reload deferred until the last open reader unmounts", async () => {
   const request = vi.fn(async () => Response.json({ id: "doc-1", title: "문서", body: "본문", version: 1 }));
   const reload = vi.fn();

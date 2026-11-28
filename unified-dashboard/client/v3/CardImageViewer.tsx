@@ -22,7 +22,6 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
   const mediaRef = useRef<HTMLDivElement>(null);
   const plainImage = image && !image.attachment ? image : null;
   const isOpen = image !== null;
-  useEffect(() => isOpen ? registerDashboardReader() : undefined, [isOpen]);
   const imageViewer = useAttachmentViewerImage({
     popupRef,
     mediaRef,
@@ -43,6 +42,14 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
       ? Math.min(attachmentCursor.index, attachmentItems.length - 1)
       : Math.max(0, selectedAttachmentIndex)
     : 0;
+
+  useEffect(() => isOpen ? registerDashboardReader(() => {
+    const popup = popupRef.current;
+    return {
+      footer: popup?.querySelector<HTMLElement>('[data-slot="dialog-footer"]'),
+      content: popup?.dataset.attachmentKind === "document" ? popup.querySelector<HTMLElement>('[data-slot="dialog-panel"]') : null,
+    };
+  }) : undefined, [isOpen, Boolean(image?.attachment), attachmentIndex]);
 
   useEffect(() => {
     if (!image) setAttachmentCursor(null);
@@ -68,6 +75,7 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
       onIndexChange={index => setAttachmentCursor({ key: image.attachment!.key, index })}
       onClose={onClose}
       returnFocus={returnFocus}
+      popupRef={popupRef}
       panelContent={status?<div className="chat-attachment-state chat-image-status" role="status"><span data-v3-selectable-content="true">{status.message}</span>{status.onRetry?<Button variant="outline" size="sm" onClick={status.onRetry}>다시 시도</Button>:null}</div>:undefined}
     />;
   }

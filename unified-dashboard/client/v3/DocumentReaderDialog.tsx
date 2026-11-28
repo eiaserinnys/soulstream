@@ -17,7 +17,7 @@ export function DocumentReaderDialog({ documentId, onClose, request = globalThis
   const document = content?.documentId === visibleDocumentId ? content.document : null;
   const error = content?.documentId === visibleDocumentId ? content.error : null;
   const isOpen = documentId !== null;
-  useEffect(() => isOpen ? registerDashboardReader() : undefined, [isOpen]);
+  useEffect(() => isOpen ? registerDashboardReader(() => ({ content: panelRef.current })) : undefined, [isOpen]);
   useEffect(() => {
     if (!documentId) return;
     setContent((previous) => previous?.documentId === documentId && previous.document ? previous : { documentId, document: null, error: null });
