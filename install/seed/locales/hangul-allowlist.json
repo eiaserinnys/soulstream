@@ -75,8 +75,8 @@
     "source": "unified-dashboard/client/v3/usePersistentReportSend.ts:17"
   },
   {
-    "text": "지금의 보고",
-    "reason": "The server uses this heading in the persistent report context.",
+    "text": "지금의 보고 (N장)",
+    "reason": "The server uses this heading in the persistent report context. N represents the number of entries.",
     "source": "soul-server-ts/src/context/persistent_report_context.ts:6"
   },
   {
