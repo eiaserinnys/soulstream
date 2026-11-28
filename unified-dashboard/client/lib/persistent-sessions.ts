@@ -1,3 +1,4 @@
+import { createI18n } from "@soulstream/i18n";
 import type { PersistentTurnUsageMode } from "../../../packages/wire-schema/src/persistent_session_settings";
 import type { PersistentReportEntry } from "../../../packages/wire-schema/src/persistent_report";
 import type { AgentInfo } from "@seosoyoung/soul-ui";
@@ -104,7 +105,9 @@ export class PersistentSessionError extends HttpResponseError {
   }
 }
 
-export function createPersistentSessionsApi(request: typeof fetch = fetch) {
+type Translate = ReturnType<typeof createI18n>["t"];
+
+export function createPersistentSessionsApi(request: typeof fetch = fetch, translate?: Translate) {
   const root = "/api/persistent-sessions";
   async function call<T>(path: string, method = "GET", body?: unknown): Promise<T> {
     const response = await request(root + path, {
@@ -113,7 +116,7 @@ export function createPersistentSessionsApi(request: typeof fetch = fetch) {
       headers: body === undefined ? { Accept: "application/json" } : { Accept: "application/json", "Content-Type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    if (!response.ok) throw await failure(response);
+    if (!response.ok) throw await failure(response, translate ?? createI18n("ko").t);
     return await response.json() as T;
   }
   return {
@@ -125,7 +128,7 @@ export function createPersistentSessionsApi(request: typeof fetch = fetch) {
         credentials: "same-origin",
         headers: { Accept: "application/json" },
       });
-      if (!response.ok) throw new Error(`에이전트 목록을 불러오지 못했습니다 (${response.status})`);
+      if (!response.ok) throw new Error((translate ?? createI18n("ko").t)("jobs.persistent.agentsLoadError", { status: response.status }));
       return ((await response.json()) as { agents?: AgentInfo[] }).agents ?? [];
     },
     update: (sessionId: string, input: PersistentSessionWrite) =>
@@ -145,8 +148,8 @@ export function createPersistentSessionsApi(request: typeof fetch = fetch) {
 
 export type PersistentSessionsApi = ReturnType<typeof createPersistentSessionsApi>;
 
-async function failure(response: Response): Promise<PersistentSessionError> {
-  let message = `영구 에이전트 세션 요청 실패 (${response.status})`;
+async function failure(response: Response, t: Translate): Promise<PersistentSessionError> {
+  let message = t("jobs.persistent.requestError", { status: response.status });
   let code: string | null = null;
   let createdSession: PersistentSessionError["createdSession"] = null;
   try {

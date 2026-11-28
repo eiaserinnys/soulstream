@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button, FrameLoading, Input } from "@seosoyoung/soul-ui";
 import { CardApiError, cardRequest } from "@seosoyoung/soul-ui/cards/card-api";
 import {
@@ -27,6 +28,7 @@ const defaultService: CardOrchestrationSettingsService = {
 export function CardOrchestrationSettingsForm({
   service = defaultService,
 }: { service?: CardOrchestrationSettingsService } = {}) {
+  const { t } = useTranslation();
   const [payload, setPayload] =
       useState<CardOrchestrationSettingsPayload | null>(null),
     [policy, setPolicy] = useState<OrchestrationPolicy | null>(null);
@@ -81,13 +83,13 @@ export function CardOrchestrationSettingsForm({
       });
       setPayload(next);
       setPolicy(next.settings.policy);
-      setMessage("배정 정책을 저장했습니다.");
+      setMessage(t("jobs.dispatch.policySaved"));
     } catch (error) {
       if (error instanceof CardApiError && error.status === 409) {
         try {
           await load();
           setError(
-            "설정이 바뀌어 최신 정책을 불러왔습니다. 확인 후 다시 저장하세요.",
+            t("jobs.dispatch.policyConflict"),
           );
         } catch (cause) {
           setError(String(cause));
@@ -100,7 +102,7 @@ export function CardOrchestrationSettingsForm({
   return (
     <form
       className="space-y-4"
-      aria-label="중앙 카드 배정 정책"
+      aria-label={t("jobs.dispatch.centralPolicy")}
       aria-busy={pending}
       onSubmit={(event) => {
         event.preventDefault();
@@ -108,14 +110,13 @@ export function CardOrchestrationSettingsForm({
       }}
     >
       <div>
-        <h3 className="font-semibold">중앙 카드 배정</h3>
+        <h3 className="font-semibold">{t("jobs.dispatch.centralTitle")}</h3>
         <p className="text-muted-foreground">
-          조건을 만족하는 첫 모델이 대기 카드의 배정 순서를 판단합니다. 실제
-          작업자의 모델은 카드 설정을 따릅니다.
+          {t("jobs.dispatch.centralHelp")}
         </p>
       </div>
       {!policy ? (
-        <FrameLoading inline label="불러오는 중…" />
+        <FrameLoading inline label={t("jobs.common.loading")} />
       ) : (
         <>
           <Button
@@ -124,21 +125,20 @@ export function CardOrchestrationSettingsForm({
             disabled={pending}
             onClick={() => setPolicy({ ...policy, enabled: !policy.enabled })}
           >
-            {policy.enabled ? "자동 배정 끄기" : "자동 배정 켜기"}
+            {policy.enabled ? t("jobs.dispatch.disableAutomatic") : t("jobs.dispatch.enableAutomatic")}
           </Button>
           <p className="text-muted-foreground">
-            사용량은 원천 관측 후 5분 이내인 값만 사용합니다. 한도 리셋 뒤 새
-            사용량을 확인하면 배정을 다시 시작합니다.
+            {t("jobs.dispatch.usageFreshness")}
           </p>
           {policy.candidates.map((item, index) => (
             <fieldset key={index} className="space-y-4" disabled={pending}>
-              <legend className="font-semibold">{index + 1}순위</legend>
+              <legend className="font-semibold">{t("jobs.dispatch.priority", { priority: index + 1 })}</legend>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="space-y-2">
-                  <span>에이전트 프로필</span>
+                  <span>{t("jobs.dispatch.agentProfile")}</span>
                   <Input
                     disabled={pending}
-                    aria-label={`${index + 1}순위 에이전트 프로필`}
+                    aria-label={t("jobs.dispatch.priorityAgent", { priority: index + 1 })}
                     value={item.agentId}
                     onChange={(event) =>
                       candidate(index, { agentId: event.target.value })
@@ -146,10 +146,10 @@ export function CardOrchestrationSettingsForm({
                   />
                 </label>
                 <label className="space-y-2">
-                  <span>모델 프리셋</span>
+                  <span>{t("jobs.dispatch.modelPreset")}</span>
                   <Input
                     disabled={pending}
-                    aria-label={`${index + 1}순위 모델 프리셋`}
+                    aria-label={t("jobs.dispatch.priorityPreset", { priority: index + 1 })}
                     value={item.modelPreset}
                     onChange={(event) =>
                       candidate(index, { modelPreset: event.target.value })
@@ -157,10 +157,10 @@ export function CardOrchestrationSettingsForm({
                   />
                 </label>
                 <label className="space-y-2">
-                  <span>실행 노드</span>
+                  <span>{t("jobs.dispatch.executionNode")}</span>
                   <Input
                     disabled={pending}
-                    aria-label={`${index + 1}순위 실행 노드`}
+                    aria-label={t("jobs.dispatch.priorityNode", { priority: index + 1 })}
                     value={item.nodeId}
                     onChange={(event) =>
                       candidate(index, { nodeId: event.target.value })
@@ -168,10 +168,10 @@ export function CardOrchestrationSettingsForm({
                   />
                 </label>
                 <label className="space-y-2">
-                  <span>최소 잔여 사용량 (%)</span>
+                  <span>{t("jobs.dispatch.minRemaining")}</span>
                   <Input
                     disabled={pending}
-                    aria-label={`${index + 1}순위 최소 잔여 사용량`}
+                    aria-label={t("jobs.dispatch.priorityMinRemaining", { priority: index + 1 })}
                     type="number"
                     min={0}
                     max={100}
@@ -191,7 +191,7 @@ export function CardOrchestrationSettingsForm({
                   disabled={pending || index === 0}
                   onClick={() => move(index, -1)}
                 >
-                  {index + 1}순위 위로
+                  {t("jobs.dispatch.movePriorityUp", { priority: index + 1 })}
                 </Button>
                 <Button
                   type="button"
@@ -199,7 +199,7 @@ export function CardOrchestrationSettingsForm({
                   disabled={pending || index === policy.candidates.length - 1}
                   onClick={() => move(index, 1)}
                 >
-                  {index + 1}순위 아래로
+                  {t("jobs.dispatch.movePriorityDown", { priority: index + 1 })}
                 </Button>
                 <Button
                   type="button"
@@ -214,7 +214,7 @@ export function CardOrchestrationSettingsForm({
                     })
                   }
                 >
-                  {index + 1}순위 제거
+                  {t("jobs.dispatch.removePriority", { priority: index + 1 })}
                 </Button>
               </div>
             </fieldset>
@@ -238,15 +238,15 @@ export function CardOrchestrationSettingsForm({
               })
             }
           >
-            모델 후보 추가
+            {t("jobs.dispatch.addCandidate")}
           </Button>
           <div className="space-y-4">
             <label className="block space-y-2">
-              <span>판단 세션 보관 폴더 (선택)</span>
+              <span>{t("jobs.dispatch.archiveFolderOptional")}</span>
               <Input
                 disabled={pending}
-                aria-label="판단 세션 보관 폴더"
-                placeholder="비우면 첫 판단 때 전용 폴더를 만듭니다"
+                aria-label={t("jobs.dispatch.archiveFolder")}
+                placeholder={t("jobs.dispatch.archiveFolderPlaceholder")}
                 value={policy.sessionFolderId ?? ""}
                 onChange={(event) =>
                   setPolicy({
@@ -257,11 +257,11 @@ export function CardOrchestrationSettingsForm({
               />
             </label>
             <label className="block space-y-2">
-              <span>새 보관 폴더의 상위 폴더 (선택)</span>
+              <span>{t("jobs.dispatch.parentFolderOptional")}</span>
               <Input
                 disabled={pending}
-                aria-label="새 보관 폴더의 상위 폴더"
-                placeholder="비우면 최상위에 만듭니다"
+                aria-label={t("jobs.dispatch.parentFolder")}
+                placeholder={t("jobs.dispatch.parentFolderPlaceholder")}
                 value={policy.systemFolderParentId ?? ""}
                 onChange={(event) =>
                   setPolicy({
@@ -273,16 +273,13 @@ export function CardOrchestrationSettingsForm({
             </label>
           </div>
           <p className="text-muted-foreground">
-            폴더를 지정하면 삭제·보관·접근 제한 시 자동으로 다른 폴더로 바꾸지
-            않습니다.
+            {t("jobs.dispatch.archiveFolderHelp")}
           </p>
         </>
       )}
       {payload ? (
         <p className="text-muted-foreground">
-          정책 v{payload.settings.version}
-          {payload.status?.state ? ` · ${payload.status.state}` : ""}
-          {payload.status?.reason ? ` · ${payload.status.reason}` : ""}
+          {t("jobs.dispatch.policyVersion", { version: payload.settings.version, state: payload.status?.state ? ` · ${payload.status.state}` : "", reason: payload.status?.reason ? ` · ${payload.status.reason}` : "" })}
         </p>
       ) : null}
       {error ? (
@@ -301,10 +298,10 @@ export function CardOrchestrationSettingsForm({
             void load().catch((error) => setError(String(error)));
           }}
         >
-          배정 정책 다시 불러오기
+          {t("jobs.dispatch.reloadPolicy")}
         </Button>
         <Button type="submit" disabled={!changed || pending}>
-          {pending ? "배정 정책 저장 중…" : "배정 정책 저장"}
+          {pending ? t("jobs.dispatch.savingPolicy") : t("jobs.dispatch.savePolicy")}
         </Button>
       </div>
     </form>
