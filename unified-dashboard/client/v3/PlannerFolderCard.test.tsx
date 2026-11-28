@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
 vi.mock("@seosoyoung/soul-ui", () => ({
+  StatusChip: ({ label }: { label: string }) => <span aria-label={label}>{label}</span>,
   DashboardIconCap: ({
     children,
     label,

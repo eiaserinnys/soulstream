@@ -84,6 +84,7 @@ export {
 
 export { Slider, SliderValue } from "./slider";
 export { Spinner } from "./spinner";
+export { StatusChip } from "./status-chip";
 export { Switch } from "./switch";
 
 export {

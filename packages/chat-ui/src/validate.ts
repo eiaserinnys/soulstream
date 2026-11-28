@@ -1,5 +1,5 @@
 import { checkStructure } from "./validate_structure.js";
-import { addIssue, hasOwn, MAX_ISSUES } from "./validate_utils.js";
+import { addIssue, hasOwn, MAX_ISSUES, visitDisplayValues } from "./validate_utils.js";
 import type {
   Action,
   ChatUiDocumentV1,
@@ -268,7 +268,32 @@ function checkSemantics(doc: NormalizedChatUiDocumentV1): ValidationIssue[] {
     else if (node.kind === "entity") {
       checkParts(node.details, `${path}.details`);
       if (node.source && !hasOwn(doc.sources, node.source)) report(`${path}.source`, `source '${node.source}'를 찾을 수 없습니다.`);
-    } else if (!hasOwn(doc.sources, node.source)) report(`${path}.source`, `source '${node.source}'를 찾을 수 없습니다.`);
+    } else if (node.kind === "citation") {
+      if (!hasOwn(doc.sources, node.source)) report(`${path}.source`, `source '${node.source}'를 찾을 수 없습니다.`);
+    } else {
+      visitDisplayValues(node, path, (value, valuePath, unit, numeric) => {
+        let type: StaticType | undefined;
+        if (typeof value === "string") type = { kind: "string" };
+        else if (typeof value === "number") type = { kind: "number", dims: unit && unitAt(unit) ? unitAt(unit)!.dims : {} };
+        else if (value && typeof value === "object") {
+          const part = value as Exclude<TextPart, string>;
+          checkTextPartSemantics(part, valuePath);
+          type = typeOfRef(part.value, `${valuePath}.value`);
+        }
+        if (numeric && type && type.kind !== "number") report(valuePath, "숫자 값이 필요합니다.");
+        if (unit) {
+          const unitPath = valuePath.replace(/\.value$/, ".unit");
+          const resolved = unitAt(unit);
+          if (!resolved) report(unitPath, `unit '${unit}'를 찾을 수 없습니다.`);
+          else if (type && (type.kind !== "number" || !sameDims(type.dims, resolved.dims))) report(unitPath, "unit 차원이 값과 다릅니다.");
+        }
+      });
+      if (node.kind === "table") node.columns.forEach((column, index) => {
+        if (column.unit && column.type !== "number") report(`${path}.columns[${index}].unit`, "unit은 숫자 열에만 사용할 수 있습니다.");
+        if (column.unit && !unitAt(column.unit)) report(`${path}.columns[${index}].unit`, `unit '${column.unit}'를 찾을 수 없습니다.`);
+      });
+      if ((node.kind === "bars" || node.kind === "line") && node.unit && !unitAt(node.unit)) report(`${path}.unit`, `unit '${node.unit}'를 찾을 수 없습니다.`);
+    }
   };
 
   for (const key of Object.keys(doc.data)) {

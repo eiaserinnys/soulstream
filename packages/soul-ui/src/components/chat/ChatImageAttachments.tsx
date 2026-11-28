@@ -85,6 +85,7 @@ function ChatImageThumbnail({
   onMetadata,
   onOpen,
   openFailedImage,
+  hideFilename,
 }: {
   image: ChatImageItem;
   galleryIndex: number;
@@ -92,6 +93,7 @@ function ChatImageThumbnail({
   onMetadata(key: string, metadata: ChatImageMetadata): void;
   onOpen(index: number, trigger: HTMLElement): void;
   openFailedImage?: boolean;
+  hideFilename?: boolean;
 }) {
   const { t } = useTranslation();
   const [failedSource, setFailedSource] = useState<string | null>(null);
@@ -130,7 +132,7 @@ function ChatImageThumbnail({
           onError={src => setFailedSource(src)}
         />
       )}
-      {filename && (
+      {filename && !hideFilename && (
         <figcaption className="chat-image-caption">
           <span className="chat-image-filename" title={filename}>{filename}</span>
         </figcaption>
@@ -149,6 +151,7 @@ export function ChatImageAttachments({
   onOpen,
   openFailedImage,
   tone,
+  hideFilename,
 }: {
   gallery: ChatImageItem[];
   galleryIndexes: number[];
@@ -159,6 +162,7 @@ export function ChatImageAttachments({
   onOpen(index: number, trigger: HTMLElement): void;
   openFailedImage?: boolean;
   tone?: "onUserBubble";
+  hideFilename?: boolean;
 }) {
   if (galleryIndexes.length === 0) return null;
   return (
@@ -182,6 +186,7 @@ export function ChatImageAttachments({
               onMetadata={onMetadata}
               onOpen={onOpen}
               openFailedImage={openFailedImage}
+              hideFilename={hideFilename}
             />
           );
         })}

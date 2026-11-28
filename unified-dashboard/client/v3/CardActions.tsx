@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { CARD_BOARD_STATUS_LABELS } from "@seosoyoung/soul-ui/lib/card-board-status-labels";
-import { StatusChip } from "./StatusChip";
+import { StatusChip } from "@seosoyoung/soul-ui";
 import { cardDependencyStopReason, type CardDependency } from "../../../packages/wire-schema/src/card_dependency_display";
 
 export function useCardCompletion(card:CardRow) {

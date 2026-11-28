@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Badge, Button, useAgentPortraitUrlResolver } from "@seosoyoung/soul-ui";
-import { StatusChip } from "../StatusChip";
+import { Badge, Button, StatusChip, useAgentPortraitUrlResolver } from "@seosoyoung/soul-ui";
 import { type AgendaKind } from "@seosoyoung/soul-ui/lib/pas-report-thread-core";
 import { formatReturnTime, type Agenda } from "./pas-report-thread-model";
 import type { PasReportThreadController } from "./use-pas-report-thread";

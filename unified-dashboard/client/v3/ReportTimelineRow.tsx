@@ -1,8 +1,7 @@
 import { REPORT_TIMELINE_STATUS_LABEL, type ReportTimelineRowLine } from "../../../packages/wire-schema/src/persistent_report";
-import { useInternalLinkClick, type ReportTimelineAlignmentInset } from "@seosoyoung/soul-ui";
+import { StatusChip, useInternalLinkClick, type ReportTimelineAlignmentInset } from "@seosoyoung/soul-ui";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
-import { StatusChip } from "./StatusChip";
 
 function isQuestionRow(line: ReportTimelineRowLine): boolean {
   return line.question_id !== undefined || line.status === "question"

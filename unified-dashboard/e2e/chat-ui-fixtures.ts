@@ -4,7 +4,7 @@ import { reviewDocuments } from "../client/v3/chat-ui-review-documents";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 export const chatUiSession = "run-alpha-2";
-export type ChatUiExample = "normal" | "pas" | "gallery";
+export type ChatUiExample = "normal" | "pas" | "gallery" | "displayResearch";
 const settings = { default_model: { model_preset: null, reasoning_effort: null }, fallback_models: [],
   show_generation_separator: true, show_character: false, show_jev_candidates: true, animate_character: false, show_turn_usage: true };
 function gate() {
@@ -17,7 +17,7 @@ function sse(type: string, payload: object, id?: number) {
 }
 export async function installChatUiRoutes(page: Page, options: {
   example?: ChatUiExample; count?: number; live?: boolean; questions?: boolean;
-  fallback?: "unsupported" | "invalid"; ui?: boolean; questionClosed?: boolean;
+  fallback?: "unsupported" | "invalid"; ui?: boolean; questionClosed?: boolean; theme?: "light" | "dark";
 } = {}) {
   const count = options.count ?? 8;
   const example = options.example ?? "normal";
@@ -29,13 +29,13 @@ export async function installChatUiRoutes(page: Page, options: {
   const errors: string[] = [], sends: Record<string, unknown>[] = [], responses: { path: string; body: Record<string, unknown> }[] = [];
   const histories: (string | null)[] = [], identities: { sessionId: string; eventId: number; uiId: string; hash: string }[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  await page.addInitScript(() => {
-    localStorage.setItem("soul-dashboard-theme", "dark"); localStorage.setItem("ls.webglGlass", "0");
+  await page.addInitScript(theme => {
+    localStorage.setItem("soul-dashboard-theme", theme); localStorage.setItem("ls.webglGlass", "0");
     // A valid registration stub avoids the service-worker-blocked update() error.
     Object.defineProperty(navigator.serviceWorker, "register", { configurable: true,
       value: async () => ({ update: async () => undefined, active: null, installing: null, addEventListener: () => undefined, removeEventListener: () => undefined }) });
     Object.defineProperty(navigator.serviceWorker, "controller", { configurable: true, get: () => null });
-  });
+  }, options.theme ?? "dark");
   await installV3VisualQaRoutes(page, { unifiedFolderView: true, timelineEventCount: count });
   await page.route("**/api/config/settings", route => route.fulfill({ json: { categories: [] } }));
   await page.route("**/api/ui-events/config", route => route.fulfill({ json: { enabled: false } }));

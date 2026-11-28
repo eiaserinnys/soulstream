@@ -25,13 +25,15 @@ export function GuideBadgesReviewSample() {
         <ProfileInitial name="보람" small />
         {(["body", "entry", "title"] as const).map(how => <span key={how} className="text-xs text-muted-foreground">{howLabel(how)}</span>)}
       </div>
-      <LinkChips links={[
-        { kind: "call", target: guideSkills[2]!.name, target_kind: "skill" },
-        { kind: "include", target: LONGEST_SKILL_NAME, target_kind: "skill" },
-        { kind: null, target: guideSkills[4]!.name, target_kind: "skill" },
-        { kind: "uses", target: "lantern-axis-catalog", target_kind: "catalog" },
-        { kind: "pick", target: guideSkills[6]!.name, target_kind: "skill" },
-      ]} />
+      <div className="[&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:min-h-5 [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:break-all">
+        <LinkChips links={[
+          { kind: "call", target: guideSkills[2]!.name, target_kind: "skill" },
+          { kind: "include", target: LONGEST_SKILL_NAME, target_kind: "skill" },
+          { kind: null, target: guideSkills[4]!.name, target_kind: "skill" },
+          { kind: "uses", target: "lantern-axis-catalog", target_kind: "catalog" },
+          { kind: "pick", target: guideSkills[6]!.name, target_kind: "skill" },
+        ]} />
+      </div>
     </div>
   );
 }

@@ -9,10 +9,9 @@ import { CARD_COLORS, CARD_COLOR_KEYS, type CardColor } from "../../../packages/
 import { CARD_STATUS_LABELS } from "../../../packages/wire-schema/src/card_status_labels";
 import type { CardStatus } from "../../../packages/wire-schema/generated/typescript/index";
 import { type CardRow } from "@seosoyoung/soul-ui/cards/card-types";
-import { Button, DashboardIconCap, FrameLoading, useDashboardStore, Popover, PopoverPopup, PopoverTrigger, AlertDialog, AlertDialogPopup, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, FrameLoading, StatusChip, useDashboardStore, Popover, PopoverPopup, PopoverTrigger, AlertDialog, AlertDialogPopup, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter } from "@seosoyoung/soul-ui";
 import type { CardQueueStatusActivator } from "@seosoyoung/soul-ui/cards/CardQueue";
 import { cardDependencyStatus, cardStatusLabel } from "./CardActions";
-import { StatusChip } from "./StatusChip";
 import "./v3-card-status-picker.css";
 
 export type { CardStatusControl } from "./card-status-coordinator";

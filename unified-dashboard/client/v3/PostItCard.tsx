@@ -1,13 +1,12 @@
 import { useTranslation } from "react-i18next";
 import { memo, useEffect, useRef, useState, type HTMLAttributes, type Ref } from "react";
-import { ProfileAvatar, useAgentPortraitUrlResolver, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
+import { ProfileAvatar, StatusChip, useAgentPortraitUrlResolver, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardStatus } from "../../../packages/wire-schema/generated/typescript/index";
 import { cardActivityPreview } from "@seosoyoung/soul-ui/cards/card-activity-preview";
 import type { CardActivity, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import type { CardQueueStatusActivator } from "@seosoyoung/soul-ui/cards/CardQueue";
 import { cardDependencyNotice, cardStatusLabel } from "./CardActions";
-import { StatusChip } from "./StatusChip";
 import { useCardNavigation } from "./card-navigation";
 import { CardStatusPicker, type CardStatusControl, type CardStatusHandle } from "./CardStatusPicker";
 import { usePostItStatus } from "./use-postit-status";

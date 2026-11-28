@@ -16,7 +16,35 @@ const galleryWithSources: ChatUiDocumentV1 = {
     { id: 'openAssumption', kind: 'button', label: '가정 보기', action: { type: 'open_source', source: 'exampleAssumption' } },
   ] } : node),
 };
-export const reviewDocuments=Object.fromEntries(Object.entries({pas,normal,gallery:galleryWithSources}).map(([key,input])=>{const result=validateChatUiDocument(input);if(!result.ok)throw Error(JSON.stringify(result.errors));return [key,result.document]}));
+const displayCards: ChatUiDocumentV1 = { schema_version: 1, body: [
+  { id: 'intro', kind: 'text', parts: ['지금 진행 중인 카드는 세 개야. 검수 중인 항목부터 살펴보자.'] }, // i18n-ignore
+  { id: 'cards', kind: 'list', label: '카드 현황', items: [ // i18n-ignore
+    { id: 'a', title: '채팅 답변 동적 UI 조립과 라이브 카드 보기 통합 — 좁은 화면에서 긴 제목과 배지를 함께 확인하는 작업', note: '웹 화면과 서버 발행 경로', badge: { label: '진행 중', tone: 'good' }, url: 'https://example.com/card/1964' }, // i18n-ignore
+    { id: 'b', title: '국제화 기반과 영어 화면', note: '검수 대기', badge: { label: '검수', tone: 'warn' } }, // i18n-ignore
+    { id: 'c', title: '무중단 재시작', badge: { label: '완료', tone: 'info' } }, // i18n-ignore
+  ] },
+] };
+const displayResources: ChatUiDocumentV1 = { schema_version: 1, body: [
+  { id: 'intro', kind: 'text', parts: ['노드 자원은 안정적이야. 메모리 추이를 함께 확인했어.'] }, // i18n-ignore
+  { id: 'stats', kind: 'stats', label: 'eiaserinnys', tiles: [ { label: 'CPU', value: '34%', tone: 'good' }, { label: '메모리', value: '68%', note: '16 GB 중 10.9 GB', tone: 'warn' }, { label: '디스크', value: '42%', tone: 'good' }, { label: '세션', value: 12, tone: 'info' } ] }, // i18n-ignore
+  { id: 'line', kind: 'line', label: '메모리 사용률', baseline: { value: 80, label: '기준' }, series: [{ label: 'eiaserinnys', points: [{x:'2026-11-28T00:00:00Z',y:52},{x:'2026-11-28T04:00:00Z',y:68},{x:'2026-11-28T08:00:00Z',y:72}] }, { label: 'silent-manari-ts', points: [{x:'2026-11-28T00:00:00Z',y:34},{x:'2026-11-28T04:00:00Z',y:48},{x:'2026-11-28T08:00:00Z',y:43}] }] }, // i18n-ignore
+] };
+const displayDeploy: ChatUiDocumentV1 = { schema_version: 1, body: [
+  { id: 'intro', kind: 'text', parts: ['배포는 중앙 노드에서 끝났고 작업 노드를 확인하고 있어.'] }, // i18n-ignore
+  { id: 'nodes', kind: 'list', label: '노드', items: [{id:'a',title:'eiaserinnys',badge:{label:'완료',tone:'info'}},{id:'b',title:'eias-linegames-wsl',badge:{label:'진행 중',tone:'good'}},{id:'c',title:'silent-manari-ts',badge:{label:'대기',tone:'neutral'}}] }, // i18n-ignore
+  { id:'steps', kind:'steps', items:[{title:'변경 확인',state:'done',time:'17:20'},{title:'중앙 노드 적용',state:'done',time:'17:22'},{title:'작업 노드 확인',state:'current',note:'연결과 버전을 확인하고 있어.'},{title:'최종 점검',state:'pending'}] }, // i18n-ignore
+] };
+const displayResearch: ChatUiDocumentV1 = { schema_version:1, sources:{ original:source }, body:[
+  {id:'intro',kind:'text',parts:['조사한 세 노드 중 중앙 노드의 사용량이 가장 높아.']}, // i18n-ignore
+  {id:'table',kind:'table',label:'노드별 관측',columns:[{key:'node',label:'노드',wrap:true},{key:'cpu',label:'CPU',type:'number'},{key:'memory',label:'메모리',type:'number'},{key:'disk',label:'디스크',type:'number'},{key:'sessions',label:'세션',type:'number'},{key:'state',label:'상태',type:'badge'},{key:'region',label:'구역'},{key:'source',label:'근거',type:'link'}],rows:Array.from({length:3},(_,i)=>({node:['eiaserinnys','eias-linegames-wsl','silent-manari-ts'][i%3],cpu:34+i,memory:68,disk:42,sessions:12,state:{label:'정상',tone:'good'},region:'내부',source:{label:'원문',url:'https://example.com'}}))}, // i18n-ignore
+  {id:'bars',kind:'bars',label:'메모리 사용률',items:[{label:'eiaserinnys',value:68,tone:'warn'},{label:'eias-linegames-wsl',value:43,tone:'good'},{label:'silent-manari-ts',value:37,tone:'info'}]}, // i18n-ignore
+  {id:'compare',kind:'compare',columns:[{id:'a',title:'중앙에서 처리',selected:true,items:[{mark:'yes',text:'자원 확인이 빠름'},{mark:'yes',text:'운영 상태를 함께 봄'}]},{id:'b',title:'각 노드에서 처리',items:[{mark:'partial',text:'노드별 확인 필요'},{mark:'no',text:'현황이 분산됨'}]}]}, // i18n-ignore
+  {id:'citation',kind:'citation',source:'original'},
+] };
+const displayFlow: ChatUiDocumentV1 = { schema_version:1, body:[{id:'intro',kind:'text',parts:['요청은 네 단계로 전달돼.']},{id:'flow',kind:'flow',nodes:Array.from({length:12},(_,i)=>({id:`n${i}`,title:['사용자','세션','오케스트레이터','결과'][i%4],note:`단계 ${i+1}`,col:(i%4+1) as 1|2|3|4,row:(Math.floor(i/4)+1) as 1|2|3|4})),edges:Array.from({length:11},(_,i)=>({from:`n${i}`,to:`n${i+1}`}))}] }; // i18n-ignore
+const displayLargeTable: ChatUiDocumentV1 = { ...displayResearch, body: displayResearch.body.map(node => node.kind === 'table' ? { ...node, rows: Array.from({ length: 50 }, (_, index) => node.rows[index % node.rows.length]!) } : node) };
+const displayMedia: ChatUiDocumentV1 = { schema_version:1, body:[{id:'intro',kind:'text',parts:['그림과 작은 보고를 함께 보여줄게.']},{id:'image',kind:'image',attachment_id:'review-image',alt:'자원 사용량 그림',caption:'노드별 사용량'},{id:'html',kind:'html',html:'<p style="color:var(--host-accent)">작은 정적 보고</p>',height:120,alt:'노드별 사용량 보고'}] }; // i18n-ignore
+export const reviewDocuments=Object.fromEntries(Object.entries({pas,normal,gallery:galleryWithSources,displayCards,displayResources,displayDeploy,displayResearch,displayLargeTable,displayFlow,displayMedia}).map(([key,input])=>{const result=validateChatUiDocument(input);if(!result.ok)throw Error(JSON.stringify(result.errors));return [key,result.document]}));
 
 export const reviewPrompts={pas:'검수 뒤에는 무엇부터 진행할까?',normal:'인원수와 결제 조건을 바꾸며 팀 요금을 비교해 줘.',gallery:'첫 조각 구성 요소와 모든 입력 종류를 보여줘.'};
 

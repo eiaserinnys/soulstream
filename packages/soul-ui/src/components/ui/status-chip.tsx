@@ -1,7 +1,6 @@
 import type { HTMLAttributes } from "react";
-import "./v3-status-chip.css";
+import "./status-chip.css";
 
-/** Shared status presentation. Callers retain the meaning of their own state. */
 export function StatusChip({ label, tone, className = "", ...props }: HTMLAttributes<HTMLSpanElement> & {
   label: string; tone?: string;
 }) {

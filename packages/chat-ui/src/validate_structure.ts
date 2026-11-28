@@ -1,5 +1,5 @@
 import { CHAT_UI_LIMITS, type ValidationIssue } from "./types.js";
-import { addIssue, codePointLength, hasOwn, inspectJsonValue, isPlainObject, MAX_ISSUES, utf8ByteLength, type UnknownRecord } from "./validate_utils.js";
+import { addIssue, checkDisplayStructure, codePointLength, displayNodeSpecs, hasOwn, inspectJsonValue, isPlainObject, MAX_ISSUES, utf8ByteLength, type UnknownRecord } from "./validate_utils.js";
 
 const KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,47}$/;
 const DIMENSION_PATTERN = /^[A-Za-z][A-Za-z0-9_:]{0,31}$/;
@@ -329,6 +329,7 @@ function checkNode(value: unknown, path: string, depth: number, count: { nodes: 
     button: { allowed: ["label", "action"], required: ["label", "action"] },
     entity: { allowed: ["label", "details", "source"], required: ["label", "details"] },
     citation: { allowed: ["source"], required: ["source"] },
+    ...Object.fromEntries(Object.entries(displayNodeSpecs).map(([kind, [allowed, required]]) => [kind, { allowed, required }])),
   };
   if (!hasOwn(fields, kind)) {
     checkObject(value, path, [...base, "kind"], ["id", "kind"], issues);
@@ -342,6 +343,10 @@ function checkNode(value: unknown, path: string, depth: number, count: { nodes: 
   if (!node) return;
   checkKey(node.id, `${path}.id`, issues);
   if (hasOwn(node, "visibleWhen")) checkExpr(node.visibleWhen, `${path}.visibleWhen`, 1, issues);
+  if (hasOwn(displayNodeSpecs, kind)) {
+    checkDisplayStructure(node, path, issues, checkTextPart);
+    return;
+  }
 
   if (kind === "heading") {
     if (node.level !== 1 && node.level !== 2 && node.level !== 3) addIssue(issues, `${path}.level`, "heading level은 1, 2, 3 중 하나여야 합니다.");

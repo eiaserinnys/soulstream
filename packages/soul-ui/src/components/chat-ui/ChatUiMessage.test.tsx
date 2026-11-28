@@ -152,3 +152,34 @@ describe('ChatUiMessage', () => {
     expect(prevented).toBe(false); expect(openTarget).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('보여 주기 부품', () => {
+  it('표, 목록, 차트, 흐름, 그림과 격리된 HTML을 그린다', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    const host = document.createElement('div'); document.body.append(host); const root = createRoot(host);
+    const body = [
+      { id: 'stats', kind: 'stats', tiles: [{ label: '하나', value: 1 }, { label: '둘', value: 2 }] },
+      { id: 'badge', kind: 'badge', label: '진행', tone: 'good' },
+      { id: 'table', kind: 'table', columns: [{ key: 'name', label: '이름' }], rows: [{ name: '사과' }] },
+      { id: 'list', kind: 'list', items: [{ id: 'a', title: '링크 항목', url: 'https://example.com' }] },
+      { id: 'bars', kind: 'bars', items: [{ label: '막대', value: 4 }] },
+      { id: 'line', kind: 'line', series: [{ label: '값', points: [{ x: '2026-01-01T00:00:00Z', y: 1 }, { x: '2026-01-02T00:00:00Z', y: 2 }] }] },
+      { id: 'steps', kind: 'steps', items: [{ title: '검증', state: 'done' }] },
+      { id: 'compare', kind: 'compare', columns: [{ id: 'a', title: '가', items: [{ text: '하나' }] }, { id: 'b', title: '나', items: [{ text: '둘' }] }] },
+      { id: 'flow', kind: 'flow', nodes: [{ id: 'a', title: '출발', col: 1, row: 1 }, { id: 'b', title: '도착', col: 2, row: 1 }], edges: [{ from: 'a', to: 'b' }] },
+      { id: 'image', kind: 'image', attachment_id: 'att-1', alt: '그림' },
+      { id: 'html', kind: 'html', html: '<p>안녕</p>', height: 120, alt: '작은 보고' },
+    ];
+    await act(async () => root.render(<ChatUiControllerProvider sessionId="session-a"><ChatUiMessage ui={{ ...envelope, document: { schema_version: 1, body } }} content="저장된 글" sessionId="session-a" /></ChatUiControllerProvider>));
+    expect(host.querySelector('th')?.textContent).toBe('이름');
+    expect(host.querySelector('td')?.textContent).toBe('사과');
+    expect(host.querySelector('a[href="https://example.com"]')?.textContent).toContain('링크 항목');
+    expect(host.querySelector('[data-chat-ui-node="line"] svg')).toBeTruthy();
+    expect(host.querySelector('[data-chat-ui-node="flow"] svg')).toBeTruthy();
+    expect(host.querySelector('[data-chat-ui-node="image"] img')?.getAttribute('src')).toContain('att-1');
+    expect(host.querySelector('iframe')?.getAttribute('sandbox')).toBe('');
+    expect(host.querySelector('iframe')?.getAttribute('srcdoc')).toContain('<p>안녕</p>');
+    for (const id of ['stats', 'badge', 'bars', 'steps', 'compare']) expect(host.querySelector(`[data-chat-ui-node="${id}"]`)?.textContent).toBeTruthy();
+    act(() => root.unmount()); host.remove(); vi.unstubAllGlobals();
+  });
+});

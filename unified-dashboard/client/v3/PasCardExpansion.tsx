@@ -1,12 +1,11 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from 'react';
 import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
-import { Button, FrameLoading, useAgentPortraitUrlResolver, useAuth, useDashboardStore, useInternalLinkClick } from '@seosoyoung/soul-ui';
+import { Button, FrameLoading, StatusChip, useAgentPortraitUrlResolver, useAuth, useDashboardStore, useInternalLinkClick } from '@seosoyoung/soul-ui';
 import { cardMutationKey, cardQuestionChoiceAnswer, cardQuestionTextAnswer } from '@seosoyoung/soul-ui/cards/card-api';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import { CardCheckItems } from './CardCheckItems';
 import { CardCommentInput } from './CardCommentInput';
-import { StatusChip } from './StatusChip';
 import { CardNowPanel } from './CardNowPanel';
 import { CardTimeline } from './CardTimeline';
 import { summarizeCardItems } from './card-item-summary';

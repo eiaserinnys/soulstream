@@ -1,6 +1,8 @@
 import { createEvaluationContext } from "./evaluate.js";
 import { initialState } from "./controller.js";
 import type {
+  Cell,
+  DisplayValue,
   ChatUiState,
   Expr,
   FieldValue,
@@ -39,9 +41,9 @@ function formatNumber(value: number, digits?: number): string {
   return `${sign}${integer}${fraction ? `.${fraction}` : ""}`;
 }
 
-function appendUnit(number: string, unit: Unit | undefined): string {
-  if (!unit || !unit.symbol) return number;
-  return /^[A-Za-z]/.test(unit.symbol) ? `${number} ${unit.symbol}` : `${number}${unit.symbol}`;
+function joinUnit(text: string, symbol?: string): string {
+  if (!symbol) return text;
+  return /^[A-Za-z]/.test(symbol) ? `${text} ${symbol}` : `${text}${symbol}`;
 }
 
 function displayUnitForRef(
@@ -61,30 +63,30 @@ function displayUnitForRef(
   return undefined;
 }
 
-function renderValue(
+function formatValue(
   doc: NormalizedChatUiDocumentV1,
   ref: ValueRef,
   value: Value,
   part: Exclude<TextPart, string>,
-): string {
-  if (value.type === "error") return `계산할 수 없음(${value.message})`;
-  if (value.type === "boolean") return value.value ? "예" : "아니오";
+): { text: string; symbol?: string } {
+  if (value.type === "error") return { text: `계산할 수 없음(${value.message})` };
+  if (value.type === "boolean") return { text: value.value ? "예" : "아니오" };
   if (value.type === "string") {
     if ("field" in ref) {
       const field = doc.fields[ref.field]!;
-      if (field.type === "choice") return field.options.find((option) => option.id === value.value)?.label ?? value.value;
+      if (field.type === "choice") return { text: field.options.find((option) => option.id === value.value)?.label ?? value.value };
     }
-    return value.value;
+    return { text: value.value };
   }
   if (value.type === "list") {
     if ("field" in ref) {
       const field = doc.fields[ref.field]!;
       if (field.type === "selection") {
         const labels = value.value.map((id) => field.options.find((option) => option.id === id)?.label ?? id);
-        return labels.length ? labels.join(", ") : "선택 없음";
+        return { text: labels.length ? labels.join(", ") : "선택 없음" };
       }
     }
-    return value.value.join(", ");
+    return { text: value.value.join(", ") };
   }
 
   const format = part.format ?? "number";
@@ -92,7 +94,7 @@ function renderValue(
   const shown = format === "percent"
     ? formatNumber(value.base * 100, part.digits)
     : formatNumber(value.base / (displayUnit?.scale ?? 1), part.digits);
-  return format === "plain" || format === "percent" ? `${shown}${format === "percent" ? "%" : ""}` : appendUnit(shown, displayUnit);
+  return { text: shown, symbol: format === "percent" ? "%" : format === "plain" ? undefined : displayUnit?.symbol };
 }
 
 function renderPartsWithContext(
@@ -103,7 +105,8 @@ function renderPartsWithContext(
   return parts.map((part) => {
     if (typeof part === "string") return part;
     const value = evaluateExpression({ op: "ref", ref: part.value });
-    return renderValue(doc, part.value, value, part);
+    const { text, symbol } = formatValue(doc, part.value, value, part);
+    return joinUnit(text, symbol);
   }).join("");
 }
 
@@ -119,7 +122,7 @@ export function renderParts(
 function renderFieldValue(doc: NormalizedChatUiDocumentV1, state: ChatUiState, key: string): string {
   const field = doc.fields[key]!;
   const value = state.values[key] as FieldValue;
-  if (field.type === "number") return appendUnit(formatNumber(value as number), doc.units[field.unit]);
+  if (field.type === "number") return joinUnit(formatNumber(value as number), doc.units[field.unit]?.symbol);
   if (field.type === "text") return value as string;
   if (field.type === "boolean") return value ? "예" : "아니오";
   if (field.type === "choice") return field.options.find((option) => option.id === value)?.label ?? String(value);
@@ -170,6 +173,7 @@ function renderNode(
       ? labelledLine(node.label, renderPartsWithContext(doc, node.details, evaluateExpression))
       : node.label;
   }
+  if (node.kind !== "citation") return renderDisplayNode(doc, state, node);
   const source = doc.sources[node.source]!;
   return source.type === "assumption"
     ? `출처: ${source.label}`
@@ -291,4 +295,44 @@ export function composeText(
       .join("\n");
   }
   return renderText(doc, state);
+}
+
+export function renderDisplayValueParts(doc: NormalizedChatUiDocumentV1, state: ChatUiState, value: DisplayValue, unit?: string): { text: string; symbol?: string } {
+  if (typeof value === 'string') return { text: value };
+  if (typeof value === 'number') return { text: value.toLocaleString('en-US'), symbol: unit ? doc.units[unit]?.symbol : undefined };
+  const part = unit ? { ...value, unit } : value;
+  const evaluated = createEvaluationContext(doc, state).evaluateExpression({ op: "ref", ref: part.value });
+  return formatValue(doc, part.value, evaluated, part);
+}
+
+export function renderDisplayValue(doc: NormalizedChatUiDocumentV1, state: ChatUiState, value: DisplayValue, unit?: string): string {
+  const { text, symbol } = renderDisplayValueParts(doc, state, value, unit);
+  return typeof value === 'number' ? text + (symbol ?? '') : joinUnit(text, symbol);
+}
+
+function cellText(doc: NormalizedChatUiDocumentV1, state: ChatUiState, cell: Cell | undefined, unit?: string): string {
+  if (cell == null) return '';
+  if (typeof cell === 'object' && 'label' in cell) return 'url' in cell ? `[${cell.label}](${cell.url})` : cell.label;
+  return renderDisplayValue(doc, state, cell, unit);
+}
+
+function renderDisplayNode(doc: NormalizedChatUiDocumentV1, state: ChatUiState, node: Node): string {
+  switch (node.kind) {
+    case 'stats': return [node.label, ...node.tiles.map(tile => [tile.label, renderDisplayValue(doc, state, tile.value, tile.unit), tile.note].filter(Boolean).join(' '))].filter(Boolean).join('\n');
+    case 'badge': return node.label;
+    case 'table': {
+      const escape = (value: string) => value.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+      const row = (values: string[]) => `| ${values.map(escape).join(' | ')} |`;
+      return [node.label, row(node.columns.map(c => c.label)), row(node.columns.map(() => '---')), ...node.rows.map(r => row(node.columns.map(c => cellText(doc, state, r[c.key], c.unit))))].filter(Boolean).join('\n');
+    }
+    case 'list': return [node.label, ...node.items.map((item, i) => `${node.numbered ? `${i + 1}.` : '-'} ${[item.url ? `[${item.title}](${item.url})` : item.title, item.note, item.badge?.label, item.value === undefined ? undefined : renderDisplayValue(doc, state, item.value)].filter(Boolean).join(' ')}`)].filter(Boolean).join('\n');
+    case 'bars': return [node.label, ...node.items.map(item => `${item.label} ${Array.isArray(item.value) ? item.value.join(', ') : item.value}${node.unit ? doc.units[node.unit]?.symbol ?? '' : ''}`)].filter(Boolean).join('\n');
+    case 'line': return [node.label, ...node.series.map(series => { const first = series.points[0]!, last = series.points[series.points.length - 1]!; return `${series.label} ${first.x}: ${first.y} → ${last.x}: ${last.y}${node.unit ? doc.units[node.unit]?.symbol ?? '' : ''}`; })].filter(Boolean).join('\n');
+    case 'steps': return node.items.map(item => `[${item.state}] ${[item.title, item.note, item.time].filter(Boolean).join(' ')}`).join('\n');
+    case 'compare': return node.columns.map(column => `${column.title}\n${column.items.map(item => `- ${renderDisplayValue(doc, state, item.text)}`).join('\n')}`).join('\n\n');
+    case 'flow': return node.edges.map(edge => `${node.nodes.find(n => n.id === edge.from)!.title} ${edge.both ? '↔' : '→'} ${node.nodes.find(n => n.id === edge.to)!.title}`).concat(node.nodes.filter(n => !node.edges.some(e => e.from === n.id || e.to === n.id)).map(n => n.title)).join('\n');
+    case 'image': return [node.alt, node.caption].filter(Boolean).join(' — ');
+    case 'html': return node.alt;
+    default: return '';
+  }
 }

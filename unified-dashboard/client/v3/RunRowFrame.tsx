@@ -1,8 +1,7 @@
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
-import { DashboardIconCap, DisclosureActionIcon } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, DisclosureActionIcon, StatusChip } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 import { Check, ChevronRight, MoreHorizontal, Star } from "lucide-react";
-import { StatusChip } from "./StatusChip";
 import "./v3-run-history.css";
 
 type ActionState = { label: string; onAction(event: MouseEvent<HTMLButtonElement>): void; disabled?: boolean; pending?: boolean };

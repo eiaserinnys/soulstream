@@ -8,6 +8,7 @@ import type { CatalogFolder, SessionReviewAcknowledgeResult, SessionSummary } fr
 const acknowledgeSessionReview = vi.hoisted(() => vi.fn());
 
 vi.mock("@seosoyoung/soul-ui", () => ({
+  StatusChip: ({ label }: { label: string }) => <span aria-label={label}>{label}</span>,
   acknowledgeSessionReview,
   useAgentPortraitUrlResolver: () => (agentId?: string | null) => agentId ? `/api/agent-portraits/${agentId}` : "",
   STATUS_CONFIG: {
