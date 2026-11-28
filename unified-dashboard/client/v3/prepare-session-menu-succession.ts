@@ -24,7 +24,7 @@ export async function prepareSessionMenuSuccession(session:SessionSummary,folder
   return {
     folderTitle:folder?.name ?? t("sessions.session"),folderId,folderPageId:pageId,currentSession:session,
     predecessorOptions:[{sessionId:session.agentSessionId,label:session.displayName ?? null,runNumber:null}],
-    contextItems:buildFolderSessionContextItems(merged,blocks,pageId),
+    contextItems:buildFolderSessionContextItems(merged,blocks,pageId,t),
     documentOptions: folderId
       ? boardMarkdownDocuments(await fetchFolderBoardItems(folderId))
         .map(document=>({pageId:document.pageId,title:document.title}))

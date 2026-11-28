@@ -23,10 +23,14 @@ LOCALES = ROOT / "packages/i18n/src/locales"
 SESSION = "components-session"
 
 
-FOLDER = {"id": "demo-folder", "name": "Release preparation", "sortOrder": 0,
-          "parentFolderId": None, "projectPageId": "demo-page", "status": "open",
+PARENT = {"id": "parent-folder", "name": "Release operations", "sortOrder": 0,
+          "parentFolderId": None, "projectPageId": "parent-page", "status": "open",
           "archived": False, "version": 1, "settings": {}}
+FOLDER = {**PARENT, "id": "demo-folder", "name": "Release preparation",
+          "parentFolderId": PARENT["id"], "projectPageId": "demo-page"}
 PROJECT = {"id": "demo-page", "title": FOLDER["name"], "version": 1, "metadata": {}}
+PARENT_PROJECT = {**PROJECT, "id": "parent-page", "title": PARENT["name"]}
+GUIDANCE = {"demo-page": "Check the release checklist.", "parent-page": "Record packaging results."}
 RUN = {**SUMMARY, "displayName": "Check release notes and session history",
        "agentName": "Release assistant", "folderId": FOLDER["id"]}
 REVIEW = {**SUMMARY, "agentSessionId": "review-session", "displayName": "Review packaging results",
@@ -74,13 +78,15 @@ def capture(page, out, name):
 
 
 class DashboardFixture(Fake):
+    reject_context = False
+
     def handle(self, route):
         url = urlsplit(route.request.url)
         path = url.path
         if path in STREAMS:
             return route.continue_()
         if path == "/api/folders":
-            return route.fulfill(json={"folders": [FOLDER], "sessions": {
+            return route.fulfill(json={"folders": [PARENT, FOLDER], "sessions": {
                 RUN["agentSessionId"]: {"folderId": FOLDER["id"], "displayName": RUN["displayName"]},
             }})
         if path == "/api/folders/demo-folder":
@@ -94,8 +100,15 @@ class DashboardFixture(Fake):
             return route.fulfill(json={"folder": FOLDER, "page": PROJECT, "blocks": [], "sections": [], "cards": [],
                                        "subfolders": {"items": [], "nextCursor": None},
                                        "sessions": {"items": [RUN], "nextCursor": None}})
-        if path == "/api/pages/demo-page":
-            return route.fulfill(json={"page": PROJECT, "blocks": [], "sections": []})
+        if path in ("/api/pages/demo-page", "/api/pages/parent-page"):
+            if self.reject_context:
+                return route.fulfill(status=503, json={"error": "Context unavailable"})
+            project = PROJECT if path.endswith("/demo-page") else PARENT_PROJECT
+            page_id = project["id"]
+            block = {"id": f"{page_id}-guidance", "page_id": page_id, "parent_id": None,
+                     "position_key": "a", "block_type": "guidance", "text": GUIDANCE[page_id],
+                     "properties": {"enabled": True}, "collapsed": False}
+            return route.fulfill(json={"page": project, "blocks": [block], "sections": []})
         if path == "/api/pages/demo-page/session-defaults":
             return route.fulfill(body="null", content_type="application/json")
         if path == "/api/cards":
@@ -103,6 +116,8 @@ class DashboardFixture(Fake):
         if path == "/api/board-items":
             return route.fulfill(json={"boardItems": []})
         if path == "/api/sessions":
+            if route.request.method == "POST":
+                return route.fulfill(status=422, json={"error": {"message": "The fixture rejected this session."}})
             rows = [REVIEW] if "review" in url.query else [RUN, REVIEW]
             return route.fulfill(json={"sessions": rows, "total": len(rows)})
         if path.endswith("/resume-after-limit"):
@@ -224,7 +239,15 @@ def dashboard(browser, base, out, language, width):
         expect(instruction).to_be_visible()
         observations["succession_open"] = focus(page)
         observations["succession_geometry"] = geometry(dialog)
+        materials = dialog.locator("summary").filter(has_text=copy["sharedMaterials"])
+        materials.click()
+        for label in (
+            f'{GUIDANCE["demo-page"]} · This folder',
+            f'{GUIDANCE["parent-page"]} · Inherited from {PARENT["name"]}',
+        ):
+            expect(dialog.get_by_text(label, exact=True)).to_be_visible()
         capture(page, out, "en-dashboard-succession-1440.png")
+        instruction.focus()
         page.keyboard.press("Tab")
         observations["succession_tab"] = focus(page)
         instruction.fill("Verify the release checklist.")
@@ -232,11 +255,24 @@ def dashboard(browser, base, out, language, width):
         expect(instruction).to_have_value("Verify the release checklist.")
         observations["succession_narrow"] = geometry(dialog)
         page.set_viewport_size({"width": 1440, "height": 900})
+        dialog.get_by_role("button", name=copy["startSession"], exact=True).click()
+        expect(dialog.get_by_role("alert")).to_contain_text(copy["startFailed"])
+        expect(instruction).to_have_value("Verify the release checklist.")
+        capture(page, out, "en-dashboard-succession-error-1440.png")
         instruction.clear()
         page.keyboard.press("Escape")
         expect(dialog).to_have_count(0)
         expect(trigger).to_be_focused()
         observations["succession_escape"] = focus(page)
+
+        fixture.reject_context = True
+        trigger.click(button="right")
+        continuation.click()
+        continuation_error = page.get_by_role("dialog", name=ui["session"]["continueErrorTitle"])
+        expect(continuation_error.get_by_text(ui["session"]["continueErrorHelp"])).to_be_visible()
+        page.keyboard.press("Escape")
+        expect(continuation_error).to_have_count(0)
+        fixture.reject_context = False
 
         review_row = panel.locator(f'[data-session-id="{REVIEW["agentSessionId"]}"]')
         review_row.get_by_role("button", name=copy["acknowledgeSession"].replace(
