@@ -10,7 +10,7 @@
 | `skill.html_make.body` | HTMLの例を`lang="ja"`にし、日本語のシステムフォントを優先した。日本語に`word-break: normal`と対応ブラウザー向けの`auto-phrase`を案内し、`keep-all`は韓国語の文に限定した。 |
 | `skill.daily_review`、`skill.daily_review.body` | インストール時に付ける名前「日次まとめ」「ワークスペース」にそろえた。点検件数の報告と選択肢はエージェントが書く文言なので、日本語にした。 |
 | `skill.soulstream_session.body` | 既定プロフィールを「ソ・ソヨン(PAS)」「ソ・ソヨン」と表記した。メインPASの例も「ソ・ソヨン常駐セッション」にした。実際の送信には一覧から取得したIDを使う。 |
-| `skill.lite_delegation.body`、`skill.node_model_selection`、`skill.node_model_selection.body` | 固定のモデル名を持ち込まず、ノードのカタログで利用できるプリセットを確認する手順と、作業の種類ごとの選定基準を残した。 |
+| `skill.lite_delegation.body`、`skill.node_model_selection.body` | 軽量委任の例と作業別の表には原文のプリセットIDを残した。実際に使えるプリセットはノードのカタログで確認する。 |
 
 ## 画面表示と実行時の文字列
 
