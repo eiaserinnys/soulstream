@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { cardRequest } from "@seosoyoung/soul-ui/cards/card-api";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
@@ -7,7 +8,7 @@ import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
 type Page={cards:CardRow[];nextCursor:string|null};
 type Accumulated={cards:CardRow[];cursor:string|null};
 export type CompletedPageLoader=(params:CompletedCardParams)=>Promise<Page>;
-const loadPage:CompletedPageLoader=params=>cardRequest<Page>(`/api/cards?${new URLSearchParams({status:"done",...Object.fromEntries(Object.entries(params).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)]))})}`);
+const loadPage=(params:CompletedCardParams,t:ReturnType<typeof useTranslation>["t"])=>cardRequest<Page>(`/api/cards?${new URLSearchParams({status:"done",...Object.fromEntries(Object.entries(params).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)]))})}`,"GET",undefined,undefined,t);
 
 export function mergeCompletedRefresh(first:Page,previous:Accumulated):Accumulated {
   if(!first.nextCursor)return {cards:first.cards,cursor:null};
@@ -17,7 +18,8 @@ export function mergeCompletedRefresh(first:Page,previous:Accumulated):Accumulat
   return {cards:[...first.cards,...tail],cursor:tail.length?previous.cursor:first.nextCursor};
 }
 
-export function useCompletedCards(folderId:string|undefined,enabled:boolean,loader:CompletedPageLoader=loadPage) {
+export function useCompletedCards(folderId:string|undefined,enabled:boolean,loader?:CompletedPageLoader) {
+  const {t}=useTranslation();
   const cardRevision=useV3InvalidationKey(["card"]);
   const immediateRevision=useV3InvalidationKey(["folder","catalog","replay"]);
   const localRevision=useCardStore(state=>state.localRevision);
@@ -47,7 +49,8 @@ export function useCompletedCards(folderId:string|undefined,enabled:boolean,load
       const request=mode==="more"?params!:{folderId,...completedBounds(period,start,end,Date.now())!,q,limit:60};
       if(mode!=="more")params=request;
       try {
-        const result=await loader({...request,...(after?{cursor:after}:{})});
+        const pageParams={...request,...(after?{cursor:after}:{})};
+        const result=await (loader?loader(pageParams):loadPage(pageParams,t));
         if(!active)return;
         accumulated=mode==="refresh"?mergeCompletedRefresh(result,accumulated):mode==="more"
           ?{cards:[...new Map([...accumulated.cards,...result.cards].map(card=>[card.id,card])).values()],cursor:result.nextCursor}
@@ -70,7 +73,7 @@ export function useCompletedCards(folderId:string|undefined,enabled:boolean,load
     retry.current=()=>void load(loaded?"refresh":"initial");
     if(enabled&&!invalidRange)void load("initial");
     return()=>{active=false;queued.current=null;if(timer!==undefined)clearTimeout(timer);};
-  },[key,enabled,invalidRange,folderId,period,start,end,q,loader]);
+  },[key,enabled,invalidRange,folderId,period,start,end,q,loader,t]);
   const previousRevision=useRef({cardRevision,immediateRevision,localRevision});
   useEffect(()=>{
     const previous=previousRevision.current;

@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 /**
  * 저장소 루트에서 실행:
  * corepack pnpm -C unified-dashboard build
@@ -40,6 +41,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     reducedMotion: "reduce",
     timezoneId: "Asia/Seoul",
     viewport: { width: 1440, height: 1000 },
+    locale: koreanLocale,
   });
   const page = await context.newPage();
   // Keep the fixture reset date on the same day; timers still run normally.

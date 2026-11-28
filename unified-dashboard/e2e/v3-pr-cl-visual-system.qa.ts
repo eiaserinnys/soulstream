@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 import type { Browser, Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -39,6 +40,7 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     reducedMotion: "reduce",
     timezoneId: "Asia/Seoul",
     viewport: { width: 2048, height: 1152 },
+    locale: koreanLocale,
   });
   const page = await context.newPage();
   const browserErrors: string[] = [];

@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 import type { Browser, BrowserContext, Page, Route } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -129,6 +130,7 @@ async function createContext(browser: Browser, theme: Theme): Promise<BrowserCon
     reducedMotion: "reduce",
     timezoneId: "Asia/Seoul",
     viewport: { width: 1440, height: 900 },
+    locale: koreanLocale,
   });
 }
 

@@ -1,6 +1,7 @@
+import { koreanLocale } from "./korean-locale.mjs";
 // 지침과 스킬 보기(카드 #1854): 세 화면(구성, 스킬과 카탈로그, 한눈에)의 캡처와 조작 측정.
 // 캡처는 워크트리 .local/shots/, 조작 결과(ui-design §0의 14~18번과 대화상자 표)는 .local/shots/operations.md로 쓴다.
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import { LONGEST_SKILL_NAME } from "../client/v3/guides-fixture";
 import { NARROW, WIDE, openComponents, openSettings, shot, shotSample, writeOperations, type OperationResults, type Theme } from "./agent-profile-assembly-guides-helpers";
 
@@ -144,7 +145,7 @@ test("components: /components의 새 표본 셋(GuideParts, 한눈에 표, Setti
   const errors: string[] = [];
   for (const theme of ["light", "dark"] as const) {
     // 테마마다 새 맥락으로 연다(같은 쪽에 길과 초기 스크립트를 두 번 얹으면 앱이 서지 않는다).
-    const context = await browser.newContext();
+    const context = await browser.newContext({ locale: koreanLocale });
     const page = await context.newPage();
     page.on("pageerror", error => errors.push(error.message));
     await openComponents(page, theme);

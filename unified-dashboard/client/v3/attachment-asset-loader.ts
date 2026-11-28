@@ -1,3 +1,6 @@
+import { createI18n } from "@soulstream/i18n";
+import type { useTranslation } from "react-i18next";
+type Translate = ReturnType<typeof useTranslation>["t"];
 import type { CardItemEvidence } from "@seosoyoung/soul-ui/cards/card-types";
 import { attachmentContentUrl, type ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import type { AttachmentReadContext } from "./card-attachment-selection";
@@ -22,11 +25,14 @@ export type AttachmentLoadResult = {
   status?: { message: string; retryable?: boolean };
 };
 
+const legacyT = createI18n("ko").t;
+
 type AttachmentDescriptor = NonNullable<CardItemEvidence["descriptor"]>;
 
 export async function loadAttachmentAsset(
   reference: AttachmentAssetLoadInput,
   signal: AbortSignal,
+  t: Translate = legacyT,
 ): Promise<AttachmentLoadResult> {
   const metadataUrl = `/api/attachments/${encodeURIComponent(reference.attachmentId)}?${attachmentContextQuery(reference.context)}`;
   let response: Response;
@@ -34,9 +40,9 @@ export async function loadAttachmentAsset(
     response = await fetch(metadataUrl, { credentials: "same-origin", signal });
   } catch (error) {
     if (signal.aborted) throw error;
-    return failedReference(reference);
+    return failedReference(reference,undefined,undefined,t);
   }
-  if (!response.ok) return failedReference(reference, response.status);
+  if (!response.ok) return failedReference(reference,response.status,undefined,t);
   const body: unknown = await response.json().catch(() => null);
   if (!isMetadataResponse(body, reference.attachmentId)) {
     return { item: unavailableItem(reference, "unavailable") };
@@ -71,18 +77,19 @@ export function failedReference(
   reference: AttachmentPlaceholderReference,
   status?: number,
   previewKind: "image" | "info" = "info",
+  t: Translate = legacyT,
 ): AttachmentLoadResult {
   const retryable = status === undefined || (status >= 500 && status < 600);
   return {
     item: unavailableItem(reference, status === 404 ? "missing" : "unavailable", previewKind),
     status: {
       message: retryable
-        ? "첨부를 불러오지 못했습니다."
+        ? t("cards.attachmentLoadError")
         : status === 401 || status === 403
-          ? "첨부를 읽을 수 없습니다."
+          ? t("cards.attachmentForbidden")
           : status === 404
-            ? "첨부를 찾을 수 없습니다."
-            : "첨부를 사용할 수 없습니다.",
+            ? t("cards.attachmentMissing")
+            : t("cards.attachmentUnavailable"),
       retryable,
     },
   };

@@ -5,7 +5,7 @@
  * 넓은 폭과 360px 에서 열어 칸막이 자리와 커서 x 를 잰다. 시안은
  * .local/card1510-mockup/ 이고 캡처는 .local/card1510-captures/ 에 남긴다.
  */
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";

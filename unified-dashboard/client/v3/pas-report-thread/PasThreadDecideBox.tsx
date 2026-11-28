@@ -187,7 +187,7 @@ export function PasThreadDecideBox({ controller, agenda, undoButtonRef, onLayout
       {target ? <CardQuestionNotice label={t("persistent.thread.itemTarget", { number: target.itemId })} onClear={closeComposer} />
         : <CardQuestionNotice label={label} onClear={closeComposer} />}
       <CardCommentInput cardId={`pas-thread:${agenda.cardId}:${composerMode}`} nodeId={attachNodeId} sessionId={assigneeSessionId} pending={busy}
-        focusRequest={focusRequest} placeholder={placeholder} onSend={submit} />
+        focusRequest={focusRequest} kind={composerMode === "answer" || composerMode === "ask" ? "answer" : "comment"} placeholder={placeholder} onSend={submit} />
     </div> : null}
   </footer>;
 }

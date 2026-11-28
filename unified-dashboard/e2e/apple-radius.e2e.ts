@@ -1,7 +1,7 @@
 // 카드 #1735 항목 6: 애플식 곡률(뿌리 24 하나)이 화면에 실제로 적용됐는지 계산 곡률로 판정한다.
 // 규칙: 틀 24, 알약(높이의 절반 이상), 동심 12(틀에서 12 이상 떨어진 안쪽), 고정 4(인라인 코드·kbd·체크박스).
 // 실행: corepack pnpm --dir unified-dashboard exec playwright test --config e2e/radius-glass.config.ts apple-radius
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./test";
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";

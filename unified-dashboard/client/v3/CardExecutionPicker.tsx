@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { errorText } from "./v3-dashboard-utils";
 import { Button, FrameLoading, ProfileAvatar, useAgentPortraitUrlResolver, type AgentInfo } from "@seosoyoung/soul-ui";
@@ -5,7 +6,7 @@ import type { CardAssignment } from "@seosoyoung/soul-ui/cards/card-types";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { useNodeModelPresetCatalog, type NodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
 import {
-  NO_AVAILABLE_MODEL_MESSAGE,
+  noAvailableModelMessage,
   hasNoAvailableModelPreset,
   modelPresetOptionLabel,
   modelPresetSelectionState,
@@ -19,6 +20,7 @@ export function useCardExecutionPicker({selection,onChange,onError,disabled,open
  onError(message:string):void;disabled:boolean;
  open:boolean;onClose():void;
 }) {
+ const {t,i18n}=useTranslation();
  const nodes=useOrchestratorStore(s=>s.nodes);
  const connected=useMemo(()=>[...nodes.values()].filter(node=>node.status==="connected"),[nodes]);
  const [byNode,setByNode]=useState<Record<string,AgentInfo[]>>({});
@@ -31,11 +33,11 @@ export function useCardExecutionPicker({selection,onChange,onError,disabled,open
   let active=true;
   void Promise.all(connected.map(async node=>{
    const response=await fetch(`/api/nodes/${encodeURIComponent(node.nodeId)}/agents`,{credentials:"same-origin",headers:{Accept:"application/json"}});
-   if(!response.ok)throw new Error(`에이전트 목록을 불러오지 못했습니다 (${response.status})`);
+   if(!response.ok)throw new Error(t("cards.agentListError",{status:response.status}));
    const payload=await response.json() as {agents:AgentInfo[]};return [node.nodeId,payload.agents] as const;
   })).then(entries=>{if(active)setByNode(Object.fromEntries(entries));}).catch(e=>{if(active)errorRef.current(errorText(e));});
   return ()=>{active=false;};
- },[connected]);
+ },[connected,t]);
  const agents=useMemo(()=>{
   const ordered=[draftSelection.nodeId,...connected.map(node=>node.nodeId).filter(id=>id!==draftSelection.nodeId)];
   return [...new Map(ordered.flatMap(id=>(byNode[id]??[]).map(agent=>[agent.id,{agent,nodeId:id}] as const)).reverse()).values()].reverse();
@@ -57,11 +59,11 @@ export function useCardExecutionPicker({selection,onChange,onError,disabled,open
  const unavailableMessage=useMemo(()=>{
   if(catalog.nodeId!==selection.nodeId||catalog.status!=="ready"||!selection.modelPreset)return null;
   const selectedPreset=catalog.presets.find(preset=>preset.id===selection.modelPreset);
-  if(!selectedPreset)return modelPresetSelectionState(selection.modelPreset,catalog.presets,true).warning;
+  if(!selectedPreset)return modelPresetSelectionState(selection.modelPreset,catalog.presets,true,t).warning;
   if(selectedPreset.available)return null;
-  const reason=modelPresetReasonText(selectedPreset);
+  const reason=modelPresetReasonText(selectedPreset,t,i18n.language);
   return reason?`${selectedPreset.label} · ${reason}`:selectedPreset.label;
- },[catalog.nodeId,catalog.presets,catalog.status,selection.modelPreset,selection.nodeId]);
+ },[catalog.nodeId,catalog.presets,catalog.status,selection.modelPreset,selection.nodeId,t,i18n.language]);
  const valid=Boolean(selection.nodeId&&selectedAgent&&catalog.nodeId===selection.nodeId
   &&catalog.status==="ready"&&(!selection.modelPreset||model?.available));
  return {
@@ -78,25 +80,26 @@ export function CardExecutionPickerView({selection,onChange,onCancel,onConfirm,c
  connected:readonly {nodeId:string}[];agents:readonly {agent:AgentInfo;nodeId:string}[];
  byNode:Record<string,AgentInfo[]>;catalog:NodeModelPresetCatalog;
 }) {
+ const {t,i18n}=useTranslation();
  const resolvePortrait=useAgentPortraitUrlResolver();
  return <div className="v3-card-execution-body">
   <div className="v3-card-execution-columns">
-   <section aria-label="에이전트"><h3>에이전트</h3>{agents.map(({agent,nodeId})=><button type="button" key={agent.id} aria-pressed={selection.agentId===agent.id} disabled={disabled} onClick={()=>onChange({...selection,agentId:agent.id,nodeId,modelPreset:agent.default_preset??""})}>
+   <section aria-label={t("cards.agent")}><h3>{t("cards.agent")}</h3>{agents.map(({agent,nodeId})=><button type="button" key={agent.id} aria-pressed={selection.agentId===agent.id} disabled={disabled} onClick={()=>onChange({...selection,agentId:agent.id,nodeId,modelPreset:agent.default_preset??""})}>
     <span className="v3-card-picker-avatar"><ProfileAvatar role="assistant" hasPortrait portraitUrl={agent.portraitUrl||resolvePortrait(agent.id)} fallbackEmoji="🤖"/></span><span>{agent.name}</span></button>)}</section>
-   <section aria-label="노드"><h3>노드</h3>{connected.length===0?<p>연결된 노드가 없습니다</p>:connected.map(node=><button type="button" key={node.nodeId} aria-pressed={selection.nodeId===node.nodeId} disabled={disabled||Boolean(selection.agentId&&!byNode[node.nodeId]?.some(agent=>agent.id===selection.agentId))} onClick={()=>onChange({...selection,nodeId:node.nodeId,modelPreset:""})}>{node.nodeId}</button>)}</section>
-   <section aria-label="모델"><h3>모델</h3>{catalog.nodeId===selection.nodeId ? <>
-    {hasNoAvailableModelPreset(catalog)?<p>{NO_AVAILABLE_MODEL_MESSAGE}</p>:null}
+   <section aria-label={t("cards.node")}><h3>{t("cards.node")}</h3>{connected.length===0?<p>{t("cards.noConnectedNodes")}</p>:connected.map(node=><button type="button" key={node.nodeId} aria-pressed={selection.nodeId===node.nodeId} disabled={disabled||Boolean(selection.agentId&&!byNode[node.nodeId]?.some(agent=>agent.id===selection.agentId))} onClick={()=>onChange({...selection,nodeId:node.nodeId,modelPreset:""})}>{node.nodeId}</button>)}</section>
+   <section aria-label={t("cards.model")}><h3>{t("cards.model")}</h3>{catalog.nodeId===selection.nodeId ? <>
+    {hasNoAvailableModelPreset(catalog)?<p>{noAvailableModelMessage(t)}</p>:null}
     {modelPresetsByAgentBackend(catalog.presets,agents.find(({agent})=>agent.id===selection.agentId)?.agent.backend).map(preset=>{
-    const reason=modelPresetReasonText(preset);
+    const reason=modelPresetReasonText(preset,t,i18n.language);
     return <button type="button" key={preset.id} className={reason?"v3-card-execution-option--reason":undefined} aria-pressed={selection.modelPreset===preset.id} disabled={disabled||!preset.available} onClick={()=>onChange({...selection,modelPreset:preset.id})}>
      {reason ? <><span className={preset.reason==="quota_exhausted"?"v3-card-execution-name text-destructive":"v3-card-execution-name"}>{preset.label}</span><span className="v3-card-execution-reason">{reason}</span></>
-      : <span>{modelPresetOptionLabel(preset)}</span>}
+      : <span>{modelPresetOptionLabel(preset,undefined,true,t,i18n.language)}</span>}
     </button>;
-   })}</> : null}{catalog.status==="loading"?<FrameLoading inline label="불러오는 중…"/>:null}</section>
+   })}</> : null}{catalog.status==="loading"?<FrameLoading inline label={t("cards.loading")}/>:null}</section>
   </div>
   <div className="v3-card-execution-actions">
-   <Button variant="ghost" onClick={onCancel}>취소</Button>
-   <Button disabled={disabled||!canConfirm} onClick={onConfirm}>확인</Button>
+   <Button variant="ghost" onClick={onCancel}>{t("cards.cancel")}</Button>
+   <Button disabled={disabled||!canConfirm} onClick={onConfirm}>{t("cards.confirm")}</Button>
   </div>
  </div>;
 }

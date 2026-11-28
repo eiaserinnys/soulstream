@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { errorText } from "./v3-dashboard-utils";
 import { useDashboardStore, type CatalogFolder } from "@seosoyoung/soul-ui";
@@ -19,6 +20,7 @@ function savedSelection(): CardAssignment {
  catch { return {folderId:"",nodeId:"",agentId:"",modelPreset:""}; }
 }
 export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
+ const {t}=useTranslation();
  const queryClient=useQueryClient();
  const [selection,setSelection] = useState(savedSelection);
  const request = useDashboardStore(s=>s.drafts[draftKey]??"");
@@ -66,10 +68,10 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
  };
  const folder = folders.find(f=>f.id===selection.folderId);
  return <CardHandoffView
-  composer={{text:request,onChangeText:text=>setDraft(draftKey,text),onSend:()=>void submit(),placeholder:"새 세션에서 무엇을 할까요",inputLabel:"세션 첫 메시지",label:"세션 시작",disabled:!canSubmit,pending,
-   files,onAddFiles:fileUploadUrl?attachFiles:undefined,onRemoveFile:removeFile,onAttachUnavailable:()=>setError("첨부하려면 실행 노드를 선택해 주세요.")}}
-  folderLabel={folder?`📁 ${folder.name}`:"폴더 선택"}
-  executionLabel={<>{agent?.id===selection.agentId ? agent.name : selection.agentId||"에이전트"} · {selection.nodeId||"노드"} · <span className={model?.id===selection.modelPreset && model.reason==="quota_exhausted" ? "text-destructive" : undefined}>{model?.id===selection.modelPreset ? model.label : selection.modelPreset||"모델"}</span></>}
+  composer={{text:request,onChangeText:text=>setDraft(draftKey,text),onSend:()=>void submit(),placeholder:t("cards.startSessionPlaceholder"),inputLabel:t("cards.firstSessionMessage"),label:t("cards.startSession"),disabled:!canSubmit,pending,
+   files,onAddFiles:fileUploadUrl?attachFiles:undefined,onRemoveFile:removeFile,onAttachUnavailable:()=>setError(t("cards.selectNodeToAttach"))}}
+  folderLabel={folder?`📁 ${folder.name}`:t("cards.selectFolder")}
+  executionLabel={<>{agent?.id===selection.agentId ? agent.name : selection.agentId||t("cards.agent")} · {selection.nodeId||t("cards.node")} · <span className={model?.id===selection.modelPreset && model.reason==="quota_exhausted" ? "text-destructive" : undefined}>{model?.id===selection.modelPreset ? model.label : selection.modelPreset||t("cards.model")}</span></>}
   folderOpen={folderOpen} onFolderOpenChange={setFolderOpen} executionOpen={executionOpen} onExecutionOpenChange={setExecutionOpen} executionInvalid={Boolean(unavailableMessage)}
   error={error||files.find(f=>f.status==="error")?.errorMessage||unavailableMessage}
   folderPicker={<FolderPicker folders={folders} starredFolderIds={stars.folderIds} selectedFolderId={selection.folderId} disabledFolderIds={new Set(["claude","llm"])} pending={pending} onSelect={f=>void selectFolder(f)}/>}

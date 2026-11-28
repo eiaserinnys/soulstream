@@ -1,7 +1,8 @@
+import { koreanLocale } from "../korean-locale.mjs";
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "../test";
 import { installReadmeDemoRoutes, readmeDemoIds, readmeDemoPreferences, type DemoFixtureDiagnostics } from "./demo-fixtures";
 import { installDemoEventSource } from "./demo-event-source";
 
@@ -98,6 +99,7 @@ async function capturePersistentSession(browser: Browser) {
     viewport: { width: 390, height: 844 },
     deviceScaleFactor: 3,
     serviceWorkers: "block",
+    locale: koreanLocale,
   });
   const page = await context.newPage();
   try {

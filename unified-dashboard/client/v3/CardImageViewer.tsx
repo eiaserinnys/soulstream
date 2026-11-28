@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Dialog, DialogPopup, DialogTitle } from "@seosoyoung/soul-ui";
 import { ScrollArea } from "@seosoyoung/soul-ui/components/ui/scroll-area";
@@ -17,6 +18,7 @@ export interface CardAttachmentStatus { message: string; onRetry?(): void }
 
 /** Shared dialog surface for card timeline and check item evidence images. */
 export function CardImageViewer({ image, attachments, attachmentStatus, returnFocus, onClose }: { image: CardImageSelection | null; attachments?: readonly ChatAttachmentItem[]; attachmentStatus?: Readonly<Record<string, CardAttachmentStatus>>; returnFocus?: HTMLElement | null; onClose(): void }) {
+  const { t } = useTranslation();
   const [attachmentCursor, setAttachmentCursor] = useState<{ key: string; index: number } | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const setPopupRef = useCallback((popup: HTMLDivElement | null) => {
@@ -31,7 +33,7 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
     mediaRef,
     src: plainImage?.src,
     mimeType: null,
-    label: plainImage?.alt || "이미지",
+    label: plainImage?.alt || t("cards.image"),
   });
   const heic = useHeicImageSource(plainImage?.src, null);
   const imageFailed = imageViewer.state === "failed";
@@ -75,7 +77,7 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
       returnFocus={returnFocus}
       popupRef={popupRef}
       onPopupChange={updateDashboardReaderPlacement}
-      panelContent={status?<div className="chat-attachment-state chat-image-status" role="status"><span data-v3-selectable-content="true">{status.message}</span>{status.onRetry?<Button variant="outline" size="sm" onClick={status.onRetry}>다시 시도</Button>:null}</div>:undefined}
+      panelContent={status?<div className="chat-attachment-state chat-image-status" role="status"><span data-v3-selectable-content="true">{status.message}</span>{status.onRetry?<Button variant="outline" size="sm" onClick={status.onRetry}>{t("cards.retry")}</Button>:null}</div>:undefined}
     />;
   }
 
@@ -107,7 +109,7 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
       style={imageViewer.popupStyle}
       {...(returnFocus ? { finalFocus: () => returnFocus } : {})}
     >
-      <DialogTitle className="sr-only">{image?.alt || "이미지"}</DialogTitle>
+      <DialogTitle className="sr-only">{image?.alt || t("cards.image")}</DialogTitle>
       {image ? <figure className="v3-card-image-expanded" data-image-failed={imageFailed || undefined}>
         <div className="attachment-viewer-image-body" data-image-state={imageViewer.state}>
           {imageViewer.state !== "failed" && (imageViewer.reading ? (
@@ -122,7 +124,7 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
           ) : viewerImage)}
           <AttachmentViewerImageStatus
             state={imageViewer.state}
-            message="파일을 불러오지 못했습니다"
+            message={t("cards.fileLoadError")}
             retryable={imageViewer.retryable}
             onRetry={imageViewer.retry}
           />

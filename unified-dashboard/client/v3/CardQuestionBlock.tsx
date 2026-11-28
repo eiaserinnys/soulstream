@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useState, type ReactNode } from "react";
 import { ThinkingOrb } from "@seosoyoung/soul-ui/components/chat/WorkingOrb";
 import type { PersistentReportEntry } from "../../../packages/wire-schema/src/persistent_report";
@@ -101,6 +102,7 @@ type BodyProps = {
 };
 
 export function CardQuestionBody({ view, portraitUrl, userPortraitUrl, pending = false, layout = "stack", onChoose }: BodyProps) {
+ const {t}=useTranslation();
   const [image, setImage] = useState<{ src: string; alt: string; attachment?: ChatAttachmentItem } | null>(null);
   const internalLinkClick = useInternalLinkClick();
   const [picked, setPicked] = useState<{ id: string; label: string } | null>(null);
@@ -136,17 +138,17 @@ export function CardQuestionBody({ view, portraitUrl, userPortraitUrl, pending =
           } else internalLinkClick(event);
         }}><Link className="h-3 w-3" aria-hidden="true" />{item.label}</a>;
     })}</div> : null}
-    {view.thread.length ? <ol className="v3-card-question-thread" aria-label="되묻기">
+    {view.thread.length ? <ol className="v3-card-question-thread" aria-label={t("cards.askBack")}>
       {view.thread.map(turn => <li key={turn.id} data-author={turn.author}>
         <ProfileAvatar role={turn.author === "user" ? "user" : "assistant"} hasPortrait fallbackEmoji={turn.author === "user" ? "👤" : "🤖"} portraitUrl={turn.author === "user" ? userPortraitUrl : portraitUrl} />
         <div className="v3-card-question-turn" data-v3-selectable-content="true"><MarkdownContent content={turn.body} /></div>
       </li>)}
-      {view.awaitingAgent ? <li data-author="agent" data-waiting="true" aria-label="담당의 답을 기다리는 중">
+      {view.awaitingAgent ? <li data-author="agent" data-waiting="true" aria-label={t("cards.waitingForAssignee")}>
         <ProfileAvatar role="assistant" hasPortrait fallbackEmoji="🤖" portraitUrl={portraitUrl} />
-        <div className="v3-card-question-turn"><ThinkingOrb state="working" size={20} theme="auto" aria-hidden="true" /><span className="v3-card-question-meta">답을 기다리는 중</span></div>
+        <div className="v3-card-question-turn"><ThinkingOrb state="working" size={20} theme="auto" aria-hidden="true" /><span className="v3-card-question-meta">{t("cards.waitingForAnswer")}</span></div>
       </li> : null}
     </ol> : null}
-    {choices.length ? <div className="v3-card-question-choices" role="group" aria-label="선택지">
+    {choices.length ? <div className="v3-card-question-choices" role="group" aria-label={t("cards.options")}>
       {choices.map(choice => {
         const chosen = pickedLabel !== null ? pickedLabel === choice.label : !view.open && view.selectedOption === choice.label;
         return <Button key={choice.label} variant="choice" className="w-full px-3 py-2.5" disabled={locked && !chosen}
@@ -155,7 +157,7 @@ export function CardQuestionBody({ view, portraitUrl, userPortraitUrl, pending =
           onClick={() => { if (!locked) void choose(choice.label); }}>
           <InputRequestOptionContent layout={layout} option={{ label: choice.label, description: choice.description ?? undefined }}
             descriptionClassName="v3-card-question-effect"
-            labelAccessory={choice.recommended ? <Badge variant="info" size="sm" className="v3-card-question-recommended">권함</Badge> : null} />
+            labelAccessory={choice.recommended ? <Badge variant="info" size="sm" className="v3-card-question-recommended">{t("cards.recommended")}</Badge> : null} />
         </Button>;
       })}
     </div> : null}
@@ -175,23 +177,26 @@ type ActionsProps = {
 
 /** 늘 있는 두 동작. 부탁 장은 「했어」 하나가 더 붙는다. */
 export function CardQuestionActions({ view, pending = false, onAnswerFreely, onAskBack, onDone, composerVisible = false }: ActionsProps) {
+ const {t}=useTranslation();
   if (!view.open) return null;
   return <div className="chat-ui-actions v3-card-question-actions">
-    {composerVisible ? null : <Button variant="outline" disabled={pending} onClick={onAnswerFreely}>다르게 답하기</Button>}
-    <Button variant="outline" disabled={pending} onClick={onAskBack}>되묻기</Button>
-    {view.kind === "request" ? <Button variant="default" disabled={pending} onClick={onDone}>했어</Button> : null}
+    {composerVisible ? null : <Button variant="outline" disabled={pending} onClick={onAnswerFreely}>{t("cards.answerFreely")}</Button>}
+    <Button variant="outline" disabled={pending} onClick={onAskBack}>{t("cards.askBack")}</Button>
+    {view.kind === "request" ? <Button variant="default" disabled={pending} onClick={onDone}>{t("cards.doneResponse")}</Button> : null}
   </div>;
 }
 
 /** 답을 보낸 뒤의 줄: 받은 답과 「덧붙이기」. 덧붙인 말은 같은 질문에 이어진 커멘트로 간다. */
 export function CardQuestionAnswered({ view, onAppend }: { view: CardQuestionView; onAppend?(): void }) {
+ const {t}=useTranslation();
   if (view.open || !view.answer) return null;
   return <div className="v3-card-question-answered">
-    <span className="pas-report-received-label">받은 답</span><span className="v3-card-question-answer">{view.answer}</span>
-    {onAppend ? <Button variant="ghost" size="xs" onClick={onAppend}>덧붙이기</Button> : null}
+    <span className="pas-report-received-label">{t("cards.receivedAnswer")}</span><span className="v3-card-question-answer">{view.answer}</span>
+    {onAppend ? <Button variant="ghost" size="xs" onClick={onAppend}>{t("cards.appendAnswer")}</Button> : null}
   </div>;
 }
 
 export function CardQuestionNotice({ label, onClear }: { label: ReactNode; onClear(): void }) {
-  return <div className="v3-card-target-notice" role="status"><span>{label}</span><button type="button" onClick={onClear}>해제</button></div>;
+ const {t}=useTranslation();
+  return <div className="v3-card-target-notice" role="status"><span>{label}</span><button type="button" onClick={onClear}>{t("cards.clear")}</button></div>;
 }

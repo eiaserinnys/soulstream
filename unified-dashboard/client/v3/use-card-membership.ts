@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { cardRequest } from "@seosoyoung/soul-ui/cards/card-api";
@@ -10,6 +11,7 @@ const currentImmediateRevision=()=>selectV3InvalidationKey(getV3InvalidationSnap
 
 /** Authorized list membership is local to the web scope, independent of cached details. */
 export function useCardMembership(folderId?:string,createdIds:readonly string[]=[],enabled=true) {
+  const {t}=useTranslation();
   const cardRevision=useV3InvalidationKey(["card"]);
   const immediateRevision=useV3InvalidationKey(immediateSources);
   const localRevision=useCardStore(state=>state.localRevision);
@@ -42,7 +44,7 @@ export function useCardMembership(folderId?:string,createdIds:readonly string[]=
         const startedUpdateSeq = getListUpdateSequence();
         try {
           const path=`/api/cards?${new URLSearchParams({includeCompleted:"false",...(folderId?{folderId}:{})})}`;
-          const {cards}=await cardRequest<{cards:CardRow[]}>(path);
+          const {cards}=await cardRequest<{cards:CardRow[]}>(path,"GET",undefined,undefined,t);
           if(!active)break;
           // Card events schedule a follow-up; structural changes invalidate this scope.
           if(startedImmediate!==currentImmediateRevision()){
@@ -79,7 +81,7 @@ export function useCardMembership(folderId?:string,createdIds:readonly string[]=
     schedule.current=scheduleLoad;
     void load();
     return ()=>{active=false;if(timer!==undefined)clearTimeout(timer);unregister?.();};
-  },[folderId,enabled]);
+  },[folderId,enabled,t]);
   const previousRevision=useRef({cardRevision,immediateRevision,localRevision});
   useEffect(()=>{
     const previous=previousRevision.current;

@@ -1,25 +1,28 @@
+import { useTranslation } from "react-i18next";
 import { useCallback,useLayoutEffect,useRef,useState,type ReactNode } from "react";
 import { Button,FrameLoading,Input } from "@seosoyoung/soul-ui";
 import { CompletedVirtualGrid, type CompletedGridHandle,type CompletedGridSnapshot } from "@seosoyoung/soul-ui/cards/CompletedVirtualGrid";
-import { completedPeriods } from "@seosoyoung/soul-ui/cards/completed-cards";
+import { completedPeriodLabel, completedPeriods } from "@seosoyoung/soul-ui/cards/completed-cards";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import type { CompletedBrowser } from "./use-completed-cards";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 
 export function CompletedCardBrowserControls({browser}:{browser:CompletedBrowser}) {
+ const {t}=useTranslation();
   return <div className="v3-completed-controls">
-    <div className="v3-completed-periods" role="group" aria-label="완료 기간">{completedPeriods.map(option=><Button key={option.value} size="sm" variant="ghost" aria-pressed={browser.period===option.value} onClick={()=>browser.setPeriod(option.value)}>{option.label}</Button>)}</div>
-    {browser.period==="custom"?<div className="v3-completed-dates"><Input type="date" aria-label="완료 시작일" value={browser.start} onChange={event=>browser.setStart(event.target.value)}/><Input type="date" aria-label="완료 종료일" value={browser.end} onChange={event=>browser.setEnd(event.target.value)}/></div>:null}
-    <Input aria-label="제목 또는 요청 검색" placeholder="제목 또는 요청 검색" value={browser.search} onChange={event=>browser.setSearch(event.target.value)}/>
+    <div className="v3-completed-periods" role="group" aria-label={t("cards.completedPeriod")}>{completedPeriods.map(option=><Button key={option.value} size="sm" variant="ghost" aria-pressed={browser.period===option.value} onClick={()=>browser.setPeriod(option.value)}>{completedPeriodLabel(option,t)}</Button>)}</div>
+    {browser.period==="custom"?<div className="v3-completed-dates"><Input type="date" aria-label={t("cards.completedFrom")} value={browser.start} onChange={event=>browser.setStart(event.target.value)}/><Input type="date" aria-label={t("cards.completedTo")} value={browser.end} onChange={event=>browser.setEnd(event.target.value)}/></div>:null}
+    <Input aria-label={t("cards.searchCompleted")} placeholder={t("cards.searchCompleted")} value={browser.search} onChange={event=>browser.setSearch(event.target.value)}/>
   </div>;
 }
 
 export function CompletedCardBrowserFeedback({browser}:{browser:CompletedBrowser}) {
-  if(browser.invalidRange)return <p role="alert" className="v3-card-board-empty">시작일과 종료일을 확인해 주세요.</p>;
-  if(browser.error)return <V3ErrorNotice message="완료 카드를 불러오지 못했습니다." detail={browser.error} onRetry={browser.retry}/>;
+ const {t}=useTranslation();
+  if(browser.invalidRange)return <p role="alert" className="v3-card-board-empty">{t("cards.invalidDateRange")}</p>;
+  if(browser.error)return <V3ErrorNotice message={t("cards.loadCompletedError")} detail={browser.error} onRetry={browser.retry} retryLabel={t("cards.reload")}/>;
   if(browser.cards.length)return null;
-  if(!browser.loaded)return <FrameLoading label="완료 카드를 불러오는 중…"/>;
-  return <p className="v3-card-board-empty" role="status">선택한 기간에 완료 카드가 없습니다</p>;
+  if(!browser.loaded)return <FrameLoading label={t("cards.loadingCompleted")}/>;
+  return <p className="v3-card-board-empty" role="status">{t("cards.noCompletedCards")}</p>;
 }
 
 function RestorableCompletedGrid({browser,renderCard,snapshot,onSnapshotChange}: {

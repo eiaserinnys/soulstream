@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef } from "react";
 import { useDashboardStore, useSessionMenu, type SessionSummary } from "@seosoyoung/soul-ui";
 import type {CardLinkedSession} from "@seosoyoung/soul-ui/cards/card-types";
@@ -14,6 +15,7 @@ export function CardSessionHistory({ sessionIds, linkedSessions=[], onOpenSessio
   initialSessionId?: string | null;
   onOpenSession(session: SessionSummary, selection?:CardSessionSelection): void;
 }) {
+ const {t}=useTranslation();
   const openMenu = useSessionMenu();
   // CardDetailPane keys this history by cardId: one initial choice per card opening.
   const sessionChosen = useRef(false);
@@ -48,9 +50,9 @@ export function CardSessionHistory({ sessionIds, linkedSessions=[], onOpenSessio
     onOpenSession(session,{source:'user'});
   };
   return <>
-    {sessionIds.length === 0 ? <p className="v3-detail-empty">아직 세션이 없습니다.</p> : null}
+    {sessionIds.length === 0 ? <p className="v3-detail-empty">{t("cards.noSessions")}</p> : null}
     {targeted.error?<p role="alert" className="v3-detail-empty">{targeted.error}</p>:null}
-    <div className="v3-card-session-virtual" data-testid="card-session-virtual" role="region" aria-label="카드 세션 목록">
+    <div className="v3-card-session-virtual" data-testid="card-session-virtual" role="region" aria-label={t("cards.cardSessions")}>
      {rows.length > 0 ? <CardSessionVirtualList data={rows} style={{height:"100%"}} className="v3-session-panel-scroll" initialItemCount={1}
       computeItemKey={(_,row)=>row.node.session.agentSessionId} endReached={loadMore}
       itemContent={(_,row)=>Array.from({length:row.depth}).reduce<import("react").ReactNode>(child=><div className="v3-run-children">{child}</div>,<SessionRunList size="small" tree={[row.node]} activeSessionId={activeSessionId} onOpenSession={openSession} onContextMenu={(session,event)=>openMenu(session.agentSessionId,event)}/>)}/>

@@ -34,7 +34,7 @@ describe("display-only card status and completion action",()=>{
   await act(()=>root.render(<CardRowView card={card("review")}/>));
   const action=container.querySelector<HTMLButtonElement>('button[aria-label="완료"]')!;
   expect(container.querySelectorAll('button')).toHaveLength(1);await click(action);
-  expect(mutate).toHaveBeenCalledWith("c","/status",{status:"done",expectedVersion:7});
+  expect(mutate).toHaveBeenCalledWith("c","/status",{status:"done",expectedVersion:7},"POST",expect.any(Function));
  });
  it("keeps the common small action disabled while pending and allows retry after failure",async()=>{
   let reject!: (error:Error)=>void;

@@ -56,7 +56,7 @@ it("puts both selection buttons above the composer",async()=>{
 it("lets the handoff own its spacing while preserving the default comment composer",async()=>{
   await render(main());
   expect(container.querySelector('[data-testid="card-composer"]')!.classList.contains("pt-2")).toBe(false);
-  await render(<CardCommentInput cardId="a" pending={false} onSend={async()=>true}/>);
+  await render(<CardCommentInput kind="comment" cardId="a" pending={false} onSend={async()=>true}/>);
   expect(container.querySelector('[data-testid="card-composer"]')!.classList.contains("pt-2")).toBe(true);
 });
 it("restores the main draft on remount and from persisted storage",async()=>{
@@ -90,23 +90,23 @@ it("does not erase a new main draft when an earlier request succeeds",async()=>{
 });
 it("isolates card A/B drafts and restores both after remount and rehydration",async()=>{
   const send=vi.fn().mockResolvedValue(true);
-  await render(<CardCommentInput cardId="a" pending={false} onSend={send}/>);await edit("A 초안");
-  await render(<CardCommentInput cardId="b" pending={false} onSend={send}/>);expect(input().value).toBe("");await edit("B 초안");
-  await render(null);await render(<CardCommentInput cardId="a" pending={false} onSend={send}/>);expect(input().value).toBe("A 초안");
-  await rehydrate();await render(<CardCommentInput cardId="b" pending={false} onSend={send}/>);expect(input().value).toBe("B 초안");
+  await render(<CardCommentInput kind="comment" cardId="a" pending={false} onSend={send}/>);await edit("A 초안");
+  await render(<CardCommentInput kind="comment" cardId="b" pending={false} onSend={send}/>);expect(input().value).toBe("");await edit("B 초안");
+  await render(null);await render(<CardCommentInput kind="comment" cardId="a" pending={false} onSend={send}/>);expect(input().value).toBe("A 초안");
+  await rehydrate();await render(<CardCommentInput kind="comment" cardId="b" pending={false} onSend={send}/>);expect(input().value).toBe("B 초안");
 });
 it("clears only a successful card comment, retaining failed text",async()=>{
   const send=vi.fn().mockResolvedValue(false);
-  await render(<CardCommentInput cardId="a" pending={false} onSend={send}/>);await edit("커멘트 초안");await submit();
+  await render(<CardCommentInput kind="comment" cardId="a" pending={false} onSend={send}/>);await edit("커멘트 초안");await submit();
   expect(input().value).toBe("커멘트 초안");expect(useDashboardStore.getState().drafts[cardKey("a")]).toBe("커멘트 초안");
   send.mockResolvedValueOnce(true);await submit();
   expect(input().value).toBe("");expect(useDashboardStore.getState().drafts[cardKey("a")]).toBeUndefined();
 });
 it("keeps a new card A draft and card B draft when card A submission finishes",async()=>{
   let finish!:(ok:boolean)=>void;const send=vi.fn(()=>new Promise<boolean>(resolve=>{finish=resolve;}));
-  await render(<CardCommentInput cardId="a" pending={false} onSend={send}/>);await edit("전송한 A 초안");await submit();
+  await render(<CardCommentInput kind="comment" cardId="a" pending={false} onSend={send}/>);await edit("전송한 A 초안");await submit();
   await act(()=>useDashboardStore.getState().setDraft(cardKey("a"),"새 A 초안"));
-  await render(<CardCommentInput cardId="b" pending={false} onSend={send}/>);await edit("B 초안");
+  await render(<CardCommentInput kind="comment" cardId="b" pending={false} onSend={send}/>);await edit("B 초안");
   await act(async()=>{finish(true);await Promise.resolve();});
   expect(input().value).toBe("B 초안");expect(useDashboardStore.getState().drafts).toMatchObject({[cardKey("a")]:"새 A 초안",[cardKey("b")]:"B 초안"});
 });

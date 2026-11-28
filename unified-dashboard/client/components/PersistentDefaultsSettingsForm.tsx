@@ -18,7 +18,7 @@ type Translate = ReturnType<typeof useTranslation>["t"];
 
 export interface PersistentDefaultsSettingsService {
   read(t: Translate): Promise<PersistentDefaultsPayload>;
-  write(input: { value: PersistentDefaultsValue; expectedVersion: number }): Promise<PersistentDefaultsPayload>;
+  write(input: { value: PersistentDefaultsValue; expectedVersion: number }, t: Translate): Promise<PersistentDefaultsPayload>;
   presets(t: Translate): Promise<NodeModelPresetCatalog>;
 }
 const endpoint = "/api/admin/settings/persistent-defaults";
@@ -32,15 +32,15 @@ export async function loadDefaultNodeModelPresets(t: Translate): Promise<NodeMod
 }
 const defaultService: PersistentDefaultsSettingsService = {
   read: async (t) => {
-    try { return await cardRequest(endpoint); }
+    try { return await cardRequest(endpoint, "GET", undefined, undefined, t); }
     catch (error) {
-      if (error instanceof CardApiError && error.message === `카드 요청 실패 (${error.status})`) { // i18n-ignore: 공용 카드 API가 만든 오류 문구와 비교합니다.
+      if (error instanceof CardApiError && !error.hasServerMessage) {
         throw new Error(t("jobs.defaults.loadError", { status: error.status }));
       }
       throw error;
     }
   },
-  write: (input) => cardRequest(endpoint, "PUT", input),
+  write: (input, t) => cardRequest(endpoint, "PUT", input, undefined, t),
   presets: loadDefaultNodeModelPresets,
 };
 const missingLabel = (id: string) => id;
@@ -67,7 +67,7 @@ export function PersistentDefaultsSettingsForm({ service = defaultService }: { s
       setCatalog(null); setLoadError(errorText(caught));
     } finally { setLoading(false); }
   }
-  useEffect(() => { void load(); }, [service]);
+  useEffect(() => { void load(); }, [service, t]);
   const changed = Boolean(draft && payload && JSON.stringify(draft) !== JSON.stringify(payload.value));
   const ready = catalog?.status === "ready";
   function updateFallback(index: number, patch: Partial<PersistentDefaultsValue["fallback_models"][number]>) {
@@ -87,7 +87,7 @@ export function PersistentDefaultsSettingsForm({ service = defaultService }: { s
     if (!draft || !payload || !ready || pending || !changed || conflict) return;
     setPending(true); setError(null); setMessage(null);
     try {
-      const next = await service.write({ value: draft, expectedVersion: payload.version });
+      const next = await service.write({ value: draft, expectedVersion: payload.version }, t);
       setPayload(next); setDraft(next.value); setMessage(t("jobs.common.saved"));
     } catch (caught) {
       if (caught instanceof CardApiError && caught.status === 409) setConflict(true);

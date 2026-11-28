@@ -95,7 +95,7 @@ export function ProjectDialog({
   const internalCatalog = useNodeModelPresetCatalog(suppliedCatalog ? "" : defaultsNode, setError);
   const catalog = suppliedCatalog ?? internalCatalog;
   const assignmentValid = modelPresetSelectionState(value.sessionDefaults?.modelPreset ?? "", catalog.presets,
-    catalog.nodeId === defaultsNode && catalog.status === "ready").valid;
+    catalog.nodeId === defaultsNode && catalog.status === "ready", t).valid;
   const effectiveFolder = target?.mode === "edit" ? target.folder : createdFolder;
 
   useEffect(() => {

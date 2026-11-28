@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 import type { Browser, Locator, Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -18,7 +19,7 @@ const children = (depth: number) => Array.from({ length: depth < 3 ? 25 : 0 }, (
   card: { title: i === 0 ? "프로젝트 컨텍스트에서 긴 노드 제목의 말줄임과 선택을 확인하기 위한 아주 긴 한글 제목입니다" : `프로젝트 지식 노드 ${depth}-${i}`, card_type: "knowledge" },
 }));
 async function setup(browser: Browser, width: number, height: number, theme = "dark", glass = true) {
-  const context = await browser.newContext({ viewport: { width, height }, colorScheme: theme as "dark" | "light", reducedMotion: "reduce" });
+  const context = await browser.newContext({ viewport: { width, height }, colorScheme: theme as "dark" | "light", reducedMotion: "reduce", locale: koreanLocale });
   const page = await context.newPage();
   page.setDefaultTimeout(10_000);
   // tsx가 함수 인자를 변환하며 남기는 __name 호출이 페이지에서 터지지 않게 한다.

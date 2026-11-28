@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./test";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 import { reviewCard, reviewTitle } from "../client/v3/components-review-fixtures";
 import { mkdirSync, writeFileSync } from "node:fs";

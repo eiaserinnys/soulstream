@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 import type { Browser, Page } from "@playwright/test";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
@@ -19,6 +20,7 @@ async function verify(browser: Browser) {
     colorScheme: "dark",
     reducedMotion: "reduce",
     viewport: { width: 1440, height: 1000 },
+    locale: koreanLocale,
   });
   const page = await context.newPage();
   const requestCounts = new Map<string, number>();

@@ -1,3 +1,4 @@
+import { koreanLocale } from "./korean-locale.mjs";
 import type { Browser, Locator, Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -153,7 +154,7 @@ async function captureMobile(page: Page) {
 }
 
 async function openFixturePage(browser: Browser, viewport: { width: number; height: number }) {
-  const context = await browser.newContext({ colorScheme: "dark", reducedMotion: "reduce", viewport });
+  const context = await browser.newContext({ colorScheme: "dark", reducedMotion: "reduce", viewport, locale: koreanLocale });
   const page = await context.newPage();
   page.on("framenavigated", (frame) => console.log(`[pr-ad/qa] navigate · ${frame.url()}`));
   page.on("pageerror", (error) => console.error(`[pr-ad/qa] page error · ${error.message}`));

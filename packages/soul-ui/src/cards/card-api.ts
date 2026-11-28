@@ -1,12 +1,26 @@
 import {orchestratorFetch} from "../lib/orchestrator-connection";
 import type { CardAssignment, CardRow } from "./card-types";
 import { sortByStatusChange, sortCardsInStatus } from "./card-order";
-export class CardApiError extends Error { constructor(message: string, readonly status: number, readonly code?:string, readonly serverDetail?:string) { super(message); } }
+export type CardTranslate = (key: string, options?: { defaultValue?: string; [key: string]: unknown }) => string;
+
+export class CardApiError extends Error {
+  constructor(message: string, readonly status: number, readonly code?:string, readonly serverDetail?:string, readonly hasServerMessage = true) {
+    super(message);
+  }
+}
+
+function localizeCardRequestError(error: unknown, t: CardTranslate): never {
+  if (!(error instanceof CardApiError) || error.hasServerMessage) throw error;
+  throw new CardApiError(t("cards.requestError", { status: error.status }), error.status, error.code, error.serverDetail, false);
+}
 async function sendCardRequest<T>(path: string, method: string, body?: object, signal?: AbortSignal): Promise<T> {
   const response = await orchestratorFetch(fetch,path, { method, credentials: "same-origin", headers: { Accept: "application/json", ...(body ? { "Content-Type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), ...(signal ? { signal } : {}) });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new CardApiError(payload?.detail?.error?.message ?? payload?.message ?? `카드 요청 실패 (${response.status})`, response.status,payload?.detail?.error?.code,payload?.detail?.error?.message);
+    const serverDetail = payload?.detail?.error?.message;
+    const serverMessage = serverDetail ?? payload?.message;
+    const message = serverMessage ?? `카드 요청 실패 (${response.status})`; // i18n-ignore: 번역 함수를 받지 않는 공용 카드 API의 한국어 기본값.
+    throw new CardApiError(message, response.status, payload?.detail?.error?.code, serverDetail, serverMessage != null);
   }
   return response.json() as Promise<T>;
 }
@@ -48,8 +62,9 @@ function coalescedListRead<T>(path: string, signal?: AbortSignal): Promise<T> {
   });
 }
 
-export function cardRequest<T>(path: string, method = "GET", body?: object, signal?: AbortSignal): Promise<T> {
-  return isCardListRead(path, method, body) ? coalescedListRead<T>(path, signal) : sendCardRequest<T>(path, method, body, signal);
+export function cardRequest<T>(path: string, method = "GET", body?: object, signal?: AbortSignal, t?: CardTranslate): Promise<T> {
+  const request = isCardListRead(path, method, body) ? coalescedListRead<T>(path, signal) : sendCardRequest<T>(path, method, body, signal);
+  return t ? request.catch(error => localizeCardRequestError(error, t)) : request;
 }
 export function createCardInput(request: string, selection: CardAssignment, idempotencyKey: string) {
   return { folderId: selection.folderId, title: request.trim().split(/\r?\n/)[0].slice(0, 60), request,
@@ -71,9 +86,9 @@ export type CardQuestionAnswerRequest = { mode: "choice"; option: string } | { m
 export type CardQuestionCommentRequest = { questionId: string; body: string };
 export const cardQuestionChoiceAnswer = (option: string): CardQuestionAnswerRequest => ({ mode: "choice", option });
 export const cardQuestionTextAnswer = (answer: string): CardQuestionAnswerRequest => ({ mode: "text", answer });
-export function confirmCardItem(cardId: string, itemId: number, confirmed: boolean): Promise<{card:CardRow}> {
-  return cardRequest<{card:CardRow}>(`${cardPath(cardId)}/items/${encodeURIComponent(String(itemId))}/confirm`, "POST", {confirmed});
+export function confirmCardItem(cardId: string, itemId: number, confirmed: boolean, t?:CardTranslate): Promise<{card:CardRow}> {
+  return cardRequest<{card:CardRow}>(`${cardPath(cardId)}/items/${encodeURIComponent(String(itemId))}/confirm`, "POST", {confirmed}, undefined, t);
 }
-export async function fetchCards(folderId: string): Promise<CardRow[]> {
-  return (await cardRequest<{cards: CardRow[]}>(`/api/cards?${new URLSearchParams({folderId})}`)).cards;
+export async function fetchCards(folderId: string, t?:CardTranslate): Promise<CardRow[]> {
+  return (await cardRequest<{cards: CardRow[]}>(`/api/cards?${new URLSearchParams({folderId})}`, "GET", undefined, undefined, t)).cards;
 }

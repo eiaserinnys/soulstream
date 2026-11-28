@@ -4,7 +4,7 @@
 // - 1440 폴더 화면에서 세션 카드와 하위 폴더 행 왼쪽 위 모서리를 WebGL 켬/끔으로 찍어
 //   처음 채워지는 화소까지 거리가 1px 안으로 같은지 본다.
 // 실행: corepack pnpm --dir unified-dashboard exec playwright test --config e2e/radius-glass.config.ts
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";

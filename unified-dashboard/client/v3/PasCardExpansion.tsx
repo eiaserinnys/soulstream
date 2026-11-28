@@ -139,7 +139,7 @@ export function PasCardExpansion({ entry, lookupCards, samplePortraitUrl }: Prop
     {targetItemId === null && validTarget ? <CardQuestionNotice label={validTarget.kind === 'ask' ? t("persistent.thread.askBack") : t("persistent.expansion.appendTo", { answer: validTarget.label })} onClear={clearQuestionTarget} /> : null}
     {sendError ? <p role="alert" className="v3-card-error">{sendError}</p> : null}
     <CardCommentInput cardId={cardId ?? entry.key} nodeId={card.nodeId} sessionId={card.assigneeSessionId} pending={pending} focusRequest={focusRequest + questionTarget.focus}
-      placeholder={targetItemId !== null ? t("persistent.thread.comment") : validTarget?.kind === 'ask' ? t("persistent.thread.askPlaceholder") : validTarget?.kind === 'append' ? t("persistent.expansion.appendPlaceholder") : question ? t("persistent.thread.answerFreely") : t("persistent.thread.comment")} onSend={send} />
+      kind={targetItemId === null && (validTarget || question) ? "answer" : "comment"} placeholder={targetItemId !== null ? t("persistent.thread.comment") : validTarget?.kind === 'ask' ? t("persistent.thread.askPlaceholder") : validTarget?.kind === 'append' ? t("persistent.expansion.appendPlaceholder") : question ? t("persistent.thread.answerFreely") : t("persistent.thread.comment")} onSend={send} />
   </div>;
 }
 
