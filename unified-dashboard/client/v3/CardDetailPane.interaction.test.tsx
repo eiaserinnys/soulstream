@@ -36,7 +36,7 @@ it("preserves the comments scroll on unrelated card updates and follows a new co
  const updated={...detail,card:{...card,now:{text:'상황 변경',turn:'agent' as const,ask:null,updatedAt:card.updatedAt,sessionId:'owner'}}};
  await act(()=>useCardStore.setState({byId:{inherit:updated.card},details:{inherit:updated}}));
  expect(scroll.scrollTop).toBe(350);
- const comments=[...updated.comments,{...updated.comments[0],id:'c2',body:'새 커멘트'}];
+ const comments=[...updated.comments!,{...updated.comments![0],id:'c2',body:'새 커멘트'}];
  const withComment={...updated,comments};
  await act(()=>useCardStore.setState({details:{inherit:withComment}}));
  expect(scroll.scrollTop).toBe(1000);
@@ -51,7 +51,7 @@ it("preserves the comments scroll on unrelated card updates and follows a new co
 });
 it("scrolls to the bottom when a card without timeline entries first loads",async()=>{
  vi.spyOn(Element.prototype,'scrollHeight','get').mockReturnValue(1000);
- useCardStore.setState({byId:{},details:{},loadCard:vi.fn(()=>new Promise(()=>{}))});
+ useCardStore.setState({byId:{},details:{},loadCard:vi.fn(()=>new Promise<CardDetail>(()=>{}))});
  await render();
  const empty={...detail,questions:[],reports:[],comments:[]};
  await act(()=>useCardStore.setState({byId:{inherit:card},details:{inherit:empty}}));

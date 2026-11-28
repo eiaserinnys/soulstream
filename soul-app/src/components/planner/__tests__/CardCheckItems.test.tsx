@@ -268,6 +268,7 @@ test('keeps evidence Markdown open when the card detail changes without changing
   const fetch = jest.spyOn(global, 'fetch').mockResolvedValue({
     ok: true, status: 200, headers: { get: () => null }, text: async () => '# 읽던 근거',
   } as unknown as Response);
+  fetch.mockClear();
   try {
     const evidence: CardCheckItem['evidence'] = [{
       type: 'link', label: '근거.md', url: '/api/attachments/doc/content', attachment_id: 'doc',
