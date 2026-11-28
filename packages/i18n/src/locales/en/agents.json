@@ -1,1 +1,73 @@
-{}
+{
+  "profile": {
+    "conflict": "Someone else edited this profile. Reload it and reapply your changes.",
+    "label": "Profile",
+    "loadError": "Couldn't load profiles.",
+    "required": "Enter an agent ID and name.",
+    "saved": "Profile saved.",
+    "savedOrderChanged": "Profile saved. Reload to check the server's context order.",
+    "loading": "Loading profiles…",
+    "new": "New profile",
+    "nodeSettings": "Node settings",
+    "backToEdit": "← Back to profile",
+    "overview": "Overview",
+    "loadingNodeAgentsEllipsis": "Loading node agents…",
+    "views": "Profile views",
+    "assembly": "Assembly",
+    "edit": "Edit",
+    "empty": "Select or create a profile.",
+    "loadingNodeAgents": "Loading node agents…",
+    "agentId": "Agent ID",
+    "name": "Name",
+    "defaultPreset": "Default preset",
+    "aliases": "Aliases",
+    "addAlias": "Add alias",
+    "aliasId": "Alias ID",
+    "aliasPreset": "Alias preset",
+    "inheritPreset": "Inherit default",
+    "save": "Save profile",
+    "saveError": "Couldn't save the profile."
+  },
+  "portrait": {
+    "saved": "Portrait saved.",
+    "save": "Save portrait",
+    "label": "Portrait",
+    "remove": "Remove current portrait",
+    "invalidFormat": "Use PNG, JPEG, WebP, or GIF for portraits.",
+    "saveError": "Couldn't save the portrait.",
+    "deleteError": "Couldn't delete the portrait.",
+    "readError": "Couldn't read the portrait file."
+  },
+  "assignment": {
+    "executionNode": "Run node",
+    "noNodesOption": "No connected nodes",
+    "noNodes": "No connected nodes."
+  },
+  "bundle": {
+    "manage": "Edit bundles",
+    "title": "Context bundles",
+    "editHelp": "To change a bundle's contents, choose Edit bundles above.",
+    "moveUpLabel": "Move {{bundleId}} up",
+    "moveDownLabel": "Move {{bundleId}} down",
+    "removeLabel": "Remove {{bundleId}}",
+    "noReferences": "No bundles linked.",
+    "select": "Bundle",
+    "toAdd": "Bundle to add",
+    "selectToAdd": "Choose a bundle",
+    "add": "Add bundle",
+    "loadError": "Couldn't load bundles."
+  },
+  "saving": "Saving…",
+  "unassigned": "Not set",
+  "moveUp": "Up",
+  "moveDown": "Down",
+  "remove": "Remove",
+  "context": {
+    "atom": "Atom context",
+    "addSource": "Add source",
+    "noSources": "No context sources."
+  },
+  "delete": "Delete",
+  "reloadLatest": "Reload latest",
+  "requestError": "Request failed."
+}

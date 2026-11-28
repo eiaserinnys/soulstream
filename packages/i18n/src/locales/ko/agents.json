@@ -1,1 +1,73 @@
-{}
+{
+  "profile": {
+    "conflict": "다른 사용자가 먼저 수정했습니다. 최신 프로필을 다시 불러온 뒤 변경을 다시 적용하세요.",
+    "label": "프로필",
+    "loadError": "프로필을 불러오지 못했습니다.",
+    "required": "에이전트 ID와 이름을 입력하세요.",
+    "saved": "프로필을 저장했습니다.",
+    "savedOrderChanged": "프로필을 저장했습니다. 서버의 실제 주입 순서가 달라 최신 버전을 다시 확인하세요.",
+    "loading": "프로필을 불러오는 중...",
+    "new": "새 프로필",
+    "nodeSettings": "노드 설정",
+    "backToEdit": "← 프로필 편집으로",
+    "overview": "한눈에",
+    "loadingNodeAgentsEllipsis": "노드 에이전트를 불러오는 중…",
+    "views": "프로필 보기",
+    "assembly": "구성",
+    "edit": "편집",
+    "empty": "편집할 프로필을 선택하거나 새로 만드세요.",
+    "loadingNodeAgents": "노드 에이전트를 불러오는 중...",
+    "agentId": "에이전트 ID",
+    "name": "이름",
+    "defaultPreset": "기본 프리셋",
+    "aliases": "별칭",
+    "addAlias": "별칭 추가",
+    "aliasId": "별칭 ID",
+    "aliasPreset": "별칭 프리셋",
+    "inheritPreset": "기본값 상속",
+    "save": "프로필 저장",
+    "saveError": "프로필 저장에 실패했습니다."
+  },
+  "portrait": {
+    "saved": "초상화를 저장했습니다.",
+    "save": "초상화 저장",
+    "label": "초상화",
+    "remove": "기존 초상화 삭제",
+    "invalidFormat": "초상화는 PNG, JPEG, WebP, GIF만 지원합니다.",
+    "saveError": "초상화 저장에 실패했습니다.",
+    "deleteError": "초상화 삭제에 실패했습니다.",
+    "readError": "초상화 파일을 읽지 못했습니다."
+  },
+  "assignment": {
+    "executionNode": "실행 노드",
+    "noNodesOption": "연결된 노드 없음",
+    "noNodes": "연결된 노드가 없습니다."
+  },
+  "bundle": {
+    "manage": "컨텍스트 번들 편집",
+    "title": "컨텍스트 번들",
+    "editHelp": "번들 자체의 내용을 고치려면 상단 「컨텍스트 번들 편집」으로 가십시오.",
+    "moveUpLabel": "{{bundleId}} 위로",
+    "moveDownLabel": "{{bundleId}} 아래로",
+    "removeLabel": "{{bundleId}} 제거",
+    "noReferences": "참조 중인 번들이 없습니다.",
+    "select": "번들 선택",
+    "toAdd": "추가할 번들",
+    "selectToAdd": "추가할 번들 선택",
+    "add": "번들 추가",
+    "loadError": "번들을 불러오지 못했습니다."
+  },
+  "saving": "저장 중...",
+  "unassigned": "미지정",
+  "moveUp": "위로",
+  "moveDown": "아래로",
+  "remove": "제거",
+  "context": {
+    "atom": "Atom 컨텍스트",
+    "addSource": "소스 추가",
+    "noSources": "등록된 컨텍스트 소스가 없습니다."
+  },
+  "delete": "삭제",
+  "reloadLatest": "최신 버전 다시 불러오기",
+  "requestError": "요청 처리에 실패했습니다."
+}
