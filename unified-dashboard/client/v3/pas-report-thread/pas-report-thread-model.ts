@@ -112,7 +112,7 @@ export function buildThread(detail: CardDetail, t: Translate): ThreadItem<CardCo
   const seenNow = new Set<string>();
   nowEntries.forEach((entry, index) => {
     const key = `${entry.at}\0${entry.text}`;
-    if (!entry.text.trim() || seenNow.has(key)) return;
+    if (!entry.text?.trim() || seenNow.has(key)) return;
     seenNow.add(key);
     flat.push({ id: `now:${entry.at}:${index}`, at: parseTime(entry.at) ?? 0, kind: "milestone", tone: "now", text: entry.text });
   });

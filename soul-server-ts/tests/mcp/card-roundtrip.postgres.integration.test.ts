@@ -42,11 +42,11 @@ const cases: readonly [string, string, Record<string, unknown>, McpRequestContex
     expected_version: 1, idempotency_key: "handoff-key", reason: "successor takes over" }],
   ["brief success", "update_card_brief", { card_id: "card-1", brief: "경과" }],
   ["report success", "add_card_report", { card_id: "card-1", title: "보고", format: "html", body: "<p>증거</p>" }],
-  ["comment default spoken", "add_card_comment", { card_id: "card-1", text: "사용자 발언" }],
+  ["comment default reply", "add_card_comment", { card_id: "card-1", text: "에이전트 답변" }],
   ["comment reply", "add_card_comment", { card_id: "card-1", text: "에이전트 답변", mode: "reply" }],
   ["status success", "set_card_status", { ...status, status: "running" }],
   ["work success", "start_card_work", status],
-  ["review success", "request_card_review", { card_id: "card-1" }],
+  ["review success", "request_card_review", { card_id: "card-1", report: "결과 보고" }],
   ["question options", "ask_card_question", { card_id: "card-1", text: "판단?", options: ["진행", "중단"] }],
   ["question no options", "ask_card_question", { card_id: "card-1", text: "판단?" }, context, true],
   ["move success", "move_card", { card_id: "card-1", folder_id: "cards-b", after_card_id: null }],
@@ -160,9 +160,9 @@ describe("card orchestrator MCP roundtrip", () => {
     expect(added.isError).not.toBe(true);
     expect(added.structuredContent).toMatchObject({card:{id:"card-1",number:1,version:4,status:"todo"},
       item:{id:2,title:"안내 문구 확인",state:"todo"}});
-    const comment=await call("add_card_comment",{card_id:"card-1",text:"안내 문구를 고쳐 주세요",mode:"spoken",item_id:2},context);
+    const comment=await call("add_card_comment",{card_id:"card-1",text:"안내 문구를 확인했습니다",item_id:2},context);
     expect(comment.isError).not.toBe(true);
-    expect(comment.structuredContent).toMatchObject({id:expect.any(String),itemId:2,kind:"spoken",authorKind:"user"});
+    expect(comment.structuredContent).toMatchObject({id:expect.any(String),itemId:2,kind:"comment",authorKind:"agent"});
     expect(comment.structuredContent).not.toHaveProperty("body");
     const now=await call("update_card_now",{card_id:"card-1",now:"수정 화면 확인을 기다립니다",turn:"user",ask:"수정 화면을 확인해 주세요"},context);
     expect(now.isError).not.toBe(true);
@@ -174,15 +174,15 @@ describe("card orchestrator MCP roundtrip", () => {
     const notes=await call("list_card_notes",{card_id:"card-1",limit:20},context);
     expect(notes.isError).not.toBe(true);
     expect(notes.structuredContent).toMatchObject({notes:[{id:note.structuredContent?.id,kind:"note",body:"화면 주소와 구현 기록"}],nextCursor:null});
-    const review=await call("request_card_review",{card_id:"card-1",ask:"가입과 수정 화면을 확인해 주세요"},context);
+    const review=await call("request_card_review",{card_id:"card-1",ask:"가입과 수정 화면을 확인해 주세요",report:"화면을 확인했습니다"},context);
     expect(review.isError).not.toBe(true);
     const detail=await call("get_card",{card_id:"card-1",include:["comments","reports","notes","now_history"]},context);
     expect(detail.isError).not.toBe(true);
     expect(detail.structuredContent).toMatchObject({
-      card:{items:[{id:1,display:"reported"},{id:2,display:"fix",fixOpen:1}],now:{text:"수정 화면 확인을 기다립니다",turn:"user"}},
+      card:{items:[{id:1,display:"reported"},{id:2,display:"todo",fixOpen:0}],now:{text:null,turn:"user"}},
       sections:{
         comments:{items:expect.arrayContaining([
-          expect.objectContaining({id:"seed-comment"}),expect.objectContaining({itemId:2,body:"안내 문구를 고쳐 주세요"}),
+          expect.objectContaining({id:"seed-comment"}),expect.objectContaining({itemId:2,body:"안내 문구를 확인했습니다"}),
         ]),nextCursor:null,truncated:false},
         reports:{items:[expect.objectContaining({title:"기존 보고"})],nextCursor:null,truncated:false},
         notes:{items:[expect.objectContaining({kind:"note",body:"화면 주소와 구현 기록"})],nextCursor:null,truncated:false},

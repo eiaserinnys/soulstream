@@ -191,7 +191,7 @@ it("keeps status_changed_at when resetting the wait and preserves the fields on 
 it("clears the wait through the other status-writing entrypoints", async () => {
   const reviewId = await makeCard();
   await enterWait(reviewId);
-  await cards.requestCardReview({ actorKind: "agent", actorSessionId: cardSession.get(reviewId)!, cardId: reviewId, idempotencyKey: key() });
+  await cards.requestCardReview({ actorKind: "agent", actorSessionId: cardSession.get(reviewId)!, cardId: reviewId, report: "결과 보고", idempotencyKey: key() });
   expect(await stored(reviewId)).toMatchObject({ status: "review", wake_at: null, waiting_for: null });
 
   const questionId = await makeCard();

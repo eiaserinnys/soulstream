@@ -4,7 +4,7 @@ import type { CardNow, CardNowHistoryEntry } from "@seosoyoung/soul-ui/cards/car
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import "./v3-card-check-items.css";
 
-interface NowSlot { key:string; text:string; turn:CardNow["turn"]; ask:string|null; at:string }
+interface NowSlot { key:string; text:string | null; turn:CardNow["turn"]; ask:string|null; at:string }
 interface NowPanelProps {hideTurn?:boolean;embedded?:boolean;now?:CardNow|null;nowHistory?:readonly CardNowHistoryEntry[]|null;itemsCount:number;activeCount:number;onComplete?():void;pending?:boolean}
 
 export function CardNowPanel(props: NowPanelProps) {

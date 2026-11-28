@@ -57,10 +57,10 @@ describe("card completion reports as comments", () => {
     }
   });
 
-  it("records the done report and keeps report-less calls comment-free", async () => {
+  it("records the done report and rejects a report-less tool operation", async () => {
     await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running') ON CONFLICT (session_id) DO NOTHING`;
     const plain = await makeAssignedCard("보고 없는 완료");
-    await cards.requestCardReview({ ...owner, cardId: plain, ask: "확인해 주세요", idempotencyKey: key() });
+    expect(cardOperationSchemas.request_card_review.safeParse({ cardId: plain, ask: "확인해 주세요", idempotencyKey: key() }).success).toBe(false);
     expect(await agentComments(plain)).toHaveLength(0);
 
     const cardId = await makeAssignedCard("완료 보고");

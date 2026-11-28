@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { decodeCardDecision } from '../src/cards/state/card_decision_decoder.js';
 import { decideCardTransition } from '../src/cards/state/card_decision.js';
+import { reviewCardNowFromCheckedAsk } from '../src/cards/card_item_rules.js';
 import { rowToStateValue, stateValueToColumns } from '../src/cards/state/card_state_value.js';
 
 const row = { status: 'running', blocked_kind: null, blocked_detail: null, archived: false, assignee_kind: 'session', assignee_session_id: 'owner', wake_at: null, limit_resume_session_id: null, limit_resume_at: null };
@@ -89,4 +90,29 @@ it('decodes final status, completion and reservation writes together',()=>{
  const verify={type:'SET_STATUS' as const,status:'awaiting_verification' as const,wakeAt:'2026-11-12T00:00:00.000Z',waitingFor:'확인'};
  const next=decideCardTransition(row,[],{},verify,actor,Date.parse('2026-11-11T00:00:00.000Z'));
  expect(decodeCardDecision(next,{...values,card:row,command:verify})[0]!.fields).toMatchObject({wake_at:verify.wakeAt,waiting_for:'확인'});
+});
+
+const previousNow = { text: '작업 중', ask: null, turn: 'agent' as const, updatedAt: '2026-01-01', sessionId: 'owner' };
+it.each([{ ask: '결과 확인', expected: { text: null, ask: '결과 확인', turn: 'user' } }, { ask: undefined, expected: null }])(
+  'replaces the current now on review with ask $ask', ({ ask, expected }) => {
+    const card = { ...row, now: previousNow }, actor = { kind: 'agent', sessionId: 'owner' };
+    const command = { type: 'REQUEST_REVIEW' as const, ...(ask === undefined ? {} : { ask }) };
+    const decision = decideCardTransition(card, [], {}, command, actor, 0);
+    expect(decision.kind).toBe('apply');
+    const writes = decodeCardDecision(decision, { card, command, actor, now: new Date(0), eventId: null,
+      lazy: { 'formatted.review': () => reviewCardNowFromCheckedAsk(previousNow, ask, new Date(0).toISOString(), 'owner') } });
+    expect(writes[0]!.fields.now).toEqual(expected === null ? null : expect.objectContaining(expected));
+  });
+it.each(['SET_STATUS', 'BULK_SET_STATUS'] as const)('%s clears now on off-board statuses and keeps verification now', type => {
+  const card = type === 'SET_STATUS' ? { ...row, now: previousNow } : { ...row, status: 'todo', assignee_kind: 'none', assignee_session_id: null, now: previousNow };
+  for (const actor of [{ kind: 'user', sessionId: null }, { kind: 'agent', sessionId: 'owner' }]) {
+    for (const status of ['done', 'cancelled', 'on_hold', 'awaiting_verification'] as const) {
+      const command = { type, status, ...(status === 'awaiting_verification' ? { wakeAt: '2026-11-12T00:00:00.000Z', waitingFor: '확인' } : {}) };
+      const decision = decideCardTransition(card, [], type === 'BULK_SET_STATUS' ? { loaded: ['ownerState', 'claim'], claim: actor.kind === 'agent' } : {}, command, actor, Date.parse('2026-11-11T00:00:00.000Z'));
+      expect(decision.kind).toBe('apply');
+      const verificationNow = { text: '검증 대기' };
+      const writes = decodeCardDecision(decision, { card, command, actor, now: new Date(0), eventId: null, values: { 'formatted.verification': verificationNow } });
+      expect(writes[0]!.fields.now).toEqual(status === 'awaiting_verification' ? verificationNow : null);
+    }
+  }
 });

@@ -1,3 +1,5 @@
+import { isDirectHumanSessionInput } from "../cards/card_human_session_input.js";
+export { isDirectHumanSessionInput } from "../cards/card_human_session_input.js";
 import type { ServiceCaller } from "../auth/service_caller.js";
 import { randomUUID } from "node:crypto";
 
@@ -82,7 +84,7 @@ export type SessionActionCommandRouteOptions =
      */
     acceptPersistentReportReply?: (sessionId: string, context: unknown, callerInfo: JsonObject | undefined, request: FastifyRequest | ServiceCaller) =>
       Promise<{ handled: boolean; failure?: { status: number; body: unknown } } | undefined>;
-    onHumanSessionInput?: (targetSessionId: string) => Promise<void>;
+    onHumanSessionInput?: (targetSessionId: string, text: string, callerInfo: JsonObject | undefined) => Promise<void>;
     /** Session folder ACL for the HTTP handlers only (not the shared MCP body). */
     accessProvider?: SessionRequestAccessGuard;
   };
@@ -325,10 +327,10 @@ export async function executeSessionIntervention(
   } } };
   const response=await executeInterveneCommand(options, durable.payload, durable.deliveryId);
   if (response.status>=200 && response.status<300 && "log" in caller
-    && (payload.value.caller_info?.source==="browser" || payload.value.caller_info?.source==="soul-app")
+    && (isDirectHumanSessionInput(payload.value.caller_info) || payload.value.caller_info?.source==="browser" || payload.value.caller_info?.source==="soul-app")
     && options.onHumanSessionInput) {
-    try { await options.onHumanSessionInput(targetSessionId); }
-    catch (error) { caller.log.warn({err:error,targetSessionId},"Card resume after human session input failed"); }
+    try { await options.onHumanSessionInput(targetSessionId, payload.value.text, payload.value.caller_info); }
+    catch (error) { caller.log.warn({err:error,targetSessionId},"Card update after human session input failed"); }
   }
   return response;
 }

@@ -63353,10 +63353,10 @@
         "value": {
           "id": "2bff5554-3401-453e-8b53-6ba81774d33f",
           "card_id": "97e75467-e299-455b-ad3d-df44851a95cf",
-          "author_kind": "user",
+          "author_kind": "agent",
           "author_id": null,
           "session_id": "owner",
-          "kind": "spoken",
+          "kind": "comment",
           "body": "확인했습니다",
           "item_id": null,
           "delivered_at": null,
@@ -66781,7 +66781,8 @@
         "actorKind": "agent",
         "actorSessionId": "owner",
         "cardId": "d1b5375e-a49a-4d74-9977-ecddcdd66d98",
-        "ask": "결과를 확인해 주세요"
+        "ask": "결과를 확인해 주세요",
+        "report": "결과 보고"
       },
       "checkedAt": 1794406619299,
       "actor": {
@@ -67213,7 +67214,7 @@
         "items": [],
         "now": {
           "ask": "결과를 확인해 주세요",
-          "text": "결과를 확인해 주세요",
+          "text": null,
           "turn": "user",
           "sessionId": "owner",
           "updatedAt": "2026-11-11T14:16:59.331Z"
@@ -67291,7 +67292,7 @@
                 "items": [],
                 "now": {
                   "ask": "결과를 확인해 주세요",
-                  "text": "결과를 확인해 주세요",
+                  "text": null,
                   "turn": "user",
                   "sessionId": "owner",
                   "updatedAt": "2026-11-11T14:16:59.331Z"
@@ -67350,7 +67351,8 @@
               "ask": "결과를 확인해 주세요",
               "status": "review",
               "blocked_kind": null,
-              "blocked_detail": null
+              "blocked_detail": null,
+              "report_comment_id": "09a3cbb9-74ea-4318-a05b-8af06df42761"
             },
             "reason": null,
             "created_at": "2026-11-11T14:16:59.325Z"
@@ -164277,7 +164279,7 @@
         "value": null,
         "statusCode": 422,
         "code": "INVALID_CARD_REQUEST",
-        "message": "다른 세션이 담당인 카드입니다. 인계 요약, 질문, 발언 기록은 담당 세션만 씁니다."
+        "message": "담당 세션만 카드 커멘트에 답할 수 있습니다. 담당이 아니면 내부 에이전트 세션이 transfer_card_assignee로 담당을 맡은 뒤 다시 부르세요. 인계는 담당만 바꾸고 작업을 시작하거나 멈추지 않습니다."
       }
     },
     {

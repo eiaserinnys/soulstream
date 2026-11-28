@@ -290,7 +290,7 @@ describe("external MCP card writes", () => {
     ["create_card", { folder_id: "a", title: "외부 카드", request: "원문" }, "create_card"],
     ["update_card_brief", { card_id: "card", brief: "닷 경과" }, "update_card"],
     ["add_card_report", { card_id: "card", title: "보고", format: "markdown", body: "증거" }, "add_card_report"],
-    ["request_card_review", { card_id: "card" }, "set_card_status"],
+    ["request_card_review", { card_id: "card", report: "결과 보고" }, "set_card_status"],
     ["move_card", { card_id: "card", folder_id: "b" }, "move_card"],
   ])("executes %s as llm without a caller session", async (tool, args, operation) => {
     const result = await call(tool as string, { ...(args as object), caller_session_id: "forged-argument" });

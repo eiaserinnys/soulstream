@@ -15,6 +15,7 @@ import {
   sessionActionCommandRouteAuthRequirements,
   type SessionStreamEvent,
 } from "../src/index.js";
+import { isDirectHumanSessionInput } from "../src/session/session_action_command_routes.js";
 import {
   createActionHarness,
   createHarnessCore,
@@ -168,11 +169,11 @@ describe("session action command HTTP route harness", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/sessions/sess-contract/intervene",
-      payload: { text: "계속 진행해 주세요", caller_info: { source } },
+      payload: { text: "계속 진행해 주세요", caller_info: { source, user_id: "a@b" } },
     });
     expect(response.statusCode).toBe(200);
     expect(onHumanSessionInput).toHaveBeenCalledOnce();
-    expect(onHumanSessionInput).toHaveBeenCalledWith("sess-contract");
+    expect(onHumanSessionInput).toHaveBeenCalledWith("sess-contract", "계속 진행해 주세요", { source, user_id: "a@b" });
     await app.close();
   });
 
@@ -1038,4 +1039,15 @@ describe("session action command HTTP route harness", () => {
 
     await app.close();
   });
+});
+
+it.each([
+  [{ source: 'browser', user_id: 'a@b' }, true],
+  [{ source: 'soul-app', user_id: 'a@b' }, true],
+  [{ source: 'browser' }, false],
+  [{ source: 'agent', user_id: 'seosoyoung-pas' }, false],
+  [{ source: 'system' }, false],
+  [{ source: 'browser', user_id: '' }, false],
+])('classifies direct input %j as %s', (callerInfo, expected) => {
+  expect(isDirectHumanSessionInput(callerInfo)).toBe(expected);
 });
