@@ -45,9 +45,7 @@
     "loadError": "エージェント一覧を読み込めませんでした({{status}})。",
     "node": "ノード",
     "chooseNode": "ノード選択",
-    "defaultNode": "既定の実行ノード",
     "model": "モデル",
-    "executionModel": "実行モデル",
     "executionAgent": "実行エージェント",
     "chooseAgent": "エージェント選択",
     "defaultAgent": "既定の実行エージェント"
