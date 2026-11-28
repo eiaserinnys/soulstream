@@ -26,6 +26,9 @@ afterEach(() => {
 jest.mock('../../../lib/attachment-image-size', () => ({
   getAttachmentImageSize: jest.fn(() => new Promise(() => {})),
 }));
+jest.mock('react-native-enriched-markdown', () => ({
+  EnrichedMarkdownText: (props: any) => require('react').createElement(require('react-native').Text, props, props.markdown),
+}));
 
 function item(id: number, display: CardCheckItem['display'], overrides: Partial<CardCheckItem> = {}): CardCheckItem {
   const state = display === 'doing' ? 'doing' : display === 'dropped' ? 'dropped' : display === 'reported' || display === 'changed' ? 'done' : 'todo';
@@ -258,6 +261,35 @@ test('URL-only legacy HTML evidence resolves metadata then reads the document bo
   const bodyCall = fetch.mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method !== 'HEAD')!;
   expect(bodyCall[0]).toContain('/api/attachments/files?');
   expect(new Headers((bodyCall[1] as RequestInit).headers).get('range')).toBe('bytes=0-1048575');
+});
+
+test('keeps evidence Markdown open when the card detail changes without changing evidence', async () => {
+  useSettingsStore.setState({ serverUrl: 'https://cards.test' });
+  const fetch = jest.spyOn(global, 'fetch').mockResolvedValue({
+    ok: true, status: 200, headers: { get: () => null }, text: async () => '# 읽던 근거',
+  } as unknown as Response);
+  try {
+    const evidence: CardCheckItem['evidence'] = [{
+      type: 'link', label: '근거.md', url: '/api/attachments/doc/content', attachment_id: 'doc',
+      descriptor: { attachment_id: 'doc', name: '근거.md', mime_type: 'text/markdown', byte_size: 12,
+        checksum_sha256: null, width: null, height: null, preview_kind: 'text', preview_mime_type: 'text/plain' },
+      read_context: { type: 'card', id: 'card-test' }, previewUrl: '/api/attachments/doc/content', originalUrl: '/api/attachments/doc/content',
+    }];
+    const checkItem = item(1, 'reported', { evidence });
+    const props = { items: [checkItem], pendingConfirmations: {}, initiallyConfirmedIds: [], newlyConfirmedIds: [],
+      onConfirm: jest.fn(), onSetTarget: jest.fn(), onRecentConfirmation: jest.fn(), paneWidth: 428 };
+    const screen = render(<CardCheckItems {...props} />);
+    fireEvent.press(screen.getByTestId('card-check-item-1-link'));
+    await waitFor(() => expect(screen.getByTestId('attachment-preview-markdown')).toBeTruthy());
+    expect(screen.getByText('# 읽던 근거')).toBeTruthy();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    screen.rerender(<CardCheckItems {...props} items={[{ ...checkItem }]} />);
+    expect(screen.getByTestId('attachment-preview-markdown')).toBeTruthy();
+    expect(screen.getByText('# 읽던 근거')).toBeTruthy();
+    expect(screen.queryByTestId('attachment-preview-loading')).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  } finally { fetch.mockRestore(); }
 });
 
 test('확인 항목의 결과, 못 본 것과 변경 까닭은 모두 선택할 수 있다', () => {

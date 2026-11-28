@@ -4,6 +4,13 @@ import {
   waitForDashboardMutationsToFlush,
 } from "@seosoyoung/soul-ui/pending-mutation-registry";
 
+const openReaders = new Set<symbol>();
+export function registerDashboardReader(): () => void {
+  const token = Symbol();
+  openReaders.add(token);
+  return () => { openReaders.delete(token); };
+}
+
 export interface ReloadEnvironment {
   document: Document;
   reload(): void;
@@ -24,8 +31,9 @@ export function createDashboardReloadCoordinator(
     pendingAction?.();
   };
   const approve = async () => {
-    if (environment.hasAttachments?.()) return false;
+    if (environment.hasAttachments?.() || openReaders.size) return false;
     if (!(await environment.flushPendingEdits())) return false;
+    if (openReaders.size) return false;
     execute();
     return true;
   };
@@ -37,14 +45,15 @@ export function createDashboardReloadCoordinator(
       if (issued) return Promise.resolve(true);
       if (inFlight) return inFlight;
       pendingAction ??= action;
-      if (!environment.hasPendingEdits()) {
-        execute();
-        return Promise.resolve(true);
-      }
       const defer = () => {
         showUpdateBanner(environment.document, approve);
         return false;
       };
+      if (openReaders.size) return Promise.resolve(defer());
+      if (!environment.hasPendingEdits()) {
+        execute();
+        return Promise.resolve(true);
+      }
       if (!automatic || environment.hasAttachments?.())
         return Promise.resolve(defer());
       inFlight = approve()

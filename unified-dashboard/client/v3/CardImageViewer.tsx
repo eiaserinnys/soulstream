@@ -10,6 +10,7 @@ import {
 } from "@seosoyoung/soul-ui/components/AttachmentViewerImage";
 import { useHeicImageSource } from "@seosoyoung/soul-ui/lib/image-source";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
+import { registerDashboardReader } from "../pwa/dashboard-reload";
 
 export interface CardImageSelection { src: string; alt: string; attachment?: ChatAttachmentItem }
 export interface CardAttachmentStatus { message: string; onRetry?(): void }
@@ -20,6 +21,8 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
   const popupRef = useRef<HTMLDivElement>(null);
   const mediaRef = useRef<HTMLDivElement>(null);
   const plainImage = image && !image.attachment ? image : null;
+  const isOpen = image !== null;
+  useEffect(() => isOpen ? registerDashboardReader() : undefined, [isOpen]);
   const imageViewer = useAttachmentViewerImage({
     popupRef,
     mediaRef,

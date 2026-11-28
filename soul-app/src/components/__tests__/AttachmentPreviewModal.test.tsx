@@ -163,6 +163,21 @@ test('Markdown preview renders through PlannerMarkdownText in the document frame
   expect(mockReadAttachmentText).toHaveBeenCalledWith('attachment-1', { type: 'card', id: 'card-1' }, expect.any(AbortSignal));
 });
 
+test('keeps a loaded Markdown preview for the same attachment and reads a different attachment', async () => {
+  mockReadAttachmentText.mockResolvedValue({ text: '# 읽던 문서', truncated: false });
+  const makeMarkdown = (key: string) => makeView({ key, name: '문서.md', mimeType: 'text/markdown' });
+  const screen = render(<AttachmentPreviewModal item={makeMarkdown('attachment-1')} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByTestId('attachment-preview-markdown')).toBeTruthy());
+
+  screen.rerender(<AttachmentPreviewModal item={makeMarkdown('attachment-1')} onClose={jest.fn()} />);
+  expect(screen.queryByTestId('attachment-preview-loading')).toBeNull();
+  expect(screen.getByTestId('attachment-preview-markdown')).toBeTruthy();
+  expect(mockReadAttachmentText).toHaveBeenCalledTimes(1);
+
+  screen.rerender(<AttachmentPreviewModal item={makeMarkdown('attachment-2')} onClose={jest.fn()} />);
+  await waitFor(() => expect(mockReadAttachmentText).toHaveBeenCalledTimes(2));
+});
+
 test('caller-provided Markdown uses the renderer and keeps the truncation label', async () => {
   const markdown = '## local preview';
   const screen = render(<AttachmentPreviewModal item={makeView({ name: 'local.md', mimeType: 'text/markdown' })} onClose={jest.fn()}

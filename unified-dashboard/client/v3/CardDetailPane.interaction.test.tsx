@@ -28,6 +28,35 @@ afterEach(async()=>{await act(()=>root.unmount());container.remove();useCardStor
 const render=async(onClose=vi.fn())=>{await act(()=>root.render(<CardDetailPane cardId="inherit" folders={[]} onClose={onClose} onOpenSession={()=>{}}/>));return onClose;};
 const tab=async(name:string)=>{await act(()=>[...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(el=>el.textContent?.includes(name))!.click());};
 const item=(id:number,display:"todo"|"doing"|"reported"|"changed"|"fix"|"confirmed"|"dropped")=>({id,title:`확인 항목 ${id}`,state:display==="confirmed"?"done" as const:display==="dropped"?"dropped" as const:display==="doing"||display==="fix"?"doing" as const:display==="reported"||display==="changed"?"done" as const:"todo" as const,result:display==="dropped"?"제외한 까닭":`항목 ${id} 결과`,evidence:[],caveat:null,rev:1,confirmed:display==="confirmed"?{at:card.createdAt,rev:1}:null,fixOpen:display==="fix"?2:0,reopened:display==="changed"?"변경 뒤 다시 확인":null,from:null,createdAt:card.createdAt,reportedAt:card.createdAt,display});
+it("preserves the comments scroll on unrelated card updates and follows a new comment",async()=>{
+ await render();
+ const scroll=container.querySelector<HTMLDivElement>('.v3-card-panel-scroll')!;
+ Object.defineProperty(scroll,'scrollHeight',{configurable:true,value:1000});
+ scroll.scrollTop=350;
+ const updated={...detail,card:{...card,now:{text:'상황 변경',turn:'agent' as const,ask:null,updatedAt:card.updatedAt,sessionId:'owner'}}};
+ await act(()=>useCardStore.setState({byId:{inherit:updated.card},details:{inherit:updated}}));
+ expect(scroll.scrollTop).toBe(350);
+ const comments=[...updated.comments,{...updated.comments[0],id:'c2',body:'새 커멘트'}];
+ const withComment={...updated,comments};
+ await act(()=>useCardStore.setState({details:{inherit:withComment}}));
+ expect(scroll.scrollTop).toBe(1000);
+ scroll.scrollTop=350;
+ const withReport={...withComment,reports:[...withComment.reports,{...withComment.reports[0],id:'r2'}]};
+ await act(()=>useCardStore.setState({details:{inherit:withReport}}));
+ expect(scroll.scrollTop).toBe(1000);
+ scroll.scrollTop=350;
+ const withQuestion={...withReport,questions:[...withReport.questions,{...withReport.questions[0],id:'q2'}]};
+ await act(()=>useCardStore.setState({details:{inherit:withQuestion}}));
+ expect(scroll.scrollTop).toBe(1000);
+});
+it("scrolls to the bottom when a card without timeline entries first loads",async()=>{
+ vi.spyOn(Element.prototype,'scrollHeight','get').mockReturnValue(1000);
+ useCardStore.setState({byId:{},details:{},loadCard:vi.fn(()=>new Promise(()=>{}))});
+ await render();
+ const empty={...detail,questions:[],reports:[],comments:[]};
+ await act(()=>useCardStore.setState({byId:{inherit:card},details:{inherit:empty}}));
+ expect(container.querySelector<HTMLDivElement>('.v3-card-panel-scroll')!.scrollTop).toBe(1000);
+});
 it("keeps the old card on comments and keeps session selection and composer mounted across four tabs",async()=>{
  await render();
  expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("커멘트");

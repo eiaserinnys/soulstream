@@ -47,6 +47,7 @@ export function CardDetailPane(props:CardDetailPaneProps) {
  const catalog=useDashboardStore(s=>s.catalog);
  const {user}=useAuth();
  const scroll=useRef<HTMLDivElement>(null);
+ const previousTimeline=useRef<{cardId:string;tab:string;questions:number;reports:number;comments:number}|null>(null);
  const dock=useRef<HTMLDivElement>(null);
  const surface=useRef<HTMLElement>(null);
  const webglActive=useGlassSurface(surface,{enabled:true});
@@ -88,7 +89,13 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   initializedTabForCard.current=cardId;
   setTab(card.items?.length?"items":"comments");setTargetItemId(null);setSentNotice(false);setUnreadComments(false);
  },[cardId,card]);
- useEffect(()=>{if(tab==="comments"&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;},[cardId,detail,tab]);
+ const cardAvailable=Boolean(card),questionCount=detail?.questions.length??0,reportCount=detail?.reports.length??0,commentCount=detail?.comments?.filter(comment=>comment.kind!=="note").length??0;
+ useEffect(()=>{
+  if(!scroll.current)return;
+  const previous=previousTimeline.current;
+  if(tab==="comments"&&(!previous||previous.cardId!==cardId||previous.tab!==tab||questionCount>previous.questions||reportCount>previous.reports||commentCount>previous.comments))scroll.current.scrollTop=scroll.current.scrollHeight;
+  previousTimeline.current={cardId,tab,questions:questionCount,reports:reportCount,comments:commentCount};
+ },[cardId,tab,cardAvailable,questionCount,reportCount,commentCount]);
  useEffect(()=>{
   if(!sentNotice)return;
   const timer=window.setTimeout(()=>setSentNotice(false),6000);
