@@ -19,14 +19,14 @@ function fixture() {
 describe('folder context submission', () => {
   it('sends guidance and atom in a single batch', async () => {
     const f = fixture();
-    const value = { ...emptyProjectFormValue('폴더'), guidance: [{ blockId: null, text: '지침' }], atomReferences: [{ blockId: null, instance: 'atom' as const, nodeId: 'n', nodeTitle: '자료', depth: 3, titlesOnly: false }] };
+    const value = { ...emptyProjectFormValue('폴더'), guidance: { source: 'own' as const, text: '지침' }, atomReferences: [{ blockId: null, instance: 'atom' as const, nodeId: 'n', nodeTitle: '자료', depth: 3, titlesOnly: false }] };
     await saveProjectFormContext(f.api, 'p', previous, value, {});
     expect(f.applyOperations).toHaveBeenCalledTimes(1);
     expect(f.applyOperations.mock.calls[0][1].operations).toHaveLength(2);
   });
   it('reuses the complete failed request and recovers replay with an empty mapping', async () => {
     const f = fixture(); const session: ProjectContextSaveSession = {};
-    const value = { ...emptyProjectFormValue(), guidance: [{ blockId: null, text: '지침' }] };
+    const value = { ...emptyProjectFormValue(), guidance: { source: 'own' as const, text: '지침' } };
     f.applyOperations.mockRejectedValueOnce(new Error('응답 손실'));
     await expect(saveProjectFormContext(f.api, 'p', previous, value, session)).rejects.toThrow('응답 손실');
     await saveProjectFormContext(f.api, 'p', previous, value, session);
@@ -35,10 +35,10 @@ describe('folder context submission', () => {
   });
   it('resolves the old attempt before submitting edited content under a new key', async () => {
     const f = fixture(); const session: ProjectContextSaveSession = {};
-    const value = { ...emptyProjectFormValue(), guidance: [{ blockId: null, text: '이전 지침' }] };
+    const value = { ...emptyProjectFormValue(), guidance: { source: 'own' as const, text: '이전 지침' } };
     f.applyOperations.mockRejectedValueOnce(new Error('응답 손실'));
     await expect(saveProjectFormContext(f.api, 'p', previous, value, session)).rejects.toThrow();
-    await saveProjectFormContext(f.api, 'p', previous, { ...value, guidance: [{ blockId: null, text: '수정 지침' }] }, session);
+    await saveProjectFormContext(f.api, 'p', previous, { ...value, guidance: { source: 'own' as const, text: '수정 지침' } }, session);
     expect(f.applyOperations.mock.calls[1][1]).toBe(f.applyOperations.mock.calls[0][1]);
     expect(f.applyOperations.mock.calls[2][1].idempotencyKey).not.toBe(f.applyOperations.mock.calls[0][1].idempotencyKey);
     expect(f.blocks).toHaveLength(1);

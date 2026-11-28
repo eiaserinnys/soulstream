@@ -1,7 +1,6 @@
 .v3-shell,
 .v3-surface,
 .approved-dialog,
-.project-purpose-dialog,
 /* 포털로 붙는 대화상자·팝오버(검색 모달, 아침 정리 모달, 폴더 이동, PAS 설정,
    CardStatusPicker) 안에서도 로더/안내 부품이 같은 토큰을 쓰도록 부품 자체를
    토큰 소유자 범위에 넣는다. 대화상자마다 클래스를 덧붙이지 않는다. */

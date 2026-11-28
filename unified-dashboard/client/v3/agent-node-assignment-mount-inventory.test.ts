@@ -14,24 +14,16 @@ describe("agent/node/model assignment mount inventory", () => {
 
     expect(mounts).toEqual([
       "CardCreateDialog.tsx",
-      "FolderDefaultAssignment.tsx",
-      "ProjectContextFormFields.tsx",
+      "ProjectDialog.tsx",
       "SessionSuccessionModal.tsx",
     ]);
-  });
-
-  it("applies the compact row only to the folder default assignment surface", () => {
-    expect(read("FolderDefaultAssignment.tsx")).toContain('layout="compact-row"');
-    expect(read("SessionSuccessionModal.tsx")).not.toContain('layout="compact-row"');
-    expect(read("ProjectContextFormFields.tsx")).not.toContain('layout="compact-row"');
   });
 
   it("keeps a three-column desktop contract and a one-column narrow contract", () => {
     const css = read("v3-context-succession.css");
 
-    expect(css).toContain(".v3-succession-assignment--compact-row");
     expect(css).toMatch(
-      /\.v3-succession-assignment--compact-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*0\.8fr\)\s+minmax\(0,\s*0\.9fr\)\s+minmax\(0,\s*1\.35fr\)/s,
+      /\.v3-succession-modal \.v3-succession-assignment\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*0\.8fr\)\s+minmax\(0,\s*0\.9fr\)\s+minmax\(0,\s*1\.35fr\)/s,
     );
     expect(css).toMatch(
       /@media \(max-width:\s*600px\)[\s\S]*?\.v3-succession-assignment\s*\{\s*grid-template-columns:\s*1fr;/,

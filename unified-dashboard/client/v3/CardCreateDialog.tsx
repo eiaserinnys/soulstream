@@ -6,6 +6,7 @@ import {useCardStore} from "@seosoyoung/soul-ui/cards/card-store";
 import {CardApiError,cardMutationKey} from "@seosoyoung/soul-ui/cards/card-api";
 import type { CardAttachment } from "../../../packages/wire-schema/src/card_attachments";
 import type {UseFileUploadReturn} from "@seosoyoung/soul-ui/hooks/useFileUpload";
+import type {ModelPresetAvailability} from "@seosoyoung/soul-ui/lib/model-preset-availability";
 import {useTextareaAutoHeight} from "@seosoyoung/soul-ui/components/chat/useTextareaAutoHeight";
 import {handleClipboardFiles} from "@seosoyoung/soul-ui/lib/clipboard-files";
 import {AgentNodeAssignmentFields} from "./AgentNodeAssignmentFields";
@@ -29,7 +30,7 @@ export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,o
 }) {
  const {t}=useTranslation();
  const [title,setTitle]=useState(""),[request,setRequest]=useState(""),[folderId,setFolderId]=useState(executionSettings?.card.folderId??initialFolderId);
- const [nodeId,setNodeId]=useState(executionSettings?.card.nodeId??""),[agentId,setAgentId]=useState(executionSettings?.card.assigneeAgentId??""),[agent,setAgent]=useState<AgentInfo|null>(null),[modelPreset,setModelPreset]=useState(executionSettings?.card.modelPreset??""),[valid,setValid]=useState(false);
+ const [nodeId,setNodeId]=useState(executionSettings?.card.nodeId??""),[agentId,setAgentId]=useState(executionSettings?.card.assigneeAgentId??""),[agent,setAgent]=useState<AgentInfo|null>(null),[modelPreset,setModelPreset]=useState(executionSettings?.card.modelPreset??""),[modelInfo,setModelInfo]=useState<ModelPresetAvailability|null>(null),[valid,setValid]=useState(false);
  const [folderOpen,setFolderOpen]=useState(false),[pending,setPending]=useState(false),[error,setError]=useState<string|null>(null);
  const [uncertain,setUncertain]=useState(false),[startRefused,setStartRefused]=useState(false);
  const [uploadSessionId]=useState(()=>crypto.randomUUID());
@@ -82,8 +83,8 @@ export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,o
      <label className="v3-creation-text-field"><strong>{t("cards.requestBody")} <small>{t("cards.optional")}</small></strong><textarea ref={textarea} aria-label={t("cards.rawRequest")} placeholder={t("cards.requestPlaceholder")} rows={1} className="v3-creation-request max-h-[120px]" value={request} disabled={locked} onChange={event=>{if(!attempt.current)setRequest(event.target.value);}} onPaste={event=>{if(nodeId&&!locked)handleClipboardFiles(event,upload.addFiles);}}/></label>
      <fieldset className="contents" disabled={locked}><SessionAttachmentFields files={upload.files} pending={locked} nodeId={nodeId} isUploading={upload.isUploading} addFiles={files=>{if(!attempt.current)upload.addFiles(files);}} removeFile={id=>{if(!attempt.current)upload.removeFile(id);}}/></fieldset>
      </>:null}
-     <CreationDisclosure title={executionSettings?t("cards.executionEnvironment"):t("cards.executionEnvironmentOptional")} invalid={!!executionSettings&&(!valid || !nodeId || !agentId || (!!executionSettings.startAfterSave&&!modelPreset))} summary={`${nodeId || t("cards.selectNode")} / ${agent?.name ?? t("cards.selectAgent")} / ${modelPreset || (executionSettings?.startAfterSave?t("cards.selectModel"):t("cards.defaultModel"))}`}><section><AgentNodeAssignmentFields data={assignment} presentation="session" fallbackToAvailable={!!executionSettings} nodeId={nodeId} agentId={agentId} modelPreset={modelPreset} disabled={locked}
-      onNodeIdChange={onNodeChange} onAgentIdChange={value=>{if(!attempt.current)setAgentId(value);}} onAgentInfoChange={onAgentChange} onModelPresetChange={onPresetChange} onModelPresetValidityChange={setValid} onError={setError}/></section></CreationDisclosure>
+     <CreationDisclosure title={executionSettings?t("cards.executionEnvironment"):t("cards.executionEnvironmentOptional")} invalid={!!executionSettings&&(!valid || !nodeId || !agentId || (!!executionSettings.startAfterSave&&!modelPreset))} summary={`${agent?.name ?? t("cards.selectAgent")} · ${nodeId || t("cards.selectNode")} · ${modelInfo?.label ?? (modelPreset || (executionSettings?.startAfterSave?t("cards.selectModel"):t("cards.defaultModel")))}`}><section><AgentNodeAssignmentFields data={assignment} fallbackToAvailable={!!executionSettings} nodeId={nodeId} agentId={agentId} modelPreset={modelPreset} disabled={locked}
+      onNodeIdChange={onNodeChange} onAgentIdChange={value=>{if(!attempt.current)setAgentId(value);}} onAgentInfoChange={onAgentChange} onModelPresetChange={onPresetChange} onModelPresetInfoChange={setModelInfo} onModelPresetValidityChange={setValid} onError={setError}/></section></CreationDisclosure>
 
     </div>
    </DialogPanel>

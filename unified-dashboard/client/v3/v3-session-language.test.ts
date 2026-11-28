@@ -8,7 +8,8 @@ const USER_COPY_FILES = [
   "./PlannerFolderCard.tsx",
   "./RichSessionRow.tsx",
   "./SessionSuccessionModal.tsx",
-  "./ProjectContextFormFields.tsx",
+  "./ProjectDialog.tsx",
+  "./FolderContextParts.tsx",
   "./FolderSessionHistory.tsx",
   "./FolderWorkspace.tsx",
   "./use-v3-planner-actions.ts",
@@ -26,23 +27,15 @@ describe("v3 session language", () => {
   });
 
   it("keeps shared context and per-session context on their canonical surfaces", () => {
-    const contextForm = readFileSync(
-      fileURLToPath(new URL("./ProjectContextFormFields.tsx", import.meta.url)),
-      "utf8",
-    );
     const succession = readFileSync(
       fileURLToPath(new URL("./SessionSuccessionModal.tsx", import.meta.url)),
       "utf8",
     );
 
-    expect(contextForm).toContain("ProjectAtomFields");
-    expect(contextForm).toContain("ProjectSessionDefaultsFields");
     expect(succession).toContain('<strong>{t("sessions.boardDocuments")}</strong>');
-    expect(succession).toContain("<ProjectAtomFields request={atomRequest} value={atomDraft}");
-    expect(succession).toMatch(/<ProjectAtomFields request=\{atomRequest\} value=\{atomDraft\} disabled=\{pending\} supportsLimit=\{false\}[\s\S]*?selectorOpen=\{atomOpen\} onSelectorOpenChange=\{setAtomOpen\} onSelectorStatusChange=\{setAtomStatus\} onChange=\{setAtomDraft\}/);
-    expect(succession).toContain('<strong>{t("sessions.referenceMaterial")}</strong>');
-    expect(succession).toMatch(/setAtomDraft\(\{ \.\.\.atomValue \}\); setAtomStatus\("loading"\); setAtomOpen\(true\);/);
-    expect(succession).toMatch(/atomNode: atomNodeId \? \{ nodeId: atomNodeId, title: atomNodeTitle, depth: atomValue\.depth, titlesOnly: atomValue\.titlesOnly, mode: atomValue\.mode \} : null/);
+    expect(succession).toContain("<ReferencePicker request={atomRequest} value={atomDraft.value}");
+    expect(succession).toContain('<strong>{t("sessions.references")}</strong>');
+    expect(succession).toMatch(/atomNodes: references\.map\(/);
     expect(succession).toMatch(/contextItems: contextSelection\.contextItems\.length > 0\s*\?\s*contextSelection\.contextItems\s*:\s*undefined/);
     expect(succession).not.toContain("추가 지침");
     expect(succession).toContain('aria-label={t("sessions.initialInstruction")}');

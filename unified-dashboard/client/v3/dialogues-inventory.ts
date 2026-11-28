@@ -7,13 +7,25 @@ export const dialoguesInventory = [
   {
     section: "folders",
     id: "project-create",
-    name: "새 폴더 · 프로젝트",
+    name: "새 폴더",
+    component: "ProjectDialog",
+  },
+  {
+    section: "folders",
+    id: "project-create-child",
+    name: "새 하위 폴더",
     component: "ProjectDialog",
   },
   {
     section: "folders",
     id: "project-edit",
-    name: "폴더 편집 · 프로젝트",
+    name: "폴더 설정",
+    component: "ProjectDialog",
+  },
+  {
+    section: "folders",
+    id: "project-edit-child",
+    name: "폴더 설정 · 하위 폴더",
     component: "ProjectDialog",
   },
   {
@@ -150,27 +162,15 @@ export const dialoguesInventory = [
   },
   {
     section: "overlays",
-    id: "atom-add",
-    name: "atom 컨텍스트 추가",
-    component: "ProjectContextEditor",
+    id: "reference-add",
+    name: "참고 자료 추가",
+    component: "ProjectDialog",
   },
   {
     section: "overlays",
-    id: "atom-edit",
-    name: "atom 컨텍스트 편집",
-    component: "ProjectContextEditor",
-  },
-  {
-    section: "overlays",
-    id: "defaults-add",
-    name: "기본 에이전트 추가",
-    component: "ProjectContextEditor",
-  },
-  {
-    section: "overlays",
-    id: "defaults-edit",
-    name: "기본 에이전트 편집",
-    component: "ProjectContextEditor",
+    id: "reference-edit",
+    name: "참고 자료 고치기",
+    component: "ProjectDialog",
   },
   {
     section: "overlays",

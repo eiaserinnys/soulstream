@@ -295,7 +295,6 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
             agentId={editor.agentId}
             nodeId={editor.nodeId}
             modelPreset={editor.modelPreset}
-            presentation="session"
             onAgentIdChange={(agentId) => setEditor((current) => ({ ...current, agentId }))}
             onNodeIdChange={(nodeId) => setEditor((current) => ({ ...current, nodeId }))}
             onModelPresetChange={(modelPreset) => setEditor((current) => ({ ...current, modelPreset }))}

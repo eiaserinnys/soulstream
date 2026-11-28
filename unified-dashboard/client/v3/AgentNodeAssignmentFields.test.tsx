@@ -124,7 +124,7 @@ describe("AgentNodeAssignmentFields", () => {
     expect(container.textContent).not.toContain("에이전트 A");
   });
 
-  it("renders the session assignment as node then agent without execution terminology", () => {
+  it("renders node, agent and model in that order in every window", () => {
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) =>
       String(input).includes("model-presets") ? presetResponse([]) : response([])
     ));
@@ -134,7 +134,6 @@ describe("AgentNodeAssignmentFields", () => {
         nodeId: "node-a",
         agentId: "",
         modelPreset: "",
-        presentation: "session",
         onNodeIdChange: vi.fn(),
         onAgentIdChange: vi.fn(),
         onModelPresetChange: vi.fn(),
@@ -153,7 +152,7 @@ describe("AgentNodeAssignmentFields", () => {
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) =>
       String(input).includes("model-presets") ? presetResponse([]) : response([])));
     flushSync(() => root.render(createElement(AgentNodeAssignmentFields, {
-      nodeId: "offline-node", agentId: "", modelPreset: "", presentation: "session",
+      nodeId: "offline-node", agentId: "", modelPreset: "",
       onNodeIdChange, onAgentIdChange: vi.fn(), onModelPresetChange: vi.fn(),
     })));
     const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="노드 선택"]');
@@ -178,7 +177,6 @@ describe("AgentNodeAssignmentFields", () => {
         nodeId: "",
         agentId: "",
         modelPreset: "",
-        presentation: "session",
         onNodeIdChange,
         onAgentIdChange: vi.fn(),
         onModelPresetChange: vi.fn(),
@@ -187,32 +185,6 @@ describe("AgentNodeAssignmentFields", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(onNodeIdChange).not.toHaveBeenCalled();
-  });
-
-  it("marks the explicit compact desktop row layout without changing field order", () => {
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) =>
-      String(input).includes("model-presets") ? presetResponse([]) : response([])
-    ));
-
-    flushSync(() => {
-      root.render(createElement(AgentNodeAssignmentFields, {
-        nodeId: "node-a",
-        agentId: "",
-        modelPreset: "",
-        presentation: "session",
-        layout: "compact-row",
-        onNodeIdChange: vi.fn(),
-        onAgentIdChange: vi.fn(),
-        onModelPresetChange: vi.fn(),
-      }));
-    });
-
-    const assignment = container.querySelector(".v3-succession-assignment");
-    expect(assignment?.classList.contains("v3-succession-assignment--compact-row")).toBe(true);
-    const labels = [...container.querySelectorAll("label")].map((label) =>
-      label.firstChild?.textContent?.trim(),
-    );
-    expect(labels).toEqual(["노드", "에이전트", "모델"]);
   });
 
   it("reuses a provided node preset catalog without fetching the same API again", async () => {
@@ -229,7 +201,6 @@ describe("AgentNodeAssignmentFields", () => {
         nodeId: "node-a",
         agentId: "agent-a",
         modelPreset: "preset-sol",
-        presentation: "session",
         modelPresetCatalog: {
           status: "ready",
           nodeId: "node-a",
@@ -289,7 +260,6 @@ describe("AgentNodeAssignmentFields", () => {
           nodeId: "node-a",
           agentId: "agent-a",
           modelPreset,
-          presentation: "session",
           onNodeIdChange: vi.fn(),
           onAgentIdChange: vi.fn(),
           onModelPresetChange: vi.fn(),
@@ -329,7 +299,6 @@ describe("AgentNodeAssignmentFields", () => {
         nodeId: "node-a",
         agentId: "agent-a",
         modelPreset: "preset-inherited",
-        presentation: "session",
         onNodeIdChange: vi.fn(),
         onAgentIdChange: vi.fn(),
         onModelPresetChange: vi.fn(),
@@ -367,7 +336,6 @@ describe("AgentNodeAssignmentFields", () => {
           nodeId,
           agentId: "agent-a",
           modelPreset: "",
-          presentation: "session",
           onNodeIdChange: vi.fn(),
           onAgentIdChange: vi.fn(),
           onModelPresetChange: vi.fn(),
@@ -403,7 +371,6 @@ describe("AgentNodeAssignmentFields", () => {
         nodeId: "node-a",
         agentId: "agent-a",
         modelPreset: "preset-inherited",
-        presentation: "session",
         onNodeIdChange: vi.fn(),
         onAgentIdChange: vi.fn(),
         onModelPresetChange: vi.fn(),

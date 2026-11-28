@@ -63,6 +63,7 @@ import type { ReportTimelineRowLine, ReportTimelineRowStatus } from '../../../pa
 import { exhaustiveList } from '@shared/exhaustive';
 import { CENTRAL_REVIEW_SCENES, ClaudeAccountPoolReviewSample, ClaudeCentralPoolReviewSample, ClaudePoolPasReviewSample, isCentralReviewScene } from './ClaudeAccountPoolReviewSample';
 import { GitReposTabReviewSample } from "./GitReposTabReviewSample";
+import { FolderContextSummaryReviewSample } from "./FolderContextSummaryReviewSample";
 import { AgentLoginSheetReviewSamples, AntigravityBackendReviewSamples, CodingAgentRowReviewSamples, CodingAgentsTabReviewSample, PersistentEmptyStateReviewSamples, PersistentSessionsTabReviewSample, SettingsToolbarReviewSamples } from "./SettingsToolbarReviewSamples";
 import { UsageShareRow } from "../components/usage-stats/UsageShareRow";
 import "../components/usage-stats/usage-stats.css";
@@ -490,6 +491,7 @@ export function ComponentsReviewPage() {
                 })} onSelect={setFolder} onContextMenu={() => open("폴더 메뉴")} onReorder={async () => open("폴더 순서")}/></div>
             </Sample>
             <ComponentsReviewControls/>
+            <Sample name="FolderContextSummary / ContextSourceMark" state="직접 정한 값 · 물려받은 값과 출처 · 빈 폴더"><FolderContextSummaryReviewSample onOpenSettings={() => open("폴더 설정")}/></Sample>
             <Sample name="PersistentSessionDetails / PersistentSessionMonitoring" state="표시 필드 · 판단 있음/없음 · 값 있음 · 기록 없음 · 불러오는 중 · 조회 실패"><PersistentSessionSettingsReviewSample/></Sample>
             <Sample name="MCP 아이콘과 값 단위" state="타일 · 고르기 · 서버 아이콘 줄 · 참조"><McpReviewSample /></Sample>
             <Sample name="GuideParts 배지와 연결 칩" state="오류 · 경고 · 정보 · 보고에 없음 · 연결 칩 말줄임과 +N · 초상 없는 프로필 · 실린 방식"><GuideBadgesReviewSample/></Sample>

@@ -19,13 +19,13 @@ export function buildSessionContextSelection({
   inheritCard,
   folderPageId,
   documentPageIds,
-  atomNode,
+  atomNodes,
   guidance,
 }: {
   inheritCard: boolean;
   folderPageId: string;
   documentPageIds: readonly string[];
-  atomNode: SessionAtomNode | null;
+  atomNodes: readonly SessionAtomNode[];
   guidance: string;
 }): { needsPageAnchor: boolean; contextItems: SessionContextItem[] } {
   const normalizedFolderPageId = folderPageId.trim();
@@ -44,12 +44,13 @@ export function buildSessionContextSelection({
       content: { pages: pageIds.map((pageId) => ({ page_id: pageId })) },
     });
   }
-  if (atomNode?.nodeId.trim()) {
+  const nodes = atomNodes.filter((node) => node.nodeId.trim());
+  if (nodes.length > 0) {
     contextItems.push({
       key: ATOM_CONTEXT_SOURCES_KEY,
       label: "선택한 atom 노드", // i18n-ignore: context label sent to the session
       content: {
-        nodes: [{ node_id: atomNode.nodeId.trim(), depth: atomNode.depth ?? 3, titles_only: atomNode.titlesOnly ?? false, ...(atomNode.mode ? { mode: atomNode.mode } : {}) }],
+        nodes: nodes.map((node) => ({ node_id: node.nodeId.trim(), depth: node.depth ?? 3, titles_only: node.titlesOnly ?? false, ...(node.mode ? { mode: node.mode } : {}) })),
       },
     });
   }

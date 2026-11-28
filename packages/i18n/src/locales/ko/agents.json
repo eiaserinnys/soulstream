@@ -45,9 +45,7 @@
     "loadError": "에이전트 목록을 불러오지 못했습니다 ({{status}})",
     "node": "노드",
     "chooseNode": "노드 선택",
-    "defaultNode": "기본 실행 노드",
     "model": "모델",
-    "executionModel": "실행 모델",
     "executionAgent": "실행 에이전트",
     "chooseAgent": "에이전트 선택",
     "defaultAgent": "기본 실행 에이전트"

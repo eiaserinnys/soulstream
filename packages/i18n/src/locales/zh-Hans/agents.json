@@ -45,9 +45,7 @@
     "loadError": "无法加载智能体列表 ({{status}})。",
     "node": "节点",
     "chooseNode": "选择节点",
-    "defaultNode": "默认执行节点",
     "model": "模型",
-    "executionModel": "执行模型",
     "executionAgent": "执行智能体",
     "chooseAgent": "选择智能体",
     "defaultAgent": "默认执行智能体"

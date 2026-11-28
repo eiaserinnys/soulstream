@@ -204,64 +204,6 @@
   background: color-mix(in srgb, var(--muted) 62%, transparent);
   font-size: var(--font-size-sm);
 }
-
-.v3-project-context-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
-}
-
-.v3-project-context-row > strong {
-  margin-right: 4px;
-  color: var(--foreground);
-}
-
-.v3-project-context-chip {
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-pill);
-  padding: 4px 8px;
-  color: var(--foreground);
-  background: color-mix(in srgb, var(--accent) 70%, transparent);
-  font-size: var(--font-size-xs);
-  font-weight: 700;
-}
-
-.v3-project-guidance {
-  display: grid;
-  gap: 4px;
-  width: 100%;
-}
-
-.v3-project-guidance > span {
-  color: var(--foreground);
-  line-height: 1.55;
-  white-space: pre-wrap;
-}
-
-.v3-project-guidance > small,
-.v3-project-context-sourced > small {
-  color: var(--muted-foreground);
-  font-size: var(--font-size-xs);
-}
-
-.v3-project-guidance > small {
-  text-align: right;
-}
-
-.v3-project-context-sourced > small {
-  margin-left: auto;
-  text-align: right;
-}
-
-.v3-project-context-sourced {
-  display: inline-flex;
-  flex: 1 1 100%;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-}
-
 .v3-empty,
 .v3-load-error {
   border: 1px dashed var(--border);

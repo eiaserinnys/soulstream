@@ -2,7 +2,8 @@ import { useLayoutEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useIsMobile, FileAttachmentPreview, SessionContextMenu, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
-import { ProjectContextEditor } from "./ProjectContextEditor";
+import { ProjectDialog } from "./ProjectDialog";
+import { saveProjectFormContext } from "./project-form-actions";
 import { CardTimeline } from "./CardTimeline";
 import { CardWorkspace } from "./CardWorkspace";
 import { CardBoardWorkspace } from "./CardBoardWorkspace";
@@ -12,7 +13,7 @@ import { CardAttachmentReviewSamples } from "./CardAttachmentReviewSamples";
 import { ChatAttachmentReviewSamples } from "./ChatAttachmentReviewSamples";
 import { V3ContextMenu } from "./V3ContextMenu";
 import { dialoguesFolders, dialoguesAssignment, createDialoguesApi } from "./dialogues-api";
-import { reviewCard, reviewDetail, reviewFolder, reviewSession } from "./components-review-fixtures";
+import { reviewCard, reviewDetail, reviewSession } from "./components-review-fixtures";
 import type { DialogueId } from "./dialogues-inventory";
 import { activateRunSession } from "./folder-workspace-run-model";
 import "./v3-card-board.css";
@@ -60,46 +61,19 @@ export function DialoguesOverlaySamples({
   );
   if (id === "card-attachments") return <CardAttachmentReviewSamples />;
   if (id === "chat-attachments") return <ChatAttachmentReviewSamples />;
-  if (["atom-add", "atom-edit", "defaults-add", "defaults-edit"].includes(id))
+  if (id === "reference-add" || id === "reference-edit")
     return (
-      <ProjectContextEditor
-        initialEditor={id as "atom-add" | "atom-edit" | "defaults-add" | "defaults-edit"}
-        pageId={folder.id}
-        api={pageApi}
+      <ProjectDialog
+        target={{ mode: "edit", folder }}
+        folders={dialoguesFolders}
+        initialEditor={id}
         request={api.request}
         assignment={dialoguesAssignment}
-        snapshot={{
-          page: reviewFolder(folder.name, folder.id).page,
-          blocks: [],
-          stateVector: "",
-          guidance: [],
-          atomReferences:
-            id === "atom-edit"
-              ? [
-                  {
-                    blockId: "sample-atom-block",
-                    instance: "atom",
-                    nodeId: "sample-atom",
-                    nodeTitle: "검수 지식",
-                    depth: 3,
-                    titlesOnly: false,
-                  },
-                ]
-              : [],
-          sessionDefaults:
-            id === "defaults-edit"
-              ? [
-                  {
-                    blockId: "sample-default-block",
-                    scope: "project",
-                    nodeId: "sample-node",
-                    agentId: "roselin",
-                    modelPreset: "sample-sol",
-                  },
-                ]
-              : [],
-        }}
-        onChanged={async () => done("프로젝트 컨텍스트 저장")}
+        onClose={onClose}
+        onCreateIdentity={async () => folder}
+        onRename={async () => undefined}
+        onSaveContext={(pageId, previous, value, attempt) => saveProjectFormContext(pageApi, pageId, previous, value, attempt)}
+        onSaved={() => done("참고 자료 저장")}
       />
     );
   if (id === "card-image" || id === "card-image-screen")

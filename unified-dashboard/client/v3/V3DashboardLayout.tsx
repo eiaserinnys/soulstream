@@ -81,6 +81,7 @@ function V3DashboardContent() {
   const plannerInvalidationKeys = useV3PlannerInvalidationKeys();
   const projectContextInvalidationKey = useV3PageInvalidationKey([selectedProjectId]) + plannerInvalidationKeys.pageDetail;
   const [childFolderDialog, setChildFolderDialog] = useState<ProjectDialogTarget | null>(null);
+  const [folderSettingsSaved, setFolderSettingsSaved] = useState(0);
   const [childArchiveTarget, setChildArchiveTarget] = useState<CatalogFolder | null>(null);
   const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<ReadonlySet<string>>(() => new Set());
   const [configOpen, setConfigOpen] = useState(false);
@@ -581,6 +582,7 @@ function V3DashboardContent() {
   const folderSections = selectedFolder ? <FolderWorkspaceSections
     folder={selectedFolder}
     parentFolder={parentFolder}
+    folders={catalog?.folders ?? []}
     children={(folderAggregate?.subfolders ?? childFolders)
       .map((child) => catalog?.folders.find((current) => current.id === child.id) ?? child)
       .filter((child) => !child.archived)}
@@ -591,8 +593,10 @@ function V3DashboardContent() {
     sessions={sessions}
     nodeConnectivity={nodeConnectivity}
     invalidationKey={projectContextInvalidationKey}
+    contextSavedKey={folderSettingsSaved}
     onOpenFolder={(folder) => { void selectFolder(folder); }}
     onCreateSubfolder={() => setChildFolderDialog({ mode: "create", parentFolderId: selectedFolder.id, parentName: selectedFolder.name })}
+    onOpenSettings={() => setChildFolderDialog({ mode: "edit", folder: selectedFolder })}
     onRenameChild={(folder) => setChildFolderDialog({ mode: "edit", folder })}
     onArchiveChild={(folder) => {
       void (async () => {
@@ -762,8 +766,9 @@ function V3DashboardContent() {
         onClose={() => setChildFolderDialog(null)}
         onCreateIdentity={projectNavigationMutations.onCreateProject}
         onRename={projectNavigationMutations.onRenameProject}
+        folders={catalog?.folders ?? []}
         onSaveContext={(pageId, previous, value, attempt) => saveProjectFormContext(api, pageId, previous, value, attempt)}
-        onSaved={() => undefined}
+        onSaved={() => setFolderSettingsSaved((count) => count + 1)}
       />
       <FolderArchiveDialog
         folder={childArchiveTarget}

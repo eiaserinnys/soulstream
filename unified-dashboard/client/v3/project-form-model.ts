@@ -2,11 +2,7 @@ import type { CatalogFolder } from "@seosoyoung/soul-ui";
 
 import type { ProjectPageDetails } from "./project-page-details";
 
-export interface ProjectFormGuidance {
-  blockId: string | null;
-  draftId?: string;
-  text: string;
-}
+export type ContextSource = "inherit" | "own";
 
 export interface ProjectFormAtomReference {
   blockId: string | null;
@@ -20,40 +16,48 @@ export interface ProjectFormAtomReference {
   mode?: "full" | "index" | "titles";
 }
 
+export interface ProjectFormGuidance {
+  source: ContextSource;
+  text: string;
+}
+
 export interface ProjectFormSessionDefaults {
-  blockId: string | null;
-  draftId?: string;
-  agentId: string;
+  source: ContextSource;
   nodeId: string;
+  agentId: string;
   modelPreset: string;
 }
 
 export interface ProjectFormValue {
   title: string;
-  guidance: ProjectFormGuidance[];
+  description: string;
+  guidance: ProjectFormGuidance;
   atomReferences: ProjectFormAtomReference[];
-  sessionDefaults: ProjectFormSessionDefaults | null;
+  sessionDefaults: ProjectFormSessionDefaults;
 }
 
 export function emptyProjectFormValue(title = ""): ProjectFormValue {
   return {
     title,
-    guidance: [],
+    description: "",
+    guidance: { source: "inherit", text: "" },
     atomReferences: [],
-    sessionDefaults: null,
+    sessionDefaults: { source: "inherit", nodeId: "", agentId: "", modelPreset: "" },
   };
 }
 
 export function projectFormValueFromDetails(
   title: string,
+  description: string,
   details: ProjectPageDetails,
 ): ProjectFormValue {
+  const defaults = details.sessionDefaults[0];
   return {
     title,
-    guidance: details.guidance.map((item) => ({
-      blockId: item.blockId,
-      text: item.text,
-    })),
+    description,
+    guidance: details.guidance.length > 0
+      ? { source: "own", text: details.guidance.map((item) => item.text).join("\n\n") }
+      : { source: "inherit", text: "" },
     atomReferences: details.atomReferences.map((item) => ({
       blockId: item.blockId,
       instance: item.instance,
@@ -64,15 +68,17 @@ export function projectFormValueFromDetails(
       limit: item.limit ?? null,
       ...(item.mode !== undefined ? { mode: item.mode } : {}),
     })),
-    sessionDefaults: details.sessionDefaults[0]
-      ? {
-          blockId: details.sessionDefaults[0].blockId,
-          agentId: details.sessionDefaults[0].agentId ?? "",
-          nodeId: details.sessionDefaults[0].nodeId ?? "",
-          modelPreset: details.sessionDefaults[0].modelPreset ?? "",
-        }
-      : null,
+    sessionDefaults: defaults
+      ? { source: "own", nodeId: defaults.nodeId ?? "", agentId: defaults.agentId ?? "", modelPreset: defaults.modelPreset ?? "" }
+      : { source: "inherit", nodeId: "", agentId: "", modelPreset: "" },
   };
+}
+
+export function isProjectFormValid(value: ProjectFormValue): boolean {
+  return value.title.trim().length > 0
+    && (value.guidance.source === "inherit" || value.guidance.text.trim().length > 0)
+    && (value.sessionDefaults.source === "inherit"
+      || (value.sessionDefaults.nodeId.length > 0 && value.sessionDefaults.agentId.length > 0));
 }
 
 export function projectHasContents(
