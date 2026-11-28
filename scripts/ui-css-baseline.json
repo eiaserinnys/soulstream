@@ -8,7 +8,6 @@
   },
   "font-literal": {
     "soul-desktop/src/index.css": 1,
-    "unified-dashboard/client/v3/ritual.css": 2,
     "unified-dashboard/client/v3/v3-context-succession.css": 1,
     "unified-dashboard/client/v3/v3-folder-workspace.css": 2,
     "unified-dashboard/client/v3/v3-mobile-projects.css": 1,
@@ -43,7 +42,6 @@
     "unified-dashboard/client/v3/v3-card-board.css": 1
   },
   "spacing-literal": {
-    "unified-dashboard/client/v3/ritual.css": 16,
     "unified-dashboard/client/v3/v3-card-check-items.css": 1,
     "unified-dashboard/client/v3/v3-content-boundary.css": 5,
     "unified-dashboard/client/v3/v3-context-menus.css": 9,
@@ -54,7 +52,7 @@
     "unified-dashboard/client/v3/v3-persistent-task-list.css": 4,
     "unified-dashboard/client/v3/v3-planner-mobile.css": 4,
     "unified-dashboard/client/v3/v3-planner-surfaces.css": 32,
-    "unified-dashboard/client/v3/v3-planner.css": 31,
+    "unified-dashboard/client/v3/v3-planner.css": 28,
     "unified-dashboard/client/v3/v3-project-star.css": 26,
     "unified-dashboard/client/v3/v3-run-history.css": 11,
     "unified-dashboard/client/v3/v3-session-panel.css": 6

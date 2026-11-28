@@ -181,7 +181,6 @@ export function FolderDetailPane({
     >
       <Star className="h-4 w-4" fill={folderStar.starred ? "currentColor" : "none"} aria-hidden="true" />
     </DashboardIconCap>
-
     <DashboardIconCap label="폴더 메뉴" onClick={(event) => setFolderMenu({ x: event.clientX, y: event.clientY })}>
       <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
     </DashboardIconCap>

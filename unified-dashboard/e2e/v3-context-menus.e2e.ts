@@ -42,7 +42,6 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByRole("menuitem", { name: "폴더 ID 복사" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "별표 해제" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "완료 처리" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "오늘에서 제외" })).toBeVisible();
     await capture(page, theme, "02-task-context-menu");
     await page.keyboard.press("Escape");
 

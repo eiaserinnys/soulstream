@@ -272,9 +272,7 @@ export function FolderWorkspace({
           onLoadMoreRuns={onLoadMoreRuns}
           sessionDefaults={sessionDefaults}
           folderMoveTargets={folderMoveTargets}
-
           onReturnToToday={onReturnToToday}
-
           onOpenSession={onOpenSession}
           onRenameFolderTitle={async (title) => {
             const renamedTitle = await onRenameFolderTitle(title);

@@ -130,6 +130,19 @@ describe("SessionPageBindingService", () => {
     );
   });
 
+  it("projects the folder for an old unanchored pending binding", async () => {
+    const h = harness(binding({ target_page_id: null, page_state: "pending", legacy_state: "pending" }));
+    await h.service.reconcileDue();
+    expect(h.repository.markPageBound).toHaveBeenCalledWith("sess-1");
+    expect(h.legacyProjection.project).toHaveBeenCalledWith(expect.objectContaining({
+      session_id: "sess-1", page_state: "bound", legacy_folder_id: "folder-1",
+    }));
+    expect(vi.mocked(h.repository.markPageBound).mock.invocationCallOrder[0]).toBeLessThan(
+      h.legacyProjection.project.mock.invocationCallOrder[0]!,
+    );
+    expect(h.row()).toMatchObject({ page_state: "bound", legacy_state: "completed" });
+  });
+
   it.each([
     {
       name: "delegated agent source",
